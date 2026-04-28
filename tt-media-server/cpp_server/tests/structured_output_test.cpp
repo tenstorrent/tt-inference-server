@@ -4,12 +4,16 @@
 #include <gtest/gtest.h>
 #include <json/json.h>
 
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "domain/chat_completion_request.hpp"
 #include "domain/response_format.hpp"
 #include "domain/sampling_params.hpp"
+#include "runners/guided_decoder_manager.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
 
@@ -227,6 +231,150 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
   })");
   EXPECT_THROW(tt::domain::ChatCompletionRequest::fromJson(json, 1),
                std::invalid_argument);
+}
+
+// ---------------------------------------------------------------------------
+// GuidedDecoderManager deterministic-select mode (mock-runner driver)
+// ---------------------------------------------------------------------------
+//
+// In mock mode the manager must reduce the per-step bitmask to exactly one
+// token that drives the grammar to termination. Without this, a mock runner
+// that just picks any allowed token gets stuck inside open-ended values
+// (string contents and trailing integer fields), because there is always at
+// least one allowed character that extends the value.
+
+namespace {
+
+constexpr int K_MAX_DECODE_STEPS = 256;
+
+struct DeterministicRunResult {
+  bool terminated = false;
+  std::vector<int32_t> tokens;
+  std::string decoded;
+};
+
+DeterministicRunResult runDeterministicGeneration(
+    tt::runners::GuidedDecoderManager& manager,
+    const tt::utils::tokenizers::Tokenizer& tokenizer, uint32_t taskId,
+    const tt::domain::SamplingParams& params) {
+  manager.initRequest(taskId, params);
+  DeterministicRunResult result;
+  for (int step = 0; step < K_MAX_DECODE_STEPS; ++step) {
+    std::vector<int32_t> bitmask;
+    manager.fillNextBitmask(taskId, bitmask);
+
+    // Deterministic mode must leave exactly one bit set per step so that a
+    // mock runner with no logits has only one valid choice.
+    int totalSetBits = 0;
+    int32_t chosen = -1;
+    for (size_t w = 0; w < bitmask.size(); ++w) {
+      uint32_t word = static_cast<uint32_t>(bitmask[w]);
+      while (word != 0) {
+        int bit = __builtin_ctz(word);
+        word &= word - 1;
+        chosen = static_cast<int32_t>(w * 32 + bit);
+        ++totalSetBits;
+      }
+    }
+    if (totalSetBits == 0 || chosen < 0) break;
+    EXPECT_EQ(totalSetBits, 1)
+        << "Deterministic mode must reduce bitmask to exactly one token per "
+           "step, found "
+        << totalSetBits << " at step " << step;
+
+    auto accept = manager.acceptToken(taskId, chosen);
+    EXPECT_TRUE(accept.accepted) << "Manager rejected its own chosen token "
+                                 << chosen << " at step " << step;
+    result.tokens.push_back(chosen);
+    if (accept.completed) {
+      result.terminated = true;
+      break;
+    }
+  }
+  manager.removeRequest(taskId);
+  std::vector<int> intTokens(result.tokens.begin(), result.tokens.end());
+  result.decoded = tokenizer.decode(intTokens, /*skipSpecialTokens=*/true);
+  return result;
+}
+
+tt::runners::GuidedDecoderManager makeDeterministicManager() {
+  const auto& tok = tt::utils::tokenizers::activeTokenizer();
+  auto vocab = tok.getEncodedVocab();
+  int vocabSize = static_cast<int>(vocab.size());
+  return tt::runners::GuidedDecoderManager(vocab, vocabSize,
+                                           /*deterministicSelect=*/true);
+}
+
+}  // namespace
+
+TEST(GuidedDecoderManagerDeterministic, TerminatesIntegerObject) {
+  auto manager = makeDeterministicManager();
+  const auto& tok = tt::utils::tokenizers::activeTokenizer();
+
+  tt::domain::SamplingParams params;
+  params.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
+  params.json_schema_str =
+      R"({"type":"object","properties":{"age":{"type":"integer"},"name":{"type":"integer"}},"required":["age","name"],"additionalProperties":false})";
+
+  auto run = runDeterministicGeneration(manager, tok, 1, params);
+  EXPECT_TRUE(run.terminated)
+      << "Grammar must terminate; produced text: " << run.decoded;
+
+  Json::Value parsed;
+  Json::CharReaderBuilder builder;
+  std::istringstream iss(run.decoded);
+  std::string errs;
+  ASSERT_TRUE(Json::parseFromStream(builder, iss, &parsed, &errs))
+      << "Output was not valid JSON: '" << run.decoded << "' err=" << errs;
+  EXPECT_TRUE(parsed.isMember("age"));
+  EXPECT_TRUE(parsed.isMember("name"));
+  EXPECT_TRUE(parsed["age"].isIntegral());
+  EXPECT_TRUE(parsed["name"].isIntegral());
+}
+
+TEST(GuidedDecoderManagerDeterministic, TerminatesStringObject) {
+  auto manager = makeDeterministicManager();
+  const auto& tok = tt::utils::tokenizers::activeTokenizer();
+
+  tt::domain::SamplingParams params;
+  params.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
+  params.json_schema_str =
+      R"({"type":"object","properties":{"age":{"type":"integer"},"name":{"type":"string"}},"required":["age","name"],"additionalProperties":false})";
+
+  auto run = runDeterministicGeneration(manager, tok, 2, params);
+  EXPECT_TRUE(run.terminated)
+      << "Grammar must terminate; produced text: " << run.decoded;
+
+  Json::Value parsed;
+  Json::CharReaderBuilder builder;
+  std::istringstream iss(run.decoded);
+  std::string errs;
+  ASSERT_TRUE(Json::parseFromStream(builder, iss, &parsed, &errs))
+      << "Output was not valid JSON: '" << run.decoded << "' err=" << errs;
+  EXPECT_TRUE(parsed.isMember("age"));
+  EXPECT_TRUE(parsed.isMember("name"));
+  EXPECT_TRUE(parsed["age"].isIntegral());
+  EXPECT_TRUE(parsed["name"].isString());
+}
+
+TEST(GuidedDecoderManagerDeterministic, TerminatesJsonObjectFreeFormat) {
+  auto manager = makeDeterministicManager();
+  const auto& tok = tt::utils::tokenizers::activeTokenizer();
+
+  tt::domain::SamplingParams params;
+  params.response_format_type = tt::domain::ResponseFormatType::JSON_OBJECT;
+
+  auto run = runDeterministicGeneration(manager, tok, 3, params);
+  EXPECT_TRUE(run.terminated)
+      << "Free-form JSON grammar must terminate; produced text: "
+      << run.decoded;
+
+  Json::Value parsed;
+  Json::CharReaderBuilder builder;
+  std::istringstream iss(run.decoded);
+  std::string errs;
+  ASSERT_TRUE(Json::parseFromStream(builder, iss, &parsed, &errs))
+      << "Output was not valid JSON: '" << run.decoded << "' err=" << errs;
 }
 
 }  // namespace

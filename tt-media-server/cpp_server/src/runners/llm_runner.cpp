@@ -36,10 +36,14 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     const auto& tok = tt::utils::tokenizers::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
-    guidedDecoder =
-        std::make_unique<GuidedDecoderManager>(encodedVocab, vocabSize);
-    TT_LOG_INFO("[LLMRunner] Guided decoder initialized (vocab_size={})",
-                vocabSize);
+    bool deterministicSelect =
+        config.runner_type == tt::config::ModelRunnerType::MOCK;
+    guidedDecoder = std::make_unique<GuidedDecoderManager>(
+        encodedVocab, vocabSize, deterministicSelect);
+    TT_LOG_INFO(
+        "[LLMRunner] Guided decoder initialized (vocab_size={}, "
+        "deterministic_select={})",
+        vocabSize, deterministicSelect);
   } catch (const std::exception& e) {
     TT_LOG_WARN(
         "[LLMRunner] Failed to init guided decoder, structured outputs "

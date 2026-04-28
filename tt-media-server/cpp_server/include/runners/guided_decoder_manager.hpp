@@ -19,8 +19,20 @@ struct TokenAcceptResult {
 
 class GuidedDecoderManager {
  public:
+  /**
+   * @param encodedVocab Byte-level encoded vocabulary used by xgrammar.
+   * @param vocabSize Total vocabulary size, including special tokens.
+   * @param deterministicSelect When true, fillNextBitmask reduces the bitmask
+   *   to a single best token that drives the grammar toward termination. This
+   *   is intended for mock runners that lack real logits and would otherwise
+   *   pick tokens that prevent the grammar from ever completing (e.g. always
+   *   picking digits inside an integer, or content characters inside a
+   *   string). Real model runners must leave this off so that they receive
+   *   the full bitmask and can sample over it normally.
+   */
   explicit GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
-                                int vocabSize);
+                                int vocabSize,
+                                bool deterministicSelect = false);
   ~GuidedDecoderManager();
 
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;
