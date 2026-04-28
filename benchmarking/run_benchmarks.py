@@ -424,8 +424,7 @@ def main():
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
         is_structured_output_task = (
-            task.task_type
-            == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+            task.task_type == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
         )
         benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
