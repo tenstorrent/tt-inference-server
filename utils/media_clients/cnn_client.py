@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import time
@@ -10,7 +11,6 @@ from pathlib import Path
 import requests
 
 from utils.media_clients.test_status import CnnGenerationTestStatus
-from workflows.utils import get_num_calls
 from workflows.workflow_types import ReportCheckTypes
 
 from .base_strategy_interface import BaseMediaStrategy
@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 # Constants
 CNN_MOBILENETV2_RUNNER = "tt-xla-mobilenetv2"
+# Reuse the ImageNet subset prepared by VisionEvalsTest so benchmarks and
+# accuracy evals exercise the model with the exact same inputs.
+IMAGENET_DATASET_DIR = "server_tests/datasets/imagenet_subset"
+IMAGENET_METADATA_FILE = "metadata.json"
+# Number of images to fetch when the ImageNet subset is missing on disk. Once
+# downloaded, the benchmark sends one request per image found in the dataset
+# (so the request count equals len(metadata), not this constant).
+DEFAULT_DATASET_DOWNLOAD_COUNT = 20
 
 
 class CnnClientStrategy(BaseMediaStrategy):
@@ -42,13 +50,11 @@ class CnnClientStrategy(BaseMediaStrategy):
             logger.info(f"Runner in use: {runner_in_use}")
             # 2026-01-11 11:05:48,031 - utils.media_clients.cnn_client - INFO - Runner in use: tt-xla-mobilenetv2
 
-            # Get num_calls from benchmark parameters
-            num_calls = get_num_calls(self)
             eval_result = None
             if runner_in_use == CNN_MOBILENETV2_RUNNER:
                 eval_result = self._run_mobilenetv2_eval()
             else:
-                status_list = self._run_image_analysis_benchmark(num_calls)
+                status_list = self._run_image_analysis_benchmark()
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -119,28 +125,41 @@ class CnnClientStrategy(BaseMediaStrategy):
 
             logger.info(f"Runner in use: {runner_in_use}")
 
-            # Get num_calls from CNN benchmark parameters
-            num_calls = get_num_calls(self)
-
-            status_list = []
-            status_list = self._run_image_analysis_benchmark(num_calls)
+            status_list = self._run_image_analysis_benchmark()
 
             self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _run_image_analysis_benchmark(
-        self, num_calls: int
-    ) -> list[CnnGenerationTestStatus]:
-        """Run image analysis benchmark."""
-        logger.info("Running image analysis benchmark.")
-        status_list = []
+    def _run_image_analysis_benchmark(self) -> list[CnnGenerationTestStatus]:
+        """Run image analysis benchmark using the ImageNet subset dataset.
 
-        for i in range(num_calls):
-            logger.info(f"Analyzing image {i + 1}/{num_calls}...")
-            status, elapsed = self._analyze_image()
-            logger.info(f"Analyzed image with {50} steps in {elapsed:.2f} seconds.")
+        Sends one request per image present in the dataset (so the number of
+        requests is determined by the dataset itself, not by a benchmark
+        parameter). This reuses the same dataset that VisionEvalsTest uses
+        for accuracy measurements; here we only measure inference timing per
+        request - no accuracy comparison. Aggregate metrics such as TTFT are
+        computed downstream from `len(status_list)`.
+        """
+        dataset_path, metadata = self._ensure_imagenet_dataset()
+        total_requests = len(metadata)
+        logger.info(
+            "Running image analysis benchmark over ImageNet subset at %s "
+            "(%d images -> %d requests).",
+            dataset_path,
+            total_requests,
+            total_requests,
+        )
+
+        status_list: list[CnnGenerationTestStatus] = []
+        for i, sample in enumerate(metadata, start=1):
+            image_file = dataset_path / sample["filename"]
+            logger.info(
+                f"Analyzing image {i}/{total_requests}: {sample['filename']}"
+            )
+            status, elapsed = self._analyze_image(image_file)
+            logger.info(f"Analyzed image in {elapsed:.2f} seconds.")
             status_list.append(
                 CnnGenerationTestStatus(
                     status=status,
@@ -148,20 +167,88 @@ class CnnClientStrategy(BaseMediaStrategy):
                 )
             )
 
+        logger.info(
+            "Completed image analysis benchmark: %d requests sent.",
+            len(status_list),
+        )
         return status_list
 
-    def _analyze_image(self) -> tuple[bool, float]:
-        """Analyze image using CNN model."""
-        logger.info("🔍 Analyzing image")
-        with open(f"{self.test_payloads_path}/image_client_image_payload", "r") as f:
-            imagePayload = f.read()
+    def _ensure_imagenet_dataset(self) -> tuple[Path, list[dict]]:
+        """Ensure the ImageNet subset is available locally and return its path
+        plus the loaded metadata.
+
+        If the dataset directory or metadata is missing this triggers a fresh
+        download via VisionEvalsTest so we share a single source of truth with
+        the eval flow. Once the dataset exists we use whatever images are
+        present - the number of benchmark requests is implied by
+        ``len(metadata)``.
+        """
+        dataset_path = Path(IMAGENET_DATASET_DIR)
+        metadata_path = dataset_path / IMAGENET_METADATA_FILE
+
+        if metadata_path.exists():
+            try:
+                with metadata_path.open("r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                if metadata:
+                    return dataset_path, metadata
+                logger.warning(
+                    "ImageNet metadata at %s is empty; re-downloading.",
+                    metadata_path,
+                )
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(
+                    "Failed to read existing ImageNet metadata at %s: %s; "
+                    "will re-download.",
+                    metadata_path,
+                    e,
+                )
+
+        logger.info(
+            "ImageNet subset missing at %s; downloading %s samples.",
+            dataset_path,
+            DEFAULT_DATASET_DOWNLOAD_COUNT,
+        )
+
+        # Lazy import to avoid loading 'datasets' library at module import time
+        from server_tests.test_cases.vision_evals_test import (
+            VisionEvalsTest,
+            VisionEvalsTestRequest,
+        )
+        from server_tests.test_classes import TestConfig
+
+        config = TestConfig.create_default()
+        request = VisionEvalsTestRequest(
+            action="download", download_count=DEFAULT_DATASET_DOWNLOAD_COUNT
+        )
+        download_test = VisionEvalsTest(config, {"request": request})
+        download_result = download_test.run_tests()
+        if not download_result.get("success"):
+            raise RuntimeError(
+                f"Failed to download ImageNet samples: {download_result}"
+            )
+
+        with metadata_path.open("r", encoding="utf-8") as f:
+            metadata = json.load(f)
+        if not metadata:
+            raise RuntimeError(
+                f"ImageNet metadata at {metadata_path} is empty after download."
+            )
+        return dataset_path, metadata
+
+    def _analyze_image(self, image_path: Path) -> tuple[bool, float]:
+        """Analyze a single image using the CNN model and return (ok, elapsed)."""
+        logger.info("🔍 Analyzing image: %s", image_path)
+        with image_path.open("rb") as img_fp:
+            encoded = base64.b64encode(img_fp.read()).decode("ascii")
+        image_payload = f"data:image/jpeg;base64,{encoded}"
 
         headers = {
             "accept": "application/json",
             "Authorization": "Bearer your-secret-key",
             "Content-Type": "application/json",
         }
-        payload = {"prompt": imagePayload}
+        payload = {"prompt": image_payload}
         start_time = time.time()
         response = requests.post(
             f"{self.base_url}/v1/cnn/search-image",
