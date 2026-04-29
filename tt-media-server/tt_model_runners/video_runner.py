@@ -42,11 +42,14 @@ Environment variables:
 
 import asyncio
 import os
+import queue
 import signal
 import sys
+import threading
 import traceback
+from dataclasses import dataclass
 from dataclasses import fields as dc_fields
-from typing import Optional
+from typing import Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -64,7 +67,40 @@ _log = TTLogger("video_runner")
 
 LOG_PROMPT_PREVIEW_CHARS = 50
 
+# Bounded encoder backlog: up to 2 jobs queued + 1 in-flight encode. Any deeper
+# holds onto frame buffers (RAM) for no benefit — model latency >> encode
+# latency, so the backlog stays at 0–1 in steady state. Rank 0 blocking on
+# `put` if the encoder falls behind is the correct back-pressure signal.
+ENCODER_QUEUE_MAXSIZE = 2
+# Per-job wall-clock bound used to derive the shutdown drain timeout. Wan 2.2
+# at `ultrafast` typically encodes in ~1–3s; 10s is a deliberately loose cap.
+# If we hit it, something (e.g. a wedged ffmpeg child) is actually broken.
+_PER_ENCODE_BOUND_S = 10.0
+# Drain bound = (in-flight + queued) × per-job bound. Scales with MAXSIZE so
+# future tuning can't silently underdimension the shutdown path.
+ENCODER_JOIN_TIMEOUT_S = (ENCODER_QUEUE_MAXSIZE + 1) * _PER_ENCODE_BOUND_S
+
 _shutdown = False
+
+
+@dataclass
+class _EncodeJob:
+    """Work item handed off from rank-0 inference to the encoder thread.
+
+    The encoder thread is the *sole* writer of ``output_shm``, for both success
+    and failure paths. Exactly one of ``frames`` or ``error`` is set:
+
+    - ``frames`` set → run ffmpeg, write SUCCESS response.
+    - ``error``  set → skip ffmpeg, write ERROR response directly.
+
+    This single-writer invariant eliminates out-of-order responses that would
+    otherwise occur when an inference failure short-circuited the queue while
+    a prior successful job was still waiting to encode.
+    """
+
+    task_id: str
+    frames: Optional[Any] = None
+    error: Optional[str] = None
 
 
 def _handle_sigterm(signum, frame):
@@ -180,9 +216,71 @@ def _broadcast_request(comm, req: Optional[VideoRequest], image_data: Optional[s
     return comm.bcast((req, image_data), root=0)
 
 
-def _run_inference_loop(
-    comm, runner, input_shm: Optional[VideoShm], output_shm: Optional[VideoShm]
+def _encoder_loop(
+    output_shm: VideoShm,
+    encode_queue: "queue.Queue[Optional[_EncodeJob]]",
 ) -> None:
+    """Rank-0 background thread: sole writer of ``output_shm``.
+
+    FIFO by construction (single consumer of the queue, single writer of the
+    output SHM), so response order matches submission order for both success
+    and error paths. Sentinel ``None`` signals shutdown.
+
+    """
+    from utils.video_manager import VideoManager
+
+    video_manager = VideoManager()
+    _log.info("Encoder thread: started")
+
+    while True:
+        job = encode_queue.get()
+        if job is None:
+            _log.info("Encoder thread: shutdown sentinel received, exiting")
+            return
+
+        if job.error is not None:
+            try:
+                _write_error_to_shm(output_shm, job.task_id, job.error)
+            except Exception as write_err:
+                _log.error(
+                    f"Encoder thread: failed to write upstream-error response "
+                    f"for task {job.task_id}: {write_err}"
+                )
+            continue
+
+        try:
+            mp4_path = video_manager.export_to_mp4(job.frames)
+            _log.info(
+                f"Encoder thread: encoded mp4 for task {job.task_id} at {mp4_path}"
+            )
+            _write_response_to_shm(output_shm, job.task_id, mp4_path)
+        except Exception as encode_err:
+            _log.error(
+                f"Encoder thread: encode failure for task {job.task_id}: "
+                f"{encode_err}\n{traceback.format_exc()}"
+            )
+            try:
+                _write_error_to_shm(output_shm, job.task_id, str(encode_err))
+            except Exception as write_err:
+                _log.error(
+                    f"Encoder thread: failed to write error response for task "
+                    f"{job.task_id}: {write_err}"
+                )
+
+
+def _run_inference_loop(
+    comm,
+    runner,
+    input_shm: Optional[VideoShm],
+    encode_queue: "Optional[queue.Queue[Optional[_EncodeJob]]]",
+) -> None:
+    """Collective inference loop. Rank 0 owns SHM + encoder queue; other ranks
+    receive broadcasts and run inference only.
+
+    Rank 0 never writes to ``output_shm`` directly — all responses (success
+    and error) are handed off to the encoder thread so ordering matches
+    submission (see ``_encoder_loop`` for the single-writer invariant).
+    """
     rank = comm.Get_rank()
 
     while not _shutdown:
@@ -218,11 +316,12 @@ def _run_inference_loop(
             _log.info(f"Rank {rank}: Inference done for task {req.task_id}")
 
             if rank == 0:
-                from utils.video_manager import VideoManager
-
-                mp4_path = VideoManager().export_to_mp4(frames)
-                _log.info(f"Rank 0: Encoded mp4 at {mp4_path}")
-                _write_response_to_shm(output_shm, req.task_id, mp4_path)
+                # Hand the frames off to the encoder thread and immediately
+                # loop back to read_request — this frees the mesh while
+                # ffmpeg runs in parallel. `put` is bounded; if the encoder
+                # falls behind we block here, naturally back-pressuring
+                # inference (no memory blowup).
+                encode_queue.put(_EncodeJob(task_id=req.task_id, frames=frames))
 
         except Exception as e:
             _log.error(
@@ -230,7 +329,7 @@ def _run_inference_loop(
                 f"{traceback.format_exc()}"
             )
             if rank == 0:
-                _write_error_to_shm(output_shm, req.task_id, str(e))
+                encode_queue.put(_EncodeJob(task_id=req.task_id, error=str(e)))
 
 
 def run_all_ranks() -> None:
@@ -263,6 +362,8 @@ def run_all_ranks() -> None:
 
     input_shm: Optional[VideoShm] = None
     output_shm: Optional[VideoShm] = None
+    encode_queue: Optional[queue.Queue] = None
+    encoder_thread: Optional[threading.Thread] = None
 
     if rank == 0:
         input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
@@ -283,14 +384,37 @@ def run_all_ranks() -> None:
                 f"Rank 0: crash-recovery repaired prior inconsistency: "
                 f"input={in_repair} output={out_repair}"
             )
+
+        # Start the encoder thread AFTER output_shm is open and recovered,
+        # so its first `_write_response_to_shm` call sees a usable segment.
+        encode_queue = queue.Queue(maxsize=ENCODER_QUEUE_MAXSIZE)
+        encoder_thread = threading.Thread(
+            target=_encoder_loop,
+            args=(output_shm, encode_queue),
+            name="video-encoder",
+            daemon=False,
+        )
+        encoder_thread.start()
         _log.info("Rank 0: SHM bridge ready, waiting for requests...")
 
     try:
-        _run_inference_loop(comm, runner, input_shm, output_shm)
+        _run_inference_loop(comm, runner, input_shm, encode_queue)
     except KeyboardInterrupt:
         _log.info(f"Rank {rank}: Interrupted by user")
     finally:
         if rank == 0:
+            # Order matters: stop the encoder BEFORE closing output_shm so any
+            # remaining encodes can write their responses on the way out.
+            if encode_queue is not None and encoder_thread is not None:
+                encode_queue.put(None)
+                encoder_thread.join(timeout=ENCODER_JOIN_TIMEOUT_S)
+                if encoder_thread.is_alive():
+                    _log.warning(
+                        f"Rank 0: encoder thread did not drain within "
+                        f"{ENCODER_JOIN_TIMEOUT_S}s "
+                        f"(remaining queued={encode_queue.qsize()}); "
+                        f"continuing shutdown"
+                    )
             if input_shm:
                 input_shm.close()
             if output_shm:

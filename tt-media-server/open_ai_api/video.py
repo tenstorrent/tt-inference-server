@@ -5,8 +5,8 @@
 import base64
 import os
 import tempfile
-import time
 from typing import Annotated, Optional
+import time as _time
 
 from config.constants import JobTypes
 from config.settings import settings
@@ -79,9 +79,9 @@ async def submit_generate_video_request(
     try:
         # Synchronous mode: process and return video directly
         if not settings.use_async_video:
-            t0 = time.perf_counter()
+            _t0 = _time.time()
             video_file_path = await service.process_request(request)
-            t1 = time.perf_counter()
+            _elapsed = round(_time.time() - _t0, 2)
 
             if not video_file_path or not isinstance(video_file_path, str):
                 raise HTTPException(status_code=500, detail="Video generation failed: invalid file path returned")
@@ -91,15 +91,15 @@ async def submit_generate_video_request(
             if file_size == 0:
                 raise HTTPException(status_code=500, detail="Video generation failed: empty file generated")
 
-            logger.info(
-                f"[video] process_request={t1-t0:.3f}s  file_size={file_size/1024:.1f}KB  task={request._task_id}"
-            )
 
             return FileResponse(
                 video_file_path,
                 media_type="video/mp4",
                 filename=f"video_{request._task_id}.mp4",
-                headers={"Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"},
+                headers={
+                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4",
+                    "X-Generation-Time": str(_elapsed),
+                },
             )
 
         # Async mode: create job and return job metadata

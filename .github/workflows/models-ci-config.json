@@ -63,16 +63,31 @@
       }
     },
     "Llama-3.2-3B-Instruct": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Llama-3.2-90B-Vision-Instruct": {
       "inference_engine": "vLLM",
@@ -266,16 +281,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        }
-      }
-    },
-    "Llama-3.2-3B": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
           ]
         }
       }
