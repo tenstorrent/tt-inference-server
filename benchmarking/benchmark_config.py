@@ -11,6 +11,7 @@ from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -56,6 +57,15 @@ class BenchmarkTaskTTS(BenchmarkTask):
 
 
 @dataclass(frozen=True)
+class BenchmarkTaskStructuredOutput(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = (
+        BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+    )
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     model_id: str
     tasks: List[BenchmarkTask]
@@ -83,6 +93,24 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
     (128, 128, 1024, 512, 1),
     (128, 128, 512, 1024, 1),
 ]
+
+
+# Structured-output benchmark sweep. Each entry yields one run of
+# benchmark_serving_structured_output.py at fixed max_concurrency=1,
+# num_prompts=1000, output-len=128. structured_output_ratio=None maps to
+# --no-structured-output (the baseline run).
+# (dataset, structured_output_ratio)
+STRUCTURED_OUTPUT_PAIRS = [
+    ("json", 1.0),
+    ("json", 0.0),
+    # ("grammar", 1.0),
+    # ("regex", 1.0),
+    # ("choice", 1.0),
+    # ("xgrammar_bench", 1.0),
+]
+STRUCTURED_OUTPUT_NUM_PROMPTS = 100
+STRUCTURED_OUTPUT_OSL = 128
+STRUCTURED_OUTPUT_MAX_CONCURRENCY = 4
 
 
 def _expand_text_sweep_params(
@@ -589,5 +617,37 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
 
         tasks.append(benchmark_task_runs)
+
+    # Structured-output benchmarks: text LLMs only, vLLM engine only, fixed
+    # max_concurrency=1. Skip VLM (image), CNN, embedding, video, TTS.
+    structured_output_eligible = (
+        model_spec.model_type
+        not in (
+            ModelType.CNN,
+            ModelType.EMBEDDING,
+            ModelType.VIDEO,
+            ModelType.TEXT_TO_SPEECH,
+        )
+        and "image" not in model_spec.supported_modalities
+        and model_spec.inference_engine == InferenceEngine.VLLM.value
+    )
+    if structured_output_eligible:
+        tasks.append(
+            BenchmarkTaskStructuredOutput(
+                param_map={
+                    device: [
+                        BenchmarkTaskParams(
+                            osl=STRUCTURED_OUTPUT_OSL,
+                            max_concurrency=STRUCTURED_OUTPUT_MAX_CONCURRENCY,
+                            num_prompts=STRUCTURED_OUTPUT_NUM_PROMPTS,
+                            task_type="structured_output",
+                            structured_dataset=dataset,
+                            structured_output_ratio=ratio,
+                        )
+                        for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
+                    ]
+                }
+            )
+        )
 
     BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)

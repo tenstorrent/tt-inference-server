@@ -53,6 +53,7 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
     HTTP_CLIENT_VIDEO_API = auto()
+    HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 

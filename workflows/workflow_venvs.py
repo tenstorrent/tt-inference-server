@@ -239,6 +239,23 @@ def setup_evals_meta(
     return setup_succeeded
 
 
+VLLM_BENCHMARKS_PIN = "v0.13.0"
+VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/{VLLM_BENCHMARKS_PIN}/benchmarks"
+# Files fetched into work_dir for benchmark_serving_structured_output.py
+# (relative_path_in_vllm_repo, relative_path_in_work_dir)
+STRUCTURED_OUTPUT_FETCH_FILES = [
+    (
+        "benchmark_serving_structured_output.py",
+        "benchmark_serving_structured_output.py",
+    ),
+    ("backend_request_func.py", "backend_request_func.py"),
+    (
+        "structured_schemas/structured_schema_1.json",
+        "structured_schemas/structured_schema_1.json",
+    ),
+]
+
+
 def setup_benchmarks_vllm(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -258,6 +275,31 @@ def setup_benchmarks_vllm(
         )
         == 0
     )
+    # Extra deps for benchmark_serving_structured_output.py (fetched below).
+    # The unified `vllm bench serve` CLI does not pull these in, so install
+    # them explicitly.
+    setup_succeeded = (
+        run_command(
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} datasets pandas xgrammar",
+            logger=logger,
+        )
+        == 0
+        and setup_succeeded
+    )
+    # Fetch structured-output benchmark script (and its sibling deps) from the
+    # pinned vLLM tag directly, rather than vendoring into the repo.
+    for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
+        dst = work_dir / dst_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
+        setup_succeeded = (
+            run_command(
+                f"curl -fSL {url} -o {dst}",
+                logger=logger,
+            )
+            == 0
+            and setup_succeeded
+        )
 
     return setup_succeeded
 
