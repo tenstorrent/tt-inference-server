@@ -3,7 +3,10 @@
 
 #include "services/memory_services/contiguous_memory_manager.hpp"
 
+#include <string>
+
 #include "domain/manage_memory.hpp"
+#include "utils/event_recorder.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -19,9 +22,15 @@ ContiguousMemoryManager::ContiguousMemoryManager(uint32_t poolSize)
     freeSlots.insert(i);
   }
   TT_LOG_INFO("[ContiguousMemoryManager] Initialized with {} slots", poolSize);
+
+  auto& recorder = tt::utils::EventRecorder::instance();
+  recorder.record("MM", "POOL_INITIALIZED",
+                  "\"pool_size\":" + std::to_string(poolSize));
 }
 
 void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
+  auto& recorder = tt::utils::EventRecorder::instance();
+
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
       if (freeSlots.empty()) {
@@ -29,6 +38,11 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
             "[ContiguousMemoryManager] ALLOCATE taskId={}: pool exhausted "
             "(allocated={})",
             task.taskId, allocatedSlots.size());
+
+        recorder.record(
+            "MM", "ALLOC_EXHAUSTED",
+            "\"task_id\":" + std::to_string(task.taskId) +
+                ",\"allocated\":" + std::to_string(allocatedSlots.size()));
 
         ManageMemoryResult result{};
         result.taskId = task.taskId;
@@ -46,6 +60,13 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
           "free={}, allocated={}",
           task.taskId, slotId, freeSlots.size(), allocatedSlots.size());
 
+      recorder.record(
+          "MM", "SLOT_ALLOCATED",
+          "\"task_id\":" + std::to_string(task.taskId) +
+              ",\"slot_id\":" + std::to_string(slotId) +
+              ",\"free\":" + std::to_string(freeSlots.size()) +
+              ",\"allocated\":" + std::to_string(allocatedSlots.size()));
+
       ManageMemoryResult result{};
       result.taskId = task.taskId;
       result.status = ManageMemoryStatus::SUCCESS;
@@ -62,11 +83,23 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
               "[ContiguousMemoryManager] DEALLOCATE taskId={}: freed slot={}, "
               "free={}, allocated={}",
               task.taskId, slotId, freeSlots.size(), allocatedSlots.size());
+
+          recorder.record(
+              "MM", "SLOT_DEALLOCATED",
+              "\"task_id\":" + std::to_string(task.taskId) +
+                  ",\"slot_id\":" + std::to_string(slotId) +
+                  ",\"free\":" + std::to_string(freeSlots.size()) +
+                  ",\"allocated\":" + std::to_string(allocatedSlots.size()));
         } else {
           TT_LOG_WARN(
               "[ContiguousMemoryManager] DEALLOCATE taskId={}: slot={} was "
               "not allocated",
               task.taskId, slotId);
+
+          recorder.record(
+              "MM", "DEALLOC_UNKNOWN_SLOT",
+              "\"task_id\":" + std::to_string(task.taskId) +
+                  ",\"slot_id\":" + std::to_string(slotId));
         }
       }
       return;

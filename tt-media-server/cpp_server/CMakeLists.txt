@@ -286,6 +286,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
+    src/utils/event_recorder.cpp
     src/runners/blaze_runner/sp_pipeline_runner_demo.cpp
     src/runners/blaze_runner/i_sp_pipeline_model_runner.cpp
     src/runners/blaze_runner/sp_pipeline_model_runner.cpp
