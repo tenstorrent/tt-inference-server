@@ -51,6 +51,7 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
             with open(metadata_path) as f:
                 dataset_loader = json.load(f).get("dataset_loader")
         except (OSError, json.JSONDecodeError, AttributeError):
+            # we ignore dataset info loading if anything fails
             pass
 
     return AdapterInfo(
