@@ -112,6 +112,10 @@ class Settings(BaseSettings):
         True  # If False, video is generated synchronously and returned directly
     )
 
+    # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
+    # Currently only supported in LoraSingleChipRunner
+    lora_adapter: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):

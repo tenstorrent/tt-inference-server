@@ -5,6 +5,7 @@
 import json
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from config.constants import TRAINING_STORE_ADAPTERS_DIR
 
@@ -13,6 +14,7 @@ from config.constants import TRAINING_STORE_ADAPTERS_DIR
 class AdapterInfo:
     base_model_name: str
     adapter_path: str
+    dataset_loader: Optional[str] = None
 
 
 def resolve_adapter(adapter: str) -> AdapterInfo:
@@ -42,4 +44,18 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
     if not base_model_name:
         raise ValueError(f"base_model_name_or_path missing in {config_path}")
 
-    return AdapterInfo(base_model_name=base_model_name, adapter_path=adapter_path)
+    metadata_path = os.path.join(adapter_path, "dataset_metadata.json")
+    dataset_loader = None
+    if os.path.isfile(metadata_path):
+        try:
+            with open(metadata_path) as f:
+                dataset_loader = json.load(f).get("dataset_loader")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            # we ignore dataset info loading if anything fails
+            pass
+
+    return AdapterInfo(
+        base_model_name=base_model_name,
+        adapter_path=adapter_path,
+        dataset_loader=dataset_loader,
+    )
