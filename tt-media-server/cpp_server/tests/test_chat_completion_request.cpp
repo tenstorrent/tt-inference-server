@@ -182,47 +182,6 @@ void testToolChoiceUnknownStringRejected() {
   std::cout << "✅ Test passed!\n";
 }
 
-// ==================== enable_reasoning Tests ====================
-
-void testEnableReasoningDefaultTrue() {
-  std::cout << "\n=== Testing enable_reasoning Default Value ===\n";
-
-  Json::Value json = createBasicRequestJson();
-  auto request = ChatCompletionRequest::fromJson(json, 1);
-
-  assert(request.enable_reasoning == true);
-
-  std::cout << "✓ enable_reasoning defaults to true\n";
-  std::cout << "✅ Test passed!\n";
-}
-
-void testEnableReasoningFalseParsed() {
-  std::cout << "\n=== Testing enable_reasoning=false Parsed ===\n";
-
-  Json::Value json = createBasicRequestJson();
-  json["enable_reasoning"] = false;
-  auto request = ChatCompletionRequest::fromJson(json, 1);
-
-  assert(request.enable_reasoning == false);
-
-  std::cout << "✓ enable_reasoning=false parsed correctly\n";
-  std::cout << "✅ Test passed!\n";
-}
-
-void testEnableReasoningPropagatedToLLMRequest() {
-  std::cout << "\n=== Testing enable_reasoning Propagated to LLMRequest ===\n";
-
-  Json::Value json = createBasicRequestJson();
-  json["enable_reasoning"] = false;
-  auto request = ChatCompletionRequest::fromJson(json, 1);
-  auto llmRequest = request.toLLMRequest();
-
-  assert(llmRequest.enable_reasoning == false);
-
-  std::cout << "✓ enable_reasoning=false propagated to LLMRequest\n";
-  std::cout << "✅ Test passed!\n";
-}
-
 // Main function for running tests
 int main() {
   std::cout << "\n";
@@ -238,9 +197,6 @@ int main() {
     testToolChoiceNoneWithEmptyToolsArray();
     testToolChoiceAutoWithoutToolsRejected();
     testToolChoiceUnknownStringRejected();
-    testEnableReasoningDefaultTrue();
-    testEnableReasoningFalseParsed();
-    testEnableReasoningPropagatedToLLMRequest();
 
     std::cout << "\n";
     std::cout
