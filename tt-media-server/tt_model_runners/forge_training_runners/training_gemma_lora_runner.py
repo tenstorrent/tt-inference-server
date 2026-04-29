@@ -76,7 +76,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         if request._start_event:
             request._start_event.set()
-            self.logger.info(f"Device {self.device_id}: Start event set")
+            self.logger.debug(f"Device {self.device_id}: Start event set")
 
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
