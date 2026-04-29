@@ -37,15 +37,12 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._tokenizer = None
 
     async def warmup(self):
-        self._setup_xla_device()
-        if self.settings.lora_adapter:
-            await asyncio.to_thread(self._preload_adapter_and_compile)
-
-    def _setup_xla_device(self):
         xr.set_device_type("TT")
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
+        if self.settings.lora_adapter:
+            await asyncio.to_thread(self._preload_adapter_and_compile)
 
     def _preload_adapter_and_compile(self):
         self.logger.info(
@@ -54,9 +51,6 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         adapter_info = resolve_adapter(self.settings.lora_adapter)
         self._load_adapter(adapter_info)
         self._compile_model()
-        self._dummy_decode()
-
-    def _dummy_decode(self):
         self.logger.info("Running warmup decode to trigger compilation")
         self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
         self.logger.info("Warmup decode completed")
@@ -64,8 +58,12 @@ class LoraSingleChipRunner(BaseDeviceRunner):
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
-        self._validate_request(request)
-
+        if isinstance(request.prompt, str) and not request.prompt.strip():
+            raise ValueError("Prompt must not be empty")
+        if isinstance(request.prompt, list) and len(request.prompt) == 0:
+            raise ValueError("Prompt token list must not be empty")
+        
+        # Handle adapter loading and compilation
         if self.settings.lora_adapter:
             if request.adapter and request.adapter != self.settings.lora_adapter:
                 self.logger.warning(
@@ -73,7 +71,14 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                     f"pinned to settings.lora_adapter={self.settings.lora_adapter!r}"
                 )
         else:
-            self._load_for_request(request)
+            if request.adapter:
+                self._load_adapter(resolve_adapter(request.adapter))
+            else:
+                self._unload_adapter()
+                self._load_base_model(
+                    request.model or self.settings.model_weights_path
+                )
+            self._compile_model()
 
         prompt = (
             request.prompt
@@ -89,55 +94,18 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 type="final_result",
                 data=CompletionResult(text=text),
             )
-        ]
-
-    def _load_for_request(self, request: CompletionRequest):
-        if request.adapter:
-            self._load_adapter(resolve_adapter(request.adapter))
-        else:
-            self._unload_adapter()
-            self._load_base_model(
-                request.model or self.settings.model_weights_path
-            )
-        self._compile_model()
-
-    def _generate(self, prompt: str, max_tokens: int) -> List[str]:
-        input_args = self._construct_inputs(
-            [prompt],
-            self._compiled_model.config,
-            self.BATCH_SIZE,
-            self.MAX_CACHE_LENGTH,
-        )
-        tokens_to_generate = min(
-            max_tokens,
-            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
-        )
-        if tokens_to_generate < 1:
-            raise ValueError(
-                f"Prompt fills the entire context window "
-                f"({self.MAX_CACHE_LENGTH} tokens), no room to generate"
-            )
-        input_args = self._transfer_inputs_to_device(input_args, self.device)
-        return self._run_generate(
-            self._compiled_model, input_args, self.device, tokens_to_generate
-        )
+        ] 
 
     async def _run_async(self, requests):
-        return self._stream(requests)
+        async def _stream():
+            results = await asyncio.to_thread(self.run, requests)
+            final = results[0]
+            yield CompletionOutput(
+                type="streaming_chunk", data=CompletionResult(text=final["data"].text)
+            )
+            yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
-    async def _stream(self, requests):
-        results = await asyncio.to_thread(self.run, requests)
-        final = results[0]
-        yield CompletionOutput(
-            type="streaming_chunk", data=CompletionResult(text=final["data"].text)
-        )
-        yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
-
-    def _validate_request(self, request: CompletionRequest):
-        if isinstance(request.prompt, str) and not request.prompt.strip():
-            raise ValueError("Prompt must not be empty")
-        if isinstance(request.prompt, list) and len(request.prompt) == 0:
-            raise ValueError("Prompt token list must not be empty")
+        return _stream()
 
     def _load_adapter(self, adapter_info: AdapterInfo):
         if self._active_adapter == adapter_info:
@@ -279,7 +247,28 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         input_args["attention_mask"] = input_args["attention_mask"].to(device)
         return input_args
 
-    def _run_generate(
+    def _generate(self, prompt: str, max_tokens: int) -> List[str]:
+        input_args = self._construct_inputs(
+            [prompt],
+            self._compiled_model.config,
+            self.BATCH_SIZE,
+            self.MAX_CACHE_LENGTH,
+        )
+        tokens_to_generate = min(
+            max_tokens,
+            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
+        )
+        if tokens_to_generate < 1:
+            raise ValueError(
+                f"Prompt fills the entire context window "
+                f"({self.MAX_CACHE_LENGTH} tokens), no room to generate"
+            )
+        input_args = self._transfer_inputs_to_device(input_args, self.device)
+        return self._greedy_decode_loop(
+            self._compiled_model, input_args, self.device, tokens_to_generate
+        )
+
+    def _greedy_decode_loop(
         self,
         compiled_model: torch.nn.Module,
         input_args: dict,
