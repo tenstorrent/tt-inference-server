@@ -2795,7 +2795,7 @@ audio_tts_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
                 },
             ),
             DeviceModelSpec(
@@ -2804,7 +2804,7 @@ audio_tts_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
                 },
             ),
         ],
