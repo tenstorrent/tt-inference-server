@@ -285,6 +285,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.truncate_prompt_tokens = truncate_prompt_tokens;
     out.fast_mode = fast_mode;
     out.response_format = response_format;
+    out.enable_reasoning = enable_reasoning;
     out.sessionId = sessionId;
     return out;
   }

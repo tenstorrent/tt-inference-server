@@ -130,6 +130,9 @@ struct LLMRequest : BaseRequest {
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
+  // When false, reasoning tokens are suppressed from the response.
+  bool enable_reasoning = true;
+
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;

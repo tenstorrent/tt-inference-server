@@ -87,6 +87,7 @@ class LLMService
 
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
   mutable utils::ConcurrentMap<uint32_t, std::string> toolChoiceMap;
+  utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
