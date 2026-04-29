@@ -41,7 +41,6 @@ Json::Value createToolJson(const std::string& name,
   return tool;
 }
 
-// Helper to create a user message
 Json::Value createUserMessage(const std::string& content) {
   Json::Value msg;
   msg["role"] = "user";
@@ -49,7 +48,6 @@ Json::Value createUserMessage(const std::string& content) {
   return msg;
 }
 
-// Helper to create an assistant message
 Json::Value createAssistantMessage(const std::string& content) {
   Json::Value msg;
   msg["role"] = "assistant";
@@ -57,7 +55,6 @@ Json::Value createAssistantMessage(const std::string& content) {
   return msg;
 }
 
-// Helper to create an assistant message with a tool call
 Json::Value createAssistantWithToolCall(const std::string& callId,
                                         const std::string& functionName,
                                         const std::string& arguments) {
@@ -269,8 +266,11 @@ void testToolMessageMissingAfterToolCalls() {
   } catch (const std::invalid_argument& e) {
     exceptionThrown = true;
     std::string errorMsg = e.what();
-    assert(errorMsg.find("Expected message with role='tool'") !=
-           std::string::npos);
+    // New validation gives "Incomplete tool call conversation" error
+    assert(errorMsg.find("Incomplete tool call conversation") !=
+               std::string::npos ||
+           errorMsg.find("Expected message with role='tool'") !=
+               std::string::npos);
   }
 
   assert(exceptionThrown &&
@@ -336,13 +336,336 @@ void testToolMessageMismatchedCallId() {
   } catch (const std::invalid_argument& e) {
     exceptionThrown = true;
     std::string errorMsg = e.what();
-    assert(errorMsg.find("does not match expected call_id") !=
-           std::string::npos);
+    // New validation reports missing expected ID or unknown actual ID
+    assert(errorMsg.find("Missing tool response") != std::string::npos ||
+           errorMsg.find("Unknown tool_call_id") != std::string::npos ||
+           errorMsg.find("does not match") != std::string::npos);
   }
 
   assert(exceptionThrown && "Should throw when tool_call_id doesn't match");
 
   std::cout << "✓ Mismatched tool_call_id correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+// ==================== New Tool Call ID Validation Tests ====================
+
+void testToolCallFewerOutputsThanExpected() {
+  std::cout << "\n=== Testing Scenario 1: Fewer Outputs Than Tool Calls "
+               "(Should Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather and time?"));
+
+  // Assistant requests 3 tool calls
+  Json::Value assistantMsg;
+  assistantMsg["role"] = "assistant";
+  assistantMsg["content"] = "";
+
+  Json::Value toolCall1, toolCall2, toolCall3;
+  toolCall1["id"] = "call_abc123";
+  toolCall1["type"] = "function";
+  toolCall1["function"]["name"] = "get_weather";
+  toolCall1["function"]["arguments"] = "{\"location\":\"NYC\"}";
+
+  toolCall2["id"] = "call_def456";
+  toolCall2["type"] = "function";
+  toolCall2["function"]["name"] = "get_time";
+  toolCall2["function"]["arguments"] = "{}";
+
+  toolCall3["id"] = "call_ghi789";
+  toolCall3["type"] = "function";
+  toolCall3["function"]["name"] = "get_date";
+  toolCall3["function"]["arguments"] = "{}";
+
+  assistantMsg["tool_calls"].append(toolCall1);
+  assistantMsg["tool_calls"].append(toolCall2);
+  assistantMsg["tool_calls"].append(toolCall3);
+  json["messages"].append(assistantMsg);
+
+  // Client only provides 2 outputs (missing call_ghi789)
+  json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
+  json["messages"].append(createToolMessage("call_def456", "3:45 PM"));
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("Incomplete tool call conversation") !=
+               std::string::npos ||
+           errorMsg.find("requested 3") != std::string::npos);
+    assert(errorMsg.find("call_ghi789") != std::string::npos);
+    std::cout << "  Error message: " << errorMsg << "\n";
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when fewer outputs than tool calls");
+
+  std::cout << "✓ Fewer outputs correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallMoreOutputsThanExpected() {
+  std::cout << "\n=== Testing Scenario 2: More Outputs Than Tool Calls (Should "
+               "Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+
+  // Assistant requests 2 tool calls
+  Json::Value assistantMsg;
+  assistantMsg["role"] = "assistant";
+  assistantMsg["content"] = "";
+
+  Json::Value toolCall1, toolCall2;
+  toolCall1["id"] = "call_abc123";
+  toolCall1["type"] = "function";
+  toolCall1["function"]["name"] = "get_weather";
+  toolCall1["function"]["arguments"] = "{\"location\":\"NYC\"}";
+
+  toolCall2["id"] = "call_def456";
+  toolCall2["type"] = "function";
+  toolCall2["function"]["name"] = "get_time";
+  toolCall2["function"]["arguments"] = "{}";
+
+  assistantMsg["tool_calls"].append(toolCall1);
+  assistantMsg["tool_calls"].append(toolCall2);
+  json["messages"].append(assistantMsg);
+
+  // Client provides 3 outputs (extra call_ghi789)
+  json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
+  json["messages"].append(createToolMessage("call_def456", "3:45 PM"));
+  json["messages"].append(
+      createToolMessage("call_ghi789", "Extra output"));  // Extra!
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("Too many tool call responses") != std::string::npos ||
+           errorMsg.find("requested 2") != std::string::npos);
+    assert(errorMsg.find("call_ghi789") != std::string::npos);
+    std::cout << "  Error message: " << errorMsg << "\n";
+  }
+
+  assert(exceptionThrown && "Should throw when more outputs than tool calls");
+
+  std::cout << "✓ Extra outputs correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallOneRequestMultipleOutputs() {
+  std::cout << "\n=== Testing Scenario 3: 1 Tool Call → Multiple Outputs "
+               "(Should Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(
+      createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
+
+  // Client provides 2 outputs when only 1 was requested
+  json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
+  json["messages"].append(createToolMessage("call_def456", "Extra output"));
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("Too many tool call responses") != std::string::npos);
+    std::cout << "  Error message: " << errorMsg << "\n";
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when multiple outputs for single tool call");
+
+  std::cout << "✓ Multiple outputs for single tool call correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallZeroOutputs() {
+  std::cout
+      << "\n=== Testing Scenario 4: Tool Calls → 0 Outputs (Should Reject) "
+         "===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(
+      createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
+  // No tool message follows
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("Expected message with role='tool'") !=
+           std::string::npos);
+    std::cout << "  Error message: " << errorMsg << "\n";
+  }
+
+  assert(exceptionThrown && "Should throw when no outputs after tool calls");
+
+  std::cout << "✓ Zero outputs correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallDuplicateToolCallIds() {
+  std::cout << "\n=== Testing Duplicate tool_call_id in Responses (Should "
+               "Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+
+  // Assistant requests 2 different tool calls
+  Json::Value assistantMsg;
+  assistantMsg["role"] = "assistant";
+  assistantMsg["content"] = "";
+
+  Json::Value toolCall1, toolCall2;
+  toolCall1["id"] = "call_abc123";
+  toolCall1["type"] = "function";
+  toolCall1["function"]["name"] = "get_weather";
+  toolCall1["function"]["arguments"] = "{}";
+
+  toolCall2["id"] = "call_def456";
+  toolCall2["type"] = "function";
+  toolCall2["function"]["name"] = "get_time";
+  toolCall2["function"]["arguments"] = "{}";
+
+  assistantMsg["tool_calls"].append(toolCall1);
+  assistantMsg["tool_calls"].append(toolCall2);
+  json["messages"].append(assistantMsg);
+
+  // Client provides duplicate response for call_abc123
+  json["messages"].append(createToolMessage("call_abc123", "Sunny"));
+  json["messages"].append(
+      createToolMessage("call_abc123", "Duplicate!"));  // Duplicate!
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    // New validation properly detects duplicates
+    assert(errorMsg.find("Duplicate tool response") != std::string::npos ||
+           errorMsg.find("call_abc123") != std::string::npos);
+    std::cout << "  Error message: " << errorMsg << "\n";
+  }
+
+  assert(exceptionThrown && "Should throw when duplicate tool_call_ids exist");
+
+  std::cout << "✓ Duplicate tool_call_ids correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallMultipleValidSequence() {
+  std::cout << "\n=== Testing Multiple Valid Tool Calls Sequence ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather and time?"));
+
+  // Assistant requests 3 tool calls
+  Json::Value assistantMsg;
+  assistantMsg["role"] = "assistant";
+  assistantMsg["content"] = "";
+
+  Json::Value toolCall1, toolCall2, toolCall3;
+  toolCall1["id"] = "call_abc123";
+  toolCall1["type"] = "function";
+  toolCall1["function"]["name"] = "get_weather";
+  toolCall1["function"]["arguments"] = "{\"location\":\"NYC\"}";
+
+  toolCall2["id"] = "call_def456";
+  toolCall2["type"] = "function";
+  toolCall2["function"]["name"] = "get_time";
+  toolCall2["function"]["arguments"] = "{}";
+
+  toolCall3["id"] = "call_ghi789";
+  toolCall3["type"] = "function";
+  toolCall3["function"]["name"] = "get_date";
+  toolCall3["function"]["arguments"] = "{}";
+
+  assistantMsg["tool_calls"].append(toolCall1);
+  assistantMsg["tool_calls"].append(toolCall2);
+  assistantMsg["tool_calls"].append(toolCall3);
+  json["messages"].append(assistantMsg);
+
+  // Client provides all 3 outputs in correct order
+  json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
+  json["messages"].append(createToolMessage("call_def456", "3:45 PM"));
+  json["messages"].append(createToolMessage("call_ghi789", "April 29, 2026"));
+
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+
+  assert(request.messages.size() == 5);
+  assert(request.messages[1].tool_calls.has_value());
+  assert(request.messages[1].tool_calls->size() == 3);
+
+  std::cout << "✓ Multiple valid tool calls sequence accepted\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolCallValidSequenceWithSubsequentMessage() {
+  std::cout << "\n=== Testing Valid Tool Calls Followed by User Message ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+
+  // Assistant requests 2 tool calls
+  Json::Value assistantMsg;
+  assistantMsg["role"] = "assistant";
+  assistantMsg["content"] = "";
+
+  Json::Value toolCall1, toolCall2;
+  toolCall1["id"] = "call_abc123";
+  toolCall1["type"] = "function";
+  toolCall1["function"]["name"] = "get_weather";
+  toolCall1["function"]["arguments"] = "{}";
+
+  toolCall2["id"] = "call_def456";
+  toolCall2["type"] = "function";
+  toolCall2["function"]["name"] = "get_time";
+  toolCall2["function"]["arguments"] = "{}";
+
+  assistantMsg["tool_calls"].append(toolCall1);
+  assistantMsg["tool_calls"].append(toolCall2);
+  json["messages"].append(assistantMsg);
+
+  json["messages"].append(createToolMessage("call_abc123", "Sunny"));
+  json["messages"].append(createToolMessage("call_def456", "3:45 PM"));
+
+  json["messages"].append(createUserMessage("Thanks!"));
+
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+
+  assert(request.messages.size() == 5);
+  assert(request.messages[1].tool_calls->size() == 2);
+  assert(request.messages[4].role == "user");
+
+  std::cout
+      << "✓ Tool calls followed by user message correctly accepted\n";
   std::cout << "✅ Test passed!\n";
 }
 
@@ -367,6 +690,15 @@ int main() {
     testToolMessageMissingAfterToolCalls();
     testToolMessageMissingToolCallId();
     testToolMessageMismatchedCallId();
+
+    // New tool call ID validation tests (OpenAI compatibility)
+    testToolCallFewerOutputsThanExpected();
+    testToolCallMoreOutputsThanExpected();
+    testToolCallOneRequestMultipleOutputs();
+    testToolCallZeroOutputs();
+    testToolCallDuplicateToolCallIds();
+    testToolCallMultipleValidSequence();
+    testToolCallValidSequenceWithSubsequentMessage();
 
     std::cout << "\n";
     std::cout
