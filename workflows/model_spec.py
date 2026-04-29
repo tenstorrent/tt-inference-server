@@ -1002,13 +1002,6 @@ llm_templates = [
                 tensor_cache_timeout=5400.0,
             ),
             DeviceModelSpec(
-                device=DeviceTypes.P300X2,
-                max_concurrency=1,
-                max_context=16 * 1024,
-                default_impl=True,
-                tensor_cache_timeout=5400.0,
-            ),
-            DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,  # currently limiting client-side max_concurrency=32 to allow workflows to
                 # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
@@ -1026,6 +1019,34 @@ llm_templates = [
                 override_tt_config={
                     "sample_on_device_mode": "all",
                 },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        metadata={
+            "openai/gpt-oss-120b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        version="0.12.0",
+        tt_metal_commit="e65cf58",
+        vllm_commit="22be241",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=16 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
