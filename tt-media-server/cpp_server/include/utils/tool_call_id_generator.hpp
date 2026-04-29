@@ -20,12 +20,17 @@ class ToolCallIDGenerator {
     static constexpr const char kChars[] =
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::mt19937 gen = []() {
+      std::random_device rd;
+      std::seed_seq seed{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
+      return std::mt19937(seed);
+    }();
+    std::uniform_int_distribution<int> dist(0, 61);
     std::string result = "call_";
     result.reserve(29);
 
     for (int i = 0; i < 24; ++i) {
-      result += kChars[gen() % 62];
+      result += kChars[dist(gen)];
     }
 
     return result;
