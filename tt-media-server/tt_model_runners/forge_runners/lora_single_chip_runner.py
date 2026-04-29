@@ -20,7 +20,6 @@ from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.dataset_loaders.alpaca import alpaca_utils
 from utils.dataset_loaders.sst2 import sst2_utils
 from utils.decorators import log_execution_time
-from utils.dataset_loaders.sst2 import sst2_utils
 
 
 class LoraSingleChipRunner(BaseDeviceRunner):
@@ -84,23 +83,20 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
-        # hardcoded for sst2 dataset for now
-        prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
-
         # wrap prompt in dataset template if applicable
         dataset_name = (
             self._active_adapter.dataset_loader if self._active_adapter else None
         )
         if dataset_name == DatasetLoaders.SST2.value:
-            self.logger.info(f"Using SST2 template for prompt")
+            self.logger.info("Using SST2 template for prompt")
             prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
         elif dataset_name == DatasetLoaders.ALPACA.value:
-            self.logger.info(f"Using Alpaca template for prompt")
+            self.logger.info("Using Alpaca template for prompt")
             prompt = alpaca_utils.PROMPT_TEMPLATE_NO_INPUT.substitute(
                 instruction=prompt
             )
         else:
-            self.logger.info(f"Using no template for prompt")
+            self.logger.info("Using no template for prompt")
 
         text = "".join(self._generate(prompt, request.max_tokens or 16))
         return [
