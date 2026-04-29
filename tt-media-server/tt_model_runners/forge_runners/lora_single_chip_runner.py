@@ -42,19 +42,17 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
+        
         if self.settings.lora_adapter:
-            self._preload_adapter_and_compile()
-
-    def _preload_adapter_and_compile(self):
-        self.logger.info(
-            f"Preloading adapter from settings: {self.settings.lora_adapter}"
-        )
-        adapter_info = resolve_adapter(self.settings.lora_adapter)
-        self._load_adapter(adapter_info)
-        self._compile_model()
-        self.logger.info("Running warmup decode to trigger compilation")
-        self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
-        self.logger.info("Warmup decode completed")
+            self.logger.info(
+                f"Preloading adapter from settings: {self.settings.lora_adapter}"
+            )
+            adapter_info = resolve_adapter(self.settings.lora_adapter)
+            self._load_adapter(adapter_info)
+            self._compile_model()
+            self.logger.info("Running warmup decode to trigger compilation")
+            self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
+            self.logger.info("Warmup decode completed")        
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
