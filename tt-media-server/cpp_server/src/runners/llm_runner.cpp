@@ -40,10 +40,11 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     for (int64_t id : tok.stopTokenIds()) {
       stopIds.push_back(static_cast<int32_t>(id));
     }
-    guidedDecoder =
-        std::make_unique<GuidedDecoderManager>(encodedVocab, vocabSize, stopIds);
+    guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
+                                                           vocabSize, stopIds);
     TT_LOG_INFO(
-        "[LLMRunner] Guided decoder initialized (vocab_size={}, stop_tokens={})",
+        "[LLMRunner] Guided decoder initialized (vocab_size={}, "
+        "stop_tokens={})",
         vocabSize, stopIds.size());
   } catch (const std::exception& e) {
     TT_LOG_WARN(

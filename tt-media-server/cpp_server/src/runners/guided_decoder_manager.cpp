@@ -26,13 +26,10 @@ struct GuidedDecoderManager::Impl {
 
   Impl(const std::vector<std::string>& encodedVocab, int vocabSize,
        const std::vector<int32_t>& stopTokenIds)
-      : tokenizerInfo(
-            encodedVocab,
-            xgrammar::VocabType::BYTE_LEVEL,
-            vocabSize,
-            stopTokenIds.empty()
-                ? std::optional<std::vector<int32_t>>(std::nullopt)
-                : std::optional<std::vector<int32_t>>(stopTokenIds)),
+      : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize,
+                      stopTokenIds.empty()
+                          ? std::optional<std::vector<int32_t>>(std::nullopt)
+                          : std::optional<std::vector<int32_t>>(stopTokenIds)),
         compiler(tokenizerInfo),
         vocabSize(vocabSize),
         bitmaskSize(xgrammar::GetBitmaskSize(vocabSize)) {}

@@ -20,14 +20,14 @@ constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 // from the active tokenizer at construction time so the mock works with any
 // vocabulary (DeepSeek, Llama, etc.).
 struct GrammarTokenIds {
-  int quote;          // '"'
-  int letterA;        // 'A' — valid in bitmask only inside free-form string values
-  int minus;          // '-'
-  int comma;          // ','
-  int closeBracket;   // ']'
-  int closeBrace;     // '}'
-  std::array<int, 10> digits;        // '0'–'9' (not assumed consecutive)
-  std::array<int, 5> mockStrChars;   // T I S R V — varied content per task
+  int quote;    // '"'
+  int letterA;  // 'A' — valid in bitmask only inside free-form string values
+  int minus;    // '-'
+  int comma;    // ','
+  int closeBracket;                 // ']'
+  int closeBrace;                   // '}'
+  std::array<int, 10> digits;       // '0'–'9' (not assumed consecutive)
+  std::array<int, 5> mockStrChars;  // T I S R V — varied content per task
 
   static GrammarTokenIds fromTokenizer(
       const tt::utils::tokenizers::Tokenizer& tok) {
@@ -45,8 +45,8 @@ struct GrammarTokenIds {
         .comma = id(','),
         .closeBracket = id(']'),
         .closeBrace = id('}'),
-        .digits = {id('0'), id('1'), id('2'), id('3'), id('4'),
-                   id('5'), id('6'), id('7'), id('8'), id('9')},
+        .digits = {id('0'), id('1'), id('2'), id('3'), id('4'), id('5'),
+                   id('6'), id('7'), id('8'), id('9')},
         .mockStrChars = {id('T'), id('I'), id('S'), id('R'), id('V')},
     };
   }
@@ -74,7 +74,8 @@ class MockModelRunner : public IModelRunner {
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));
+        decodeCallback(
+            TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -116,26 +117,32 @@ class MockModelRunner : public IModelRunner {
         if (seq->getLastToken() != static_cast<int64_t>(tokenIds.quote))
           return tokenIds.quote;
         // Emit one task-varied char from the mock string.
-        int charToken = tokenIds.mockStrChars[seq->taskId % tokenIds.mockStrChars.size()];
-        return isBitmaskSet(*bitmask, charToken) ? static_cast<uint64_t>(charToken)
-                                                 : tokenIds.quote;
+        int charToken =
+            tokenIds.mockStrChars[seq->taskId % tokenIds.mockStrChars.size()];
+        return isBitmaskSet(*bitmask, charToken)
+                   ? static_cast<uint64_t>(charToken)
+                   : tokenIds.quote;
       }
 
       for (size_t w = 0; w < bitmask->size(); ++w) {
         auto word = static_cast<uint32_t>((*bitmask)[w]);
         if (word == 0) continue;
-        const int candidateToken = static_cast<int>(w * 32 + __builtin_ctz(word));
+        const int candidateToken =
+            static_cast<int>(w * 32 + __builtin_ctz(word));
         if (candidateToken == tokenIds.comma &&
             isBitmaskSet(*bitmask, tokenIds.closeBracket)) {
           return tokenIds.closeBracket;
         }
         if (tokenIds.isDigit(candidateToken)) {
-          if (isBitmaskSet(*bitmask, tokenIds.closeBrace)) return tokenIds.closeBrace;
-          if (isBitmaskSet(*bitmask, tokenIds.closeBracket)) return tokenIds.closeBracket;
+          if (isBitmaskSet(*bitmask, tokenIds.closeBrace))
+            return tokenIds.closeBrace;
+          if (isBitmaskSet(*bitmask, tokenIds.closeBracket))
+            return tokenIds.closeBracket;
         }
         if (candidateToken == tokenIds.minus) {
           int digit = tokenIds.digits[seq->taskId % tokenIds.digits.size()];
-          if (isBitmaskSet(*bitmask, digit)) return static_cast<uint64_t>(digit);
+          if (isBitmaskSet(*bitmask, digit))
+            return static_cast<uint64_t>(digit);
         }
         return static_cast<uint64_t>(candidateToken);
       }

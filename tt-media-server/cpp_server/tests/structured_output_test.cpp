@@ -439,24 +439,25 @@ TEST(GuidedDecodingTest, CombinedResponseFormatAndToolsPreserveBoth) {
 
 // GuidedDecoderManager — bitmask, token acceptance, and grammar completion.
 // DeepSeek-R1-0528 single-character token IDs verified against tokenizer.json.
-static constexpr int K_JSON_OPEN_BRACE  = 93;  // {
+static constexpr int K_JSON_OPEN_BRACE = 93;   // {
 static constexpr int K_JSON_CLOSE_BRACE = 95;  // }
-static constexpr int K_JSON_QUOTE       = 4;   // "
-static constexpr int K_JSON_COLON       = 28;  // :
-static constexpr int K_JSON_DIGIT_4     = 22;  // '4'
-static constexpr int K_JSON_LETTER_x    = 90;  // 'x'
-static constexpr int K_JSON_LETTER_A    = 35;  // 'A' – invalid outside strings
+static constexpr int K_JSON_QUOTE = 4;         // "
+static constexpr int K_JSON_COLON = 28;        // :
+static constexpr int K_JSON_DIGIT_4 = 22;      // '4'
+static constexpr int K_JSON_LETTER_x = 90;     // 'x'
+static constexpr int K_JSON_LETTER_A = 35;     // 'A' – invalid outside strings
 
 class GuidedDecoderManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     const auto& tok = tt::utils::tokenizers::activeTokenizer();
-    vocab_     = tok.getEncodedVocab();
+    vocab_ = tok.getEncodedVocab();
     vocabSize_ = static_cast<int>(vocab_.size());
     for (int64_t id : tok.stopTokenIds()) {
       stopIds_.push_back(static_cast<int32_t>(id));
     }
-    ASSERT_FALSE(stopIds_.empty()) << "Tokenizer must expose at least one EOS token";
+    ASSERT_FALSE(stopIds_.empty())
+        << "Tokenizer must expose at least one EOS token";
     decoder_ = std::make_unique<tt::runners::GuidedDecoderManager>(
         vocab_, vocabSize_, stopIds_);
   }
@@ -505,12 +506,12 @@ TEST_F(GuidedDecoderManagerTest, AcceptsValidJsonSequenceAndCompletesOnEos) {
   decoder_->initRequest(1, integerXSchema());
 
   const int32_t tokens[] = {K_JSON_OPEN_BRACE, K_JSON_QUOTE, K_JSON_LETTER_x,
-                             K_JSON_QUOTE,      K_JSON_COLON, K_JSON_DIGIT_4,
-                             K_JSON_CLOSE_BRACE};
+                            K_JSON_QUOTE,      K_JSON_COLON, K_JSON_DIGIT_4,
+                            K_JSON_CLOSE_BRACE};
   for (int32_t tid : tokens) {
     auto r = decoder_->acceptToken(1, tid);
-    EXPECT_TRUE(r.accepted)    << "Token " << tid << " should be accepted";
-    EXPECT_FALSE(r.completed)  << "Grammar must not complete before EOS";
+    EXPECT_TRUE(r.accepted) << "Token " << tid << " should be accepted";
+    EXPECT_FALSE(r.completed) << "Grammar must not complete before EOS";
   }
 
   // EOS triggers IsTerminated() → completed = true.
