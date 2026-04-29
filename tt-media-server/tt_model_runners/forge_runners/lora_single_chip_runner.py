@@ -42,7 +42,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
         if self.settings.lora_adapter:
-            await asyncio.to_thread(self._preload_adapter_and_compile)
+            # await asyncio.to_thread(self._preload_adapter_and_compile)
+            self._preload_adapter_and_compile()
 
     def _preload_adapter_and_compile(self):
         self.logger.info(
