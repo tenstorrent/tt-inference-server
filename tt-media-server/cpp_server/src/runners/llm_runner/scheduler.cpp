@@ -168,6 +168,15 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->appendToken(tokenId);
 
     bool isStopToken = stopTokenIds.count(tokenId) > 0;
+    if (!isStopToken) {
+      const auto& perReqStops = seq->getSamplingParams().stop_token_ids;
+      for (int id : perReqStops) {
+        if (static_cast<int64_t>(id) == tokenId) {
+          isStopToken = true;
+          break;
+        }
+      }
+    }
     bool reachedMaxTokens =
         seq->getSamplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
