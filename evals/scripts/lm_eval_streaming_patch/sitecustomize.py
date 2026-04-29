@@ -272,9 +272,50 @@ def _codegen_check_correctness_spawn_safe(sample, generation, timeout, debug=Fal
     return result[0], metadata
 
 
+def _patch_livecodebench_utils_globals(globals_dict: dict | None) -> None:
+    if not isinstance(globals_dict, dict):
+        return
+    if "codegen_check_correctness" not in globals_dict:
+        return
+    if "codegen_metrics" not in globals_dict:
+        return
+    if "postprocess_generation" not in globals_dict:
+        return
+
+    current = globals_dict["codegen_check_correctness"]
+    if getattr(current, "_tt_spawn_safe_patch", False):
+        return
+
+    _codegen_check_correctness_spawn_safe._tt_spawn_safe_patch = True
+    globals_dict["codegen_check_correctness"] = _codegen_check_correctness_spawn_safe
+
+
+def _patch_configurable_task_process_results(ConfigurableTask) -> None:
+    original = ConfigurableTask.process_results
+    if getattr(original, "_tt_livecodebench_process_results_patch", False):
+        return
+
+    def process_results_with_livecodebench_patch(self, doc, results):
+        task_process_results = getattr(
+            getattr(self, "config", None),
+            "process_results",
+            None,
+        )
+        if callable(task_process_results):
+            _patch_livecodebench_utils_globals(
+                getattr(task_process_results, "__globals__", None)
+            )
+        return original(self, doc, results)
+
+    process_results_with_livecodebench_patch._tt_livecodebench_process_results_patch = True
+    process_results_with_livecodebench_patch._tt_original_process_results = original
+    ConfigurableTask.process_results = process_results_with_livecodebench_patch
+
+
 def _patch_lm_eval() -> None:
     try:
         from lm_eval.models.api_models import TemplateAPI
+        from lm_eval.api.task import ConfigurableTask
         from lm_eval.loggers.evaluation_tracker import EvaluationTracker
     except ModuleNotFoundError:
         # PYTHONPATH also reaches helper Python tools such as the redactor, which
@@ -295,18 +336,14 @@ def _patch_lm_eval() -> None:
     if not hasattr(EvaluationTracker, "_filter_livecodebench_sample"):
         EvaluationTracker._filter_livecodebench_sample = _filter_livecodebench_sample
 
+    _patch_configurable_task_process_results(ConfigurableTask)
+
     try:
         from lm_eval.tasks.livecodebench import utils as livecodebench_utils
     except ModuleNotFoundError:
         return
 
-    if not getattr(
-        livecodebench_utils.codegen_check_correctness,
-        "_tt_spawn_safe_patch",
-        False,
-    ):
-        _codegen_check_correctness_spawn_safe._tt_spawn_safe_patch = True
-        livecodebench_utils.codegen_check_correctness = _codegen_check_correctness_spawn_safe
+    _patch_livecodebench_utils_globals(vars(livecodebench_utils))
 
 
 _patch_lm_eval()
