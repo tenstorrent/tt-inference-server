@@ -165,7 +165,7 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   bool found = sessions.modify(
       sessionId, [&result, &wasInFlight,
                   cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
-        wasInFlight = !ms.session.isIdle();
+        wasInFlight = ms.session.isInFlight();
         if (wasInFlight) return;
         ms.session.updateActivityTime();
         ms.session.markInFlight();
@@ -360,6 +360,42 @@ void SessionManager::createSession(
 
 void SessionManager::sendAsyncAllocationRequest(
     PendingAllocation& pendingAllocation) {
+  // Check if max session count is reached
+  size_t maxSessions = tt::config::maxSessionsCount();
+  size_t activeCount = getActiveSessionCount();
+
+  if (activeCount >= maxSessions) {
+    TT_LOG_DEBUG(
+        "[SessionManager] sendAsyncAllocationRequest: max sessions reached "
+        "({}/{}), deferring sessionId={}",
+        activeCount, maxSessions, pendingAllocation.session.getSessionId());
+
+    if (pendingAllocation.attemptsRemaining == 0) {
+      TT_LOG_ERROR(
+          "[SessionManager] sendAsyncAllocationRequest: no attempts left, "
+          "failing sessionId={}",
+          pendingAllocation.session.getSessionId());
+      pendingAllocation.eventLoop->queueInLoop([onError =
+                                                    std::move(pendingAllocation
+                                                                  .onError)]() {
+        onError(
+            "Failed to allocate: max session count reached after all attempts");
+      });
+    } else {
+      pendingAllocation.attemptsRemaining--;
+      pendingAllocation.retryAt =
+          std::chrono::steady_clock::now() + IPC_QUEUE_FULL_RETRY_DELAY;
+      TT_LOG_DEBUG(
+          "[SessionManager] sendAsyncAllocationRequest: queuing retry for "
+          "sessionId={}, attemptsRemaining={}, delayMs={}",
+          pendingAllocation.session.getSessionId(),
+          pendingAllocation.attemptsRemaining,
+          IPC_QUEUE_FULL_RETRY_DELAY.count());
+      pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
+    }
+    return;
+  }
+
   auto task = makeAllocTask();
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
@@ -440,6 +476,7 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
+    pendingAllocation.session.markPrepared();
     sessions.insert(pendingAllocation.session.getSessionId(),
                     ManagedSession{pendingAllocation.session, {}});
     if (pendingAllocation.session.getHash() != 0) {
@@ -525,7 +562,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
         stale = true;
         return;
       }
-      if (!ms.session.isIdle()) {
+      if (ms.session.isInFlight()) {
         busy = true;
         return;
       }

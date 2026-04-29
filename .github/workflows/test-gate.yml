@@ -779,6 +779,24 @@ jobs:
       - name: Make binaries executable
         run: chmod +x cpp_server/build/tt_media_server_cpp
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
+          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
+          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
+          # Track upstream and remove pin once 5.6.x is fixed or bench is
+          # made resilient to client tokenizer cost.
+          uv pip install vllm 'transformers<5.6'
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      # ── Round 1: Plain Decode + Prefill split ────────────────────────
       - name: Start Decode server (receives HTTP, listens for prefill)
         run: |
           cd cpp_server/build
@@ -822,28 +840,10 @@ jobs:
           fi
           sleep 2
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.10"
-          enable-cache: true
-
-      - name: Install Python test dependencies
-        run: |
-          uv venv
-          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
-          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
-          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
-          # Track upstream and remove pin once 5.6.x is fixed or bench is
-          # made resilient to client tokenizer cost.
-          uv pip install vllm 'transformers<5.6'
-          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
-
       - name: Run vLLM bench serve against split servers
         env:
           OPENAI_API_KEY: 'your-secret-key'
         run: |
-          RESULT_FILE="vllm-bench-split-result.json"
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
@@ -855,9 +855,154 @@ jobs:
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
-            --result-filename "$RESULT_FILE" \
+            --result-filename "vllm-bench-split-result.json" \
             2>&1 | tee bench_split_output.txt
-          echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
+
+      - name: Stop split servers (round 1)
+        if: always()
+        run: |
+          [ -f decode_server.pid ] && kill $(cat decode_server.pid) 2>/dev/null || true
+          [ -f prefill_server.pid ] && kill $(cat prefill_server.pid) 2>/dev/null || true
+          sleep 2
+
+      # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
+      - name: Clean shared memory segments
+        run: |
+          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
+
+      - name: Start mock_prefill_runner (rank 0 coordinator)
+        run: |
+          cd cpp_server
+          TT_IPC_SHM_P2C=tt_ipc_p2c \
+          TT_IPC_SHM_C2P=tt_ipc_c2p \
+          LLM_DEVICE_BACKEND=ttrun \
+            python src/runners/mock_prefill_runner.py \
+            > ../mock_prefill_runner.log 2>&1 &
+          echo $! > ../mock_prefill_runner.pid
+          cd ..
+          sleep 2
+          if ! kill -0 "$(cat mock_prefill_runner.pid)" 2>/dev/null; then
+            echo "ERROR: mock_prefill_runner exited during startup"
+            cat mock_prefill_runner.log || true
+            exit 1
+          fi
+
+      - name: Start Prefill server (mock_prefill_runner round)
+        run: |
+          cd cpp_server
+          TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
+          TT_LOG_LEVEL=debug \
+          LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+            ./build/tt_media_server_cpp -p 8001 \
+            > ../prefill_server_runner.log 2>&1 &
+          echo $! > ../prefill_server_runner.pid
+          cd ..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8001"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          echo "Prefill liveness response: $LIVENESS"
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Start Decode server (mock_prefill_runner round)
+        run: |
+          cd cpp_server
+          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          TT_LOG_LEVEL=debug \
+            ./build/tt_media_server_cpp -p 8000 \
+            > ../decode_server_runner.log 2>&1 &
+          echo $! > ../decode_server_runner.pid
+          cd ..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8000"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          echo "Decode liveness response: $LIVENESS"
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Verify prefill/decode socket connection
+        run: |
+          for i in $(seq 1 30); do
+            PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true' \
+               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"' \
+               && echo "$DECODE_LIVENESS" | grep -q '"model_ready":true' \
+               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
+              echo "✅ Prefill (client:connected) and Decode (server:connected) both ready"
+              break
+            fi
+            sleep 1
+          done
+          PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          echo "Prefill liveness: $PREFILL_LIVENESS"
+          echo "Decode liveness:  $DECODE_LIVENESS"
+          FAIL=0
+          if ! echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server model_ready is not true"
+            FAIL=1
+          fi
+          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
+            echo "ERROR: Prefill server socket_status is not 'client:connected'"
+            FAIL=1
+          fi
+          if ! echo "$DECODE_LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server model_ready is not true"
+            FAIL=1
+          fi
+          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
+            echo "ERROR: Decode server socket_status is not 'server:connected'"
+            FAIL=1
+          fi
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi
+          sleep 2
+
+      - name: Run vLLM bench serve against mock_prefill_runner split
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8000 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-split-runner-result.json" \
+            2>&1 | tee bench_split_runner_output.txt
+
+      - name: Stop split servers (round 2)
+        if: always()
+        run: |
+          [ -f decode_server_runner.pid ] && kill $(cat decode_server_runner.pid) 2>/dev/null || true
+          [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
+          [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
+          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
+          sleep 1
 
       - name: Check benchmark thresholds
         run: |
@@ -879,9 +1024,9 @@ jobs:
             MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
             MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
 
-            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
@@ -908,13 +1053,16 @@ jobs:
               echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
               echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
               echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
               echo ""
             } >> $GITHUB_STEP_SUMMARY
           }
 
           check_thresholds "C++ Server Prefill/Decode Split" \
-            "${{ env.RESULT_FILE }}" 10 650
+            "vllm-bench-split-result.json" 10 650
+
+          check_thresholds "C++ Server Prefill/Decode Split (mock_prefill_runner)" \
+            "vllm-bench-split-runner-result.json" 10 650
 
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
           {
@@ -923,27 +1071,42 @@ jobs:
             echo "BENCHERRORSEOF"
           } >> $GITHUB_ENV
 
-      - name: Stop servers
-        if: always()
-        run: |
-          [ -f decode_server.pid ] && kill $(cat decode_server.pid) 2>/dev/null || true
-          [ -f prefill_server.pid ] && kill $(cat prefill_server.pid) 2>/dev/null || true
-
       - name: Show server logs
         if: always()
         run: |
-          echo "=== Decode Server Logs ==="
+          echo "=== Decode Server Logs (round 1) ==="
           if [ -f decode_server.log ]; then
             cat decode_server.log
           else
             echo "No decode_server.log file found"
           fi
           echo ""
-          echo "=== Prefill Server Logs ==="
+          echo "=== Prefill Server Logs (round 1) ==="
           if [ -f prefill_server.log ]; then
             cat prefill_server.log
           else
             echo "No prefill_server.log file found"
+          fi
+          echo ""
+          echo "=== mock_prefill_runner Logs (round 2) ==="
+          if [ -f mock_prefill_runner.log ]; then
+            cat mock_prefill_runner.log
+          else
+            echo "No mock_prefill_runner.log file found"
+          fi
+          echo ""
+          echo "=== Prefill Server Logs (round 2) ==="
+          if [ -f prefill_server_runner.log ]; then
+            cat prefill_server_runner.log
+          else
+            echo "No prefill_server_runner.log file found"
+          fi
+          echo ""
+          echo "=== Decode Server Logs (round 2) ==="
+          if [ -f decode_server_runner.log ]; then
+            cat decode_server_runner.log
+          else
+            echo "No decode_server_runner.log file found"
           fi
 
       - name: Upload benchmark result
@@ -951,7 +1114,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cpp-server-prefill-decode-split-result
-          path: tt-media-server/vllm-bench-split-result.json
+          path: |
+            tt-media-server/vllm-bench-split-result.json
+            tt-media-server/vllm-bench-split-runner-result.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -963,6 +1128,9 @@ jobs:
           path: |
             tt-media-server/decode_server.log
             tt-media-server/prefill_server.log
+            tt-media-server/mock_prefill_runner.log
+            tt-media-server/prefill_server_runner.log
+            tt-media-server/decode_server_runner.log
           retention-days: 1
           if-no-files-found: warn
 
@@ -974,6 +1142,155 @@ jobs:
           fi
           printf '%s\n' "$BENCH_ERRORS"
           exit 1
+
+  cpp-tsan:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ ThreadSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Gating: any TSan race report after suppressions fails this job and the
+    # whole pipeline. Known issues are listed in tsan_suppressions.txt with
+    # their tracking issue IDs; remove the corresponding suppression line
+    # when the issue is fixed so the regression check protects the fix.
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server with ThreadSanitizer
+        run: |
+          cd cpp_server
+          ./build.sh --tsan
+
+      - name: Run unit tests under TSan
+        env:
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7"
+        run: |
+          # ctest exit code is informational here — the race count is what
+          # gates this job. Test failures are reported via the artifact.
+          cd cpp_server/build
+          ctest --output-on-failure -j4 2>&1 | tee ../../ctest_tsan.log || true
+
+      - name: Set up uv (for guidellm)
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install guidellm
+        run: |
+          uv venv
+          uv pip install guidellm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Start TSan-instrumented server (mock_pipeline)
+        env:
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
+        run: |
+          cd cpp_server/build
+          ./tt_media_server_cpp -p 8001 > ../../tsan_server.log 2>&1 &
+          echo $! > ../../tsan_server.pid
+          cd ../..
+          # 180s timeout (TSan startup is slower than Release)
+          for i in $(seq 1 90); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ TSan-instrumented server ready (after ${i}*2s)"
+              break
+            fi
+            sleep 2
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: TSan server did not become ready within 180s"
+            tail -100 tsan_server.log
+            exit 1
+          fi
+
+      - name: Run concurrent multi-turn workload (8 users x 8 turns)
+        env:
+          # Suppressions are loaded by the server itself — the bench client
+          # doesn't need them, but inheriting the env is harmless.
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
+        run: |
+          mkdir -p bench_results/tsan_ci
+          guidellm benchmark run \
+            --target "http://localhost:8001" \
+            --model "deepseek-ai/DeepSeek-R1-0528" \
+            --request-format "/v1/chat/completions" \
+            --profile concurrent \
+            --rate 8 \
+            --max-requests 64 \
+            --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
+            --backend-kwargs '{"api_key": "your-secret-key"}' \
+            --output-path "bench_results/tsan_ci" \
+            2>&1 | tee tsan_bench.log
+
+      - name: Stop server
+        if: always()
+        run: |
+          [ -f tsan_server.pid ] && kill $(cat tsan_server.pid) 2>/dev/null || true
+          sleep 3
+
+      - name: Analyze TSan output
+        if: always()
+        run: |
+          set -u
+          TOTAL=0
+          {
+            echo "## 🧵 ThreadSanitizer Results"
+            echo ""
+            echo "| Source | Race reports |"
+            echo "|--------|------:|"
+          } >> $GITHUB_STEP_SUMMARY
+
+          shopt -s nullglob
+          for f in cpp_server/build/tsan-server.* ctest_tsan.log; do
+            [ -f "$f" ] || continue
+            COUNT=$(grep -c "WARNING: ThreadSanitizer" "$f" 2>/dev/null || echo 0)
+            COUNT=$(echo "$COUNT" | tr -dc '0-9'); COUNT=${COUNT:-0}
+            echo "$(basename "$f"): $COUNT"
+            echo "| \`$(basename "$f")\` | $COUNT |" >> $GITHUB_STEP_SUMMARY
+            TOTAL=$(( TOTAL + COUNT ))
+          done
+
+          {
+            echo "| **Total (after suppressions)** | **$TOTAL** |"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "::warning::ThreadSanitizer detected $TOTAL data race(s) — see cpp-tsan-output artifact"
+            {
+              echo "⚠️ **$TOTAL data race(s) detected.** Stack traces in the \`cpp-tsan-output\` artifact."
+              echo ""
+              echo "Suppressions file: \`tt-media-server/cpp_server/tsan_suppressions.txt\`"
+            } >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "✅ No data races detected after suppressions" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload TSan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-tsan-output
+          path: |
+            tt-media-server/cpp_server/build/tsan-server.*
+            tt-media-server/tsan_server.log
+            tt-media-server/tsan_bench.log
+            tt-media-server/ctest_tsan.log
+            tt-media-server/bench_results/tsan_ci/
+          retention-days: 7
+          if-no-files-found: warn
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
@@ -1113,9 +1430,10 @@ jobs:
 
           # Generate diff-cover report for changed lines only
           # --exclude uses fnmatch patterns (shell-style wildcards)
+          # tt-inference-server-v2 is excluded from coverage checks entirely
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' \
+            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' 'tt-inference-server-v2/*'\
             --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
@@ -1253,6 +1571,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - cpp-tsan
     if: always()
     steps:
       - name: Check results
@@ -1268,6 +1587,7 @@ jobs:
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"

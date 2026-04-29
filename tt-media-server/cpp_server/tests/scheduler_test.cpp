@@ -10,13 +10,14 @@
 #include "domain/sampling_params.hpp"
 #include "domain/sequence.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/schedulers/scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 using Config = tt::config::LLMConfig;
+using tt::runners::llm_engine::InMemoryTaskQueue;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
 using Sequence = tt::domain::Sequence;
 using SamplingParams = tt::domain::SamplingParams;
@@ -524,4 +525,4 @@ TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   EXPECT_EQ(b3.size(), 2u);
 }
 }  // namespace
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers
