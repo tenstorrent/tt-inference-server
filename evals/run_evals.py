@@ -100,6 +100,36 @@ EVAL_TASK_TYPES = [
 ]
 
 
+def _is_external_server_workflow(runtime_config: Optional[RuntimeConfig]) -> bool:
+    if runtime_config is None:
+        return False
+    return not getattr(runtime_config, "docker_server", False) and not getattr(
+        runtime_config, "local_server", False
+    )
+
+
+def _resolve_api_model_name(model_spec) -> str:
+    return os.getenv("VLLM_MODEL") or model_spec.hf_model_repo
+
+
+def _resolve_tokenizer_model_name(model_spec) -> str:
+    return os.getenv("TOKENIZER_MODEL") or model_spec.hf_model_repo
+
+
+def _format_model_kwargs(
+    task: EvalTask, *, extra_args: Optional[List[str]] = None, exclude_keys=None
+) -> str:
+    exclude_keys = set(exclude_keys or [])
+    model_kwargs_list = [
+        f"{key}={value}"
+        for key, value in task.model_kwargs.items()
+        if key not in exclude_keys
+    ]
+    if extra_args:
+        model_kwargs_list.extend(extra_args)
+    return ",".join(model_kwargs_list)
+
+
 def _get_limit_mode(runtime_config: Optional[RuntimeConfig]) -> Optional[EvalLimitMode]:
     if runtime_config is None or not runtime_config.limit_samples_mode:
         return None
@@ -240,6 +270,26 @@ def _resolve_eval_samples(
     return json.dumps({task.task_name: list(indices)})
 
 
+def _normalize_gen_kwargs_for_external_server(
+    task: EvalTask,
+    model_spec,
+    runtime_config: Optional[RuntimeConfig],
+    gen_kwargs: Optional[dict] = None,
+) -> dict:
+    gen_kwargs = dict(task.gen_kwargs if gen_kwargs is None else gen_kwargs)
+    if not _is_external_server_workflow(runtime_config):
+        return gen_kwargs
+
+    if "max_tokens" in gen_kwargs or "max_completion_tokens" in gen_kwargs:
+        return gen_kwargs
+
+    if "max_gen_toks" in gen_kwargs:
+        gen_kwargs["max_tokens"] = gen_kwargs.pop("max_gen_toks")
+    elif "max_new_tokens" in gen_kwargs:
+        gen_kwargs["max_tokens"] = gen_kwargs.pop("max_new_tokens")
+    return gen_kwargs
+
+
 def _check_media_server_health(model_spec, device, output_path, service_port):
     """
     Check if media server is healthy using DeviceLivenessTest.
@@ -287,13 +337,13 @@ def _setup_openai_api_key(args, logger):
         args: Parsed command line arguments
         logger: Logger instance
     """
-    api_key = os.getenv("API_KEY")
-    if not api_key:
-        api_key = "your-secret-key"
-        logger.warning(
-            "API_KEY is not set. Using a default key for media server auth. "
-            "Set API_KEY in .env or as an environment variable."
-        )
+    api_key = (
+        args.jwt_secret
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("VLLM_API_KEY")
+        or os.getenv("API_KEY")
+        or "your-secret-key"
+    )
     os.environ["OPENAI_API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set.")
 
@@ -313,6 +363,7 @@ def _configure_openai_api_key(args, model_type, logger) -> str:
     else:
         api_key = (
             os.getenv("OPENAI_API_KEY")
+            or os.getenv("VLLM_API_KEY")
             or os.getenv("API_KEY")
             or "your-secret-key"
         )
@@ -619,6 +670,9 @@ def build_eval_command(
     if effective_max_concurrent:
         optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
 
+    api_model_name = _resolve_api_model_name(model_spec)
+    tokenizer_model_name = _resolve_tokenizer_model_name(model_spec)
+
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
     if task.workflow_venv_type in [
@@ -644,12 +698,14 @@ def build_eval_command(
     else:
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
-    model_kwargs_list += optional_model_args
-    model_kwargs_str = ",".join(model_kwargs_list)
-
     # build gen_kwargs string
-    gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
+    resolved_gen_kwargs = _normalize_gen_kwargs_for_external_server(
+        task,
+        model_spec,
+        runtime_config,
+        gen_kwargs=effective_gen_kwargs,
+    )
+    gen_kwargs_list = [f"{k}={v}" for k, v in resolved_gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
     # set output_dir
@@ -658,6 +714,11 @@ def build_eval_command(
 
     # fmt: off
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
+        model_kwargs_str = _format_model_kwargs(
+            task,
+            extra_args=optional_model_args,
+            exclude_keys={"model_version", "base_url", "tokenizer_backend"},
+        )
         cmd = [
             str(lm_eval_exec),
             "--tasks", task.task_name,
@@ -677,6 +738,10 @@ def build_eval_command(
             "--show_config",
         ]
     elif task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
+        model_kwargs_str = _format_model_kwargs(
+            task,
+            exclude_keys={"model", "base_url"},
+        )
         cmd = [
             str(lm_eval_exec),
             "--model", eval_class,
@@ -691,12 +756,21 @@ def build_eval_command(
             "--log_samples",
         ]
     else:
+        model_kwargs_str = _format_model_kwargs(
+            task,
+            extra_args=optional_model_args,
+            exclude_keys={"model", "base_url", "tokenizer", "tokenizer_backend"},
+        )
+        tokenizer_arg = ""
+        if tokenizer_model_name != api_model_name:
+            tokenizer_arg = f"tokenizer={tokenizer_model_name},"
         cmd = [
             str(lm_eval_exec),
             "--tasks", task.task_name,
             "--model", eval_class,
             "--model_args", (
-                f"model={model_spec.hf_model_repo},"
+                f"model={api_model_name},"
+                f"{tokenizer_arg}"
                 f"tokenizer_backend={task.tokenizer_backend},"
                 f"{model_kwargs_str},"
                 f"base_url={_base_url}"
@@ -944,10 +1018,17 @@ def main():
     env_config.deploy_url = os.getenv("DEPLOY_URL", env_config.deploy_url)
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
-    # EnvironmentConfig.vllm_api_key default is captured at module-load time;
-    # explicitly re-read so in-process PromptClient sees later env updates
-    # (mirrors run_benchmarks.py:439).
-    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    # EnvironmentConfig defaults are captured at construction time; explicitly
+    # re-read so in-process PromptClient sees auth updates made above.
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_model_name = _resolve_api_model_name(model_spec)
+
+    if api_model_name != model_spec.hf_model_repo:
+        logger.info(
+            "Using VLLM_MODEL override for API requests: %s (tokenizer/task config remains %s)",
+            api_model_name,
+            model_spec.hf_model_repo,
+        )
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
@@ -1008,18 +1089,24 @@ def main():
             model_spec=model_spec,
             runtime_config=runtime_config,
         )
-        logger.info(
-            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
-            prompt_client.cache_monitor.get_tensor_cache_timeout(),
-        )
-        if not prompt_client.wait_for_healthy():
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-            return 1
+        external_server_workflow = _is_external_server_workflow(runtime_config)
+        if external_server_workflow:
+            logger.info(
+                "Client-side external-server workflow detected; skipping /health checks and validating generation endpoints directly."
+            )
+        else:
+            logger.info(
+                "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
+                prompt_client.cache_monitor.get_tensor_cache_timeout(),
+            )
+            if not prompt_client.wait_for_healthy():
+                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                return 1
 
         for use_chat_api in {task.use_chat_api for task in eval_config.tasks}:
             _validate_generation_endpoint(
                 prompt_client=prompt_client,
-                model_name=model_spec.hf_model_repo,
+                model_name=api_model_name,
                 use_chat_api=use_chat_api,
             )
 
@@ -1035,10 +1122,11 @@ def main():
         logger.info("Running vLLM evals client ...")
         return_codes = []
         for task in eval_config.tasks:
-            health_check = prompt_client.get_health()
-            if health_check.status_code != 200:
-                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-                return 1
+            if not external_server_workflow:
+                health_check = prompt_client.get_health()
+                if health_check.status_code != 200:
+                    logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                    return 1
 
             logger.info(
                 f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"

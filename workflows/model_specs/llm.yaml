@@ -580,19 +580,20 @@ templates:
   device_model_specs:
     - device: GALAXY
       max_concurrency: 256  # 32 * 8
-      max_context: 2048
+      max_context: 65536
       default_impl: true
       tensor_cache_timeout: 6400.0
       vllm_args:
-        max_model_len: "2048"
+        max_model_len: "65536"
     - device: DUAL_GALAXY
       max_concurrency: 256  # 32 * 8; 32 per DP rank * 8 ranks
-      max_context: 32768
+      max_context: 65536
       default_impl: true
       tensor_cache_timeout: 6400.0
       vllm_args:
         data_parallel_size: 8
         block_size: "32"
+        max_model_len: "65536"
       override_tt_config:
         fabric_config: FABRIC_1D
         fabric_reliability_mode: RELAXED_INIT
@@ -602,12 +603,12 @@ templates:
           - DEEPSEEK_V3_HF_MODEL
     - device: QUAD_GALAXY
       max_concurrency: 512  # 32 * 16; 32 per DP rank * 16 ranks
-      max_context: 32768
+      max_context: 65536
       default_impl: true
       vllm_args:
         data_parallel_size: 16
         block_size: "32"
-        max_model_len: "2048"
+        max_model_len: "65536"
       override_tt_config:
         fabric_config: FABRIC_1D
         fabric_reliability_mode: RELAXED_INIT
