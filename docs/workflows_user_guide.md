@@ -371,7 +371,7 @@ Each test case entry in `server_tests_config.json` specifies:
 - `name` / `module`: the test class and its Python module path.
 - `enabled`: set to `false` to skip a test case.
 - `test_config`: execution settings — `test_timeout`, `retry_attempts`, `retry_delay`, `break_on_failure`, `mock_mode`.
-- `targets`: test-specific numerical thresholds (e.g. `image_generation_time`, `num_of_devices`).
+- `targets`: test-specific numerical thresholds. Common keys include `image_generation_time`, `audio_transcription_time`, `num_concurrent_requests` (client-side concurrency for `*LoadTest`), and `num_of_devices` (physical chip count, used by `DeviceLivenessTest`/`DeviceStabilityTest`). `num_of_devices` is also accepted as a deprecated fallback for `num_concurrent_requests` inside load tests.
 
 Output is written as JSON and Markdown reports to `workflow_logs/spec_tests_output/`.
 
