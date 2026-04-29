@@ -6,8 +6,12 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+#include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 
+#include "api/response_writer/response_writer.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -83,6 +87,15 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::shared_ptr<domain::LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
+  /**
+   * Handle non-streaming chat completion. Drives the same Streamable producer
+   * as handleStreaming and accumulates chunks into a single JSON response,
+   * so disaggregated and prefill-on-decode routing is honored identically.
+   */
+  void handleNonStreaming(
+      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
   struct SessionInfo {
     bool validSessionFound = false;
   };
@@ -114,6 +127,42 @@ class LLMController : public drogon::HttpController<LLMController> {
    */
   bool shouldDoPrefillOnDecode(const domain::LLMRequest& request,
                                bool validSessionFound) const;
+
+  /**
+   * Submit the request to the appropriate streaming producer based on
+   * llm_mode (REGULAR vs DECODE_ONLY) and the prefill-on-decode heuristic.
+   * Caller must invoke service->preProcess(req) beforehand. Throws on
+   * unsupported mode or queue/dispatch failures.
+   */
+  void dispatchGeneration(
+      domain::LLMRequest& request, bool validSessionFound,
+      const std::function<void(const domain::LLMStreamChunk&, bool)>& cb) const;
+
+  /**
+   * Release in-flight session slot if a session is present. No-op otherwise.
+   */
+  void releaseSessionInFlight(
+      const std::optional<std::string>& sessionId) const;
+
+  /**
+   * Translate a SessionError into a drogon HTTP error response.
+   */
+  static drogon::HttpResponsePtr makeSessionErrorResponse(
+      const SessionError& err);
+
+  /**
+   * Build the ResponseWriterParams shared by both streaming and non-streaming
+   * writers.
+   */
+  ResponseWriterParams makeWriterParams(
+      const domain::LLMRequest& request) const;
+
+  /**
+   * Build the streaming callback that pumps LLMStreamChunks into a
+   * ResponseWriter. Common to both streaming and non-streaming code paths.
+   */
+  static std::function<void(const domain::LLMStreamChunk&, bool)>
+  makeStreamingCallback(std::shared_ptr<ResponseWriter> writer);
 };
 
 }  // namespace tt::api

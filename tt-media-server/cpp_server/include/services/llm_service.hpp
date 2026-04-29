@@ -46,6 +46,16 @@ class LLMService
   void preProcess(domain::LLMRequest& request) const override;
 
   /**
+   * Run post-processing (reasoning strip, tool-call parsing) on a fully
+   * accumulated response. Public wrapper around the protected postProcess
+   * so non-streaming callers that bypass submitRequest (e.g. the controller
+   * accumulating from streaming chunks) can still apply final processing.
+   */
+  void finalizeResponse(domain::LLMResponse& response) const {
+    postProcess(response);
+  }
+
+  /**
    * Abort an in-flight request. Removes the streaming callback, decrements
    * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
    * synchronous waiters, and broadcasts cancel to all worker queues.
