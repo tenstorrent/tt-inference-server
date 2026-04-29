@@ -321,7 +321,9 @@ struct ChatCompletionRequest : BaseRequest {
     const std::string& expectedCallId = lastAssistant.tool_calls->at(0).id;
 
     if (lastAssistantIdx + 1 >= req.messages.size()) {
-      return;
+      throw std::invalid_argument(
+          "Expected message with role='tool' after assistant message with "
+          "tool_calls, but didn't get any new messages");
     }
 
     const auto& nextMessage = req.messages[lastAssistantIdx + 1];
