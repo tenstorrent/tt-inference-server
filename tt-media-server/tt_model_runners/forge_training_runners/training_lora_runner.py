@@ -15,7 +15,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
-from config.constants import SupportedModels
+from config.constants import ModelNames, SupportedModels
 from domain.training_request import TrainingRequest
 from peft import LoraConfig, PeftModel, get_peft_model
 from tqdm import tqdm
@@ -77,19 +77,23 @@ def _training_step_inner(batch, model):
     return loss.detach()
 
 
-class TrainingLlamaLoraRunner(BaseDeviceRunner):
+class TrainingLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
-        self.model_name = SupportedModels.LLAMA_3_1_8B.value
+        if not self.settings.training_model:
+            raise ValueError("TRAINING_MODEL and MODEL_RUNNER both must be set")
+        self.model_name = SupportedModels[
+            ModelNames(self.settings.training_model).name
+        ].value
 
     @property
     def _is_multichip(self) -> bool:
         return math.prod(self.settings.device_mesh_shape) > 1
 
-    @log_execution_time("Setting up Llama Lora training")
+    @log_execution_time("Setting up LoRA training")
     async def warmup(self) -> bool:
         self.logger.info(
-            f"Device {self.device_id}: Setting up Llama Lora training "
+            f"Device {self.device_id}: Setting up LoRA training for {self.model_name} "
             f"(multichip={self._is_multichip}, mesh={self.settings.device_mesh_shape})..."
         )
 
@@ -183,7 +187,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         return batch
 
-    @log_execution_time("Llama Lora training")
+    @log_execution_time("LoRA training")
     def run(self, training_requests: list) -> list:
         if len(training_requests) > 1:
             self.logger.warning(
@@ -272,9 +276,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             lr=request.learning_rate,
         )
 
-        self.logger.info(
-            f"Device {self.device_id}: Llama Lora training setup completed"
-        )
+        self.logger.info(f"Device {self.device_id}: LoRA training setup completed")
 
         if self._is_multichip and self.MODEL_SHARDING_PATTERNS:
             self._shard_model(model, mesh, self.MODEL_SHARDING_PATTERNS)
@@ -392,7 +394,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                                     {
                                         "id": f"ckpt-step-{global_step}",
                                         "step": global_step,
-                                        "epoch": epoch,
+                                        "epoch": epoch + 1,
                                         "metrics": checkpoint_metrics,
                                         "created_at": time.time(),
                                     }
@@ -405,7 +407,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
-                            f"Training llama lora runner: Cancellation requested at step {global_step}, stopping training. "
+                            f"Cancellation requested at step {global_step}, stopping training. "
                             f"Directory containing checkpoints: {request._output_model_path}",
                             extra={"log_type": "info", "step": global_step},
                         )
