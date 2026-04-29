@@ -54,13 +54,13 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self._compile_model()
             self.logger.info("Running warmup decode to trigger compilation")
             self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
-            self.logger.info("Warmup decode completed")        
+            self.logger.info("Warmup decode completed")
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
         self._validate_request(request)
-        
+
         # Handle adapter loading and compilation
         if self.settings.lora_adapter:
             if request.adapter and request.adapter != self.settings.lora_adapter:
@@ -73,9 +73,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 self._load_adapter(resolve_adapter(request.adapter))
             else:
                 self._unload_adapter()
-                self._load_base_model(
-                    request.model or self.settings.model_weights_path
-                )
+                self._load_base_model(request.model or self.settings.model_weights_path)
             self._compile_model()
 
         prompt = (
@@ -104,7 +102,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 type="final_result",
                 data=CompletionResult(text=text),
             )
-        ] 
+        ]
 
     async def _run_async(self, requests):
         async def _stream():
