@@ -50,6 +50,7 @@ scripts are shared internals used by those entrypoints.
 
 | Script | Purpose | Default scope |
 |---|---|---|
+| `evals/scripts/run_deepseek_external.sh smoke` | tiny end-to-end suite flow check | AIME24 short pass@1 x2 + 2 examples from each suite benchmark |
 | `evals/scripts/run_deepseek_external.sh quick` | quick smoke mode | AIME24 short pass@1 x16 + MMLU-Pro sample (32/category) |
 | `evals/scripts/run_deepseek_external.sh single` | single benchmark mode | AIME24 full (30) |
 | `evals/scripts/run_deepseek_external.sh suite` | reporting-grade DeepSeek-aligned suite | AIME24 pass@1 x16 + GPQA Diamond + MATH-500 + LiveCodeBench + full MMLU-Pro |
@@ -108,9 +109,12 @@ Additional mode-specific knobs:
 
 | Variable | Purpose | Default |
 |---|---|---|
+| `SMOKE_LIMIT` | Per-task sample limit in `smoke` mode for GPQA, MATH-500, LiveCodeBench, and each MMLU-Pro category | `2` |
+| `SMOKE_AIME_RUNS` | AIME short pass@1 sample runs in `smoke` mode | `2` |
 | `QUICK_MMLU_PRO_LIMIT` | `mmlu_pro` sample size in `quick` mode | `32` |
 | `MMLU_PRO_LIMIT` | `mmlu_pro` sample size for `run_mmlu_pro_external.sh` | full run |
 | `AIME_PASS1_RUNS` | Number of repeated AIME runs for `run_aime24_pass1x16_external.sh`, quick mode, and suite mode | `16` |
+| `AIME_PASS1_PARALLEL_RUNS` | Number of repeated AIME sample runs to launch in parallel. Quick mode defaults to `6`, so the 5-question AIME short pass keeps about 30 requests in flight. Other modes default to serial (`1`). | quick: `6`; otherwise `1` |
 
 ## TT Console key setup
 
@@ -134,6 +138,20 @@ When targeting TT Console, the scripts fail early if no key is available or if
 
 ## Example invocations
 
+### Smoke mode
+
+```bash
+./evals/scripts/run_deepseek_external.sh smoke
+```
+
+This exercises the full suite flow with tiny limits:
+
+- `r1_aime24_short` pass@1 x2
+- `r1_gpqa_diamond --limit 2`
+- `r1_math500 --limit 2`
+- `livecodebench --limit 2`
+- `mmlu_pro --limit 2` (2 examples per MMLU-Pro category, 28 requests total)
+
 ### Quick mode
 
 ```bash
@@ -144,6 +162,10 @@ This runs:
 
 - `r1_aime24_short` pass@1 x16 (5 questions per run)
 - `mmlu_pro --limit 32` (32 examples per MMLU-Pro category, 448 requests total)
+
+Quick mode runs six AIME short sample runs at a time by default
+(`AIME_PASS1_PARALLEL_RUNS=6`), so the AIME block keeps roughly 30 requests in
+flight instead of waiting for each 5-question sample to finish serially.
 
 ### Single mode
 

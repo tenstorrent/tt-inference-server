@@ -388,9 +388,13 @@ if [[ -n "${TOP_P}" ]]; then
     append_gen_kwarg_if_missing top_p "${TOP_P}"
 fi
 
+# Always load local lm_eval compatibility patches. The streaming request parser
+# only activates when stream=true, but other fixes such as LiveCodeBench sample
+# logging are useful for non-streaming runs too.
+export PYTHONPATH="${STREAMING_PATCH_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+
 if is_truthy "${STREAM}"; then
     append_gen_kwarg_if_missing stream true
-    export PYTHONPATH="${STREAMING_PATCH_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
     if [[ "${MAX_CONCURRENT}" =~ ^[0-9]+$ && "${MAX_CONCURRENT}" -gt 15 ]]; then
         echo "STREAM=1 with MAX_CONCURRENT=${MAX_CONCURRENT} opens many long-lived requests; TT Console may return 504s or interrupted streams. Prefer MAX_CONCURRENT<=15." >&2
     fi
