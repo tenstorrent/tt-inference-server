@@ -155,9 +155,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         status_list: list[CnnGenerationTestStatus] = []
         for i, sample in enumerate(metadata, start=1):
             image_file = dataset_path / sample["filename"]
-            logger.info(
-                f"Analyzing image {i}/{total_requests}: {sample['filename']}"
-            )
+            logger.info(f"Analyzing image {i}/{total_requests}: {sample['filename']}")
             status, elapsed = self._analyze_image(image_file)
             logger.info(f"Analyzed image in {elapsed:.2f} seconds.")
             status_list.append(
