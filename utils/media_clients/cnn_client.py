@@ -209,7 +209,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         )
 
         # Lazy import to avoid loading 'datasets' library at module import time
-        from server_tests.test_cases.vision_evals_test import (
+        from test_module.eval_tests.vision_evals_test import (
             VisionEvalsTest,
             VisionEvalsTestRequest,
         )
@@ -323,7 +323,7 @@ class CnnClientStrategy(BaseMediaStrategy):
                 }
         """
         # Lazy import to avoid loading 'datasets' library at module import time
-        from server_tests.test_cases.vision_evals_test import (
+        from test_module.eval_tests.vision_evals_test import (
             VisionEvalsTest,
             VisionEvalsTestRequest,
         )

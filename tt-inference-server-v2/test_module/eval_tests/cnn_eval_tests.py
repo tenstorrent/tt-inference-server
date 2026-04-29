@@ -69,10 +69,7 @@ def _run_image_analysis_benchmark(
 
 def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     """Delegate MobileNetV2 accuracy eval to VisionEvalsTest."""
-    from server_tests.test_cases.vision_evals_test import (
-        VisionEvalsTest,
-        VisionEvalsTestRequest,
-    )
+    from .vision_evals_test import VisionEvalsTest, VisionEvalsTestRequest
     from server_tests.test_classes import TestConfig
 
     logger.info("Running mobilenetv2 eval.")

@@ -16,12 +16,14 @@ import requests
 from .base_strategy_interface import BaseMediaStrategy
 from .test_status import ImageGenerationTestStatus
 
-# Add project root to Python path
+# Add project root + tt-inference-server-v2 to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+v2_root = project_root / "tt-inference-server-v2"
+for _path in (project_root, v2_root):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
-from server_tests.test_cases.image_generation_eval_test import (
+from test_module.eval_tests.image_generation_eval_test import (
     ImageGenerationEvalsTest,
 )
 from server_tests.test_classes import TestConfig as ServerTestConfig

@@ -19,9 +19,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from server_tests.test_cases.image_generation_eval_test import (
-    ImageGenerationEvalsTest,
-)
+from .image_generation_eval_test import ImageGenerationEvalsTest
 from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,

@@ -386,11 +386,11 @@ class VideoClientStrategy(BaseMediaStrategy):
                 }
         """
         # Lazy import to avoid loading dependencies at module import time
-        from server_tests.test_cases.video_generation_eval_test import (
+        from server_tests.test_classes import TestConfig
+        from test_module.eval_tests.video_generation_eval_test import (
             VideoGenerationEvalsTest,
             VideoGenerationEvalsTestRequest,
         )
-        from server_tests.test_classes import TestConfig
 
         logger.info("Running video generation eval.")
 
@@ -448,18 +448,18 @@ class VideoClientStrategy(BaseMediaStrategy):
         """
         from pathlib import Path
 
-        from server_tests.test_cases.video_fvd_eval_test import (
+        from server_tests.test_classes import TestConfig
+        from test_module.eval_tests.video_fvd_eval_test import (
             DATASET_DIR as FVD_DATASET_DIR,
         )
-        from server_tests.test_cases.video_fvd_eval_test import (
+        from test_module.eval_tests.video_fvd_eval_test import (
             VideoFVDTest,
             VideoFVDTestRequest,
         )
-        from server_tests.test_cases.video_fvmd_eval_test import (
+        from test_module.eval_tests.video_fvmd_eval_test import (
             VideoFVMDTest,
             VideoFVMDTestRequest,
         )
-        from server_tests.test_classes import TestConfig
 
         logger.info("Running video FVD and FVMD eval.")
 

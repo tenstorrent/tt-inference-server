@@ -22,11 +22,12 @@ logger = logging.getLogger(__name__)
 
 def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
-    from server_tests.test_cases.video_generation_eval_test import (
+    from server_tests.test_classes import TestConfig
+
+    from .video_generation_eval_test import (
         VideoGenerationEvalsTest,
         VideoGenerationEvalsTestRequest,
     )
-    from server_tests.test_classes import TestConfig
 
     logger.info("Running video generation eval.")
 
@@ -58,18 +59,11 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
 
 def _run_video_fvd_and_fvmd_eval() -> dict:
     """Run FVD + FVMD eval against reference and generated video directories."""
-    from server_tests.test_cases.video_fvd_eval_test import (
-        DATASET_DIR as FVD_DATASET_DIR,
-    )
-    from server_tests.test_cases.video_fvd_eval_test import (
-        VideoFVDTest,
-        VideoFVDTestRequest,
-    )
-    from server_tests.test_cases.video_fvmd_eval_test import (
-        VideoFVMDTest,
-        VideoFVMDTestRequest,
-    )
     from server_tests.test_classes import TestConfig
+
+    from .video_fvd_eval_test import DATASET_DIR as FVD_DATASET_DIR
+    from .video_fvd_eval_test import VideoFVDTest, VideoFVDTestRequest
+    from .video_fvmd_eval_test import VideoFVMDTest, VideoFVMDTestRequest
 
     logger.info("Running video FVD and FVMD eval.")
 
