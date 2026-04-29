@@ -4,6 +4,7 @@
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -15,25 +16,56 @@ namespace {
 
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 
-// DeepSeek-R1-0528 tokenizer single-character token IDs (stable).
-// Digits 0-9 occupy IDs 18-27; single ASCII letters follow sequentially.
-constexpr int K_QUOTE_TOKEN = 4;           // '"'
-constexpr int K_LETTER_A_TOKEN = 35;       // 'A' — valid only inside string values
-constexpr int K_FIRST_DIGIT_TOKEN = 18;    // '0'
-constexpr int K_NUM_DIGITS = 10;
-constexpr int K_MINUS_TOKEN = 15;          // '-'
-constexpr int K_COMMA_TOKEN = 14;          // ','
-constexpr int K_CLOSE_BRACKET_TOKEN = 63;  // ']'
-constexpr int K_CLOSE_BRACE_TOKEN = 95;    // '}'
+// Token IDs for structural JSON characters and mock string content, resolved
+// from the active tokenizer at construction time so the mock works with any
+// vocabulary (DeepSeek, Llama, etc.).
+struct GrammarTokenIds {
+  int quote;          // '"'
+  int letterA;        // 'A' — valid in bitmask only inside free-form string values
+  int minus;          // '-'
+  int comma;          // ','
+  int closeBracket;   // ']'
+  int closeBrace;     // '}'
+  std::array<int, 10> digits;        // '0'–'9' (not assumed consecutive)
+  std::array<int, 5> mockStrChars;   // T I S R V — varied content per task
 
-// A small pool of distinct letter tokens used to vary mock string content per task.
-// T(54) I(43) S(53) R(84) V(88)
-constexpr std::array<int, 5> K_MOCK_STRING_CHARS = {54, 43, 53, 84, 88};
+  static GrammarTokenIds fromTokenizer(
+      const tt::utils::tokenizers::Tokenizer& tok) {
+    auto id = [&](char c) -> int {
+      auto ids = tok.encode(std::string(1, c));
+      if (ids.size() != 1)
+        TT_LOG_WARN("[model_runner:mock] '{}' encodes to {} tokens, expected 1",
+                    c, ids.size());
+      return ids.empty() ? -1 : ids[0];
+    };
+    return {
+        .quote = id('"'),
+        .letterA = id('A'),
+        .minus = id('-'),
+        .comma = id(','),
+        .closeBracket = id(']'),
+        .closeBrace = id('}'),
+        .digits = {id('0'), id('1'), id('2'), id('3'), id('4'),
+                   id('5'), id('6'), id('7'), id('8'), id('9')},
+        .mockStrChars = {id('T'), id('I'), id('S'), id('R'), id('V')},
+    };
+  }
+
+  bool isDigit(int tokenId) const {
+    for (int d : digits) {
+      if (d == tokenId) return true;
+    }
+    return false;
+  }
+};
 
 class MockModelRunner : public IModelRunner {
  public:
   MockModelRunner(const Config& config, DecodeCallback callback)
-      : config(config), decodeCallback(std::move(callback)) {}
+      : config(config),
+        decodeCallback(std::move(callback)),
+        tokenIds(GrammarTokenIds::fromTokenizer(
+            tt::utils::tokenizers::activeTokenizer())) {}
 
   void run(const std::vector<Sequence*>& seqs, bool isPrefill) override {
     ZoneScopedN("MockModelRunner::run");
@@ -74,37 +106,35 @@ class MockModelRunner : public IModelRunner {
   //                   has been emitted (digit is lowest bit but close token
   //                   is also valid).
   //   '-'           — substitute a task-varied positive digit.
-  static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) {
+  uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) const {
     const auto& sp = seq->getSamplingParams();
     const auto& bitmask = sp.token_bitmask;
     if (bitmask.has_value()) {
-      if (isBitmaskSet(*bitmask, K_LETTER_A_TOKEN)) {
+      if (isBitmaskSet(*bitmask, tokenIds.letterA)) {
         // If the previous token was not '"' (opening quote), we already emitted
         // one content char → close the string now.
-        if (seq->getLastToken() != static_cast<int64_t>(K_QUOTE_TOKEN))
-          return K_QUOTE_TOKEN;
+        if (seq->getLastToken() != static_cast<int64_t>(tokenIds.quote))
+          return tokenIds.quote;
         // Emit one task-varied char from the mock string.
-        int charToken = K_MOCK_STRING_CHARS[seq->taskId % K_MOCK_STRING_CHARS.size()];
+        int charToken = tokenIds.mockStrChars[seq->taskId % tokenIds.mockStrChars.size()];
         return isBitmaskSet(*bitmask, charToken) ? static_cast<uint64_t>(charToken)
-                                                 : K_QUOTE_TOKEN;
+                                                 : tokenIds.quote;
       }
 
       for (size_t w = 0; w < bitmask->size(); ++w) {
         auto word = static_cast<uint32_t>((*bitmask)[w]);
         if (word == 0) continue;
         const int candidateToken = static_cast<int>(w * 32 + __builtin_ctz(word));
-        if (candidateToken == K_COMMA_TOKEN &&
-            isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) {
-          return K_CLOSE_BRACKET_TOKEN;
+        if (candidateToken == tokenIds.comma &&
+            isBitmaskSet(*bitmask, tokenIds.closeBracket)) {
+          return tokenIds.closeBracket;
         }
-        const bool isDigit = candidateToken >= K_FIRST_DIGIT_TOKEN &&
-                             candidateToken < K_FIRST_DIGIT_TOKEN + K_NUM_DIGITS;
-        if (isDigit) {
-          if (isBitmaskSet(*bitmask, K_CLOSE_BRACE_TOKEN)) return K_CLOSE_BRACE_TOKEN;
-          if (isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) return K_CLOSE_BRACKET_TOKEN;
+        if (tokenIds.isDigit(candidateToken)) {
+          if (isBitmaskSet(*bitmask, tokenIds.closeBrace)) return tokenIds.closeBrace;
+          if (isBitmaskSet(*bitmask, tokenIds.closeBracket)) return tokenIds.closeBracket;
         }
-        if (candidateToken == K_MINUS_TOKEN) {
-          int digit = K_FIRST_DIGIT_TOKEN + static_cast<int>(seq->taskId % K_NUM_DIGITS);
+        if (candidateToken == tokenIds.minus) {
+          int digit = tokenIds.digits[seq->taskId % tokenIds.digits.size()];
           if (isBitmaskSet(*bitmask, digit)) return static_cast<uint64_t>(digit);
         }
         return static_cast<uint64_t>(candidateToken);
@@ -122,6 +152,7 @@ class MockModelRunner : public IModelRunner {
 
   Config config;
   DecodeCallback decodeCallback;
+  GrammarTokenIds tokenIds;
 };
 
 }  // namespace
