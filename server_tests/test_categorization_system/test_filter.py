@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Constants
 TEST_CONFIG = "test_config"
 NUM_OF_DEVICES = "num_of_devices"
+NUM_CONCURRENT_REQUESTS = "num_concurrent_requests"
 TARGETS = "targets"
 
 
@@ -167,12 +168,15 @@ class TestFilter:
         if TEST_CONFIG in test_case:
             expanded["test_config"].update(test_case["test_config"])
 
-        # Set num_of_devices: suite-level override > hardware default
+        # Populate both keys from the suite/hardware default so that:
+        #   - DeviceLivenessTest / DeviceStabilityTest read num_of_devices (chip count).
+        #   - *LoadTest read num_concurrent_requests (client-side fan-out).
+        # Per-test-case targets below may override either independently.
         num_devices = self._get_num_of_devices(suite)
         if num_devices is not None:
-            expanded["targets"]["num_of_devices"] = num_devices
+            expanded["targets"][NUM_OF_DEVICES] = num_devices
+            expanded["targets"][NUM_CONCURRENT_REQUESTS] = num_devices
 
-        # Override with test case specific targets
         if TARGETS in test_case:
             expanded["targets"].update(test_case["targets"])
 

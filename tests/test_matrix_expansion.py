@@ -1044,3 +1044,129 @@ class TestAllSuitesLoad:
                 f"Missing 'model_marker' in suite {suite['id']}"
             )
             assert "test_cases" in suite, f"Missing 'test_cases' in suite {suite['id']}"
+
+
+class TestNumConcurrentRequestsExpansion:
+    """
+    Verify the split between `num_of_devices` (physical chips, consumed by
+    liveness/stability tests) and `num_concurrent_requests` (client-side
+    concurrency, consumed by load tests).
+
+    These assertions guard against regressions introduced by the overloaded
+    `num_of_devices` key reappearing inside load-test `targets`.
+    """
+
+    def _expand(self, suite, test_case):
+        from server_tests.test_categorization_system.test_filter import TestFilter
+
+        # Build a minimal TestFilter with just the suite under test so we can
+        # drive _expand_test_case directly without touching disk.
+        tf = TestFilter(suites=[suite])
+        tf.test_templates = {
+            "LoadTest": {
+                "module": "x",
+                "markers": [],
+                "test_config": {},
+            }
+        }
+        return tf._expand_test_case(test_case, suite)
+
+    def test_expand_populates_both_keys_from_suite_num_of_devices(self):
+        suite = {
+            "id": "s1",
+            "device": "t3k",
+            "num_of_devices": 4,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {"template": "LoadTest", "enabled": True}
+        expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_of_devices"] == 4
+        assert expanded["targets"]["num_concurrent_requests"] == 4
+
+    def test_test_case_num_concurrent_requests_overrides_suite_default(self):
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_concurrent_requests": 1},
+        }
+        expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+        # num_of_devices (chip count for liveness) stays at the suite default.
+        assert expanded["targets"]["num_of_devices"] == 32
+
+    def test_test_case_num_of_devices_override_still_works_for_backcompat(self):
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_of_devices": 1},
+        }
+        expanded = self._expand(suite, test_case)
+
+        # Override flows through to num_of_devices; num_concurrent_requests
+        # retains the suite default. BaseTest._get_num_concurrent_requests will
+        # still read num_concurrent_requests first at runtime.
+        assert expanded["targets"]["num_of_devices"] == 1
+        assert expanded["targets"]["num_concurrent_requests"] == 32
+
+
+class TestBaseTestConcurrencyResolution:
+    """Precedence for BaseTest._get_num_concurrent_requests."""
+
+    def _make_test(self, targets):
+        from server_tests.base_test import BaseTest
+
+        class _StubTest(BaseTest):
+            async def _run_specific_test_async(self):  # pragma: no cover
+                return {}
+
+        config = {
+            "timeout": 1,
+            "retry_attempts": 0,
+            "retry_delay": 0,
+            "break_on_failure": False,
+        }
+        return _StubTest(config=config, targets=targets)
+
+    def test_prefers_num_concurrent_requests(self):
+        t = self._make_test({"num_concurrent_requests": 7, "num_of_devices": 32})
+        assert t._get_num_concurrent_requests(default=1) == 7
+
+    def test_falls_back_to_num_of_devices(self):
+        t = self._make_test({"num_of_devices": 4})
+        assert t._get_num_concurrent_requests(default=1) == 4
+
+    def test_returns_default_when_neither_present(self):
+        t = self._make_test({})
+        assert t._get_num_concurrent_requests(default=3) == 3
+
+    def test_deprecation_warning_emitted_once(self, caplog):
+        import logging
+
+        t = self._make_test({"num_of_devices": 2})
+        with caplog.at_level(logging.WARNING, logger="server_tests.base_test"):
+            t._get_num_concurrent_requests()
+            t._get_num_concurrent_requests()
+
+        deprecation_messages = [
+            r
+            for r in caplog.records
+            if "num_of_devices is deprecated" in r.getMessage()
+        ]
+        assert len(deprecation_messages) == 1
