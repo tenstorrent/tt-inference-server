@@ -41,6 +41,50 @@ Json::Value createToolJson(const std::string& name,
   return tool;
 }
 
+// Helper to create a user message
+Json::Value createUserMessage(const std::string& content) {
+  Json::Value msg;
+  msg["role"] = "user";
+  msg["content"] = content;
+  return msg;
+}
+
+// Helper to create an assistant message
+Json::Value createAssistantMessage(const std::string& content) {
+  Json::Value msg;
+  msg["role"] = "assistant";
+  msg["content"] = content;
+  return msg;
+}
+
+// Helper to create an assistant message with a tool call
+Json::Value createAssistantWithToolCall(const std::string& callId,
+                                        const std::string& functionName,
+                                        const std::string& arguments) {
+  Json::Value msg;
+  msg["role"] = "assistant";
+  msg["content"] = "";
+
+  Json::Value toolCall;
+  toolCall["id"] = callId;
+  toolCall["type"] = "function";
+  toolCall["function"]["name"] = functionName;
+  toolCall["function"]["arguments"] = arguments;
+  msg["tool_calls"].append(toolCall);
+
+  return msg;
+}
+
+// Helper to create a tool response message
+Json::Value createToolMessage(const std::string& toolCallId,
+                              const std::string& content) {
+  Json::Value msg;
+  msg["role"] = "tool";
+  msg["tool_call_id"] = toolCallId;
+  msg["content"] = content;
+  return msg;
+}
+
 // ==================== Tool Parsing Tests ====================
 
 void testParseRequestWithTools() {
@@ -182,6 +226,126 @@ void testToolChoiceUnknownStringRejected() {
   std::cout << "✅ Test passed!\n";
 }
 
+// ==================== validateToolMessages Tests ====================
+
+void testValidToolMessageSequence() {
+  std::cout << "\n=== Testing Valid Tool Message Sequence ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(createAssistantWithToolCall(
+      "call_abc123", "get_weather", "{\"location\":\"NYC\"}"));
+  json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
+
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+
+  assert(request.messages.size() == 3);
+  assert(request.messages[1].tool_calls.has_value());
+  assert(request.messages[1].tool_calls->at(0).id == "call_abc123");
+  assert(request.messages[2].role == "tool");
+  assert(request.messages[2].tool_call_id.value() == "call_abc123");
+
+  std::cout << "✓ Valid tool message sequence accepted\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolMessageMissingAfterToolCalls() {
+  std::cout << "\n=== Testing Missing Tool Message After tool_calls (Should "
+               "Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(
+      createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
+  json["messages"].append(createUserMessage("Never mind"));
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("Expected message with role='tool'") !=
+           std::string::npos);
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when tool message is missing after tool_calls");
+
+  std::cout << "✓ Missing tool message correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolMessageMissingToolCallId() {
+  std::cout
+      << "\n=== Testing Tool Message Missing tool_call_id (Should Reject) "
+         "===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(
+      createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
+
+  // Add tool message without tool_call_id
+  Json::Value toolMsg;
+  toolMsg["role"] = "tool";
+  toolMsg["content"] = "Sunny";
+  // Missing tool_call_id
+  json["messages"].append(toolMsg);
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("must include 'tool_call_id' field") !=
+           std::string::npos);
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when tool message is missing tool_call_id");
+
+  std::cout << "✓ Missing tool_call_id correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolMessageMismatchedCallId() {
+  std::cout
+      << "\n=== Testing Tool Message With Mismatched tool_call_id (Should "
+         "Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["messages"].clear();
+
+  json["messages"].append(createUserMessage("What's the weather?"));
+  json["messages"].append(
+      createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
+  json["messages"].append(
+      createToolMessage("call_xyz789", "Sunny"));  // Wrong ID
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("does not match expected call_id") !=
+           std::string::npos);
+  }
+
+  assert(exceptionThrown && "Should throw when tool_call_id doesn't match");
+
+  std::cout << "✓ Mismatched tool_call_id correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
 // Main function for running tests
 int main() {
   std::cout << "\n";
@@ -197,6 +361,12 @@ int main() {
     testToolChoiceNoneWithEmptyToolsArray();
     testToolChoiceAutoWithoutToolsRejected();
     testToolChoiceUnknownStringRejected();
+
+    // validateToolMessages tests
+    testValidToolMessageSequence();
+    testToolMessageMissingAfterToolCalls();
+    testToolMessageMissingToolCallId();
+    testToolMessageMismatchedCallId();
 
     std::cout << "\n";
     std::cout
