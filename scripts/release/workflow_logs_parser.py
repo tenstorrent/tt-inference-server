@@ -38,13 +38,11 @@ def latest_json_by_mtime(dir_path: Path, pattern: str) -> Optional[Path]:
 def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optional[str]]:
     """Load model spec JSON from model_specs directory.
 
-    Supports both the new model_specs/ directory and legacy run_specs/ as fallback.
+    Supports new model_specs/ directory
+    - New: {"runtime_model_spec": {...}, "runtime_config": {...}}
 
     Args:
         model_specs_dir: Path to model_specs directory
-
-    Returns:
-        Tuple of (model_spec_dict, model_id)
     """
     spec_file = latest_json_by_mtime(model_specs_dir, "*.json")
     if not spec_file:
@@ -55,9 +53,20 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     except Exception as e:
         logger.warning(f"Failed to parse model spec JSON from {spec_file}: {e}")
         return None, None
-    model_id = data.get("model_id")
-    return data, model_id
 
+    # New format: {"runtime_model_spec": {...}, "runtime_config": {...}}
+    if "runtime_model_spec" not in data:
+        logger.warning(f"No 'runtime_model_spec' key found in {spec_file}")
+        return None, None                                                                                                                                                                                                                                                      
+                       
+    spec = data["runtime_model_spec"]                                                                                                                                                                                                                                          
+    config = data.get("runtime_config", {})                                                                                                                                                                                                                                    
+    model_id = spec.get("model_id")        
+    normalized = dict(spec)                                                                                                                                                                                                                                                    
+    override = config.get("override_docker_image")         
+    if override:                                  
+        normalized.setdefault("cli_args", {})["override_docker_image"] = override
+    return normalized, model_id
 
 def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
     """Load report_data JSON from reports_output directory.
