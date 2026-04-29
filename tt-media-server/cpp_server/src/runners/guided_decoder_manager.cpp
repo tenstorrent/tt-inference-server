@@ -58,6 +58,8 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
             tool.functionDefinition.name;
         wrappedSchema["properties"]["arguments"] =
             tool.functionDefinition.parameters;
+        wrappedSchema["properties"]["arguments"]["additionalProperties"] =
+            false;
         wrappedSchema["required"].append("name");
         wrappedSchema["required"].append("arguments");
 

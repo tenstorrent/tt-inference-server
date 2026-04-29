@@ -460,15 +460,17 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
       std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
 
       Json::Value decodedOutput;
-      Json::Reader reader;
+      static const Json::CharReaderBuilder kReaderBuilder;
+      thread_local const std::unique_ptr<Json::CharReader> reader(
+          kReaderBuilder.newCharReader());
       std::string argumentsStr = choice.text;
+      std::string parseErrors;
 
-      if (reader.parse(choice.text, decodedOutput)) {
-        if (decodedOutput.isMember("arguments")) {
-          Json::StreamWriterBuilder writer;
-          writer["indentation"] = "";
-          argumentsStr = Json::writeString(writer, decodedOutput["arguments"]);
-        }
+      const bool parsed = reader->parse(choice.text.data(),
+                                        choice.text.data() + choice.text.size(),
+                                        &decodedOutput, &parseErrors);
+      if (parsed && decodedOutput.isMember("arguments")) {
+        argumentsStr = decodedOutput["arguments"].toStyledString();
       }
 
       Json::Value toolCallJson;
