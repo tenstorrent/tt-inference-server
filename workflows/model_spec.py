@@ -1358,6 +1358,20 @@ llm_templates = [
                     "fabric_reliability_mode": "RELAXED_INIT",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_4X,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "trace_region_size": 61341696,
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
