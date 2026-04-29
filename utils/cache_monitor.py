@@ -665,7 +665,7 @@ class CacheMonitor:
         if cache_status is None:
             cache_status = self.get_cache_generation_status()
 
-        if cache_status.is_generating or cache_status.is_first_run:
+        if cache_status.is_generating or cache_status.is_first_run or cache_status.has_existing_cache:
             return self.get_tensor_cache_timeout()
 
         return float(default_timeout)
