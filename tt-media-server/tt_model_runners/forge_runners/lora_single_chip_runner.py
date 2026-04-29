@@ -3,12 +3,12 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
-import asyncio
 from typing import List
 
 import torch
 import torch_xla
 import torch_xla.runtime as xr
+from config.constants import DatasetLoaders
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionOutput, CompletionResult
 from peft import PeftModel
@@ -16,8 +16,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
-from utils.decorators import log_execution_time
+from utils.dataset_loaders.alpaca import alpaca_utils
 from utils.dataset_loaders.sst2 import sst2_utils
+from utils.decorators import log_execution_time
 
 
 class LoraSingleChipRunner(BaseDeviceRunner):
@@ -42,7 +43,6 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
         if self.settings.lora_adapter:
-            # await asyncio.to_thread(self._preload_adapter_and_compile)
             self._preload_adapter_and_compile()
 
     def _preload_adapter_and_compile(self):
@@ -86,8 +86,21 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
-        # hardcoded for sst2 dataset for now
-        prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
+
+        # wrap prompt in dataset template if applicable
+        dataset_name = (
+            self._active_adapter.dataset_loader if self._active_adapter else None
+        )
+        if dataset_name == DatasetLoaders.SST2.value:
+            self.logger.info(f"Using SST2 template for prompt")
+            prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
+        elif dataset_name == DatasetLoaders.ALPACA.value:
+            self.logger.info(f"Using Alpaca template for prompt")
+            prompt = alpaca_utils.PROMPT_TEMPLATE_NO_INPUT.substitute(
+                instruction=prompt
+            )
+        else:
+            self.logger.info(f"Using no template for prompt")
 
         text = "".join(self._generate(prompt, request.max_tokens or 16))
         return [
@@ -99,7 +112,9 @@ class LoraSingleChipRunner(BaseDeviceRunner):
 
     async def _run_async(self, requests):
         async def _stream():
-            results = await asyncio.to_thread(self.run, requests)
+            # Run on the worker thread (same as warmup and non-streaming run). Avoid
+            # asyncio.to_thread so XLA/TT compile cache matches across requests.
+            results = self.run(requests)
             final = results[0]
             yield CompletionOutput(
                 type="streaming_chunk", data=CompletionResult(text=final["data"].text)
