@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping
 
 LATENCY_METRICS = ("ttft", "tpot", "itl", "e2el")
 LATENCY_STATS = ("mean", "median", "p99", "std")

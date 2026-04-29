@@ -130,13 +130,17 @@ def _run_header(
         "guidellm": md.get("guidellm_version", ""),
         "python": md.get("python_version", ""),
         "platform": md.get("platform", ""),
-        "wall_time_s": _r(benchmark.get("end_time", 0) - benchmark.get("start_time", 0), 3),
+        "wall_time_s": _r(
+            benchmark.get("end_time", 0) - benchmark.get("start_time", 0), 3
+        ),
         "warmup_s": benchmark.get("warmup_duration", 0),
         "cooldown_s": benchmark.get("cooldown_duration", 0),
     }
 
 
-def _request_totals(metrics: Mapping[str, Any], scheduler: Mapping[str, Any]) -> Dict[str, Any]:
+def _request_totals(
+    metrics: Mapping[str, Any], scheduler: Mapping[str, Any]
+) -> Dict[str, Any]:
     rt = metrics.get("request_totals", {}) or {}
     total = rt.get("total", 0) or 0
     successful = rt.get("successful", 0) or 0
@@ -241,25 +245,30 @@ def _tail_ratios(metrics: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _token_sanity(metrics: Mapping[str, Any], requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+def _token_sanity(
+    metrics: Mapping[str, Any], requests: Sequence[Mapping[str, Any]]
+) -> Dict[str, Any]:
     sum_prompt = sum(int(r.get("prompt_tokens", 0)) for r in requests)
     sum_output = sum(int(r.get("output_tokens", 0)) for r in requests)
-    agg_prompt = ((metrics.get("prompt_token_count") or {}).get("successful") or {}).get("total_sum", 0)
-    agg_output = ((metrics.get("output_token_count") or {}).get("successful") or {}).get("total_sum", 0)
+    agg_prompt = (
+        (metrics.get("prompt_token_count") or {}).get("successful") or {}
+    ).get("total_sum", 0)
+    agg_output = (
+        (metrics.get("output_token_count") or {}).get("successful") or {}
+    ).get("total_sum", 0)
     all_match = all(
-        r.get("prompt_tokens", 0) + r.get("output_tokens", 0) == r.get("total_tokens", 0)
+        r.get("prompt_tokens", 0) + r.get("output_tokens", 0)
+        == r.get("total_tokens", 0)
         for r in requests
     )
     return {
         "sum_prompt_tokens_per_request": sum_prompt,
         "aggregate_prompt_token_count": (
-            f"{agg_prompt}    "
-            + ("MATCH" if sum_prompt == agg_prompt else "MISMATCH")
+            f"{agg_prompt}    " + ("MATCH" if sum_prompt == agg_prompt else "MISMATCH")
         ),
         "sum_output_tokens_per_request": sum_output,
         "aggregate_output_token_count": (
-            f"{agg_output}    "
-            + ("MATCH" if sum_output == agg_output else "MISMATCH")
+            f"{agg_output}    " + ("MATCH" if sum_output == agg_output else "MISMATCH")
         ),
         "all_prompt_plus_output_eq_total": all_match,
     }
@@ -268,7 +277,10 @@ def _token_sanity(metrics: Mapping[str, Any], requests: Sequence[Mapping[str, An
 def _per_turn(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     sorted_reqs = sorted(
         requests,
-        key=lambda r: (r["info"].get("conversation_id", ""), r["info"].get("turn_index", 0)),
+        key=lambda r: (
+            r["info"].get("conversation_id", ""),
+            r["info"].get("turn_index", 0),
+        ),
     )
     rows: List[Dict[str, Any]] = []
     for r in sorted_reqs:
@@ -288,14 +300,24 @@ def _per_turn(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _cold_vs_warm(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    cold = [r["time_to_first_token_ms"] for r in requests if r["info"].get("turn_index") == 0]
-    warm = [r["time_to_first_token_ms"] for r in requests if r["info"].get("turn_index", 0) > 0]
+    cold = [
+        r["time_to_first_token_ms"]
+        for r in requests
+        if r["info"].get("turn_index") == 0
+    ]
+    warm = [
+        r["time_to_first_token_ms"]
+        for r in requests
+        if r["info"].get("turn_index", 0) > 0
+    ]
     cold_mean = statistics.mean(cold) if cold else 0.0
     warm_mean = statistics.mean(warm) if warm else 0.0
     warm_stdev = statistics.stdev(warm) if len(warm) > 1 else 0.0
     delta = cold_mean - warm_mean
     speedup = (cold_mean / warm_mean) if warm_mean else 0.0
-    cold_ptok = next((r["prompt_tokens"] for r in requests if r["info"].get("turn_index") == 0), 0)
+    cold_ptok = next(
+        (r["prompt_tokens"] for r in requests if r["info"].get("turn_index") == 0), 0
+    )
     warm_ptok = next(
         (r["prompt_tokens"] for r in requests if r["info"].get("turn_index", 0) > 0), 0
     )
@@ -315,7 +337,10 @@ def _cold_vs_warm(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 def _ttft_vs_context(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     sorted_reqs = sorted(
         requests,
-        key=lambda r: (r["info"].get("conversation_id", ""), r["info"].get("turn_index", 0)),
+        key=lambda r: (
+            r["info"].get("conversation_id", ""),
+            r["info"].get("turn_index", 0),
+        ),
     )
     xs: List[float] = []
     ys: List[float] = []
@@ -337,8 +362,16 @@ def _ttft_vs_context(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 
 
 def _stability(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    itl = [float(r["inter_token_latency_ms"]) for r in requests if "inter_token_latency_ms" in r]
-    tpot = [float(r["time_per_output_token_ms"]) for r in requests if "time_per_output_token_ms" in r]
+    itl = [
+        float(r["inter_token_latency_ms"])
+        for r in requests
+        if "inter_token_latency_ms" in r
+    ]
+    tpot = [
+        float(r["time_per_output_token_ms"])
+        for r in requests
+        if "time_per_output_token_ms" in r
+    ]
     return {
         "ITL_mean_ms": _r(statistics.mean(itl), 6) if itl else None,
         "ITL_stdev_ms": _r(statistics.stdev(itl), 6) if len(itl) > 1 else 0.0,
@@ -402,7 +435,9 @@ def _server_vs_harness(
     requests: Sequence[Mapping[str, Any]], scheduler: Mapping[str, Any]
 ) -> Dict[str, Any]:
     sum_lat = sum(float(r.get("request_latency", 0)) for r in requests)
-    active = scheduler.get("end_requests_time", 0) - scheduler.get("start_requests_time", 0)
+    active = scheduler.get("end_requests_time", 0) - scheduler.get(
+        "start_requests_time", 0
+    )
     server_frac = (sum_lat / active) if active else 0.0
     return {
         "sum_request_latency_s": _r(sum_lat, 3),
@@ -418,12 +453,12 @@ def _key_takeaways(metrics: Mapping[str, Any]) -> Dict[str, Any]:
             "percentiles", {}
         ).get("p50", 0) or 0
 
-    out_tps_mean = ((metrics.get("output_tokens_per_second") or {}).get("successful") or {}).get(
-        "mean", 0
-    ) or 0
-    concurrency = ((metrics.get("request_concurrency") or {}).get("successful") or {}).get(
-        "mean", 0
-    ) or 0
+    out_tps_mean = (
+        (metrics.get("output_tokens_per_second") or {}).get("successful") or {}
+    ).get("mean", 0) or 0
+    concurrency = (
+        (metrics.get("request_concurrency") or {}).get("successful") or {}
+    ).get("mean", 0) or 0
     return {
         "TTFT_median_ms": _r(_med("time_to_first_token_ms"), 2),
         "ITL_median_ms": _r(_med("inter_token_latency_ms"), 2),
@@ -465,7 +500,9 @@ def _top_outliers(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]
 def _errors_summary(benchmark: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "errored": len((benchmark.get("requests") or {}).get("errored", []) or []),
-        "incomplete": len((benchmark.get("requests") or {}).get("incomplete", []) or []),
+        "incomplete": len(
+            (benchmark.get("requests") or {}).get("incomplete", []) or []
+        ),
     }
 
 
@@ -475,18 +512,22 @@ def _time_accounting(
     metrics: Mapping[str, Any],
 ) -> Dict[str, Any]:
     wall = benchmark.get("end_time", 0) - benchmark.get("start_time", 0)
-    active = scheduler.get("end_requests_time", 0) - scheduler.get("start_requests_time", 0)
+    active = scheduler.get("end_requests_time", 0) - scheduler.get(
+        "start_requests_time", 0
+    )
     warmup = benchmark.get("warmup_duration", 0) or 0
     cooldown = benchmark.get("cooldown_duration", 0) or 0
     idle = wall - active - warmup - cooldown
     active_frac = (100 * active / wall) if wall else 0.0
-    avg_concurrency = ((metrics.get("request_concurrency") or {}).get("successful") or {}).get(
+    avg_concurrency = (
+        (metrics.get("request_concurrency") or {}).get("successful") or {}
+    ).get("mean", 0)
+    rps_mean = ((metrics.get("requests_per_second") or {}).get("successful") or {}).get(
         "mean", 0
     )
-    rps_mean = ((metrics.get("requests_per_second") or {}).get("successful") or {}).get("mean", 0)
-    out_tps_mean = ((metrics.get("output_tokens_per_second") or {}).get("successful") or {}).get(
-        "mean", 0
-    )
+    out_tps_mean = (
+        (metrics.get("output_tokens_per_second") or {}).get("successful") or {}
+    ).get("mean", 0)
     return {
         "wall_s": _r(wall, 3),
         "active_s": _r(active, 3),
@@ -503,11 +544,14 @@ def _time_accounting(
 def _shape_verification(
     config: Mapping[str, Any], requests: Sequence[Mapping[str, Any]]
 ) -> Dict[str, Any]:
-    advertised = _strip_outer_brackets(str((config.get("requests") or {}).get("data", "")))
+    advertised = _strip_outer_brackets(
+        str((config.get("requests") or {}).get("data", ""))
+    )
     ptoks = [int(r.get("prompt_tokens", 0)) for r in requests]
     otoks = [int(r.get("output_tokens", 0)) for r in requests]
     convo_turns = {
-        (r["info"].get("conversation_id", ""), r["info"].get("turn_index", 0)) for r in requests
+        (r["info"].get("conversation_id", ""), r["info"].get("turn_index", 0))
+        for r in requests
     }
     convos = {r["info"].get("conversation_id", "") for r in requests}
     max_turn = max((t for _, t in convo_turns), default=0)
@@ -550,12 +594,24 @@ def _slo_checks(metrics: Mapping[str, Any]) -> List[Dict[str, Any]]:
         ("TTFT p99  <= 400 ms", f"{ttft_p99:.2f} ms", ttft_p99 <= SLO["ttft_p99_ms"]),
         ("ITL  p95  <=   5 ms", f"{itl_p95:.3f} ms", itl_p95 <= SLO["itl_p95_ms"]),
         ("TPOT p95  <=   6 ms", f"{tpot_p95:.3f} ms", tpot_p95 <= SLO["tpot_p95_ms"]),
-        ("error_rate <= 1%", f"{100 * error_rate:.2f}%", error_rate <= SLO["error_rate"]),
-        ("out_tok/s >= 200", f"{out_tps_mean:.2f}", out_tps_mean >= SLO["out_tps_mean"]),
+        (
+            "error_rate <= 1%",
+            f"{100 * error_rate:.2f}%",
+            error_rate <= SLO["error_rate"],
+        ),
+        (
+            "out_tok/s >= 200",
+            f"{out_tps_mean:.2f}",
+            out_tps_mean >= SLO["out_tps_mean"],
+        ),
     ]
 
     rows = [
-        {"slo_target": label, "observed": observed, "result": "PASS" if passed else "FAIL"}
+        {
+            "slo_target": label,
+            "observed": observed,
+            "result": "PASS" if passed else "FAIL",
+        }
         for label, observed, passed in checks
     ]
     rows.append(
@@ -568,7 +624,9 @@ def _slo_checks(metrics: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _linear_regression(xs: Sequence[float], ys: Sequence[float]) -> Tuple[float, float, float]:
+def _linear_regression(
+    xs: Sequence[float], ys: Sequence[float]
+) -> Tuple[float, float, float]:
     mean_x = statistics.mean(xs)
     mean_y = statistics.mean(ys)
     num = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
@@ -615,6 +673,8 @@ def _strip_outer_brackets(text: str) -> str:
     s = text.strip()
     if s.startswith("[") and s.endswith("]"):
         s = s[1:-1].strip()
-    if (s.startswith("'") and s.endswith("'")) or (s.startswith('"') and s.endswith('"')):
+    if (s.startswith("'") and s.endswith("'")) or (
+        s.startswith('"') and s.endswith('"')
+    ):
         s = s[1:-1]
     return s

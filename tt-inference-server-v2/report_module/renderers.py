@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
