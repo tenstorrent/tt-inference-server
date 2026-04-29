@@ -114,7 +114,6 @@ Additionally, `git add/commit/push` only untracked/modified docs files in `docs/
 
 ## Generate docker images as release artifacts
 
-Images should be uploaded to the `https://github.com/tenstorrent/tt-inference-server/pkgs/container/` 
 The next step is to copy docker images as release artifacts.
 Depending on the model engine they will end up in one the following repositories
 
@@ -137,7 +136,7 @@ Start by promoting Models CI images if existing for manual models (e.g. if ad ho
 ```bash
 crane copy <src> <dst>
 # e.g.
-# crane copy https://ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f27288d6da50c0ac7fe8afce3c7e6db3b5f27f-91dddb0-52470823821 https://ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f2728-91dddb0
+# crane copy ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f27288d6da50c0ac7fe8afce3c7e6db3b5f27f-91dddb0-52470823821 ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f2728-91dddb0
 ```
 
 ## Step 2: verification through the list model images
