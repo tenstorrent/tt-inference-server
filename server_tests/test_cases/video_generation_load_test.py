@@ -31,7 +31,7 @@ class VideoGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
         logger.info(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         video_generation_target_time = self.targets.get(
             "video_generation_target_time", 480
         )
@@ -43,13 +43,15 @@ class VideoGenerationLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_video_generation(batch_size=devices)
+        ) = await self.test_concurrent_video_generation(
+            batch_size=num_concurrent_requests
+        )
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": video_generation_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": requests_duration <= video_generation_target_time,
         }
 
