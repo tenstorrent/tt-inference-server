@@ -14541,7 +14541,7 @@
             "model_name": "mochi-1-preview",
             "inference_engine": "media",
             "device_type": "P150X4",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "P150X4",
               "max_concurrency": 1,
@@ -14624,10 +14624,10 @@
             "min_ram_gb": 32,
             "model_type": "VIDEO",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240",
+            "version": "0.1.1",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.1.1-079a2c2",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 30000000
             },
@@ -14637,6 +14637,7 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
