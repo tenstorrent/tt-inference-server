@@ -88,6 +88,9 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<tool_calls::ToolChoice> tool_choice;
   bool parallel_tool_calls = true;
 
+  // When false, reasoning models skip chain-of-thought (e.g. DeepSeek-R1).
+  bool enable_reasoning = true;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
@@ -208,6 +211,10 @@ struct ChatCompletionRequest : BaseRequest {
       req.parallel_tool_calls =
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
+    if (json.isMember("enable_reasoning") && !json["enable_reasoning"].isNull())
+      req.enable_reasoning =
+          getBool(json["enable_reasoning"], "enable_reasoning");
+
     validateToolFields(req);
     validateToolMessages(req);
     return req;
@@ -233,7 +240,8 @@ struct ChatCompletionRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size();
+        << " stop_count=" << stop.size()
+        << " enable_reasoning=" << enable_reasoning;
     return out.str();
   }
 
@@ -244,7 +252,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.model = model;
     out.messages = messages;
     out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
-        messages, true, tools);
+        messages, true, tools, enable_reasoning);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
