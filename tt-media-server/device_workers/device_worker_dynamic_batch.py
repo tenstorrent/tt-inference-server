@@ -3,6 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import os
+import threading
+import time
 from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL
@@ -36,6 +39,25 @@ def device_worker(
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    # Initialization heartbeat — vLLM's engine init (compile + KV cache +
+    # warmup) can run for many minutes with no log output. A 60s daemon-thread
+    # heartbeat reassures the operator that the process isn't hung. Stops
+    # once initialize_device_worker returns.
+    _init_done = threading.Event()
+    _init_start_ts = time.time()
+    _init_model = os.getenv("MODEL")
+
+    def _heartbeat():
+        while not _init_done.wait(timeout=60.0):
+            elapsed = time.time() - _init_start_ts
+            model_part = f" model={_init_model}" if _init_model else ""
+            logger.info(
+                f"Worker {worker_id} still initializing...{model_part} "
+                f"({int(elapsed)}s elapsed)"
+            )
+
+    threading.Thread(target=_heartbeat, daemon=True).start()
+
     device_runner: BaseDeviceRunner = None
     try:
         device_runner, loop = initialize_device_worker(worker_id, logger)
@@ -44,6 +66,8 @@ def device_worker(
     except Exception as e:
         error_queue.put((worker_id, -1, str(e)))
         return
+    finally:
+        _init_done.set()
 
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
     # Signal that this worker is ready after warmup
