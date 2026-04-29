@@ -141,6 +141,94 @@ def test_build_eval_command_accepts_full_completions_base_url(monkeypatch):
     )
 
 
+def test_build_eval_command_uses_vllm_model_override_and_hf_tokenizer(monkeypatch):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("VLLM_MODEL", "console/deployed-model")
+    monkeypatch.setenv("BASE_URL", "https://console.tenstorrent.com")
+    monkeypatch.delenv("DEPLOY_URL", raising=False)
+
+    task = EvalTask(
+        task_name="first",
+        use_chat_api=True,
+        model_kwargs={
+            "model": "test/repo",
+            "base_url": "http://127.0.0.1:8000/v1/completions",
+            "tokenizer_backend": "huggingface",
+        },
+    )
+    model_spec = SimpleNamespace(hf_model_repo="test/repo", model_id="test-model")
+    runtime_config = SimpleNamespace(limit_samples_mode=None)
+
+    cmd = run_evals.build_eval_command(
+        task=task,
+        model_spec=model_spec,
+        device="n150",
+        output_path="/tmp/evals",
+        service_port="8000",
+        runtime_config=runtime_config,
+    )
+
+    model_args = cmd[cmd.index("--model_args") + 1]
+    assert "model=console/deployed-model," in model_args
+    assert "tokenizer=test/repo," in model_args
+    assert "base_url=https://console.tenstorrent.com/v1/chat/completions" in model_args
+    assert "model=test/repo" not in model_args
+
+
+def test_build_eval_command_translates_external_server_max_gen_toks(monkeypatch):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("BASE_URL", "https://console.tenstorrent.com")
+    monkeypatch.delenv("DEPLOY_URL", raising=False)
+
+    task = EvalTask(
+        task_name="first",
+        use_chat_api=True,
+        gen_kwargs={
+            "stream": "false",
+            "max_gen_toks": "32768",
+        },
+    )
+    model_spec = SimpleNamespace(
+        hf_model_repo="test/repo",
+        model_id="test-model",
+    )
+    runtime_config = SimpleNamespace(
+        limit_samples_mode=None,
+        docker_server=False,
+        local_server=False,
+    )
+
+    cmd = run_evals.build_eval_command(
+        task=task,
+        model_spec=model_spec,
+        device="n150",
+        output_path="/tmp/evals",
+        service_port="8000",
+        runtime_config=runtime_config,
+    )
+
+    gen_kwargs = cmd[cmd.index("--gen_kwargs") + 1]
+    assert "max_tokens=32768" in gen_kwargs
+    assert "max_gen_toks" not in gen_kwargs
+
+
+def test_is_external_server_workflow_detects_client_side_runs(monkeypatch):
+    run_evals = _import_run_evals(monkeypatch)
+
+    assert (
+        run_evals._is_external_server_workflow(
+            SimpleNamespace(docker_server=False, local_server=False)
+        )
+        is True
+    )
+    assert (
+        run_evals._is_external_server_workflow(
+            SimpleNamespace(docker_server=True, local_server=False)
+        )
+        is False
+    )
+
+
 def test_configure_openai_api_key_preserves_existing_api_key(monkeypatch):
     run_evals = _import_run_evals(monkeypatch)
     monkeypatch.setenv("API_KEY", "real-api-key")
@@ -150,7 +238,7 @@ def test_configure_openai_api_key_preserves_existing_api_key(monkeypatch):
 
     resolved = run_evals._configure_openai_api_key(
         args=args,
-        model_type=run_evals.ModelType.TEXT,
+        model_type=run_evals.ModelType.LLM,
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
     )
 
@@ -167,7 +255,7 @@ def test_configure_openai_api_key_uses_api_key_for_llm_workflows(monkeypatch):
 
     resolved = run_evals._configure_openai_api_key(
         args=args,
-        model_type=run_evals.ModelType.TEXT,
+        model_type=run_evals.ModelType.LLM,
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
     )
 
@@ -175,16 +263,35 @@ def test_configure_openai_api_key_uses_api_key_for_llm_workflows(monkeypatch):
     assert run_evals.os.environ["OPENAI_API_KEY"] == "llm-api-key"
 
 
+def test_configure_openai_api_key_uses_vllm_api_key_for_llm_workflows(monkeypatch):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("VLLM_API_KEY", "vllm-api-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+
+    args = SimpleNamespace(jwt_secret="")
+
+    resolved = run_evals._configure_openai_api_key(
+        args=args,
+        model_type=run_evals.ModelType.LLM,
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+    )
+
+    assert resolved == "vllm-api-key"
+    assert run_evals.os.environ["OPENAI_API_KEY"] == "vllm-api-key"
+
+
 def test_configure_openai_api_key_uses_default_only_when_unset(monkeypatch):
     run_evals = _import_run_evals(monkeypatch)
     monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     args = SimpleNamespace(jwt_secret="")
 
     resolved = run_evals._configure_openai_api_key(
         args=args,
-        model_type=run_evals.ModelType.TEXT,
+        model_type=run_evals.ModelType.LLM,
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
     )
 

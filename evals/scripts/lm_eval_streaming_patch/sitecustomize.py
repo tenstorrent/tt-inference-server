@@ -3,10 +3,10 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Patch lm_eval SSE parsing for OpenAI chat-completions streaming.
+"""Patch lm_eval compatibility issues for external OpenAI-compatible evals.
 
-This module is loaded through PYTHONPATH only when eval streaming is requested.
-It avoids editing the installed lm_eval package in-place.
+This module is loaded through PYTHONPATH by the external eval helper to avoid
+editing the installed lm_eval package in-place.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import copy
+import multiprocessing
 from typing import Dict
 
 
@@ -207,9 +208,74 @@ def _as_generation_response(
     return {"choices": choices}
 
 
+def _filter_livecodebench_sample(self, sample: dict) -> dict:
+    """Keep LiveCodeBench sample logs useful without dumping every test field.
+
+    Some lm_eval builds call this hook but do not define it, causing
+    ``samples_livecodebench_*.jsonl`` to be created empty. The prompt, response,
+    metrics, and core problem statement are enough for smoke/debug workflows.
+    """
+
+    doc = sample.get("doc")
+    if isinstance(doc, dict):
+        keep_doc_keys = [
+            "question_id",
+            "question_title",
+            "question_content",
+            "starter_code",
+            "difficulty",
+            "platform",
+            "contest_date",
+        ]
+        sample = dict(sample)
+        sample["doc"] = {key: doc[key] for key in keep_doc_keys if key in doc}
+    return sample
+
+
+def _codegen_check_correctness_spawn_safe(sample, generation, timeout, debug=False):
+    """LiveCodeBench scorer fix for platforms where multiprocessing uses spawn.
+
+    The installed task defines its process target as a nested function, which is
+    not pickleable under macOS's default ``spawn`` multiprocessing mode. The
+    same module already provides an equivalent top-level helper, so use that.
+    """
+
+    try:
+        from lm_eval.tasks.livecodebench import utils as livecodebench_utils
+    except ImportError:
+        from . import utils as livecodebench_utils  # type: ignore
+
+    manager = multiprocessing.Manager()
+    result = manager.list()
+    metadata_list = manager.list()
+    process = multiprocessing.Process(
+        target=livecodebench_utils._temp_run_helper,
+        args=(sample, generation, debug, result, metadata_list, timeout),
+    )
+    process.start()
+
+    in_outs = json.loads(sample["input_output"])
+    global_timeout = (timeout + 1) * len(in_outs["inputs"])
+    if debug:
+        LOGGER.info("LiveCodeBench global timeout = %s", global_timeout)
+    process.join(timeout=global_timeout)
+    if process.is_alive():
+        process.kill()
+
+    if not result:
+        return [-1 for _ in range(len(in_outs["inputs"]))], {
+            "error_code": -1,
+            "error_message": "No result returned before timeout",
+        }
+
+    metadata = metadata_list[0] if metadata_list else {}
+    return result[0], metadata
+
+
 def _patch_lm_eval() -> None:
     try:
         from lm_eval.models.api_models import TemplateAPI
+        from lm_eval.loggers.evaluation_tracker import EvaluationTracker
     except ModuleNotFoundError:
         # PYTHONPATH also reaches helper Python tools such as the redactor, which
         # may run outside the lm_eval venv. Only lm_eval processes need this.
@@ -225,6 +291,22 @@ def _patch_lm_eval() -> None:
     TemplateAPI.model_call = _model_call
     TemplateAPI._consume_sse_stream = _consume_sse_stream
     TemplateAPI._tt_chat_streaming_patch = True
+
+    if not hasattr(EvaluationTracker, "_filter_livecodebench_sample"):
+        EvaluationTracker._filter_livecodebench_sample = _filter_livecodebench_sample
+
+    try:
+        from lm_eval.tasks.livecodebench import utils as livecodebench_utils
+    except ModuleNotFoundError:
+        return
+
+    if not getattr(
+        livecodebench_utils.codegen_check_correctness,
+        "_tt_spawn_safe_patch",
+        False,
+    ):
+        _codegen_check_correctness_spawn_safe._tt_spawn_safe_patch = True
+        livecodebench_utils.codegen_check_correctness = _codegen_check_correctness_spawn_safe
 
 
 _patch_lm_eval()
