@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
+import asyncio
 from typing import List
 
 import torch
@@ -19,6 +20,7 @@ from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.dataset_loaders.alpaca import alpaca_utils
 from utils.dataset_loaders.sst2 import sst2_utils
 from utils.decorators import log_execution_time
+from utils.dataset_loaders.sst2 import sst2_utils
 
 
 class LoraSingleChipRunner(BaseDeviceRunner):
@@ -82,6 +84,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
+        # hardcoded for sst2 dataset for now
+        prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
 
         # wrap prompt in dataset template if applicable
         dataset_name = (
@@ -118,6 +122,17 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
         return _stream()
+
+    async def _run_async(self, requests):
+        return self._stream(requests)
+
+    async def _stream(self, requests):
+        results = await asyncio.to_thread(self.run, requests)
+        final = results[0]
+        yield CompletionOutput(
+            type="streaming_chunk", data=CompletionResult(text=final["data"].text)
+        )
+        yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
     def _validate_request(self, request: CompletionRequest):
         if isinstance(request.prompt, str) and not request.prompt.strip():

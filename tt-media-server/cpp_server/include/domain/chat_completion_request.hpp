@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -86,6 +87,9 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<std::vector<tool_calls::Tool>> tools;
   std::optional<tool_calls::ToolChoice> tool_choice;
   bool parallel_tool_calls = true;
+
+  // When false, reasoning models skip chain-of-thought (e.g. DeepSeek-R1).
+  bool enable_reasoning = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -191,6 +195,10 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+    }
+
     if (json.isMember("tools") && json["tools"].isArray()) {
       std::vector<tool_calls::Tool> toolList;
       for (const auto& tool : json["tools"]) {
@@ -198,27 +206,17 @@ struct ChatCompletionRequest : BaseRequest {
       }
       req.tools = toolList;
     }
-
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
-      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
-    }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
       req.parallel_tool_calls =
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
-    if (req.tool_choice.has_value()) {
-      if (!req.tools.has_value() || req.tools->empty()) {
-        throw std::invalid_argument(
-            "tool_choice is provided but no tools are specified");
-      }
-      const auto& toolChoice = req.tool_choice.value();
-      if (toolChoice.type != "auto") {
-        throw std::invalid_argument(
-            "tool_choice must be 'auto', other tool_choice values are not yet "
-            "supported");
-      }
-    }
+    if (json.isMember("enable_reasoning") && !json["enable_reasoning"].isNull())
+      req.enable_reasoning =
+          getBool(json["enable_reasoning"], "enable_reasoning");
+
+    validateToolFields(req);
+    validateToolMessages(req);
     return req;
   }
 
@@ -242,7 +240,8 @@ struct ChatCompletionRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size();
+        << " stop_count=" << stop.size()
+        << " enable_reasoning=" << enable_reasoning;
     return out.str();
   }
 
@@ -253,7 +252,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.model = model;
     out.messages = messages;
     out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
-        messages, true, tools);
+        messages, true, tools, enable_reasoning);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
@@ -276,6 +275,8 @@ struct ChatCompletionRequest : BaseRequest {
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
     out.parallel_tool_calls = parallel_tool_calls;
+    out.tools = tools;
+    out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;
@@ -288,6 +289,70 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.sessionId = sessionId;
     return out;
+  }
+
+ private:
+  static void validateToolFields(const ChatCompletionRequest& req) {
+    if (!req.tool_choice.has_value()) return;
+
+    const auto& toolChoice = req.tool_choice.value();
+    const auto& type = toolChoice.type;
+    const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
+
+    if (type != "none" && toolsMissing) {
+      throw std::invalid_argument("tool_choice='" + type +
+                                  "' requires non-empty 'tools'");
+    }
+  }
+
+  static void validateToolMessages(const ChatCompletionRequest& req) {
+    if (req.messages.size() < 2) return;
+
+    // Find the last assistant message
+    size_t lastAssistantIdx = req.messages.size();
+    for (size_t i = req.messages.size(); i-- > 0;) {
+      if (req.messages[i].role == "assistant") {
+        lastAssistantIdx = i;
+        break;
+      }
+    }
+
+    if (lastAssistantIdx == req.messages.size()) return;
+
+    const auto& lastAssistant = req.messages[lastAssistantIdx];
+
+    if (!lastAssistant.tool_calls.has_value() ||
+        lastAssistant.tool_calls->empty()) {
+      return;
+    }
+
+    const std::string& expectedCallId = lastAssistant.tool_calls->at(0).id;
+
+    if (lastAssistantIdx + 1 >= req.messages.size()) {
+      throw std::invalid_argument(
+          "Expected message with role='tool' after assistant message with "
+          "tool_calls, but didn't get any new messages");
+    }
+
+    const auto& nextMessage = req.messages[lastAssistantIdx + 1];
+
+    if (nextMessage.role != "tool") {
+      throw std::invalid_argument(
+          "Expected message with role='tool' after assistant message with "
+          "tool_calls, but got role='" +
+          nextMessage.role + "'");
+    }
+
+    if (!nextMessage.tool_call_id.has_value()) {
+      throw std::invalid_argument(
+          "Message with role='tool' must include 'tool_call_id' field");
+    }
+
+    if (*nextMessage.tool_call_id != expectedCallId) {
+      throw std::invalid_argument("tool_call_id '" + *nextMessage.tool_call_id +
+                                  "' does not match expected call_id '" +
+                                  expectedCallId + "'");
+    }
   }
 };
 

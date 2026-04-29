@@ -73,6 +73,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_llama_70b",
         fromlist=["VLLMForgeLlama70BRunner"],
     ).VLLMForgeLlama70BRunner(wid),
+    ModelRunners.VLLMForge_GEMMA4_31B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_gemma4_31b",
+        fromlist=["VLLMForgeGemma4_31BRunner"],
+    ).VLLMForgeGemma4_31BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),
@@ -102,10 +106,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.lora_single_chip_runner",
         fromlist=["LoraSingleChipRunner"],
     ).LoraSingleChipRunner(wid),
-    ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.training_llama_lora_runner",
-        fromlist=["TrainingLlamaLoraRunner"],
-    ).TrainingLlamaLoraRunner(wid),
+    ModelRunners.TRAINING_LORA: lambda wid: __import__(
+        "tt_model_runners.forge_training_runners.training_lora_runner",
+        fromlist=["TrainingLoraRunner"],
+    ).TrainingLoraRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),
