@@ -543,6 +543,39 @@ def setup_benchmarks_aiperf(
     return setup_succeeded
 
 
+def setup_benchmarks_guidellm(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Setup for GuideLLM benchmarks (pip-based installation)."""
+    logger.info("running setup_benchmarks_guidellm() ...")
+
+    setup_succeeded = (
+        run_command(
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} 'torch==2.4.0+cpu' --index-url https://download.pytorch.org/whl/cpu",
+            logger=logger,
+        )
+        == 0
+    )
+    setup_succeeded = (
+        run_command(
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} guidellm",
+            logger=logger,
+        )
+        == 0
+        and setup_succeeded
+    )
+    setup_succeeded = (
+        run_command(
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests pyjwt datasets pillow imageio imageio-ffmpeg",
+            logger=logger,
+        )
+        == 0
+        and setup_succeeded
+    )
+    return setup_succeeded
+
+
 def setup_system_software_validation(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -658,6 +691,11 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         setup_function=setup_benchmarks_aiperf,
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
+        setup_function=setup_benchmarks_guidellm,
         python_version="3.11",
     ),
     VenvConfig(

@@ -11,6 +11,7 @@ from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
+    WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG,
     WORKFLOW_CONFIGS,
     WorkflowType,
     get_default_workflow_root_log_dir,
@@ -36,6 +37,8 @@ class WorkflowSetup:
         tools = getattr(self.runtime_config, "tools", "vllm")
         if _workflow_type == WorkflowType.BENCHMARKS and tools == "aiperf":
             self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
+        elif _workflow_type == WorkflowType.BENCHMARKS and tools == "guidellm":
+            self.workflow_config = WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG
         else:
             self.workflow_config = WORKFLOW_CONFIGS[_workflow_type]
 

@@ -8,7 +8,7 @@ See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#perfo
 
 ## Benchmarking Tools
 
-The tt-inference-server supports three benchmarking tools:
+The tt-inference-server supports four benchmarking tools:
 
 
 ### vLLM (default) - server-side measurements
@@ -26,7 +26,12 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
 ```
 
-**Key differences:** vLLM provides baseline metrics, GenAI-Perf validates against NVIDIA Triton standards, and AIPerf adds detailed latency percentiles for performance analysis.
+### GuideLLM - dataset-driven multi-turn and omni-modal benchmarking
+```
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools guidellm
+```
+
+**Key differences:** vLLM provides baseline metrics, GenAI-Perf validates against NVIDIA Triton standards, AIPerf adds detailed latency percentiles, and GuideLLM enables dataset-driven multi-turn/custom/omni-modal scenarios.
 
 For detailed comparison, TTFT measurement differences, and usage guide, see [Benchmarking Tools Guide](../docs/benchmarking_tools.md).
 
@@ -41,6 +46,10 @@ Purpose: Docker orchestration script for GenAI-Perf benchmarks using NVIDIA Trit
 ### `run_benchmarks_aiperf.py`
 
 Purpose: Main script for AIPerf benchmarks with detailed percentile metrics and warm-up logic.
+
+### `run_guidellm_benchmarks.py`
+
+Purpose: Main script for GuideLLM scenarios including multi-turn chat, custom datasets, and omni-modal workloads (text/image/video/audio).
 
 #### Workflow
 

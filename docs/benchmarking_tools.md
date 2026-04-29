@@ -4,13 +4,14 @@ Comprehensive guide to performance benchmarking tools integrated with tt-inferen
 
 ## Overview
 
-tt-inference-server supports three benchmarking tools for measuring LLM inference performance on Tenstorrent accelerators:
+tt-inference-server supports four benchmarking tools for measuring LLM inference performance on Tenstorrent accelerators:
 
 | Tool | Source | Installation | Best For |
 |------|--------|--------------|----------|
 | **vLLM** | vLLM project | Docker | Baseline reference |
 | **GenAI-Perf** | NVIDIA Triton SDK | Docker (~10GB) | Official Triton validation |
 | **AIPerf** | NVIDIA ai-dynamo | `pip install` | Detailed percentiles, VLM support |
+| **GuideLLM** | vLLM project | `pip install` | Multi-turn, custom datasets, omni-modal scenarios |
 
 ## Quick Start
 
@@ -25,6 +26,9 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker
 
 # AIPerf
 python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
+
+# GuideLLM
+python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
 ```
 
 ## Tool Comparison
