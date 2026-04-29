@@ -251,6 +251,38 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
 }
 
 TEST_F(DeepseekTokenizerTest,
+       ApplyChatTemplateReasoningDisabledInjectsThinkBlock) {
+  std::vector<ChatMessage> messages = {
+      {"user", "Hello"},
+  };
+
+  const std::string expected =
+      "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>"
+      "<think>\n</think>\n";
+
+  std::string actual =
+      tokenizer().applyChatTemplate(messages, true, std::nullopt, false);
+
+  EXPECT_EQ(actual, expected)
+      << "enable_reasoning=false should inject a closed <think> block after "
+         "the assistant tag.\n"
+      << "  Expected length: " << expected.size() << "\n"
+      << "  Actual length:   " << actual.size();
+}
+
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplateReasoningEnabledNoThinkBlock) {
+  std::vector<ChatMessage> messages = {
+      {"user", "Hello"},
+  };
+
+  std::string actual =
+      tokenizer().applyChatTemplate(messages, true, std::nullopt, true);
+
+  EXPECT_EQ(actual.find("<think>"), std::string::npos)
+      << "enable_reasoning=true should not inject a <think> block";
+}
+
+TEST_F(DeepseekTokenizerTest,
        ApplyChatTemplateNoGenerationPromptMatchesDeepSeekR10528Format) {
   // Same message list as used in HuggingFace docs for apply_chat_template.
   std::vector<ChatMessage> messages = {
