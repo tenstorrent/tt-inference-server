@@ -42,7 +42,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
-        
+
+        # Preload adapter and compile model if adapter is set
         if self.settings.lora_adapter:
             self.logger.info(
                 f"Preloading adapter from settings: {self.settings.lora_adapter}"
