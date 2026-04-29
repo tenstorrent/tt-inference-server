@@ -2668,8 +2668,8 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        version="0.10.0",
-        tt_metal_commit="555f240",
+        version="0.1.1",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
