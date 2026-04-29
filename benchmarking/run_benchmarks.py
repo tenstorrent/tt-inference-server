@@ -28,6 +28,7 @@ if project_root not in sys.path:
 
 from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
+    BenchmarkConfig,
     expand_concurrency_sweep_params,
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
@@ -50,10 +51,12 @@ from workflows.workflow_types import (
     ModelType,
 )
 
-STRUCTURED_OUTPUT_SCRIPT = (
-    Path(__file__).resolve().parent / "benchmark_serving_structured_output.py"
-)
 from workflows.workflow_venvs import VENV_CONFIGS
+
+# Filename of the structured-output benchmark script downloaded by
+# setup_benchmarks_vllm() into the BENCHMARKS_VLLM venv work_dir. Resolved
+# at run-time from venv_config.venv_path.
+STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +205,7 @@ def build_benchmark_command(
 
 def build_structured_output_command(
     venv_python,
+    structured_output_script,
     params,
     output_path,
     service_port,
@@ -213,7 +217,7 @@ def build_structured_output_command(
         if params.structured_output_ratio is None
         else f"so-{params.structured_output_ratio}"
     )
-    result_filename = (
+    result_filepath = (
         Path(output_path)
         / f"benchmark_structured_{model_spec.model_id}_{run_timestamp}"
         f"_dataset-{params.structured_dataset}_{ratio_tag}"
@@ -223,7 +227,7 @@ def build_structured_output_command(
     # fmt: off
     cmd = [
         str(venv_python),
-        str(STRUCTURED_OUTPUT_SCRIPT),
+        str(structured_output_script),
         "--backend", "vllm",
         "--host", "localhost",
         "--port", str(service_port),
@@ -236,14 +240,31 @@ def build_structured_output_command(
         "--percentile-metrics", "ttft,tpot,itl,e2el",
         "--save-results",
         "--result-dir", str(output_path),
-        "--result-filename", result_filename.name,
+        "--result-filename", result_filepath.name,
     ]
     if params.structured_output_ratio is None:
         cmd.append("--no-structured-output")
     else:
         cmd.extend(["--structured-output-ratio", str(params.structured_output_ratio)])
     # fmt: on
-    return cmd
+    return cmd, result_filepath
+
+
+def annotate_structured_output_result(result_filepath):
+    """Tag a structured-output result JSON in place so downstream readers can
+    distinguish it from regular `vllm bench serve` outputs."""
+    if not result_filepath.exists():
+        logger.warning("Structured-output result JSON not found: %s", result_filepath)
+        return
+    try:
+        with open(result_filepath) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not parse %s: %s", result_filepath, exc)
+        return
+    data["benchmark_kind"] = "structured_output"
+    with open(result_filepath, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 def main():
@@ -338,6 +359,20 @@ def main():
     if smoke_test_mode:
         benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
         logger.info("Smoke-test mode enabled; selected smoke-test benchmark config.")
+
+    if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
+        benchmark_config = BenchmarkConfig(
+            model_id=benchmark_config.model_id,
+            tasks=[
+                t
+                for t in benchmark_config.tasks
+                if t.task_type
+                == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+            ],
+        )
+        logger.info(
+            "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; running structured-output tasks only."
+        )
 
     concurrency_sweeps = args.concurrency_sweeps or runtime_config.concurrency_sweeps
     if smoke_test_mode and concurrency_sweeps:
@@ -467,13 +502,30 @@ def main():
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
+                structured_output_result_filepath = None
                 if is_structured_output_task:
-                    cmd = build_structured_output_command(
-                        venv_python=venv_config.venv_python,
-                        params=params,
-                        output_path=args.output_path,
-                        service_port=service_port,
-                        model_spec=model_spec,
+                    structured_output_script = (
+                        venv_config.venv_path
+                        / "work_dir"
+                        / STRUCTURED_OUTPUT_SCRIPT_NAME
+                    )
+                    if not structured_output_script.exists():
+                        logger.error(
+                            "⛔️ Structured-output benchmark script not found at "
+                            f"{structured_output_script}. Re-run with --reset-venvs "
+                            "or rerun setup_benchmarks_vllm to fetch it."
+                        )
+                        return_codes.append(1)
+                        continue
+                    cmd, structured_output_result_filepath = (
+                        build_structured_output_command(
+                            venv_python=venv_config.venv_python,
+                            structured_output_script=structured_output_script,
+                            params=params,
+                            output_path=args.output_path,
+                            service_port=service_port,
+                            model_spec=model_spec,
+                        )
                     )
                 else:
                     cmd = build_benchmark_command(
@@ -487,6 +539,8 @@ def main():
                     )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
+                if return_code == 0 and structured_output_result_filepath is not None:
+                    annotate_structured_output_result(structured_output_result_filepath)
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed benchmarks")
