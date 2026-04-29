@@ -26,9 +26,9 @@ constexpr int K_COMMA_TOKEN = 14;          // ','
 constexpr int K_CLOSE_BRACKET_TOKEN = 63;  // ']'
 constexpr int K_CLOSE_BRACE_TOKEN = 95;    // '}'
 
-// Spells "TT-Inference-Server" using single-char tokens (no space token exists).
-constexpr std::array<int, 19> K_MOCK_STRING_CHARS = {
-    54, 54, 15, 43, 80, 72, 71, 84, 71, 80, 69, 71, 15, 53, 71, 84, 88, 71, 84};
+// A small pool of distinct letter tokens used to vary mock string content per task.
+// T(54) I(43) S(53) R(84) V(88)
+constexpr std::array<int, 5> K_MOCK_STRING_CHARS = {54, 43, 53, 84, 88};
 
 class MockModelRunner : public IModelRunner {
  public:
@@ -81,35 +81,33 @@ class MockModelRunner : public IModelRunner {
       if (isBitmaskSet(*bitmask, K_LETTER_A_TOKEN)) {
         // If the previous token was not '"' (opening quote), we already emitted
         // one content char → close the string now.
-        if (seq->getLastToken() != static_cast<int64_t>(K_QUOTE_TOKEN)) {
-          if (isBitmaskSet(*bitmask, K_QUOTE_TOKEN)) return K_QUOTE_TOKEN;
-        }
+        if (seq->getLastToken() != static_cast<int64_t>(K_QUOTE_TOKEN))
+          return K_QUOTE_TOKEN;
         // Emit one task-varied char from the mock string.
         int charToken = K_MOCK_STRING_CHARS[seq->taskId % K_MOCK_STRING_CHARS.size()];
-        if (isBitmaskSet(*bitmask, charToken)) return static_cast<uint64_t>(charToken);
-        if (isBitmaskSet(*bitmask, K_QUOTE_TOKEN)) return K_QUOTE_TOKEN;
+        return isBitmaskSet(*bitmask, charToken) ? static_cast<uint64_t>(charToken)
+                                                 : K_QUOTE_TOKEN;
       }
 
       for (size_t w = 0; w < bitmask->size(); ++w) {
         auto word = static_cast<uint32_t>((*bitmask)[w]);
-        if (word != 0) {
-          auto firstBit = static_cast<uint64_t>(w * 32 + __builtin_ctz(word));
-          if (firstBit == K_COMMA_TOKEN &&
-              isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) {
-            return K_CLOSE_BRACKET_TOKEN;
-          }
-          const bool isDigit = (firstBit >= K_FIRST_DIGIT_TOKEN &&
-                                 firstBit < K_FIRST_DIGIT_TOKEN + K_NUM_DIGITS);
-          if (isDigit) {
-            if (isBitmaskSet(*bitmask, K_CLOSE_BRACE_TOKEN)) return K_CLOSE_BRACE_TOKEN;
-            if (isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) return K_CLOSE_BRACKET_TOKEN;
-          }
-          if (firstBit == K_MINUS_TOKEN) {
-            int digit = K_FIRST_DIGIT_TOKEN + static_cast<int>(seq->taskId % K_NUM_DIGITS);
-            if (isBitmaskSet(*bitmask, digit)) return static_cast<uint64_t>(digit);
-          }
-          return firstBit;
+        if (word == 0) continue;
+        const int candidateToken = static_cast<int>(w * 32 + __builtin_ctz(word));
+        if (candidateToken == K_COMMA_TOKEN &&
+            isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) {
+          return K_CLOSE_BRACKET_TOKEN;
         }
+        const bool isDigit = candidateToken >= K_FIRST_DIGIT_TOKEN &&
+                             candidateToken < K_FIRST_DIGIT_TOKEN + K_NUM_DIGITS;
+        if (isDigit) {
+          if (isBitmaskSet(*bitmask, K_CLOSE_BRACE_TOKEN)) return K_CLOSE_BRACE_TOKEN;
+          if (isBitmaskSet(*bitmask, K_CLOSE_BRACKET_TOKEN)) return K_CLOSE_BRACKET_TOKEN;
+        }
+        if (candidateToken == K_MINUS_TOKEN) {
+          int digit = K_FIRST_DIGIT_TOKEN + static_cast<int>(seq->taskId % K_NUM_DIGITS);
+          if (isBitmaskSet(*bitmask, digit)) return static_cast<uint64_t>(digit);
+        }
+        return static_cast<uint64_t>(candidateToken);
       }
       return defaultToken;
     }
