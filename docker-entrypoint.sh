@@ -65,6 +65,11 @@ set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
 # NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
 echo "Mounted volume permissions setup completed."
 
+# Ensure conversation log directory exists and is writable by app user
+CONVERSATION_LOG_DIR="${CONVERSATION_LOG_DIR:-/tmp/tt_conversation_logs}"
+mkdir -p "${CONVERSATION_LOG_DIR}"
+chown "${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME}" "${CONVERSATION_LOG_DIR}"
+
 # Execute server as CONTAINER_APP_USERNAME user
 # Usage: docker run <image> --model <hf_repo> --device <device_type>
 exec gosu "${CONTAINER_APP_USERNAME}" "$@"
