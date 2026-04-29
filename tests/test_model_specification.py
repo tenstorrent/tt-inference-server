@@ -14,6 +14,7 @@ from workflows.model_spec import (
     VERSION,
     DeviceModelSpec,
     ImplSpec,
+    KnownIssue,
     ModelSpec,
     ModelSpecTemplate,
     VersionRequirement,
@@ -22,10 +23,12 @@ from workflows.model_spec import (
     spec_templates,
     SystemRequirements,
 )
+from workflows.run_reports import enforce_acceptance_criteria, _is_check_failing
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     ModelStatusTypes,
+    ReportCheckTypes,
     VersionMode,
 )
 
@@ -102,6 +105,43 @@ class TestModelSpecTemplateSystem:
                 1800.0 if spec.device_type == DeviceTypes.N150 else 3600.0
             )
             assert spec.device_model_spec.tensor_cache_timeout == expected_timeout
+
+    def test_expand_to_specs_propagates_known_issues(self, sample_impl):
+        """Test that known_issues on DeviceModelSpec survive template expansion."""
+        known_issues = [
+            KnownIssue(
+                workflow_type="BENCHMARKS",
+                reason="GH#2600 - OOM on N150",
+                task_name="isl-128_osl-1024_con-32",
+            ),
+            KnownIssue(
+                workflow_type="EVALS",
+                reason="GH#2550 - eval harness crash",
+            ),
+        ]
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=8192,
+                    known_issues=known_issues,
+                ),
+            ],
+            weights=["test/model-7B"],
+        )
+        specs = template.expand_to_specs()
+        assert len(specs) == 1
+        expanded_issues = specs[0].device_model_spec.known_issues
+        assert len(expanded_issues) == 2
+        assert expanded_issues[0].workflow_type == "BENCHMARKS"
+        assert expanded_issues[0].task_name == "isl-128_osl-1024_con-32"
+        assert expanded_issues[1].workflow_type == "EVALS"
+        assert expanded_issues[1].task_name is None
 
     def test_template_defaults(self, sample_impl):
         """Test template creation with defaults."""
@@ -601,6 +641,314 @@ class TestModelSpecsStructure:
             # Should NOT have template attributes
             assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
+
+
+class TestRequiredTargetTiers:
+    """Tests for ModelStatusTypes.required_target_tiers property."""
+
+    def test_experimental_has_no_required_tiers(self):
+        assert ModelStatusTypes.EXPERIMENTAL.required_target_tiers == []
+
+    def test_functional_requires_functional(self):
+        assert ModelStatusTypes.FUNCTIONAL.required_target_tiers == ["functional"]
+
+    def test_complete_requires_functional_and_complete(self):
+        assert ModelStatusTypes.COMPLETE.required_target_tiers == [
+            "functional",
+            "complete",
+        ]
+
+    def test_top_perf_requires_all_tiers(self):
+        assert ModelStatusTypes.TOP_PERF.required_target_tiers == [
+            "functional",
+            "complete",
+            "target",
+        ]
+
+
+class TestEnforceAcceptanceCriteria:
+    """Tests for the enforce_acceptance_criteria function."""
+
+    @pytest.fixture
+    def passing_target_checks(self):
+        return {
+            "functional": {
+                "ttft_check": ReportCheckTypes.PASS,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+            "complete": {
+                "ttft_check": ReportCheckTypes.PASS,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+            "target": {
+                "ttft_check": ReportCheckTypes.PASS,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+        }
+
+    @pytest.fixture
+    def failing_target_checks(self):
+        return {
+            "functional": {
+                "ttft_check": ReportCheckTypes.PASS,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+            "complete": {
+                "ttft_check": ReportCheckTypes.FAIL,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+            "target": {
+                "ttft_check": ReportCheckTypes.FAIL,
+                "tput_check": ReportCheckTypes.FAIL,
+            },
+        }
+
+    def test_experimental_passes_even_when_all_fail(self, failing_target_checks):
+        result = enforce_acceptance_criteria(
+            failing_target_checks, ModelStatusTypes.EXPERIMENTAL
+        )
+        assert result["enforcement_result"] == "PASS"
+        assert result["enforced_tiers"] == []
+        assert result["failed_enforced_tiers"] == []
+        assert set(result["informational_tiers"]) == {
+            "functional",
+            "complete",
+            "target",
+        }
+
+    def test_functional_passes_when_functional_passes(self, failing_target_checks):
+        result = enforce_acceptance_criteria(
+            failing_target_checks, ModelStatusTypes.FUNCTIONAL
+        )
+        assert result["enforcement_result"] == "PASS"
+        assert result["enforced_tiers"] == ["functional"]
+        assert result["failed_enforced_tiers"] == []
+
+    def test_complete_fails_when_complete_fails(self, failing_target_checks):
+        result = enforce_acceptance_criteria(
+            failing_target_checks, ModelStatusTypes.COMPLETE
+        )
+        assert result["enforcement_result"] == "FAIL"
+        assert "complete" in result["failed_enforced_tiers"]
+
+    def test_top_perf_fails_when_any_tier_fails(self, failing_target_checks):
+        result = enforce_acceptance_criteria(
+            failing_target_checks, ModelStatusTypes.TOP_PERF
+        )
+        assert result["enforcement_result"] == "FAIL"
+        assert "complete" in result["failed_enforced_tiers"]
+        assert "target" in result["failed_enforced_tiers"]
+
+    def test_all_pass(self, passing_target_checks):
+        result = enforce_acceptance_criteria(
+            passing_target_checks, ModelStatusTypes.TOP_PERF
+        )
+        assert result["enforcement_result"] == "PASS"
+        assert result["failed_enforced_tiers"] == []
+
+    def test_handles_integer_check_values(self):
+        """Media model reports use raw integers (2=PASS, 3=FAIL)."""
+        target_checks = {
+            "functional": {"ttft_check": 2, "tput_check": 3},
+            "complete": {"ttft_check": 2, "tput_check": 2},
+            "target": {"ttft_check": 2, "tput_check": 2},
+        }
+        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
+        assert result["enforcement_result"] == "FAIL"
+        assert "functional" in result["failed_enforced_tiers"]
+
+    def test_na_checks_are_not_failures(self):
+        target_checks = {
+            "functional": {
+                "ttft_check": ReportCheckTypes.NA,
+                "tput_check": ReportCheckTypes.PASS,
+            },
+        }
+        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
+        assert result["enforcement_result"] == "PASS"
+
+    def test_model_status_is_included_in_result(self, passing_target_checks):
+        result = enforce_acceptance_criteria(
+            passing_target_checks, ModelStatusTypes.COMPLETE
+        )
+        assert result["model_status"] == "COMPLETE"
+
+
+class TestKnownIssue:
+    """Tests for KnownIssue and DeviceModelSpec skip logic."""
+
+    def test_known_issue_creation(self):
+        ki = KnownIssue(
+            workflow_type="BENCHMARKS",
+            reason="GH#2600 - OOM on T3K",
+            task_name="isl-128_osl-1024_con-32",
+        )
+        assert ki.workflow_type == "BENCHMARKS"
+        assert ki.reason == "GH#2600 - OOM on T3K"
+        assert ki.task_name == "isl-128_osl-1024_con-32"
+
+    def test_known_issue_defaults(self):
+        ki = KnownIssue(workflow_type="EVALS", reason="test reason")
+        assert ki.task_name is None
+
+    def test_device_model_spec_with_known_issues(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="BENCHMARKS",
+                    reason="whole workflow skip",
+                ),
+                KnownIssue(
+                    workflow_type="EVALS",
+                    reason="specific task skip",
+                    task_name="mmlu",
+                ),
+            ],
+        )
+        assert len(dms.known_issues) == 2
+
+    def test_should_skip_workflow(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="BENCHMARKS",
+                    reason="skip all benchmarks",
+                ),
+            ],
+        )
+        assert dms.should_skip_workflow("BENCHMARKS") is not None
+        assert dms.should_skip_workflow("EVALS") is None
+
+    def test_should_skip_task_whole_workflow(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="BENCHMARKS",
+                    reason="skip all benchmarks",
+                ),
+            ],
+        )
+        assert dms.should_skip_task("BENCHMARKS", "any_task") is not None
+
+    def test_should_skip_task_specific(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="EVALS",
+                    reason="mmlu broken",
+                    task_name="mmlu",
+                ),
+            ],
+        )
+        assert dms.should_skip_task("EVALS", "mmlu") is not None
+        assert dms.should_skip_task("EVALS", "hellaswag") is None
+        assert dms.should_skip_workflow("EVALS") is None
+
+    def test_should_skip_case_insensitive_workflow(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="benchmarks",
+                    reason="test",
+                ),
+            ],
+        )
+        assert dms.should_skip_workflow("BENCHMARKS") is not None
+
+    def test_no_known_issues_skips_nothing(self):
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+        )
+        assert dms.should_skip_workflow("BENCHMARKS") is None
+        assert dms.should_skip_task("EVALS", "mmlu") is None
+
+    def test_known_issue_json_roundtrip(self, tmp_path):
+        """Test KnownIssue survives JSON serialization/deserialization."""
+        impl = ImplSpec(
+            impl_id="test-impl",
+            impl_name="test-impl",
+            repo_url="https://github.com/test/repo",
+            code_path="models/test",
+        )
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type="BENCHMARKS",
+                    reason="GH#100 - test issue",
+                    task_name="specific_task",
+                ),
+                KnownIssue(
+                    workflow_type="EVALS",
+                    reason="GH#200 - another issue",
+                ),
+            ],
+        )
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=impl,
+            hf_model_repo="test/model-7B",
+            model_id="test_id",
+            model_name="model-7B",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=dms,
+        )
+
+        json_file = spec.to_json(run_id="test_ki", output_dir=str(tmp_path))
+        loaded_spec = ModelSpec.from_json(json_file)
+
+        assert len(loaded_spec.device_model_spec.known_issues) == 2
+        ki0 = loaded_spec.device_model_spec.known_issues[0]
+        ki1 = loaded_spec.device_model_spec.known_issues[1]
+        assert ki0.workflow_type == "BENCHMARKS"
+        assert ki0.reason == "GH#100 - test issue"
+        assert ki0.task_name == "specific_task"
+        assert ki1.workflow_type == "EVALS"
+        assert ki1.task_name is None
+
+
+class TestIsCheckFailing:
+    """Tests for _is_check_failing helper."""
+
+    def test_report_check_fail(self):
+        assert _is_check_failing(ReportCheckTypes.FAIL) is True
+
+    def test_report_check_pass(self):
+        assert _is_check_failing(ReportCheckTypes.PASS) is False
+
+    def test_report_check_na(self):
+        assert _is_check_failing(ReportCheckTypes.NA) is False
+
+    def test_integer_fail(self):
+        assert _is_check_failing(3) is True  # ReportCheckTypes.FAIL == 3
+
+    def test_integer_pass(self):
+        assert _is_check_failing(2) is False  # ReportCheckTypes.PASS == 2
+
+    def test_non_check_values(self):
+        assert _is_check_failing("FAIL") is False
+        assert _is_check_failing(None) is False
 
 
 if __name__ == "__main__":
