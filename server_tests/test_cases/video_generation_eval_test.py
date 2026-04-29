@@ -4,6 +4,7 @@
 
 import json
 import logging
+import shutil
 import statistics
 import time
 from dataclasses import dataclass
@@ -188,7 +189,14 @@ class VideoGenerationEvalsTest(BaseTest):
         """
         logger.info(f"Generating {len(prompts)} videos")
 
-        # Wait for server to be ready
+        # Remove any stale videos from previous runs so FVD/FVMD only sees
+        # outputs produced in the current eval.
+        output_dir = Path(DATASET_DIR)
+        if output_dir.exists():
+            logger.info(f"Cleaning stale videos from {output_dir}")
+            shutil.rmtree(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         if not self._wait_for_server_ready():
             raise RuntimeError("Server health check failed - server not ready")
 
