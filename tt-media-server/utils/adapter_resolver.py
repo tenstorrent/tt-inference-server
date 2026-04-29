@@ -47,8 +47,11 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
     metadata_path = os.path.join(adapter_path, "dataset_metadata.json")
     dataset_loader = None
     if os.path.isfile(metadata_path):
-        with open(metadata_path) as f:
-            dataset_loader = json.load(f).get("dataset_loader")
+        try:
+            with open(metadata_path) as f:
+                dataset_loader = json.load(f).get("dataset_loader")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            pass
 
     return AdapterInfo(
         base_model_name=base_model_name,
