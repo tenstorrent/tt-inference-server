@@ -199,10 +199,12 @@ void Scheduler::abortRequest(uint32_t taskId) {
     }
   }
 
+  // If the sequence doesn't exist or is already terminal, we're done.
   if (!seq || seq->isAborted() || seq->isFinished()) {
     return;
   }
 
+  // Clean up resources for active sequences
   seq->setStatus(SequenceStatus::ABORTED);
   blockManager.deallocate(*seq);
 
