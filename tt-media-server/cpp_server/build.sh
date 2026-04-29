@@ -8,6 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 BUILD_TYPE="Release"
 
+# Pull in dependency prefix set up by install_dependencies.sh (if present).
+# It exports CMAKE_PREFIX_PATH / PKG_CONFIG_PATH / LD_LIBRARY_PATH so Drogon,
+# JsonCpp, libuuid, etc. installed under ${HOME}/.local are discoverable.
+if [ -f "${SCRIPT_DIR}/deps/env.sh" ]; then
+    # shellcheck source=/dev/null
+    . "${SCRIPT_DIR}/deps/env.sh"
+fi
+
 # Parse arguments
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
@@ -101,64 +109,76 @@ echo "  Clang-tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "=============================================="
 
-# Ensure cargo (Rust) is in PATH for tokenizers-cpp
+# Ensure cargo (Rust) is in PATH for tokenizers-cpp and that rustc is recent
+# enough (monostate, pulled transitively, needs rustc >= 1.79).
+# CARGO_HOME / RUSTUP_HOME may have been redirected off $HOME by
+# install_dependencies.sh when / was full (see deps/env.sh).
+_CARGO_HOME="${CARGO_HOME:-${HOME}/.cargo}"
 if ! command -v cargo >/dev/null 2>&1; then
-    if [ -f "${HOME}/.cargo/env" ]; then
+    if [ -f "${_CARGO_HOME}/env" ]; then
         echo "Sourcing Rust environment (cargo not in PATH)..."
         # shellcheck source=/dev/null
-        . "${HOME}/.cargo/env"
-    fi
-    if ! command -v cargo >/dev/null 2>&1; then
-        echo ""
-        echo "ERROR: cargo (Rust) not found. tokenizers-cpp requires Rust."
-        echo "  Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-        echo "  Then: source ~/.cargo/env  (or start a new terminal)"
-        echo ""
-        exit 1
+        . "${_CARGO_HOME}/env"
     fi
 fi
+# Prefer rustup-managed toolchain over any older system one.
+if [ -d "${_CARGO_HOME}/bin" ]; then
+    case ":${PATH}:" in
+        *":${_CARGO_HOME}/bin:"*) : ;;
+        *) export PATH="${_CARGO_HOME}/bin:${PATH}" ;;
+    esac
+fi
+unset _CARGO_HOME
+if ! command -v cargo >/dev/null 2>&1; then
+    echo ""
+    echo "ERROR: cargo (Rust) not found. tokenizers-cpp requires Rust >= 1.79."
+    echo "  Run ./install_dependencies.sh (installs rustup into ~/.cargo)."
+    echo ""
+    exit 1
+fi
+_rustc_ver="$(rustc --version 2>/dev/null | awk '{print $2}')"
+_rustc_major="${_rustc_ver%%.*}"
+_rustc_minor="${_rustc_ver#*.}"; _rustc_minor="${_rustc_minor%%.*}"
+if [ -z "${_rustc_major}" ] || [ -z "${_rustc_minor}" ] \
+   || [ "${_rustc_major}" -lt 1 ] \
+   || { [ "${_rustc_major}" -eq 1 ] && [ "${_rustc_minor}" -lt 79 ]; }; then
+    echo ""
+    echo "ERROR: rustc ${_rustc_ver:-<unknown>} is too old for tokenizers-cpp"
+    echo "  (monostate requires rustc >= 1.79)."
+    echo "  Run ./install_dependencies.sh to install a newer toolchain into"
+    echo "  \$HOME/.cargo (no sudo required)."
+    echo ""
+    exit 1
+fi
+unset _rustc_ver _rustc_major _rustc_minor
 
-# Check for Drogon
+# Check for Drogon (system-wide, Homebrew, or deps prefix from install_dependencies.sh)
 DROGON_FOUND=0
 if pkg-config --exists drogon 2>/dev/null; then
     DROGON_FOUND=1
-elif [ -f "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
-elif [ -f "/usr/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
-elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
+else
+    for _drogon_cfg in \
+        "${HOME}/.local/lib/cmake/Drogon/DrogonConfig.cmake" \
+        "${HOME}/.local/lib64/cmake/Drogon/DrogonConfig.cmake" \
+        "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" \
+        "/usr/lib/cmake/Drogon/DrogonConfig.cmake" \
+        "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake"
+    do
+        if [ -f "${_drogon_cfg}" ]; then
+            DROGON_FOUND=1
+            break
+        fi
+    done
 fi
 
 if [ "${DROGON_FOUND}" -eq 0 ]; then
     echo ""
-    echo "Drogon not found. Installing dependencies..."
+    echo "ERROR: Drogon framework not found."
+    echo "  Run ./install_dependencies.sh first (installs Drogon + JsonCpp"
+    echo "  + libuuid into \$HOME/.local by default, no sudo required)."
+    echo "  Or install system-wide: sudo apt install libdrogon-dev"
     echo ""
-
-    # Check if we need to build Drogon from deps
-    DROGON_DIR="${SCRIPT_DIR}/deps/drogon"
-    if [ -d "${DROGON_DIR}" ]; then
-        echo "Building Drogon from ${DROGON_DIR}..."
-        mkdir -p "${DROGON_DIR}/build"
-        cd "${DROGON_DIR}/build"
-        cmake -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_EXAMPLES=OFF \
-              -DBUILD_CTL=OFF \
-              -DBUILD_YAML_CONFIG=OFF \
-              ..
-        NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
-        make -j"${NPROC}"
-        sudo make install
-        if [ "$(uname -s)" = "Linux" ]; then
-            sudo ldconfig
-        fi
-        cd "${SCRIPT_DIR}"
-    else
-        echo "Please install Drogon framework first:"
-        echo "  Ubuntu/Debian: sudo apt install libdrogon-dev"
-        echo "  Or build from source: https://github.com/drogonframework/drogon"
-        exit 1
-    fi
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------
