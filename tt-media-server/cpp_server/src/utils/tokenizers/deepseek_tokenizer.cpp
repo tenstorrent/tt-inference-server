@@ -67,8 +67,8 @@ static const char* dsEndOfSentence =
 std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
     bool addGenerationPrompt,
-    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools)
-    const {
+    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
+    bool enableReasoning) const {
   std::ostringstream out;
 
   if (cfg_.add_bos_token) out << cfg_.bos_token;
@@ -154,6 +154,9 @@ std::string DeepseekTokenizer::applyChatTemplate(
   }
   if (addGenerationPrompt) {
     out << dsAssistantTag;
+    if (!enableReasoning) {
+      out << "<think>\n</think>\n";
+    }
   }
 
   return out.str();

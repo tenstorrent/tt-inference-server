@@ -16,20 +16,16 @@ namespace tt::utils {
  */
 class ToolCallIDGenerator {
  public:
-  /**
-   * Generate a new unique tool call ID using 24 random alphanumeric characters.
-   * Thread-safe, returns "call_<24_random_chars>".
-   */
   static std::string generate() {
     static constexpr const char kChars[] =
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    std::random_device rd;
+    thread_local std::mt19937 gen(std::random_device{}());
     std::string result = "call_";
     result.reserve(29);
 
     for (int i = 0; i < 24; ++i) {
-      result += kChars[rd() % 62];
+      result += kChars[gen() % 62];
     }
 
     return result;

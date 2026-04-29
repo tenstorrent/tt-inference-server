@@ -953,9 +953,26 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 106.0,
-                        "tput": 3435.0
+                        "ttft_ms": 2,
+                        "tput_user": 27.5,
+                        "tput": 27.5
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 256,
+                        "tput_user": 27.5,
+                        "tput": 3520
                     }
                 }
             }
