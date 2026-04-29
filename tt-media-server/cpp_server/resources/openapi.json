@@ -618,6 +618,11 @@
           "user": { "type": "string" },
           "response_format": {
             "$ref": "#/components/schemas/ResponseFormat"
+          },
+          "enable_reasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "When false, reasoning models (e.g. DeepSeek-R1) skip chain-of-thought and respond directly. Has no effect on non-reasoning models."
           }
         }
       },
