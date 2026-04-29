@@ -58,10 +58,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
-        if isinstance(request.prompt, str) and not request.prompt.strip():
-            raise ValueError("Prompt must not be empty")
-        if isinstance(request.prompt, list) and len(request.prompt) == 0:
-            raise ValueError("Prompt token list must not be empty")
+        self._validate_request(request)
         
         # Handle adapter loading and compilation
         if self.settings.lora_adapter:
@@ -121,6 +118,12 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
         return _stream()
+
+    def _validate_request(self, request: CompletionRequest):
+        if isinstance(request.prompt, str) and not request.prompt.strip():
+            raise ValueError("Prompt must not be empty")
+        if isinstance(request.prompt, list) and len(request.prompt) == 0:
+            raise ValueError("Prompt token list must not be empty")
 
     def _load_adapter(self, adapter_info: AdapterInfo):
         if self._active_adapter == adapter_info:
