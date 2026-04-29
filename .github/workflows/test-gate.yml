@@ -507,7 +507,7 @@ jobs:
           # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
           # Track upstream and remove pin once 5.6.x is fixed or bench is
           # made resilient to client tokenizer cost.
-          uv pip install vllm 'transformers<5.6'
+          uv pip install vllm 'transformers<5.6' guidellm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Mock backend benchmarks ──────────────────────────────────────
@@ -610,6 +610,48 @@ jobs:
             echo "ERROR: Server did not become ready within 30 seconds"
             exit 1
           fi
+
+      # ── Single-user multi-turn smoke ─────────────────────────────────
+      # Runs FIRST on a freshly started mock_pipeline server so the
+      # active-session gauge starts at 0 and ends at exactly 1: all 29
+      # turns of a single conversation share one session via
+      # tryAcquireByPrefixHash (PR #3035). A regression that breaks
+      # prefix reuse would bump this to 29 and fail the job.
+      - name: Verify clean session state before single-user multi-turn
+        run: |
+          INITIAL=$(curl -sf "http://127.0.0.1:8000/metrics" \
+            | awk '/^tt_num_active_sessions[ \t]/ {print $2}')
+          echo "Initial tt_num_active_sessions=${INITIAL}"
+          if [ "${INITIAL}" != "0" ]; then
+            echo "ERROR: server not in a clean state (expected 0, got ${INITIAL})"
+            exit 1
+          fi
+
+      - name: Run single_user_multi_turn benchmark (29 turns)
+        run: |
+          cd cpp_server/benchmarks
+          bash single_user_multi_turn.sh \
+            --output-dir "${GITHUB_WORKSPACE}/tt-media-server/single_user_multi_turn_results" \
+            2>&1 | tee ../../single_user_multi_turn_output.txt
+
+      - name: Verify tt_num_active_sessions equals 1 (prefix-cached reuse)
+        run: |
+          METRICS=$(curl -sf "http://127.0.0.1:8000/metrics")
+          echo "${METRICS}" | grep -E '^tt_num_active_sessions[ \t]' || true
+          ACTIVE=$(echo "${METRICS}" | awk '/^tt_num_active_sessions[ \t]/ {print $2}')
+          EXPECTED=1
+          {
+            echo "## C++ Server Single-User Multi-Turn Smoke (mock_pipeline)"
+            echo ""
+            echo "| Metric | Value | Expected |"
+            echo "|--------|-------|----------|"
+            echo "| **tt_num_active_sessions** | ${ACTIVE:-<missing>} | ${EXPECTED} |"
+          } >> $GITHUB_STEP_SUMMARY
+          if [ "${ACTIVE}" != "${EXPECTED}" ]; then
+            echo "ERROR: expected tt_num_active_sessions=${EXPECTED}, got '${ACTIVE}'"
+            exit 1
+          fi
+          echo "OK: tt_num_active_sessions=${ACTIVE}"
 
       - name: Bench mock_pipeline backend
         env:
@@ -727,6 +769,8 @@ jobs:
             tt-media-server/vllm-bench-structured-output-json-object.json
             tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
+            tt-media-server/single_user_multi_turn_results/
+            tt-media-server/single_user_multi_turn_output.txt
           retention-days: 1
           if-no-files-found: warn
 
