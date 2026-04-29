@@ -102,13 +102,13 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 # (dataset, structured_output_ratio)
 STRUCTURED_OUTPUT_PAIRS = [
     ("json", 1.0),
-    ("json", None),
+    ("json", 0.0),
     # ("grammar", 1.0),
     # ("regex", 1.0),
     # ("choice", 1.0),
     # ("xgrammar_bench", 1.0),
 ]
-STRUCTURED_OUTPUT_NUM_PROMPTS = 200
+STRUCTURED_OUTPUT_NUM_PROMPTS = 100
 STRUCTURED_OUTPUT_OSL = 128
 STRUCTURED_OUTPUT_MAX_CONCURRENCY = 4
 
