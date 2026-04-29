@@ -10,11 +10,12 @@ inside the renderer / generator / schema.
 
 The output is a single record ready to drop into the unified
 ``[{kind, model, device, timestamp, ...}]`` schema alongside other kinds
-like ``evals``, ``benchmarks`` or ``server_tests``. The kind-specific
-fields (``run_header``, ``request_totals``, ``summary_stats``, ...) hold
-the precomputed values for each table; the registered ``guidellm``
-renderer in :mod:`report_module.renderers` knows how to emit them as
-sub-tables under the record's heading.
+like ``evals``, ``benchmarks`` or ``server_tests``. Section keys are
+display-friendly strings (``"Run Configuration"``, ``"Request Totals"``,
+``"TTFT vs. Context (Linear Regression)"``, ...); each value is a flat
+dict, list of dicts, or dict-of-dicts that ``render_generic_table`` in
+:mod:`report_module.renderers` emits as its own H4 sub-table beneath
+the kind heading.
 """
 
 from __future__ import annotations
