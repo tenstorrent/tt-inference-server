@@ -18,6 +18,7 @@
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
+#include "utils/tool_call_id_generator.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
@@ -75,11 +76,42 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
   if (request.tool_choice.has_value()) {
     const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none") {
+    if (type != "auto" && type != "none" && type != "function") {
       throw std::invalid_argument(
           "tool_choice='" + type +
-          "' is not yet supported by this server; only 'auto' and 'none' are "
-          "currently implemented");
+          "' is not yet supported by this server; only 'auto', 'none', and "
+          "'function' are currently implemented");
+    }
+
+    // Validate named function call
+    if (type == "function") {
+      if (!request.tool_choice->function.has_value() ||
+          request.tool_choice->function.value().empty()) {
+        throw std::invalid_argument(
+            "tool_choice.function.name is required when type is 'function'. "
+            "Expected format: {\"type\": \"function\", \"function\": "
+            "{\"name\": \"function_name\"}}");
+      }
+
+      if (!request.tools.has_value()) {
+        throw std::invalid_argument(
+            "tools array is required when tool_choice type is 'function'");
+      }
+
+      // Validate function name exists in tools
+      const auto& functionName = request.tool_choice->function.value();
+      bool found = false;
+      for (const auto& tool : request.tools.value()) {
+        if (tool.functionDefinition.name == functionName) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        throw std::invalid_argument("tool_choice.function.name '" +
+                                    functionName + "' not found in tools");
+      }
     }
   }
 
@@ -365,7 +397,7 @@ void LLMService::processStreamingRequest(
   streamCallbacks.insert(taskId, std::move(entry));
 
   if (request.tool_choice.has_value()) {
-    toolChoiceMap.insert(taskId, request.tool_choice->type);
+    toolChoiceMap.insert(taskId, request.tool_choice.value());
   }
 
   if (reasoningParser) {
@@ -405,30 +437,74 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
   }
 
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
-  const bool toolCallsDisabled =
-      toolChoiceOpt.has_value() && toolChoiceOpt.value() == "none";
-  if (toolCallsDisabled) {
-    TT_LOG_DEBUG("[LLMService] Skipping tool call parsing (tool_choice=none)");
+  tt::domain::tool_calls::ToolChoice toolChoice;
+  if (toolChoiceOpt.has_value()) {
+    toolChoice = std::move(toolChoiceOpt.value());
+  } else {
+    toolChoice.type = "auto";
   }
 
-  if (toolCallParser) {
-    for (auto& choice : response.choices) {
-      if (toolCallsDisabled) {
-        choice.text = toolCallParser->stripMarkers(choice.text);
-        continue;
-      }
-      TT_LOG_DEBUG(
-          "[LLMService] Parsing text for tool calls (length={}): {}",
-          choice.text.length(),
-          choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+  if (!toolCallParser) {
+    return;
+  }
 
-      auto toolCalls = toolCallParser->parseComplete(choice.text);
-      if (toolCalls.has_value() && !toolCalls->empty()) {
-        TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
-        choice.tool_calls = std::move(toolCalls);
-        choice.text = toolCallParser->stripMarkers(choice.text);
-        choice.finish_reason = "tool_calls";
+  for (size_t choiceIdx = 0; choiceIdx < response.choices.size(); ++choiceIdx) {
+    auto& choice = response.choices[choiceIdx];
+    if (toolChoice.type == "none") {
+      choice.text = toolCallParser->stripMarkers(choice.text);
+      continue;
+    }
+
+    if (toolChoice.type == "function") {
+      // Generate unique tool call ID in OpenAI format (call_1, call_2, ...)
+      std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
+
+      Json::Value decodedOutput;
+      static const Json::CharReaderBuilder kReaderBuilder;
+      thread_local const std::unique_ptr<Json::CharReader> reader(
+          kReaderBuilder.newCharReader());
+      std::string argumentsStr = choice.text;
+      std::string parseErrors;
+
+      const bool parsed = reader->parse(choice.text.data(),
+                                        choice.text.data() + choice.text.size(),
+                                        &decodedOutput, &parseErrors);
+      if (parsed && decodedOutput.isMember("arguments")) {
+        argumentsStr = decodedOutput["arguments"].toStyledString();
       }
+
+      Json::Value toolCallJson;
+      toolCallJson["id"] = toolCallId;
+      toolCallJson["type"] = "function";
+      toolCallJson["function"]["name"] =
+          toolChoice.function.value_or("unknown");
+      toolCallJson["function"]["arguments"] = argumentsStr;
+
+      Json::Value toolCallsArray(Json::arrayValue);
+      toolCallsArray.append(toolCallJson);
+
+      choice.tool_calls = toolCallsArray;
+      choice.text = "";
+      choice.finish_reason = "tool_calls";
+
+      TT_LOG_DEBUG(
+          "[LLMService] Created tool_call from structured output "
+          "(tool_choice=function, function={}, id={})",
+          toolChoice.function.value_or("unknown"), toolCallId);
+      continue;
+    }
+
+    TT_LOG_DEBUG(
+        "[LLMService] Parsing text for tool calls (length={}): {}",
+        choice.text.length(),
+        choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+
+    auto toolCalls = toolCallParser->parseComplete(choice.text);
+    if (toolCalls.has_value() && !toolCalls->empty()) {
+      TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
+      choice.tool_calls = std::move(toolCalls);
+      choice.text = toolCallParser->stripMarkers(choice.text);
+      choice.finish_reason = "tool_calls";
     }
   }
 }

@@ -15,6 +15,7 @@
 #include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/response_format.hpp"
+#include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 
 namespace tt::domain {
@@ -125,6 +126,7 @@ struct LLMRequest : BaseRequest {
 
   bool parallel_tool_calls = true;
 
+  std::optional<std::vector<tool_calls::Tool>> tools;
   std::optional<tool_calls::ToolChoice> tool_choice;
 
   // Structured output constraint

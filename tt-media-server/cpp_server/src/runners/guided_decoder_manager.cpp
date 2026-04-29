@@ -47,19 +47,48 @@ GuidedDecoderManager::~GuidedDecoderManager() = default;
 
 void GuidedDecoderManager::initRequest(uint32_t taskId,
                                        const SamplingParams& params) {
-  if (!params.hasGuidedDecoding()) return;
-
   using tt::config::ResponseFormatType;
+  ResponseFormatType formatType = params.response_format_type;
+  std::optional<std::string> schemaStr = params.json_schema_str;
+
+  if (params.tool_choice.has_value() &&
+      params.tool_choice->type == "function" &&
+      params.tool_choice->function.has_value() && params.tools.has_value()) {
+    const auto& functionName = params.tool_choice->function.value();
+    for (const auto& tool : params.tools.value()) {
+      if (tool.functionDefinition.name == functionName) {
+        formatType = ResponseFormatType::JSON_SCHEMA;
+
+        Json::Value wrappedSchema;
+        wrappedSchema["type"] = "object";
+
+        wrappedSchema["properties"]["name"]["const"] =
+            tool.functionDefinition.name;
+        wrappedSchema["properties"]["arguments"] =
+            tool.functionDefinition.parameters;
+        wrappedSchema["properties"]["arguments"]["additionalProperties"] =
+            false;
+        wrappedSchema["required"].append("name");
+        wrappedSchema["required"].append("arguments");
+
+        schemaStr = wrappedSchema.toStyledString();
+        break;
+      }
+    }
+  }
+
+  if (formatType == ResponseFormatType::TEXT) return;
+
   xgrammar::CompiledGrammar compiled = [&] {
-    switch (params.response_format_type) {
+    switch (formatType) {
       case ResponseFormatType::JSON_OBJECT:
         return impl->compiler.CompileBuiltinJSONGrammar();
       case ResponseFormatType::JSON_SCHEMA:
-        if (!params.json_schema_str.has_value()) {
+        if (!schemaStr.has_value()) {
           throw std::invalid_argument(
               "json_schema response format requires a schema string");
         }
-        return impl->compiler.CompileJSONSchema(*params.json_schema_str);
+        return impl->compiler.CompileJSONSchema(*schemaStr);
       default:
         throw std::logic_error("initRequest called for non-guided request");
     }
