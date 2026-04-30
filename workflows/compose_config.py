@@ -535,28 +535,33 @@ def write_compose_files_sidecar(
     return path
 
 
-def run_compose_server(
+def build_compose_command(
     model_spec,
     runtime_config,
     setup_config,
     json_fpath: Optional[Path] = None,
 ):
-    """Run a single-host inference server via Docker Compose.
+    """Pick contract + overlays + compose vars for a single-host run.
 
-    Picks a contract from contracts.yml based on the image version, stacks
-    overlays per runtime_config / setup_config, writes .env.compose and
-    .env.compose.files, then runs `docker compose up -d --wait` so the
-    healthcheck-based readiness check is the source of truth.
+    Selects the compose contract file based on image version (via contracts.yml),
+    appends overlays based on runtime_config / setup_config / json_fpath, and
+    resolves the env-var dict.
 
-    Returns immediately after the server is healthy. The caller is responsible
-    for running the workflow client and calling `run_compose_down` in a
-    finally block.
+    This is shared by `run_compose_server` (which executes compose up) and
+    by `run.py`'s `--print-compose` branch (which renders `compose config`),
+    so adding a new overlay requires changing only one place.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object
+        setup_config: SetupConfig (or None)
+        json_fpath: Optional path to runtime model spec JSON
 
     Returns:
-        Dict with keys: container_name, compose_files, env_file.
+        Tuple of:
+            compose_files: list[Path] — first is the contract, rest are overlays
+            compose_vars: dict[str, str] — values for .env.compose
     """
-    from workflows.run_docker_server import ensure_docker_image
-
     image_version = parse_image_version(model_spec.docker_image)
     contract_file = lookup_contract(model_spec.inference_engine, image_version)
 
@@ -579,10 +584,7 @@ def run_compose_server(
         compose_vars["HOST_MODEL_WEIGHTS"] = str(setup_config.host_model_weights_mount_dir)
         if getattr(setup_config, "container_model_weights_mount_dir", None):
             compose_vars["CONTAINER_MODEL_WEIGHTS"] = str(setup_config.container_model_weights_mount_dir)
-        # Pre-0.11-era extras. Silently ignored by 0.11+ templates; required by
-        # docker-compose.vllm-pre-0.11.yml. We populate unconditionally so the
-        # contract that needs them gets them and the contract that doesn't
-        # ignores them.
+        # Pre-0.11-era extras: ignored by 0.11+ templates, used by pre-0.11 template.
         if getattr(setup_config, "container_model_weights_path", None):
             compose_vars["MODEL_WEIGHTS_PATH"] = str(setup_config.container_model_weights_path)
         if getattr(setup_config, "container_tt_metal_cache_dir", None):
@@ -590,6 +592,35 @@ def run_compose_server(
     if json_fpath:
         compose_vars["RUNTIME_MODEL_SPEC_JSON"] = str(json_fpath)
         compose_vars["TT_MODEL_SPEC_HOST_PATH"] = str(json_fpath)  # pre-0.11 contract uses this
+
+    return compose_files, compose_vars
+
+
+def run_compose_server(
+    model_spec,
+    runtime_config,
+    setup_config,
+    json_fpath: Optional[Path] = None,
+):
+    """Run a single-host inference server via Docker Compose.
+
+    Picks a contract from contracts.yml based on the image version, stacks
+    overlays per runtime_config / setup_config, writes .env.compose and
+    .env.compose.files, then runs `docker compose up -d --wait` so the
+    healthcheck-based readiness check is the source of truth.
+
+    Returns immediately after the server is healthy. The caller is responsible
+    for running the workflow client and calling `run_compose_down` in a
+    finally block.
+
+    Returns:
+        Dict with keys: container_name, compose_files, env_file.
+    """
+    from workflows.run_docker_server import ensure_docker_image
+
+    compose_files, compose_vars = build_compose_command(
+        model_spec, runtime_config, setup_config, json_fpath
+    )
 
     write_compose_env(compose_vars)
     write_compose_files_sidecar(compose_files)
