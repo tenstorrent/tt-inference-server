@@ -52,7 +52,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 600s
+      # See note in docker-compose.vllm-0.11.yml: cache generation on first
+      # run takes 40-60 min; matching the server's own 5400s timeout.
+      start_period: 5400s
 
 volumes:
   cache:

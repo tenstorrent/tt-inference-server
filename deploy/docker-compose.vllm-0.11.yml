@@ -46,7 +46,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 600s
+      # 5400s = 90 min. Matches the server's internal cache-generation timeout
+      # (utils.prompt_client logs "🔄 Cache generation in progress — this may
+      # take 40-60 minutes for new models"). On first run for a new model,
+      # weights download + tt-metal cache generation can run for ~60 min before
+      # /health responds. Subsequent runs (cache hit) come up in ~5 min and
+      # `compose up --wait` returns immediately on the first successful probe.
+      start_period: 5400s
 
 volumes:
   cache:
