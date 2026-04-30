@@ -68,11 +68,17 @@ def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
 def _setup_blackhole_mesh_config(tt_metal_home: str):
     """Configure mesh graph descriptors for Blackhole hardware"""
     device = (settings.device or "").lower()
-    descriptor = _BH_DEVICE_MESH_DESCRIPTORS.get(device)
-    if descriptor:
-        os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
-            f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
-        )
+    if device not in _BH_DEVICE_MESH_DESCRIPTORS:
+        return
+    # Single-chip-per-worker workloads always use the 1x1 descriptor regardless
+    # of the host board type (P300 / P300X2 expose individual BH chips).
+    if settings.device_mesh_shape == (1, 1):
+        descriptor = "p150_mesh_graph_descriptor.textproto"
+    else:
+        descriptor = _BH_DEVICE_MESH_DESCRIPTORS[device]
+    os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+        f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+    )
 
 
 def _setup_galaxy_mesh_config(tt_metal_home: str):
