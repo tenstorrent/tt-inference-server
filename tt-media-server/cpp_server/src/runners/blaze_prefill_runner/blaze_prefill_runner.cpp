@@ -61,22 +61,6 @@ void BlazePrefillRunner::run() {
   }
 }
 
-bool BlazePrefillRunner::warmup() {
-  std::vector<int64_t> warmupTokens = {1};
-  uint32_t warmupTaskId = 0;  // Use 0 for warmup task
-
-  TT_LOG_DEBUG("[BlazePrefillRunner] warmup forward task_id={} token_count={}",
-               warmupTaskId, warmupTokens.size());
-  auto result = modelRunner->forward(warmupTaskId, warmupTokens);
-  if (!result || result->isError) {
-    TT_LOG_ERROR("[BlazePrefillRunner] Warmup failed");
-    return false;
-  }
-
-  TT_LOG_INFO("[BlazePrefillRunner] Warmup successful");
-  return true;
-}
-
 void BlazePrefillRunner::stop() {
   TT_LOG_INFO("[BlazePrefillRunner] Stopping");
   stopped.store(true, std::memory_order_relaxed);

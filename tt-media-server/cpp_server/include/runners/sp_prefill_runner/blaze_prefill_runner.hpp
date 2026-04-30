@@ -24,7 +24,6 @@ class BlazePrefillRunner : public IRunner {
 
   void run() override;
   void stop() override;
-  bool warmup() override;
   const char* runnerType() const override { return "BlazePrefillRunner"; }
 
  private:
