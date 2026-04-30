@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# uv overrides applied during media-server requirements install.
+#
+# Why this exists:
+#   tt-metal's python_env (created by create_venv.sh) installs
+#   tt_metal/python_env/requirements-dev.txt FIRST, which hard-pins:
+#       numpy>=1.24.4,<2
+#   whisperx==3.4.3 (and 3.4.2) declares numpy>=2.0.2 in its metadata.
+#   These ranges do not overlap, so uv aborts resolution. uv collapses the
+#   conflict tree and reports it indirectly as
+#       "there are no versions of lightning"
+#   because lightning is the deepest transitive dep that gets unsatisfiable.
+#
+# This overrides file forces the entire resolution to use numpy<2,
+# matching tt-metal's pin. whisperx 3.4.3 has been observed to run fine on
+# numpy<2 at runtime (its numpy>=2.0.2 declaration is overly conservative).
+numpy>=1.24.4,<2
