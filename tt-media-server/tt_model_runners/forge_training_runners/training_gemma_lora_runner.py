@@ -246,7 +246,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.compiled_model.train()
 
                     # Checkpoint saving
-                    if global_step > 0 and global_step % request.save_interval == 0:
+                    if request.save_interval > 0 and global_step > 0 and global_step % request.save_interval == 0:
                         checkpoint_path = os.path.join(
                             request._output_model_path, f"ckpt-step-{global_step}"
                         )
