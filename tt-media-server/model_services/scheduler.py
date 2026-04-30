@@ -273,6 +273,22 @@ class Scheduler:
 
                             if queue_obj:
                                 await queue_obj.put(input_data)
+                                # A successful result is evidence the worker is
+                                # still healthy. Decay the error_count so that
+                                # transient per-request errors don't accumulate
+                                # toward `max_worker_restart_count` and kill the
+                                # worker. Per-request failures (e.g., a single
+                                # bad request, vLLM scheduler corner case) should
+                                # not take down a worker that is otherwise
+                                # serving traffic correctly.
+                                worker_info = self.worker_info.get(worker_id)
+                                if (
+                                    worker_info
+                                    and worker_info.get("error_count", 0) > 0
+                                ):
+                                    worker_info["error_count"] = max(
+                                        0, worker_info["error_count"] - 1
+                                    )
                             else:
                                 current_queues = list(self.result_queues.keys())
                                 self.logger.warning(

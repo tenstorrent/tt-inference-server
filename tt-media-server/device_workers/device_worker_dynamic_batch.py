@@ -6,6 +6,7 @@ import asyncio
 import os
 import threading
 import time
+import traceback
 from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL
@@ -83,6 +84,19 @@ def device_worker(
     except Exception as e:
         logger.warning(f"Worker {worker_id} failed to signal warmup completion: {e}")
 
+    def _format_exception(e: BaseException) -> str:
+        # Capture rich exception info: type name, str repr, full traceback.
+        # Plain str(e) is empty for bare Exception() / no-args exceptions
+        # (which is what vLLM's V1 engine puts in its output queue when
+        # something fails) — we want to know the actual class and where
+        # it came from. Returns a single string that will travel through
+        # the multi-process error_queue intact.
+        msg = str(e) if str(e) else "(no message)"
+        return (
+            f"{type(e).__name__}: {msg}\n"
+            f"{''.join(traceback.format_exception(type(e), e, e.__traceback__))}"
+        )
+
     # Define streaming handler
     async def handle_streaming(request):
         try:
@@ -97,8 +111,9 @@ def device_worker(
                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
             )
         except Exception as e:
-            logger.error(f"Streaming failed for task {request._task_id}: {e}")
-            error_queue.put((worker_id, request._task_id, str(e)))
+            err_info = _format_exception(e)
+            logger.error(f"Streaming failed for task {request._task_id}:\n{err_info}")
+            error_queue.put((worker_id, request._task_id, err_info))
 
     # Handle non-streaming request
     async def handle_non_streaming(request):
@@ -109,8 +124,9 @@ def device_worker(
             else:
                 error_queue.put((worker_id, request._task_id, "No response generated"))
         except Exception as e:
-            logger.error(f"Execution failed for task {request._task_id}: {e}")
-            error_queue.put((worker_id, request._task_id, str(e)))
+            err_info = _format_exception(e)
+            logger.error(f"Execution failed for task {request._task_id}:\n{err_info}")
+            error_queue.put((worker_id, request._task_id, err_info))
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():

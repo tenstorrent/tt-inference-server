@@ -69,7 +69,16 @@ class Settings(BaseSettings):
     new_device_delay_seconds: int = 0
     new_runner_delay_seconds: int = 2
     mock_devices_count: int = 5
-    max_worker_restart_count: int = 5
+    # max_worker_restart_count is used in two ways by scheduler.worker_health_monitor:
+    #   1. error-count threshold — worker is declared dead if error_count exceeds this.
+    #   2. restart-count limit — once a worker has been restarted this many times,
+    #      it is given up on (or deep_reset is attempted if allow_deep_reset).
+    # Bumped from 5 to 100 so transient per-request errors (bare Exception()s
+    # from vLLM V1 engine, scheduler corner cases) don't accumulate to worker
+    # death between successful traffic. Combined with error_count decay on
+    # successful results in scheduler.result_listener, this keeps the worker
+    # alive across one-off vLLM hiccups while still bounding genuine failures.
+    max_worker_restart_count: int = 100
     worker_check_sleep_timeout: float = 30.0
     default_throttle_level: str = "5"
 

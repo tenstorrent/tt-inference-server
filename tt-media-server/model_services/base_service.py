@@ -191,8 +191,17 @@ class BaseService(ABC):
                     # Wait only when queue is empty
                     chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
-                # Propagate worker errors to the endpoint layer
+                # Propagate worker errors to the endpoint layer.
+                # Log the raw exception details before raising — vLLM V1 sometimes
+                # propagates bare Exception() with empty str(e), which makes the
+                # client-side traceback uninformative. Capturing repr + args here
+                # ensures we can debug post-mortem from server logs even if the
+                # upstream device-worker logging missed something.
                 if isinstance(chunk, Exception):
+                    self.logger.error(
+                        f"Worker exception for task {request._task_id}: "
+                        f"type={type(chunk).__name__} repr={chunk!r} args={chunk.args}"
+                    )
                     raise chunk
 
                 # Type-based dispatch (faster than isinstance)
