@@ -138,22 +138,6 @@ def lookup_contract(
     )
 
 
-def get_compose_template_path(model_spec, runtime_config) -> Path:
-    """Return the path to the appropriate compose template.
-
-    Args:
-        model_spec: ModelSpec object
-        runtime_config: RuntimeConfig object
-
-    Returns:
-        Path to the compose template YAML file
-    """
-    if model_spec.inference_engine == InferenceEngine.VLLM.value:
-        return DEPLOY_DIR / "docker-compose.vllm-0.11.yml"
-    else:
-        return DEPLOY_DIR / "docker-compose.media-0.11.yml"
-
-
 def resolve_compose_vars(
     model_spec,
     runtime_config,
