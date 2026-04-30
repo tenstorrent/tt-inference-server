@@ -3014,6 +3014,16 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    # NOTE: stream=false. lm-eval-harness' _consume_sse_stream
+                    # (api_models.py) only understands /v1/completions chunks
+                    # (choice.text), not /v1/chat/completions chunks
+                    # (choice.delta.content). With stream=true the harness
+                    # silently drops every chat chunk and parse_generations
+                    # then fails with KeyError: 'message', producing empty
+                    # resps and 0% scores. The non-streaming path is fine
+                    # because vLLM keeps the connection open and timeout=7200
+                    # gives each request a 2-hour budget.
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3045,6 +3055,9 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    # See aime25 above: stream=false to avoid the lm-eval
+                    # SSE-consumer bug that drops chat-completion chunks.
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3076,6 +3089,9 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    # See aime25 above: stream=false to avoid the lm-eval
+                    # SSE-consumer bug that drops chat-completion chunks.
+                    "stream": "false",
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,

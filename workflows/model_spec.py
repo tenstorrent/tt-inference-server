@@ -1082,7 +1082,7 @@ llm_templates = [
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
         version="0.12.0",
-        tt_metal_commit="034ac58",
+        tt_metal_commit="c59974f",
         vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1096,14 +1096,39 @@ llm_templates = [
                 # path, but per-device padded vocab = 65536 sits at the on-device
                 # sampling boundary so sampling stays on device).
                 max_concurrency=1,
-                max_context=16 * 1024,
+                # 128K (model-native) context. The eval suite in
+                # eval_config.py (aime25 / gpqa_diamond_cot_zeroshot /
+                # mmlu_generative) sets max_gen_toks=64*1024, and lm-eval
+                # forwards that as `max_tokens` on the chat-completion
+                # request. vLLM's harmony render path computes
+                # max_input_tokens = max_model_len - max_tokens, then uses
+                # max_input_tokens+1 as the prompt-truncation length in
+                # `vllm/renderers/params.py:get_encode_kwargs`. With
+                # max_model_len == max_tokens this collapses to 1, silently
+                # truncating the rendered Harmony prompt to a single token
+                # and yielding empty `resps` (0% on aime25/mmlu_generative).
+                # Setting max_context to 128K leaves
+                # 128*1024 - 64*1024 = 64K of input headroom and matches the
+                # gpt-oss-120b Galaxy spec above.
+                # KV cache budget covers it: 131,136 tokens
+                # (block_size=64 * num_gpu_blocks=2049) at max_concurrency=1.
+                max_context=128 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 env_vars={
+                    "MESH_DEVICE": "(1, 4)",
                     # Pin the physical fabric topology so we don't depend on
                     # auto-detection (matches every other P300X2 spec in this
                     # file; the descriptor declares device_topology [2, 2]).
                     "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    # trace_region_size matches the Llama-3.1-8B P300x2 spec.
+                    # sample_on_device_mode=decode_only because gpt-oss-120b's
+                    # per-device padded vocab on (1, 4) sits at the on-device sampling
+                    # boundary; forcing decode_only avoids surprises during prefill.
+                    "trace_region_size": 58000000,
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],

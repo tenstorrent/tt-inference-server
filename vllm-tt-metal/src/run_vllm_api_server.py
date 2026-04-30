@@ -545,6 +545,29 @@ def set_runtime_env_vars(model_spec_json):
             )
             value = str(value)
 
+        # Resolve a relative TT_MESH_GRAPH_DESC_PATH against TT_METAL_HOME.
+        # Model specs declare the descriptor path with the `../../tt-metal/...`
+        # form expected inside the docker image. When the server is launched
+        # outside the image (e.g. via --local-server), the cwd no longer makes
+        # that relative path resolvable, and tt-metal aborts startup with
+        # "Custom mesh graph descriptor file not found". Rewriting the path to
+        # an absolute one anchored on TT_METAL_HOME keeps the spec portable
+        # without forcing every caller to chdir.
+        if (
+            key == "TT_MESH_GRAPH_DESC_PATH"
+            and not os.path.isabs(value)
+            and "tt-metal/" in value
+        ):
+            tt_metal_home = os.getenv("TT_METAL_HOME")
+            if tt_metal_home:
+                suffix = value.split("tt-metal/", 1)[1]
+                resolved = os.path.join(tt_metal_home, suffix)
+                logger.info(
+                    f"resolved TT_MESH_GRAPH_DESC_PATH via TT_METAL_HOME: "
+                    f"'{value}' -> '{resolved}'"
+                )
+                value = resolved
+
         original_value = os.getenv(key)
         if original_value is not None:
             logger.warning(
