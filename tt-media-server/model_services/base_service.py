@@ -143,10 +143,12 @@ class BaseService(ABC):
             result = await asyncio.wait_for(
                 queue.get(), timeout=settings.request_processing_timeout_seconds
             )
+            if isinstance(result, Exception):
+                raise result
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
+                f"Request timed out for task {request._task_id} after {settings.request_processing_timeout_seconds}s"
             )
             raise
         except Exception as e:
