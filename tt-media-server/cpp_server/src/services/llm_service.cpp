@@ -380,10 +380,6 @@ void LLMService::processStreamingRequest(
 
   if (!request.enable_reasoning) {
     reasoningSuppressedMap.insert(taskId, true);
-    if (reasoningParser) {
-      request.stop_token_ids.push_back(
-          static_cast<int>(ReasoningParser::THINK_START_TOKEN));
-    }
   }
 
   if (reasoningParser) {
