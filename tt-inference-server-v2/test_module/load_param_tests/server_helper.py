@@ -163,6 +163,6 @@ def stop_server(
 
 
 def sanitize_model_name(name: str) -> str:
-    """Produce a filesystem-safe fragment from a model runner name."""
+    """Produce a filesystem-safe fragment from a model runner name.."""
 
     return name.replace("/", "_").replace(" ", "_")
