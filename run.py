@@ -273,11 +273,6 @@ def parse_arguments():
         help="Print Docker Compose YAML and exit (does not start server)",
     )
     parser.add_argument(
-        "--use-compose",
-        action="store_true",
-        help="Use Docker Compose backend instead of raw docker run (requires docker compose v2)",
-    )
-    parser.add_argument(
         "--host-volume",
         nargs="?",
         const=str(Path(__file__).resolve().parent / "persistent_volume"),
