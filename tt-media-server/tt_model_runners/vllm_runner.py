@@ -47,13 +47,18 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": True,
+                "cpu_sampling": os.environ.get("CPU_SAMPLING", "true").lower()
+                != "false",
                 "optimization_level": 1,
-                "enable_trace": True,
             },
         )
         self.logger.info(
-            f"Device {self.device_id}: additional_config={engine_args.additional_config}"
+            f"Device {self.device_id}: engine_args "
+            f"max_model_len={engine_args.max_model_len}, "
+            f"max_num_seqs={engine_args.max_num_seqs}, "
+            f"max_num_batched_tokens={engine_args.max_num_batched_tokens}, "
+            f"gpu_memory_utilization={engine_args.gpu_memory_utilization}, "
+            f"additional_config={engine_args.additional_config}"
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
