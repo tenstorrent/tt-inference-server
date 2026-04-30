@@ -27,6 +27,8 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from packaging.version import InvalidVersion, Version
 
 from workflows.utils import get_repo_root_path, write_dotenv
@@ -71,6 +73,69 @@ def parse_image_version(image: str) -> Optional[Version]:
         return Version(match.group(1))
     except InvalidVersion:
         return None
+
+
+class NoMatchingContractError(Exception):
+    """Raised when no contract in contracts.yml matches a given engine/version."""
+
+
+def lookup_contract(
+    engine: str,
+    version: Optional[Version],
+    contracts_path: Optional[Path] = None,
+) -> Path:
+    """Return the compose contract file path for `engine` that supports `version`.
+
+    Selection rule: among the contracts listed for `engine`, pick the one with
+    the largest `min_version` that is <= `version`. If `version` is None, pick
+    the contract with the largest `min_version` (the newest era) and log a
+    warning.
+
+    Args:
+        engine: Engine name as listed in contracts.yml (e.g. "vllm", "media").
+        version: Parsed image version, or None when the tag was unparseable.
+        contracts_path: Path to contracts.yml. Defaults to DEPLOY_DIR/contracts.yml.
+
+    Raises:
+        NoMatchingContractError: if `engine` is missing from the file, or if no
+            contract for `engine` has a `min_version` <= `version`.
+    """
+    if contracts_path is None:
+        contracts_path = DEPLOY_DIR / "contracts.yml"
+
+    with open(contracts_path) as f:
+        data = yaml.safe_load(f) or {}
+
+    contracts = data.get("contracts", {}).get(engine)
+    if not contracts:
+        raise NoMatchingContractError(
+            f"No contracts defined for engine '{engine}' in {contracts_path}"
+        )
+
+    parsed = sorted(
+        ((Version(c["min_version"]), c["file"]) for c in contracts),
+        key=lambda x: x[0],
+        reverse=True,
+    )
+
+    if version is None:
+        logger.warning(
+            "Image version could not be parsed; falling back to newest "
+            "contract '%s' for engine '%s'.",
+            parsed[0][1],
+            engine,
+        )
+        return contracts_path.parent / parsed[0][1]
+
+    for min_v, fname in parsed:
+        if min_v <= version:
+            return contracts_path.parent / fname
+
+    raise NoMatchingContractError(
+        f"No contract for engine '{engine}' supports version {version}. "
+        f"Lowest min_version available: {parsed[-1][0]}. "
+        f"Add a row to {contracts_path} to support this version."
+    )
 
 
 def get_compose_template_path(model_spec, runtime_config) -> Path:
