@@ -190,7 +190,11 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
-    LOGURU_LEVEL=INFO
+    LOGURU_LEVEL=INFO \
+    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
+    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal/build/lib \
+    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
@@ -233,7 +237,6 @@ RUN chmod +x ${HOME_DIR}/app/server/run_uvicorn.sh
 
 EXPOSE 8000
 WORKDIR ${HOME_DIR}/app/server
-# Default to uvicornr-entrypoint.sh"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
 ENV SERVER_MODE=uvicorn
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
