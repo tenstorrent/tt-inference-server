@@ -310,7 +310,8 @@
         "qwen3_emb": {
             "id_name": "qwen3-emb-8b",
             "weights": [
-                "Qwen3-Embedding-8B"
+                "Qwen3-Embedding-8B",
+                "Qwen3-Embedding-4B"
             ],
             "category": "EMBEDDING",
             "compatible_devices": [
