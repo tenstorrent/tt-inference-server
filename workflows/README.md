@@ -205,7 +205,6 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--service-port` | `8000` | Service port. Also reads from `SERVICE_PORT` env var. |
 | `--bind-host` | `0.0.0.0` | Host interface for Docker port publishing. Use `127.0.0.1` for localhost-only access. |
 | `--no-auth` | false | Disable vLLM API key authorization (skips `JWT_SECRET` requirement). |
-| `--print-docker-cmd` | false | Print the Docker run command and exit without starting the server. |
 
 **Docker Volume Options:**
 
@@ -319,14 +318,6 @@ Mounts a host directory containing pre-downloaded model weights readonly into th
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
   --host-weights-dir /mnt/models/Llama-3.1-8B-Instruct
-```
-
-### Print Docker Command
-
-Use `--print-docker-cmd` to output the generated `docker run` command without starting the server. This is useful for inspecting or customizing the command before running it manually.
-
-```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server --print-docker-cmd
 ```
 
 ### Example Commands

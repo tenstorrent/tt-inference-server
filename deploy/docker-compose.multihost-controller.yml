@@ -10,7 +10,7 @@
 #
 # Usage (via run.py):
 #   python3 run.py --model DeepSeek-R1 --workflow server \
-#     --tt-device dual_galaxy --docker-server --use-compose --no-auth
+#     --tt-device dual_galaxy --docker-server --no-auth
 
 services:
   controller:
