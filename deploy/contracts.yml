@@ -9,9 +9,14 @@
 #
 # Filenames encode the LOWER bound of the era (e.g. -0.11.yml means
 # "applies to anything >= 0.11.0").
+#
+# Engine names match InferenceEngine enum values from workflows/workflow_types.py:
+#   VLLM = "vLLM"  (note: mixed case)
+#   MEDIA = "media"
+#   FORGE = "forge"  (uses the same image and contract as media)
 
 contracts:
-  vllm:
+  vLLM:
     # 0.11.0 changed the image entrypoint: venv is no longer pre-activated
     # and run_vllm_api_server.py takes --model / --tt-device CLI args.
     # Pre-0.11 selects the model via TT_MODEL_SPEC_JSON_PATH env var.
@@ -23,6 +28,14 @@ contracts:
   media:
     # No breaking change at 0.11 for the media engine; the 0.11 file works
     # for older images too. We register both eras pointing to the same file.
+    - min_version: "0.0.0"
+      file: docker-compose.media-0.11.yml
+    - min_version: "0.11.0"
+      file: docker-compose.media-0.11.yml
+
+  forge:
+    # Forge models run on the tt-media-server image, with the same contract
+    # as the media engine. Same routing rules as media.
     - min_version: "0.0.0"
       file: docker-compose.media-0.11.yml
     - min_version: "0.11.0"

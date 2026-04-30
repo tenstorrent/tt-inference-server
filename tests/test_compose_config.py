@@ -145,6 +145,50 @@ class TestLookupContract:
         assert path.parent == contracts_yaml.parent
 
 
+class TestProductionContractsYaml:
+    """Sanity tests that exercise the real deploy/contracts.yml against the
+    actual InferenceEngine enum values. These catch case-mismatch / missing-engine
+    bugs that the isolated-fixture tests above can't see.
+    """
+
+    def test_vllm_engine_value_resolves(self):
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.VLLM.value, Version("0.11.0"))
+        assert path.name == "docker-compose.vllm-0.11.yml"
+
+    def test_vllm_pre_0_11_resolves(self):
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.VLLM.value, Version("0.10.1"))
+        assert path.name == "docker-compose.vllm-pre-0.11.yml"
+
+    def test_media_engine_value_resolves(self):
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.MEDIA.value, Version("0.11.0"))
+        assert path.name == "docker-compose.media-0.11.yml"
+
+    def test_forge_engine_value_resolves(self):
+        # Forge models route through the media template; production contracts.yml
+        # must register the forge engine even though it shares files with media.
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.FORGE.value, Version("0.11.0"))
+        assert path.name == "docker-compose.media-0.11.yml"
+
+    def test_every_enum_value_is_registered(self):
+        """If a new engine is added to InferenceEngine, the production
+        contracts.yml must register it. Otherwise a real run with that engine
+        will hit NoMatchingContractError.
+        """
+        from workflows.workflow_types import InferenceEngine
+
+        for engine in InferenceEngine:
+            # Use 0.11.0 which is in-range for every era in the prod file.
+            lookup_contract(engine.value, Version("0.11.0"))
+
+
 from workflows.compose_config import write_compose_files_sidecar
 
 
