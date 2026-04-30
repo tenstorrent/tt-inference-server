@@ -97,12 +97,12 @@ bootstraps it in place. Override with `LM_EVAL_VENV=/path/to/venv` or
 | `OPENAI_API_KEY` or `VLLM_API_KEY` | Auth for the remote server. TT Console requires a `sk-tt-*` key from <https://console.tenstorrent.com/dashboard/inference/keys>. Defaults to `~/.tt-api-token` when present. | `sk-tt-...` |
 | `VLLM_MODEL` | Model name sent in the request body. Defaults to `deepseek-ai/DeepSeek-R1-0528`. | `deepseek-ai/DeepSeek-R1-0528` |
 | `TOKENIZER_MODEL` | HuggingFace repo used to tokenize prompts for `--completions-api`. Chat-completions mode does not load a tokenizer. Defaults to `VLLM_MODEL`. | `deepseek-ai/DeepSeek-R1-0528` |
-| `MAX_CONCURRENT` | Max simultaneous API requests. Defaults to `15`; decrease if the endpoint starts returning gateway timeouts or interrupted streams. | `5`, `15` |
+| `MAX_CONCURRENT` | Max simultaneous API requests. Defaults to `30`; decrease if the endpoint starts returning gateway timeouts or interrupted streams. | `5`, `30` |
 | `MAX_GEN_TOKS` | Generation token cap passed as `max_tokens`. Defaults to `65535`, matching the 64K DeepSeek-R1-0528 model-card evaluation setup. | `65535` |
 | `TEMPERATURE` | Sampling temperature. Defaults to `0.6`, matching the DeepSeek-R1-0528 model-card evaluation setup. | `0.6` |
 | `TOP_P` | Nucleus sampling `top_p`. Defaults to `0.95`, matching the DeepSeek-R1-0528 model-card evaluation setup. | `0.95` |
 | `MODEL_SEED` | API model seed. Normally unset; the pass@1 runner sets a distinct seed per run. | `1234000` |
-| `STREAM` | Request streaming API responses. Defaults to `1` while TT Console has idle timeout issues. Set `STREAM=0` only when deliberately testing non-streaming behavior. | `STREAM=0` |
+| `STREAM` | Request streaming API responses. Defaults to `0`; set `STREAM=1` only when deliberately falling back to streaming behavior. | `STREAM=1` |
 | `OUTPUT_DIR` | Destination for `lm_eval` results. Defaults to `./eval_results/<task>_<timestamp>/` or `./eval_results/deepseek_external_<mode>_<timestamp>/`. | `/tmp/deepseek_suite` |
 
 Additional mode-specific knobs:
@@ -275,13 +275,13 @@ OPENAI_API_KEY='sk-...' \
   `max_gen_toks=65535`, `temperature=0.6`, and `top_p=0.95`. Task YAML still
   owns task-specific stop strings such as `until`; use `--gen-kwargs` only when
   deliberately overriding or adding settings.
-- Streaming is enabled by default. This adds `stream=true` to
-  generation kwargs and loads `evals/scripts/lm_eval_streaming_patch/` through
-  `PYTHONPATH`. Disable it with `STREAM=0` or `--no-stream`; non-streaming runs
-  keep using the stock installed `lm_eval`.
-  Streaming prevents idle connection timeouts, but it does not increase server
-  capacity. The default is `MAX_CONCURRENT=15`; lower it if long reasoning evals
-  hit gateway timeouts or interrupted streams.
+- Non-streaming requests are the default (`STREAM=0`) and use
+  `MAX_CONCURRENT=30`. Set `STREAM=1` or pass `--stream` to add `stream=true`
+  to generation kwargs and enable the streaming response parser from
+  `evals/scripts/lm_eval_streaming_patch/`.
+  Streaming can help with idle connection timeouts, but it does not increase
+  server capacity. If long reasoning evals hit gateway timeouts or interrupted
+  streams, lower `MAX_CONCURRENT`.
   For chat streams that split `delta.reasoning` from `delta.content`, the patch
   preserves reasoning as a `<think>...</think>` block before the visible answer
   so sample logs retain total generation length while the scorer still extracts
@@ -318,7 +318,7 @@ OPENAI_API_KEY='sk-...' \
   waiting for a long non-streaming request or an overloaded queued request.
   Retry with lower concurrency, for example `MAX_CONCURRENT=1
   ./evals/scripts/run_aime24_all_external.sh`. If individual non-streaming
-  requests still time out, keep streaming enabled.
+  requests still time out, retry with `STREAM=1`.
 
 ## Output
 

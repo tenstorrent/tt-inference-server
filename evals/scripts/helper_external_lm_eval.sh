@@ -23,14 +23,14 @@ Options:
   --limit N|PCT            Pass through lm-eval --limit
   --num-fewshot N          Override lm-eval --num_fewshot
   --batch-size N           Batch size (default: 1)
-  --max-concurrent N       Add num_concurrent=N to model_args (default: 15)
+  --max-concurrent N       Add num_concurrent=N to model_args (default: 30)
   --max-gen-toks N         Generation token cap (default: 65535)
   --temperature N          Sampling temperature (default: 0.6)
   --top-p N                Nucleus sampling top_p (default: 0.95)
   --model-seed N           API model seed; useful for repeated sampling
   --gen-kwargs STR         Pass through lm-eval --gen_kwargs
-  --stream                 Request streaming responses (default; also STREAM=1)
-  --no-stream              Disable streaming responses (also STREAM=0)
+  --stream                 Request streaming responses (also STREAM=1)
+  --no-stream              Disable streaming responses (default; also STREAM=0)
   --no-apply-chat-template Disable --apply_chat_template
   --show-config            Print full lm-eval task configuration after evaluation
   --print-command          Print the full lm-eval command before running
@@ -62,13 +62,13 @@ OUTPUT_DIR="${OUTPUT_DIR:-}"
 LIMIT_ARG=""
 NUM_FEWSHOT=""
 BATCH_SIZE="1"
-MAX_CONCURRENT="${MAX_CONCURRENT:-15}"
+MAX_CONCURRENT="${MAX_CONCURRENT:-30}"
 MAX_GEN_TOKS="${MAX_GEN_TOKS:-65535}"
 TEMPERATURE="${TEMPERATURE:-0.6}"
 TOP_P="${TOP_P:-0.95}"
 MODEL_SEED="${MODEL_SEED:-}"
 GEN_KWARGS=""
-STREAM="${STREAM:-1}"
+STREAM="${STREAM:-0}"
 USE_CHAT_API="1"
 APPLY_CHAT_TEMPLATE="1"
 SHOW_CONFIG="0"
