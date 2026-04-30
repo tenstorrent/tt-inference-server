@@ -118,9 +118,8 @@ void DisaggregationService::setupSocketHandlers() {
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
 
-                bool isError =
-                    !response.choices.empty() &&
-                    response.choices.back().finish_reason == "error";
+                bool isError = !response.choices.empty() &&
+                               response.choices.back().finish_reason == "error";
                 if (isError) {
                   TT_LOG_WARN(
                       "[DisaggregationService] Prefill error for task {}, "
@@ -130,10 +129,9 @@ void DisaggregationService::setupSocketHandlers() {
                   prefillResult.finished = true;
                 } else {
                   prefillResult.remaining_tokens =
-                      maxTokens.has_value()
-                          ? std::optional<int>(
-                                std::max(0, maxTokens.value() - 1))
-                          : std::nullopt;
+                      maxTokens.has_value() ? std::optional<int>(std::max(
+                                                  0, maxTokens.value() - 1))
+                                            : std::nullopt;
                   prefillResult.token_ids.insert(prefillResult.token_ids.end(),
                                                  message.token_ids.begin(),
                                                  message.token_ids.end());

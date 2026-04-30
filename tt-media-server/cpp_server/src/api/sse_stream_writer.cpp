@@ -105,12 +105,11 @@ domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
 void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
   if (done_.load()) return;
 
-  const bool isErrorChunk = !chunk.choices.empty() &&
-                            chunk.choices[0].finish_reason == "error";
+  const bool isErrorChunk =
+      !chunk.choices.empty() && chunk.choices[0].finish_reason == "error";
 
-  const int currentTokens =
-      isErrorChunk ? completion_tokens_.load()
-                   : completion_tokens_.fetch_add(1) + 1;
+  const int currentTokens = isErrorChunk ? completion_tokens_.load()
+                                         : completion_tokens_.fetch_add(1) + 1;
 
   if (!isErrorChunk) {
     auto now = std::chrono::high_resolution_clock::now();
