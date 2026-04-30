@@ -4,12 +4,16 @@
 #include <gtest/gtest.h>
 #include <json/json.h>
 
+#include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "domain/chat_completion_request.hpp"
 #include "domain/response_format.hpp"
 #include "domain/sampling_params.hpp"
+#include "runners/guided_decoder_manager.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
 
@@ -432,3 +436,95 @@ TEST(GuidedDecodingTest, CombinedResponseFormatAndToolsPreserveBoth) {
 }
 
 }  // namespace
+
+// GuidedDecoderManager — bitmask, token acceptance, and grammar completion.
+// DeepSeek-R1-0528 single-character token IDs verified against tokenizer.json.
+static constexpr int K_JSON_OPEN_BRACE = 93;   // {
+static constexpr int K_JSON_CLOSE_BRACE = 95;  // }
+static constexpr int K_JSON_QUOTE = 4;         // "
+static constexpr int K_JSON_COLON = 28;        // :
+static constexpr int K_JSON_DIGIT_4 = 22;      // '4'
+static constexpr int K_JSON_LETTER_X = 90;     // 'x'
+static constexpr int K_JSON_LETTER_A = 35;     // 'A' – invalid outside strings
+
+class GuidedDecoderManagerTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    const auto& tok = tt::utils::tokenizers::activeTokenizer();
+    vocab = tok.getEncodedVocab();
+    vocabSize = static_cast<int>(vocab.size());
+    for (int64_t id : tok.stopTokenIds()) {
+      stopIds.push_back(static_cast<int32_t>(id));
+    }
+    ASSERT_FALSE(stopIds.empty())
+        << "Tokenizer must expose at least one EOS token";
+    decoder = std::make_unique<tt::runners::GuidedDecoderManager>(
+        vocab, vocabSize, stopIds);
+  }
+
+  // Schema: {"x": integer} — minimal, deterministic, fast to compile.
+  static tt::domain::SamplingParams integerXSchema() {
+    tt::domain::SamplingParams sp;
+    sp.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
+    sp.json_schema_str =
+        R"({"type":"object","properties":{"x":{"type":"integer"}})"
+        R"(,"required":["x"],"additionalProperties":false})";
+    return sp;
+  }
+
+  static bool isBitmaskSet(const std::vector<int32_t>& mask, int tokenId) {
+    if (tokenId < 0) return false;
+    size_t word = static_cast<size_t>(tokenId) / 32;
+    if (word >= mask.size()) return false;
+    return (static_cast<uint32_t>(mask[word]) >> (tokenId % 32)) & 1;
+  }
+
+  std::vector<std::string> vocab;
+  int vocabSize = 0;
+  std::vector<int32_t> stopIds;
+  std::unique_ptr<tt::runners::GuidedDecoderManager> decoder;
+};
+
+// The very first bitmask for a JSON-schema request must allow '{' and must
+// not allow an uppercase letter, which is only valid inside string values.
+TEST_F(GuidedDecoderManagerTest, InitialBitmaskAllowsOpenBrace) {
+  decoder->initRequest(1, integerXSchema());
+
+  std::vector<int32_t> bitmask;
+  decoder->fillNextBitmask(1, bitmask);
+
+  EXPECT_FALSE(bitmask.empty());
+  EXPECT_TRUE(isBitmaskSet(bitmask, K_JSON_OPEN_BRACE))
+      << "'{' must be valid at the start of a JSON schema response";
+  EXPECT_FALSE(isBitmaskSet(bitmask, K_JSON_LETTER_A))
+      << "'A' must not be valid at the start of a JSON schema response";
+}
+
+// Feeding the exact token sequence for {"x":4} followed by the EOS token
+// must be fully accepted and mark the grammar as complete only after EOS.
+TEST_F(GuidedDecoderManagerTest, AcceptsValidJsonSequenceAndCompletesOnEos) {
+  decoder->initRequest(1, integerXSchema());
+
+  const int32_t tokens[] = {K_JSON_OPEN_BRACE, K_JSON_QUOTE, K_JSON_LETTER_X,
+                            K_JSON_QUOTE,      K_JSON_COLON, K_JSON_DIGIT_4,
+                            K_JSON_CLOSE_BRACE};
+  for (int32_t tid : tokens) {
+    auto r = decoder->acceptToken(1, tid);
+    EXPECT_TRUE(r.accepted) << "Token " << tid << " should be accepted";
+    EXPECT_FALSE(r.completed) << "Grammar must not complete before EOS";
+  }
+
+  // EOS triggers IsTerminated() → completed = true.
+  auto r = decoder->acceptToken(1, stopIds.front());
+  EXPECT_TRUE(r.accepted);
+  EXPECT_TRUE(r.completed) << "Grammar must complete after EOS token";
+}
+
+// Presenting an uppercase letter as the first token must be rejected because
+// the grammar expects '{' (or whitespace), not a string character.
+TEST_F(GuidedDecoderManagerTest, RejectsTokenOutsideGrammar) {
+  decoder->initRequest(1, integerXSchema());
+
+  auto r = decoder->acceptToken(1, K_JSON_LETTER_A);
+  EXPECT_FALSE(r.accepted) << "'A' must be rejected when grammar expects '{'";
+}

@@ -16,7 +16,7 @@
 #include "ipc/cancel_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
 

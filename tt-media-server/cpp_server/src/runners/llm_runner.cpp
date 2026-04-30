@@ -36,10 +36,16 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     const auto& tok = tt::utils::tokenizers::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
-    guidedDecoder =
-        std::make_unique<GuidedDecoderManager>(encodedVocab, vocabSize);
-    TT_LOG_INFO("[LLMRunner] Guided decoder initialized (vocab_size={})",
-                vocabSize);
+    std::vector<int32_t> stopIds;
+    for (int64_t id : tok.stopTokenIds()) {
+      stopIds.push_back(static_cast<int32_t>(id));
+    }
+    guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
+                                                           vocabSize, stopIds);
+    TT_LOG_INFO(
+        "[LLMRunner] Guided decoder initialized (vocab_size={}, "
+        "stop_tokens={})",
+        vocabSize, stopIds.size());
   } catch (const std::exception& e) {
     TT_LOG_WARN(
         "[LLMRunner] Failed to init guided decoder, structured outputs "
@@ -67,11 +73,11 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
       if (!grammarResult.accepted) {
         TT_LOG_WARN(
             "[LLMRunner] Grammar rejected token {} for task {} - "
-            "finishing sequence",
+            "aborting sequence",
             result.tokenId, result.taskId);
         guidedDecoder->removeRequest(result.taskId);
         seq->setStatus(SequenceStatus::FINISHED);
-        ipc::pushToken(*this->resultQueue, result.taskId, result.tokenId, true);
+        ipc::pushErrorToken(*this->resultQueue, result.taskId);
         scheduler->removeSequence(result.taskId);
         return;
       }

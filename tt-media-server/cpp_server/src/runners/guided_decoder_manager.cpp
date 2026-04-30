@@ -24,16 +24,21 @@ struct GuidedDecoderManager::Impl {
 
   std::unordered_map<uint32_t, std::unique_ptr<RequestState>> requests;
 
-  Impl(const std::vector<std::string>& encodedVocab, int vocabSize)
-      : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize),
+  Impl(const std::vector<std::string>& encodedVocab, int vocabSize,
+       const std::vector<int32_t>& stopTokenIds)
+      : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize,
+                      stopTokenIds.empty()
+                          ? std::optional<std::vector<int32_t>>(std::nullopt)
+                          : std::optional<std::vector<int32_t>>(stopTokenIds)),
         compiler(tokenizerInfo),
         vocabSize(vocabSize),
         bitmaskSize(xgrammar::GetBitmaskSize(vocabSize)) {}
 };
 
 GuidedDecoderManager::GuidedDecoderManager(
-    const std::vector<std::string>& encodedVocab, int vocabSize)
-    : impl(std::make_unique<Impl>(encodedVocab, vocabSize)) {}
+    const std::vector<std::string>& encodedVocab, int vocabSize,
+    const std::vector<int32_t>& stopTokenIds)
+    : impl(std::make_unique<Impl>(encodedVocab, vocabSize, stopTokenIds)) {}
 
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 

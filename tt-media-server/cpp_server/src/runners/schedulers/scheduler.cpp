@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner/schedulers/scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 #include <algorithm>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/schedulers/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
 

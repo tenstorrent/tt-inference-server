@@ -9,8 +9,8 @@
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "runners/llm_runner/model_runner.hpp"
-#include "runners/llm_runner/schedulers/scheduler.hpp"
 #include "runners/runner_interface.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 namespace tt::services {
 class MemoryManager;

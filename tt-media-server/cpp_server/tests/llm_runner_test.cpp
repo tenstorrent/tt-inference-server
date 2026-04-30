@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+#include "runners/llm_runner.hpp"
 
 #include <gtest/gtest.h>
 
@@ -10,10 +11,13 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/response_format.hpp"
+#include "domain/sampling_params.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
-#include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "utils/id_generator.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
@@ -102,6 +106,65 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   EXPECT_EQ(receivedTokens[taskIds[0]], expectedSeq0);
   EXPECT_EQ(receivedTokens[taskIds[1]], expectedSeq1);
   EXPECT_EQ(receivedTokens[taskIds[2]], expectedSeq2);
+
+  resultQueue.shutdown();
+  resultQueue.remove();
+}
+
+// With a json_schema response format the mock runner drives the grammar to
+// completion. The sequence must finish via grammar termination (finish_reason
+// "stop"), not by exhausting max_tokens.  For {"x": integer} the grammar
+// completes in ~8 tokens, well under the 100-token budget.
+TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
+  setenv("LLM_MODE", "prefill", 1);
+
+  // Load stop tokens before constructing the engine so the scheduler can
+  // recognise the EOS token and mark the sequence finished without dangling
+  // pointers in the decode queue.
+  Config config = makeEngineConfig();
+  for (int64_t id : tt::utils::tokenizers::activeTokenizer().stopTokenIds()) {
+    config.stop_token_ids.push_back(id);
+  }
+  auto taskQueue = makeQueue();
+  tt::ipc::BoostIpcResultQueue resultQueue("test_structured_output",
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
+
+  tt::domain::SamplingParams sp;
+  sp.max_tokens = 100;
+  sp.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
+  sp.json_schema_str =
+      R"({"type":"object","properties":{"x":{"type":"integer"}})"
+      R"(,"required":["x"],"additionalProperties":false})";
+
+  auto& seq = engine.getScheduler().addRequest(
+      tt::utils::TaskIDGenerator::generate(), {1, 2, 3}, sp);
+  uint32_t taskId = seq.taskId;
+
+  std::vector<int64_t> tokens;
+  std::atomic<bool> done{false};
+
+  std::thread consumer([&]() {
+    tt::ipc::SharedToken token;
+    while (!done.load()) {
+      if (resultQueue.tryPop(token) && token.task_id == taskId) {
+        tokens.push_back(static_cast<int64_t>(token.token_id));
+        if (token.isFinal()) {
+          done.store(true);
+          engine.stop();
+        }
+      }
+    }
+  });
+
+  engine.start();
+  consumer.join();
+
+  EXPECT_FALSE(tokens.empty());
+  // Grammar for {"x": N} completes in ~8 tokens; hitting 100 would indicate
+  // the sequence ran out of budget rather than terminating grammatically.
+  EXPECT_LT(static_cast<int>(tokens.size()), 100)
+      << "Structured output should complete via grammar, not max_tokens";
 
   resultQueue.shutdown();
   resultQueue.remove();
