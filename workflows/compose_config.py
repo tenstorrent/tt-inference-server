@@ -20,11 +20,14 @@ Compose templates:
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Optional
+
+from packaging.version import InvalidVersion, Version
 
 from workflows.utils import get_repo_root_path, write_dotenv
 from workflows.workflow_types import (
@@ -40,6 +43,34 @@ COMPOSE_ENV_PATH = get_repo_root_path() / ".env.compose"
 
 def _short_uuid():
     return str(uuid.uuid4())[:8]
+
+
+_VERSION_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
+
+
+def parse_image_version(image: str) -> Optional[Version]:
+    """Parse a leading PEP-440 / semver-style version from a Docker image tag.
+
+    Returns None if the image has no tag, or if the tag's leading characters
+    do not form a parseable version. The build suffix after the version
+    (e.g. "-fae3df") is ignored.
+
+    Examples:
+        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc") == Version("0.11.0")
+        True
+        >>> parse_image_version("ghcr.io/foo/bar:dev") is None
+        True
+    """
+    if ":" not in image:
+        return None
+    tag = image.rsplit(":", 1)[1]
+    match = _VERSION_PREFIX_RE.match(tag)
+    if not match:
+        return None
+    try:
+        return Version(match.group(1))
+    except InvalidVersion:
+        return None
 
 
 def get_compose_template_path(model_spec, runtime_config) -> Path:
