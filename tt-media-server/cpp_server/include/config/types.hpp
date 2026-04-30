@@ -78,7 +78,6 @@ inline LLMMode llmModeFromString(const std::string& v) {
 
 enum class ModelRunnerType {
   MOCK,
-  PIPELINE,
   LLAMA,
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
@@ -105,6 +104,22 @@ inline std::string toString(Model m) {
     if (entry.model == m) return std::string(entry.name);
   }
   throw std::invalid_argument("Cannot match model to string");
+}
+
+inline std::string toString(ModelRunnerType m) {
+  switch (m) {
+    case ModelRunnerType::MOCK:
+      return "mock";
+    case ModelRunnerType::LLAMA:
+      return "llama";
+    case ModelRunnerType::MOCK_PIPELINE:
+      return "mock_pipeline";
+    case ModelRunnerType::PIPELINE_MANAGER:
+      return "pipeline_manager";
+    case ModelRunnerType::PREFILL:
+      return "prefill";
+  }
+  return "unknown";
 }
 
 inline Model modelFromString(const std::string_view& v) {

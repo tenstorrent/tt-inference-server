@@ -223,10 +223,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "pipeline") {
-      cfg.runner_type = ModelRunnerType::PIPELINE;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "prefill") {
+    if (backend == "prefill") {
       cfg.runner_type = ModelRunnerType::PREFILL;
       cfg.max_in_flight_count = 1;
     } else if (backend == "llama") {
