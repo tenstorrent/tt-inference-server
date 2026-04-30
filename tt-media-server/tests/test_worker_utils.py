@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import asyncio
 import os
 import sys
 from unittest.mock import Mock, patch
@@ -283,8 +282,11 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner = Mock()
         mock_device_runner = Mock()
         mock_device_runner.set_device = Mock()
-        mock_device_runner.warmup = Mock(return_value=asyncio.Future())
-        mock_device_runner.warmup.return_value.set_result(None)
+        # Plain Mock (not AsyncMock, not asyncio.Future): ``run_until_complete``
+        # is itself mocked below, so it never inspects or awaits warmup()'s
+        # return value. Using ``asyncio.Future()`` (pre-fix) required an event
+        # loop and broke when an earlier test in the run closed the main one.
+        mock_device_runner.warmup = Mock()
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
@@ -306,8 +308,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner = Mock()
         mock_device_runner = Mock()
         mock_device_runner.set_device = Mock()
-        mock_device_runner.warmup = Mock(return_value=asyncio.Future())
-        mock_device_runner.warmup.return_value.set_result(None)
+        mock_device_runner.warmup = Mock()
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
@@ -327,8 +328,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner = Mock()
         mock_device_runner = Mock()
         mock_device_runner.set_device = Mock()
-        mock_device_runner.warmup = Mock(return_value=asyncio.Future())
-        mock_device_runner.warmup.return_value.set_result(None)
+        mock_device_runner.warmup = Mock()
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
@@ -349,8 +349,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner = Mock()
         mock_device_runner = Mock()
         mock_device_runner.set_device = Mock()
-        mock_device_runner.warmup = Mock(return_value=asyncio.Future())
-        mock_device_runner.warmup.return_value.set_result(None)
+        mock_device_runner.warmup = Mock()
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()

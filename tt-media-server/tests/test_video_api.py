@@ -9,13 +9,38 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from config.constants import JobTypes
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import (
+    ImagePromptEntry,
+    VideoI2VGenerateRequest,
+)
 from open_ai_api.video import (
     cancel_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
+    submit_generate_video_i2v_request,
     submit_generate_video_request,
 )
+
+
+# A real 1x1 red PNG, base64-encoded. Hardcoded (not generated via PIL) because
+# ``conftest.py`` mocks the ``PIL`` module to keep unit tests ttnn-free — so
+# ``Image.new(...).save(buf)`` is a no-op and ``buf.getvalue()`` returns b""
+# under pytest, which breaks the ``min_length=1`` validator on ImagePromptEntry.
+# Only the string length matters for DTO validation; content is never decoded.
+_TINY_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8z8BQDwAEhQGAhKmM"
+    "IQAAAABJRU5ErkJggg=="
+)
+
+
+def _tiny_png_base64() -> str:
+    """Return a minimal base64-encoded PNG for I2V request fixtures.
+
+    We don't call PIL here because the test conftest mocks the PIL module;
+    a generated image would end up as an empty bytes buffer.
+    """
+    return _TINY_PNG_BASE64
 
 
 class TestSubmitGenerateVideoRequest:
@@ -358,6 +383,166 @@ class TestResponseContent:
         assert content["id"] == "job_123"
         assert content["object"] == JobTypes.VIDEO.value
         assert content["status"] == "cancelling"
+
+
+class TestSubmitGenerateVideoI2VRequest:
+    """Tests for POST /generations/i2v endpoint and VideoI2VGenerateRequest validation."""
+
+    @pytest.mark.asyncio
+    async def test_submit_i2v_request_success(self):
+        """I2V job submission reuses the same create_job path as T2V."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            return_value={
+                "id": "job_i2v_1",
+                "object": "video",
+                "status": "pending",
+                "created_at": 1234567890,
+            }
+        )
+
+        request = VideoI2VGenerateRequest(
+            prompt="A cat on a hill",
+            image_prompts=[
+                ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0),
+            ],
+        )
+
+        response = await submit_generate_video_i2v_request(
+            request=request,
+            service=mock_service,
+            api_key="test_key",
+        )
+
+        assert response.status_code == 202
+        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+
+    @pytest.mark.asyncio
+    async def test_submit_i2v_request_multiple_image_prompts(self):
+        """Multi-image conditioning is accepted and passed through unchanged."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            return_value={"id": "job_i2v_2", "status": "pending"}
+        )
+
+        b64 = _tiny_png_base64()
+        request = VideoI2VGenerateRequest(
+            prompt="A cat on a hill",
+            image_prompts=[
+                ImagePromptEntry(image=b64, frame_pos=0),
+                ImagePromptEntry(image=b64, frame_pos=40),
+                ImagePromptEntry(image=b64, frame_pos=80),
+            ],
+        )
+
+        await submit_generate_video_i2v_request(
+            request=request,
+            service=mock_service,
+            api_key="test_key",
+        )
+
+        args, _ = mock_service.create_job.call_args
+        passed_request = args[1]
+        assert len(passed_request.image_prompts) == 3
+        assert [e.frame_pos for e in passed_request.image_prompts] == [0, 40, 80]
+
+
+class TestVideoI2VGenerateRequestValidation:
+    """Tests for VideoI2VGenerateRequest pydantic validation."""
+
+    def test_valid_request(self):
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert len(request.image_prompts) == 1
+        assert request.image_prompts[0].frame_pos == 0
+
+    def test_missing_image_prompts_rejected(self):
+        """A request without image_prompts is not a valid I2V request."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(prompt="A cat")
+
+    def test_empty_image_prompts_rejected(self):
+        """Upstream would crash on image_prompt=[]; reject at API boundary."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(prompt="A cat", image_prompts=[])
+
+    def test_duplicate_frame_pos_rejected(self):
+        """Upstream asserts on duplicate frame positions; pre-empt at API."""
+        from pydantic import ValidationError
+
+        b64 = _tiny_png_base64()
+        with pytest.raises(ValidationError, match="duplicate frame_pos"):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                image_prompts=[
+                    ImagePromptEntry(image=b64, frame_pos=5),
+                    ImagePromptEntry(image=b64, frame_pos=5),
+                ],
+            )
+
+    def test_negative_frame_pos_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ImagePromptEntry(image=_tiny_png_base64(), frame_pos=-1)
+
+    def test_empty_base64_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ImagePromptEntry(image="", frame_pos=0)
+
+    def test_frame_pos_out_of_range_rejected(self):
+        """frame_pos must be < WAN22_DEFAULT_NUM_FRAMES (81); upstream
+        would otherwise raise IndexError writing into a 81-slot tensor."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ImagePromptEntry(image=_tiny_png_base64(), frame_pos=81)
+
+    def test_too_many_image_prompts_rejected(self):
+        """List length is capped at num_frames (81): one conditioning image
+        per output frame is the upstream hard limit."""
+        from pydantic import ValidationError
+
+        b64 = _tiny_png_base64()
+        # 82 entries exceeds WAN22_DEFAULT_NUM_FRAMES, and the only valid
+        # frame_pos values are [0, 80] so this list is invalid on two axes.
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                image_prompts=[
+                    ImagePromptEntry(image=b64, frame_pos=i % 81) for i in range(82)
+                ],
+            )
+
+    def test_max_valid_image_prompts_accepted(self):
+        """81 distinct frame positions, one per frame, is the upstream max."""
+        b64 = _tiny_png_base64()
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            image_prompts=[ImagePromptEntry(image=b64, frame_pos=i) for i in range(81)],
+        )
+        assert len(request.image_prompts) == 81
+
+    def test_inherits_video_generate_request_fields(self):
+        """I2V subclasses T2V: all T2V fields remain usable."""
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            negative_prompt="blurry",
+            num_inference_steps=30,
+            seed=42,
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert request.negative_prompt == "blurry"
+        assert request.num_inference_steps == 30
+        assert request.seed == 42
 
 
 if __name__ == "__main__":
