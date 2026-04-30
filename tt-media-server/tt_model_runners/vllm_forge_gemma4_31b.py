@@ -44,9 +44,11 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
-                "cpu_sampling": True,
-                "optimization_level": 0,
+                "cpu_sampling": False,
+                "optimization_level": 2,
                 "experimental_weight_dtype": "bfp_bf8",
+                #                "num_hidden_layers": 1,
+                "enable_trace": True,
             },
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
