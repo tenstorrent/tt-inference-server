@@ -15,10 +15,98 @@ import json
 import logging
 import copy
 import multiprocessing
+import re
 from typing import Dict
 
 
 LOGGER = logging.getLogger(__name__)
+
+MMLU_PRO_REGEX_PATTERNS = {
+    r"answer is \(?([ABCDEFGHIJ])\)?",
+    r"[tT]he best answer is ([A-Z])",
+}
+MMLU_PRO_DEFAULT_FALLBACK = "[invalid]"
+MMLU_PRO_MAX_CHOICES = 10
+
+_ANSWER_LETTER = (
+    r"(?:\*\*)?"
+    r"[\(\[]?\s*([A-J])\s*[\)\]]?"
+    r"(?:\*\*)?"
+    r"(?=[^A-Za-z]|$)"
+)
+_OPTION_PREFIX = r"(?:(?:option|choice)\s*)?"
+_MMLU_PRO_ANSWER_PATTERNS = [
+    re.compile(
+        rf"(?is)\bfinal\s+answer\s*(?:is|:)\s*{_OPTION_PREFIX}{_ANSWER_LETTER}"
+    ),
+    re.compile(
+        rf"(?is)\b(?:final\s+)?answer\s*:\s*(?:\*\*)?\s*"
+        rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
+    ),
+    re.compile(
+        rf"(?is)\bthe\s+(?:best\s+|correct\s+)?answer\s+is\s*"
+        rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
+    ),
+    re.compile(
+        rf"(?is)\b(?:the\s+)?(?:correct|best)\s+option\s+is\s*{_ANSWER_LETTER}"
+    ),
+    re.compile(
+        rf"(?is)\b(?:option|choice)\s*{_ANSWER_LETTER}\s*"
+        rf"(?:is\s+)?(?:the\s+)?(?:correct|right|best)\b"
+    ),
+    re.compile(
+        r"\\boxed\s*\{\s*(?:\\(?:text|mathrm|mathbf)\s*\{\s*)?"
+        r"([A-J])\s*(?:\}\s*)?\}"
+    ),
+]
+
+
+def _strip_think_blocks(text: str) -> str:
+    return re.sub(r"(?is)<think>.*?</think>", "", text)
+
+
+def _allowed_mmlu_pro_letters(doc: dict) -> set[str]:
+    options = doc.get("options") or doc.get("choices") or []
+    if not isinstance(options, list):
+        return set("ABCDEFGHIJ")
+    if not options:
+        return set("ABCDEFGHIJ")
+    return {
+        chr(ord("A") + idx)
+        for idx in range(min(len(options), MMLU_PRO_MAX_CHOICES))
+    }
+
+
+def _extract_mmlu_pro_answer(
+    response: str,
+    doc: dict,
+    fallback: str = MMLU_PRO_DEFAULT_FALLBACK,
+) -> str:
+    """Extract the final MMLU-Pro answer letter from common R1 formats.
+
+    The upstream MMLU-Pro task uses a very narrow regex for ``answer is (X)``.
+    DeepSeek-R1 commonly emits equivalent endings such as ``**Answer: X**``,
+    ``Final Answer: X``, or ``\\boxed{\\text{X}}``. Use anchored final-answer
+    forms and select the last valid letter so chain-of-thought alternatives do
+    not win over the final answer.
+    """
+
+    if not isinstance(response, str):
+        return fallback
+
+    text = _strip_think_blocks(response)
+    allowed_letters = _allowed_mmlu_pro_letters(doc)
+    matches: list[tuple[int, str]] = []
+    for pattern in _MMLU_PRO_ANSWER_PATTERNS:
+        for match in pattern.finditer(text):
+            answer = match.group(1).upper()
+            if answer in allowed_letters:
+                matches.append((match.start(), answer))
+
+    if not matches:
+        return fallback
+
+    return sorted(matches, key=lambda item: item[0])[-1][1]
 
 
 def _choice_delta_text(choice: dict) -> tuple[str, str]:
@@ -312,11 +400,37 @@ def _patch_configurable_task_process_results(ConfigurableTask) -> None:
     ConfigurableTask.process_results = process_results_with_livecodebench_patch
 
 
+def _patch_mmlu_pro_regex_filter(RegexFilter) -> None:
+    original = RegexFilter.apply
+    if getattr(original, "_tt_mmlu_pro_robust_extract_patch", False):
+        return
+
+    def apply_with_mmlu_pro_robust_extract(self, resps, docs):
+        if getattr(self, "regex_pattern", None) not in MMLU_PRO_REGEX_PATTERNS:
+            return original(self, resps, docs)
+
+        filtered_resps = []
+        fallback = getattr(self, "fallback", MMLU_PRO_DEFAULT_FALLBACK)
+        for response_set, doc in zip(resps, docs):
+            filtered_resps.append(
+                [
+                    _extract_mmlu_pro_answer(response, doc, fallback=fallback)
+                    for response in response_set
+                ]
+            )
+        return filtered_resps
+
+    apply_with_mmlu_pro_robust_extract._tt_mmlu_pro_robust_extract_patch = True
+    apply_with_mmlu_pro_robust_extract._tt_original_apply = original
+    RegexFilter.apply = apply_with_mmlu_pro_robust_extract
+
+
 def _patch_lm_eval() -> None:
     try:
         from lm_eval.models.api_models import TemplateAPI
         from lm_eval.api.task import ConfigurableTask
         from lm_eval.loggers.evaluation_tracker import EvaluationTracker
+        from lm_eval.filters.extraction import RegexFilter
     except ModuleNotFoundError:
         # PYTHONPATH also reaches helper Python tools such as the redactor, which
         # may run outside the lm_eval venv. Only lm_eval processes need this.
@@ -337,6 +451,7 @@ def _patch_lm_eval() -> None:
         EvaluationTracker._filter_livecodebench_sample = _filter_livecodebench_sample
 
     _patch_configurable_task_process_results(ConfigurableTask)
+    _patch_mmlu_pro_regex_filter(RegexFilter)
 
     try:
         from lm_eval.tasks.livecodebench import utils as livecodebench_utils

@@ -47,6 +47,9 @@ from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 SMOKE_TEST_EVAL_LIMIT = 3
+LM_EVAL_COMPAT_PATCH_DIR = (
+    Path(__file__).resolve().parent / "scripts" / "lm_eval_streaming_patch"
+)
 
 # Per-request budget reserved for the prompt when clamping max_gen_toks against
 # device_model_spec.max_context. A floor prevents pathological clamps on
@@ -110,6 +113,22 @@ def _is_external_server_workflow(runtime_config: Optional[RuntimeConfig]) -> boo
 
 def _resolve_api_model_name(model_spec) -> str:
     return os.getenv("VLLM_MODEL") or model_spec.hf_model_repo
+
+
+def _prepend_env_path(path: Path, existing: str = "") -> str:
+    parts = [str(path)]
+    if existing:
+        parts.extend(part for part in existing.split(os.pathsep) if part)
+    return os.pathsep.join(parts)
+
+
+def _build_lm_eval_env() -> dict:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _prepend_env_path(
+        LM_EVAL_COMPAT_PATCH_DIR,
+        env.get("PYTHONPATH", ""),
+    )
+    return env
 
 
 def _resolve_tokenizer_model_name(model_spec) -> str:
@@ -1008,7 +1027,9 @@ def main():
         _setup_agentic_eval_env(runtime_config.service_port)
 
     # copy env vars to pass to subprocesses
-    env_vars = os.environ.copy()
+    env_vars = _build_lm_eval_env()
+    if has_code_eval_tasks:
+        env_vars["HF_ALLOW_CODE_EVAL"] = "1"
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
