@@ -2660,6 +2660,39 @@ vlm_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
+    # Molmo2-8B: video-language model with 384-frame video support
+    ModelSpecTemplate(
+        weights=[
+            "allenai/Molmo2-8B",
+        ],
+        impl=tt_transformers_impl,
+        inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
+        version="1.0.0",
+        tt_metal_commit="f88d894",
+        vllm_commit="",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=36864,
+                default_impl=True,
+                vllm_args={
+                    "override-neuron-config": json.dumps(
+                        {"architectures": ["TTMolmo2ForConditionalGeneration"]}
+                    ),
+                    "disable_mm_preprocessor_cache": True,
+                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image", "video"],
+        has_builtin_warmup=True,
+    ),
 ]
 
 # =============================================================================

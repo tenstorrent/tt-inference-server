@@ -64,5 +64,20 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Register Molmo2 video-language model (TTMolmo2ForConditionalGeneration)
+    try:
+        ModelRegistry.register_model(
+            "TTMolmo2ForConditionalGeneration",
+            "models.demos.molmo2.tt.generator_vllm:Molmo2ForConditionalGeneration",
+        )
+        print("Registered Molmo2 model")
+    except Exception as e:
+        import logging
+
+        logging.warning(
+            f"Failed to register TTMolmo2ForConditionalGeneration: {e}. "
+            "Molmo2 model may not be available. Ensure tt-metal is in Python path."
+        )
+
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")
