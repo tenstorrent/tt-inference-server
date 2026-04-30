@@ -170,7 +170,7 @@ def build_benchmark_command(
         "serve",
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
-        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+        # "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
