@@ -88,6 +88,17 @@ bool InterServerService::sendPrefillRequest(
   return socket_manager_.sendObject("prefill_request", message);
 }
 
+bool InterServerService::sendPrefillError(uint32_t taskId,
+                                          const std::string& error) {
+  if (!enabled_) {
+    return false;
+  }
+
+  PrefillResultMessage message(taskId);
+  message.error = error;
+  return socket_manager_.sendObject("prefill_result", message);
+}
+
 bool InterServerService::sendPrefillResult(
     const PrefillResultMessage& message) {
   if (!enabled_) {

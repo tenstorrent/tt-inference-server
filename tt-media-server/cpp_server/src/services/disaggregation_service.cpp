@@ -39,6 +39,13 @@ void DisaggregationService::setupSocketHandlers() {
           }
           streamCallbacks.erase(message.task_id);
 
+          if (message.error.has_value()) {
+            callback.value()(
+                domain::makeErrorChunk(message.task_id, message.error.value()),
+                /*isFinal=*/true);
+            return;
+          }
+
           auto response = domain::LLMStreamChunk(message.task_id);
           domain::LLMChoice choice;
           choice.text = message.generated_text;
@@ -72,11 +79,8 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
-            auto response = domain::LLMStreamChunk(taskId);
-            domain::LLMChoice errChoice;
-            errChoice.finish_reason = "error";
-            response.choices.push_back(std::move(errChoice));
-            callback(response, true);
+            callback(domain::makeErrorChunk(taskId, "connection lost"),
+                     /*isFinal=*/true);
           });
       streamCallbacks.clear();
     });
@@ -101,6 +105,17 @@ void DisaggregationService::setupSocketHandlers() {
               request,
               [this, message, maxTokens, slotId](
                   const domain::LLMStreamChunk& response, bool /*isFinal*/) {
+                if (response.error.has_value()) {
+                  if (!socketService->sendPrefillError(
+                          message.task_id,
+                          "prefill: " + response.error.value())) {
+                    TT_LOG_WARN(
+                        "[DisaggregationService] Failed to send prefill error "
+                        "for task_id: {}",
+                        message.task_id);
+                  }
+                  return;
+                }
                 auto remainingTokens =
                     maxTokens.has_value()
                         ? std::optional<int>(std::max(0, maxTokens.value() - 1))
