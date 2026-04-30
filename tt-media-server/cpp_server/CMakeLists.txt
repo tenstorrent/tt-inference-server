@@ -477,6 +477,20 @@ target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# Reasoning parser test
+add_executable(test_reasoning_parser
+    tests/test_reasoning_parser.cpp
+    src/services/reasoning_parser.cpp
+)
+target_link_libraries(test_reasoning_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_reasoning_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/worker/worker_metrics_shm.cpp
@@ -544,6 +558,7 @@ gtest_discover_tests(conversation_store_test)
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
+add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
