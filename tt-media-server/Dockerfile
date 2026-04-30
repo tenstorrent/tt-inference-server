@@ -125,11 +125,16 @@ ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${TT_METAL_HOME}/server"
 COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 COPY "tt-media-server/fix_dependencies.sh" "${TT_METAL_HOME}/fix_dependencies.sh"
+# Use --index-strategy unsafe-best-match so uv searches all indexes for each
+# package. The PyTorch CPU index publishes stub listings for non-torch packages
+# (e.g. lightning, pyannote-audio) with limited versions, which under uv's
+# default first-index strategy shadows PyPI and breaks resolution of
+# whisperx -> pyannote-audio -> lightning.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
+    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir --index-strategy unsafe-best-match -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    uv pip install --no-cache-dir -r requirements_no_pyluwen.txt) \
+    uv pip install --no-cache-dir --index-strategy unsafe-best-match -r requirements_no_pyluwen.txt) \
     && echo 'Running dependency fixes...' \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
