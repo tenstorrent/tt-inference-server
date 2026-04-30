@@ -1,12 +1,13 @@
 # Docker Compose for vLLM inference server on Tenstorrent hardware.
+# Contract era: image versions >= 0.11.0.
 #
 # Usage (standalone, without run.py):
 #   1. Copy .env.example to .env.compose and fill in values
-#   2. docker compose --env-file .env.compose -f docker-compose.vllm-0.11.yml up -d
+#   2. docker compose --env-file .env.compose -f docker-compose.vllm-0.11.yml up -d --wait
 #
 # Usage (via run.py):
 #   python3 run.py --model Llama-3.1-8B-Instruct --workflow server \
-#     --tt-device n150 --docker-server --use-compose --no-auth
+#     --tt-device n150 --docker-server --no-auth
 #
 # Note on entrypoint: Release images use docker-entrypoint.sh (root → gosu)
 # which does NOT activate the Python venv. The command must include venv
@@ -22,6 +23,7 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - cache:/home/container_app_user/cache_root
+      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required}:${CONTAINER_MODEL_WEIGHTS:-/mnt/weights}:ro
     env_file:
       - ${ENV_FILE:-.env}
     environment:
@@ -47,4 +49,3 @@ services:
 volumes:
   cache:
     name: ${CACHE_VOLUME:-tt-inference-cache}
-    external: true
