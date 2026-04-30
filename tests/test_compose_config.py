@@ -189,7 +189,7 @@ class TestProductionContractsYaml:
             lookup_contract(engine.value, Version("0.11.0"))
 
 
-from workflows.compose_config import write_compose_files_sidecar
+from workflows.compose_config import build_compose_command, write_compose_files_sidecar
 
 
 class TestWriteComposeFilesSidecar:
@@ -217,3 +217,234 @@ class TestWriteComposeFilesSidecar:
         sidecar = tmp_path / ".env.compose.files"
         write_compose_files_sidecar([], path=sidecar)
         assert sidecar.read_text() == "\n"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for TestBuildComposeCommand
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+
+from workflows.workflow_types import InferenceEngine
+
+
+def _model_spec(image_tag="0.11.0-abc", engine=None):
+    """Minimal fake ModelSpec for build_compose_command / resolve_compose_vars."""
+    if engine is None:
+        engine = InferenceEngine.VLLM.value
+    return SimpleNamespace(
+        docker_image=f"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal:{image_tag}",
+        inference_engine=engine,
+        hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
+        model_name="Llama-3.1-8B-Instruct",
+        # device_type.name is read by media/forge branch of resolve_compose_vars
+        device_type=SimpleNamespace(name="N150"),
+    )
+
+
+def _runtime_config(dev_mode=False):
+    """Minimal fake RuntimeConfig."""
+    return SimpleNamespace(
+        device="n150",
+        service_port=8000,
+        bind_host="0.0.0.0",
+        dev_mode=dev_mode,
+    )
+
+
+def _setup_config(
+    host_model_volume_root=None,
+    host_model_weights_mount_dir=None,
+    container_model_weights_mount_dir=None,
+    container_model_weights_path=None,
+    container_tt_metal_cache_dir=None,
+    container_model_weights=None,
+):
+    """Minimal fake SetupConfig.
+
+    When host_model_volume_root is None, resolve_compose_vars falls back to
+    generate_docker_volume_name(model_spec), which reads model_spec.impl.impl_id
+    and model_spec.model_name.  All tests that pass a setup_config set
+    host_model_volume_root to avoid that branch.
+    """
+    return SimpleNamespace(
+        host_model_volume_root=host_model_volume_root,
+        host_model_weights_mount_dir=host_model_weights_mount_dir,
+        container_model_weights_mount_dir=container_model_weights_mount_dir,
+        container_model_weights_path=container_model_weights_path,
+        container_tt_metal_cache_dir=container_tt_metal_cache_dir,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+OVERLAYS_DIR = Path(__file__).parent.parent / "deploy" / "overlays"
+DEPLOY_DIR = Path(__file__).parent.parent / "deploy"
+
+
+class TestBuildComposeCommand:
+    """Unit tests for build_compose_command overlay-selection logic.
+
+    build_compose_command is a pure function: it reads config objects and
+    returns (compose_files: list[Path], compose_vars: dict[str, str]).
+    No Docker or subprocess calls are made.
+    """
+
+    # ------------------------------------------------------------------
+    # 1. Default case — vLLM, no overlays
+    # ------------------------------------------------------------------
+    def test_default_no_overlays(self):
+        ms = _model_spec(image_tag="0.11.0-abc")
+        rc = _runtime_config(dev_mode=False)
+        files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
+
+        # Only the contract file, no overlays
+        assert len(files) == 1
+        assert files[0].name == "docker-compose.vllm-0.11.yml"
+
+        # Core vars present
+        assert env["DOCKER_IMAGE"] == ms.docker_image
+        assert env["HF_MODEL"] == ms.hf_model_repo
+        assert env["TT_DEVICE"] == rc.device
+
+        # No overlay-specific vars
+        assert "HOST_MODEL_WEIGHTS" not in env
+        assert "REPO_ROOT" not in env
+        assert "HOST_CACHE_ROOT" not in env
+        assert "RUNTIME_MODEL_SPEC_JSON" not in env
+
+    # ------------------------------------------------------------------
+    # 2. dev_mode True — adds dev-mode overlay + REPO_ROOT
+    # ------------------------------------------------------------------
+    def test_dev_mode_adds_overlay_and_repo_root(self):
+        ms = _model_spec()
+        rc = _runtime_config(dev_mode=True)
+        files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
+
+        assert files[0].name == "docker-compose.vllm-0.11.yml"
+        assert any(f.name == "dev-mode.yml" for f in files)
+        assert "REPO_ROOT" in env
+        # No other overlay vars
+        assert "HOST_CACHE_ROOT" not in env
+        assert "HOST_MODEL_WEIGHTS" not in env
+        assert "RUNTIME_MODEL_SPEC_JSON" not in env
+
+    # ------------------------------------------------------------------
+    # 3. host_model_volume_root set — adds host-cache overlay + HOST_CACHE_ROOT
+    # ------------------------------------------------------------------
+    def test_host_cache_overlay(self, tmp_path):
+        ms = _model_spec()
+        rc = _runtime_config()
+        sc = _setup_config(host_model_volume_root=tmp_path / "cache")
+        files, env = build_compose_command(ms, rc, setup_config=sc, json_fpath=None)
+
+        assert files[0].name == "docker-compose.vllm-0.11.yml"
+        assert any(f.name == "host-cache.yml" for f in files)
+        assert env["HOST_CACHE_ROOT"] == str(tmp_path / "cache")
+        # No other overlay vars
+        assert "HOST_MODEL_WEIGHTS" not in env
+        assert "RUNTIME_MODEL_SPEC_JSON" not in env
+
+    # ------------------------------------------------------------------
+    # 4. host_model_weights_mount_dir set — adds host-weights overlay
+    # ------------------------------------------------------------------
+    def test_host_weights_overlay(self, tmp_path):
+        weights_dir = tmp_path / "weights"
+        container_weights_dir = Path("/models/weights")
+        container_weights_path = Path("/models/weights/model")
+        container_cache = Path("/cache/tt_metal")
+
+        ms = _model_spec()
+        rc = _runtime_config()
+        sc = _setup_config(
+            host_model_volume_root=tmp_path / "cache",
+            host_model_weights_mount_dir=weights_dir,
+            container_model_weights_mount_dir=container_weights_dir,
+            container_model_weights_path=container_weights_path,
+            container_tt_metal_cache_dir=container_cache,
+        )
+        files, env = build_compose_command(ms, rc, setup_config=sc, json_fpath=None)
+
+        assert any(f.name == "host-weights.yml" for f in files)
+        assert env["HOST_MODEL_WEIGHTS"] == str(weights_dir)
+        assert env["CONTAINER_MODEL_WEIGHTS"] == str(container_weights_dir)
+        # Pre-0.11-era extras also set
+        assert env["MODEL_WEIGHTS_PATH"] == str(container_weights_path)
+        assert env["TT_CACHE_PATH"] == str(container_cache)
+        assert "RUNTIME_MODEL_SPEC_JSON" not in env
+
+    # ------------------------------------------------------------------
+    # 5. json_fpath set — adds model-spec overlay + RUNTIME_MODEL_SPEC_JSON
+    # ------------------------------------------------------------------
+    def test_json_fpath_adds_model_spec_overlay(self, tmp_path):
+        json_file = tmp_path / "model_spec.json"
+        ms = _model_spec()
+        rc = _runtime_config()
+        files, env = build_compose_command(
+            ms, rc, setup_config=None, json_fpath=json_file
+        )
+
+        assert any(f.name == "model-spec.yml" for f in files)
+        assert env["RUNTIME_MODEL_SPEC_JSON"] == str(json_file)
+        assert env["TT_MODEL_SPEC_HOST_PATH"] == str(json_file)
+        assert "HOST_MODEL_WEIGHTS" not in env
+        assert "REPO_ROOT" not in env
+
+    # ------------------------------------------------------------------
+    # 6. All overlays stacked — order: contract, dev-mode, host-cache,
+    #    host-weights, model-spec
+    # ------------------------------------------------------------------
+    def test_all_overlays_stacking_order(self, tmp_path):
+        json_file = tmp_path / "model_spec.json"
+        ms = _model_spec()
+        rc = _runtime_config(dev_mode=True)
+        sc = _setup_config(
+            host_model_volume_root=tmp_path / "cache",
+            host_model_weights_mount_dir=tmp_path / "weights",
+            container_model_weights_mount_dir=Path("/container/weights"),
+        )
+        files, env = build_compose_command(ms, rc, setup_config=sc, json_fpath=json_file)
+
+        names = [f.name for f in files]
+        assert names[0] == "docker-compose.vllm-0.11.yml", "contract must be first"
+        assert names.index("dev-mode.yml") < names.index("host-cache.yml"), \
+            "dev-mode before host-cache"
+        assert names.index("host-cache.yml") < names.index("host-weights.yml"), \
+            "host-cache before host-weights"
+        assert names.index("host-weights.yml") < names.index("model-spec.yml"), \
+            "host-weights before model-spec"
+
+        # All overlay-specific vars present
+        assert "REPO_ROOT" in env
+        assert "HOST_CACHE_ROOT" in env
+        assert "HOST_MODEL_WEIGHTS" in env
+        assert "RUNTIME_MODEL_SPEC_JSON" in env
+        assert "TT_MODEL_SPEC_HOST_PATH" in env
+
+    # ------------------------------------------------------------------
+    # 7. Pre-0.11 image tag — picks vllm-pre-0.11.yml contract
+    # ------------------------------------------------------------------
+    def test_pre_0_11_image_picks_legacy_contract(self):
+        ms = _model_spec(image_tag="0.10.4-abc")
+        rc = _runtime_config()
+        files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
+
+        assert files[0].name == "docker-compose.vllm-pre-0.11.yml"
+        assert len(files) == 1
+        assert env["DOCKER_IMAGE"] == ms.docker_image
+
+    # ------------------------------------------------------------------
+    # 8. Media engine — picks media-0.11.yml contract
+    # ------------------------------------------------------------------
+    def test_media_engine_picks_media_contract(self):
+        ms = _model_spec(image_tag="0.11.0-abc", engine=InferenceEngine.MEDIA.value)
+        rc = _runtime_config()
+        files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
+
+        assert files[0].name == "docker-compose.media-0.11.yml"
+        # Media branch sets MODEL and DEVICE instead of HF_MODEL / TT_DEVICE
+        assert env["MODEL"] == ms.model_name
+        assert env["DEVICE"] == ms.device_type.name.lower()
+        assert "HF_MODEL" not in env
