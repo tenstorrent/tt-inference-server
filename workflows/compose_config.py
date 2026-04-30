@@ -549,3 +549,103 @@ def write_compose_files_sidecar(
     path.write_text(args + "\n")
     logger.info(f"Wrote compose file list to {path}")
     return path
+
+
+def run_compose_server(
+    model_spec,
+    runtime_config,
+    setup_config,
+    json_fpath: Optional[Path] = None,
+):
+    """Run a single-host inference server via Docker Compose.
+
+    Picks a contract from contracts.yml based on the image version, stacks
+    overlays per runtime_config / setup_config, writes .env.compose and
+    .env.compose.files, then runs `docker compose up -d --wait` so the
+    healthcheck-based readiness check is the source of truth.
+
+    Returns immediately after the server is healthy. The caller is responsible
+    for running the workflow client and calling `run_compose_down` in a
+    finally block.
+
+    Returns:
+        Dict with keys: container_name, compose_files, env_file.
+    """
+    from workflows.run_docker_server import ensure_docker_image
+
+    image_version = parse_image_version(model_spec.docker_image)
+    contract_file = lookup_contract(model_spec.inference_engine, image_version)
+
+    overlays = []
+    if runtime_config.dev_mode:
+        overlays.append(DEPLOY_DIR / "overlays" / "dev-mode.yml")
+    if setup_config and getattr(setup_config, "host_model_volume_root", None):
+        overlays.append(DEPLOY_DIR / "overlays" / "host-cache.yml")
+    if json_fpath:
+        overlays.append(DEPLOY_DIR / "overlays" / "model-spec.yml")
+
+    compose_files = [contract_file, *overlays]
+
+    compose_vars = resolve_compose_vars(model_spec, runtime_config, setup_config)
+    if runtime_config.dev_mode:
+        compose_vars["REPO_ROOT"] = str(get_repo_root_path())
+    if setup_config and getattr(setup_config, "host_model_volume_root", None):
+        compose_vars["HOST_CACHE_ROOT"] = str(setup_config.host_model_volume_root)
+    if json_fpath:
+        compose_vars["RUNTIME_MODEL_SPEC_JSON"] = str(json_fpath)
+    if setup_config and getattr(setup_config, "host_model_weights_mount_dir", None):
+        compose_vars["HOST_MODEL_WEIGHTS"] = str(setup_config.host_model_weights_mount_dir)
+        if getattr(setup_config, "container_model_weights_mount_dir", None):
+            compose_vars["CONTAINER_MODEL_WEIGHTS"] = str(setup_config.container_model_weights_mount_dir)
+
+    write_compose_env(compose_vars)
+    write_compose_files_sidecar(compose_files)
+
+    if not is_compose_available():
+        raise RuntimeError(
+            "Docker Compose v2 is required but not available. "
+            "Install with `apt-get install docker-compose-plugin` or upgrade Docker."
+        )
+
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
+
+    cmd = ["docker", "compose"]
+    for f in compose_files:
+        cmd += ["-f", str(f)]
+    cmd += ["--env-file", str(COMPOSE_ENV_PATH)]
+
+    logger.info(f"Starting server via: {' '.join(cmd + ['up', '-d', '--wait'])}")
+    result = subprocess.run(cmd + ["up", "-d", "--wait"])
+    if result.returncode != 0:
+        # `compose up --wait` already prints what failed; surface a final dump.
+        subprocess.run(cmd + ["logs", "--tail", "200"])
+        raise RuntimeError(
+            f"`docker compose up --wait` exited {result.returncode}. "
+            f"Server failed to become healthy. See logs above."
+        )
+
+    return {
+        "container_name": compose_vars["CONTAINER_NAME"],
+        "compose_files": [str(f) for f in compose_files],
+        "env_file": str(COMPOSE_ENV_PATH),
+    }
+
+
+def run_compose_down(compose_files: list, env_file: Optional[Path] = None, timeout: int = 30):
+    """Stop and remove containers/networks/volumes for a compose-managed run.
+
+    Args:
+        compose_files: List of paths/strings used in the original `compose up`.
+        env_file: Path to the env file used. Defaults to COMPOSE_ENV_PATH.
+        timeout: Seconds to wait for graceful shutdown before force-stop.
+    """
+    if env_file is None:
+        env_file = COMPOSE_ENV_PATH
+    cmd = ["docker", "compose"]
+    for f in compose_files:
+        cmd += ["-f", str(f)]
+    cmd += ["--env-file", str(env_file), "down", "-t", str(timeout)]
+    logger.info(f"Tearing down via: {' '.join(cmd)}")
+    subprocess.run(cmd, check=False)
