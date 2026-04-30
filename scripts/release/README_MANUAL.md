@@ -141,7 +141,7 @@ crane copy <src> <dst>
 
 ## Step 2: verification through the list model images
 
-Run `python3 list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
+Run `python3 scripts/list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
 
 The full script path is: ```https://github.com/tenstorrent/tt-inference-server/blob/main/scripts/list_model_images.py```
 
