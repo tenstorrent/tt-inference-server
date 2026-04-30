@@ -1,0 +1,19 @@
+# Maps inference-server image version → compose contract file.
+#
+# Selection rule (see workflows.compose_config.lookup_contract):
+#   pick the entry with the largest min_version <= image_version.
+#
+# A new entry is added only when a breaking change in the inference-server
+# image interface (entrypoint, env vars, mount paths, command shape) makes
+# the previous contract inadequate. This is rare; expect few entries.
+#
+# Filenames encode the LOWER bound of the era (e.g. -0.11.yml means
+# "applies to anything >= 0.11.0").
+
+contracts:
+  vllm:
+    - min_version: "0.11.0"
+      file: docker-compose.vllm-0.11.yml
+  media:
+    - min_version: "0.11.0"
+      file: docker-compose.media-0.11.yml
