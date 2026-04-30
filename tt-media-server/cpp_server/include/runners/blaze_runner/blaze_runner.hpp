@@ -16,8 +16,8 @@
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"
-#include "runners/runner_interface.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
+#include "runners/runner_interface.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
 
 namespace tt::runners {

@@ -9,8 +9,8 @@
 #include "config/runner_config.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
-#include "runners/runner_interface.hpp"
 #include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
+#include "runners/runner_interface.hpp"
 
 namespace tt::runners {
 

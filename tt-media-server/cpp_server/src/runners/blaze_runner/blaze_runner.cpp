@@ -10,41 +10,41 @@
 #include <services/memory_services/blaze_memory_manager.hpp>
 
 #include "config/settings.hpp"
+#include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
-#include "ipc/token_push.hpp"
-
 
 namespace {
-  using namespace tt_blaze::pipeline_manager;
-  PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
-    switch (config.runner_type) {
-      case tt::config::ModelRunnerType::PIPELINE_MANAGER:
-        return SocketConfig{
+using namespace tt_blaze::pipeline_manager;
+PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return SocketConfig{
           .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
           .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
           .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return PipelineSimulatorConfig{
-        .num_stages = 64,
-        .stage_duration_us= 44,
-        .decode_token_id = 12345,
-        };
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .decode_token_id = 12345,
+      };
       /* spec decode config
        return PipelineSimulatorConfig{
           .num_stages = 64,
           .stage_duration_us = 44,
           .accept_rate = 0.9f,
-          .safe_vocab_base = 1000,    // anything safely above your tokenizer's stop ids
-          .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower coincidental-stop chance
+          .safe_vocab_base = 1000,    // anything safely above your tokenizer's
+      stop ids .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower
+      coincidental-stop chance
       };
        */
     default:
       throw std::runtime_error("Invalid blaze runner type");
   }
 }
-}
+}  // namespace
 
 namespace tt::runners {
 namespace utils = blaze_utils;
