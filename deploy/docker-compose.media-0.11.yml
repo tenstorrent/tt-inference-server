@@ -1,13 +1,14 @@
 # Docker Compose for tt-media-server (image, video, audio, embedding models)
 # on Tenstorrent hardware. Also used for forge-based models.
+# Contract era: image versions >= 0.11.0.
 #
 # Usage (standalone, without run.py):
 #   1. Copy .env.example to .env.compose and fill in values
-#   2. docker compose --env-file .env.compose -f docker-compose.media-0.11.yml up -d
+#   2. docker compose --env-file .env.compose -f docker-compose.media-0.11.yml up -d --wait
 #
 # Usage (via run.py):
 #   python3 run.py --model Wan2.2-T2V-A14B-Diffusers --workflow server \
-#     --tt-device galaxy --docker-server --use-compose
+#     --tt-device galaxy --docker-server
 
 services:
   inference-server:
@@ -19,6 +20,7 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - cache:/home/container_app_user/cache_root
+      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required}:${CONTAINER_MODEL_WEIGHTS:-/mnt/weights}:ro
     env_file:
       - ${ENV_FILE:-.env}
     environment:
@@ -38,4 +40,3 @@ services:
 volumes:
   cache:
     name: ${CACHE_VOLUME:-tt-media-cache}
-    external: true
