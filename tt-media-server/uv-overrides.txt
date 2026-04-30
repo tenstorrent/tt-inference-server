@@ -4,17 +4,25 @@
 #
 # uv overrides applied during media-server requirements install.
 #
-# Why this exists:
-#   tt-metal's python_env (created by create_venv.sh) installs
-#   tt_metal/python_env/requirements-dev.txt FIRST, which hard-pins:
-#       numpy>=1.24.4,<2
-#   whisperx==3.4.3 (and 3.4.2) declares numpy>=2.0.2 in its metadata.
-#   These ranges do not overlap, so uv aborts resolution. uv collapses the
-#   conflict tree and reports it indirectly as
-#       "there are no versions of lightning"
-#   because lightning is the deepest transitive dep that gets unsatisfiable.
+# These overrides work around two upstream resolution issues that prevent
+# whisperx==3.4.3 from installing into tt-metal's pre-populated python_env:
 #
-# This overrides file forces the entire resolution to use numpy<2,
-# matching tt-metal's pin. whisperx 3.4.3 has been observed to run fine on
-# numpy<2 at runtime (its numpy>=2.0.2 declaration is overly conservative).
+# 1) lightning quarantine on PyPI
+#    pyannote-audio 3.3.2-3.4.0 (a transitive dep of whisperx==3.4.3) declares
+#    `lightning>=2.0.1`. As of 2026-04, PyPI has flagged the `lightning`
+#    project as quarantined (pypi:project-status=quarantined), so its simple
+#    index returns no links and the JSON metadata API returns 404. uv
+#    legitimately reports "there are no versions of lightning". The actual
+#    sdist files remain hosted on PyPI's content-addressable CDN, so we
+#    bypass the quarantined project page by overriding `lightning` to a
+#    direct CDN URL. lightning 2.5.5's declared deps are all compatible with
+#    tt-metal's existing pins.
+#
+# 2) numpy upper-bound conflict
+#    tt-metal's requirements-dev.txt pins numpy>=1.24.4,<2 (already installed
+#    in the venv when this override file is consumed). whisperx==3.4.3
+#    declares numpy>=2.0.2, which would force a venv-wide numpy upgrade and
+#    break tt-metal's pin. whisperx is observed to run fine on numpy<2;
+#    overriding here keeps the venv consistent with tt-metal.
 numpy>=1.24.4,<2
+lightning @ https://files.pythonhosted.org/packages/0f/dd/86bb3bebadcdbc6e6e5a63657f0a03f74cd065b5ea965896679f76fec0b4/lightning-2.5.5.tar.gz
