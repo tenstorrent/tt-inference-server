@@ -642,8 +642,8 @@ jobs:
             --dataset-name random \
             --random-input-len 32\
             --random-output-len 1024\
-            --num-prompts 512\
-            --max-concurrency 64 \
+            --num-prompts 256\
+            --max-concurrency 32\
             --save-result \
             --result-filename "vllm-bench-mock-pipeline.json" \
             2>&1 | tee bench_mock_pipeline_output.txt
