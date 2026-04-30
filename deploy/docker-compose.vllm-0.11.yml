@@ -23,7 +23,9 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - cache:/home/container_app_user/cache_root
-      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required}:${CONTAINER_MODEL_WEIGHTS:-/mnt/weights}:ro
+      # Host-bound weights are added via overlays/host-weights.yml when
+      # setup_config.host_model_weights_mount_dir is set; otherwise the
+      # server downloads weights at runtime via HF_TOKEN.
     env_file:
       - ${ENV_FILE:-.env}
     environment:

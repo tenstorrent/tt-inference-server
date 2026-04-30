@@ -7,7 +7,7 @@
 #   - Model selection is via `TT_MODEL_SPEC_JSON_PATH` env var pointing to
 #     a bind-mounted JSON spec. There are no --model / --tt-device CLI args.
 #   - Weights env var is `MODEL_WEIGHTS_PATH` (renamed to MODEL_WEIGHTS_DIR
-#     in 0.11.0).
+#     in 0.11.0). Set via overlays/host-weights.yml.
 #   - `TT_CACHE_PATH` must be passed explicitly (0.11 computes it from
 #     CACHE_ROOT internally).
 #   - Used `shm_size: 32g` instead of `ipc: host` (compose accepts either,
@@ -15,8 +15,12 @@
 #
 # Required env vars (set by run.py via .env.compose, or supply manually):
 #   DOCKER_IMAGE, HF_TOKEN/JWT_SECRET (via env_file)
-#   HOST_MODEL_WEIGHTS, MODEL_WEIGHTS_PATH
-#   TT_MODEL_SPEC_HOST_PATH, TT_CACHE_PATH
+#   TT_MODEL_SPEC_HOST_PATH (the runtime model spec JSON; pre-0.11 needs it
+#                            to know which model to load — no CLI args).
+#   TT_CACHE_PATH (defaults to /home/container_app_user/cache_root/tt_metal_cache)
+#
+# Optional overlays:
+#   overlays/host-weights.yml  — bind-mount weights from host (sets MODEL_WEIGHTS_PATH).
 
 services:
   inference-server:
@@ -28,15 +32,16 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - cache:/home/container_app_user/cache_root
-      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required}:${CONTAINER_MODEL_WEIGHTS:-/home/container_app_user/readonly_weights_mount}:ro
       - ${TT_MODEL_SPEC_HOST_PATH:?TT_MODEL_SPEC_HOST_PATH is required}:/tmp/tt_model_spec.json:ro
+      # Host-bound weights are added via overlays/host-weights.yml when
+      # setup_config.host_model_weights_mount_dir is set.
     env_file:
       - ${ENV_FILE:-.env}
     environment:
       CACHE_ROOT: /home/container_app_user/cache_root
       TT_CACHE_PATH: ${TT_CACHE_PATH:-/home/container_app_user/cache_root/tt_metal_cache}
-      MODEL_WEIGHTS_PATH: ${MODEL_WEIGHTS_PATH:?MODEL_WEIGHTS_PATH is required}
       TT_MODEL_SPEC_JSON_PATH: /tmp/tt_model_spec.json
+      # MODEL_WEIGHTS_PATH is set by overlays/host-weights.yml when present.
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
     restart: on-failure:3

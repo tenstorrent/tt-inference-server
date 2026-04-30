@@ -457,6 +457,8 @@ def build_compose_command(
         overlays.append(DEPLOY_DIR / "overlays" / "dev-mode.yml")
     if setup_config and getattr(setup_config, "host_model_volume_root", None):
         overlays.append(DEPLOY_DIR / "overlays" / "host-cache.yml")
+    if setup_config and getattr(setup_config, "host_model_weights_mount_dir", None):
+        overlays.append(DEPLOY_DIR / "overlays" / "host-weights.yml")
     if json_fpath:
         overlays.append(DEPLOY_DIR / "overlays" / "model-spec.yml")
 
