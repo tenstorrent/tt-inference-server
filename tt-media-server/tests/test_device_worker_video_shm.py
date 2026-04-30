@@ -50,9 +50,12 @@ class MockVideoGenerateRequest:
 
 
 def _touch_mp4_file() -> str:
-    """Create an empty file; simulates coordinator output (mp4 path in SHM)."""
+    """Create a valid-sized file; simulates coordinator output (mp4 path in SHM)."""
     fd, path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_test_")
-    os.close(fd)
+    # SPRunner now validates file size (minimum 0.5 MB), so write enough data
+    MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(b"\x00" * MIN_VIDEO_SIZE_BYTES)
     return path
 
 
@@ -309,8 +312,10 @@ class TestSPRunnerFileCleanup:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         fd, file_path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_corrupt_")
+        # Write enough data to pass size validation, but content is invalid MP4
+        MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
         with os.fdopen(fd, "wb") as fh:
-            fh.write(b"not-a-valid-mp4")
+            fh.write(b"not-a-valid-mp4" * (MIN_VIDEO_SIZE_BYTES // 15 + 1))
 
         mock_output.read_response.return_value = VideoResponse(
             "tid", VideoStatus.SUCCESS, file_path, ""
