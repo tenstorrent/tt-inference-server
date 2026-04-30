@@ -591,9 +591,10 @@ def run_compose_server(
             "Install with `apt-get install docker-compose-plugin` or upgrade Docker."
         )
 
-    assert ensure_docker_image(model_spec.docker_image), (
-        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
-    )
+    if not ensure_docker_image(model_spec.docker_image):
+        raise RuntimeError(
+            f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+        )
 
     cmd = ["docker", "compose"]
     for f in compose_files:

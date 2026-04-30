@@ -639,7 +639,7 @@ def main():
                 f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
             )
     finally:
-        if is_compose_run and WorkflowType.from_string(runtime_config.workflow) not in {
+        if is_compose_run and compose_run_info is not None and WorkflowType.from_string(runtime_config.workflow) not in {
             WorkflowType.SERVER,
             WorkflowType.REPORTS,
         }:
