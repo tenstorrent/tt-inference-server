@@ -3,8 +3,12 @@
 
 #include "utils/tokenizers/llama_tokenizer.hpp"
 
+#include <json/json.h>
+
 #include <sstream>
 #include <stdexcept>
+
+#include "utils/logger.hpp"
 
 namespace tt::utils::tokenizers {
 
@@ -14,6 +18,36 @@ static const char* llamaEot = "<|eot_id|>";
 static const char* llamaSystemPreamble =
     "Cutting Knowledge Date: December 2023\n"
     "Today Date: 26 Jul 2024\n\n";
+static const char* llamaToolsEnvironment = "Environment: ipython\n";
+static const char* llamaToolUserPreamble =
+    "Given the following functions, please respond with a JSON for a function "
+    "call with its proper arguments that best answers the given prompt.\n\n"
+    "Respond in the format {\"name\": function name, \"parameters\": "
+    "dictionary of argument name and its value}."
+    "Do not use variables.\n\n";
+
+namespace {
+
+// Trim ASCII whitespace from both ends, mirroring Jinja's `|trim` filter as
+// used by the upstream Llama 3.1 chat template.
+std::string trimWhitespace(const std::string& s) {
+  static const char* whitespace = " \t\n\r\f\v";
+  const auto start = s.find_first_not_of(whitespace);
+  if (start == std::string::npos) return "";
+  const auto end = s.find_last_not_of(whitespace);
+  return s.substr(start, end - start + 1);
+}
+
+// Render a tool definition as the upstream chat template does: `t |
+// tojson(indent=4)` over the OpenAI envelope `{"type": "function", "function":
+// {...}}`.
+std::string renderToolJson(const tt::domain::tool_calls::Tool& tool) {
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "    ";
+  return Json::writeString(builder, tool.toJson());
+}
+
+}  // namespace
 
 std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
@@ -22,74 +56,56 @@ std::string LlamaTokenizer::applyChatTemplate(
     [[maybe_unused]] bool enableReasoning) const {
   std::ostringstream out;
 
-  // Extract system message
+  // Extract system message; the reference template uses an empty system
+  // message when none is provided (no implicit tool-calling preamble).
   std::string systemContent;
-  auto filteredMessages = messages;
+  auto remainingMessages = messages;
   if (!messages.empty() && messages[0].role == "system") {
-    systemContent = messages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
+    systemContent = trimWhitespace(messages[0].content);
+    remainingMessages = std::vector<tt::domain::ChatMessage>(
         messages.begin() + 1, messages.end());
-  } else if (tools.has_value() && !tools->empty()) {
-    // Default system message when tools are provided
-    systemContent =
-        "You are a helpful assistant with tool calling capabilities. "
-        "Only reply with a tool call if the function exists in the library "
-        "provided by the user. If it doesn't exist, just reply directly in "
-        "natural language. When you receive a tool call response, use the "
-        "output to format an answer to the original user question.";
   }
 
-  // BOS token
+  const bool hasTools = tools.has_value() && !tools->empty();
+
   if (cfg_.add_bos_token) out << cfg_.bos_token;
 
-  // System header
   out << llamaHeaderStart << "system" << llamaHeaderEnd << "\n\n";
-
-  // Add environment for tools
-  if (tools.has_value() && !tools->empty()) {
-    out << "Environment: ipython\n";
+  if (hasTools) {
+    out << llamaToolsEnvironment;
   }
-
   out << llamaSystemPreamble << systemContent << llamaEot;
 
-  if (tools.has_value() && !tools->empty()) {
-    if (filteredMessages.empty()) {
+  if (hasTools) {
+    if (remainingMessages.empty()) {
       throw std::runtime_error(
           "Cannot put tools in the first user message when there's no first "
           "user message!");
     }
-
-    if (filteredMessages[0].role != "user") {
+    if (remainingMessages[0].role != "user") {
       throw std::runtime_error(
           "When tools are provided, the first non-system message must have "
           "role='user', but got role='" +
-          filteredMessages[0].role + "'");
+          remainingMessages[0].role + "'");
     }
 
-    // Extract first user message
-    auto firstUserMessage = filteredMessages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
-        filteredMessages.begin() + 1, filteredMessages.end());
+    const std::string firstUserMessage =
+        trimWhitespace(remainingMessages[0].content);
+    remainingMessages = std::vector<tt::domain::ChatMessage>(
+        remainingMessages.begin() + 1, remainingMessages.end());
 
     out << llamaHeaderStart << "user" << llamaHeaderEnd << "\n\n";
-    out << "Given the following functions, please respond with a JSON for a "
-           "function call "
-        << "with its proper arguments that best answers the given prompt.\n\n"
-        << "Respond in the format {\"name\": function name, \"parameters\": "
-        << "dictionary of argument name and its value}. "
-        << "Do not use variables.\n\n";
+    out << llamaToolUserPreamble;
 
     for (const auto& tool : *tools) {
-      out << tool.toJson() << "\n\n";
+      out << renderToolJson(tool) << "\n\n";
     }
 
     out << firstUserMessage << llamaEot;
   }
 
   // Process remaining messages
-  for (const auto& m : filteredMessages) {
-    // Skip messages that have tool_calls, tool role, or ipython role
-    // They need special handling
+  for (const auto& m : remainingMessages) {
     if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
       // Assistant message with tool calls
       if (m.tool_calls->size() != 1) {
@@ -100,21 +116,21 @@ std::string LlamaTokenizer::applyChatTemplate(
       const auto& toolCall = (*m.tool_calls)[0];
       out << llamaHeaderStart << "assistant" << llamaHeaderEnd << "\n\n";
       out << "{\"name\": \"" << toolCall.functionCall.name << "\", ";
-      out << "\"parameters\": ";
-
-      out << toolCall.functionCall.arguments;
-      out << "}" << llamaEot;
+      out << "\"parameters\": " << toolCall.functionCall.arguments << "}";
+      out << llamaEot;
 
     } else if (m.role == "tool" || m.role == "ipython") {
-      // Tool output message
-      out << llamaHeaderStart << m.role << llamaHeaderEnd << "\n\n";
-      out << m.content << llamaEot;
+      // Tool output: the reference template always emits role=`ipython`,
+      // regardless of whether the caller used OpenAI's `tool` role or
+      // Llama's native `ipython` role.
+      out << llamaHeaderStart << "ipython" << llamaHeaderEnd << "\n\n";
+      out << trimWhitespace(m.content) << llamaEot;
 
     } else {
       // Regular user/assistant message
-      std::string role = m.role.empty() ? "user" : m.role;
+      const std::string role = m.role.empty() ? "user" : m.role;
       out << llamaHeaderStart << role << llamaHeaderEnd << "\n\n";
-      out << m.content << llamaEot;
+      out << trimWhitespace(m.content) << llamaEot;
     }
   }
 
@@ -122,6 +138,7 @@ std::string LlamaTokenizer::applyChatTemplate(
   if (addGenerationPrompt) {
     out << llamaHeaderStart << "assistant" << llamaHeaderEnd << "\n\n";
   }
+  TT_LOG_INFO("LJUBICA LlamaTokenizer::applyChatTemplate: {}", out.str());
 
   return out.str();
 }
