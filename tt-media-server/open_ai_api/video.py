@@ -4,6 +4,7 @@
 
 import os
 import tempfile
+import time as _time
 
 from config.constants import JobTypes
 from config.settings import settings
@@ -44,7 +45,9 @@ async def submit_generate_video_request(
     try:
         # Synchronous mode: process and return video directly
         if not settings.use_async_video:
+            _t0 = _time.time()
             video_file_path = await service.process_request(request)
+            _elapsed = round(_time.time() - _t0, 2)
 
             # Verify the video file exists and is valid
             if not video_file_path or not isinstance(video_file_path, str):
@@ -86,7 +89,8 @@ async def submit_generate_video_request(
                 media_type="video/mp4",
                 filename=f"video_{request._task_id}.mp4",
                 headers={
-                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"
+                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4",
+                    "X-Generation-Time": str(_elapsed),
                 },
             )
 
