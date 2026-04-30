@@ -517,3 +517,35 @@ def compose_logs(
     else:
         result = subprocess.run(cmd, capture_output=True, text=True)
         return result.stdout
+
+
+SIDECAR_PATH = get_repo_root_path() / ".env.compose.files"
+
+
+def write_compose_files_sidecar(
+    compose_files: list,
+    path: Optional[Path] = None,
+) -> Path:
+    """Write the list of compose files used in this run to a sidecar file.
+
+    The CI workflow (and any external script) reads this to know which
+    compose files to pass to `compose logs` and `compose down` for cleanup.
+
+    Output format is the literal string of `-f <path>` arguments separated
+    by spaces, ready to be substituted into a `docker compose ...` command.
+    Example: `-f /repo/deploy/docker-compose.vllm-0.11.yml -f /repo/deploy/overlays/dev-mode.yml`
+
+    Args:
+        compose_files: list of Path or str. Order is preserved (first file
+            becomes the base; subsequent files act as overlays).
+        path: where to write. Defaults to <repo_root>/.env.compose.files.
+
+    Returns:
+        The path written to.
+    """
+    if path is None:
+        path = SIDECAR_PATH
+    args = " ".join(f"-f {f}" for f in compose_files)
+    path.write_text(args + "\n")
+    logger.info(f"Wrote compose file list to {path}")
+    return path

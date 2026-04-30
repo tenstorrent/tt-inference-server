@@ -143,3 +143,33 @@ class TestLookupContract:
         # The returned path lives next to contracts.yml, not as a bare basename
         path = lookup_contract("vllm", Version("0.11.0"), contracts_path=contracts_yaml)
         assert path.parent == contracts_yaml.parent
+
+
+from workflows.compose_config import write_compose_files_sidecar
+
+
+class TestWriteComposeFilesSidecar:
+    def test_writes_dash_f_args(self, tmp_path: Path):
+        files = [
+            tmp_path / "docker-compose.vllm-0.11.yml",
+            tmp_path / "overlays" / "dev-mode.yml",
+        ]
+        sidecar = tmp_path / ".env.compose.files"
+        result = write_compose_files_sidecar(files, path=sidecar)
+        assert result == sidecar
+        contents = sidecar.read_text().strip()
+        # Format: "-f /abs/...vllm-0.11.yml -f /abs/.../dev-mode.yml"
+        assert contents.startswith("-f ")
+        assert str(files[0]) in contents
+        assert str(files[1]) in contents
+
+    def test_single_file(self, tmp_path: Path):
+        f = tmp_path / "docker-compose.vllm-0.11.yml"
+        sidecar = tmp_path / ".env.compose.files"
+        write_compose_files_sidecar([f], path=sidecar)
+        assert sidecar.read_text().strip() == f"-f {f}"
+
+    def test_empty_list_writes_empty(self, tmp_path: Path):
+        sidecar = tmp_path / ".env.compose.files"
+        write_compose_files_sidecar([], path=sidecar)
+        assert sidecar.read_text() == "\n"
