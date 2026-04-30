@@ -27,7 +27,7 @@
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/single_process_worker_metrics.hpp"
-#include "worker/sp_pipeline_worker_metrics_renderer.hpp"
+#include "worker/blaze_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
 #include "worker/worker_metrics_aggregator.hpp"
 #include "worker/worker_metrics_shm.hpp"

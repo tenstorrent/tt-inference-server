@@ -5,10 +5,9 @@
 
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
-#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
+#include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #ifdef ENABLE_BLAZE
-#include "runners/sp_pipeline_runner/blaze_runner.hpp"
+#include "runners/blaze_runner/blaze_runner.hpp"
 #endif
 #include "utils/logger.hpp"
 
@@ -27,15 +26,8 @@ std::unique_ptr<runners::IRunner> createRunner(
     default: {
       auto& cfg = std::get<config::LLMConfig>(config);
 
-      if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
-          cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
-        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (demo)");
-        return std::make_unique<runners::SpPipelineRunnerDemo>(cfg, resultQueue,
-                                                               taskQueue);
-      }
-
 #ifdef ENABLE_BLAZE
-      if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER || cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
         TT_LOG_INFO("[RunnerFactory] Creating Blaze runner (pipeline_manager)");
         return std::make_unique<runners::BlazeRunner>(cfg, resultQueue,
                                                       taskQueue);

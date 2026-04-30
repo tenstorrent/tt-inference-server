@@ -1,23 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_pipeline_runner/blaze_runner.hpp"
+#include "runners/blaze_runner/blaze_runner.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <pipeline_manager/pipeline_manager_types.hpp>
-#include <thread>
+#include <services/memory_services/blaze_memory_manager.hpp>
 
 #include "config/settings.hpp"
-#include "domain/manage_memory.hpp"
-#include "domain/sequence.hpp"
-#include "ipc/token_push.hpp"
-#include "runners/sp_pipeline_runner/blaze_utils.hpp"
-#include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
+#include "ipc/token_push.hpp"
+
+
+namespace {
+  using namespace tt_blaze::pipeline_manager;
+  PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
+    switch (config.runner_type) {
+      case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+        return SocketConfig{
+          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
+          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+          .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return MockConfig{
+        .latency_min_us = 0,
+        .latency_max_us = 0,
+        .seed = 42,
+        .accept_rate = 1.0f};
+    default:
+      throw std::runtime_error("Invalid blaze runner type");
+  }
+}
+}
 
 namespace tt::runners {
 namespace utils = blaze_utils;
@@ -32,15 +50,11 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
-  pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
-      .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
-      .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+  auto pipelineConfig = makePipelineConfig(config);
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(pipelineConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
