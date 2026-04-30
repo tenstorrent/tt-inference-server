@@ -1520,15 +1520,21 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+    structured_pattern = f"benchmark_structured_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
 
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
     aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
+    structured_files = glob(f"{benchmarks_output_dir}/{structured_pattern}")
+    # vllm_pattern also matches structured files; subtract them so they're processed once.
+    vllm_files = [f for f in vllm_files if f not in set(structured_files)]
 
     logger.info(
-        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files before deduplication"
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, "
+        f"{len(aiperf_files)} AIPerf, {len(structured_files)} structured-output "
+        "benchmark files before deduplication"
     )
 
     # Deduplicate files - keep only latest run for each config
@@ -1571,7 +1577,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     output_dir = Path(args.output_path) / "benchmarks"
 
-    if not vllm_files and not genai_files and not aiperf_files:
+    if not vllm_files and not genai_files and not aiperf_files and not structured_files:
         logger.info("No benchmark files found. Skipping.")
         return (
             "",
@@ -1598,6 +1604,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_video_display_dict,
         create_vlm_display_dict,
         get_markdown_table,
+        render_structured_output_sections,
         save_markdown_table,
         save_to_csv,
     )
@@ -1697,6 +1704,27 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             video_sections.append(
                 f"#### vLLM Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_video_md}"
             )
+
+    # Process structured-output benchmarks (vLLM-family; one section per dataset+ratio)
+    if structured_files:
+        _, structured_release_raw, _, _ = benchmark_generate_report_helper(
+            structured_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(structured_release_raw)
+
+        structured_rows = [
+            r
+            for r in structured_release_raw
+            if r.get("task_type") == "structured_output"
+        ]
+        text_sections.extend(
+            render_structured_output_sections(
+                structured_rows,
+                model_spec.model_name,
+                args.device,
+                source_label="vLLM",
+            )
+        )
 
     # Process AIPerf benchmarks
     if aiperf_files:

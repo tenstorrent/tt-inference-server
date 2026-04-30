@@ -209,6 +209,39 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
+    # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
+    # Example: benchmark_structured_id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_2026-04-28_18-01-30_dataset-json_so-1.0_osl-128_maxcon-4_n-100.json
+    structured_pattern = r"""
+        ^benchmark_structured_
+        (?P<model>.+?)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _dataset-(?P<dataset>[^_]+)
+        _(?P<so_tag>no-so|so-[\d.]+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+    match = re.search(structured_pattern, filename, re.VERBOSE)
+    if match:
+        logger.info(
+            f"Found structured-output benchmark pattern in filename: {filename}"
+        )
+        so_tag = match.group("so_tag")
+        ratio = 0.0 if so_tag == "no-so" else float(so_tag.removeprefix("so-"))
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "dataset": match.group("dataset"),
+            "structured_output_ratio": ratio,
+            "task_type": "structured_output",
+        }
+
     # Fall back to text benchmark pattern
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
@@ -526,6 +559,66 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "num_inference_steps": benchmarks_data.get("benchmarks").get(
                 "num_inference_steps", 0
             ),
+        }
+        return format_metrics(metrics)
+
+    if params.get("task_type") == "structured_output":
+        logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
+        # Mean ISL from upstream payload (filename omits isl).
+        total_input_tokens = data.get("total_input_tokens") or 0
+        num_prompts = data.get("num_prompts") or params["num_requests"]
+        isl = round(total_input_tokens / num_prompts) if num_prompts else 0
+
+        mean_tpot_ms = data.get("mean_tpot_ms")
+        if mean_tpot_ms:
+            mean_tpot = max(mean_tpot_ms, 1e-6)
+            mean_tps = 1000.0 / mean_tpot
+            std_tps = (
+                mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))
+                if data.get("std_tpot_ms")
+                else None
+            )
+        else:
+            mean_tps = None
+            std_tps = None
+
+        actual_max_con = min(params["max_con"], params["num_requests"])
+        tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
+        tps_prefill_throughput = (
+            (isl * actual_max_con) / (data.get("mean_ttft_ms") / 1000)
+            if isl and data.get("mean_ttft_ms")
+            else None
+        )
+
+        metrics = {
+            "timestamp": params["timestamp"],
+            "model_name": params["model_name"],
+            "model_id": data.get("model_id", ""),
+            "backend": data.get("backend", "vllm"),
+            "device": params.get("device", ""),
+            "input_sequence_length": isl,
+            "output_sequence_length": params["output_sequence_length"],
+            "max_con": actual_max_con,
+            "mean_ttft_ms": data.get("mean_ttft_ms"),
+            "std_ttft_ms": data.get("std_ttft_ms"),
+            "mean_tpot_ms": mean_tpot_ms,
+            "std_tpot_ms": data.get("std_tpot_ms"),
+            "mean_tps": mean_tps,
+            "std_tps": std_tps,
+            "tps_decode_throughput": tps_decode_throughput,
+            "tps_prefill_throughput": tps_prefill_throughput,
+            "mean_e2el_ms": data.get("mean_e2el_ms"),
+            "request_throughput": data.get("request_throughput"),
+            "total_input_tokens": data.get("total_input_tokens"),
+            "total_output_tokens": data.get("total_output_tokens"),
+            "total_token_throughput": data.get("total_token_throughput"),
+            "num_prompts": data.get("num_prompts", ""),
+            "num_requests": params["num_requests"],
+            "filename": filename,
+            "task_type": "structured_output",
+            "dataset": params["dataset"],
+            "structured_output_ratio": params["structured_output_ratio"],
+            "correct_rate_pct": data.get("correct_rate(%)"),
         }
         return format_metrics(metrics)
 
@@ -1004,6 +1097,51 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
     return "\n".join([header_row, separator_row] + value_rows) + end_notes + explain_str
 
 
+def render_structured_output_sections(
+    structured_results: List[Dict[str, Any]],
+    model_name: str,
+    device: str,
+    source_label: str = "",
+) -> List[str]:
+    """Render one markdown section per (dataset, ratio) group of structured-output results.
+
+    Reuses create_display_dict() so columns match the standard text table.
+    correct_rate is surfaced as a footnote line under the title.
+    """
+    if not structured_results:
+        return []
+
+    grouped: Dict[Tuple[str, float], List[Dict[str, Any]]] = {}
+    for r in structured_results:
+        key = (r.get("dataset", ""), r.get("structured_output_ratio"))
+        grouped.setdefault(key, []).append(r)
+
+    prefix = f"{source_label} " if source_label else ""
+    sections = []
+    for (dataset, ratio), rows in sorted(
+        grouped.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0.0)
+    ):
+        display_rows = [create_display_dict(r) for r in rows]
+        table_md = get_markdown_table(display_rows)
+        title = (
+            f"#### {prefix}Structured Output Performance Benchmark Sweeps "
+            f"— dataset={dataset}, ratio={ratio} for {model_name} on {device}"
+        )
+        # correct_rate is per-run; show all rows' values as a footnote line.
+        correct_rates = [r.get("correct_rate_pct") for r in rows]
+        correct_rate_strs = [
+            f"{cr:g}%" if isinstance(cr, (int, float)) else str(cr)
+            for cr in correct_rates
+            if cr is not None and cr != NOT_MEASURED_STR
+        ]
+        if correct_rate_strs:
+            footnote = f"\n\nCorrect rate: {', '.join(correct_rate_strs)}"
+        else:
+            footnote = ""
+        sections.append(f"{title}\n\n{table_md}{footnote}")
+    return sections
+
+
 def save_markdown_table(
     markdown_str: str, filepath: str, add_title: str = None, add_notes: List[str] = None
 ) -> None:
@@ -1086,6 +1224,9 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]
+    structured_results = [
+        r for r in results if r.get("task_type") == "structured_output"
+    ]
 
     markdown_sections = []
 
@@ -1095,6 +1236,14 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         text_markdown_str = get_markdown_table(text_display_results)
         text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
+
+    # Generate structured-output sections (one per dataset+ratio combination)
+    if structured_results:
+        markdown_sections.extend(
+            render_structured_output_sections(
+                structured_results, model_name, device, source_label=""
+            )
+        )
 
     # Generate VLM benchmarks section if any exist
     if vlm_results:
