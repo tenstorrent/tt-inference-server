@@ -44,16 +44,41 @@ def _count_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
 
 
+# Demo-safe sampling floor. The tt-cloud-console website's slider passes
+# top_k=0 (= disabled) by default, leaving the long tail of the vocab fully
+# samplable at temperature > 0. That occasionally lets the sampler pick a
+# very-low-probability foreign-language / garbage token, which then steers
+# subsequent tokens into incoherent output (the "tail cascade"). To keep
+# users safe regardless of what the website sends, force top_k to a sane
+# floor unless the user explicitly opts out by setting top_k > _DEMO_TOP_K.
+# Set to None to disable the override entirely.
+_DEMO_TOP_K = 50
+
+
 def _build_completion_request(
     chat_request: ChatCompletionRequest, prompt: str
 ) -> CompletionRequest:
+    # Apply demo-safe top_k floor: if the request didn't set top_k or set
+    # it to disabled (0/None/-1), force it to _DEMO_TOP_K. This is invisible
+    # to the website slider — values higher than _DEMO_TOP_K from the user
+    # are still respected. Logs the override so it's auditable.
+    requested_top_k = chat_request.top_k
+    effective_top_k = requested_top_k
+    if _DEMO_TOP_K is not None:
+        if requested_top_k is None or requested_top_k == 0 or requested_top_k == -1:
+            effective_top_k = _DEMO_TOP_K
+            logger.info(
+                f"top_k override: requested={requested_top_k} -> {_DEMO_TOP_K} "
+                f"(server-side floor against tail-cascade gibberish)"
+            )
+
     return CompletionRequest(
         model=chat_request.model,
         prompt=prompt,
         max_tokens=chat_request.max_tokens,
         temperature=chat_request.temperature,
         top_p=chat_request.top_p,
-        top_k=chat_request.top_k,
+        top_k=effective_top_k,
         repetition_penalty=chat_request.repetition_penalty,
         frequency_penalty=chat_request.frequency_penalty,
         presence_penalty=chat_request.presence_penalty,
@@ -86,16 +111,29 @@ async def chat_completions(
         else settings.model_weights_path
     )
 
-    logger.info(
-        f"Chat request: temp={chat_request.temperature}, top_p={chat_request.top_p}, "
-        f"top_k={chat_request.top_k}, rep_penalty={chat_request.repetition_penalty}, "
-        f"max_tokens={chat_request.max_tokens}, stream={chat_request.stream}"
-    )
-
     # Convert chat messages to a prompt using the model's chat template
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
+
+    stop_count = (
+        len(chat_request.stop)
+        if isinstance(chat_request.stop, list)
+        else (1 if chat_request.stop else 0)
+    )
+    logger.info(
+        f"Chat request: model={chat_request.model}, "
+        f"prompt_tokens={prompt_tokens}, n_messages={len(chat_request.messages)}, "
+        f"max_tokens={chat_request.max_tokens}, n={chat_request.n}, "
+        f"stream={chat_request.stream}, "
+        f"temp={chat_request.temperature}, "
+        f"top_p={chat_request.top_p}, top_k={chat_request.top_k}, "
+        f"freq_penalty={chat_request.frequency_penalty}, "
+        f"pres_penalty={chat_request.presence_penalty}, "
+        f"rep_penalty={chat_request.repetition_penalty}, "
+        f"stop_count={stop_count}, seed={chat_request.seed}, "
+        f"adapter={chat_request.adapter}"
+    )
 
     # Reject prompts that exceed the model's context window
     max_model_len = settings.vllm.max_model_length
