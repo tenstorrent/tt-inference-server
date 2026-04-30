@@ -23,13 +23,16 @@ from workflows.model_spec import (
     get_runtime_model_spec,
 )
 from workflows.compose_config import (
+    COMPOSE_ENV_PATH,
+    DEPLOY_DIR,
     format_env_for_display,
-    get_compose_template_path,  # KEEP — print_compose uses it; removed in Task 12
+    lookup_contract,
     parse_image_version,
     resolve_compose_vars,
     resolve_multihost_vars,
     run_compose_down,
     run_compose_server,
+    write_compose_env,
 )
 from workflows.run_docker_server import (
     format_docker_command,  # still used by multi-host print path
@@ -630,14 +633,28 @@ def main():
                 print("\nNote: SSH_CONFIG_DIR and MPIRUN_DIR are generated at runtime by the orchestrator.")
                 print("Use 'run.py --docker-server' for full automated deployment.\n")
             else:
-                template_path = get_compose_template_path(model_spec, runtime_config)
-                env_vars = resolve_compose_vars(
+                image_version = parse_image_version(model_spec.docker_image)
+                contract_file = lookup_contract(
+                    model_spec.inference_engine, image_version
+                )
+                overlays = []
+                if runtime_config.dev_mode:
+                    overlays.append(DEPLOY_DIR / "overlays" / "dev-mode.yml")
+                if setup_config and getattr(setup_config, "host_model_volume_root", None):
+                    overlays.append(DEPLOY_DIR / "overlays" / "host-cache.yml")
+                if docker_json_fpath:
+                    overlays.append(DEPLOY_DIR / "overlays" / "model-spec.yml")
+
+                compose_vars = resolve_compose_vars(
                     model_spec, runtime_config, setup_config
                 )
-                print(f"\nDocker Compose template: {template_path}\n")
-                print("Resolved variables (add to .env):\n")
-                print(format_env_for_display(env_vars))
-                print(f"\nRun:\n  docker compose -f {template_path} up -d\n")
+                write_compose_env(compose_vars)
+
+                cmd = ["docker", "compose"]
+                for f in [contract_file, *overlays]:
+                    cmd += ["-f", str(f)]
+                cmd += ["--env-file", str(COMPOSE_ENV_PATH), "config"]
+                subprocess.run(cmd)
             return 0
         compose_run_info = None
         if is_multihost_deployment(runtime_config):
