@@ -1044,7 +1044,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=1,
-                max_context=16 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
             ),
