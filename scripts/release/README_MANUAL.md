@@ -86,7 +86,7 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 
 For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in `model_spec.py` file.
 
-After changes have been added, re-generate the Model Support `README.md` table and `release_model_spec.json` by running:
+After changes have been added, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
@@ -158,6 +158,11 @@ The full script path is: ```https://github.com/tenstorrent/tt-inference-server/b
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
 * any manual changes from the automated edits should be noted
+* set metadata information for a Release Object 
+As a comment, at the top of the HTML body, within the commented section, add metadata information.
+```metadata:run_id=24842121888```
+
+```metadata:version=v0.13.0```
 * the PR must be with merge commit option ("all commits from this branch will be added with a merge commit"), this is done in the case that there are merge conflicts that need to be resolved. The resolution commit is then available in the next release for the changes required on current `main`.
 * Use `git add -f docs/model_support/**` to commit updates to generated model docs.
 <!-- 
@@ -176,27 +181,17 @@ We need to create new Draft Release Object `vx.x.x` targeting the given tag crea
 ### Step 1: Reference Tag
 Set tag for a given Release Object, created in a previous step.
 
-### Step 2: Set metadata information for a Release Object 
-
-As a comment, at the top of the HTML body, within the commented section, add metadata information.
-
-```metadata:run_id=24842121888```
-
-```metadata:version=v0.13.0```
-
-
-
-## Step 3: Upload assets to Release Object
-
- Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
-
-## Step 4: copy paste Release notes from PR body
+## Step 2: copy paste Release notes from PR body
 
 Release Notes must be added describing new supported engine features.
 
 * we do the copy of the PR body
 * we add repository paths towards the docker images
 * add notes for changes to model support and performance (if possible use `release_logs/release_models_diff.md`)
+
+## Step 3: Upload assets to Release Object
+
+ Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
 
