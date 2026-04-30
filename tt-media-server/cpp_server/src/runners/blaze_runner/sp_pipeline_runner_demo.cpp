@@ -210,6 +210,15 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
     seq->appendToken(static_cast<int64_t>(dr.tokenId));
 
     bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.tokenId)) > 0;
+    if (!isStop) {
+      const auto& perReqStops = seq->getSamplingParams().stop_token_ids;
+      for (int id : perReqStops) {
+        if (static_cast<int64_t>(id) == static_cast<int64_t>(dr.tokenId)) {
+          isStop = true;
+          break;
+        }
+      }
+    }
     bool reachedMaxTokens =
         seq->getSamplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
