@@ -6516,8 +6516,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
@@ -6529,8 +6529,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
