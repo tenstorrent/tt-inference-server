@@ -54,7 +54,7 @@ Within the `models-ci-config.json` file, update which models and devices should 
 
 Bump the version of the `VERSION` file (major/minor/patch syntax).
 
-## Step 3: run `release.yml` using default arguments
+## run `release.yml` using the default arguments
 
 From  the `tt-shield` repository, run the `release.yml` using the default arguments:
 
