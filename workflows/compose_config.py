@@ -11,9 +11,9 @@ The compose templates use ${VAR} and ${VAR:-default} syntax. This module
 provides the variable values. Users who don't use run.py can set these
 variables manually in .env and run `docker compose up` directly.
 
-Compose templates:
-- deploy/docker-compose.vllm.yml         — vLLM models
-- deploy/docker-compose.media.yml        — media/forge models
+Compose templates (versioned by contract era — see deploy/contracts.yml):
+- deploy/docker-compose.vllm-0.11.yml    — vLLM, image versions >= 0.11.0
+- deploy/docker-compose.media-0.11.yml   — media/forge, image versions >= 0.11.0
 - deploy/docker-compose.multihost-worker.yml     — MPI worker
 - deploy/docker-compose.multihost-controller.yml — MPI controller
 """
@@ -149,9 +149,9 @@ def get_compose_template_path(model_spec, runtime_config) -> Path:
         Path to the compose template YAML file
     """
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
-        return DEPLOY_DIR / "docker-compose.vllm.yml"
+        return DEPLOY_DIR / "docker-compose.vllm-0.11.yml"
     else:
-        return DEPLOY_DIR / "docker-compose.media.yml"
+        return DEPLOY_DIR / "docker-compose.media-0.11.yml"
 
 
 def resolve_compose_vars(
