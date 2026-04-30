@@ -72,6 +72,16 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
              .Name("tt_worker_total_acceptance_rate")
              .Help("Cumulative speculative-decode acceptance rate (0..1)")
              .Register(registry);
+    total_tokens_processed_family_ =
+        &prometheus::BuildGauge()
+             .Name("tt_worker_total_tokens_processed_total")
+             .Help(
+                 "Cumulative tokens this worker drove through the model: "
+                 "prompt + spec_accepts + spec_rejects. Use rate() to derive "
+                 "saturation throughput including draft tokens that were "
+                 "verified but rejected. Cluster total: "
+                 "sum(rate(tt_worker_total_tokens_processed_total[1m])).")
+             .Register(registry);
     slot_input_tokens_family_ =
         &prometheus::BuildGauge()
              .Name("tt_worker_slot_input_tokens")
@@ -114,6 +124,8 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
   g.spec_rejects_total = &spec_rejects_family_->Add({{"worker_id", idStr}});
   g.total_acceptance_rate =
       &total_acceptance_rate_family_->Add({{"worker_id", idStr}});
+  g.total_tokens_processed_total =
+      &total_tokens_processed_family_->Add({{"worker_id", idStr}});
 
   g.slots.resize(sp_pipeline::MAX_LLM_SLOTS);
   for (size_t s = 0; s < sp_pipeline::MAX_LLM_SLOTS; ++s) {
@@ -167,6 +179,12 @@ void SpPipelineWorkerMetricsRenderer::render(const WorkerMetricsShm& shm,
   const uint64_t specTotal = accTotal + rejTotal;
   g.total_acceptance_rate->Set(
       specTotal > 0 ? static_cast<double>(accTotal) / specTotal : 0.0);
+  // Saturation throughput series: includes prompt tokens the model prefilled,
+  // accepted (emitted) decode tokens, and draft tokens that were verified but
+  // rejected. rate() of this gauge over a worker, summed across the cluster,
+  // is the "tokens the model actually had to compute per second".
+  g.total_tokens_processed_total->Set(
+      static_cast<double>(promptTotal + accTotal + rejTotal));
 
   for (size_t s = 0; s < g.slots.size(); ++s) {
     const uint64_t isl = shm.loadScratch(

@@ -29,6 +29,9 @@ namespace tt::worker {
  *     - tt_worker_spec_accepts_total
  *     - tt_worker_spec_rejects_total
  *     - tt_worker_total_acceptance_rate
+ *     - tt_worker_total_tokens_processed_total
+ *           (prompt + spec_accepts + spec_rejects; saturation throughput
+ *           series — includes draft tokens that were verified but rejected)
  *
  *   Per-LLM-slot (labels: worker_id, slot_id) — wired so that
  *   "TPOT vs ISL/OSL" correlation can be plotted in Grafana:
@@ -66,6 +69,7 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
     prometheus::Gauge* spec_accepts_total{nullptr};
     prometheus::Gauge* spec_rejects_total{nullptr};
     prometheus::Gauge* total_acceptance_rate{nullptr};
+    prometheus::Gauge* total_tokens_processed_total{nullptr};
     std::vector<SlotGauges> slots;
   };
 
@@ -78,6 +82,7 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
   prometheus::Family<prometheus::Gauge>* spec_accepts_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* spec_rejects_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* total_acceptance_rate_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* total_tokens_processed_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_input_tokens_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_output_tokens_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_current_output_tokens_family_{
