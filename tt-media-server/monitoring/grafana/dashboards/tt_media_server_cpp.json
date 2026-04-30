@@ -1145,7 +1145,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Token throughput: prompt (input) and generation (output) tokens per second",
+      "description": "Cluster token throughput by category. 'Total processed' is the saturation series — it sums prompt tokens, accepted decode tokens, AND speculatively-generated tokens that the target model verified but rejected. Use it to detect pipeline-parallel saturation that the accepts-only counter would hide.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1159,7 +1159,46 @@
           },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total processed tok/s (incl. rejects)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rejected tok/s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1169,9 +1208,15 @@
       },
       "id": 21,
       "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["mean", "max"]
+        },
         "tooltip": {
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       },
       "targets": [
@@ -1180,19 +1225,35 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(tt_generation_tokens_total[1m])",
-          "legendFormat": "Output tok/s"
+          "expr": "sum(rate(tt_worker_total_tokens_processed_total[1m]))",
+          "legendFormat": "Total processed tok/s (incl. rejects)"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(tt_prompt_tokens_total[1m])",
+          "expr": "sum(rate(tt_worker_prompt_tokens_total[1m]))",
           "legendFormat": "Input tok/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(tt_worker_spec_accepts_total[1m]))",
+          "legendFormat": "Accepted (output) tok/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(tt_worker_spec_rejects_total[1m]))",
+          "legendFormat": "Rejected tok/s"
         }
       ],
-      "title": "Total Token Throughput",
+      "title": "Cluster Token Throughput (with rejects)",
       "type": "timeseries"
     },
     {
