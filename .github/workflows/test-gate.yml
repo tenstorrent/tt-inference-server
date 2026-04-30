@@ -399,6 +399,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -439,6 +449,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -620,9 +640,9 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
+            --random-input-len 32\
+            --random-output-len 1024\
+            --num-prompts 512\
             --max-concurrency 64 \
             --save-result \
             --result-filename "vllm-bench-mock-pipeline.json" \
@@ -1161,6 +1181,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh

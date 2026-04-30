@@ -26,11 +26,20 @@ namespace {
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
           .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return MockConfig{
-        .latency_min_us = 0,
-        .latency_max_us = 0,
-        .seed = 42,
-        .accept_rate = 1.0f};
+      return PipelineSimulatorConfig{
+        .num_stages = 64,
+        .stage_duration_us= 44,
+        .decode_token_id = 12345,
+        };
+      /* spec decode config
+       return PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .accept_rate = 0.9f,
+          .safe_vocab_base = 1000,    // anything safely above your tokenizer's stop ids
+          .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower coincidental-stop chance
+      };
+       */
     default:
       throw std::runtime_error("Invalid blaze runner type");
   }
