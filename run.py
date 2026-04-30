@@ -35,7 +35,6 @@ from workflows.compose_config import (
     write_compose_env,
 )
 from workflows.run_docker_server import (
-    format_docker_command,  # still used by multi-host print path
     run_multihost_server,
 )
 from workflows.multihost_orchestrator import (
@@ -261,11 +260,6 @@ def parse_arguments():
         "--concurrency-sweeps",
         action="store_true",
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
-    )
-    parser.add_argument(
-        "--print-docker-cmd",
-        action="store_true",
-        help="Print simplified Docker run command and exit (does not start server)",
     )
     parser.add_argument(
         "--print-compose",
@@ -558,50 +552,6 @@ def main():
         docker_json_fpath = None
         if runtime_config.dev_mode:
             docker_json_fpath = json_fpath
-        if runtime_config.print_docker_cmd:
-            if is_multihost_deployment(runtime_config):
-                # Print multi-host docker commands
-                expected_hosts = get_expected_num_hosts(runtime_config)
-                multihost_config = setup_multihost_config(
-                    model_spec, expected_hosts, dry_run=True
-                )
-                hosts = validate_multihost_args(
-                    multihost_config,
-                    tt_smi_path=multihost_config.tt_smi_path,
-                    dry_run=True,
-                )
-                orchestrator = MultiHostOrchestrator(
-                    hosts=hosts,
-                    mpi_interface=multihost_config.mpi_interface,
-                    shared_storage_root=multihost_config.shared_storage_root,
-                    config_pkl_dir=multihost_config.config_pkl_dir,
-                    docker_image=model_spec.docker_image,
-                    runtime_config=runtime_config,
-                    model_spec=model_spec,
-                    setup_config=setup_config,
-                    tt_smi_path=multihost_config.tt_smi_path,
-                )
-                orchestrator.prepare()
-
-                print("\n=== Multi-Host Deployment Commands ===\n")
-                for rank, host in enumerate(hosts):
-                    worker_cmd, _ = orchestrator.generate_worker_docker_command(
-                        host, rank
-                    )
-                    print(f"Worker {rank} on {host}:")
-                    print(f"ssh {host} {format_docker_command(worker_cmd)}\n")
-
-                controller_cmd, _ = orchestrator.generate_controller_docker_command()
-                print("Controller (run on rank-0 host):")
-                print(f"{format_docker_command(controller_cmd)}\n")
-            else:
-                docker_command, _ = generate_docker_run_command(
-                    model_spec, runtime_config, setup_config, docker_json_fpath
-                )
-                print(
-                    f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
-                )
-            return 0
         if runtime_config.print_compose:
             if is_multihost_deployment(runtime_config):
                 expected_hosts = get_expected_num_hosts(runtime_config)
