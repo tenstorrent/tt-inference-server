@@ -1,23 +1,21 @@
 # Docker Compose for vLLM inference server on Tenstorrent hardware.
 # Contract era: image versions < 0.11.0 (legacy contract).
 #
+# Real-world note: this contract targets 0.10.1+ images, which already accept
+# `--tt-device` / `--model` CLI args. The original audit suggested 0.10.0
+# used TT_MODEL_SPEC_JSON_PATH with no CLI args, but that contract was very
+# short-lived and is not supported here. If you need to run a 0.10.0-era
+# image, add a separate contract entry to deploy/contracts.yml.
+#
 # Differences from the 0.11+ contract:
-#   - The image's docker-entrypoint.sh + CMD already activate the venv and
-#     run run_vllm_api_server.py — DO NOT override `command:`.
-#   - Model selection is via `TT_MODEL_SPEC_JSON_PATH` env var pointing to
-#     a bind-mounted JSON spec. There are no --model / --tt-device CLI args.
-#   - Weights env var is `MODEL_WEIGHTS_PATH` (renamed to MODEL_WEIGHTS_DIR
-#     in 0.11.0). Set via overlays/host-weights.yml.
-#   - `TT_CACHE_PATH` must be passed explicitly (0.11 computes it from
-#     CACHE_ROOT internally).
-#   - Used `shm_size: 32g` instead of `ipc: host` (compose accepts either,
-#     but `shm_size` matches what `run.py` did pre-0.11).
+#   - `shm_size: "32g"` instead of `ipc: host` (matches what the 0.10.x
+#     `docker run` path passed via --shm-size 32g).
+#   - Otherwise identical command shape and env vars — the CLI interface
+#     stabilised at 0.10.1 and didn't change again until later post-0.11.
 #
 # Required env vars (set by run.py via .env.compose, or supply manually):
-#   DOCKER_IMAGE, HF_TOKEN/JWT_SECRET (via env_file)
-#   TT_MODEL_SPEC_HOST_PATH (the runtime model spec JSON; pre-0.11 needs it
-#                            to know which model to load — no CLI args).
-#   TT_CACHE_PATH (defaults to /home/container_app_user/cache_root/tt_metal_cache)
+#   DOCKER_IMAGE, HF_MODEL, TT_DEVICE
+#   HF_TOKEN/JWT_SECRET (via env_file)
 #
 # Optional overlays:
 #   overlays/host-weights.yml  — bind-mount weights from host (sets MODEL_WEIGHTS_PATH).
@@ -32,18 +30,22 @@ services:
     volumes:
       - /dev/hugepages-1G:/dev/hugepages-1G
       - cache:/home/container_app_user/cache_root
-      - ${TT_MODEL_SPEC_HOST_PATH:?TT_MODEL_SPEC_HOST_PATH is required}:/tmp/tt_model_spec.json:ro
       # Host-bound weights are added via overlays/host-weights.yml when
       # setup_config.host_model_weights_mount_dir is set.
     env_file:
       - ${ENV_FILE:-.env}
     environment:
       CACHE_ROOT: /home/container_app_user/cache_root
-      TT_CACHE_PATH: ${TT_CACHE_PATH:-/home/container_app_user/cache_root/tt_metal_cache}
-      TT_MODEL_SPEC_JSON_PATH: /tmp/tt_model_spec.json
-      # MODEL_WEIGHTS_PATH is set by overlays/host-weights.yml when present.
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    command:
+      - /bin/bash
+      - -c
+      - >-
+        source /home/container_app_user/tt-metal/python_env/bin/activate &&
+        exec python run_vllm_api_server.py
+        --model ${HF_MODEL:?HF_MODEL is required}
+        --tt-device ${TT_DEVICE:?TT_DEVICE is required}
     restart: on-failure:3
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
