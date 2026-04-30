@@ -17,6 +17,7 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
+lightning>=2.0.1
 whisperx==3.4.3
 requests
 num2words
