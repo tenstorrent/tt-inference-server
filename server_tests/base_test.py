@@ -12,8 +12,13 @@ from typing import Any, Dict
 
 from server_tests.test_classes import TestConfig
 
-# Set up logging
 logger = logging.getLogger(__name__)
+
+# Targets key used by load tests to control concurrent HTTP request fan-out.
+# Introduced to replace the overloaded `num_of_devices` key (which also meant
+# "physical chip count" in hardware_defaults / liveness tests).
+NUM_CONCURRENT_REQUESTS_KEY = "num_concurrent_requests"
+NUM_OF_DEVICES_KEY = "num_of_devices"
 
 
 class BaseTest(ABC):
@@ -29,6 +34,29 @@ class BaseTest(ABC):
         self.break_on_failure = config.get("break_on_failure")
         self.logs = []
         self.retry_delay = config.get("retry_delay")
+
+    def _get_num_concurrent_requests(self, default: int = 1) -> int:
+        """Resolve the number of concurrent HTTP requests a load test should fire.
+
+        The historical key ``num_of_devices`` conflates three different
+        concepts (physical chip count, per-model data-parallel factor, and
+        client-side concurrency). Load tests only care about concurrency, so
+        they read the new key first and fall back for back-compat.
+        """
+        if NUM_CONCURRENT_REQUESTS_KEY in self.targets:
+            return self.targets[NUM_CONCURRENT_REQUESTS_KEY]
+
+        if NUM_OF_DEVICES_KEY in self.targets:
+            if not getattr(self, "_warned_num_of_devices", False):
+                logger.warning(
+                    "targets.%s is deprecated for load tests; please use %s instead.",
+                    NUM_OF_DEVICES_KEY,
+                    NUM_CONCURRENT_REQUESTS_KEY,
+                )
+                self._warned_num_of_devices = True
+            return self.targets[NUM_OF_DEVICES_KEY]
+
+        return default
 
     def run_tests(self):
         last_exception = None

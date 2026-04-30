@@ -29,7 +29,7 @@
                 "mock_mode": false
             },
             "targets": {
-                "num_of_devices": 2,
+                "num_concurrent_requests": 2,
                 "num_inference_steps": 20,
                 "image_generation_time": 10
             }
@@ -47,7 +47,7 @@
                 "mock_mode": false
             },
             "targets": {
-                "num_of_devices": 2,
+                "num_concurrent_requests": 2,
                 "num_inference_steps": 30,
                 "image_generation_time": 14
             }
@@ -65,7 +65,7 @@
                 "mock_mode": false
             },
             "targets": {
-                "num_of_devices": 2,
+                "num_concurrent_requests": 2,
                 "num_inference_steps": 50,
                 "image_generation_time": 23
             }

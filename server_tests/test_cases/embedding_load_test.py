@@ -28,7 +28,7 @@ class EmbeddingLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
         logger.info(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
         model = self.config.get("model", "test-model")
@@ -41,13 +41,13 @@ class EmbeddingLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_embedding(batch_size=devices)
+        ) = await self.test_concurrent_embedding(batch_size=num_concurrent_requests)
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": embedding_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": requests_duration <= embedding_target_time,
         }
 
