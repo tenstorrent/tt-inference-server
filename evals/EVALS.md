@@ -274,7 +274,9 @@ OPENAI_API_KEY='sk-...' \
 - Pass DeepSeek-R1-0528 model-card generation defaults through CLI kwargs:
   `max_gen_toks=65535`, `temperature=0.6`, and `top_p=0.95`. Task YAML still
   owns task-specific stop strings such as `until`; use `--gen-kwargs` only when
-  deliberately overriding or adding settings.
+  deliberately overriding or adding settings. This 64K generation budget is
+  applied uniformly by the external helper to AIME24, GPQA Diamond, MATH-500,
+  LiveCodeBench, and MMLU-Pro.
 - Non-streaming requests are the default (`STREAM=0`) and use
   `MAX_CONCURRENT=30`. Set `STREAM=1` or pass `--stream` to add `stream=true`
   to generation kwargs and enable the streaming response parser from
@@ -299,6 +301,11 @@ OPENAI_API_KEY='sk-...' \
   expected and not a scoring risk.
 - For the short AIME run, add `--include_path evals/custom_tasks/r1_aime24_short`
   so the custom task YAML + filter are discovered.
+- Load `evals/scripts/lm_eval_streaming_patch/` through `PYTHONPATH` for
+  external and managed `lm_eval` runs. Besides streaming compatibility, this
+  patches the upstream MMLU-Pro `custom-extract` regex to accept common
+  DeepSeek-R1 final-answer formats such as `**Answer: D**`,
+  `Final Answer: D`, and `\boxed{\text{D}}`.
 
 `suite` intentionally prefers `livecodebench` over `ifeval` because
 `livecodebench` appears on current DeepSeek-R1-0528 benchmark tables, while

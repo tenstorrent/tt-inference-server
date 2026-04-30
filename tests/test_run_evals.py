@@ -212,6 +212,30 @@ def test_build_eval_command_translates_external_server_max_gen_toks(monkeypatch)
     assert "max_gen_toks" not in gen_kwargs
 
 
+def test_build_lm_eval_env_loads_compatibility_patch(monkeypatch):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("PYTHONPATH", "/existing/path")
+
+    env = run_evals._build_lm_eval_env()
+
+    pythonpath = env["PYTHONPATH"].split(run_evals.os.pathsep)
+    assert pythonpath[0] == str(run_evals.LM_EVAL_COMPAT_PATCH_DIR)
+    assert "/existing/path" in pythonpath
+
+
+def test_deepseek_reasoning_evals_use_full_64k_generation_budget():
+    from evals.eval_config import (
+        DEEPSEEK_R1_CONTEXT_LENGTH,
+        DEEPSEEK_R1_MAX_GEN_TOKS,
+        EVAL_CONFIGS,
+    )
+
+    for model_name in ["DeepSeek-R1-Distill-Llama-70B", "DeepSeek-R1-0528"]:
+        for task in EVAL_CONFIGS[model_name].tasks:
+            assert task.model_kwargs["max_length"] == DEEPSEEK_R1_CONTEXT_LENGTH
+            assert task.gen_kwargs["max_gen_toks"] == DEEPSEEK_R1_MAX_GEN_TOKS
+
+
 def test_is_external_server_workflow_detects_client_side_runs(monkeypatch):
     run_evals = _import_run_evals(monkeypatch)
 
