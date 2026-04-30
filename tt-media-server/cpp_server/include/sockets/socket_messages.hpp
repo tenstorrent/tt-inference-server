@@ -63,10 +63,10 @@ struct PrefillResultMessage {
   uint32_t task_id;
   std::string generated_text;
   bool finished = false;
+  bool error = false;
   int tokens_generated = 0;
   double processing_time_ms = 0.0;
   std::vector<int64_t> token_ids;
-  std::optional<std::string> error;
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
 
@@ -76,10 +76,8 @@ struct PrefillResultMessage {
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
-    bool hasError = error.has_value();
-    std::string err = error.value_or("");
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
-       token_ids, rt, sid, hasError, err);
+       token_ids, rt, sid, error);
   }
 
   template <class Archive>
@@ -92,9 +90,8 @@ struct PrefillResultMessage {
     std::vector<int64_t> tids;
     int rt;
     uint32_t sid;
-    bool hasError;
-    std::string err;
-    ar(tid, genText, fin, tg, pt, tids, rt, sid, hasError, err);
+    bool err;
+    ar(tid, genText, fin, tg, pt, tids, rt, sid, err);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -105,8 +102,7 @@ struct PrefillResultMessage {
     msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
-    msg.error =
-        hasError ? std::optional<std::string>(std::move(err)) : std::nullopt;
+    msg.error = err;
     return msg;
   }
 };

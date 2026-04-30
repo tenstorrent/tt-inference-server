@@ -39,9 +39,13 @@ void DisaggregationService::setupSocketHandlers() {
           }
           streamCallbacks.erase(message.task_id);
 
-          if (message.error.has_value()) {
+          if (message.error) {
+            TT_LOG_ERROR(
+                "[DisaggregationService] Prefill error received for task {}, "
+                "propagating error to client",
+                message.task_id);
             callback.value()(
-                domain::makeErrorChunk(message.task_id, message.error.value()),
+                domain::makeErrorChunk(message.task_id, "prefill error"),
                 /*isFinal=*/true);
             return;
           }
@@ -105,34 +109,34 @@ void DisaggregationService::setupSocketHandlers() {
               request,
               [this, message, maxTokens, slotId](
                   const domain::LLMStreamChunk& response, bool /*isFinal*/) {
-                if (response.error.has_value()) {
-                  if (!socketService->sendPrefillError(
-                          message.task_id,
-                          "prefill: " + response.error.value())) {
-                    TT_LOG_WARN(
-                        "[DisaggregationService] Failed to send prefill error "
-                        "for task_id: {}",
-                        message.task_id);
-                  }
-                  return;
-                }
-                auto remainingTokens =
-                    maxTokens.has_value()
-                        ? std::optional<int>(std::max(0, maxTokens.value() - 1))
-                        : std::nullopt;
-
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
-                prefillResult.remaining_tokens = remainingTokens;
-                prefillResult.token_ids.insert(prefillResult.token_ids.end(),
-                                               message.token_ids.begin(),
-                                               message.token_ids.end());
                 prefillResult.slot_id = slotId;
-                if (response.choices.back().token_id.has_value()) {
-                  prefillResult.token_ids.push_back(
-                      response.choices.back().token_id.value());
+
+                bool isError = !response.choices.empty() &&
+                               response.choices.back().finish_reason == "error";
+                if (isError) {
+                  TT_LOG_WARN(
+                      "[DisaggregationService] Prefill error for task {}, "
+                      "propagating to decode server",
+                      message.task_id);
+                  prefillResult.error = true;
+                  prefillResult.finished = true;
+                } else {
+                  prefillResult.remaining_tokens =
+                      maxTokens.has_value() ? std::optional<int>(std::max(
+                                                  0, maxTokens.value() - 1))
+                                            : std::nullopt;
+                  prefillResult.token_ids.insert(prefillResult.token_ids.end(),
+                                                 message.token_ids.begin(),
+                                                 message.token_ids.end());
+                  if (response.choices.back().token_id.has_value()) {
+                    prefillResult.token_ids.push_back(
+                        response.choices.back().token_id.value());
+                  }
+                  prefillResult.generated_text = response.choices.back().text;
                 }
-                prefillResult.generated_text = response.choices.back().text;
+
                 socketService->sendPrefillResult(prefillResult);
               });
         });

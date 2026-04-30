@@ -87,8 +87,6 @@ class InterServerService {
    */
   bool sendPrefillResult(const PrefillResultMessage& message);
 
-  bool sendPrefillError(uint32_t taskId, const std::string& error);
-
   /**
    * @brief Send health check information
    * @param server_id This server's identifier

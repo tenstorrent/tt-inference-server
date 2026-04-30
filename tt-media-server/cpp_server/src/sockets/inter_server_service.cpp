@@ -88,17 +88,6 @@ bool InterServerService::sendPrefillRequest(
   return socket_manager_.sendObject("prefill_request", message);
 }
 
-bool InterServerService::sendPrefillError(uint32_t taskId,
-                                          const std::string& error) {
-  if (!enabled_) {
-    return false;
-  }
-
-  PrefillResultMessage message(taskId);
-  message.error = error;
-  return socket_manager_.sendObject("prefill_result", message);
-}
-
 bool InterServerService::sendPrefillResult(
     const PrefillResultMessage& message) {
   if (!enabled_) {
@@ -167,14 +156,20 @@ void InterServerService::setupMessageHandlers() {
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
-        TT_LOG_INFO(
-            "[InterServerService] Received prefill result: {} - text: '{}', "
-            "remaining: {}, token_ids: {}",
-            message.task_id, message.generated_text.substr(0, 50),
-            message.remaining_tokens.has_value()
-                ? std::to_string(message.remaining_tokens.value())
-                : "none",
-            message.token_ids.size());
+        if (message.error) {
+          TT_LOG_ERROR(
+              "[InterServerService] Received prefill error for task: {}",
+              message.task_id);
+        } else {
+          TT_LOG_INFO(
+              "[InterServerService] Received prefill result: {} - text: '{}', "
+              "remaining: {}, token_ids: {}",
+              message.task_id, message.generated_text.substr(0, 50),
+              message.remaining_tokens.has_value()
+                  ? std::to_string(message.remaining_tokens.value())
+                  : "none",
+              message.token_ids.size());
+        }
         if (prefill_complete_callback_) {
           prefill_complete_callback_(message);
         }
