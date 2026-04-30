@@ -24,15 +24,16 @@ from workflows.model_spec import (
 )
 from workflows.compose_config import (
     format_env_for_display,
-    get_compose_template_path,
+    get_compose_template_path,  # KEEP — print_compose uses it; removed in Task 12
+    parse_image_version,
     resolve_compose_vars,
     resolve_multihost_vars,
+    run_compose_down,
+    run_compose_server,
 )
 from workflows.run_docker_server import (
-    format_docker_command,
-    generate_docker_run_command,
-    run_docker_server,
-    run_docker_server_compose,
+    format_docker_command,  # still used by multi-host print path
+    run_multihost_server,
 )
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -638,32 +639,49 @@ def main():
                 print(format_env_for_display(env_vars))
                 print(f"\nRun:\n  docker compose -f {template_path} up -d\n")
             return 0
-        if runtime_config.use_compose:
-            run_docker_server_compose(model_spec, runtime_config, setup_config, docker_json_fpath)
+        compose_run_info = None
+        if is_multihost_deployment(runtime_config):
+            # Multi-host stays on the legacy orchestrator path (out of scope for this refactor).
+            run_multihost_server(
+                model_spec, runtime_config, setup_config, docker_json_fpath
+            )
         else:
-            run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+            compose_run_info = run_compose_server(
+                model_spec, runtime_config, setup_config, docker_json_fpath
+            )
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")
 
     # step 5: run workflows
+    skip_workflows = {WorkflowType.SERVER}
+    is_compose_run = (
+        runtime_config.docker_server
+        and not is_multihost_deployment(runtime_config)
+    )
     main_return_code = 0
 
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        return_codes = run_workflows(model_spec, runtime_config, json_fpath)
-        if all(return_code == 0 for return_code in return_codes):
-            logger.info("Completed run.py successfully.")
+    try:
+        if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
+            return_codes = run_workflows(model_spec, runtime_config, json_fpath)
+            if all(return_code == 0 for return_code in return_codes):
+                logger.info("Completed run.py successfully.")
+            else:
+                main_return_code = 1
+                logger.error(
+                    f"run.py failed with return codes: {return_codes}. "
+                    "See logs above for details."
+                )
         else:
-            main_return_code = 1
-            logger.error(
-                f"run.py failed with return codes: {return_codes}. "
-                "See logs above for details."
+            logger.info(
+                f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
             )
-    else:
-        logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
-        )
+    finally:
+        if is_compose_run and WorkflowType.from_string(runtime_config.workflow) not in {
+            WorkflowType.SERVER,
+            WorkflowType.REPORTS,
+        }:
+            run_compose_down(compose_run_info["compose_files"])
 
     logger.info(
         "The output of the workflows is not checked and any errors will be "
