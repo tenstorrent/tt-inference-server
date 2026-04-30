@@ -18,11 +18,11 @@ namespace tt::services {
 ConversationStore::ConversationStore(std::string logDir)
     : logDir(std::move(logDir)) {
   try {
-    std::filesystem::create_directories(logDir);
-    TT_LOG_INFO("[ConversationStore] Log directory: {}", logDir);
+    std::filesystem::create_directories(this->logDir);
+    TT_LOG_INFO("[ConversationStore] Log directory: {}", this->logDir);
   } catch (const std::exception& e) {
-    TT_LOG_WARN("[ConversationStore] Failed to create log dir {}: {}", logDir,
-                e.what());
+    TT_LOG_WARN("[ConversationStore] Failed to create log dir {}: {}",
+                this->logDir, e.what());
   }
   writerThread = std::thread([this] { writerLoop(); });
 }

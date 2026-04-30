@@ -41,29 +41,33 @@ set_group_permissions() {
 
 echo "using CACHE_ROOT: ${CACHE_ROOT}"
 
-# Get current ownership of volume
-VOLUME_OWNER=$(stat -c '%u' "$CACHE_ROOT")
-VOLUME_GROUP=$(stat -c '%g' "$CACHE_ROOT")
-echo "Mounted CACHE_ROOT volume is owned by UID:GID - $VOLUME_OWNER:$VOLUME_GROUP"
+if [ -n "${CACHE_ROOT}" ] && [ -d "${CACHE_ROOT}" ]; then
+    # Get current ownership of volume
+    VOLUME_OWNER=$(stat -c '%u' "$CACHE_ROOT")
+    VOLUME_GROUP=$(stat -c '%g' "$CACHE_ROOT")
+    echo "Mounted CACHE_ROOT volume is owned by UID:GID - $VOLUME_OWNER:$VOLUME_GROUP"
 
-# Create shared group with host's GID if it doesn't exist
-if ! getent group "$VOLUME_GROUP" > /dev/null 2>&1; then
-    groupadd -g "$VOLUME_GROUP" sharedgroup
+    # Create shared group with host's GID if it doesn't exist
+    if ! getent group "$VOLUME_GROUP" > /dev/null 2>&1; then
+        groupadd -g "$VOLUME_GROUP" sharedgroup
+    fi
+
+    # Get the created/existing group name
+    SHARED_GROUP_NAME=$(getent group "$VOLUME_GROUP" | cut -d: -f1)
+
+    # Add container user to the shared group
+    usermod -a -G "$SHARED_GROUP_NAME" "${CONTAINER_APP_USERNAME}"
+
+    # Ensure new files get group write permissions (in current shell)
+    umask 0002
+
+    # only set permisssions for cache_root
+    set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
+    # NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
+    echo "Mounted volume permissions setup completed."
+else
+    echo "CACHE_ROOT is not set or does not exist, skipping volume permissions setup."
 fi
-
-# Get the created/existing group name
-SHARED_GROUP_NAME=$(getent group "$VOLUME_GROUP" | cut -d: -f1)
-
-# Add container user to the shared group
-usermod -a -G "$SHARED_GROUP_NAME" "${CONTAINER_APP_USERNAME}"
-
-# Ensure new files get group write permissions (in current shell)
-umask 0002
-
-# only set permisssions for cache_root
-set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
-# NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
-echo "Mounted volume permissions setup completed."
 
 # Ensure conversation log directory exists and is writable by app user
 CONVERSATION_LOG_DIR="${CONVERSATION_LOG_DIR:-/tmp/tt_conversation_logs}"
