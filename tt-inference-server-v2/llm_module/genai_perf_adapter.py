@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: 2025 Tenstorrent AI ULC
 
-"""Adapter for the ai-dynamo/aiperf ``JsonExportData`` shape."""
+"""Adapter for the NVIDIA genai-perf ``*_genai_perf.json`` shape."""
 
 from __future__ import annotations
 
@@ -14,29 +14,15 @@ LATENCY_METRICS: Tuple[Tuple[str, str], ...] = (
     ("time_to_first_token", "ttft"),
     ("time_to_second_token", "ttst"),
     ("inter_token_latency", "itl"),
-    ("inter_chunk_latency", "icl"),
 )
 THROUGHPUT_METRICS: Tuple[Tuple[str, str], ...] = (
     ("request_throughput", "request_throughput"),
     ("output_token_throughput", "output_token_throughput"),
     ("output_token_throughput_per_user", "output_token_throughput_per_user"),
-    ("goodput", "goodput"),
 )
 SEQUENCE_LENGTH_METRICS: Tuple[Tuple[str, str], ...] = (
     ("input_sequence_length", "input_sequence_length"),
     ("output_sequence_length", "output_sequence_length"),
-)
-COUNT_METRICS: Tuple[Tuple[str, str], ...] = (
-    ("request_count", "request_count"),
-    ("good_request_count", "good_request_count"),
-    ("error_request_count", "error_request_count"),
-    ("output_token_count", "output_token_count"),
-    ("reasoning_token_count", "reasoning_token_count"),
-    ("benchmark_duration", "benchmark_duration"),
-    ("total_output_tokens", "total_output_tokens"),
-    ("total_reasoning_tokens", "total_reasoning_tokens"),
-    ("total_isl", "total_isl"),
-    ("total_osl", "total_osl"),
 )
 ORDERED_STATS: Tuple[str, ...] = (
     "avg",
@@ -61,16 +47,14 @@ def to_report_record(
     device: str = "",
 ) -> Dict[str, Any]:
     return {
-        "kind": "aiperf",
+        "kind": "genai_perf",
         "model": _model_name(raw),
         "device": device,
-        "timestamp": _timestamp(raw),
+        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         "Run Configuration": _run_configuration(raw),
         "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
         "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
         "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
-        "Counts & Totals": _metric_table(raw, COUNT_METRICS),
-        "Telemetry": _telemetry(raw),
     }
 
 
@@ -110,66 +94,37 @@ def _model_name(raw: Mapping[str, Any]) -> str:
     config = raw.get("input_config")
     if not isinstance(config, Mapping):
         return ""
-    endpoint = config.get("endpoint")
-    if isinstance(endpoint, Mapping):
-        names = endpoint.get("model_names")
-        if isinstance(names, list) and names:
-            return str(names[0])
-        model = endpoint.get("model")
-        if model:
-            return str(model)
-    model = config.get("model")
+    model = config.get("model") or config.get("formatted_model_name")
+    if isinstance(model, list) and model:
+        return str(model[0])
     return str(model) if model else ""
-
-
-def _timestamp(raw: Mapping[str, Any]) -> str:
-    start = raw.get("start_time")
-    if isinstance(start, str) and start:
-        return _normalize_iso(start)
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _normalize_iso(text: str) -> str:
-    cleaned = text.rstrip("Z").split(".")[0].replace("T", " ")
-    try:
-        parsed = dt.datetime.strptime(cleaned, "%Y-%m-%d %H:%M:%S")
-        return parsed.strftime("%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return text
 
 
 def _run_configuration(raw: Mapping[str, Any]) -> Dict[str, Any]:
     config = raw.get("input_config") or {}
     if not isinstance(config, Mapping):
         config = {}
-    out: Dict[str, Any] = {
-        "schema_version": raw.get("schema_version"),
-        "aiperf_version": raw.get("aiperf_version"),
-        "benchmark_id": raw.get("benchmark_id"),
-        "model": _model_name(raw),
-        "start_time": raw.get("start_time"),
-        "end_time": raw.get("end_time"),
-        "was_cancelled": raw.get("was_cancelled"),
-    }
-    endpoint = config.get("endpoint")
-    if isinstance(endpoint, Mapping):
-        out["endpoint_type"] = endpoint.get("type")
-    loadgen = config.get("loadgen")
-    if isinstance(loadgen, Mapping):
-        for key in ("concurrency", "request_rate"):
-            if key in loadgen:
-                out[key] = loadgen[key]
+    keys = (
+        "model",
+        "endpoint_type",
+        "service_kind",
+        "url",
+        "concurrency",
+        "request_rate",
+        "num_prompts",
+        "synthetic_input_tokens_mean",
+        "output_tokens_mean",
+        "tokenizer",
+        "streaming",
+    )
+    out: Dict[str, Any] = {}
+    for key in keys:
+        if key in config:
+            value = config[key]
+            if isinstance(value, list) and len(value) == 1:
+                value = value[0]
+            out[key] = value
     return out
-
-
-def _telemetry(raw: Mapping[str, Any]) -> Any:
-    telemetry = raw.get("telemetry_data") or {}
-    if not isinstance(telemetry, Mapping):
-        return {}
-    gpu_metrics = telemetry.get("gpu_metrics")
-    if isinstance(gpu_metrics, Mapping):
-        return {str(name): dict(values) for name, values in gpu_metrics.items()}
-    return {str(k): v for k, v in telemetry.items()}
 
 
 def _round(value: Any, digits: int) -> Any:
