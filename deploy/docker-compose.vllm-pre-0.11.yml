@@ -1,0 +1,52 @@
+# Docker Compose for vLLM inference server on Tenstorrent hardware.
+# Contract era: image versions < 0.11.0 (legacy contract).
+#
+# Differences from the 0.11+ contract:
+#   - The image's docker-entrypoint.sh + CMD already activate the venv and
+#     run run_vllm_api_server.py — DO NOT override `command:`.
+#   - Model selection is via `TT_MODEL_SPEC_JSON_PATH` env var pointing to
+#     a bind-mounted JSON spec. There are no --model / --tt-device CLI args.
+#   - Weights env var is `MODEL_WEIGHTS_PATH` (renamed to MODEL_WEIGHTS_DIR
+#     in 0.11.0).
+#   - `TT_CACHE_PATH` must be passed explicitly (0.11 computes it from
+#     CACHE_ROOT internally).
+#   - Used `shm_size: 32g` instead of `ipc: host` (compose accepts either,
+#     but `shm_size` matches what `run.py` did pre-0.11).
+#
+# Required env vars (set by run.py via .env.compose, or supply manually):
+#   DOCKER_IMAGE, HF_TOKEN/JWT_SECRET (via env_file)
+#   HOST_MODEL_WEIGHTS, MODEL_WEIGHTS_PATH
+#   TT_MODEL_SPEC_HOST_PATH, TT_CACHE_PATH
+
+services:
+  inference-server:
+    image: ${DOCKER_IMAGE:?DOCKER_IMAGE is required}
+    container_name: ${CONTAINER_NAME:-tt-inference-server}
+    shm_size: "32g"
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - cache:/home/container_app_user/cache_root
+      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required}:${CONTAINER_MODEL_WEIGHTS:-/home/container_app_user/readonly_weights_mount}:ro
+      - ${TT_MODEL_SPEC_HOST_PATH:?TT_MODEL_SPEC_HOST_PATH is required}:/tmp/tt_model_spec.json:ro
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      CACHE_ROOT: /home/container_app_user/cache_root
+      TT_CACHE_PATH: ${TT_CACHE_PATH:-/home/container_app_user/cache_root/tt_metal_cache}
+      MODEL_WEIGHTS_PATH: ${MODEL_WEIGHTS_PATH:?MODEL_WEIGHTS_PATH is required}
+      TT_MODEL_SPEC_JSON_PATH: /tmp/tt_model_spec.json
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    restart: on-failure:3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+
+volumes:
+  cache:
+    name: ${CACHE_VOLUME:-tt-inference-cache}

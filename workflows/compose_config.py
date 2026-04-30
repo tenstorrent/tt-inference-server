@@ -575,12 +575,21 @@ def run_compose_server(
         compose_vars["REPO_ROOT"] = str(get_repo_root_path())
     if setup_config and getattr(setup_config, "host_model_volume_root", None):
         compose_vars["HOST_CACHE_ROOT"] = str(setup_config.host_model_volume_root)
-    if json_fpath:
-        compose_vars["RUNTIME_MODEL_SPEC_JSON"] = str(json_fpath)
     if setup_config and getattr(setup_config, "host_model_weights_mount_dir", None):
         compose_vars["HOST_MODEL_WEIGHTS"] = str(setup_config.host_model_weights_mount_dir)
         if getattr(setup_config, "container_model_weights_mount_dir", None):
             compose_vars["CONTAINER_MODEL_WEIGHTS"] = str(setup_config.container_model_weights_mount_dir)
+        # Pre-0.11-era extras. Silently ignored by 0.11+ templates; required by
+        # docker-compose.vllm-pre-0.11.yml. We populate unconditionally so the
+        # contract that needs them gets them and the contract that doesn't
+        # ignores them.
+        if getattr(setup_config, "container_model_weights_path", None):
+            compose_vars["MODEL_WEIGHTS_PATH"] = str(setup_config.container_model_weights_path)
+        if getattr(setup_config, "container_tt_metal_cache_dir", None):
+            compose_vars["TT_CACHE_PATH"] = str(setup_config.container_tt_metal_cache_dir)
+    if json_fpath:
+        compose_vars["RUNTIME_MODEL_SPEC_JSON"] = str(json_fpath)
+        compose_vars["TT_MODEL_SPEC_HOST_PATH"] = str(json_fpath)  # pre-0.11 contract uses this
 
     write_compose_env(compose_vars)
     write_compose_files_sidecar(compose_files)

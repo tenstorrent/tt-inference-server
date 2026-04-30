@@ -12,8 +12,18 @@
 
 contracts:
   vllm:
+    # 0.11.0 changed the image entrypoint: venv is no longer pre-activated
+    # and run_vllm_api_server.py takes --model / --tt-device CLI args.
+    # Pre-0.11 selects the model via TT_MODEL_SPEC_JSON_PATH env var.
+    - min_version: "0.0.0"
+      file: docker-compose.vllm-pre-0.11.yml
     - min_version: "0.11.0"
       file: docker-compose.vllm-0.11.yml
+
   media:
+    # No breaking change at 0.11 for the media engine; the 0.11 file works
+    # for older images too. We register both eras pointing to the same file.
+    - min_version: "0.0.0"
+      file: docker-compose.media-0.11.yml
     - min_version: "0.11.0"
       file: docker-compose.media-0.11.yml
