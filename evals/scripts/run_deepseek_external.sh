@@ -15,8 +15,33 @@
 set -euo pipefail
 
 usage() {
+    local status="${1:-64}"
     cat <<'EOF' >&2
 usage: run_deepseek_external.sh {smoke|quick|single|suite}
+
+Modes:
+  smoke   Tiny end-to-end suite flow check:
+          - AIME24 short pass@1 with SMOKE_AIME_RUNS samples per problem
+            (default: 2 samples across 5 short AIME24 questions)
+          - GPQA Diamond, MATH-500, LiveCodeBench, and MMLU-Pro with
+            SMOKE_LIMIT examples each (default: 2; MMLU-Pro applies this
+            per category)
+
+  quick   Fast iteration check:
+          - AIME24 short pass@1 with AIME_PASS1_RUNS samples per problem
+            (default: 16 samples across 5 short AIME24 questions)
+          - MMLU-Pro limited to QUICK_MMLU_PRO_LIMIT examples per category
+            (default: 32)
+
+  single  Single full AIME24 benchmark:
+          - Runs r1_aime24 once over all 30 AIME24 questions
+          - No pass@1 aggregation and no other suite tasks
+
+  suite   Reporting-grade DeepSeek-aligned suite:
+          - Full AIME24 pass@1 with AIME_PASS1_RUNS samples per problem
+            (default: 16 samples across all 30 AIME24 questions)
+          - Full GPQA Diamond, MATH-500, LiveCodeBench, and MMLU-Pro
+            (MMLU-Pro is 12,032 questions, so this is long-running)
 
 Environment knobs:
   OUTPUT_DIR             Root output directory for the selected mode
@@ -31,12 +56,15 @@ Notes:
   - Full MMLU-Pro is 12,032 questions, so suite mode is reporting-grade and long-running.
   - Use run_mmlu_pro_external.sh if you want to run just MMLU-Pro by itself.
 EOF
-    exit 64
+    exit "${status}"
 }
 
 MODE="${1:-}"
 if [[ -z "${MODE}" ]]; then
     usage
+fi
+if [[ "${MODE}" == "--help" || "${MODE}" == "-h" ]]; then
+    usage 0
 fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
