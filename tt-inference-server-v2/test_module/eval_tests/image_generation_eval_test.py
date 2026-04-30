@@ -13,7 +13,7 @@ from typing import Optional, Union
 import aiohttp
 import requests
 
-from server_tests.base_test import BaseTest
+from .._test_common import BaseTest
 from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
 from server_tests.test_classes import TestConfig
 from utils.media_clients.test_status import ImageGenerationTestStatus
