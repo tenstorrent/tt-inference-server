@@ -439,7 +439,13 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    runs-on: ubuntu-latest
+    # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
+    # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
+    # find every shared lib the binary was linked against. Splitting build
+    # (ubuntu-latest = noble, Python 3.12) from bench (jammy, Python 3.10)
+    # has produced repeated runtime "missing libfoo.so" failures (libpq5,
+    # libpython3.12, ...). Same OS image on both sides eliminates the class.
+    runs-on: tt-ubuntu-2204-large-stable
     permissions:
       contents: read
     defaults:
