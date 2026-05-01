@@ -45,7 +45,10 @@ class InputBatch:
         self.num_computed_tokens_cpu = np.zeros(max_num_reqs, dtype=np.int32)
 
         # Block table.
-        self.block_table = MultiGroupBlockTable(
+        # kernel_block_sizes was added in a newer vllm; default to block_sizes if needed
+        import inspect as _inspect
+        _mgtb_params = _inspect.signature(MultiGroupBlockTable.__init__).parameters
+        _mgtb_kwargs = dict(
             max_num_reqs=max_num_reqs,
             max_model_len=max_model_len,
             max_num_batched_tokens=max_num_batched_tokens,
@@ -53,6 +56,9 @@ class InputBatch:
             device="cpu",
             block_sizes=block_sizes,
         )
+        if "kernel_block_sizes" in _mgtb_params:
+            _mgtb_kwargs["kernel_block_sizes"] = block_sizes
+        self.block_table = MultiGroupBlockTable(**_mgtb_kwargs)
 
         self.req_output_token_ids: list[Optional[list[int]]] = []
 

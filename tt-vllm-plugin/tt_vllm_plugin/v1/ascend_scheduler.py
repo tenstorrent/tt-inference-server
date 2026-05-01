@@ -14,7 +14,10 @@ from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from vllm.utils import cdiv
+try:
+    from vllm.utils import cdiv
+except ImportError:
+    from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs
@@ -35,18 +38,33 @@ class AscendScheduler(Scheduler):
         vllm_config: VllmConfig,
         kv_cache_config: KVCacheConfig,
         structured_output_manager: StructuredOutputManager,
+        block_size: int = 64,  # added in newer vllm
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
         include_finished_set: bool = False,
         log_stats: bool = False,
+        **kwargs,  # absorb any future new args
     ) -> None:
-        super().__init__(
-            vllm_config,
-            kv_cache_config,
-            structured_output_manager,
-            mm_registry,
-            include_finished_set,
-            log_stats,
-        )
+        import inspect as _inspect
+        _super_params = _inspect.signature(Scheduler.__init__).parameters
+        if "block_size" in _super_params:
+            super().__init__(
+                vllm_config,
+                kv_cache_config,
+                structured_output_manager,
+                block_size,
+                mm_registry,
+                include_finished_set,
+                log_stats,
+            )
+        else:
+            super().__init__(
+                vllm_config,
+                kv_cache_config,
+                structured_output_manager,
+                mm_registry,
+                include_finished_set,
+                log_stats,
+            )
         self.scheduled_req_ids: set[str] = set()
         self.running: list[Request] = []
         # Optional execution mode gate (None=auto, 1=prefill, 0=decode)
@@ -118,7 +136,9 @@ class AscendScheduler(Scheduler):
 
             # Skip request if the structured output request is still waiting
             # for FSM compilation.
-            if request.status == RequestStatus.WAITING_FOR_FSM:
+            _WAITING_FOR_FSM = getattr(RequestStatus, "WAITING_FOR_FSM",
+                                        getattr(RequestStatus, "WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR", None))
+            if _WAITING_FOR_FSM is not None and request.status == _WAITING_FOR_FSM:
                 structured_output_req = request.structured_output_request
                 if structured_output_req and structured_output_req.grammar:
                     # unblock request if FSM is now ready
@@ -279,8 +299,8 @@ class AscendScheduler(Scheduler):
             request.status = RequestStatus.RUNNING
             request.num_computed_tokens = num_computed_tokens
             # Count the number of prefix cached tokens.
-            if request.num_cached_tokens < 0:
-                request.num_cached_tokens = num_computed_tokens
+            if request.num_computed_tokens < 0:
+                request.num_computed_tokens = num_computed_tokens
 
         # Put back any skipped requests at the head of the waiting queue
         if skipped_waiting_requests:
@@ -421,7 +441,7 @@ class AscendScheduler(Scheduler):
             any_request = self.running[0]
             num_common_prefix_blocks = (
                 self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request, len(self.running)
+                    getattr(any_request, 'request_id', any_request)
                 )
             )
 
@@ -532,10 +552,10 @@ class AscendScheduler(Scheduler):
             self.scheduler_config.chunked_prefill_enabled
             and not self.scheduler_config.is_multi_step
         ):
-            prompt_limit = self.scheduler_config.max_model_len
+            prompt_limit = self.max_model_len
         else:
             prompt_limit = min(
-                self.scheduler_config.max_model_len,
+                self.max_model_len,
                 self.scheduler_config.max_num_batched_tokens,
             )
 

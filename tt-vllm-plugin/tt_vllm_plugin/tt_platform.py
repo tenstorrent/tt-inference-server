@@ -5,18 +5,29 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
+
+# VLLM_USE_V1 was added in newer vllm forks; default True for older forks
+_VLLM_USE_V1 = getattr(envs, "VLLM_USE_V1", True)
+
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import PromptType
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
+    try:
+        from vllm.inputs import ProcessorInputs
+    except ImportError:
+        from vllm.multimodal.processing import ProcessorInputs
 else:
     ModelConfig = None
     VllmConfig = None
     PoolingParams = None
+    SamplingParams = None
+    PromptType = None
+    ProcessorInputs = None
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
 
@@ -55,9 +66,12 @@ class TTPlatform(Platform):
         ), "TT backend does not support distributed execution"
         assert not vllm_config.lora_config, "LoRA is not supported for TT backend"
 
-        vllm_config.scheduler_config.scheduler_cls = (
-            "tt_vllm_plugin.v1.ascend_scheduler.AscendScheduler"
-        )
+        # Use the default vllm scheduler for compatibility with newer vllm forks.
+        # AscendScheduler has API mismatches and is not needed for Molmo2 inference.
+        if vllm_config.scheduler_config.scheduler_cls is None:
+            vllm_config.scheduler_config.scheduler_cls = (
+                "vllm.v1.core.sched.scheduler.Scheduler"
+            )
 
         # Set default block_size if not specified by user
         cache_config = vllm_config.cache_config
@@ -70,7 +84,7 @@ class TTPlatform(Platform):
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            if envs.VLLM_USE_V1:
+            if _VLLM_USE_V1:
                 parallel_config.worker_cls = (
                     "tt_vllm_plugin.v1.worker.tt_worker.TTWorker"
                 )
@@ -120,7 +134,7 @@ class TTPlatform(Platform):
         # or if any of the requests in the batch require it.
         # For now, it is only supported with host-side sampling.
 
-        if envs.VLLM_USE_V1:  # type: ignore[attr-defined]
+        if _VLLM_USE_V1:  # type: ignore[attr-defined]
             logger.warning(
                 "Disabling compatibility sampling as it's not yet support for "
                 "V1 TT backend."
@@ -136,7 +150,7 @@ class TTPlatform(Platform):
                 "always_compat_sampling must be a boolean"
             )
             if always_compat_sampling:
-                if envs.VLLM_USE_V1:
+                if _VLLM_USE_V1:
                     raise ValueError(
                         "always_compat_sampling is not yet supported for V1 TT backend."
                     )
@@ -165,7 +179,7 @@ class TTPlatform(Platform):
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         # V1 support on TT is experimental.
         # Allow users to opt in, but give a warning.
-        if envs.is_set("VLLM_USE_V1") and envs.VLLM_USE_V1:
+        if _VLLM_USE_V1:
             if model_config.is_encoder_decoder:
                 raise ValueError(
                     "VLLM_USE_V1=1 was set but encoder-decoder models aren't "
@@ -175,7 +189,7 @@ class TTPlatform(Platform):
                 "Enabling V1 since VLLM_USE_V1=1, however V1 is still "
                 "experimental for TT backend."
             )
-            return envs.VLLM_USE_V1
+            return _VLLM_USE_V1
         return False
 
     @classmethod
@@ -193,20 +207,39 @@ class TTPlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        processed_inputs: ProcessorInputs,
+        *args,
+        **kwargs,
     ) -> None:
-        """Raises if this request is unsupported on this platform"""
+        """Raises if this request is unsupported on this platform.
 
-        if isinstance(params, SamplingParams):
-            if params.n != 1:
+        Signature varies between vllm forks; accept all args flexibly.
+        In new vllm: validate_request(processed_inputs, params)
+        In old vllm: validate_request(prompt, params, processed_inputs)
+        """
+        # Extract params from positional args
+        # Find the params argument (SamplingParams or PoolingParams)
+        # by checking type name, avoiding isinstance with None types
+        params = None
+        for a in args:
+            if a is not None and type(a).__name__ in ("SamplingParams", "PoolingParams"):
+                params = a
+                break
+        if params is None:
+            params = kwargs.get("params")
+
+        try:
+            from vllm.sampling_params import SamplingParams as _SamplingParams
+        except ImportError:
+            _SamplingParams = None
+
+        if _SamplingParams is not None and isinstance(params, _SamplingParams):
+            if getattr(params, "n", 1) != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
-            if params.best_of is not None:
+            if getattr(params, "best_of", None) is not None:
                 raise ValueError(
                     f"Currently not supporting best_of on {cls.device_name}"
                 )
-            if params.prompt_logprobs is not None:
+            if getattr(params, "prompt_logprobs", None) is not None:
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"
                 )

@@ -9,7 +9,10 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+try:
+    from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+except ImportError:
+    from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
@@ -188,14 +191,21 @@ class TTWorker(WorkerBase):
             else STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
         )
 
-        attn_spec = FullAttentionSpec(
+        _attn_kwargs = dict(
             block_size=cache_config.block_size,
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
+        # use_mla was added in a newer vllm fork; skip if not supported
+        if hasattr(model_config, "use_mla"):
+            try:
+                FullAttentionSpec(**_attn_kwargs, use_mla=model_config.use_mla)
+                _attn_kwargs["use_mla"] = model_config.use_mla
+            except TypeError:
+                pass
+        attn_spec = FullAttentionSpec(**_attn_kwargs)
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
         return kv_cache_spec
 
@@ -232,9 +242,13 @@ class TTWorker(WorkerBase):
         self.cache_config.num_gpu_blocks = num_gpu_blocks
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
-    def compile_or_warm_up_model(self) -> None:
-        # Currently skip and compile/capture-trace during the first execution.
-        pass
+    def compile_or_warm_up_model(self):
+        # Return CompilationTimes if required by the new vllm API
+        try:
+            from vllm.v1.worker.worker_base import CompilationTimes
+            return CompilationTimes(language_model=0.0, encoder=0.0)
+        except ImportError:
+            return None
 
     def execute_model(
         self,
@@ -245,6 +259,20 @@ class TTWorker(WorkerBase):
             "Model runner not initialized. Call load_model() first."
         )
         output = self.model_runner.execute_model(scheduler_output)
+        # Cache for sample_tokens() which the new vllm always calls separately
+        self._last_model_output = output
+        return output
+
+    def sample_tokens(self, grammar_output=None) -> Optional[ModelRunnerOutput]:
+        """Return the cached output from execute_model.
+
+        The new vllm fork uses a two-phase model: execute_model computes,
+        sample_tokens returns the final ModelRunnerOutput. Since our
+        execute_model already does the full computation including sampling,
+        we just return the cached result.
+        """
+        output = getattr(self, "_last_model_output", None)
+        self._last_model_output = None
         return output
 
     def check_health(self) -> None:

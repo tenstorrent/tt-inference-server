@@ -327,7 +327,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "max-log-len": "32",
             "seed": "9472",
-            "override_tt_config": json.dumps(self.override_tt_config),
+            **({"override_tt_config": json.dumps(self.override_tt_config)} if self.override_tt_config else {}),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
@@ -2678,14 +2678,16 @@ vlm_templates = [
                 max_context=36864,
                 default_impl=True,
                 vllm_args={
-                    "override-neuron-config": json.dumps(
-                        {"architectures": ["TTMolmo2ForConditionalGeneration"]}
-                    ),
-                    "disable_mm_preprocessor_cache": True,
+                    "trust_remote_code": True,
                     "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
-                },
-                override_tt_config={
-                    "fabric_config": "FABRIC_1D",
+                    # Use Molmo2VideoBackend which implements the same uniform_last_frame
+                    # sampling as the HF Molmo2VideoProcessor (matches demo exactly).
+                    "media_io_kwargs": json.dumps({"video": {
+                        "video_backend": "molmo2",
+                        "frame_sample_mode": "uniform_last_frame",
+                        "max_fps": 2,
+                        "num_frames": 384,
+                    }}),
                 },
             ),
         ],

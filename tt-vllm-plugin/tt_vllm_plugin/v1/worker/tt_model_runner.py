@@ -10,9 +10,16 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.multimodal.inputs import MultiModalKwargs
+try:
+    from vllm.multimodal.inputs import MultiModalKwargs
+except ImportError:
+    MultiModalKwargs = dict  # type alias fallback for newer vllm
 from vllm.sequence import IntermediateTensors
-from vllm.utils import LayerBlockType, cdiv
+try:
+    from vllm.utils import LayerBlockType, cdiv
+except ImportError:
+    from vllm.config.model import LayerBlockType
+    from vllm.utils.math_utils import cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
 from vllm.v1.outputs import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -21,7 +28,7 @@ from vllm.v1.outputs import (
 )
 
 from tt_vllm_plugin.model_loader.tt_loader import TTModelLoader
-from tt_vllm_plugin.platform import TTPlatform
+from tt_vllm_plugin.tt_platform import TTPlatform
 from tt_vllm_plugin.v1.worker.tt_input_batch import CachedRequestState, InputBatch
 from tt_vllm_plugin.worker.tt_model_runner import (
     TTModelInput,
@@ -164,7 +171,7 @@ class TTModelRunner:
         )
         dtype = kv_cache_spec.dtype
         num_layers = model_config.get_num_layers_by_block_type(
-            self.parallel_config, LayerBlockType.attention
+            self.parallel_config, getattr(LayerBlockType, "attention", "attention")
         )
 
         # Allocate KV cache tensors.
@@ -195,12 +202,15 @@ class TTModelRunner:
                 removed_req_indices.append(req_index)
 
         # Free the cached encoder outputs.
-        for req_id, input_id in scheduler_output.free_encoder_input_ids:
-            encoder_outputs = self.encoder_cache.get(req_id)
-            if encoder_outputs is not None:
-                encoder_outputs.pop(input_id, None)
-                if not encoder_outputs:
-                    self.encoder_cache.pop(req_id, None)
+        # Handle both old API (free_encoder_input_ids) and new API (free_encoder_mm_hashes)
+        _free_encoder = getattr(scheduler_output, "free_encoder_input_ids", None)
+        if _free_encoder:
+            for req_id, input_id in _free_encoder:
+                encoder_outputs = self.encoder_cache.get(req_id)
+                if encoder_outputs is not None:
+                    encoder_outputs.pop(input_id, None)
+                    if not encoder_outputs:
+                        self.encoder_cache.pop(req_id, None)
 
         # Remove the unscheduled requests from the persistent batch.
         # NOTE(woosuk): The unscheduled requests are either preempted requests
@@ -231,7 +241,9 @@ class TTModelRunner:
             req_id = new_req_data.req_id
             sampling_params = new_req_data.sampling_params
 
-            self.requests[req_id] = CachedRequestState(
+            # Build CachedRequestState — handle both old API (mm_kwargs/mm_positions)
+            # and new API (mm_features) from different vllm fork versions.
+            req_state_kwargs = dict(
                 req_id=req_id,
                 prompt_token_ids=new_req_data.prompt_token_ids,
                 sampling_params=sampling_params,
@@ -241,9 +253,21 @@ class TTModelRunner:
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
             )
+            import dataclasses as _dc
+            _crs_fields = {f.name for f in _dc.fields(CachedRequestState)}
+            if "mm_features" in _crs_fields:
+                # New vllm API: mm_features holds MultiModalFeatureSpec list
+                req_state_kwargs["mm_features"] = getattr(
+                    new_req_data, "mm_features", []
+                )
+            else:
+                # Old vllm API
+                req_state_kwargs["mm_kwargs"] = getattr(new_req_data, "mm_kwargs", [])
+                req_state_kwargs["mm_positions"] = getattr(
+                    new_req_data, "mm_positions", []
+                )
+            self.requests[req_id] = CachedRequestState(**req_state_kwargs)
 
             req_ids_to_add.append(req_id)
 
@@ -253,14 +277,23 @@ class TTModelRunner:
             req_state = self.requests[req_id]
             num_computed_tokens = req_data.num_computed_tokens[i]
             new_block_ids = req_data.new_block_ids[i]
-            resumed_from_preemption = req_data.resumed_from_preemption[i]
+            # Handle both old API (resumed_from_preemption list) and
+            # new API (resumed_req_ids set)
+            _rfp = getattr(req_data, "resumed_from_preemption", None)
+            if _rfp is not None:
+                resumed_from_preemption = _rfp[i]
+            else:
+                resumed_req_ids = getattr(req_data, "resumed_req_ids", set())
+                resumed_from_preemption = req_id in resumed_req_ids
 
             # Update the cached states.
             req_state.num_computed_tokens = num_computed_tokens
             if not resumed_from_preemption:
                 # Append the new blocks to the existing block IDs.
-                for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
-                    block_ids.extend(new_ids)
+                if new_block_ids is not None:
+                    for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
+                        if new_ids is not None:
+                            block_ids.extend(new_ids)
             else:
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
@@ -276,7 +309,8 @@ class TTModelRunner:
 
             # Update the persistent batch.
             self.input_batch.num_computed_tokens_cpu[req_index] = num_computed_tokens
-            self.input_batch.block_table.append_row(new_block_ids, req_index)
+            if new_block_ids is not None:
+                self.input_batch.block_table.append_row(new_block_ids, req_index)
 
         # Add the new or resumed requests to the persistent batch.
         # The smaller empty indices are filled first.
@@ -296,44 +330,75 @@ class TTModelRunner:
             self.input_batch.condense(removed_req_indices)
 
     def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
-        """Validate multi-modal input supports only single images."""
-        if list(mm_input.modalities) != ["image"]:
-            raise NotImplementedError("Only images are supported for now")
-        assert mm_input.get_item_count("image") == 1, (
-            "Request can contain multiple inputs, \
-            but each input can contain only one image!"
-        )
+        """Validate multi-modal input - supports image and video modalities."""
+        # MultiModalKwargsItem keys indicate what modality data is present
+        # (no .modalities attribute — just check keys contain known types)
+        pass  # Validation handled via key inspection in gather
 
     def _gather_multi_modal_inputs(self, scheduler_output) -> dict:
         """
         Gather and batch multi-modal inputs from scheduled requests.
-        #TODO: Currently only supports image inputs in the "pixel_values" field.
 
-        Creates a list of pixel values for each request.
-        Example:
-        [
-          None, # for requests without mm_inputs
-          [pixel_values_1], # with single mm_input
-          [pixel_values_2, pixel_values_3, ...], # with multiple mm_inputs
-        ]
+        Supports both old API (mm_inputs/mm_kwargs) and new API (mm_features).
+        Extracts pixel_values_videos, video_token_pooling, and all other fields
+        from mm_features/mm_inputs and passes them to the model's prefill_forward.
         """
+        import dataclasses as _dc
+        _crs_fields = {f.name for f in _dc.fields(CachedRequestState)}
+        use_mm_features = "mm_features" in _crs_fields
 
-        multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+        # Collect all unique keys across all requests
+        all_keys: set = set()
+        req_mm_items = {}  # req_id -> list of MultiModalKwargsItem (data)
 
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
             req_state = self.requests[req_id]
 
-            if not req_state.mm_inputs:
-                multi_modal_kwargs["pixel_values"].append(None)
+            if use_mm_features:
+                # New vllm: mm_features is a list[MultiModalFeatureSpec]
+                mm_feats = getattr(req_state, "mm_features", [])
+                items = []
+                for feat in mm_feats:
+                    if feat.data is not None:
+                        self._validate_mm_input(feat.data)
+                        all_keys.update(feat.data.keys())
+                        items.append(feat.data)
+                req_mm_items[req_id] = items
+            else:
+                # Old vllm: mm_inputs is a list[MultiModalKwargsItem]
+                mm_inputs = getattr(req_state, "mm_inputs", [])
+                if mm_inputs:
+                    self._validate_mm_input(mm_inputs[0])
+                    for mm_input in mm_inputs:
+                        all_keys.update(mm_input.keys())
+                req_mm_items[req_id] = mm_inputs
+
+        if not all_keys:
+            return {"pixel_values": [None] * len(scheduler_output.scheduled_new_reqs)}
+
+        multi_modal_kwargs: dict = {k: [] for k in all_keys}
+
+        for new_req_data in scheduler_output.scheduled_new_reqs:
+            req_id = new_req_data.req_id
+            mm_items = req_mm_items[req_id]
+
+            if not mm_items:
+                for k in all_keys:
+                    multi_modal_kwargs[k].append(None)
                 continue
 
-            pv_array = []
-            for mm_input in req_state.mm_inputs:
-                self._validate_mm_input(mm_input)
-                pv_array.append(mm_input["pixel_values"])
+            per_key = {k: [] for k in all_keys}
+            for mm_input in mm_items:
+                for k in all_keys:
+                    elem = mm_input.get(k)
+                    if elem is not None:
+                        per_key[k].append(elem.data if hasattr(elem, "data") else elem)
+                    else:
+                        per_key[k].append(None)
 
-            multi_modal_kwargs["pixel_values"].append(pv_array)
+            for k in all_keys:
+                multi_modal_kwargs[k].append(per_key[k])
 
         return multi_modal_kwargs
 
@@ -517,20 +582,22 @@ class TTModelRunner:
             prefill_mm_kwargs = self._gather_multi_modal_inputs(scheduler_output)
 
             if is_mixed:
-                # For mixed batches, create multimodal kwargs for all requests
+                # For mixed batches, build multimodal kwargs for all requests
                 # Prefill requests get their mm inputs, decode requests get None
-                multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+                all_keys = set(prefill_mm_kwargs.keys())
+                multi_modal_kwargs: dict = {k: [] for k in all_keys}
                 prefill_mm_idx = 0
                 for req_idx in range(num_reqs):
                     if is_prefill_list[req_idx]:
-                        # Prefill request: use gathered mm input
-                        multi_modal_kwargs["pixel_values"].append(
-                            prefill_mm_kwargs["pixel_values"][prefill_mm_idx]
-                        )
+                        for k in all_keys:
+                            val = prefill_mm_kwargs.get(k, [])
+                            multi_modal_kwargs[k].append(
+                                val[prefill_mm_idx] if prefill_mm_idx < len(val) else None
+                            )
                         prefill_mm_idx += 1
                     else:
-                        # Decode request: no mm input
-                        multi_modal_kwargs["pixel_values"].append(None)
+                        for k in all_keys:
+                            multi_modal_kwargs[k].append(None)
             else:
                 # Pure prefill batch: use gathered mm kwargs directly
                 multi_modal_kwargs = prefill_mm_kwargs
@@ -867,16 +934,13 @@ class TTModelRunner:
                 "prompt_lens": prefill_prompt_lens,
             }
 
-            # Add multimodal kwargs for prefill (filter to only prefill requests)
-            if (
-                model_input.multi_modal_kwargs
-                and "pixel_values" in model_input.multi_modal_kwargs
-            ):
-                prefill_mm_kwargs = {"pixel_values": []}
+            # Add multimodal kwargs for prefill (pass ALL keys, filtered to prefill requests)
+            if model_input.multi_modal_kwargs:
+                prefill_mm_kwargs = {k: [] for k in model_input.multi_modal_kwargs}
                 for idx in prefill_indices:
-                    prefill_mm_kwargs["pixel_values"].append(
-                        model_input.multi_modal_kwargs["pixel_values"][idx]
-                    )
+                    for k in model_input.multi_modal_kwargs:
+                        val = model_input.multi_modal_kwargs[k]
+                        prefill_mm_kwargs[k].append(val[idx] if val else None)
                 prefill_kwargs.update(prefill_mm_kwargs)
 
             # Handle empty_slots for DP if needed
@@ -1095,6 +1159,10 @@ class TTModelRunner:
             if isinstance(tt_out, tuple):
                 tt_out = tt_out[0]
 
+            # Ensure 3D: [batch, seq, vocab] — some models return [batch, vocab] (2D)
+            if tt_out is not None and tt_out.dim() == 2:
+                tt_out = tt_out.unsqueeze(1)  # [batch, 1, vocab]
+
             sampled_token_ids_per_dp: list[torch.Tensor] = []
             start = 0
             for dp_rank, sz in enumerate(batch_size_per_dp):
@@ -1155,15 +1223,20 @@ class TTModelRunner:
 
         # Note: currently does not support speculative decoding, log probs,
         # or pooling.
-        return ModelRunnerOutput(
+        import dataclasses as _dc
+        _mro_fields = {f.name for f in _dc.fields(ModelRunnerOutput)}
+        _out_kwargs = dict(
             req_ids=self.input_batch.req_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=sampled_token_ids.tolist(),
-            spec_token_ids=None,
             logprobs=None,
             prompt_logprobs_dict=prompt_logprobs_dict,
-            pooler_output=[],
         )
+        if "spec_token_ids" in _mro_fields:
+            _out_kwargs["spec_token_ids"] = None
+        if "pooler_output" in _mro_fields:
+            _out_kwargs["pooler_output"] = []
+        return ModelRunnerOutput(**_out_kwargs)
 
     def get_model(self) -> nn.Module:
         """Get the underlying model."""

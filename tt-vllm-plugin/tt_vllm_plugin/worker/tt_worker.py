@@ -9,6 +9,10 @@ from typing import Optional
 import ttnn
 
 import vllm.envs as envs
+
+# VLLM_USE_V1 was added in newer vllm forks; default True for older forks
+_VLLM_USE_V1 = getattr(envs, "VLLM_USE_V1", True)
+
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 
@@ -27,7 +31,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     scheduler_config = vllm_config.scheduler_config
     cache_config = vllm_config.cache_config
 
-    if envs.VLLM_USE_V1:
+    if _VLLM_USE_V1:
         data_parallel = vllm_config.parallel_config.data_parallel_size
     else:
         data_parallel = 1
@@ -41,7 +45,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     num_devices_per_model = device_config.num_devices // data_parallel
 
     max_batch = scheduler_config.max_num_seqs
-    max_model_len = scheduler_config.max_model_len
+    max_model_len = vllm_config.model_config.max_model_len
 
     # Check if this is an embedding model using the explicit flag in override_tt_config
     # This flag is set by embedding models (Qwen3-Embedding, BGE, etc.) in their
@@ -131,7 +135,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     max_batch = scheduler_config.max_num_seqs
     max_tokens_all_users += cache_config.block_size * max_batch
 
-    if not envs.VLLM_USE_V1:
+    if not _VLLM_USE_V1:
         # For multi-step, to fit (max_tokens_all_users / max batch) per user,
         # allocate an extra num_lookahead_slots (num_scheduler_steps - 1 when
         # not using speculative decoding) per user.
@@ -140,7 +144,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
 
     num_tt_blocks = math.ceil(max_tokens_all_users / cache_config.block_size)
 
-    if not envs.VLLM_USE_V1:
+    if not _VLLM_USE_V1:
         # Add 1% to account for vLLM's watermark_blocks
         num_tt_blocks = int(num_tt_blocks * 1.01)
 

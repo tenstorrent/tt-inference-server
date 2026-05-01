@@ -5,7 +5,7 @@
 def register():
     # At first we used ttnn.get_device_ids() to truly understand if the TT platform is supported.
     # This caused the offline inference to hang and never complete, so for now we just assume that we always have TT support.
-    return "tt_vllm_plugin.platform.TTPlatform"
+    return "tt_vllm_plugin.tt_platform.TTPlatform"
 
 
 def register_models():
