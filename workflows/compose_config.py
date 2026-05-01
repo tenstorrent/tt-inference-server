@@ -25,11 +25,9 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import yaml
-
-from packaging.version import InvalidVersion, Version
 
 from workflows.utils import get_repo_root_path, write_dotenv
 from workflows.workflow_types import (
@@ -42,6 +40,12 @@ logger = logging.getLogger("run_log")
 DEPLOY_DIR = get_repo_root_path() / "deploy"
 COMPOSE_ENV_PATH = get_repo_root_path() / ".env.compose"
 
+# Version is represented as a 3-tuple of ints (major, minor, patch). Comparable
+# with Python's built-in tuple ordering. We deliberately avoid the `packaging`
+# library because it's not pre-installed on every CI runner's system Python
+# (see commit history: galaxy runners hit ModuleNotFoundError on first try).
+Version = Tuple[int, int, int]
+
 
 def _short_uuid():
     return str(uuid.uuid4())[:8]
@@ -50,16 +54,39 @@ def _short_uuid():
 _VERSION_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
 
 
+def _to_version_tuple(s: str) -> Optional[Version]:
+    """Parse a dotted-numeric string into a 3-tuple, padding short forms.
+
+    >>> _to_version_tuple("0.11.0")
+    (0, 11, 0)
+    >>> _to_version_tuple("0.9")
+    (0, 9, 0)
+    >>> _to_version_tuple("1.2.3.4")  # extras are dropped
+    (1, 2, 3)
+    >>> _to_version_tuple("dev") is None
+    True
+    """
+    if not s:
+        return None
+    try:
+        parts = [int(p) for p in s.split(".")]
+    except (ValueError, AttributeError):
+        return None
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
+
+
 def parse_image_version(image: str) -> Optional[Version]:
-    """Parse a leading PEP-440 / semver-style version from a Docker image tag.
+    """Parse a leading semver-style version from a Docker image tag.
 
     Returns None if the image has no tag, or if the tag's leading characters
     do not form a parseable version. The build suffix after the version
     (e.g. "-fae3df") is ignored.
 
     Examples:
-        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc") == Version("0.11.0")
-        True
+        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc")
+        (0, 11, 0)
         >>> parse_image_version("ghcr.io/foo/bar:dev") is None
         True
     """
@@ -69,10 +96,7 @@ def parse_image_version(image: str) -> Optional[Version]:
     match = _VERSION_PREFIX_RE.match(tag)
     if not match:
         return None
-    try:
-        return Version(match.group(1))
-    except InvalidVersion:
-        return None
+    return _to_version_tuple(match.group(1))
 
 
 class NoMatchingContractError(Exception):
@@ -92,8 +116,8 @@ def lookup_contract(
     warning.
 
     Args:
-        engine: Engine name as listed in contracts.yml (e.g. "vllm", "media").
-        version: Parsed image version, or None when the tag was unparseable.
+        engine: Engine name as listed in contracts.yml (e.g. "vLLM", "media").
+        version: Parsed image version (tuple) or None when the tag was unparseable.
         contracts_path: Path to contracts.yml. Defaults to DEPLOY_DIR/contracts.yml.
 
     Raises:
@@ -113,7 +137,7 @@ def lookup_contract(
         )
 
     parsed = sorted(
-        ((Version(c["min_version"]), c["file"]) for c in contracts),
+        ((_to_version_tuple(c["min_version"]), c["file"]) for c in contracts),
         key=lambda x: x[0],
         reverse=True,
     )
@@ -132,8 +156,8 @@ def lookup_contract(
             return contracts_path.parent / fname
 
     raise NoMatchingContractError(
-        f"No contract for engine '{engine}' supports version {version}. "
-        f"Lowest min_version available: {parsed[-1][0]}. "
+        f"No contract for engine '{engine}' supports version {'.'.join(str(p) for p in version)}. "
+        f"Lowest min_version available: {'.'.join(str(p) for p in parsed[-1][0])}. "
         f"Add a row to {contracts_path} to support this version."
     )
 

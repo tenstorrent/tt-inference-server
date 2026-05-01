@@ -17,9 +17,19 @@ def test_module_imports():
     import workflows.compose_config  # noqa: F401
 
 
-from packaging.version import Version
-
 from workflows.compose_config import parse_image_version
+
+
+def Version(s: str):
+    """Test helper: convert "0.11.0" → (0, 11, 0). Padded to 3 components.
+
+    Mirrors workflows.compose_config._to_version_tuple but kept inline so tests
+    are self-contained.
+    """
+    parts = [int(p) for p in s.split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
 
 
 class TestParseImageVersion:
@@ -32,7 +42,7 @@ class TestParseImageVersion:
         assert parse_image_version(image) == Version("0.11.0")
 
     def test_two_part_version(self):
-        # Tag like "0.9-abc" should still parse — packaging.Version("0.9") is valid
+        # Tag like "0.9-abc" parses as (0, 9, 0) — padded to 3 components
         assert parse_image_version("foo/bar:0.9-abc") == Version("0.9")
 
     def test_dev_tag_returns_none(self):
