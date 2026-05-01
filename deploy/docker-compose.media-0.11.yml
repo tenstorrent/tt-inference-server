@@ -36,7 +36,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 300s
+      # 1800s = 30 min. Media models compile kernels on first start (during
+      # which /health returns 500). 300s was too short for SDXL on galaxy
+      # — the container is alive and progressing but compose marks it
+      # unhealthy mid-warmup. On a warm run the first /health success
+      # makes compose up --wait return immediately.
+      start_period: 1800s
 
 volumes:
   cache:
