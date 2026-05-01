@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
+
 from config.constants import ModelRunners
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -41,6 +43,11 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),
     ModelRunners.TT_WAN_2_2: lambda wid: __import__(
+        "tt_model_runners.dit_runners",
+        fromlist=["TTWan22I2VProdiaRunner"],
+    ).TTWan22I2VProdiaRunner(wid)
+    if os.environ.get("DEMO_WEIGHTS_DIR_I2V")
+    else __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22Runner"]
     ).TTWan22Runner(wid),
     ModelRunners.TT_WAN_2_2_I2V: lambda wid: __import__(
