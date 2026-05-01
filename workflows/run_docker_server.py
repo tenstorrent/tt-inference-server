@@ -262,6 +262,8 @@ def generate_docker_run_command(
             ]
         # fmt: on
 
+    docker_env_vars["SERVICE_PORT"] = runtime_config.service_port
+
     for key, value in docker_env_vars.items():
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
