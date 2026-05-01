@@ -1,0 +1,13 @@
+# Runtime-model-spec overlay — bind-mounts the merged runtime model spec
+# JSON read-only into the container. Stacked by run.py when a runtime
+# model spec JSON file was generated for this run.
+#
+# Required env vars:
+#   RUNTIME_MODEL_SPEC_JSON — absolute host path to the JSON file.
+
+services:
+  inference-server:
+    volumes:
+      - ${RUNTIME_MODEL_SPEC_JSON:?RUNTIME_MODEL_SPEC_JSON is required for model-spec overlay}:/tmp/runtime_model_spec.json:ro
+    environment:
+      RUNTIME_MODEL_SPEC_JSON_PATH: /tmp/runtime_model_spec.json

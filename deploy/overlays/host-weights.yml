@@ -1,0 +1,21 @@
+# Host-weights overlay — bind-mounts a host weights directory read-only into
+# the container. Stacked by run.py when setup_config.host_model_weights_mount_dir
+# is set; otherwise the inference server downloads weights at runtime via
+# HF_TOKEN.
+#
+# Required env vars:
+#   HOST_MODEL_WEIGHTS — absolute host path to the weights tree.
+#   CONTAINER_MODEL_WEIGHTS — absolute container path to mount weights at.
+#                              0.11+ default: /mnt/weights.
+#                              pre-0.11 default: /home/container_app_user/readonly_weights_mount.
+#
+# Pre-0.11 era also requires `MODEL_WEIGHTS_PATH` (the in-container path
+# `run_vllm_api_server.py` reads to find weights). Defaults to whatever
+# CONTAINER_MODEL_WEIGHTS resolves to. 0.11+ images ignore this env var.
+
+services:
+  inference-server:
+    volumes:
+      - ${HOST_MODEL_WEIGHTS:?HOST_MODEL_WEIGHTS is required for host-weights overlay}:${CONTAINER_MODEL_WEIGHTS:?CONTAINER_MODEL_WEIGHTS is required for host-weights overlay}:ro
+    environment:
+      MODEL_WEIGHTS_PATH: ${MODEL_WEIGHTS_PATH:-${CONTAINER_MODEL_WEIGHTS}}

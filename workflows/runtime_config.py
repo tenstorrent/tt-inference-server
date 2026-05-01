@@ -48,7 +48,7 @@ class RuntimeConfig:
     # Dev / override
     dev_mode: bool = False
     no_auth: bool = False
-    print_docker_cmd: bool = False
+    print_compose: bool = False
     override_docker_image: Optional[str] = None
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
@@ -114,7 +114,7 @@ class RuntimeConfig:
             bind_host=args.bind_host,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
-            print_docker_cmd=args.print_docker_cmd,
+            print_compose=args.print_compose,
             override_docker_image=args.override_docker_image,
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,

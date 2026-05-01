@@ -22,6 +22,15 @@ from workflows.model_spec import (
     export_model_specs_json,
     get_runtime_model_spec,
 )
+from workflows.compose_config import (
+    COMPOSE_ENV_PATH,
+    build_compose_command,
+    format_env_for_display,
+    resolve_multihost_vars,
+    run_compose_down,
+    run_compose_server,
+    write_compose_env,
+)
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
     get_expected_num_hosts,
@@ -30,8 +39,7 @@ from workflows.multihost_orchestrator import (
 )
 from workflows.run_docker_server import (
     format_docker_command,
-    generate_docker_run_command,
-    run_docker_server,
+    run_multihost_server,
 )
 from workflows.run_local_server import run_local_server
 from workflows.run_workflows import run_workflows
@@ -268,9 +276,9 @@ def parse_arguments():
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
     parser.add_argument(
-        "--print-docker-cmd",
+        "--print-compose",
         action="store_true",
-        help="Print simplified Docker run command and exit (does not start server)",
+        help="Print Docker Compose YAML and exit (does not start server)",
     )
     parser.add_argument(
         "--host-volume",
@@ -646,9 +654,8 @@ def main():
         docker_json_fpath = None
         if runtime_config.dev_mode:
             docker_json_fpath = json_fpath
-        if runtime_config.print_docker_cmd:
+        if runtime_config.print_compose:
             if is_multihost_deployment(runtime_config):
-                # Print multi-host docker commands
                 expected_hosts = get_expected_num_hosts(runtime_config)
                 multihost_config = setup_multihost_config(
                     model_spec, expected_hosts, dry_run=True
@@ -659,66 +666,84 @@ def main():
                     json_fpath=json_fpath,
                     dry_run=True,
                 )
-                orchestrator = MultiHostOrchestrator(
-                    hosts=hosts,
-                    mpi_interface=multihost_config.mpi_interface,
-                    shared_storage_root=multihost_config.shared_storage_root,
-                    config_pkl_dir=multihost_config.config_pkl_dir,
-                    docker_image=model_spec.docker_image,
-                    runtime_config=runtime_config,
-                    model_spec=model_spec,
-                    setup_config=setup_config,
-                    tt_smi_path=multihost_config.tt_smi_path,
+                env_vars = resolve_multihost_vars(
+                    model_spec, runtime_config, multihost_config
                 )
-                orchestrator.prepare()
-
-                print("\n=== Multi-Host Deployment Commands ===\n")
-                for rank, host in enumerate(hosts):
-                    worker_cmd, _ = orchestrator.generate_worker_docker_command(
-                        host, rank
-                    )
-                    print(f"Worker {rank} on {host}:")
-                    print(f"ssh {host} {format_docker_command(worker_cmd)}\n")
-
-                controller_cmd, _ = orchestrator.generate_controller_docker_command()
-                print("Controller (run on rank-0 host):")
-                print(f"{format_docker_command(controller_cmd)}\n")
+                print("\n=== Multi-Host Docker Compose ===\n")
+                print("Templates:")
+                print("  Workers:    deploy/docker-compose.multihost-worker.yml")
+                print("  Controller: deploy/docker-compose.multihost-controller.yml")
+                print("\nResolved variables (add to .env):\n")
+                print(format_env_for_display(env_vars))
+                print("\nDeploy workers on each host:")
+                for rank, host in enumerate(multihost_config.hosts):
+                    print(f"  ssh {host} 'cd <repo> && docker compose -f deploy/docker-compose.multihost-worker.yml up -d'")
+                print("\nNote: SSH_CONFIG_DIR and MPIRUN_DIR are generated at runtime by the orchestrator.")
+                print("Use 'run.py --docker-server' for full automated deployment.\n")
             else:
-                docker_command, _ = generate_docker_run_command(
+                compose_files, compose_vars = build_compose_command(
                     model_spec, runtime_config, setup_config, docker_json_fpath
                 )
-                print(
-                    f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
-                )
+                write_compose_env(compose_vars)
+
+                cmd = ["docker", "compose"]
+                for f in compose_files:
+                    cmd += ["-f", str(f)]
+                cmd += ["--env-file", str(COMPOSE_ENV_PATH), "config"]
+                subprocess.run(cmd)
             return 0
-        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+        compose_run_info = None
+        if is_multihost_deployment(runtime_config):
+            # Multi-host stays on the legacy orchestrator path (out of scope for this refactor).
+            run_multihost_server(
+                model_spec, runtime_config, setup_config, docker_json_fpath
+            )
+        else:
+            compose_run_info = run_compose_server(
+                model_spec, runtime_config, setup_config, docker_json_fpath
+            )
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
         run_local_server(model_spec, runtime_config, json_fpath, setup_config)
 
-    main_return_code = 0
-
     # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
-        if all(result.return_code == 0 for result in workflow_results):
-            logger.info("Completed run.py.")
+    is_compose_run = (
+        runtime_config.docker_server
+        and not is_multihost_deployment(runtime_config)
+    )
+    main_return_code = 0
+
+    try:
+        if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
+            workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
+            if all(result.return_code == 0 for result in workflow_results):
+                logger.info("Completed run.py.")
+            else:
+                failed_workflows = [
+                    f"{result.workflow_name} ({result.return_code})"
+                    for result in workflow_results
+                    if result.return_code != 0
+                ]
+                logger.error(
+                    f"run.py failed workflows: {failed_workflows}. "
+                    "See logs above for details."
+                )
+                main_return_code = 1
         else:
-            failed_workflows = [
-                f"{result.workflow_name} ({result.return_code})"
-                for result in workflow_results
-                if result.return_code != 0
-            ]
-            logger.error(
-                f"run.py failed workflows: {failed_workflows}. "
-                "See logs above for details."
+            logger.info(
+                f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
             )
-            main_return_code = 1
-    else:
-        logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
-        )
+    finally:
+        if (
+            is_compose_run
+            and compose_run_info is not None
+            and WorkflowType.from_string(runtime_config.workflow) not in {
+                WorkflowType.SERVER,
+                WorkflowType.REPORTS,
+            }
+        ):
+            run_compose_down(compose_run_info["compose_files"])
 
     logger.info(
         "The output of the workflows is not checked and any errors will be "

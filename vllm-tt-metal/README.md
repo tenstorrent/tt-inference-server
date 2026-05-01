@@ -26,7 +26,7 @@ There are two ways to run the inference server in Docker:
 
 For `run.py` usage see [docs/workflows_user_guide.md](../docs/workflows_user_guide.md)
 
-See the full [run.py CLI documentation](../workflows/README.md#runpy-cli-usage) for all options including Docker volume strategies and `--print-docker-cmd`.
+See the full [run.py CLI documentation](../workflows/README.md#runpy-cli-usage) for all options including Docker volume strategies and `--print-compose`.
 
 The container can be used independently from `run.py`. See the [Container Interface](#container-interface-direct-docker-run) section below.
 The inference server container can be run directly with `docker run`, without `run.py`. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec JSON.

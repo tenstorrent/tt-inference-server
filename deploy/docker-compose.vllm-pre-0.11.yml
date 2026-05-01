@@ -1,0 +1,61 @@
+# Docker Compose for vLLM inference server on Tenstorrent hardware.
+# Contract era: image versions < 0.11.0 (legacy contract).
+#
+# Real-world note: this contract targets 0.10.1+ images, which already accept
+# `--tt-device` / `--model` CLI args. The original audit suggested 0.10.0
+# used TT_MODEL_SPEC_JSON_PATH with no CLI args, but that contract was very
+# short-lived and is not supported here. If you need to run a 0.10.0-era
+# image, add a separate contract entry to deploy/contracts.yml.
+#
+# Differences from the 0.11+ contract:
+#   - `shm_size: "32g"` instead of `ipc: host` (matches what the 0.10.x
+#     `docker run` path passed via --shm-size 32g).
+#   - Otherwise identical command shape and env vars — the CLI interface
+#     stabilised at 0.10.1 and didn't change again until later post-0.11.
+#
+# Required env vars (set by run.py via .env.compose, or supply manually):
+#   DOCKER_IMAGE, HF_MODEL, TT_DEVICE
+#   HF_TOKEN/JWT_SECRET (via env_file)
+#
+# Optional overlays:
+#   overlays/host-weights.yml  — bind-mount weights from host (sets MODEL_WEIGHTS_PATH).
+
+services:
+  inference-server:
+    image: ${DOCKER_IMAGE:?DOCKER_IMAGE is required}
+    container_name: ${CONTAINER_NAME:-tt-inference-server}
+    shm_size: "32g"
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - cache:/home/container_app_user/cache_root
+      # Host-bound weights are added via overlays/host-weights.yml when
+      # setup_config.host_model_weights_mount_dir is set.
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      CACHE_ROOT: /home/container_app_user/cache_root
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    command:
+      - /bin/bash
+      - -c
+      - >-
+        source /home/container_app_user/tt-metal/python_env/bin/activate &&
+        exec python run_vllm_api_server.py
+        --model ${HF_MODEL:?HF_MODEL is required}
+        --tt-device ${TT_DEVICE:?TT_DEVICE is required}
+    restart: on-failure:3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # See note in docker-compose.vllm-0.11.yml: cache generation on first
+      # run takes 40-60 min; matching the server's own 5400s timeout.
+      start_period: 5400s
+
+volumes:
+  cache:
+    name: ${CACHE_VOLUME:-tt-inference-cache}

@@ -23,7 +23,6 @@ from workflows.model_spec import (
     ImplSpec,
     ModelSpec,
 )
-from workflows.run_docker_server import generate_docker_run_command
 from workflows.setup_host import HostSetupManager, SetupConfig, setup_host
 from workflows.workflow_types import (
     DeviceTypes,
@@ -538,130 +537,6 @@ class TestSetupHostRunSetup:
             manager.setup_config.host_model_weights_mount_dir.resolve()
             == weights_dir.resolve()
         )
-
-
-class TestSetupHostDockerCommand:
-    """Test that generate_docker_run_command() produces correct mounts and env vars."""
-
-    def _make_json_fpath(self, temp_dir):
-        """Create a dummy model spec JSON file."""
-        json_fpath = temp_dir / "model_spec.json"
-        json_fpath.write_text("{}")
-        return json_fpath
-
-    def _generate_cmd(self, tiny_model_spec, runtime_config, config, json_fpath):
-        """Helper to call generate_docker_run_command with standard mocks."""
-        with patch(
-            "workflows.run_docker_server.get_repo_root_path",
-            return_value=Path("/tmp"),
-        ), patch(
-            "workflows.run_docker_server.DeviceTypes",
-        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
-            return generate_docker_run_command(
-                tiny_model_spec, runtime_config, config, json_fpath
-            )
-
-    def test_default_mode_docker_command(
-        self, tiny_model_spec, mock_cli_args, temp_dir
-    ):
-        """Default mode: docker volume mount, no MODEL_WEIGHTS_DIR env var."""
-        config = SetupConfig(model_spec=tiny_model_spec)
-        json_fpath = self._make_json_fpath(temp_dir)
-
-        docker_command, _ = self._generate_cmd(
-            tiny_model_spec, mock_cli_args, config, json_fpath
-        )
-
-        assert "--volume" in docker_command
-        assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
-        assert _find_env_var(docker_command, "TT_CACHE_PATH") is None
-
-    def test_host_volume_mode_docker_command(
-        self, tiny_model_spec, mock_cli_args, temp_dir
-    ):
-        """Host volume mode: bind mount of cache_root, TT_CACHE_PATH set."""
-        host_volume = str(temp_dir / "persistent_volume")
-        config = SetupConfig(
-            model_spec=tiny_model_spec,
-            host_volume=host_volume,
-        )
-        json_fpath = self._make_json_fpath(temp_dir)
-
-        docker_command, _ = self._generate_cmd(
-            tiny_model_spec, mock_cli_args, config, json_fpath
-        )
-
-        cmd_str = _join_docker_cmd(docker_command)
-        assert f"type=bind,src={config.host_model_volume_root}" in cmd_str
-        assert _find_env_var(docker_command, "TT_CACHE_PATH") is not None
-        # No separate readonly weights mount (weights in the cache_root volume)
-        assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
-
-    def test_host_hf_cache_mode_docker_command(
-        self, tiny_model_spec, mock_cli_args, temp_dir
-    ):
-        """Host HF cache mode: readonly weights mount + MODEL_WEIGHTS_DIR when snapshot exists."""
-        hf_cache = str(temp_dir / "hf_home")
-
-        # Simulate an HF cache snapshot directory structure
-        snapshot_hash = "abcdef1234567890"
-        snapshot_dir = (
-            temp_dir
-            / "hf_home"
-            / "hub"
-            / f"models--{TINY_HF_REPO.replace('/', '--')}"
-            / "snapshots"
-            / snapshot_hash
-        )
-        snapshot_dir.mkdir(parents=True)
-        (snapshot_dir / "config.json").write_text("{}")
-
-        config = SetupConfig(
-            model_spec=tiny_model_spec,
-            host_hf_cache=hf_cache,
-        )
-
-        json_fpath = self._make_json_fpath(temp_dir)
-
-        docker_command, _ = self._generate_cmd(
-            tiny_model_spec, mock_cli_args, config, json_fpath
-        )
-
-        cmd_str = _join_docker_cmd(docker_command)
-        # Readonly weights mount present
-        assert "readonly" in cmd_str
-        assert str(config.host_model_weights_mount_dir) in cmd_str
-        # MODEL_WEIGHTS_DIR set because host weights are mounted
-        assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is not None
-
-    def test_host_weights_dir_mode_docker_command(
-        self, tiny_model_spec, mock_cli_args, temp_dir
-    ):
-        """Host weights dir mode: readonly weights mount + MODEL_WEIGHTS_DIR."""
-        weights_dir = temp_dir / "my_weights"
-        weights_dir.mkdir()
-        (weights_dir / "config.json").write_text("{}")
-
-        config = SetupConfig(
-            model_spec=tiny_model_spec,
-            host_weights_dir=str(weights_dir),
-        )
-        json_fpath = self._make_json_fpath(temp_dir)
-
-        docker_command, _ = self._generate_cmd(
-            tiny_model_spec, mock_cli_args, config, json_fpath
-        )
-
-        cmd_str = _join_docker_cmd(docker_command)
-        # Readonly weights mount present
-        assert f"type=bind,src={weights_dir.resolve()}" in cmd_str
-        assert "readonly" in cmd_str
-        # MODEL_WEIGHTS_DIR set to container mount path
-        model_weights_dir = _find_env_var(docker_command, "MODEL_WEIGHTS_DIR")
-        assert model_weights_dir is not None
-        assert "readonly_weights_mount" in model_weights_dir
-        # Docker named volume used for cache_root (not host volume)
-        assert "--volume" in docker_command
 
 
 class TestSetupHostValidation:
