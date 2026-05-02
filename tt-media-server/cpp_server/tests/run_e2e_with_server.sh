@@ -41,7 +41,7 @@ fi
 echo "Starting mock server on port $PORT..."
 export LLM_DEVICE_BACKEND=mock
 export MODEL_SERVICE=llm
-"$SERVER_BIN" -p "$PORT" -h 127.0.0.1 > /dev/null 2>&1 &
+"$SERVER_BIN" -p "$PORT" -h 127.0.0.1 -t 4 > /dev/null 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to be ready (model warmed up)

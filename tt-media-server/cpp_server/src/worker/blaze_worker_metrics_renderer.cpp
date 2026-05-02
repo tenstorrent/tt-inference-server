@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "worker/sp_pipeline_worker_metrics_renderer.hpp"
+#include "worker/blaze_worker_metrics_renderer.hpp"
 
 #include <chrono>
 #include <string>
 
-#include "worker/sp_pipeline_metrics_layout.hpp"
+#include "worker/blaze_metrics_layout.hpp"
 
 namespace tt::worker {
 
