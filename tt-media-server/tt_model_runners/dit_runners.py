@@ -386,6 +386,7 @@ class TTWan22Runner(TTDiTRunner):
                 device_params["fabric_router_config"] = config
             elif is_blackhole() and mesh_shape == (2, 2):                                                                                                                                                                                                                      
                 device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_2D
+                device_params["reliability_mode"] = ttnn.FabricReliabilityMode.RELAXED_INIT 
         return device_params
 
 
