@@ -273,6 +273,12 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
               static_cast<double>(pendingTasks.load()));
         }
         streamDecoders.erase(taskId);
+        reasoningSuppressedMap.take(taskId);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  "error");
+        if (reasoningParser) {
+          reasoningParser->finalizeTask(taskId);
+        }
         auto errorChunk =
             domain::makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
