@@ -552,7 +552,7 @@ jobs:
       - name: Start C++ server (mock backend)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock.log 2>&1 &
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -632,7 +632,7 @@ jobs:
       - name: Start C++ server (mock_pipeline backend)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock_pipeline.log 2>&1 &
+          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -841,7 +841,7 @@ jobs:
         run: |
           cd cpp_server/build
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-            ./tt_media_server_cpp -p 8001 > ../../decode_server.log 2>&1 &
+            ./tt_media_server_cpp -p 8001 -t 4 > ../../decode_server.log 2>&1 &
           echo $! > ../../decode_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -862,7 +862,7 @@ jobs:
         run: |
           cd cpp_server/build
           LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-            ./tt_media_server_cpp -p 8002 > ../../prefill_server.log 2>&1 &
+            ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill_server.log 2>&1 &
           echo $! > ../../prefill_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -934,7 +934,7 @@ jobs:
           TT_LOG_LEVEL=debug \
           LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-            ./build/tt_media_server_cpp -p 8001 \
+            ./build/tt_media_server_cpp -p 8001 -t 4 \
             > ../prefill_server_runner.log 2>&1 &
           echo $! > ../prefill_server_runner.pid
           cd ..
@@ -958,7 +958,7 @@ jobs:
           cd cpp_server
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
-            ./build/tt_media_server_cpp -p 8000 \
+            ./build/tt_media_server_cpp -p 8000 -t 4 \
             > ../decode_server_runner.log 2>&1 &
           echo $! > ../decode_server_runner.pid
           cd ..
@@ -1246,7 +1246,7 @@ jobs:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
         run: |
           cd cpp_server/build
-          ./tt_media_server_cpp -p 8001 > ../../tsan_server.log 2>&1 &
+          ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..
           # 180s timeout (TSan startup is slower than Release)
