@@ -286,11 +286,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
-    src/runners/blaze_runner/sp_pipeline_runner_demo.cpp
-    src/runners/blaze_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/mock_device_pipeline.cpp
-    src/runners/blaze_runner/mock_sp_pipeline_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
@@ -641,7 +636,7 @@ set(SOURCES
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp
-    src/worker/sp_pipeline_worker_metrics_renderer.cpp
+    src/worker/blaze_worker_metrics_renderer.cpp
 )
 
 # Create executable
@@ -675,6 +670,29 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# Make the executable's runtime library lookup self-contained relative to
+# its own location (DT_RUNPATH = $ORIGIN/...). Required so the build
+# artifact can be unpacked and run on a different machine than the
+# build runner (e.g. CI build on ubuntu-latest, bench on a self-hosted
+# runner with a different workspace path). Without this, CMake bakes the
+# absolute build-time path into RUNPATH and ld.so fails to find
+# libpipeline_manager_core.so.1 elsewhere.
+if(ENABLE_BLAZE)
+    # $ORIGIN/tt-blaze/pipeline_manager keeps libpipeline_manager_core.so.1
+    # resolvable when the build artifact is unpacked on a different machine
+    # (see commit that introduced this block).
+    # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
+    # directories (e.g. tt-blaze/tt-metal/build_Release/lib where libfmt.so.11,
+    # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
+    # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
+    # they just won't resolve on a different runner, while $ORIGIN still does.
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN/tt-blaze/pipeline_manager"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE

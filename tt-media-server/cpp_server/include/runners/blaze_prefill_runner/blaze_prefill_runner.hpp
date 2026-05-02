@@ -7,11 +7,10 @@
 #include <memory>
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
+#include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 #include "runners/runner_interface.hpp"
-#include "runners/sp_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
 namespace tt::runners {
 
