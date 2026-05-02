@@ -448,6 +448,15 @@ jobs:
     runs-on: tt-ubuntu-2204-large-stable
     permissions:
       contents: read
+    env:
+      # The aus2 self-hosted runners auto-inject http(s)_proxy pointing at
+      # proxy.restricted-proxy.svc.cluster.local:3128 but do not set no_proxy
+      # for loopback. Without this, curl/requests calls to a server we start
+      # on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness probe) are routed
+      # through the internal proxy, which has no route back and fails every
+      # probe, making the server appear to never become ready.
+      no_proxy: "localhost,127.0.0.1,::1"
+      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -499,6 +508,9 @@ jobs:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
+      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -785,6 +797,9 @@ jobs:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
+      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
