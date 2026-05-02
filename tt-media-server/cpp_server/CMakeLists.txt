@@ -679,9 +679,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 # absolute build-time path into RUNPATH and ld.so fails to find
 # libpipeline_manager_core.so.1 elsewhere.
 if(ENABLE_BLAZE)
+    # $ORIGIN/tt-blaze/pipeline_manager keeps libpipeline_manager_core.so.1
+    # resolvable when the build artifact is unpacked on a different machine
+    # (see commit that introduced this block).
+    # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
+    # directories (e.g. tt-blaze/tt-metal/build_Release/lib where libfmt.so.11,
+    # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
+    # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
+    # they just won't resolve on a different runner, while $ORIGIN still does.
     set_target_properties(${PROJECT_NAME} PROPERTIES
         BUILD_WITH_INSTALL_RPATH TRUE
         INSTALL_RPATH "$ORIGIN/tt-blaze/pipeline_manager"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 endif()
 
