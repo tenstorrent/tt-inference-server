@@ -32,14 +32,18 @@ services:
       CACHE_ROOT: /home/container_app_user/cache_root
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    # The 0.11+ image's ENTRYPOINT is:
+    #   ["/bin/bash", "-c", "source $PYTHON_ENV_DIR/bin/activate &&
+    #     exec python run_vllm_api_server.py \"$@\"", "--"]
+    # so the entrypoint already sources the venv and invokes
+    # run_vllm_api_server.py — `command:` here just passes the args via $@.
+    # Wrapping in another `bash -c` would double-wrap and the entrypoint
+    # would pass the literal `/bin/bash` as argv[1] to argparse.
     command:
-      - /bin/bash
-      - -c
-      - >-
-        source /home/container_app_user/tt-metal/python_env/bin/activate &&
-        exec python run_vllm_api_server.py
-        --model ${HF_MODEL:?HF_MODEL is required}
-        --tt-device ${TT_DEVICE:?TT_DEVICE is required}
+      - --model
+      - ${HF_MODEL:?HF_MODEL is required}
+      - --tt-device
+      - ${TT_DEVICE:?TT_DEVICE is required}
     restart: on-failure:3
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
