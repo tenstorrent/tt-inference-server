@@ -281,7 +281,8 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
         .decrementActiveRequests();
     return;
   }
-  TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
+  TT_LOG_DEBUG("[BlazeRunner] evictSlot: foo slotId={} (no slot context)",
+               slotId);
 }
 
 void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
