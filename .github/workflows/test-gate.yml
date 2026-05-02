@@ -454,9 +454,10 @@ jobs:
       # for loopback. Without this, curl/requests calls to a server we start
       # on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness probe) are routed
       # through the internal proxy, which has no route back and fails every
-      # probe, making the server appear to never become ready.
+      # probe, making the server appear to never become ready. GitHub
+      # Actions treats env keys as case-insensitive, so we set only the
+      # lowercase form (which curl and Python requests both read).
       no_proxy: "localhost,127.0.0.1,::1"
-      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -510,7 +511,6 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       # Loopback must bypass the runner's injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
-      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -799,7 +799,6 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       # Loopback must bypass the runner's injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
-      NO_PROXY: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
