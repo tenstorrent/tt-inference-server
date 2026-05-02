@@ -656,6 +656,20 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
+# Make the executable's runtime library lookup self-contained relative to
+# its own location (DT_RUNPATH = $ORIGIN/...). Required so the build
+# artifact can be unpacked and run on a different machine than the
+# build runner (e.g. CI build on ubuntu-latest, bench on a self-hosted
+# runner with a different workspace path). Without this, CMake bakes the
+# absolute build-time path into RUNPATH and ld.so fails to find
+# libpipeline_manager_core.so.1 elsewhere.
+if(ENABLE_BLAZE)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN/tt-blaze/pipeline_manager"
+    )
+endif()
+
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall
