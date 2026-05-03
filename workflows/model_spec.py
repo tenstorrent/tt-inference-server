@@ -2669,7 +2669,7 @@ vlm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         version="1.0.0",
-        tt_metal_commit="eb1f455",
+        tt_metal_commit="735b65d",
         vllm_commit="7a07a97",
         device_model_specs=[
             DeviceModelSpec(
