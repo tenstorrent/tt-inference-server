@@ -192,6 +192,9 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "utils" "${APP_DIR}/utils"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
+# Copy tt-vllm-plugin (vLLM platform plugin for Tenstorrent hardware)
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "tt-vllm-plugin" "${APP_DIR}/tt-vllm-plugin"
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
@@ -200,6 +203,7 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
     && ln -s python3 python \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
+    && uv pip install --no-cache-dir --no-deps -e ${APP_DIR}/tt-vllm-plugin \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
 
