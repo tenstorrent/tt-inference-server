@@ -2670,7 +2670,7 @@ vlm_templates = [
         model_type=ModelType.VLM,
         version="1.0.0",
         tt_metal_commit="735b65d",
-        vllm_commit="",
+        vllm_commit="7a07a97",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
