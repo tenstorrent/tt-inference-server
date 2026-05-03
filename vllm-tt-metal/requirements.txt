@@ -1,3 +1,6 @@
 # additional inference server and client script requirements
 pyjwt==2.7.0
 requests==2.32.3
+# Molmo2 modeling_molmo2.py uses ROPE_INIT_FUNCTIONS['default'] which was
+# removed in transformers 5.x; pin to 4.x to keep compatibility.
+transformers==4.57.1
