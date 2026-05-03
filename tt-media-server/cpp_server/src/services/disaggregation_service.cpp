@@ -44,11 +44,9 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            auto errorResponse = domain::LLMStreamChunk(message.task_id);
-            domain::LLMChoice errChoice;
-            errChoice.finish_reason = "error";
-            errorResponse.choices.push_back(std::move(errChoice));
-            callback.value()(errorResponse, true);
+            callback.value()(
+                domain::makeErrorChunk(message.task_id, "prefill error"),
+                /*isFinal=*/true);
             return;
           }
 
@@ -85,11 +83,8 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
-            auto response = domain::LLMStreamChunk(taskId);
-            domain::LLMChoice errChoice;
-            errChoice.finish_reason = "error";
-            response.choices.push_back(std::move(errChoice));
-            callback(response, true);
+            callback(domain::makeErrorChunk(taskId, "connection lost"),
+                     /*isFinal=*/true);
           });
       streamCallbacks.clear();
     });
