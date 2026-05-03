@@ -1430,7 +1430,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
