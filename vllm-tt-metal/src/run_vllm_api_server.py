@@ -398,6 +398,9 @@ def model_setup(model_spec_json):
     dynamic_env_vars = {
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
+        # Model weights are local; prevent transformers from downloading updated
+        # model code files (e.g. modeling_molmo2.py) which may be incompatible.
+        "HF_HUB_OFFLINE": "1",
     }
 
     # Set dynamic environment variables
