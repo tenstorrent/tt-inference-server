@@ -52,11 +52,16 @@ if ! command -v clang-format-20 >/dev/null 2>&1; then
 fi
 $SUDO rm -rf /var/lib/apt/lists/*
 
+# rustup-init.sh writes the cargo env file under ${CARGO_HOME:-${HOME}/.cargo}.
+# Honour CARGO_HOME explicitly so callers (e.g. Dockerfile.blaze) that set
+# CARGO_HOME=<custom path> before invoking this script don't end up with a
+# missing-env-file error after rustup-init runs.
+CARGO_ENV_DIR="${CARGO_HOME:-${HOME}/.cargo}"
 if ! command -v cargo >/dev/null 2>&1; then
-    [ -f "${HOME}/.cargo/env" ] && . "${HOME}/.cargo/env"
+    [ -f "${CARGO_ENV_DIR}/env" ] && . "${CARGO_ENV_DIR}/env"
     if ! command -v cargo >/dev/null 2>&1; then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        . "${HOME}/.cargo/env"
+        . "${CARGO_ENV_DIR}/env"
     fi
 fi
 
