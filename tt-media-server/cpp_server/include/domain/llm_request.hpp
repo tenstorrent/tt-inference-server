@@ -135,6 +135,9 @@ struct LLMRequest : BaseRequest {
   // When false, reasoning tokens are suppressed from the response.
   bool enable_reasoning = true;
 
+  // When true, skip adding <bos><user> and <assistant> tags in chat template.
+  bool skip_apply_chat_template = false;
+
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;

@@ -68,8 +68,16 @@ std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
     bool addGenerationPrompt,
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
-    bool enableReasoning) const {
+    bool enableReasoning,
+    bool skipApplyChatTemplate) const {
   std::ostringstream out;
+
+  if (skipApplyChatTemplate) {
+    for (const auto& m : messages) {
+      out << m.content;
+    }
+    return out.str();
+  }
 
   if (cfg_.add_bos_token) out << cfg_.bos_token;
 
