@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
 #include <vector>
 
 #include "config/runner_config.hpp"
