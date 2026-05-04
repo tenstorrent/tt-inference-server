@@ -2035,7 +2035,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
             ),
             DeviceModelSpec(
