@@ -565,7 +565,7 @@ def start_trace_capture(
             "skipping background trace capture"
         )
 
-    if True:
+    if disable_trace_capture:
         logger.info("Trace capture is disabled via --disable-trace-capture")
         return
 
