@@ -140,7 +140,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_data(data, filename)
 
-    # Calculate statistics for text/image stress tests
+    # Calculate statistics for text stress tests
     mean_tpot_ms = data.get("mean_tpot_ms")
     if data.get("mean_tpot_ms"):
         mean_tpot = max(data.get("mean_tpot_ms"), 1e-6)  # Avoid division by zero
@@ -154,9 +154,12 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         std_tps = None
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-        data.get("mean_ttft_ms") / 1000
-    )
+    if data.get("mean_ttft_ms"):
+        tps_prefill_throughput = (
+            params["input_sequence_length"] * actual_max_con
+        ) / (data.get("mean_ttft_ms") / 1000)
+    else:
+        tps_prefill_throughput = None
 
     metrics = {
         "kind": RECORD_KIND,
@@ -207,17 +210,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "filename": filename,
         "task_type": params["task_type"],
     }
-
-    # Image-specific params are read straight from the JSON body when an
-    # image stress-test runner emits them.
-    if params["task_type"] == "image":
-        metrics.update(
-            {
-                "images_per_prompt": data.get("images_per_prompt"),
-                "image_height": data.get("image_height"),
-                "image_width": data.get("image_width"),
-            }
-        )
 
     metrics = format_metrics(metrics)
 
@@ -275,15 +267,6 @@ def _token_totals_row(s: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _image_params_row(s: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "config": _config_label(s),
-        "images_per_prompt": s.get("images_per_prompt"),
-        "image_height": s.get("image_height"),
-        "image_width": s.get("image_width"),
-    }
-
-
 def to_report_record(files: List[str]) -> Dict[str, Any]:
     """Aggregate per-sweep stress-test JSONs into a single schema-conformant record.
 
@@ -327,9 +310,6 @@ def to_report_record(files: List[str]) -> Dict[str, Any]:
     record["Throughput"] = [_throughput_row(s) for s in per_sweep]
     record["Token Totals"] = [_token_totals_row(s) for s in per_sweep]
 
-    image_sweeps = [s for s in per_sweep if s.get("task_type") == "image"]
-    if image_sweeps:
-        record["Image Parameters"] = [_image_params_row(s) for s in image_sweeps]
     return record
 
 
