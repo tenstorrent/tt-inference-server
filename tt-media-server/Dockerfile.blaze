@@ -110,10 +110,17 @@ WORKDIR ${APP_DIR}
 #    HOME_DIR via CARGO_HOME / RUSTUP_HOME so build.sh and the runtime
 #    stage's COPY --from=builder both see it. (The original Dockerfile
 #    installed Rust twice — once into /root via install_dependencies.sh,
-#    once into HOME_DIR — and only the second was actually used.)
+#    once into HOME_DIR — and only the second was actually used by build.sh.
+#    The first /root copy was load-bearing for tt-blaze's pipeline_manager
+#    cmake step, which sources ${HOME}/.cargo/env via tt-blaze's env.sh;
+#    we replace that implicit dependency by putting cargo on PATH globally.)
 # ----------------------------------------------------------------------------
 ENV CARGO_HOME=${HOME_DIR}/.cargo \
     RUSTUP_HOME=${HOME_DIR}/.rustup
+# Put cargo on PATH for every subsequent layer (tt-blaze pipeline_manager
+# cmake, cpp_server build.sh, anything in the runtime image). Done as a
+# separate ENV so ${CARGO_HOME} above is already in scope.
+ENV PATH=${CARGO_HOME}/bin:${PATH}
 COPY tt-media-server/cpp_server/install_dependencies.sh /tmp/install_dependencies.sh
 RUN /tmp/install_dependencies.sh && rm -f /tmp/install_dependencies.sh
 
