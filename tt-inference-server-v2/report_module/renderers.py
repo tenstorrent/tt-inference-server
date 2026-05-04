@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+import re
+from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
@@ -44,8 +45,9 @@ def register(kind: str) -> Callable[[RendererFn], RendererFn]:
     return decorator
 
 
-def get_renderer(kind: str) -> Optional[RendererFn]:
-    return _REGISTRY.get(kind)
+def get_renderer(kind: str) -> RendererFn:
+    """Return the renderer for ``kind``, falling back to a generic table."""
+    return _REGISTRY.get(kind, render_generic_table)
 
 
 def registered_kinds() -> tuple[str, ...]:
@@ -58,7 +60,16 @@ def _extract_records(block: Block) -> List[Dict[str, Any]]:
         candidate: Sequence[Any] = data
     elif isinstance(data, Mapping):
         raw = data.get("records")
-        candidate = raw if isinstance(raw, Sequence) else ()
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            candidate = raw
+        elif data and all(isinstance(v, Mapping) for v in data.values()):
+            # dict-of-dicts: surface the outer key as a "name" column so
+            # callers can pass shapes like {"metric_a": {...}, "metric_b": {...}}
+            # without flattening.
+            return [{"name": str(k), **dict(v)} for k, v in data.items()]
+        else:
+            # Flat dict: render as a single pivoted record.
+            return [dict(data)]
     else:
         return []
 
@@ -124,15 +135,15 @@ def _pivot_single_record(
     ]
 
 
-def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
-    records = _extract_records(block)
-    if not records:
-        return ""
+def _build_table(records: Sequence[Mapping[str, Any]]) -> str:
+    """Render a list of records to a markdown table (no heading).
 
+    Single-record inputs pivot into a two-column field/value table;
+    multi-record inputs render as one row per record.
+    """
     columns = _ordered_display_columns(records)
     if not columns:
         return ""
-
     if len(records) == 1:
         display_rows = _pivot_single_record(records[0], columns)
     else:
@@ -140,11 +151,80 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
             {col: format_value(record.get(col)) for col in columns}
             for record in records
         ]
+    return build_markdown_table(display_rows)
+
+
+_SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
+
+
+def _humanize_key(key: str) -> str:
+    """Turn ``"summary_stats"`` into ``"Summary Stats"`` while leaving
+    already-formatted keys (``"TTFT vs. Context"``) untouched."""
+    if _SNAKE_CASE.match(key):
+        return key.replace("_", " ").title()
+    return key
+
+
+def _is_subtable_value(value: Any) -> bool:
+    """Whether a field value should render as its own sub-table.
+
+    Mappings (flat or dict-of-dicts) and lists of dicts qualify;
+    scalars and lists of primitives stay inline in the parent row.
+    """
+    if isinstance(value, Mapping):
+        return bool(value)
+    if isinstance(value, (list, tuple)) and value:
+        return any(isinstance(item, Mapping) for item in value)
+    return False
+
+
+def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render a block as a heading plus one or more markdown tables.
+
+    - Multi-record blocks render as a single multi-row table (the
+      existing behavior for grouped records like several ``evals``).
+    - Single-record blocks split the record's fields: scalar fields
+      collapse into the main pivot table; fields whose value is a dict
+      or list-of-dicts become their own H4 sub-table, in insertion order.
+    """
+    records = _extract_records(block)
+    if not records:
+        return ""
 
     model, device = _resolve_model_device(block, metadata, records)
     heading = _heading(block.kind, model, device, block.title or "")
-    table = build_markdown_table(display_rows)
-    return f"{heading}\n\n{table}"
+
+    if len(records) > 1:
+        table = _build_table(records)
+        return f"{heading}\n\n{table}" if table else ""
+
+    record = records[0]
+    scalar_fields: Dict[str, Any] = {}
+    nested_fields: List[tuple[str, Any]] = []
+    for key, value in record.items():
+        if key in HIDDEN_COLUMNS:
+            continue
+        if _is_subtable_value(value):
+            nested_fields.append((key, value))
+        else:
+            scalar_fields[key] = value
+
+    parts: List[str] = [heading]
+    if scalar_fields:
+        scalar_table = _build_table([scalar_fields])
+        if scalar_table:
+            parts.append(scalar_table)
+
+    for key, value in nested_fields:
+        sub_records = _extract_records(Block(kind=key, data=value))
+        if not sub_records:
+            continue
+        sub_table = _build_table(sub_records)
+        if not sub_table:
+            continue
+        parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
+
+    return "\n\n".join(parts) if len(parts) > 1 else ""
 
 
 for _kind in GENERIC_KINDS:
