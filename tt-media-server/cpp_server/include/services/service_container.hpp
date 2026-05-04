@@ -55,10 +55,8 @@ class ServiceContainer {
     return sessionManager_;
   }
 
-  /** Modality-agnostic slot for new services (image, video, audio, tts, cnn,
-   *  training). LLM and Embedding remain available through their typed
-   *  accessors above for backwards compatibility; new modalities use this
-   *  generic map exclusively. */
+  /** Generic slot for modalities without a typed accessor. LLM/Embedding
+   *  are mirrored into this map for backwards-compatible lookup. */
   void registerService(config::ModelService key,
                        std::shared_ptr<IService> service);
   std::shared_ptr<IService> getService(config::ModelService key) const;

@@ -177,13 +177,9 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
   }
 
-  // Install the modality route allow-list as a *sync* advice so it runs
-  // BEFORE Drogon's own routing/method-validation. Otherwise Drogon would
-  // answer 405 ("Method Not Allowed") for endpoints that exist in the
-  // codebase but belong to a different MODEL_SERVICE (e.g. GET /v1/embeddings
-  // while running in LLM mode), leaking the controller's existence. Returning
-  // nullptr lets the request continue down the normal pipeline; returning a
-  // response short-circuits routing entirely.
+  // SyncAdvice runs before Drogon's routing/method check, so disallowed
+  // paths uniformly return 404 instead of leaking 405 for cross-modality
+  // endpoints (e.g. GET /v1/embeddings while running in LLM mode).
   drogon::app().registerSyncAdvice(
       [activeService = modelSvc](const drogon::HttpRequestPtr& req)
           -> drogon::HttpResponsePtr {

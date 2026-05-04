@@ -21,9 +21,8 @@ void ServiceContainer::initialize(
   disaggregation_ = std::move(disaggregation);
   sessionManager_ = std::move(sessionMgr);
 
-  // Mirror the typed slots into the generic map so callers that only know
-  // about ModelService (e.g. health controllers, future tooling) can resolve
-  // any active modality through a single lookup.
+  // Mirror typed slots into the generic map so getService() works uniformly
+  // across modalities.
   if (llm_) {
     services_[config::ModelService::LLM] =
         std::static_pointer_cast<IService>(llm_);

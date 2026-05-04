@@ -5,7 +5,6 @@
 
 #include <memory>
 
-#include "api/route_registry.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/disaggregation_service.hpp"
@@ -19,26 +18,9 @@
 
 namespace tt::utils::service_factory {
 
-namespace {
-
-void logActiveModality() {
-  const auto active = tt::config::modelService();
-  TT_LOG_INFO("[ServiceFactory] Active modality: {}",
-              tt::config::toString(active));
-  for (const auto& route : api::RouteRegistry::instance().routesFor(active)) {
-    TT_LOG_INFO("  {} {}  - {}", route.method, route.path, route.description);
-  }
-  for (const auto& path : api::RouteRegistry::instance().alwaysExemptPaths()) {
-    TT_LOG_INFO("  *      {}  - always available", path);
-  }
-}
-
-}  // namespace
-
 void initializeServices() {
   tracy_config::tracyStartMainProcess();
 
-  // Populate the (Service, Runner, Route) registries. Idempotent.
   services::registerBuiltinModalities();
 
   auto& c = services::ServiceContainer::instance();
@@ -50,10 +32,9 @@ void initializeServices() {
   std::shared_ptr<services::DisaggregationService> disaggregation;
   auto sessionManager = std::make_shared<services::SessionManager>();
 
-  // Build the service for the active modality through the registry. We then
-  // downcast into the typed slots that LLMController / EmbeddingController
-  // continue to consume; future modalities will populate only the generic
-  // slot via ServiceContainer::registerService().
+  // Build the active service through the registry, then downcast into the
+  // typed slots that LLMController / EmbeddingController still consume. New
+  // modalities populate only the generic slot below.
   auto activeService = services::ServiceRegistry::instance().create(active);
   if (!activeService) {
     TT_LOG_WARN(
@@ -92,8 +73,9 @@ void initializeServices() {
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
                std::move(disaggregation), std::move(sessionManager));
 
-  // Register the activeService into the generic slot for any modality that
-  // doesn't have a typed accessor on the container.
+  // Mirror the active service into the generic slot for modalities without a
+  // typed accessor (no-op for LLM/Embedding, which initialize() already
+  // mirrors).
   if (activeService && !c.getService(active)) {
     c.registerService(active, activeService);
   }
@@ -114,7 +96,8 @@ void initializeServices() {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");
   }
 
-  logActiveModality();
+  TT_LOG_INFO("[ServiceFactory] Active modality: {}",
+              tt::config::toString(active));
 }
 
 }  // namespace tt::utils::service_factory

@@ -6,7 +6,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
@@ -16,16 +15,12 @@ namespace tt::api {
 /**
  * Per-modality HTTP route allow-list.
  *
- * Drogon auto-registers every `HttpController<>` subclass linked into the
- * binary, so a multi-modal cpp_server cannot stop a controller from existing
- * by skipping a `#include`. Instead, modalities declare their public routes
- * here; main.cpp installs a pre-handling advice that 404s any request whose
- * path is not in the active modality's allow-list (modulo always-exempt
- * paths like /health, /metrics, /openapi.json).
- *
- * The same registry feeds the uniform "Endpoints:" startup log in main.cpp,
- * so adding a new modality adds an entry here once and gets routing + logging
- * for free.
+ * Drogon auto-registers every linked `HttpController<>`, so a multi-modal
+ * binary cannot disable a controller just by skipping a `#include`. main.cpp
+ * installs a sync advice that 404s any request not on the active modality's
+ * allow-list (paths registered via `registerAlwaysExempt(...)` are served
+ * regardless of MODEL_SERVICE). The same registry drives the "Endpoints:"
+ * startup log.
  */
 class RouteRegistry {
  public:
@@ -73,7 +68,6 @@ class RouteRegistry {
 
   std::unordered_map<config::ModelService, std::vector<RouteSpec>> routes_;
   std::vector<std::string> alwaysExempt_;
-  std::unordered_set<std::string> alwaysExemptIndex_;
 };
 
 }  // namespace tt::api

@@ -14,17 +14,11 @@ namespace tt::services {
 class IService;
 
 /**
- * Process-wide registry mapping each tt::config::ModelService to a factory
- * that builds the IService implementation for that modality.
- *
- * The registry is the single dispatch point for `service_factory::initialize-
- * Services()`. It exists so that adding a new modality (image, video, audio,
- * tts, cnn, training) does not require editing the central service_factory
- * switch — the new modality's `.cpp` calls `registerService(...)` once at
- * static-init or from `registerBuiltinModalities()`.
+ * Registry mapping each ModelService to a factory that builds its IService.
+ * Used by `service_factory::initializeServices()` so adding a new modality
+ * doesn't require editing a central switch.
  *
  * Thread-safety: registration must complete before `create()` is called.
- * `create()` is read-only and may be called from multiple threads.
  */
 class ServiceRegistry {
  public:

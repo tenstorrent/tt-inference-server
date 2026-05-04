@@ -6,13 +6,9 @@
 namespace tt::services {
 
 /**
- * Register the LLM and Embedding modalities into ServiceRegistry,
- * RunnerRegistry, and RouteRegistry. Idempotent.
- *
- * Called once from `service_factory::initializeServices()` before any
- * registry is queried. New modalities (image, video, audio, tts, cnn,
- * training) add themselves here next to the LLM/Embedding blocks; nothing
- * else in the codebase needs to know about them.
+ * Populate ServiceRegistry / RunnerRegistry / RouteRegistry with the
+ * built-in LLM and Embedding modalities. Idempotent. New modalities add
+ * themselves next to the existing blocks.
  */
 void registerBuiltinModalities();
 

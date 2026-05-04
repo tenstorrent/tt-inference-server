@@ -30,10 +30,7 @@ std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
-  // Make sure built-in runners are registered. Idempotent and cheap on
-  // subsequent calls; this guarantees standalone callers (e.g. unit tests
-  // that invoke createRunner without going through service_factory) still
-  // resolve to the right factory.
+  // Idempotent; required for callers that bypass service_factory (e.g. tests).
   services::registerBuiltinModalities();
 
   const config::ModelRunnerType runnerType =

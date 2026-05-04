@@ -3,6 +3,7 @@
 
 #include "api/route_registry.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <utility>
 
@@ -46,7 +47,8 @@ void RouteRegistry::registerRoute(config::ModelService service,
 }
 
 void RouteRegistry::registerAlwaysExempt(std::string path) {
-  if (alwaysExemptIndex_.insert(path).second) {
+  if (std::find(alwaysExempt_.begin(), alwaysExempt_.end(), path) ==
+      alwaysExempt_.end()) {
     alwaysExempt_.push_back(std::move(path));
   }
 }
@@ -54,8 +56,11 @@ void RouteRegistry::registerAlwaysExempt(std::string path) {
 bool RouteRegistry::isAllowed(config::ModelService activeService,
                               std::string_view method,
                               std::string_view path) const {
-  if (alwaysExemptIndex_.find(std::string(path)) != alwaysExemptIndex_.end()) {
-    return true;
+  // Linear scan over alwaysExempt_ avoids allocating a std::string from
+  // string_view per request; the list has < 10 entries so this is faster
+  // than an unordered_set lookup at HTTP RPS scale.
+  for (const auto& exempt : alwaysExempt_) {
+    if (exempt == path) return true;
   }
   auto it = routes_.find(activeService);
   if (it == routes_.end()) return false;
@@ -80,7 +85,6 @@ std::vector<std::string> RouteRegistry::alwaysExemptPaths() const {
 void RouteRegistry::clear() {
   routes_.clear();
   alwaysExempt_.clear();
-  alwaysExemptIndex_.clear();
 }
 
 bool RouteRegistry::pathMatches(std::string_view templatePath,

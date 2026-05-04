@@ -34,29 +34,27 @@ void registerLLM() {
 
   auto& runners = utils::RunnerRegistry::instance();
 
-  // Default LLM runner (mock, llama via pybind, real TT pipeline).
-  runners.registerRunner(
-      config::ModelService::LLM, config::ModelRunnerType::MOCK,
+  // Both MOCK and LLAMA construct the same C++ LLMRunner; the inner
+  // IModelRunner (mock vs. llama via pybind) is selected from
+  // cfg.runner_type in runners/llm_runner/model_runner.cpp::makeModelRunner.
+  // We register the same factory under both keys so the registry's exact-
+  // match path hits for both common types and no fallback warning fires.
+  auto llmFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating LLM runner (mock)");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
-                                                    cancelQueue);
-      });
-  runners.registerRunner(
-      config::ModelService::LLM, config::ModelRunnerType::LLAMA,
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue,
-         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating LLM runner (llama)");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
-                                                    cancelQueue);
-      });
+    const auto& llm = std::get<config::LLMConfig>(cfg);
+    TT_LOG_INFO("[RunnerRegistry] Creating LLM runner ({})",
+                config::toString(llm.runner_type));
+    return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
+                                                cancelQueue);
+  };
+  runners.registerRunner(config::ModelService::LLM,
+                         config::ModelRunnerType::MOCK, llmFactory);
+  runners.registerRunner(config::ModelService::LLM,
+                         config::ModelRunnerType::LLAMA, llmFactory);
 
-  // Disaggregated prefill — independent of ENABLE_BLAZE.
+  // Disaggregated prefill is independent of ENABLE_BLAZE.
   runners.registerRunner(
       config::ModelService::LLM, config::ModelRunnerType::PREFILL,
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
@@ -121,9 +119,8 @@ void registerEmbedding() {
 }
 
 void registerAlwaysExemptRoutes() {
+  // Served regardless of MODEL_SERVICE.
   auto& routes = api::RouteRegistry::instance();
-  // Health, liveness, OpenAPI/Swagger, metrics, and the session-count knob
-  // are served regardless of MODEL_SERVICE.
   routes.registerAlwaysExempt("/health");
   routes.registerAlwaysExempt("/tt-liveness");
   routes.registerAlwaysExempt("/docs");

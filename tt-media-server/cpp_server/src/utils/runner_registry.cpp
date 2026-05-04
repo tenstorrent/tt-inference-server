@@ -3,6 +3,8 @@
 
 #include "utils/runner_registry.hpp"
 
+#include "utils/logger.hpp"
+
 namespace tt::utils {
 
 RunnerRegistry& RunnerRegistry::instance() {
@@ -20,21 +22,27 @@ std::unique_ptr<runners::IRunner> RunnerRegistry::create(
     config::ModelService service, config::ModelRunnerType type,
     const config::RunnerConfig& config, ipc::IResultQueue* resultQueue,
     ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue) const {
-  // 1) Exact match.
   auto exact = factories_.find({service, type});
   if (exact != factories_.end() && exact->second) {
     return exact->second(config, resultQueue, taskQueue, cancelQueue);
   }
 
-  // 2) Fall back to MOCK for the same service.
   auto mock = factories_.find({service, config::ModelRunnerType::MOCK});
   if (mock != factories_.end() && mock->second) {
+    TT_LOG_WARN(
+        "[RunnerRegistry] No factory registered for ({}, {}); falling back to "
+        "MOCK",
+        config::toString(service), config::toString(type));
     return mock->second(config, resultQueue, taskQueue, cancelQueue);
   }
 
-  // 3) Fall back to any factory registered for the service.
   for (const auto& [key, factory] : factories_) {
     if (key.first == service && factory) {
+      TT_LOG_WARN(
+          "[RunnerRegistry] No factory for ({}, {}) and no MOCK registered; "
+          "falling back to first available runner ({})",
+          config::toString(service), config::toString(type),
+          config::toString(key.second));
       return factory(config, resultQueue, taskQueue, cancelQueue);
     }
   }

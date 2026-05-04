@@ -18,20 +18,13 @@
 namespace tt::utils {
 
 /**
- * Process-wide registry mapping (ModelService, ModelRunnerType) pairs to
- * runner factories. Mirrors Python's `tt_model_runners.runner_fabric.AVAILABLE
- * _RUNNERS` dict, but keyed on a 2-tuple so the same modality can offer
- * multiple runners (e.g. LLM has MOCK / LLAMA / PIPELINE_MANAGER / PREFILL).
- *
- * `runner_factory::createRunner` delegates to this registry; modules add
- * runners by calling `registerRunner(...)` from
- * `services::registerBuiltinModalities()` (or, in the future, from a per-
- * modality static initializer).
+ * Registry mapping (ModelService, ModelRunnerType) to runner factories.
+ * `runner_factory::createRunner` delegates to this registry; modalities
+ * register themselves from `services::registerBuiltinModalities()`.
  *
  * Lookup falls back from `(service, type)` to `(service, MOCK)` and then to
- * the first registered factory for the service, so that callers passing
- * unsupported runner types still get a sensible default — matching the
- * pre-refactor behaviour of the switch statement.
+ * the first registered factory for the service, matching the pre-refactor
+ * switch statement's behaviour. The fallback paths log a warning.
  */
 class RunnerRegistry {
  public:
