@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _V2_DIR = _PROJECT_ROOT / "tt-inference-server-v2"
@@ -27,9 +27,17 @@ TEST_REPORT_TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 
 
 class ServerRunner:
-    def __init__(self, test_cases: List[BaseTest]):
+    def __init__(
+        self,
+        test_cases: List[BaseTest],
+        output_path: Optional[Union[str, Path]] = None,
+    ):
         self.test_cases = test_cases
         self.reports: List[TestReport] = []
+        # Optional additional output directory (e.g. workflow_logs/spec_tests_output)
+        # When provided, the per-run JSON report is also written here so that
+        # spec test results live alongside other workflow artifacts.
+        self.output_path: Optional[Path] = Path(output_path) if output_path else None
 
     def run(self) -> List[TestReport]:
         self._run_all_tests()
@@ -130,15 +138,33 @@ class ServerRunner:
 
         generated_at = datetime.now()
         timestamp = generated_at.strftime(TEST_REPORT_TIMESTAMP_FMT)
-        json_path = (
-            _PROJECT_ROOT
-            / TEST_REPORTS_DIRNAME
-            / f"{TEST_REPORT_FILE_PREFIX}{timestamp}.json"
-        )
+        report_filename = f"{TEST_REPORT_FILE_PREFIX}{timestamp}.json"
 
         payload = self._build_test_report_data(generated_at)
+
+        # Always write to the project-level test_reports directory so that the
+        # release report aggregator (workflows/run_reports.py) can pick it up.
+        json_path = _PROJECT_ROOT / TEST_REPORTS_DIRNAME / report_filename
         ReportFileSaver.write_json(payload, json_path, indent=2, strict=True)
         logger.info(f"📊 Test report JSON: {json_path}")
+
+        # When an output path was supplied (e.g. by run_workflows.py for the
+        # SPEC_TESTS workflow), also drop the report into the workflow_logs
+        # folder so that spec test results live next to evals/benchmarks/etc.
+        if self.output_path is not None:
+            workflow_json_path = self.output_path / report_filename
+            try:
+                ReportFileSaver.write_json(
+                    payload, workflow_json_path, indent=2, strict=True
+                )
+                logger.info(
+                    f"📊 Test report JSON (workflow_logs): {workflow_json_path}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to write spec test report to workflow_logs path "
+                    f"{workflow_json_path}: {e}"
+                )
 
         self._print_cli_summary()
 

@@ -30,7 +30,8 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
       return makeLlamaModelRunner(config, std::move(callback));
 #endif
     default:
-      throw std::invalid_argument("Invalid model runner type");
+      throw std::invalid_argument("Invalid model runner type: " +
+                                  toString(config.runner_type));
   }
 }
 
