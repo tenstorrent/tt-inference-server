@@ -16,8 +16,11 @@ inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
       .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
-inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL, .slot_id = slotId, .tokens = {}};
+inline pm::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
+  return {.type = pm::RequestType::CANCEL,
+          .request_id = requestId,
+          .slot_id = slotId,
+          .tokens = {}};
 }
 
 inline pm::GenerationParams makeGenerationParams(

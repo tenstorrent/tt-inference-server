@@ -102,8 +102,12 @@ bool BlazeRunner::warmup() {
   auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
+  constexpr uint32_t WARMUP_ALLOCATE_REQUEST_ID = 0;
+  constexpr uint32_t WARMUP_CANCEL_REQUEST_ID = 1;
+
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
-  pipelineManager->push_request(utils::makeAllocateRequest(0));
+  pipelineManager->push_request(
+      utils::makeAllocateRequest(WARMUP_ALLOCATE_REQUEST_ID));
 
   TT_LOG_INFO("BlazeRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
@@ -142,7 +146,14 @@ bool BlazeRunner::warmup() {
   }
 
   TT_LOG_INFO("BlazeRunner: Warmup successful");
-  pipelineManager->push_request(utils::makeCancelRequest(slotId));
+  pipelineManager->push_request(
+      utils::makeCancelRequest(WARMUP_CANCEL_REQUEST_ID, slotId));
+  // Drain the CANCEL ack so the first run() step doesn't see an unknown
+  // request_id. The PM finalizes the cancel asynchronously, so we poll.
+  pm::PMResponse cancelResponse{};
+  while (!pipelineManager->try_pop_response(cancelResponse)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
   return true;
 }
 
