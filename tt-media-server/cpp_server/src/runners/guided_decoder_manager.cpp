@@ -4,13 +4,27 @@
 #include "runners/guided_decoder_manager.hpp"
 
 #include <xgrammar/xgrammar.h>
+#include <json/json.h>
 
 #include <stdexcept>
 #include <unordered_map>
 
+#include "domain/tool_calls/tool.hpp"
+
 namespace tt::runners {
 
 using SamplingParams = tt::domain::SamplingParams;
+
+static Json::Value buildToolSchema(const tt::domain::tool_calls::Tool& tool) {
+  Json::Value schema;
+  schema["type"] = "object";
+  schema["properties"]["name"]["const"] = tool.functionDefinition.name;
+  schema["properties"]["arguments"] = tool.functionDefinition.parameters;
+  schema["properties"]["arguments"]["additionalProperties"] = false;
+  schema["required"].append("name");
+  schema["required"].append("arguments");
+  return schema;
+}
 
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
@@ -51,17 +65,7 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
         if (tool.functionDefinition.name == functionName) {
           formatType = ResponseFormatType::JSON_SCHEMA;
 
-          Json::Value wrappedSchema;
-          wrappedSchema["type"] = "object";
-
-          wrappedSchema["properties"]["name"]["const"] =
-              tool.functionDefinition.name;
-          wrappedSchema["properties"]["arguments"] =
-              tool.functionDefinition.parameters;
-          wrappedSchema["properties"]["arguments"]["additionalProperties"] =
-              false;
-          wrappedSchema["required"].append("name");
-          wrappedSchema["required"].append("arguments");
+          Json::Value wrappedSchema = buildToolSchema(tool);
 
           Json::StreamWriterBuilder builder;
           builder["indentation"] = "";
@@ -77,16 +81,7 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
 
       Json::Value anyOfSchema(Json::arrayValue);
       for (const auto& tool : params.tools.value()) {
-        Json::Value toolSchema;
-        toolSchema["properties"]["name"]["const"] =
-            tool.functionDefinition.name;
-        toolSchema["properties"]["arguments"] =
-            tool.functionDefinition.parameters;
-        toolSchema["properties"]["arguments"]["additionalProperties"] = false;
-        toolSchema["required"].append("name");
-        toolSchema["required"].append("arguments");
-
-        anyOfSchema.append(toolSchema);
+        anyOfSchema.append(buildToolSchema(tool));
       }
 
       wrappedSchema["anyOf"] = anyOfSchema;
