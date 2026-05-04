@@ -113,7 +113,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
-    TRAINING_LLAMA_LORA = "training-llama-lora"
+    TRAINING_LORA = "training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
@@ -185,7 +185,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
-        ModelRunners.TRAINING_LLAMA_LORA,
+        ModelRunners.TRAINING_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -193,7 +193,7 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 
-MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
+INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
     ModelRunners.TT_SDXL_TRACE: {ModelNames.STABLE_DIFFUSION_XL_BASE},
@@ -233,14 +233,12 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
-    ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
-    ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
     },
     ModelRunners.TT_Z_IMAGE_TURBO: {ModelNames.Z_IMAGE_TURBO},
+    ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
 }
 
 
@@ -332,6 +330,7 @@ class TrainingTrainers(Enum):
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
     LLAMA_3_1_8B = "Llama 3.1 8B"
+    QWEN_3_8B = "Qwen 3 8B"
 
 
 class TrainingOptimizers(Enum):
@@ -769,9 +768,6 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
-    # Wan2.2 I2V — device config is identical to T2V at every supported mesh
-    # shape. The model fork lives in the pipeline class (WanPipelineI2V), not
-    # in fabric/trace settings; see runner implementation in dit_runners.py.
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -793,6 +789,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
@@ -800,6 +797,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
@@ -807,6 +805,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),

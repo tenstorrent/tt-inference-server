@@ -2,8 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import base64
-import io
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,14 +23,24 @@ from open_ai_api.video import (
 )
 
 
-def _tiny_png_base64() -> str:
-    """Return a 2x2 red PNG as base64 for I2V request fixtures."""
-    from PIL import Image
+# A real 1x1 red PNG, base64-encoded. Hardcoded (not generated via PIL) because
+# ``conftest.py`` mocks the ``PIL`` module to keep unit tests ttnn-free — so
+# ``Image.new(...).save(buf)`` is a no-op and ``buf.getvalue()`` returns b""
+# under pytest, which breaks the ``min_length=1`` validator on ImagePromptEntry.
+# Only the string length matters for DTO validation; content is never decoded.
+_TINY_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8z8BQDwAEhQGAhKmM"
+    "IQAAAABJRU5ErkJggg=="
+)
 
-    img = Image.new("RGB", (2, 2), color=(255, 0, 0))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+def _tiny_png_base64() -> str:
+    """Return a minimal base64-encoded PNG for I2V request fixtures.
+
+    We don't call PIL here because the test conftest mocks the PIL module;
+    a generated image would end up as an empty bytes buffer.
+    """
+    return _TINY_PNG_BASE64
 
 
 class TestSubmitGenerateVideoRequest:
