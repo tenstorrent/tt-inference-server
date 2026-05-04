@@ -47,13 +47,9 @@ class LLMService
 
   /**
    * Run post-processing (reasoning strip, tool-call parsing) on a fully
-   * accumulated response. Public wrapper around the protected postProcess
-   * so non-streaming callers that bypass submitRequest (e.g. the controller
-   * accumulating from streaming chunks) can still apply final processing.
+   * accumulated response.
    */
-  void finalizeResponse(domain::LLMResponse& response) const {
-    postProcess(response);
-  }
+  void postProcess(domain::LLMResponse& response) const override;
 
   /**
    * Abort an in-flight request. Removes the streaming callback, decrements
@@ -70,7 +66,6 @@ class LLMService
   }
 
  protected:
-  void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
   domain::LLMResponse processRequest(domain::LLMRequest request) override;
 

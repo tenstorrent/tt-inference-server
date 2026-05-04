@@ -63,7 +63,7 @@ void NonStreamResponseWriter::finalize() {
 
   if (params.service) {
     try {
-      params.service->finalizeResponse(llmResponse);
+      params.service->postProcess(llmResponse);
     } catch (const std::exception& e) {
       TT_LOG_WARN("[NonStreamResponseWriter] postProcess failed: {}", e.what());
     }
