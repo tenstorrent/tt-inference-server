@@ -180,15 +180,11 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-# WARNING: documentation only — drifts from reality; see comment in builder
-# stage above. /info on the running server reports the real tt-metal SHA.
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    ENVIRONMENT=development \
+ENV ENVIRONMENT=development \
     TT_MM_THROTTLE_PERF=5 \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
