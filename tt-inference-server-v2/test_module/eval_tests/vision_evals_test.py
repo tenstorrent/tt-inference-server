@@ -16,7 +16,7 @@ from typing import Literal
 import requests
 from datasets import DownloadConfig, Image, load_dataset
 
-from server_tests.base_test import BaseTest
+from .._test_common import BaseTest
 from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_DEFAULT_URL,

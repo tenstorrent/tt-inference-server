@@ -73,15 +73,9 @@ class ReportGenerator:
         """Invoke the renderer registered for ``block.kind``.
 
         Renderers own their own headings; the generator only routes.
+        Unregistered kinds fall through to the generic table renderer.
         """
         renderer = renderers.get_renderer(block.kind)
-        if renderer is None:
-            logger.warning(
-                "No renderer registered for kind '%s'; skipping block '%s'",
-                block.kind,
-                block.slug,
-            )
-            return ""
         try:
             return renderer(block, metadata) or ""
         except Exception:
