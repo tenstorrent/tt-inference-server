@@ -43,6 +43,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22Runner"]
     ).TTWan22Runner(wid),
+    ModelRunners.TT_WAN_2_2_I2V: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTWan22I2VRunner"]
+    ).TTWan22I2VRunner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
@@ -106,10 +109,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.lora_single_chip_runner",
         fromlist=["LoraSingleChipRunner"],
     ).LoraSingleChipRunner(wid),
-    ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.training_llama_lora_runner",
-        fromlist=["TrainingLlamaLoraRunner"],
-    ).TrainingLlamaLoraRunner(wid),
+    ModelRunners.TRAINING_LORA: lambda wid: __import__(
+        "tt_model_runners.forge_training_runners.training_lora_runner",
+        fromlist=["TrainingLoraRunner"],
+    ).TrainingLoraRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),

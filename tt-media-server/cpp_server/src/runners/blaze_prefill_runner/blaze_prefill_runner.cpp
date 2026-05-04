@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
+#include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
 #include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
