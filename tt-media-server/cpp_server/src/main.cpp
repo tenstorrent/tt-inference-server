@@ -181,8 +181,8 @@ int main(int argc, char* argv[]) {
   // paths uniformly return 404 instead of leaking 405 for cross-modality
   // endpoints (e.g. GET /v1/embeddings while running in LLM mode).
   drogon::app().registerSyncAdvice(
-      [activeService = modelSvc](const drogon::HttpRequestPtr& req)
-          -> drogon::HttpResponsePtr {
+      [activeService = modelSvc](
+          const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         const std::string& path = req->path();
         const std::string method = req->methodString();
         if (tt::api::RouteRegistry::instance().isAllowed(activeService, method,

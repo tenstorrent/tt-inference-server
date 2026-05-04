@@ -23,17 +23,17 @@ using tt::utils::RunnerRegistry;
 
 class FakeService : public IService {
  public:
-  explicit FakeService(std::string tag) : tag_(std::move(tag)) {}
+  explicit FakeService(std::string tag) : name(std::move(tag)) {}
   void start() override {}
   void stop() override {}
   bool isModelReady() const override { return true; }
   tt::services::SystemStatus getSystemStatus() const override {
     return tt::services::SystemStatus{};
   }
-  const std::string& tag() const { return tag_; }
+  const std::string& tag() const { return name; }
 
  private:
-  std::string tag_;
+  std::string name;
 };
 
 }  // namespace
@@ -89,13 +89,13 @@ namespace {
 
 class FakeRunner : public tt::runners::IRunner {
  public:
-  explicit FakeRunner(std::string tag) : tag_(std::move(tag)) {}
+  explicit FakeRunner(std::string tag) : name(std::move(tag)) {}
   void stop() override {}
-  const char* runnerType() const override { return tag_.c_str(); }
+  const char* runnerType() const override { return name.c_str(); }
 
  private:
   void run() override {}
-  std::string tag_;
+  std::string name;
 };
 
 }  // namespace
