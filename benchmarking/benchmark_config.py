@@ -103,6 +103,8 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 STRUCTURED_OUTPUT_PAIRS = [
     ("json", 1.0),
     ("json", 0.0),
+    ("json-unique", 1.0),
+    ("json-unique", 0.0)
     # ("grammar", 1.0),
     # ("regex", 1.0),
     # ("choice", 1.0),
