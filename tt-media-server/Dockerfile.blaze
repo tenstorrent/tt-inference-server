@@ -8,6 +8,14 @@
 # Note: Dependencies installed in this stage are NOT included in the final image.
 # Only the built artifacts and files are copied to the runtime stage.
 # Runtime dependencies must be installed separately in the runtime stage.
+#
+# Layer ordering is intentional: everything that does NOT depend on cpp_server
+# source (apt deps, Rust, tt-blaze clone+build) runs BEFORE the COPY of
+# tt-media-server. Combined with the opt-in BuildKit registry cache wired
+# from the tt-shield CI (use-blaze-cache=true), a cpp_server-only change
+# only invalidates the final ./build.sh layer; the ~10-minute tt-blaze
+# layer is reused. Without the cache flag the Dockerfile still builds
+# correctly (just with no reuse).
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
 
 # Build stage
@@ -89,65 +97,74 @@ RUN mkdir -p ${HOME_DIR} \
 
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-# install tt-smi
-# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-#     && export CARGO_HOME=${HOME_DIR}/.cargo \
-#     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-#     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-#     && . ${HOME_DIR}/.cargo/env \
-#     && rustup update \
-#     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-#     && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
-
 WORKDIR ${HOME_DIR}
 
-# install inference server requirements
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
-# ENV PYTHONPATH=${TT_METAL_HOME}
-COPY "tt-media-server" "${APP_DIR}/server"
 
-# Remove any local build artifacts that were copied
-RUN rm -rf ${APP_DIR}/server/cpp_server/build \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze
+# ----------------------------------------------------------------------------
+# 1. cpp_server build deps (apt + Drogon + Rust toolchain)
+#    Only install_dependencies.sh is COPYd here so this layer is keyed on
+#    the script content, not the rest of cpp_server. Rust is installed into
+#    HOME_DIR via CARGO_HOME / RUSTUP_HOME so build.sh and the runtime
+#    stage's COPY --from=builder both see it. (The original Dockerfile
+#    installed Rust twice — once into /root via install_dependencies.sh,
+#    once into HOME_DIR — and only the second was actually used.)
+# ----------------------------------------------------------------------------
+ENV CARGO_HOME=${HOME_DIR}/.cargo \
+    RUSTUP_HOME=${HOME_DIR}/.rustup
+COPY tt-media-server/cpp_server/install_dependencies.sh /tmp/install_dependencies.sh
+RUN /tmp/install_dependencies.sh && rm -f /tmp/install_dependencies.sh
 
-# cpp_server deps (apt + Rust if needed + Drogon)
-RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
-
-# Install Rust (needed for tokenizers-cpp)
-RUN export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && . ${HOME_DIR}/.cargo/env \
-    && rustup default stable
-
-# add tt-blaze (clone using GitHub token from secret)
+# ----------------------------------------------------------------------------
+# 2. Clone + build tt-blaze (and tt-metal). This is the ~10-minute step.
+#    TT_BLAZE_BRANCH is a build-arg so a branch bump invalidates ONLY this
+#    layer (not the apt/Rust layer above it) under the BuildKit cache.
+# ----------------------------------------------------------------------------
+ARG TT_BLAZE_BRANCH=asaigal/ds_pm_integration
+ENV TT_BLAZE_BRANCH=${TT_BLAZE_BRANCH}
 RUN --mount=type=secret,id=github_token \
-    rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
+    mkdir -p ${APP_DIR}/server/cpp_server \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/ds_pm_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch ${TT_BLAZE_BRANCH} https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
     && cd ${APP_DIR}/server/cpp_server/tt-blaze \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && ./install.sh  \
+    && ./install.sh \
     && . ./env.sh \
     && (cd tt-metal && ./build_metal.sh --disable-profiler) \
     && ./pipeline_manager/setup.sh --pm-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
-# Build C++ server (requires Rust for tokenizers-cpp)
-# Use existing Python venv, temporarily point TT_METAL_HOME to tt-blaze for the build
+# ----------------------------------------------------------------------------
+# 3. cpp_server source — the cache-breaking layer for everyday edits.
+#    We deliberately COPY only tt-media-server/cpp_server (not the whole
+#    tt-media-server) — the blaze image is C++-only and the python
+#    uvicorn server is not run from this image. Edits to non-cpp_server
+#    files (main.py, tests/, docs/, ...) will not invalidate this layer.
+#
+#    The COPY merges into the existing cpp_server/ directory: the empty
+#    tt-blaze/ submodule placeholder in the source tree (CI doesn't init
+#    it) does not clobber the prebuilt tt-blaze/ from step 2 — verified
+#    empirically against docker 29.x with BuildKit.
+# ----------------------------------------------------------------------------
+COPY tt-media-server/cpp_server ${APP_DIR}/server/cpp_server
+RUN rm -rf ${APP_DIR}/server/cpp_server/build
+
+# Build C++ server (requires Rust for tokenizers-cpp).
+# Use existing Python venv, point TT_METAL_HOME to tt-blaze for the build.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-    && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
+    && export PATH=${CARGO_HOME}/bin:${PATH} \
     && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh --blaze"
 
-# Add script for running C++ server
-COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"
+# Standalone copy of the server-launch script so the entrypoint at
+# ${APP_DIR}/server/run_cpp.sh exists. Kept separate from the cpp_server
+# COPY so editing this script alone is a near-zero-cost rebuild.
+COPY tt-media-server/run_cpp.sh ${APP_DIR}/server/run_cpp.sh
 RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 
 # Cleanup build-only directories
@@ -233,10 +250,13 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 USER root
 COPY docker-entrypoint.sh ${HOME_DIR}/app/server/docker-entrypoint.sh
 RUN chmod +x ${HOME_DIR}/app/server/docker-entrypoint.sh
-RUN chmod +x ${HOME_DIR}/app/server/run_uvicorn.sh
 
+# The blaze image is C++-server-only. The python uvicorn server (main.py +
+# tt-media-server python sources) is not shipped in this image; SERVER_MODE
+# and the conditional in CMD that referenced ./run_uvicorn.sh have been
+# removed. If you need the python server, use Dockerfile (the regular
+# media-inference-server build), not Dockerfile.blaze.
 EXPOSE 8000
 WORKDIR ${HOME_DIR}/app/server
 ENTRYPOINT ["./docker-entrypoint.sh"]
-ENV SERVER_MODE=uvicorn
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && source ./run_cpp.sh"]
