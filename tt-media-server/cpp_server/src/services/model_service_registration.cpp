@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "services/modality_registration.hpp"
+#include "services/model_service_registration.hpp"
 
 #include <atomic>
 #include <memory>
@@ -132,7 +132,7 @@ void registerAlwaysExemptRoutes() {
 
 }  // namespace
 
-void registerBuiltinModalities() {
+void registerBuiltinModelServices() {
   static std::atomic<bool> registered{false};
   if (registered.exchange(true)) return;
 

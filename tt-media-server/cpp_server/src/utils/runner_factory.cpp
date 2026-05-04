@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <variant>
 
-#include "services/modality_registration.hpp"
+#include "services/model_service_registration.hpp"
 #include "utils/logger.hpp"
 #include "utils/runner_registry.hpp"
 
@@ -31,7 +31,7 @@ std::unique_ptr<runners::IRunner> createRunner(
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
   // Idempotent; required for callers that bypass service_factory (e.g. tests).
-  services::registerBuiltinModalities();
+  services::registerBuiltinModelServices();
 
   const config::ModelRunnerType runnerType =
       runnerTypeFromConfig(service, config);

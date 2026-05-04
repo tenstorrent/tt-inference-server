@@ -20,7 +20,7 @@ namespace tt::utils {
 /**
  * Registry mapping (ModelService, ModelRunnerType) to runner factories.
  * `runner_factory::createRunner` delegates to this registry; modalities
- * register themselves from `services::registerBuiltinModalities()`.
+ * register themselves from `services::registerBuiltinModelServices()`.
  *
  * Lookup falls back from `(service, type)` to `(service, MOCK)` and then to
  * the first registered factory for the service, matching the pre-refactor

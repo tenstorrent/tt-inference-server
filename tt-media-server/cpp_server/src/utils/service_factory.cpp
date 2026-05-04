@@ -10,7 +10,7 @@
 #include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
-#include "services/modality_registration.hpp"
+#include "services/model_service_registration.hpp"
 #include "services/service_registry.hpp"
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
@@ -21,7 +21,7 @@ namespace tt::utils::service_factory {
 void initializeServices() {
   tracy_config::tracyStartMainProcess();
 
-  services::registerBuiltinModalities();
+  services::registerBuiltinModelServices();
 
   auto& c = services::ServiceContainer::instance();
   const auto active = tt::config::modelService();
@@ -34,7 +34,7 @@ void initializeServices() {
 
   // Build the active service through the registry, then downcast into the
   // typed slots that LLMController / EmbeddingController still consume. New
-  // modalities populate only the generic slot below.
+  // model services populate only the generic slot below.
   auto activeService = services::ServiceRegistry::instance().create(active);
   if (!activeService) {
     TT_LOG_WARN(
@@ -73,9 +73,9 @@ void initializeServices() {
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
                std::move(disaggregation), std::move(sessionManager));
 
-  // Mirror the active service into the generic slot for modalities without a
-  // typed accessor (no-op for LLM/Embedding, which initialize() already
-  // mirrors).
+  // Mirror the active service into the generic slot for model services
+  // without a typed accessor (no-op for LLM/Embedding, which initialize()
+  // already mirrors).
   if (activeService && !c.getService(active)) {
     c.registerService(active, activeService);
   }
@@ -96,7 +96,7 @@ void initializeServices() {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");
   }
 
-  TT_LOG_INFO("[ServiceFactory] Active modality: {}",
+  TT_LOG_INFO("[ServiceFactory] Active model service: {}",
               tt::config::toString(active));
 }
 

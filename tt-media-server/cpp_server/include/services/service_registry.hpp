@@ -15,8 +15,8 @@ class IService;
 
 /**
  * Registry mapping each ModelService to a factory that builds its IService.
- * Used by `service_factory::initializeServices()` so adding a new modality
- * doesn't require editing a central switch.
+ * Used by `service_factory::initializeServices()` so adding a new model
+ * service doesn't require editing a central switch.
  *
  * Thread-safety: registration must complete before `create()` is called.
  */
@@ -29,8 +29,8 @@ class ServiceRegistry {
 
   static ServiceRegistry& instance();
 
-  /** Register a factory for a given modality. Last write wins, so callers may
-   *  override built-in factories in tests. */
+  /** Register a factory for a given model service. Last write wins, so
+   *  callers may override built-in factories in tests. */
   void registerService(config::ModelService key, ServiceFactory factory);
 
   /** Construct the service for `key`. Returns nullptr if no factory is

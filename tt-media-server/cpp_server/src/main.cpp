@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
   }
 
   // SyncAdvice runs before Drogon's routing/method check, so disallowed
-  // paths uniformly return 404 instead of leaking 405 for cross-modality
+  // paths uniformly return 404 instead of leaking 405 for cross-service
   // endpoints (e.g. GET /v1/embeddings while running in LLM mode).
   drogon::app().registerSyncAdvice(
       [activeService = modelSvc](

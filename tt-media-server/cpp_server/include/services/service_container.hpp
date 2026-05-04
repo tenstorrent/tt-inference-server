@@ -43,7 +43,7 @@ class ServiceContainer {
 
   std::shared_ptr<IService> configuredService() const;
 
-  /** Typed accessors for modality-specific APIs (e.g. LLMController calls
+  /** Typed accessors for service-specific APIs (e.g. LLMController calls
    *  LLMService::getWorkerManager() which isn't on IService). They are thin
    *  lookups over the generic services_ map; modifying it via
    *  registerService() is reflected here too. */
@@ -60,7 +60,7 @@ class ServiceContainer {
     return sessionManager_;
   }
 
-  /** Register a modality service. Visible immediately to llm() / embedding() /
+  /** Register a model service. Visible immediately to llm() / embedding() /
    *  getService(). */
   void registerService(config::ModelService key,
                        std::shared_ptr<IService> service);

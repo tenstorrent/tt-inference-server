@@ -13,14 +13,14 @@
 namespace tt::api {
 
 /**
- * Per-modality HTTP route allow-list.
+ * Per-`ModelService` HTTP route allow-list.
  *
- * Drogon auto-registers every linked `HttpController<>`, so a multi-modal
- * binary cannot disable a controller just by skipping a `#include`. main.cpp
- * installs a sync advice that 404s any request not on the active modality's
- * allow-list (paths registered via `registerAlwaysExempt(...)` are served
- * regardless of MODEL_SERVICE). The same registry drives the "Endpoints:"
- * startup log.
+ * Drogon auto-registers every linked `HttpController<>`, so a binary that
+ * supports multiple model services cannot disable a controller just by
+ * skipping a `#include`. main.cpp installs a sync advice that 404s any
+ * request not on the active service's allow-list (paths registered via
+ * `registerAlwaysExempt(...)` are served regardless of MODEL_SERVICE). The
+ * same registry drives the "Endpoints:" startup log.
  */
 class RouteRegistry {
  public:
@@ -35,17 +35,17 @@ class RouteRegistry {
 
   static RouteRegistry& instance();
 
-  /** Register a route for a modality. */
+  /** Register a route for a model service. */
   void registerRoute(config::ModelService service, std::string method,
                      std::string path, std::string description);
 
-  /** Mark a path as always-allowed regardless of active modality (health,
+  /** Mark a path as always-allowed regardless of active model service (health,
    *  liveness, docs, metrics, …). */
   void registerAlwaysExempt(std::string path);
 
-  /** Decide whether the active modality should serve `path`. Matches templated
-   *  routes (e.g. "/v1/sessions/{session_id}") against concrete request paths
-   *  by component. */
+  /** Decide whether the active model service should serve `path`. Matches
+   *  templated routes (e.g. "/v1/sessions/{session_id}") against concrete
+   *  request paths by component. */
   bool isAllowed(config::ModelService activeService, std::string_view method,
                  std::string_view path) const;
 

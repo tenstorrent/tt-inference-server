@@ -25,8 +25,6 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
   switch (config.runner_type) {
     case ModelRunnerType::MOCK:
 #ifndef ENABLE_BLAZE
-    // Without tt-blaze, pipeline-style backends fall back to the mock
-    // IModelRunner (see RunnerRegistry in modality_registration.cpp).
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::PIPELINE_MANAGER:
 #endif
