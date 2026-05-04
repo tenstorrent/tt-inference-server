@@ -157,7 +157,9 @@ int main(int argc, char* argv[]) {
   if (shm != nullptr) {
     auto& agg = tt::worker::WorkerMetricsAggregator::instance();
     tt::worker::WorkerManager* mgr = nullptr;
-    auto llm = tt::services::ServiceContainer::instance().llm();
+    auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
+        tt::services::ServiceContainer::instance().getService(
+            tt::config::ModelService::LLM));
     if (llm) {
       mgr = llm->getWorkerManager();
     }

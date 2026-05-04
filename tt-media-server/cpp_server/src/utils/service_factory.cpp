@@ -73,24 +73,21 @@ void initializeServices() {
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
                std::move(disaggregation), std::move(sessionManager));
 
-  // Mirror the active service into the generic slot for model services
-  // without a typed accessor (no-op for LLM/Embedding, which initialize()
-  // already mirrors).
+  // Mirror the active service into the generic map for model services that
+  // don't flow through the typed `initialize()` parameters (no-op for LLM /
+  // Embedding, which initialize() already inserts).
   if (activeService && !c.getService(active)) {
     c.registerService(active, activeService);
   }
 
-  if (c.llm()) {
-    c.llm()->start();
-    TT_LOG_INFO("[ServiceFactory] LLM service started");
+  if (auto svc = c.getService(active)) {
+    svc->start();
+    TT_LOG_INFO("[ServiceFactory] {} service started",
+                tt::config::toString(active));
   }
   if (c.disaggregation()) {
     c.disaggregation()->start();
     TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
-  }
-  if (c.embedding()) {
-    c.embedding()->start();
-    TT_LOG_INFO("[ServiceFactory] Embedding service started");
   }
   if (c.sessionManager()) {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");

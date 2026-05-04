@@ -33,16 +33,6 @@ std::shared_ptr<IService> ServiceContainer::configuredService() const {
   return getService(tt::config::modelService());
 }
 
-std::shared_ptr<LLMService> ServiceContainer::llm() const {
-  return std::dynamic_pointer_cast<LLMService>(
-      getService(config::ModelService::LLM));
-}
-
-std::shared_ptr<EmbeddingService> ServiceContainer::embedding() const {
-  return std::dynamic_pointer_cast<EmbeddingService>(
-      getService(config::ModelService::EMBEDDING));
-}
-
 void ServiceContainer::registerService(config::ModelService key,
                                        std::shared_ptr<IService> service) {
   services_[key] = std::move(service);

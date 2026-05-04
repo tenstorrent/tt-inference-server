@@ -43,13 +43,6 @@ class ServiceContainer {
 
   std::shared_ptr<IService> configuredService() const;
 
-  /** Typed accessors for service-specific APIs (e.g. LLMController calls
-   *  LLMService::getWorkerManager() which isn't on IService). They are thin
-   *  lookups over the generic services_ map; modifying it via
-   *  registerService() is reflected here too. */
-  std::shared_ptr<LLMService> llm() const;
-  std::shared_ptr<EmbeddingService> embedding() const;
-
   std::shared_ptr<sockets::InterServerService> socket() const {
     return socket_;
   }
@@ -60,8 +53,7 @@ class ServiceContainer {
     return sessionManager_;
   }
 
-  /** Register a model service. Visible immediately to llm() / embedding() /
-   *  getService(). */
+  /** Register a model service. Visible immediately to getService(). */
   void registerService(config::ModelService key,
                        std::shared_ptr<IService> service);
   std::shared_ptr<IService> getService(config::ModelService key) const;
@@ -70,7 +62,7 @@ class ServiceContainer {
   ServiceContainer() = default;
 
   // services_ is the single source of truth for ModelService -> IService.
-  // Auxiliary slots below are not modalities and stay typed.
+  // Auxiliary slots below are not model services and stay typed.
   std::unordered_map<config::ModelService, std::shared_ptr<IService>> services_;
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<DisaggregationService> disaggregation_;
