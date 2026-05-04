@@ -9,25 +9,6 @@
 
 namespace tt::api {
 
-namespace {
-
-bool iequalsAscii(std::string_view a, std::string_view b) {
-  if (a.size() != b.size()) return false;
-  for (size_t i = 0; i < a.size(); ++i) {
-    if (std::toupper(static_cast<unsigned char>(a[i])) !=
-        std::toupper(static_cast<unsigned char>(b[i]))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool isTemplateSegment(std::string_view segment) {
-  return segment.size() >= 2 && segment.front() == '{' && segment.back() == '}';
-}
-
-}  // namespace
-
 RouteRegistry& RouteRegistry::instance() {
   static RouteRegistry registry;
   return registry;
@@ -64,8 +45,11 @@ bool RouteRegistry::isAllowed(config::ModelService activeService,
   }
   auto it = routes_.find(activeService);
   if (it == routes_.end()) return false;
+  // Stored methods are upper-cased by registerRoute() and Drogon's
+  // methodString() returns uppercase per HTTP convention, so a plain ==
+  // is safe and avoids a per-byte toupper on every request.
   for (const auto& spec : it->second) {
-    if (!iequalsAscii(spec.method, method)) continue;
+    if (spec.method != method) continue;
     if (pathMatches(spec.path, path)) return true;
   }
   return false;
@@ -89,38 +73,36 @@ void RouteRegistry::clear() {
 
 bool RouteRegistry::pathMatches(std::string_view templatePath,
                                 std::string_view requestPath) {
-  // Strip a single trailing slash on either side so that "/v1/sessions/" and
-  // "/v1/sessions" compare equal.
-  auto trim = [](std::string_view s) {
-    if (s.size() > 1 && s.back() == '/') s.remove_suffix(1);
-    return s;
-  };
-  auto tmpl = trim(templatePath);
-  auto req = trim(requestPath);
+  // Trailing-slash equivalence: "/x/" and "/x" match.
+  if (templatePath.size() > 1 && templatePath.back() == '/')
+    templatePath.remove_suffix(1);
+  if (requestPath.size() > 1 && requestPath.back() == '/')
+    requestPath.remove_suffix(1);
 
-  size_t ti = 0;
-  size_t ri = 0;
-  while (ti < tmpl.size() && ri < req.size()) {
-    // Both must start with '/' at this position.
-    if (tmpl[ti] != '/' || req[ri] != '/') return false;
-    ++ti;
-    ++ri;
+  // Walk segment-by-segment. Each iteration consumes "/<segment>" from both
+  // sides; the loop exits when either side runs out. std::min(find('/'),
+  // size()) collapses the "no more slashes" case (npos == max size_t) into
+  // "rest of the view".
+  while (!templatePath.empty() && !requestPath.empty()) {
+    if (templatePath.front() != '/' || requestPath.front() != '/')
+      return false;
+    templatePath.remove_prefix(1);
+    requestPath.remove_prefix(1);
 
-    size_t tEnd = tmpl.find('/', ti);
-    size_t rEnd = req.find('/', ri);
-    if (tEnd == std::string_view::npos) tEnd = tmpl.size();
-    if (rEnd == std::string_view::npos) rEnd = req.size();
-
-    auto tSeg = tmpl.substr(ti, tEnd - ti);
-    auto rSeg = req.substr(ri, rEnd - ri);
+    auto tEnd = std::min(templatePath.find('/'), templatePath.size());
+    auto rEnd = std::min(requestPath.find('/'), requestPath.size());
+    auto tSeg = templatePath.substr(0, tEnd);
+    auto rSeg = requestPath.substr(0, rEnd);
 
     if (tSeg.empty() || rSeg.empty()) return false;
-    if (!isTemplateSegment(tSeg) && tSeg != rSeg) return false;
+    const bool isWildcard =
+        tSeg.size() >= 2 && tSeg.front() == '{' && tSeg.back() == '}';
+    if (!isWildcard && tSeg != rSeg) return false;
 
-    ti = tEnd;
-    ri = rEnd;
+    templatePath.remove_prefix(tEnd);
+    requestPath.remove_prefix(rEnd);
   }
-  return ti == tmpl.size() && ri == req.size();
+  return templatePath.empty() && requestPath.empty();
 }
 
 }  // namespace tt::api
