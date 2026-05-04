@@ -5,6 +5,7 @@
 import importlib
 import os
 import subprocess
+import torch
 
 from .forge_runner import ForgeRunner
 
@@ -48,6 +49,7 @@ class ForgeUnetRunner(ForgeRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.loader = load_dynamic("unet")
+        self.dtype = torch.float32
 
 
 class ForgeVitRunner(ForgeRunner):
