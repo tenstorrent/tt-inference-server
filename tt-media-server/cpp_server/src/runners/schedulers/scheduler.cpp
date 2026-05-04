@@ -185,7 +185,15 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   }
 }
 
-void Scheduler::removeSequence(uint32_t taskId) { sequences.erase(taskId); }
+void Scheduler::removeSequence(uint32_t taskId) {
+  auto it = sequences.find(taskId);
+  if (it == sequences.end()) return;
+
+  std::erase_if(decodeQueue,
+                [taskId](Sequence* s) { return s->taskId == taskId; });
+  blockManager.deallocate(*it->second);
+  sequences.erase(it);
+}
 
 void Scheduler::abortRequest(uint32_t taskId) {
   auto* seq = findSequence(taskId);
