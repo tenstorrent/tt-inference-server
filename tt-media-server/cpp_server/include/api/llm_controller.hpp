@@ -12,6 +12,10 @@
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 
+namespace tt::sockets {
+class InterServerService;
+}
+
 namespace tt::api {
 
 /**
@@ -74,6 +78,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
+  std::shared_ptr<sockets::InterServerService> socketService;
 
   /**
    * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk
