@@ -19,26 +19,28 @@ namespace tt::utils::service_factory {
 
 namespace {
 
-// Disaggregation is an LLM-specific concern (cross-server prefill/decode), so
-// it stays as a dedicated step. New modalities that need post-construction
-// auxiliaries add their own helper next to this one rather than growing a
-// central switch.
-struct LLMAuxiliary {
+// Per-model-service post-construction wiring. New services that need
+// auxiliaries add an `if (auto x = dynamic_pointer_cast<XService>(...))` arm
+// next to the LLM one rather than growing a central switch.
+struct AuxiliaryServices {
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
 };
 
-LLMAuxiliary buildLLMAuxiliary(
+AuxiliaryServices buildAuxiliaryServices(
     const std::shared_ptr<services::IService>& activeService) {
-  auto llm = std::dynamic_pointer_cast<services::LLMService>(activeService);
-  const auto mode = tt::config::llmMode();
-  if (!llm || mode == tt::config::LLMMode::REGULAR) return {};
-
-  auto socket = std::make_shared<sockets::InterServerService>();
-  socket->initializeFromConfig();
-  auto disagg =
-      std::make_shared<services::DisaggregationService>(mode, llm, socket);
-  return {std::move(socket), std::move(disagg)};
+  if (auto llm =
+          std::dynamic_pointer_cast<services::LLMService>(activeService)) {
+    const auto mode = tt::config::llmMode();
+    if (mode != tt::config::LLMMode::REGULAR) {
+      auto socket = std::make_shared<sockets::InterServerService>();
+      socket->initializeFromConfig();
+      auto disagg = std::make_shared<services::DisaggregationService>(
+          mode, llm, socket);
+      return {std::move(socket), std::move(disagg)};
+    }
+  }
+  return {};
 }
 
 }  // namespace
@@ -61,9 +63,9 @@ void initializeServices() {
     c.registerService(active, activeService);
   }
 
-  auto llmAux = buildLLMAuxiliary(activeService);
+  auto aux = buildAuxiliaryServices(activeService);
 
-  c.initialize(std::move(llmAux.socket), std::move(llmAux.disaggregation),
+  c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
                std::make_shared<services::SessionManager>());
 
   if (auto svc = c.configuredService()) {

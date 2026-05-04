@@ -31,8 +31,8 @@ class ServiceContainer {
     return container;
   }
 
-  /** Wire auxiliary services that don't belong to a single ModelService.
-   *  The active model service itself is installed via `registerService()`. */
+  /** Wire auxiliary services. The active model service itself is installed
+   *  via `registerService()`. */
   void initialize(std::shared_ptr<sockets::InterServerService> socket,
                   std::shared_ptr<DisaggregationService> disaggregation,
                   std::shared_ptr<SessionManager> sessionMgr);
@@ -49,7 +49,6 @@ class ServiceContainer {
     return sessionManager_;
   }
 
-  /** Register a model service. Visible immediately to getService(). */
   void registerService(config::ModelService key,
                        std::shared_ptr<IService> service);
   std::shared_ptr<IService> getService(config::ModelService key) const;
@@ -57,8 +56,8 @@ class ServiceContainer {
  private:
   ServiceContainer() = default;
 
-  // services_ is the single source of truth for ModelService -> IService.
-  // Auxiliary slots below are not model services and stay typed.
+  // Single source of truth for ModelService -> IService; auxiliary slots
+  // below are not model services and stay typed.
   std::unordered_map<config::ModelService, std::shared_ptr<IService>> services_;
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<DisaggregationService> disaggregation_;

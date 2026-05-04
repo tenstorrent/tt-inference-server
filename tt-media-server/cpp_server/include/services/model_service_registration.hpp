@@ -6,9 +6,9 @@
 namespace tt::services {
 
 /**
- * Populate ServiceRegistry / RunnerRegistry / RouteRegistry with the built-in
- * `ModelService` entries (LLM, Embedding). Idempotent. New model services add
- * themselves next to the existing blocks.
+ * Populates ServiceRegistry / RunnerRegistry / RouteRegistry with the
+ * built-in `ModelService` entries (LLM, Embedding). Idempotent; new
+ * services add themselves next to the existing blocks.
  */
 void registerBuiltinModelServices();
 

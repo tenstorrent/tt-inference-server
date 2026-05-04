@@ -13,21 +13,18 @@
 namespace tt::api {
 
 /**
- * Per-`ModelService` HTTP route allow-list.
- *
- * Drogon auto-registers every linked `HttpController<>`, so a binary that
- * supports multiple model services cannot disable a controller just by
- * skipping a `#include`. main.cpp installs a sync advice that 404s any
- * request not on the active service's allow-list (paths registered via
- * `registerAlwaysExempt(...)` are served regardless of MODEL_SERVICE). The
- * same registry drives the "Endpoints:" startup log.
+ * Per-`ModelService` HTTP route allow-list. Drogon auto-registers every
+ * linked controller, so a multi-service binary cannot disable one by
+ * skipping a `#include`; main.cpp installs a sync advice that 404s any
+ * request not allowed for the active `ModelService`. Paths registered via
+ * `registerAlwaysExempt()` (health, docs, metrics, …) bypass the filter.
  */
 class RouteRegistry {
  public:
   struct RouteSpec {
-    std::string method;      /**< Uppercase HTTP verb, e.g. "POST". */
-    std::string path;        /**< Exact path or a `{param}` template. */
-    std::string description; /**< Free-form, used in startup logs. */
+    std::string method;       /**< Uppercase HTTP verb. */
+    std::string path;         /**< Exact path or a `{param}` template. */
+    std::string description;  /**< Used in startup logs. */
   };
 
   RouteRegistry(const RouteRegistry&) = delete;
@@ -35,34 +32,29 @@ class RouteRegistry {
 
   static RouteRegistry& instance();
 
-  /** Register a route for a model service. */
   void registerRoute(config::ModelService service, std::string method,
                      std::string path, std::string description);
 
-  /** Mark a path as always-allowed regardless of active model service (health,
-   *  liveness, docs, metrics, …). */
+  /** Always-allowed regardless of MODEL_SERVICE (health, docs, metrics, …). */
   void registerAlwaysExempt(std::string path);
 
-  /** Decide whether the active model service should serve `path`. Matches
-   *  templated routes (e.g. "/v1/sessions/{session_id}") against concrete
-   *  request paths by component. */
+  /** True if `service` should serve `method path`. Templated route segments
+   *  (`{name}`) match any single non-empty segment. */
   bool isAllowed(config::ModelService activeService, std::string_view method,
                  std::string_view path) const;
 
-  /** Routes registered for `service`, sorted in registration order. */
+  /** Routes for `service`, in registration order. */
   std::vector<RouteSpec> routesFor(config::ModelService service) const;
 
-  /** Always-exempt paths (sorted in registration order). */
+  /** Always-exempt paths, in registration order. */
   std::vector<std::string> alwaysExemptPaths() const;
 
-  /** Remove all registrations. Test-only helper. */
+  /** Test-only. */
   void clear();
 
  private:
   RouteRegistry() = default;
 
-  /** True iff `templatePath` matches `requestPath`. `{name}` segments match
-   *  any single non-empty segment; all other segments compare literally. */
   static bool pathMatches(std::string_view templatePath,
                           std::string_view requestPath);
 

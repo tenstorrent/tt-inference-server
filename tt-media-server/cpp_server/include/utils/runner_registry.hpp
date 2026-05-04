@@ -18,13 +18,12 @@
 namespace tt::utils {
 
 /**
- * Registry mapping (ModelService, ModelRunnerType) to runner factories.
- * `runner_factory::createRunner` delegates to this registry; modalities
- * register themselves from `services::registerBuiltinModelServices()`.
+ * Maps `(ModelService, ModelRunnerType)` to runner factories. Services
+ * register themselves from `services::registerBuiltinModelServices()` and
+ * `runner_factory::createRunner` delegates here.
  *
- * Lookup falls back from `(service, type)` to `(service, MOCK)` and then to
- * the first registered factory for the service, matching the pre-refactor
- * switch statement's behaviour. The fallback paths log a warning.
+ * Lookup falls back from `(service, type)` -> `(service, MOCK)` -> first
+ * factory registered for `service`, logging a warning when it does so.
  */
 class RunnerRegistry {
  public:
@@ -37,20 +36,18 @@ class RunnerRegistry {
 
   static RunnerRegistry& instance();
 
-  /** Register a factory for a (service, runner type) pair. */
   void registerRunner(config::ModelService service,
                       config::ModelRunnerType type, RunnerFactory factory);
 
-  /** Construct the runner. Returns nullptr if no factory matches. */
+  /** Returns nullptr if neither an exact match nor any fallback matches. */
   std::unique_ptr<runners::IRunner> create(
       config::ModelService service, config::ModelRunnerType type,
       const config::RunnerConfig& config, ipc::IResultQueue* resultQueue,
       ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue) const;
 
-  /** True iff a factory is registered for the (service, type) pair. */
   bool has(config::ModelService service, config::ModelRunnerType type) const;
 
-  /** Remove all registrations. Test-only helper. */
+  /** Test-only. */
   void clear();
 
  private:

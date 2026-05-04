@@ -179,9 +179,8 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
   }
 
-  // SyncAdvice runs before Drogon's routing/method check, so disallowed
-  // paths uniformly return 404 instead of leaking 405 for cross-service
-  // endpoints (e.g. GET /v1/embeddings while running in LLM mode).
+  // SyncAdvice runs before Drogon's routing/method check, so cross-service
+  // paths uniformly return 404 instead of leaking 405.
   drogon::app().registerSyncAdvice(
       [activeService = modelSvc](
           const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {

@@ -34,11 +34,8 @@ void registerLLM() {
 
   auto& runners = utils::RunnerRegistry::instance();
 
-  // Both MOCK and LLAMA construct the same C++ LLMRunner; the inner
-  // IModelRunner (mock vs. llama via pybind) is selected from
-  // cfg.runner_type in runners/llm_runner/model_runner.cpp::makeModelRunner.
-  // We register the same factory under both keys so the registry's exact-
-  // match path hits for both common types and no fallback warning fires.
+  // MOCK and LLAMA share LLMRunner; the inner IModelRunner is picked from
+  // cfg.runner_type in llm_runner/model_runner.cpp::makeModelRunner.
   auto llmFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
@@ -119,7 +116,6 @@ void registerEmbedding() {
 }
 
 void registerAlwaysExemptRoutes() {
-  // Served regardless of MODEL_SERVICE.
   auto& routes = api::RouteRegistry::instance();
   routes.registerAlwaysExempt("/health");
   routes.registerAlwaysExempt("/tt-liveness");

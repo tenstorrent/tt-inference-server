@@ -14,11 +14,10 @@ namespace tt::services {
 class IService;
 
 /**
- * Registry mapping each ModelService to a factory that builds its IService.
- * Used by `service_factory::initializeServices()` so adding a new model
- * service doesn't require editing a central switch.
+ * Maps each `ModelService` to a factory that builds its `IService`, so adding
+ * a new service doesn't require editing a central switch in service_factory.
  *
- * Thread-safety: registration must complete before `create()` is called.
+ * Thread-safety: registration must complete before `create()`.
  */
 class ServiceRegistry {
  public:
@@ -29,18 +28,15 @@ class ServiceRegistry {
 
   static ServiceRegistry& instance();
 
-  /** Register a factory for a given model service. Last write wins, so
-   *  callers may override built-in factories in tests. */
+  /** Last write wins, so tests can override built-in factories. */
   void registerService(config::ModelService key, ServiceFactory factory);
 
-  /** Construct the service for `key`. Returns nullptr if no factory is
-   *  registered. */
+  /** Returns nullptr if no factory is registered for `key`. */
   std::shared_ptr<IService> create(config::ModelService key) const;
 
-  /** True iff a factory is registered for `key`. */
   bool has(config::ModelService key) const;
 
-  /** Remove all registrations. Test-only helper. */
+  /** Test-only. */
   void clear();
 
  private:

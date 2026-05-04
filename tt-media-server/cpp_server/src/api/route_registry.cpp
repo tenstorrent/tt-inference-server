@@ -37,17 +37,14 @@ void RouteRegistry::registerAlwaysExempt(std::string path) {
 bool RouteRegistry::isAllowed(config::ModelService activeService,
                               std::string_view method,
                               std::string_view path) const {
-  // Linear scan over alwaysExempt_ avoids allocating a std::string from
-  // string_view per request; the list has < 10 entries so this is faster
-  // than an unordered_set lookup at HTTP RPS scale.
+  // Linear scan: < 10 entries, no allocation from string_view.
   for (const auto& exempt : alwaysExempt_) {
     if (exempt == path) return true;
   }
   auto it = routes_.find(activeService);
   if (it == routes_.end()) return false;
-  // Stored methods are upper-cased by registerRoute() and Drogon's
-  // methodString() returns uppercase per HTTP convention, so a plain ==
-  // is safe and avoids a per-byte toupper on every request.
+  // registerRoute() upper-cases stored methods and Drogon::methodString()
+  // returns uppercase, so plain == is safe.
   for (const auto& spec : it->second) {
     if (spec.method != method) continue;
     if (pathMatches(spec.path, path)) return true;
@@ -79,10 +76,8 @@ bool RouteRegistry::pathMatches(std::string_view templatePath,
   if (requestPath.size() > 1 && requestPath.back() == '/')
     requestPath.remove_suffix(1);
 
-  // Walk segment-by-segment. Each iteration consumes "/<segment>" from both
-  // sides; the loop exits when either side runs out. std::min(find('/'),
-  // size()) collapses the "no more slashes" case (npos == max size_t) into
-  // "rest of the view".
+  // Walk segment-by-segment. std::min(find('/'), size()) folds the
+  // "no more slashes" (npos) case into "rest of the view".
   while (!templatePath.empty() && !requestPath.empty()) {
     if (templatePath.front() != '/' || requestPath.front() != '/')
       return false;
