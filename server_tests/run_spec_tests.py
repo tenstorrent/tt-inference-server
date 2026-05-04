@@ -164,6 +164,7 @@ class TestFrameworkRunner:
                     test_instance.description = description
                     test_instance.markers = test_case_data.get("markers", [])
                     test_instance.suite_id = suite_id
+                    test_instance.weights = suite.get("weights", [])
 
                     test_cases.append(test_instance)
                     logger.info(f"  Loaded: {class_name} - {description}")
