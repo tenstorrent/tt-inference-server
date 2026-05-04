@@ -8,12 +8,27 @@ import os
 import time
 import traceback
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+import requests
 
 from server_tests.test_classes import TestConfig
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class HealthCheckConfig:
+    """Health check configuration."""
+
+    MAX_ATTEMPTS: int = 230
+    RETRY_DELAY: int = 10
+    TIMEOUT: int = 10
+
+
+HEALTH_CHECK_CONFIG = HealthCheckConfig()
 
 
 class BaseTest(ABC):
@@ -132,6 +147,67 @@ class BaseTest(ABC):
     def get_logs(self):
         """Get all logs collected during test execution"""
         return self.logs
+
+    def wait_for_server_ready(
+        self,
+        service_port: Optional[int] = None,
+        max_attempts: Optional[int] = None,
+        retry_delay: Optional[int] = None,
+    ) -> bool:
+        """Wait for server to be ready using simple HTTP health check.
+
+        Args:
+            service_port: Port where the server is running.
+            max_attempts: Maximum number of retry attempts.
+            retry_delay: Seconds to wait between retries.
+
+        Returns:
+            bool: True if server is ready, False otherwise.
+        """
+        logger.info("Waiting for server to be ready...")
+        service_port = int(
+            service_port if service_port is not None else self.service_port
+        )
+        max_attempts = (
+            max_attempts
+            if max_attempts is not None
+            else HEALTH_CHECK_CONFIG.MAX_ATTEMPTS
+        )
+        retry_delay = (
+            retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
+        )
+        health_url = f"http://localhost:{service_port}/tt-liveness"
+        logger.info("Waiting for server at %s ...", health_url)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.get(health_url, timeout=HEALTH_CHECK_CONFIG.TIMEOUT)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "alive" and data.get("model_ready"):
+                        logger.info(
+                            "Server is ready after %s attempt(s)",
+                            attempt,
+                        )
+                        return True
+                logger.info(
+                    "Server not ready (attempt %s/%s), retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    retry_delay,
+                )
+            except requests.exceptions.RequestException as e:
+                logger.info(
+                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
+                    attempt,
+                    max_attempts,
+                    e,
+                    retry_delay,
+                )
+            time.sleep(retry_delay)
+
+        logger.error("Server health check failed after %s attempts", max_attempts)
+        return False
 
     @abstractmethod
     async def _run_specific_test_async(self):
