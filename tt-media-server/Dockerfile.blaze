@@ -3,22 +3,28 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 #
 # ==============================================================================
-# THIN BUILDER STAGE - cpp_server only, derived from a prebuilt blaze base
+# THIN SINGLE-STAGE IMAGE - cpp_server only, derived from a prebuilt blaze base
 # ==============================================================================
-# The heavy bits (apt + Drogon + Rust + tt-blaze + tt-metal) live in
-# Dockerfile.blaze.base. This file just COPYs the cpp_server source on top
-# and runs ./build.sh --blaze, so cpp_server-only changes rebuild only this
-# small layer (~1-2 minutes) instead of the full ~25-minute pipeline.
+# The heavy bits (apt + Drogon + Rust + tt-blaze + tt-metal + ffmpeg/jsoncpp
+# runtime deps + container_app_user) live in Dockerfile.blaze.base. This file
+# just COPYs the cpp_server source on top and runs ./build.sh --blaze, so
+# cpp_server-only changes rebuild only the small new layers on top of the base.
+#
+# Crucially: this is a SINGLE-STAGE image (no separate runtime FROM-different-base
+# stage). All layer digests below ${BASE_IMAGE} are inherited from the base
+# image already pushed to ghcr.io, so `docker push` of this image only ships
+# the small cpp_server delta on top. The earlier 2-stage version squashed
+# everything into a ~5GB content-addressed COPY-from-builder layer that
+# always re-pushed (~25 min — see tt-shield run 25308875892).
 #
 # CI is responsible for ensuring BASE_IMAGE exists and matches the desired
 # tt-blaze branch. The blaze build step in tt-shield's
 # workflow_build-inference-server.yml lazily builds the base image if a
 # tag for the requested branch is missing in the registry, and accepts a
-# force-rebuild-blaze-base toggle on the dispatch UI for force-pushes /
-# rebuilds after Dockerfile.blaze.base or install_dependencies.sh changes.
+# force-rebuild-blaze-base toggle on the dispatch UI.
 # ==============================================================================
 ARG BASE_IMAGE=ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze-base:asaigal-ds_pm_integration
-FROM ${BASE_IMAGE} AS builder
+FROM ${BASE_IMAGE}
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
@@ -28,123 +34,64 @@ ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 
 # The base image already exports HOME_DIR / APP_DIR / PYTHON_ENV_DIR /
-# CARGO_HOME / RUSTUP_HOME / PATH (with cargo) as ENV. Declaring matching
-# ARGs here keeps the docker linter quiet (it cannot inspect ENVs of a
-# registry-only base) and documents the layout this Dockerfile assumes.
+# CARGO_HOME / RUSTUP_HOME / PATH (with cargo) / TT_METAL_HOME / etc. as ENV.
+# Declaring matching ARGs here keeps the docker linter quiet (it cannot
+# inspect ENVs of a registry-only base) and documents the layout.
 ARG HOME_DIR=/home/container_app_user
 ARG APP_DIR=${HOME_DIR}/app
 ARG PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env
+ARG CONTAINER_APP_USERNAME=container_app_user
 
 WORKDIR ${APP_DIR}
 
-# Overlay the cpp_server source. The base provides cpp_server/tt-blaze
-# fully prebuilt; we COPY only tt-media-server/cpp_server (not the whole
-# tt-media-server tree) for two reasons:
-#   1. The blaze image is C++-server-only — the python uvicorn server is
-#      not run from this image, so editing main.py / tests/ / docs/ etc.
-#      should not invalidate this layer.
-#   2. The submodule placeholder dir tt-media-server/cpp_server/tt-blaze
-#      is empty in CI (CI doesn't init the submodule); docker COPY merge
-#      semantics leave the prebuilt tt-blaze in the base untouched
-#      (verified empirically against docker 29.x).
-# We still defensively rm any stray ./build artifact that might leak in
-# from a developer's local checkout.
-COPY tt-media-server/cpp_server ${APP_DIR}/server/cpp_server
+# ----------------------------------------------------------------------------
+# 1. cpp_server source — the cache-breaking layer for everyday edits.
+#    --chown sets ownership during COPY (single layer) so we don't need a
+#    later `chown -R` mega-layer that would defeat the layer-inheritance
+#    benefit of having a base image. We COPY only tt-media-server/cpp_server
+#    (not the full tt-media-server tree) for two reasons:
+#      a. The blaze image is C++-only — the python uvicorn server is not
+#         run from this image, so editing main.py / tests/ / docs/ etc.
+#         should not invalidate this layer.
+#      b. The submodule placeholder dir tt-media-server/cpp_server/tt-blaze
+#         is empty in CI; docker COPY merge semantics leave the prebuilt
+#         tt-blaze in the base untouched (verified empirically against
+#         docker 29.x).
+#    We still defensively rm any stray ./build artifact from a host checkout.
+# ----------------------------------------------------------------------------
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+     tt-media-server/cpp_server ${APP_DIR}/server/cpp_server
 RUN rm -rf ${APP_DIR}/server/cpp_server/build
 
-# Build cpp_server against the prebuilt tt-blaze/tt-metal in the base.
+# ----------------------------------------------------------------------------
+# 2. Build cpp_server. Run as the container user so build artifacts land
+#    with the right ownership in a single layer (no chown afterwards).
+#    The base image already put cargo on PATH globally, so build.sh's
+#    tokenizers-cpp dependency can find it.
+# ----------------------------------------------------------------------------
+USER ${CONTAINER_APP_USERNAME}
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh --blaze"
-
-# Standalone copy of the server-launch script so the entrypoint at
-# ${APP_DIR}/server/run_cpp.sh exists.
-COPY tt-media-server/run_cpp.sh ${APP_DIR}/server/run_cpp.sh
-RUN chmod +x ${APP_DIR}/server/run_cpp.sh
-
-# Strip build-only artifacts from the builder stage so the COPY --from=builder
-# in the runtime stage stays small.
-RUN rm -rf ${HOME_DIR}/.rustup \
-    && rm -rf ${HOME_DIR}/.cargo \
-    && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.cpmcache \
-    && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
-
-
-# ==============================================================================
-# RUNTIME STAGE - final lightweight image
-# ==============================================================================
-# This is the final image that will be used. Only the built artifacts from
-# the builder stage are copied here. Any runtime dependencies needed by the
-# application must be installed in this stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
-
-LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
-
-ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
-ARG CONTAINER_APP_UID=1000
-ARG CONTAINER_APP_USERNAME=container_app_user
-ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    ENVIRONMENT=development \
-    TT_MM_THROTTLE_PERF=5 \
-    SHELL=/bin/bash \
-    CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
-    APP_DIR=${HOME_DIR}/app \
-    TT_METAL_HOME=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    CONFIG=Release \
-    TT_METAL_ENV=dev \
-    LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal/build/lib \
-    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
-
-# Runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    gosu \
-    libjsoncpp-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create user
-RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
-    && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
-    && mkdir -p /run/sshd \
-    && chmod 755 /run/sshd
-
-# Copy everything from builder
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user ${HOME_DIR}
-
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
-
-# Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
-
-USER ${CONTAINER_APP_USERNAME}
-WORKDIR ${HOME_DIR}/tt-metal
-
-RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# Switch back to root for entrypoint (it will drop to non-root user via gosu)
 USER root
-COPY docker-entrypoint.sh ${HOME_DIR}/app/server/docker-entrypoint.sh
-RUN chmod +x ${HOME_DIR}/app/server/docker-entrypoint.sh
 
-# Blaze image is C++-server-only (no python uvicorn): SERVER_MODE conditional
-# and run_uvicorn.sh chmod removed. Use Dockerfile (regular media-inference-
+# ----------------------------------------------------------------------------
+# 3. Entrypoint setup. docker-entrypoint.sh starts as root (so it can
+#    set/check permissions on mounted volumes) and then deescalates to
+#    ${CONTAINER_APP_USERNAME} via gosu — same pattern the original
+#    multi-stage runtime stage used.
+# ----------------------------------------------------------------------------
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+     tt-media-server/run_cpp.sh ${APP_DIR}/server/run_cpp.sh
+RUN chmod +x ${APP_DIR}/server/run_cpp.sh
+COPY docker-entrypoint.sh ${APP_DIR}/server/docker-entrypoint.sh
+RUN chmod +x ${APP_DIR}/server/docker-entrypoint.sh
+
+# Blaze image is C++-server-only (no python uvicorn). SERVER_MODE conditional
+# and run_uvicorn.sh chmod removed; use Dockerfile (regular media-inference-
 # server build) if you need the python server.
 EXPOSE 8000
-WORKDIR ${HOME_DIR}/app/server
+WORKDIR ${APP_DIR}/server
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && source ./run_cpp.sh"]

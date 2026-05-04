@@ -5,17 +5,29 @@
 # ==============================================================================
 # BASE IMAGE for Dockerfile.blaze
 # ==============================================================================
-# Contains the heavy, slow-changing pieces of the blaze build:
-#   - system / apt deps + CMake
+# Contains the heavy, slow-changing pieces of the blaze image:
+#   - system / apt deps + CMake (build-time)
 #   - cpp_server build deps + Drogon (via install_dependencies.sh)
-#   - Rust toolchain (used by tokenizers-cpp at cpp_server build time AND by
-#     tt-blaze's pipeline_manager cmake step that gates deepseek_inference_runner)
+#   - Rust toolchain
 #   - tt-blaze + tt-metal fully built
+#   - runtime apt deps (ffmpeg, gosu, libjsoncpp-dev) + container_app_user
+#     account + bashrc — moved here from a separate runtime stage so the
+#     derived image can be SINGLE-STAGE.
 #
-# Total build time of this image is ~25 minutes; rebuilt on demand
-# (typically when the tt-blaze branch is bumped). Dockerfile.blaze derives
-# from this image via FROM ${BASE_IMAGE} and only adds the cpp_server build,
-# which keeps cpp_server-only rebuilds at ~2-3 minutes instead of ~35.
+# Total build time of this image is ~25 minutes; rebuilt on demand (typically
+# when the tt-blaze branch is bumped). Dockerfile.blaze derives from this
+# image via FROM ${BASE_IMAGE} and only adds the cpp_server build, so its
+# layers are inherited from this base — already-pushed digests are skipped
+# by `docker push`, and only the small cpp_server delta layer ships. This is
+# what gets cpp_server-only rebuilds (the common case) down to ~7-10 min:
+# without inheriting layer digests from the base, the derived push squashes
+# everything into a single ~5GB content-addressed layer that the registry
+# never has and always re-pushes (~25 min — see tt-shield run 25308875892).
+#
+# Trade-off: the final image carries build deps (rust, .cpmcache, etc.) that
+# the previous multi-stage runtime would have stripped. Image size grows by
+# a few GB but warm rebuilds drop from ~48 min to ~7-10 min. For the user's
+# stated goal (fastest cpp_server iteration) that's the right trade-off.
 #
 # Why a separate image instead of BuildKit registry cache: tt-shield ARC
 # runner pods don't share docker daemon state, so daemon-local layer cache
@@ -153,3 +165,44 @@ RUN rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/docs \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tests \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tech_reports \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.github
+
+# ----------------------------------------------------------------------------
+# Runtime bits (previously lived in a separate runtime stage in Dockerfile.blaze).
+# Placed here so the derived image can be single-stage and inherit ALL these
+# layer digests directly from this base — `docker push` of the derived image
+# then only ships the small cpp_server build delta on top.
+# ----------------------------------------------------------------------------
+
+# Extra runtime apt deps (gosu is already in the system-deps RUN above; no need
+# to reinstall). ffmpeg is needed for the python uvicorn server's media path
+# (also harmless in the C++-only blaze image — kept for parity).
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libjsoncpp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create the non-root container user. UID 1000 matches the convention used by
+# the rest of the tt-* docker images (tt-inference-server, etc.) and by the
+# k8s manifests that mount host volumes into these containers. We do this AT
+# THE END (not at the start) on purpose: the heavy build steps above run as
+# root, so their files end up root-owned. A single chown -R afterwards bakes
+# the correct ownership into ONE layer in the base image; derived images
+# inherit that layer for free and only need to chown the small cpp_server
+# delta they add. (If we chown'd up front, every subsequent RUN as root
+# would re-create root-owned files and we'd be back to square one.)
+ARG CONTAINER_APP_UID=1000
+RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} -M ${CONTAINER_APP_USERNAME} \
+    && mkdir -p ${HOME_DIR}/logs \
+    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+ENV TT_METAL_LOGS_PATH=${HOME_DIR}/logs
+
+# Runtime layout vars Dockerfile.blaze and downstream consumers rely on.
+# Point TT_METAL_HOME at the tt-blaze copy of tt-metal (built above);
+# the original Dockerfile.blaze multi-stage runtime stage did the same.
+# Override the base's earlier ${HOME_DIR}/tt-metal pointer set at the top
+# of this file (which was for the build-time tt-metal layout).
+ENV TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
+    TT_METAL_RUNTIME_ROOT=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
+    PYTHONPATH=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
+    LD_LIBRARY_PATH=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/build/lib
