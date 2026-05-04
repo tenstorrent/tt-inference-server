@@ -415,8 +415,7 @@ bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
   // In disaggregated decode mode, fall back to running prefill locally if the
   // prefill server socket is unavailable — otherwise the request would be sent
   // to a peer that cannot service it.
-  if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY &&
-      (!socketService || !socketService->isConnected())) {
+  if (!socketService || !socketService->isConnected()) {
     TT_LOG_WARN(
         "[LLMController] Prefill server not connected; falling back to "
         "prefill on decode for taskId={}",
