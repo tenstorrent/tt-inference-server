@@ -11,7 +11,7 @@ from typing import Literal
 import numpy as np
 from PIL import Image
 
-from server_tests.base_test import BaseTest
+from .._test_common import BaseTest
 from server_tests.test_config import TestConfig
 
 logger = logging.getLogger(__name__)

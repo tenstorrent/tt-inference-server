@@ -14,7 +14,7 @@ import imageio.v3 as iio
 import requests
 from PIL import Image
 
-from server_tests.base_test import BaseTest
+from .._test_common import BaseTest
 from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_BASE_URL,
