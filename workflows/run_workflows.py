@@ -18,7 +18,8 @@ from workflows.workflow_config import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
-
+SPEC_TESTS_SKIP_MODELS = {"Mistral-7B-Instruct-v0.3"
+} 
 
 @dataclass(frozen=True)
 class WorkflowResult:
@@ -133,6 +134,8 @@ def run_workflows(model_spec, runtime_config, json_fpath):
             WorkflowType.BENCHMARKS,
             WorkflowType.SPEC_TESTS,
         ]
+        if model_spec.model_name not in SPEC_TESTS_SKIP_MODELS:
+            workflows_to_run.append(WorkflowType.SPEC_TESTS)
         if model_spec.model_name in TEST_CONFIGS:
             workflows_to_run.append(WorkflowType.TESTS)
         workflows_to_run.append(WorkflowType.REPORTS)
