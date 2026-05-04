@@ -56,9 +56,14 @@ struct SamplingParams {
     if (response_format_type != ResponseFormatType::TEXT) {
       return true;
     }
-    if (tool_choice.has_value() && tool_choice->type == "function" &&
-        tool_choice->function.has_value() && tools.has_value()) {
-      return true;
+    if (tool_choice.has_value() && tools.has_value()) {
+      if (tool_choice->type == "function" &&
+          tool_choice->function.has_value()) {
+        return true;
+      }
+      if (tool_choice->type == "required") {
+        return true;
+      }
     }
     return false;
   }
