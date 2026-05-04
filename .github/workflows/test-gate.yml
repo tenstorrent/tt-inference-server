@@ -586,6 +586,99 @@ jobs:
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
 
+      # `vllm bench serve` hard-codes stream=True, so drive stream=false coverage via inline aiohttp.
+      - name: Bench mock backend (non-streaming)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          python - <<'PY' 2>&1 | tee bench_mock_non_streaming_output.txt
+          import asyncio
+          import json
+          import os
+          import statistics
+          import time
+
+          import aiohttp
+
+          URL = "http://127.0.0.1:8000/v1/chat/completions"
+          HEADERS = {
+              "Authorization": "Bearer your-secret-key",
+              "Content-Type": "application/json",
+          }
+          MODEL = "deepseek-ai/DeepSeek-R1-0528"
+          NUM_PROMPTS = 1000
+          MAX_CONCURRENCY = 64
+          INPUT_LEN = 128
+          OUTPUT_LEN = 128
+          RESULT_FILE = "vllm-bench-mock-non-streaming.json"
+          LABEL = "C++ Server Bench (mock, non-streaming)"
+
+          PROMPT = " ".join(["hello"] * INPUT_LEN)
+
+          async def one(session, sem):
+              payload = {
+                  "model": MODEL,
+                  "messages": [{"role": "user", "content": PROMPT}],
+                  "max_tokens": OUTPUT_LEN,
+                  "stream": False,
+              }
+              async with sem:
+                  start = time.perf_counter()
+                  async with session.post(URL, headers=HEADERS, json=payload) as resp:
+                      body = await resp.json()
+                      if resp.status != 200:
+                          raise RuntimeError(f"status={resp.status} body={body}")
+                      if not body.get("choices"):
+                          raise RuntimeError(f"missing choices in response: {body}")
+                  return time.perf_counter() - start
+
+          async def main():
+              sem = asyncio.Semaphore(MAX_CONCURRENCY)
+              timeout = aiohttp.ClientTimeout(total=300)
+              async with aiohttp.ClientSession(timeout=timeout) as session:
+                  t0 = time.perf_counter()
+                  latencies = await asyncio.gather(
+                      *[one(session, sem) for _ in range(NUM_PROMPTS)]
+                  )
+                  wall = time.perf_counter() - t0
+
+              latencies_ms = sorted(r * 1000.0 for r in latencies)
+              summary = {
+                  "backend": "openai-chat",
+                  "endpoint": "/v1/chat/completions",
+                  "stream": False,
+                  "completed": NUM_PROMPTS,
+                  "failed": 0,
+                  "num_prompts": NUM_PROMPTS,
+                  "max_concurrency": MAX_CONCURRENCY,
+                  "random_input_len": INPUT_LEN,
+                  "random_output_len": OUTPUT_LEN,
+                  "wall_time_s": round(wall, 3),
+                  "throughput_rps": round(NUM_PROMPTS / wall, 2),
+                  "e2e_mean_ms": round(statistics.fmean(latencies_ms), 2),
+                  "e2e_p50_ms": round(latencies_ms[len(latencies_ms) // 2], 2),
+                  "e2e_p99_ms": round(latencies_ms[int(len(latencies_ms) * 0.99)], 2),
+              }
+              print(json.dumps(summary, indent=2))
+              with open(RESULT_FILE, "w") as f:
+                  json.dump(summary, f, indent=2)
+
+              step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if step_summary:
+                  with open(step_summary, "a") as f:
+                      f.write(f"## {LABEL}\n\n")
+                      f.write("| Metric | Value |\n")
+                      f.write("|--------|-------|\n")
+                      f.write(f"| **throughput_rps** | {summary['throughput_rps']} |\n")
+                      f.write(f"| **e2e_mean_ms** | {summary['e2e_mean_ms']} |\n")
+                      f.write(f"| **e2e_p50_ms** | {summary['e2e_p50_ms']} |\n")
+                      f.write(f"| **e2e_p99_ms** | {summary['e2e_p99_ms']} |\n")
+                      f.write(f"| **completed** | {summary['completed']} |\n")
+                      f.write(f"| **failed** | {summary['failed']} |\n\n")
+
+          asyncio.run(main())
+          PY
+
       - name: Bench mock backend (structured output - json_object)
         env:
           OPENAI_API_KEY: 'your-secret-key'
@@ -762,6 +855,7 @@ jobs:
           name: cpp-server-bench-results
           path: |
             tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-mock-non-streaming.json
             tt-media-server/vllm-bench-structured-output-json-object.json
             tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
