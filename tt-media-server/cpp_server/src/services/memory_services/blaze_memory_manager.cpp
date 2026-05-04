@@ -17,7 +17,7 @@ void BlazeMemoryManager::handleRequest(
     case domain::MemoryManagementAction::ALLOCATE: {
       auto requestId = nextRequestID++;
       allocating[requestId] = request.taskId;
-      TT_LOG_DEBUG(
+      TT_LOG_CRITICAL(
           "[BlazeMemoryManager] ALLOCATE: taskId={}, assigned "
           "requestId={}, pending allocations={}",
           request.taskId, requestId, allocating.size());
@@ -26,7 +26,7 @@ void BlazeMemoryManager::handleRequest(
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
       for (auto slotId : request.slotIds) {
-        TT_LOG_DEBUG(
+        TT_LOG_CRITICAL(
             "[BlazeMemoryManager] DEALLOCATE: taskId={}, cancelling "
             "slotId={}, then evicting",
             request.taskId, slotId);

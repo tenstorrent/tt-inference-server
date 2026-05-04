@@ -234,6 +234,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  context.tokensGenerated++;
   if (finished) {
     uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
                            context.specAcceptsAtStart;
@@ -241,8 +242,8 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
                            context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
-    TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
-                specAccepts, specTotal, acceptRate);
+    TT_LOG_CRITICAL("slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} is_complete={} ignoreEos={} hitStop={} tokensGenerated={}", output.slot_id,
+                specAccepts, specTotal, acceptRate, taskId, output.token_id, output.is_complete, context.ignoreEos, hitStop, context.tokensGenerated);
     slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();

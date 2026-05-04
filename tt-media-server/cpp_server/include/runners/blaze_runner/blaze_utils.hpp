@@ -63,6 +63,7 @@ struct SlotContext {
   bool ignoreEos;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
+  uint32_t tokensGenerated = 0;
 };
 
 }  // namespace tt::runners::blaze_utils
