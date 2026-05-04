@@ -1395,6 +1395,9 @@ llm_templates = [
                 max_context=32 * 1024,
                 default_impl=True,
                 vllm_args={"config-format": "hf","tokenizer-mode": "hf"},
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": "2", # 4 → 2 (chunks: 4096 → 2048 tokens)                                                                                                                                                                          
+                }, 
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -1402,6 +1405,9 @@ llm_templates = [
                 max_context=32 * 1024,
                 default_impl=True,
                 vllm_args={"config-format": "hf","tokenizer-mode": "hf"},
+                env_vars={
+                    "MAX_PREFILL_CHUNK_SIZE": "2", # 4 → 2 (chunks: 4096 → 2048 tokens)                                                                                                                                                                          
+                }, 
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
