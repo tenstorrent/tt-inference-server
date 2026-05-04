@@ -55,9 +55,7 @@ _REQUIRED_PARAM_KEYS = (
 )
 
 
-def extract_params_from_data(
-    data: Dict[str, Any], filename: str
-) -> Dict[str, Any]:
+def extract_params_from_data(data: Dict[str, Any], filename: str) -> Dict[str, Any]:
     """Pull sweep params out of the result-JSON body.
 
     Replaces the old filename-regex approach: the runner now writes every
@@ -155,9 +153,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
     if data.get("mean_ttft_ms"):
-        tps_prefill_throughput = (
-            params["input_sequence_length"] * actual_max_con
-        ) / (data.get("mean_ttft_ms") / 1000)
+        tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
+            data.get("mean_ttft_ms") / 1000
+        )
     else:
         tps_prefill_throughput = None
 

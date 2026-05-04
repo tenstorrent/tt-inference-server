@@ -171,9 +171,7 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
 
     sections: List[str] = [heading]
     if scalar_cols:
-        sections.append(
-            build_markdown_table(_pivot_single_record(record, scalar_cols))
-        )
+        sections.append(build_markdown_table(_pivot_single_record(record, scalar_cols)))
     for col in subtable_cols:
         rows = record[col]
         sub_columns = _subtable_columns(rows)
