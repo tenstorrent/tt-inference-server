@@ -14,14 +14,11 @@ namespace tt::utils::runner_factory {
 
 namespace {
 
+// Each variant arm exposes `runner_type`, so std::visit picks the right field
+// uniformly. New modality configs only need to declare a `runner_type` member.
 config::ModelRunnerType runnerTypeFromConfig(
-    config::ModelService service, const config::RunnerConfig& config) {
-  if (service == config::ModelService::LLM) {
-    if (auto* llm = std::get_if<config::LLMConfig>(&config)) {
-      return llm->runner_type;
-    }
-  }
-  return config::ModelRunnerType::MOCK;
+    const config::RunnerConfig& config) {
+  return std::visit([](const auto& cfg) { return cfg.runner_type; }, config);
 }
 
 }  // namespace
@@ -33,8 +30,7 @@ std::unique_ptr<runners::IRunner> createRunner(
   // Idempotent; required for callers that bypass service_factory (e.g. tests).
   services::registerBuiltinModelServices();
 
-  const config::ModelRunnerType runnerType =
-      runnerTypeFromConfig(service, config);
+  const config::ModelRunnerType runnerType = runnerTypeFromConfig(config);
 
   auto runner = RunnerRegistry::instance().create(
       service, runnerType, config, resultQueue, taskQueue, cancelQueue);

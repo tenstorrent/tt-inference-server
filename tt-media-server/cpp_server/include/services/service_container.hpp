@@ -10,8 +10,6 @@
 #include "config/types.hpp"
 
 namespace tt::services {
-class LLMService;
-class EmbeddingService;
 class DisaggregationService;
 class SessionManager;
 class IService;
@@ -33,11 +31,9 @@ class ServiceContainer {
     return container;
   }
 
-  /** Wire services created for the active MODEL_SERVICE; pass nullptr for any
-   *  slot not used in the current mode. */
-  void initialize(std::shared_ptr<LLMService> llm,
-                  std::shared_ptr<EmbeddingService> embedding,
-                  std::shared_ptr<sockets::InterServerService> socket,
+  /** Wire auxiliary services that don't belong to a single ModelService.
+   *  The active model service itself is installed via `registerService()`. */
+  void initialize(std::shared_ptr<sockets::InterServerService> socket,
                   std::shared_ptr<DisaggregationService> disaggregation,
                   std::shared_ptr<SessionManager> sessionMgr);
 
