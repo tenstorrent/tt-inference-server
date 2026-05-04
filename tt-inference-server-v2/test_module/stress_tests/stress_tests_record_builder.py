@@ -5,21 +5,23 @@
 import argparse
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
 
-DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 SCHEMA_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+RUNNER_DATE_FORMAT = "%Y%m%d-%H%M%S"
 NOT_MEASURED_STR = "n/a"
 RECORD_KIND = "stress_tests"
 
 
 def _normalize_timestamp(text: str) -> str:
+    """Convert the runner's ``data["date"]`` to the schema's display format."""
     try:
-        return datetime.strptime(text, DATE_STR_FORMAT).strftime(SCHEMA_TIMESTAMP_FORMAT)
+        return datetime.strptime(text, RUNNER_DATE_FORMAT).strftime(
+            SCHEMA_TIMESTAMP_FORMAT
+        )
     except (ValueError, TypeError):
         return text
 
@@ -44,71 +46,44 @@ def parse_args():
     return parser.parse_args()
 
 
-def extract_params_from_filename(filename: str) -> Dict[str, Any]:
-    # First try the image stress_test pattern
-    image_pattern = r"""
-        ^stress_test_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        _images-(?P<images_per_prompt>\d+)
-        _height-(?P<image_height>\d+)
-        _width-(?P<image_width>\d+)
-        \.json$
+_REQUIRED_PARAM_KEYS = (
+    "model_id",
+    "input_sequence_length",
+    "output_sequence_length",
+    "max_concurrency",
+    "num_prompts",
+)
+
+
+def extract_params_from_data(
+    data: Dict[str, Any], filename: str
+) -> Dict[str, Any]:
+    """Pull sweep params out of the result-JSON body.
+
+    Replaces the old filename-regex approach: the runner now writes every
+    sweep param into the body, so the filename is just a label. The
+    aggregator only needs the body. ``filename`` is kept for error
+    messages and for the trailing ``filename`` field on the metric row.
     """
+    missing = [k for k in _REQUIRED_PARAM_KEYS if k not in data]
+    if missing:
+        raise ValueError(
+            f"{filename}: result JSON is missing required keys: {missing}. "
+            "If this came from an older runner, rerun with the updated "
+            "stress_tests_benchmarking_script.py which writes these into "
+            "the body."
+        )
 
-    # Try image pattern first
-    match = re.search(image_pattern, filename, re.VERBOSE)
-    if match:
-        # Extract and convert numeric parameters for image benchmarks
-        params = {
-            "model_name": match.group("model"),
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "images_per_prompt": int(match.group("images_per_prompt")),
-            "image_height": int(match.group("image_height")),
-            "image_width": int(match.group("image_width")),
-            "task_type": "image",
-        }
-        return params
-
-    # Fall back to text stress_test pattern
-    text_pattern = r"""
-        ^stress_test_
-        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
-        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
-        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _isl-(?P<isl>\d+)
-        _osl-(?P<osl>\d+)
-        _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
-        \.json$
-    """
-    match = re.search(text_pattern, filename, re.VERBOSE)
-
-    if match:
-        # Extract and convert numeric parameters for text benchmarks
-        return {
-            "model_name": match.group("model"),
-            "timestamp": match.group("timestamp"),
-            "device": match.group("device"),
-            "input_sequence_length": int(match.group("isl")),
-            "output_sequence_length": int(match.group("osl")),
-            "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
-            "task_type": "text",
-        }
-
-    # If no patterns match, raise error
-    raise ValueError(f"Could not extract parameters from filename: {filename}")
+    return {
+        "model_name": str(data["model_id"]),
+        "timestamp": str(data.get("date", "")),
+        "device": str(data.get("device", "")),
+        "input_sequence_length": int(data["input_sequence_length"]),
+        "output_sequence_length": int(data["output_sequence_length"]),
+        "max_con": int(data["max_concurrency"]),
+        "num_requests": int(data["num_prompts"]),
+        "task_type": str(data.get("task_type", "text")),
+    }
 
 
 def format_metrics(metrics):
@@ -163,7 +138,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         data = json.load(f)
 
     filename = os.path.basename(filepath)
-    params = extract_params_from_filename(filename)
+    params = extract_params_from_data(data, filename)
 
     # Calculate statistics for text/image stress tests
     mean_tpot_ms = data.get("mean_tpot_ms")
@@ -233,13 +208,14 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         "task_type": params["task_type"],
     }
 
-    # Add image-specific parameters if this is an image benchmark
+    # Image-specific params are read straight from the JSON body when an
+    # image stress-test runner emits them.
     if params["task_type"] == "image":
         metrics.update(
             {
-                "images_per_prompt": params["images_per_prompt"],
-                "image_height": params["image_height"],
-                "image_width": params["image_width"],
+                "images_per_prompt": data.get("images_per_prompt"),
+                "image_height": data.get("image_height"),
+                "image_width": data.get("image_width"),
             }
         )
 

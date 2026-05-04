@@ -743,6 +743,8 @@ class StressTests:
             "--save-result",
             "--result-filename",
             str(result_filename),
+            "--device",
+            str(self.test_args.device),
         ]
 
         # Always disable trace capture in subprocesses since we capture upfront

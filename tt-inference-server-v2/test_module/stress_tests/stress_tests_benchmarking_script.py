@@ -690,6 +690,12 @@ async def main():
         action="store_true",
         help="Use server-side tokenization instead of client-side (default: client-side)",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="",
+        help="Device label written into the result JSON (e.g. n300, t3k). The runner itself does not infer it; the orchestrator passes it through.",
+    )
 
     args = parser.parse_args()
 
@@ -772,6 +778,17 @@ async def main():
         result_json["request_rate"] = "inf"
         result_json["burstiness"] = 1.0
         result_json["max_concurrency"] = args.max_concurrency
+
+        # Self-describing run params: previously the orchestrator only encoded
+        # these in the filename (stress_test_..._isl-X_osl-Y_maxcon-Z_n-N.json)
+        # and the aggregator regex-parsed them back out. Writing them into the
+        # body lets the aggregator drop that regex and lets the JSON survive
+        # any future renames or moves.
+        result_json["device"] = args.device
+        result_json["input_sequence_length"] = args.random_input_len
+        result_json["output_sequence_length"] = args.random_output_len
+        result_json["seed"] = args.seed
+        result_json["task_type"] = "text"
 
         # Merge with benchmark result
         result_json = {**result_json, **benchmark_result}
