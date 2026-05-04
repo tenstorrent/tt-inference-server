@@ -408,21 +408,6 @@ struct ChatCompletionRequest : BaseRequest {
             "Duplicate tool response for tool_call_id '" + expectedId +
             "': found " + std::to_string(count) + " responses");
       }
-
-      if (std::find(expectedToolCallIds.begin(), expectedToolCallIds.end(),
-                    expectedId) == expectedToolCallIds.end()) {
-        throw std::invalid_argument("Unknown tool_call_id '" + expectedId +
-                                    "' not found in assistant's tool_calls");
-      }
-    }
-
-    for (const auto& actualId : actualToolCallIds) {
-      if (std::find(expectedToolCallIds.begin(), expectedToolCallIds.end(),
-                    actualId) == expectedToolCallIds.end()) {
-        throw std::invalid_argument("Unknown tool_call_id '" + actualId +
-                                    "' does not match any tool_call in the "
-                                    "assistant's previous message");
-      }
     }
   }
 };
