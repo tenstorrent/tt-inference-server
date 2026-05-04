@@ -18,8 +18,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.workflow_types import ReportCheckTypes
-
+from .._test_common import ReportCheckTypes
 from ..context import MediaContext, common_eval_metadata, require_health
 from ..test_status import CnnGenerationTestStatus
 

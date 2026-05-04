@@ -19,7 +19,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
+from .._test_common import ReportCheckTypes
 from ..context import MediaContext, common_report_metadata, require_health
+from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,38 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
     return _parse_embedding_benchmark_output(output)
 
 
+def _embedding_target_checks(
+    ctx: MediaContext, tput_user: float, tput_prefill: float, e2el_ms: float
+) -> tuple[dict, ReportCheckTypes]:
+    logger.info("Computing 3-tier target checks for tput_user, tput_prefill, e2el_ms")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "tput_user",
+                tput_user,
+                "tput_user",
+                lower_is_better=False,
+                field_name="tput_user",
+            ),
+            MetricSpec(
+                "tput_prefill",
+                tput_prefill,
+                "tput_prefill",
+                lower_is_better=False,
+                field_name="tput_prefill",
+            ),
+            MetricSpec(
+                "e2el_ms",
+                e2el_ms,
+                "e2el_ms",
+                lower_is_better=True,
+                field_name="e2el_ms",
+            ),
+        ],
+    )
+
+
 def run_embedding_benchmark(ctx: MediaContext) -> dict:
     """Run benchmarks for an embedding model."""
     logger.info(
@@ -124,16 +158,22 @@ def run_embedding_benchmark(ctx: MediaContext) -> dict:
     tput_prefill = (
         total_input_tokens / benchmark_duration if benchmark_duration else 0.0
     )
+    tput_user = tput_prefill / float(concurrency) if concurrency else 0.0
+    target_checks, accuracy_check = _embedding_target_checks(
+        ctx, tput_user, tput_prefill, mean_e2el
+    )
 
     report_data = common_report_metadata(ctx, "embedding")
     report_data["benchmarks"] = {
         "isl": isl,
         "concurrency": concurrency,
         "num_requests": successful_requests + failed_requests,
-        "tput_user": tput_prefill / float(concurrency) if concurrency else 0.0,
+        "tput_user": tput_user,
         "tput_prefill": tput_prefill,
         "e2el": mean_e2el,
         "req_tput": req_tput,
+        "accuracy_check": accuracy_check,
+        "target_checks": target_checks,
     }
 
     return report_data

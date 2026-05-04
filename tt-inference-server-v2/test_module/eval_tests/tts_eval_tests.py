@@ -20,9 +20,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from workflows.utils import get_num_calls
-from workflows.utils_report import get_performance_targets
-from workflows.workflow_types import ReportCheckTypes
 
+from .._test_common import ReportCheckTypes
+from ..benchmark_tests._target_check import MetricSpec, run_tiered_check
 from ..context import MediaContext, common_eval_metadata, require_health
 from ..test_status import TtsTestStatus
 
@@ -190,60 +190,23 @@ def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]
     return status_list
 
 
-def _tts_performance_check(
+def _tts_target_checks(
     ctx: MediaContext,
     ttft_value: Optional[float],
     rtr_value: Optional[float],
-) -> ReportCheckTypes:
-    logger.info("Calculating performance check based on TTFT, RTR targets")
-
-    device_str = ctx.model_spec.cli_args.get("device")
-    targets = get_performance_targets(
-        ctx.model_spec.model_name,
-        device_str,
-        model_type=ctx.model_spec.model_type.name,
+) -> tuple[dict, ReportCheckTypes]:
+    logger.info("Computing 3-tier performance target checks for TTFT, RTR")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "TTFT", ttft_value, "ttft_ms", lower_is_better=True, field_name="ttft"
+            ),
+            MetricSpec(
+                "RTR", rtr_value, "rtr", lower_is_better=False, field_name="rtr"
+            ),
+        ],
     )
-    logger.info(f"Performance targets: {targets}")
-
-    if not targets.ttft_ms:
-        logger.warning("⚠️ No TTFT target found, skipping performance check")
-        return ReportCheckTypes.NA
-
-    tolerance = targets.tolerance if targets.tolerance else 0.05
-    logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-    checks_passed = 0
-    checks_total = 0
-
-    if targets.ttft_ms is not None:
-        checks_total += 1
-        threshold = targets.ttft_ms * (1 + tolerance)
-        if ttft_value <= threshold:
-            logger.info(f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {threshold:.2f}ms")
-            checks_passed += 1
-        else:
-            logger.warning(f"❌ TTFT FAILED: {ttft_value:.2f}ms > {threshold:.2f}ms")
-
-    if targets.rtr is not None:
-        checks_total += 1
-        threshold = targets.rtr * (1 - tolerance)
-        if rtr_value >= threshold:
-            logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {threshold:.2f}")
-            checks_passed += 1
-        else:
-            logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {threshold:.2f}")
-
-    if checks_total == 0:
-        logger.warning("⚠️ No metrics available for validation")
-        return ReportCheckTypes.NA
-    if checks_passed == checks_total:
-        logger.info(f"✅ All {checks_total} performance checks passed")
-        return ReportCheckTypes.PASS
-
-    logger.warning(
-        f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
-    )
-    return ReportCheckTypes.FAIL
 
 
 def run_tts_eval(ctx: MediaContext) -> dict:
@@ -278,9 +241,9 @@ def run_tts_eval(ctx: MediaContext) -> dict:
     benchmark_data["rtr"] = rtr_value
     benchmark_data["p90_ttft"] = p90_ttft
     benchmark_data["p95_ttft"] = p95_ttft
-    benchmark_data["performance_check"] = _tts_performance_check(
-        ctx, ttft_value, rtr_value
-    )
+    target_checks, performance_check = _tts_target_checks(ctx, ttft_value, rtr_value)
+    benchmark_data["performance_check"] = performance_check
+    benchmark_data["target_checks"] = target_checks
     # No quality metric implemented yet for TTS; always reports N/A.
     benchmark_data["accuracy_check"] = ReportCheckTypes.NA
 

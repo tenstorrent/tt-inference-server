@@ -61,6 +61,7 @@ scripts/examples/example_data
 !server_tests/server_tests_config.json
 !server_tests/test_suites/*.json
 !benchmarking/benchmark_targets/*.json
+!tt-inference-server-v2/test_module/benchmark_tests/targets/*.json
 !release_model_spec.json
 !tt-media-server/static/demos/images.json
 !tt-media-server/monitoring/grafana/**/*.json

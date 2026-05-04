@@ -20,9 +20,10 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from workflows.utils import get_num_calls
-
+from .._test_common import ReportCheckTypes
 from ..context import MediaContext, common_report_metadata, require_health
 from ..test_status import TtsTestStatus
+from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,27 @@ def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> float:
     return sum(valid) / len(valid) if valid else 0.0
 
 
+def _tts_target_checks(
+    ctx: MediaContext, ttft_ms_value: float, rtr_value: float
+) -> tuple[dict, ReportCheckTypes]:
+    logger.info("Computing 3-tier target checks for TTFT, RTR")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "TTFT",
+                ttft_ms_value,
+                "ttft_ms",
+                lower_is_better=True,
+                field_name="ttft",
+            ),
+            MetricSpec(
+                "RTR", rtr_value, "rtr", lower_is_better=False, field_name="rtr"
+            ),
+        ],
+    )
+
+
 def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
     logger.info("Calculating tail latency (P90, P95)")
     if not status_list:
@@ -206,6 +228,7 @@ def run_tts_benchmark(ctx: MediaContext) -> dict:
     ttft_value = _tts_avg(status_list, "ttft_ms")
     rtr_value = _tts_avg(status_list, "rtr")
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
+    target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     report_data = common_report_metadata(ctx, "tts")
     report_data["benchmarks"] = {
@@ -214,6 +237,8 @@ def run_tts_benchmark(ctx: MediaContext) -> dict:
         "rtr": rtr_value,
         "ttft_p90": p90_ttft / 1000,
         "ttft_p95": p95_ttft / 1000,
+        "accuracy_check": accuracy_check,
+        "target_checks": target_checks,
     }
 
     return report_data
