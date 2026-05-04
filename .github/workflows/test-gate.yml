@@ -637,24 +637,35 @@ jobs:
               timeout = aiohttp.ClientTimeout(total=300)
               async with aiohttp.ClientSession(timeout=timeout) as session:
                   t0 = time.perf_counter()
-                  latencies = await asyncio.gather(
-                      *[one(session, sem) for _ in range(NUM_PROMPTS)]
+                  results = await asyncio.gather(
+                      *[one(session, sem) for _ in range(NUM_PROMPTS)],
+                      return_exceptions=True,
                   )
                   wall = time.perf_counter() - t0
+
+              latencies = [r for r in results if not isinstance(r, BaseException)]
+              errors = [repr(r) for r in results if isinstance(r, BaseException)]
+              completed = len(latencies)
+              failed = len(errors)
+              for err in errors[:5]:
+                  print(f"request error: {err}")
+
+              if not latencies:
+                  raise RuntimeError(f"all {NUM_PROMPTS} requests failed")
 
               latencies_ms = sorted(r * 1000.0 for r in latencies)
               summary = {
                   "backend": "openai-chat",
                   "endpoint": "/v1/chat/completions",
                   "stream": False,
-                  "completed": NUM_PROMPTS,
-                  "failed": 0,
+                  "completed": completed,
+                  "failed": failed,
                   "num_prompts": NUM_PROMPTS,
                   "max_concurrency": MAX_CONCURRENCY,
                   "random_input_len": INPUT_LEN,
                   "random_output_len": OUTPUT_LEN,
                   "wall_time_s": round(wall, 3),
-                  "throughput_rps": round(NUM_PROMPTS / wall, 2),
+                  "throughput_rps": round(completed / wall, 2),
                   "e2e_mean_ms": round(statistics.fmean(latencies_ms), 2),
                   "e2e_p50_ms": round(latencies_ms[len(latencies_ms) // 2], 2),
                   "e2e_p99_ms": round(latencies_ms[int(len(latencies_ms) * 0.99)], 2),
@@ -819,8 +830,65 @@ jobs:
             } >> $GITHUB_STEP_SUMMARY
           }
 
+          # Non-streaming benches expose end-to-end latency (no TTFT/TPOT),
+          # so they need their own threshold helper.
+          check_non_streaming_thresholds() {
+            local LABEL="$1" FILE="$2" P99_LIMIT="$3" MEAN_LIMIT="$4" RPS_FLOOR="$5"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+
+            local COMPLETED FAILED_REQ E2E_P99_MS E2E_MEAN_MS THROUGHPUT_RPS
+            COMPLETED=$(jq -r       '.completed      // 0' "$FILE")
+            FAILED_REQ=$(jq -r      '.failed         // 0' "$FILE")
+            E2E_P99_MS=$(jq -r      '.e2e_p99_ms     // 0' "$FILE")
+            E2E_MEAN_MS=$(jq -r     '.e2e_mean_ms    // 0' "$FILE")
+            THROUGHPUT_RPS=$(jq -r  '.throughput_rps // 0' "$FILE")
+
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              FAIL=1
+            fi
+
+            if ! python3 -c "exit(0 if float('$E2E_P99_MS') <= $P99_LIMIT else 1)"; then
+              echo "❌ [$LABEL] e2e_p99_ms $E2E_P99_MS exceeds threshold ${P99_LIMIT}ms"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] e2e_p99_ms $E2E_P99_MS exceeds threshold ${P99_LIMIT}ms"
+              FAIL=1
+            fi
+            if ! python3 -c "exit(0 if float('$E2E_MEAN_MS') <= $MEAN_LIMIT else 1)"; then
+              echo "❌ [$LABEL] e2e_mean_ms $E2E_MEAN_MS exceeds threshold ${MEAN_LIMIT}ms"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] e2e_mean_ms $E2E_MEAN_MS exceeds threshold ${MEAN_LIMIT}ms"
+              FAIL=1
+            fi
+            if ! python3 -c "exit(0 if float('$THROUGHPUT_RPS') >= $RPS_FLOOR else 1)"; then
+              echo "❌ [$LABEL] throughput_rps $THROUGHPUT_RPS below floor ${RPS_FLOOR}"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] throughput_rps $THROUGHPUT_RPS below floor ${RPS_FLOOR}"
+              FAIL=1
+            fi
+
+            {
+              echo "## $LABEL"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **e2e_p99_ms** | $E2E_P99_MS | ≤ ${P99_LIMIT}ms |"
+              echo "| **e2e_mean_ms** | $E2E_MEAN_MS | ≤ ${MEAN_LIMIT}ms |"
+              echo "| **throughput_rps** | $THROUGHPUT_RPS | ≥ ${RPS_FLOOR} |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+
           check_thresholds "C++ Server vLLM Bench (mock)" \
             "vllm-bench-mock.json" 1 150
+
+          check_non_streaming_thresholds "C++ Server vLLM Bench (mock, non-streaming)" \
+            "vllm-bench-mock-non-streaming.json" 250 100 500
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
             "vllm-bench-structured-output-json-object.json" 5 150
