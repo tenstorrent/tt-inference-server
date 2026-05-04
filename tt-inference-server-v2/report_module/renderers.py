@@ -124,6 +124,24 @@ def _pivot_single_record(
     ]
 
 
+def _is_subtable(value: Any) -> bool:
+    """A value worth rendering as its own table: a non-empty list of dicts."""
+    return (
+        isinstance(value, list)
+        and len(value) > 0
+        and all(isinstance(v, Mapping) for v in value)
+    )
+
+
+def _subtable_columns(rows: Sequence[Mapping[str, Any]]) -> List[str]:
+    seen: Dict[str, None] = {}
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen[key] = None
+    return list(seen.keys())
+
+
 def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     records = _extract_records(block)
     if not records:
@@ -133,18 +151,39 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     if not columns:
         return ""
 
-    if len(records) == 1:
-        display_rows = _pivot_single_record(records[0], columns)
-    else:
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(block.kind, model, device, block.title or "")
+
+    if len(records) != 1:
         display_rows = [
             {col: format_value(record.get(col)) for col in columns}
             for record in records
         ]
+        return f"{heading}\n\n{build_markdown_table(display_rows)}"
 
-    model, device = _resolve_model_device(block, metadata, records)
-    heading = _heading(block.kind, model, device, block.title or "")
-    table = build_markdown_table(display_rows)
-    return f"{heading}\n\n{table}"
+    # Single-record path: render scalar fields as a field/value pivot, and
+    # promote any list-of-dicts field to its own sub-section with a real
+    # table — record builders (e.g. stress_tests) rely on this to surface
+    # per-config sub-tables instead of a single 40-column row.
+    record = records[0]
+    scalar_cols = [col for col in columns if not _is_subtable(record.get(col))]
+    subtable_cols = [col for col in columns if _is_subtable(record.get(col))]
+
+    sections: List[str] = [heading]
+    if scalar_cols:
+        sections.append(
+            build_markdown_table(_pivot_single_record(record, scalar_cols))
+        )
+    for col in subtable_cols:
+        rows = record[col]
+        sub_columns = _subtable_columns(rows)
+        display_rows = [
+            {sc: format_value(row.get(sc)) for sc in sub_columns} for row in rows
+        ]
+        sections.append(f"#### {col}")
+        sections.append(build_markdown_table(display_rows))
+
+    return "\n\n".join(s for s in sections if s)
 
 
 for _kind in GENERIC_KINDS:
