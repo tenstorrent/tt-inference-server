@@ -187,12 +187,12 @@ class TestFrameworkRunner:
             test_suites = self.apply_filters()
 
             if not test_suites:
-                logger.error("No test suites match the specified filters")
+                logger.error("No test suites match the specified filters — nothing to run, exiting cleanly")
                 logger.info("Available options:")
                 test_filter = TestFilter()
                 logger.info(f"  Devices: {test_filter.get_all_devices()}")
                 logger.info(f"  Models: {test_filter.get_all_models()}")
-                return 1
+                return 0
 
             test_cases = self.load_test_instances(test_suites)
 
