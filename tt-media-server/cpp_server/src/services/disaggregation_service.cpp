@@ -7,6 +7,7 @@
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
+#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -91,6 +92,26 @@ void DisaggregationService::setupSocketHandlers() {
   }
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    // If the prefill runner (worker subprocess) dies, the inter-server
+    // socket would otherwise stay open and the decode server would keep
+    // sending prefill requests that go nowhere.  Drop the socket so the
+    // decode server's connection-lost handler fails in-flight streams
+    // with an error instead of hanging.
+    auto* workerManager = llmService->getWorkerManager();
+    if (workerManager != nullptr) {
+      auto socketServiceCopy = socketService;
+      workerManager->setWorkerDeathCallback(
+          [socketServiceCopy](size_t workerIdx, pid_t pid) {
+            TT_LOG_ERROR(
+                "[DisaggregationService] Prefill runner (worker {}, PID {}) "
+                "is down; disconnecting inter-server socket",
+                workerIdx, pid);
+            if (socketServiceCopy) {
+              socketServiceCopy->stop();
+            }
+          });
+    }
+
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
           auto request = domain::LLMRequest(message.task_id);
