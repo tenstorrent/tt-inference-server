@@ -1431,7 +1431,7 @@ llm_templates = [
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
                     "mm_processor_cache_gb": 0,
-                    "hf_overrides": json.dumps({"architectures": ["Mistral3ForConditionalGeneration"]}),
+                    "config_format": "hf",
                     "tokenizer_mode": "hf",
                 },
             ),
