@@ -92,23 +92,17 @@ void DisaggregationService::setupSocketHandlers() {
   }
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    // If the prefill runner (worker subprocess) dies, the inter-server
-    // socket would otherwise stay open and the decode server would keep
-    // sending prefill requests that go nowhere.  Drop the socket so the
-    // decode server's connection-lost handler fails in-flight streams
-    // with an error instead of hanging.
-    auto* workerManager = llmService->getWorkerManager();
-    if (workerManager != nullptr) {
-      auto socketServiceCopy = socketService;
+    // On prefill runner death, drop the inter-server socket so the decode
+    // side's connection-lost handler can fail in-flight streams instead of
+    // hanging on requests nobody can answer.
+    if (auto* workerManager = llmService->getWorkerManager()) {
       workerManager->setWorkerDeathCallback(
-          [socketServiceCopy](size_t workerIdx, pid_t pid) {
+          [socket = socketService](size_t workerIdx, pid_t pid) {
             TT_LOG_ERROR(
                 "[DisaggregationService] Prefill runner (worker {}, PID {}) "
                 "is down; disconnecting inter-server socket",
                 workerIdx, pid);
-            if (socketServiceCopy) {
-              socketServiceCopy->stop();
-            }
+            socket->stop();
           });
     }
 

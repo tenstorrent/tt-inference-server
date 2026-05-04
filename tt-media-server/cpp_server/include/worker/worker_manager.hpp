@@ -24,35 +24,30 @@ class IWarmupSignalQueue;
 namespace tt::worker {
 
 /**
+ * Result of polling a worker process for liveness.  `transitionedToDead` is
+ * set on (and only on) the call that flips `aliveFlag` from true to false,
+ * giving callers an exactly-once hook for crash handling.
+ */
+struct ProcessLivenessTransition {
+  bool stillAlive;
+  bool transitionedToDead;
+};
+
+/**
+ * Reap the worker process if it has exited and update `aliveFlag` accordingly.
+ * Logs the cause of death (signal / exit code) at the appropriate severity.
+ */
+ProcessLivenessTransition pollProcessLiveness(pid_t pid,
+                                              std::atomic<bool>& aliveFlag,
+                                              size_t workerIdx);
+
+/**
  * Manages worker process lifecycle: spawning, warmup signaling, crash detection
  * and restart.
  *
  * Validates configuration at construction time -- throws std::invalid_argument
  * if numWorkers < 1 with a message guiding the operator to fix DEVICE_IDS.
  */
-/**
- * Result of polling a worker process for liveness.  Returned by
- * pollProcessLiveness() so callers can react to the alive -> dead transition
- * exactly once.
- */
-struct ProcessLivenessTransition {
-  bool stillAlive;          ///< True if the process is still running.
-  bool transitionedToDead;  ///< True iff this call observed alive -> dead.
-};
-
-/**
- * Reap the worker process if it has exited and update `aliveFlag` accordingly.
- * Logs the cause of death (signal / exit code) at the appropriate severity.
- *
- * Pure with respect to WorkerManager state: callers wire the death callback
- * separately based on the returned transition flag.  Extracted so that the
- * waitpid + bookkeeping logic can be unit-tested without spinning up a real
- * worker subprocess.
- */
-ProcessLivenessTransition pollProcessLiveness(pid_t pid,
-                                              std::atomic<bool>& aliveFlag,
-                                              size_t workerIdx);
-
 class WorkerManager {
  public:
   explicit WorkerManager(size_t numWorkers);
