@@ -43,29 +43,56 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
   ResponseFormatType formatType = params.response_format_type;
   std::optional<std::string> schemaStr = params.json_schema_str;
 
-  if (params.tool_choice.has_value() &&
-      params.tool_choice->type == "function" &&
-      params.tool_choice->function.has_value() && params.tools.has_value()) {
-    const auto& functionName = params.tool_choice->function.value();
-    for (const auto& tool : params.tools.value()) {
-      if (tool.functionDefinition.name == functionName) {
-        formatType = ResponseFormatType::JSON_SCHEMA;
+  if (params.tool_choice.has_value() && params.tools.has_value()) {
+    if (params.tool_choice->type == "function" &&
+        params.tool_choice->function.has_value()) {
+      const auto& functionName = params.tool_choice->function.value();
+      for (const auto& tool : params.tools.value()) {
+        if (tool.functionDefinition.name == functionName) {
+          formatType = ResponseFormatType::JSON_SCHEMA;
 
-        Json::Value wrappedSchema;
-        wrappedSchema["type"] = "object";
+          Json::Value wrappedSchema;
+          wrappedSchema["type"] = "object";
 
-        wrappedSchema["properties"]["name"]["const"] =
-            tool.functionDefinition.name;
-        wrappedSchema["properties"]["arguments"] =
-            tool.functionDefinition.parameters;
-        wrappedSchema["properties"]["arguments"]["additionalProperties"] =
-            false;
-        wrappedSchema["required"].append("name");
-        wrappedSchema["required"].append("arguments");
+          wrappedSchema["properties"]["name"]["const"] =
+              tool.functionDefinition.name;
+          wrappedSchema["properties"]["arguments"] =
+              tool.functionDefinition.parameters;
+          wrappedSchema["properties"]["arguments"]["additionalProperties"] =
+              false;
+          wrappedSchema["required"].append("name");
+          wrappedSchema["required"].append("arguments");
 
-        schemaStr = wrappedSchema.toStyledString();
-        break;
+          Json::StreamWriterBuilder builder;
+          builder["indentation"] = "";
+          schemaStr = Json::writeString(builder, wrappedSchema);
+          break;
+        }
       }
+    } else if (params.tool_choice->type == "required") {
+      formatType = ResponseFormatType::JSON_SCHEMA;
+
+      Json::Value wrappedSchema;
+      wrappedSchema["type"] = "object";
+
+      Json::Value anyOfSchema(Json::arrayValue);
+      for (const auto& tool : params.tools.value()) {
+        Json::Value toolSchema;
+        toolSchema["properties"]["name"]["const"] =
+            tool.functionDefinition.name;
+        toolSchema["properties"]["arguments"] =
+            tool.functionDefinition.parameters;
+        toolSchema["properties"]["arguments"]["additionalProperties"] = false;
+        toolSchema["required"].append("name");
+        toolSchema["required"].append("arguments");
+
+        anyOfSchema.append(toolSchema);
+      }
+
+      wrappedSchema["anyOf"] = anyOfSchema;
+      Json::StreamWriterBuilder builder;
+      builder["indentation"] = "";
+      schemaStr = Json::writeString(builder, wrappedSchema);
     }
   }
 
