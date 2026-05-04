@@ -19,6 +19,7 @@
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/service_container.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -47,6 +48,7 @@ LLMController::LLMController() {
   service = c.llm();
   disaggregationService = c.disaggregation();
   sessionManager = c.sessionManager();
+  socketService = c.socket();
 
   if (!service) {
     throw std::runtime_error(
@@ -367,8 +369,29 @@ void LLMController::handleStreaming(
                   "[LLMController] Using disaggregated prefill for request "
                   "with sessionId: {}",
                   reqPtr->sessionId.value_or("none"));
-              disaggregationService->handleStreamingRequest(*reqPtr,
-                                                            streamingCallback);
+              try {
+                disaggregationService->handleStreamingRequest(
+                    *reqPtr, streamingCallback);
+              } catch (const std::exception& e) {
+                if (reqPtr->prompt_tokens_count >=
+                    static_cast<int>(
+                        tt::config::maxTokensToPrefillOnDecode())) {
+                  TT_LOG_ERROR(
+                      "[LLMController] Disaggregated prefill failed: {}; "
+                      "prompt too "
+                      "large ({} tokens) to fall back to prefill-on-decode",
+                      e.what(), reqPtr->prompt_tokens_count);
+                  (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
+                                      "internal_error"));
+                  return;
+                }
+                TT_LOG_ERROR(
+                    "[LLMController] Disaggregated prefill failed: {}, falling "
+                    "back "
+                    "to prefill-on-decode",
+                    e.what());
+                service->submitStreamingRequest(*reqPtr, streamingCallback);
+              }
             }
           } else {
             (*cb)(errorResponse(
@@ -407,6 +430,17 @@ void LLMController::handleStreaming(
 bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
                                             bool validSessionFound) const {
   if (validSessionFound) {
+    return true;
+  }
+
+  // In disaggregated decode mode, fall back to running prefill locally if the
+  // prefill server socket is unavailable — otherwise the request would be sent
+  // to a peer that cannot service it.
+  if (!socketService || !socketService->isConnected()) {
+    TT_LOG_WARN(
+        "[LLMController] Prefill server not connected; falling back to "
+        "prefill on decode for taskId={}",
+        request.task_id);
     return true;
   }
 

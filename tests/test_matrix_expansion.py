@@ -794,7 +794,10 @@ class TestEmbeddingMatrixExpansion:
         suite_map = {s["id"]: s for s in suites}
 
         assert suite_map["bge-n150"]["weights"] == ["bge-large-en-v1.5"]
-        assert suite_map["qwen3-emb-8b-t3k"]["weights"] == ["Qwen3-Embedding-8B"]
+        assert suite_map["qwen3-emb-8b-t3k"]["weights"] == [
+            "Qwen3-Embedding-8B",
+            "Qwen3-Embedding-4B",
+        ]
 
 
 class TestTtsMatrixExpansion:
