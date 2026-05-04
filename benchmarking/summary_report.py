@@ -1103,43 +1103,58 @@ def render_structured_output_sections(
     device: str,
     source_label: str = "",
 ) -> List[str]:
-    """Render one markdown section per (dataset, ratio) group of structured-output results.
+    """Render a single combined markdown section for structured-output results.
 
-    Reuses create_display_dict() so columns match the standard text table.
-    correct_rate is surfaced as a footnote line under the title.
+    Deduplicates per (dataset, ratio) by keeping the latest run by timestamp,
+    then emits one table covering all groups so they can be compared
+    side-by-side. Dataset, SO Ratio, and Correct Rate appear as columns
+    alongside the standard performance metrics.
     """
     if not structured_results:
         return []
 
-    grouped: Dict[Tuple[str, float], List[Dict[str, Any]]] = {}
+    latest_by_key: Dict[Tuple[str, float], Dict[str, Any]] = {}
     for r in structured_results:
         key = (r.get("dataset", ""), r.get("structured_output_ratio"))
-        grouped.setdefault(key, []).append(r)
+        existing = latest_by_key.get(key)
+        if existing is None or str(r.get("timestamp", "")) > str(
+            existing.get("timestamp", "")
+        ):
+            latest_by_key[key] = r
 
-    prefix = f"{source_label} " if source_label else ""
-    sections = []
-    for (dataset, ratio), rows in sorted(
-        grouped.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0.0)
-    ):
-        display_rows = [create_display_dict(r) for r in rows]
-        table_md = get_markdown_table(display_rows)
-        title = (
-            f"#### {prefix}Structured Output Performance Benchmark Sweeps "
-            f"— dataset={dataset}, ratio={ratio} for {model_name} on {device}"
-        )
-        # correct_rate is per-run; show all rows' values as a footnote line.
-        correct_rates = [r.get("correct_rate_pct") for r in rows]
-        correct_rate_strs = [
-            f"{cr:g}%" if isinstance(cr, (int, float)) else str(cr)
-            for cr in correct_rates
-            if cr is not None and cr != NOT_MEASURED_STR
-        ]
-        if correct_rate_strs:
-            footnote = f"\n\nCorrect rate: {', '.join(correct_rate_strs)}"
+    sorted_keys = sorted(
+        latest_by_key.keys(),
+        key=lambda kv: (kv[0], kv[1] if kv[1] is not None else 0.0),
+    )
+
+    display_rows: List[Dict[str, str]] = []
+    for key in sorted_keys:
+        r = latest_by_key[key]
+        ratio = r.get("structured_output_ratio")
+        ratio_str = f"{ratio:.1f}" if isinstance(ratio, (int, float)) else str(ratio)
+        cr = r.get("correct_rate_pct")
+        if isinstance(cr, (int, float)):
+            cr_str = f"{cr:g}%"
+        elif cr in (None, NOT_MEASURED_STR):
+            cr_str = NOT_MEASURED_STR
         else:
-            footnote = ""
-        sections.append(f"{title}\n\n{table_md}{footnote}")
-    return sections
+            cr_str = str(cr)
+
+        row = {
+            "Dataset": str(r.get("dataset", "")),
+            "SO Ratio": ratio_str,
+        }
+        row.update(create_display_dict(r))
+        row["Correct Rate"] = cr_str
+        display_rows.append(row)
+
+    table_md = get_markdown_table(display_rows)
+    prefix = f"{source_label} " if source_label else ""
+    title = (
+        f"#### {prefix}Structured Output Performance Benchmark Sweeps "
+        f"for {model_name} on {device}"
+    )
+    return [f"{title}\n\n{table_md}"]
 
 
 def save_markdown_table(
