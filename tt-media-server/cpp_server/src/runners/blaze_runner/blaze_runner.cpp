@@ -253,11 +253,21 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
                            context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
-    TT_LOG_CRITICAL("slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} is_complete={} ignoreEos={} hitStop={} tokensGenerated={}", output.slot_id,
-                specAccepts, specTotal, acceptRate, taskId, output.token_id, output.is_complete, context.ignoreEos, hitStop, context.tokensGenerated);
+    TT_LOG_CRITICAL(
+        "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
+        "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
+        output.slot_id, specAccepts, specTotal, acceptRate, taskId,
+        output.token_id, output.is_complete, context.ignoreEos, hitStop,
+        context.tokensGenerated);
     slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
+  }
+
+  if (output.token_id == 128799 || output.token_id == 128798) {
+    TT_LOG_DEBUG(
+        "[Blaze Runner]: <think> or </think> for taskId={} - got token_id={}",
+        taskId, output.token_id);
   }
 }
 
