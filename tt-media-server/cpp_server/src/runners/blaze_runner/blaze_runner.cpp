@@ -145,7 +145,6 @@ bool BlazeRunner::warmup() {
     return false;
   }
 
-  TT_LOG_INFO("BlazeRunner: Warmup successful");
   pipelineManager->push_request(
       utils::makeCancelRequest(WARMUP_CANCEL_REQUEST_ID, slotId));
   // Drain the CANCEL ack so the first run() step doesn't see an unknown
@@ -154,6 +153,7 @@ bool BlazeRunner::warmup() {
   while (!pipelineManager->try_pop_response(cancelResponse)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  TT_LOG_INFO("BlazeRunner: Warmup successful");
   return true;
 }
 
