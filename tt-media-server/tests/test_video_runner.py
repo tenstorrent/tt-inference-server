@@ -22,9 +22,6 @@ mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
 sys.modules["telemetry.telemetry_client"] = Mock()
-sys.modules["utils.logger"] = Mock()
-sys.modules["utils.logger"].TTLogger = Mock(return_value=Mock())
-
 from ipc.video_shm import VideoRequest, VideoStatus
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -214,7 +211,13 @@ class TestAttachMpiComm:
 
 
 class TestRunInferenceLoop:
-    def test_rank0_successful_inference(self):
+    def test_rank0_successful_inference_enqueues_for_encoder(self):
+        """Successful inference on rank 0 hands frames off to the encoder
+        queue. The inference loop itself must never write to ``output_shm``
+        or call ``export_to_mp4`` — the encoder thread is the sole writer.
+        """
+        import queue as _queue
+
         import tt_model_runners.video_runner as vr
 
         vr._shutdown = False
@@ -229,22 +232,26 @@ class TestRunInferenceLoop:
 
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.return_value = req
-        mock_output_shm = MagicMock()
 
-        mock_vm = MagicMock()
-        mock_vm.export_to_mp4.return_value = "/tmp/videos/out.mp4"
+        encode_queue: _queue.Queue = _queue.Queue()
 
-        with patch("utils.video_manager.VideoManager", return_value=mock_vm):
-            _run_inference_loop(mock_comm, mock_runner, mock_input_shm, mock_output_shm)
+        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, encode_queue)
 
         mock_runner.run.assert_called_once()
-        mock_vm.export_to_mp4.assert_called_once_with(mock_frames)
-        mock_output_shm.write_response.assert_called_once()
-        resp = mock_output_shm.write_response.call_args[0][0]
-        assert resp.status == VideoStatus.SUCCESS
-        assert resp.file_path == "/tmp/videos/out.mp4"
 
-    def test_rank0_inference_error_writes_error(self):
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.frames is mock_frames
+        assert job.error is None
+
+    def test_rank0_inference_error_enqueues_error_job(self):
+        """Inference failure on rank 0 enqueues an error job; the encoder
+        thread is the single writer of ``output_shm`` for both success and
+        error paths, which preserves FIFO ordering under all failure modes.
+        """
+        import queue as _queue
+
         import tt_model_runners.video_runner as vr
 
         vr._shutdown = False
@@ -258,16 +265,20 @@ class TestRunInferenceLoop:
 
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.return_value = req
-        mock_output_shm = MagicMock()
 
-        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, mock_output_shm)
+        encode_queue: _queue.Queue = _queue.Queue()
 
-        mock_output_shm.write_response.assert_called_once()
-        resp = mock_output_shm.write_response.call_args[0][0]
-        assert resp.status == VideoStatus.ERROR
-        assert "inference exploded" in resp.error_message
+        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, encode_queue)
+
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.frames is None
+        assert "inference exploded" in job.error
 
     def test_none_request_breaks_loop(self):
+        import queue as _queue
+
         import tt_model_runners.video_runner as vr
 
         vr._shutdown = False
@@ -278,13 +289,14 @@ class TestRunInferenceLoop:
         mock_runner = MagicMock()
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.return_value = None
-        mock_output_shm = MagicMock()
 
-        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, mock_output_shm)
+        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, _queue.Queue())
 
         mock_runner.run.assert_not_called()
 
     def test_nonrank0_participates_in_inference(self):
+        """Non-rank-0 ranks contribute to distributed inference but never
+        touch SHM or the encoder queue."""
         import tt_model_runners.video_runner as vr
 
         vr._shutdown = False
@@ -361,7 +373,7 @@ class TestRunAllRanks:
         mock_input_shm = MagicMock()
         mock_output_shm = MagicMock()
 
-        def _raise_interrupt(comm, runner, ishm, oshm):
+        def _raise_interrupt(comm, runner, ishm, encode_queue):
             raise KeyboardInterrupt()
 
         env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "0"}

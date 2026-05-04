@@ -9,7 +9,7 @@
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "runners/llm_runner/model_runner.hpp"
-#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/schedulers/scheduler.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::services {
@@ -20,6 +20,7 @@ namespace tt::runners {
 
 class GuidedDecoderManager;
 using namespace tt::runners::llm_engine;
+using namespace tt::runners::schedulers;
 
 class LLMRunner : public IRunner {
  public:
