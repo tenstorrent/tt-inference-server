@@ -76,11 +76,12 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
   if (request.tool_choice.has_value()) {
     const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function" && type != "required") {
-      throw std::invalid_argument(
-          "tool_choice='" + type +
-          "' is not yet supported by this server; only 'auto', 'none', 'required', and "
-          "'function' are currently implemented");
+    if (type != "auto" && type != "none" && type != "function" &&
+        type != "required") {
+      throw std::invalid_argument("tool_choice='" + type +
+                                  "' is not yet supported by this server; only "
+                                  "'auto', 'none', 'required', and "
+                                  "'function' are currently implemented");
     }
 
     // Validate named function call

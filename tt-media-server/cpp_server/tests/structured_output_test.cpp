@@ -480,8 +480,9 @@ TEST(GuidedDecodingTest, ToolChoiceRequiredEnablesGuidedDecoding) {
   EXPECT_EQ(llmReq.tools->size(), 2);
 
   // When tool_choice.type == "required", the GuidedDecoderManager should
-  // enable guided decoding using an anyOf schema with all tool parameter schemas
-  // This is verified in the GuidedDecoderManager::initRequest implementation
+  // enable guided decoding using an anyOf schema with all tool parameter
+  // schemas This is verified in the GuidedDecoderManager::initRequest
+  // implementation
 }
 
 }  // namespace
