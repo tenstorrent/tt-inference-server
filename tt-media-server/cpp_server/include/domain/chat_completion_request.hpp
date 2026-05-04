@@ -18,6 +18,7 @@
 #include "domain/response_format.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
@@ -90,6 +91,9 @@ struct ChatCompletionRequest : BaseRequest {
 
   // When false, reasoning models skip chain-of-thought (e.g. DeepSeek-R1).
   bool enable_reasoning = true;
+
+  // When true, skip adding <bos><user> and <assistant> tags in chat template.
+  bool skip_apply_chat_template = false;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -215,6 +219,11 @@ struct ChatCompletionRequest : BaseRequest {
       req.enable_reasoning =
           getBool(json["enable_reasoning"], "enable_reasoning");
 
+    if (json.isMember("skip_apply_chat_template") &&
+        !json["skip_apply_chat_template"].isNull())
+      req.skip_apply_chat_template =
+          getBool(json["skip_apply_chat_template"], "skip_apply_chat_template");
+
     validateToolFields(req);
     validateToolMessages(req);
     return req;
@@ -241,7 +250,8 @@ struct ChatCompletionRequest : BaseRequest {
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
         << " stop_count=" << stop.size()
-        << " enable_reasoning=" << enable_reasoning;
+        << " enable_reasoning=" << enable_reasoning
+        << " skip_apply_chat_template=" << skip_apply_chat_template;
     return out.str();
   }
 
@@ -251,9 +261,13 @@ struct ChatCompletionRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
     out.messages = messages;
+    out.skip_apply_chat_template = skip_apply_chat_template;
     out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
-        messages, true, tools, enable_reasoning);
-
+        messages, true, tools, enable_reasoning, skip_apply_chat_template);
+    if (auto* promptStr = std::get_if<std::string>(&out.prompt)) {
+      TT_LOG_INFO("Prompt: {}",
+                  detail::truncate(*promptStr, detail::MAX_PROMPT_LOG_LENGTH));
+    }
     out.echo = echo;
     out.max_tokens = max_tokens;
     out.n = n;
