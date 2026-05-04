@@ -140,6 +140,9 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[WorkerManager] Worker death callback threw: {}",
                      e.what());
+      } catch (...) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Worker death callback threw a non-std exception");
       }
     }
   }

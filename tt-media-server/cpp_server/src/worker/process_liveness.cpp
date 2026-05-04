@@ -25,35 +25,37 @@ ProcessLivenessTransition pollProcessLiveness(pid_t pid,
   }
   if (result == pid) {
     bool wasAlive = aliveFlag.exchange(false);
-    if (WIFSIGNALED(status)) {
-      int sig = WTERMSIG(status);
-      TT_LOG_CRITICAL(
-          "[WorkerManager] Worker {} (PID {}) killed by signal {} ({})"
-          "{}",
-          workerIdx, pid, sig, strsignal(sig),
-          WCOREDUMP(status) ? " -- core dumped" : "");
-    } else if (WIFEXITED(status)) {
-      int exitCode = WEXITSTATUS(status);
-      if (exitCode != 0) {
+    if (wasAlive) {
+      if (WIFSIGNALED(status)) {
+        int sig = WTERMSIG(status);
         TT_LOG_CRITICAL(
-            "[WorkerManager] Worker {} (PID {}) exited with code {}", workerIdx,
-            pid, exitCode);
+            "[WorkerManager] Worker {} (PID {}) killed by signal {} ({})"
+            "{}",
+            workerIdx, pid, sig, strsignal(sig),
+            WCOREDUMP(status) ? " -- core dumped" : "");
+      } else if (WIFEXITED(status)) {
+        int exitCode = WEXITSTATUS(status);
+        if (exitCode != 0) {
+          TT_LOG_CRITICAL(
+              "[WorkerManager] Worker {} (PID {}) exited with code {}",
+              workerIdx, pid, exitCode);
+        } else {
+          TT_LOG_WARN(
+              "[WorkerManager] Worker {} (PID {}) exited normally (code 0)",
+              workerIdx, pid);
+        }
       } else {
-        TT_LOG_WARN(
-            "[WorkerManager] Worker {} (PID {}) exited normally (code 0)",
-            workerIdx, pid);
+        TT_LOG_CRITICAL(
+            "[WorkerManager] Worker {} (PID {}) terminated, raw status=0x{:x}",
+            workerIdx, pid, status);
       }
-    } else {
-      TT_LOG_CRITICAL(
-          "[WorkerManager] Worker {} (PID {}) terminated, raw status=0x{:x}",
-          workerIdx, pid, status);
     }
     return {/*stillAlive=*/false, /*transitionedToDead=*/wasAlive};
   }
-  // waitpid returned an error (e.g. ECHILD because the process was reaped
-  // elsewhere); err on the side of "alive" so a single failed waitpid does
-  // not spuriously fire the death callback.
-  return {/*stillAlive=*/true, /*transitionedToDead=*/false};
+  // waitpid error (typically ECHILD because the process was already reaped):
+  // mirror aliveFlag so stillAlive stays consistent with the atomic source of
+  // truth, and don't fire a spurious transition.
+  return {/*stillAlive=*/aliveFlag.load(), /*transitionedToDead=*/false};
 }
 
 }  // namespace tt::worker

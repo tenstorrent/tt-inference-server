@@ -94,7 +94,9 @@ void DisaggregationService::setupSocketHandlers() {
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     // On prefill runner death, drop the inter-server socket so the decode
     // side's connection-lost handler can fail in-flight streams instead of
-    // hanging on requests nobody can answer.
+    // hanging on requests nobody can answer.  Assumes WorkerManager does not
+    // auto-restart workers; if that changes, the callback will fire again on
+    // the replacement worker's first crash and stop a possibly-rearmed socket.
     if (auto* workerManager = llmService->getWorkerManager()) {
       workerManager->setWorkerDeathCallback(
           [socket = socketService](size_t workerIdx, pid_t pid) {

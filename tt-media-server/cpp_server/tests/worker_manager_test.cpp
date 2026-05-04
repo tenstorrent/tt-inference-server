@@ -11,7 +11,6 @@
 #include "worker/worker_manager.hpp"
 
 #include <gtest/gtest.h>
-#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,23 +20,16 @@
 
 namespace {
 
-pid_t forkExitingChild() {
+pid_t forkAndWaitForChildToExit() {
   pid_t pid = fork();
   if (pid == 0) {
     _exit(0);
   }
+  // _exit() after fork is essentially instant; this sleep just gives the
+  // kernel time to reparent the now-zombie child to us. We deliberately do
+  // not waitpid() — pollProcessLiveness() must be the one to reap.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
   return pid;
-}
-
-void waitForProcessExit(pid_t pid) {
-  // We deliberately don't waitpid() here: pollProcessLiveness() must be the
-  // one to reap the zombie so we can assert on the transition it returns.
-  for (int i = 0; i < 200; ++i) {
-    if (kill(pid, 0) != 0) {
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
 }
 
 }  // namespace
@@ -54,9 +46,8 @@ TEST(PollProcessLiveness, AliveProcessReportsAlive) {
 }
 
 TEST(PollProcessLiveness, ExitedChildIsReapedAndTransitionsOnce) {
-  pid_t childPid = forkExitingChild();
+  pid_t childPid = forkAndWaitForChildToExit();
   ASSERT_GT(childPid, 0) << "fork() failed";
-  waitForProcessExit(childPid);
 
   std::atomic<bool> alive{true};
 
@@ -66,11 +57,12 @@ TEST(PollProcessLiveness, ExitedChildIsReapedAndTransitionsOnce) {
   EXPECT_TRUE(first.transitionedToDead);
   EXPECT_FALSE(alive.load());
 
-  // Second call: the child has already been reaped; the helper must not
-  // claim a second transition.
+  // Second call: child has been reaped; the helper must not claim another
+  // transition and stillAlive must mirror the (now false) aliveFlag.
   auto second =
       tt::worker::pollProcessLiveness(childPid, alive, /*workerIdx=*/3);
   EXPECT_FALSE(second.transitionedToDead);
+  EXPECT_FALSE(second.stillAlive);
 }
 
 TEST(PollProcessLiveness, InvalidPidTransitionsAtMostOnce) {
@@ -88,9 +80,8 @@ TEST(PollProcessLiveness, InvalidPidTransitionsAtMostOnce) {
 }
 
 TEST(PollProcessLiveness, AlreadyDeadFlagDoesNotResurrectTransition) {
-  pid_t childPid = forkExitingChild();
+  pid_t childPid = forkAndWaitForChildToExit();
   ASSERT_GT(childPid, 0) << "fork() failed";
-  waitForProcessExit(childPid);
 
   std::atomic<bool> alive{false};  // Caller has already observed the death.
 
