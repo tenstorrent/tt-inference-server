@@ -3,8 +3,8 @@
 
 #include "runners/guided_decoder_manager.hpp"
 
-#include <xgrammar/xgrammar.h>
 #include <json/json.h>
+#include <xgrammar/xgrammar.h>
 
 #include <stdexcept>
 #include <unordered_map>
