@@ -22,9 +22,9 @@ namespace tt::api {
 class RouteRegistry {
  public:
   struct RouteSpec {
-    std::string method;       /**< Uppercase HTTP verb. */
-    std::string path;         /**< Exact path or a `{param}` template. */
-    std::string description;  /**< Used in startup logs. */
+    std::string method;      /**< Uppercase HTTP verb. */
+    std::string path;        /**< Exact path or a `{param}` template. */
+    std::string description; /**< Used in startup logs. */
   };
 
   RouteRegistry(const RouteRegistry&) = delete;

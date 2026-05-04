@@ -79,8 +79,7 @@ bool RouteRegistry::pathMatches(std::string_view templatePath,
   // Walk segment-by-segment. std::min(find('/'), size()) folds the
   // "no more slashes" (npos) case into "rest of the view".
   while (!templatePath.empty() && !requestPath.empty()) {
-    if (templatePath.front() != '/' || requestPath.front() != '/')
-      return false;
+    if (templatePath.front() != '/' || requestPath.front() != '/') return false;
     templatePath.remove_prefix(1);
     requestPath.remove_prefix(1);
 

@@ -35,8 +35,8 @@ AuxiliaryServices buildAuxiliaryServices(
     if (mode != tt::config::LLMMode::REGULAR) {
       auto socket = std::make_shared<sockets::InterServerService>();
       socket->initializeFromConfig();
-      auto disagg = std::make_shared<services::DisaggregationService>(
-          mode, llm, socket);
+      auto disagg =
+          std::make_shared<services::DisaggregationService>(mode, llm, socket);
       return {std::move(socket), std::move(disagg)};
     }
   }
