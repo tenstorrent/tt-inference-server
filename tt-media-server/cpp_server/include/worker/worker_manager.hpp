@@ -23,20 +23,14 @@ class IWarmupSignalQueue;
 
 namespace tt::worker {
 
-/**
- * Result of polling a worker process for liveness.  `transitionedToDead` is
- * set on (and only on) the call that flips `aliveFlag` from true to false,
- * giving callers an exactly-once hook for crash handling.
- */
+/** Result of polling a worker process; `transitionedToDead` is true on (and
+ * only on) the call that flips `aliveFlag` from true to false. */
 struct ProcessLivenessTransition {
   bool stillAlive;
   bool transitionedToDead;
 };
 
-/**
- * Reap the worker process if it has exited and update `aliveFlag` accordingly.
- * Logs the cause of death (signal / exit code) at the appropriate severity.
- */
+/** Reap `pid` if it has exited, update `aliveFlag`, and log the cause. */
 ProcessLivenessTransition pollProcessLiveness(pid_t pid,
                                               std::atomic<bool>& aliveFlag,
                                               size_t workerIdx);
@@ -70,19 +64,15 @@ class WorkerManager {
 
   SingleProcessWorker* worker(size_t idx);
 
-  /** Returns false if the worker process has exited. Updates is_alive flag.
-   * Fires the worker-death callback (if set) exactly once on the
-   * alive -> dead transition. */
+  /** Returns false if the worker process has exited; updates is_alive and
+   * fires the death callback exactly once on the alive -> dead transition. */
   bool checkWorkerAlive(size_t workerIdx);
 
   /** Re-fork a crashed worker process and update the workers entry. */
   void restartWorker(size_t workerIdx);
 
-  /** Callback fired when a worker is detected dead (exited or signaled).
-   * Invoked once per worker, on the alive -> dead transition, from the
-   * liveness checker thread (or from whichever thread calls
-   * checkWorkerAlive). The callback must be lightweight and must not call
-   * back into WorkerManager::stop(); deadlock would result. */
+  /** Fired once per worker on the alive -> dead transition, on the liveness
+   * checker thread. Callback must not re-enter WorkerManager::stop(). */
   using WorkerDeathCallback = std::function<void(size_t workerIdx, pid_t pid)>;
   void setWorkerDeathCallback(WorkerDeathCallback callback);
 
