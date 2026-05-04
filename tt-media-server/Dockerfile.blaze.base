@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# ==============================================================================
+# BASE IMAGE for Dockerfile.blaze
+# ==============================================================================
+# Contains the heavy, slow-changing pieces of the blaze build:
+#   - system / apt deps + CMake
+#   - cpp_server build deps + Drogon (via install_dependencies.sh)
+#   - Rust toolchain (used by tokenizers-cpp at cpp_server build time AND by
+#     tt-blaze's pipeline_manager cmake step that gates deepseek_inference_runner)
+#   - tt-blaze + tt-metal fully built
+#
+# Total build time of this image is ~25 minutes; rebuilt on demand
+# (typically when the tt-blaze branch is bumped). Dockerfile.blaze derives
+# from this image via FROM ${BASE_IMAGE} and only adds the cpp_server build,
+# which keeps cpp_server-only rebuilds at ~2-3 minutes instead of ~35.
+#
+# Why a separate image instead of BuildKit registry cache: tt-shield ARC
+# runner pods don't share docker daemon state, so daemon-local layer cache
+# is a pod-affinity coin flip; and BuildKit's docker-container driver can't
+# reach ghcr.io from these pods even with network=host (see tt-shield runs
+# 25301564690 / 25301890873). A plain `FROM ghcr.io/...` works fine because
+# it goes through the host docker daemon, which CAN reach ghcr.io.
+#
+# Tag convention used by CI:
+#   <repo>/tt-media-inference-server-blaze-base:<sanitized-branch>
+# (slashes in TT_BLAZE_BRANCH are replaced with '-' to satisfy OCI tag rules).
+# ==============================================================================
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+# Informational only at base-image level; the tt-metal version actually
+# built comes from the tt-blaze submodule pin on TT_BLAZE_BRANCH.
+ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+
+ENV ENVIRONMENT=development
+ENV TT_MM_THROTTLE_PERF=5
+
+ENV SHELL=/bin/bash
+ENV CONTAINER_APP_USERNAME=container_app_user
+# HOME_DIR is exported as ENV so derived images (Dockerfile.blaze) can
+# reference ${HOME_DIR} after FROM ${BASE_IMAGE}. ARGs are not inherited.
+ENV HOME_DIR=/home/${CONTAINER_APP_USERNAME}
+
+# tt-metal build vars (kept for compatibility with the original image layout)
+ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
+ENV CONFIG=Release
+ENV TT_METAL_ENV=dev
+ENV LOGURU_LEVEL=INFO
+ENV PYTHONPATH=${TT_METAL_HOME}
+ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
+ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
+
+# apt-get keyring refresh for cmake repo
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
+    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+# extra system deps (same set as the original Dockerfile.blaze pre-split)
+RUN apt-get update && apt-get install -y \
+    gosu \
+    libgl1 \
+    libsndfile1 \
+    wget \
+    git-lfs \
+    nano \
+    acl \
+    jq \
+    vim \
+    # pyluwen build dependencies (Rust package with protobuf)
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    pkg-config \
+    htop \
+    screen \
+    tmux \
+    unzip \
+    zip \
+    curl \
+    iputils-ping \
+    rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && protoc --version
+
+# CMake 3.26.4 for CMP0169 compatibility
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh \
+    && chmod +x cmake.sh \
+    && ./cmake.sh --skip-license --prefix=/usr/local \
+    && rm cmake.sh \
+    && /usr/local/bin/cmake --version
+
+RUN mkdir -p ${HOME_DIR} \
+    && mkdir -p /run/sshd \
+    && chmod 755 /run/sshd
+
+RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
+
+WORKDIR ${HOME_DIR}
+
+ENV APP_DIR=${HOME_DIR}/app
+WORKDIR ${APP_DIR}
+
+# ----------------------------------------------------------------------------
+# cpp_server build deps (apt + Drogon) + Rust toolchain.
+# Only install_dependencies.sh is COPYd here so this layer is keyed on
+# the script content, not unrelated cpp_server source. CARGO_HOME and
+# RUSTUP_HOME steer rustup-init into HOME_DIR; PATH ensures cargo is
+# discoverable for tt-blaze's pipeline_manager cmake step (which
+# silently skips deepseek_inference_runner if cargo is not on PATH and
+# then later tries to make the missing target — see tt-shield job
+# 74174444965).
+# ----------------------------------------------------------------------------
+ENV CARGO_HOME=${HOME_DIR}/.cargo \
+    RUSTUP_HOME=${HOME_DIR}/.rustup
+ENV PATH=${CARGO_HOME}/bin:${PATH}
+COPY tt-media-server/cpp_server/install_dependencies.sh /tmp/install_dependencies.sh
+RUN /tmp/install_dependencies.sh && rm -f /tmp/install_dependencies.sh
+
+# ----------------------------------------------------------------------------
+# Clone + build tt-blaze (and tt-metal). This is the ~10-minute step the
+# whole base image exists to amortize. Branch comes from a build-arg so the
+# same Dockerfile.blaze.base can produce per-branch base images.
+# ----------------------------------------------------------------------------
+ARG TT_BLAZE_BRANCH=asaigal/ds_pm_integration
+ENV TT_BLAZE_BRANCH=${TT_BLAZE_BRANCH}
+RUN --mount=type=secret,id=github_token \
+    mkdir -p ${APP_DIR}/server/cpp_server \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
+    && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
+    && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
+    && git clone --depth 1 --branch ${TT_BLAZE_BRANCH} https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
+    && cd ${APP_DIR}/server/cpp_server/tt-blaze \
+    && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
+    && ./install.sh \
+    && . ./env.sh \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler) \
+    && ./pipeline_manager/setup.sh --pm-full \
+    && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
+
+# Trim the largest non-runtime tt-metal artifacts so every derived image
+# inherits a smaller starting point. .cpmcache and the tt-metal build
+# outputs and python venv stay — needed at runtime / cpp_server build.
+RUN rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/docs \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tests \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tech_reports \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.github
