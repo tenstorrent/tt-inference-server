@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/schedulers/scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 /**
  * Always prefills when the prefill_queue has requests (original behaviour).
@@ -26,4 +26,4 @@ class PrefillFirstScheduler : public Scheduler {
   }
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

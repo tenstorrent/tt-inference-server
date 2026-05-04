@@ -593,7 +593,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "tts"
+        assert report_data["task_type"] == "text_to_speech"
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_benchmark_health_check_failed(self, mock_tokenizer):
@@ -662,4 +662,4 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "tts"
+        assert report_data["task_type"] == "text_to_speech"

@@ -15,6 +15,7 @@
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
+using namespace tt::runners::schedulers;
 using Config = tt::config::LLMConfig;
 using Sequence = tt::domain::Sequence;
 using SequenceStatus = tt::domain::SequenceStatus;
