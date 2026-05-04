@@ -10,6 +10,7 @@ import pytest
 
 from utils.media_clients.tts_client import TtsClientStrategy
 from utils.media_clients.test_status import TtsTestStatus
+from workflows.workflow_types import ReportCheckTypes
 
 
 class MockAsyncResponse:
@@ -321,7 +322,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         result = strategy._calculate_performance_check(ttft_value=100.0, rtr_value=2.0)
 
-        assert result == 0  # UNDEFINED
+        assert result == ReportCheckTypes.NA
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
     def test_performance_check_default_tolerance(self, mock_targets):
@@ -349,10 +350,10 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     def test_accuracy_check_returns_undefined(self):
-        """Test that accuracy_check returns 0 (undefined)."""
+        """TTS has no quality metric implemented yet, so it always reports N/A."""
         strategy = self._create_strategy()
         result = strategy._calculate_accuracy_check()
-        assert result == 0
+        assert result == ReportCheckTypes.NA
 
 
 class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):

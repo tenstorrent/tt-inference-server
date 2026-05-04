@@ -399,6 +399,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -423,15 +433,31 @@ jobs:
       - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
-          ./build.sh --clang-tidy
+          ./build.sh --clang-tidy --blaze
 
   cpp-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    runs-on: ubuntu-latest
+    # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
+    # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
+    # find every shared lib the binary was linked against. Splitting build
+    # (ubuntu-latest = noble, Python 3.12) from bench (jammy, Python 3.10)
+    # has produced repeated runtime "missing libfoo.so" failures (libpq5,
+    # libpython3.12, ...). Same OS image on both sides eliminates the class.
+    runs-on: tt-ubuntu-2204-large-stable
     permissions:
       contents: read
+    env:
+      # The aus2 self-hosted runners auto-inject http(s)_proxy pointing at
+      # proxy.restricted-proxy.svc.cluster.local:3128 but do not set no_proxy
+      # for loopback. Without this, curl/requests calls to a server we start
+      # on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness probe) are routed
+      # through the internal proxy, which has no route back and fails every
+      # probe, making the server appear to never become ready. GitHub
+      # Actions treats env keys as case-insensitive, so we set only the
+      # lowercase form (which curl and Python requests both read).
+      no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -439,6 +465,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -446,7 +482,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh
+          ./build.sh --blaze
           cd ..
 
       - name: Run C++ unit tests
@@ -468,11 +504,13 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: tt-ubuntu-2204-xlarge-stable
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -514,7 +552,7 @@ jobs:
       - name: Start C++ server (mock backend)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock.log 2>&1 &
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -594,7 +632,7 @@ jobs:
       - name: Start C++ server (mock_pipeline backend)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock_pipeline.log 2>&1 &
+          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -620,8 +658,8 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
+            --random-input-len 32\
+            --random-output-len 1024\
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
@@ -754,11 +792,13 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
-    runs-on: ubuntu-latest
+    runs-on: tt-ubuntu-2204-xlarge-stable
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
         working-directory: tt-media-server
@@ -801,7 +841,7 @@ jobs:
         run: |
           cd cpp_server/build
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-            ./tt_media_server_cpp -p 8001 > ../../decode_server.log 2>&1 &
+            ./tt_media_server_cpp -p 8001 -t 4 > ../../decode_server.log 2>&1 &
           echo $! > ../../decode_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -822,7 +862,7 @@ jobs:
         run: |
           cd cpp_server/build
           LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-            ./tt_media_server_cpp -p 8002 > ../../prefill_server.log 2>&1 &
+            ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill_server.log 2>&1 &
           echo $! > ../../prefill_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -894,7 +934,7 @@ jobs:
           TT_LOG_LEVEL=debug \
           LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-            ./build/tt_media_server_cpp -p 8001 \
+            ./build/tt_media_server_cpp -p 8001 -t 4 \
             > ../prefill_server_runner.log 2>&1 &
           echo $! > ../prefill_server_runner.pid
           cd ..
@@ -918,7 +958,7 @@ jobs:
           cd cpp_server
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
-            ./build/tt_media_server_cpp -p 8000 \
+            ./build/tt_media_server_cpp -p 8000 -t 4 \
             > ../decode_server_runner.log 2>&1 &
           echo $! > ../decode_server_runner.pid
           cd ..
@@ -1161,6 +1201,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        working-directory: .
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -1168,7 +1218,7 @@ jobs:
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan
+          ./build.sh --tsan --blaze
 
       - name: Run unit tests under TSan
         env:
@@ -1196,7 +1246,7 @@ jobs:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
         run: |
           cd cpp_server/build
-          ./tt_media_server_cpp -p 8001 > ../../tsan_server.log 2>&1 &
+          ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..
           # 180s timeout (TSan startup is slower than Release)
@@ -1430,9 +1480,10 @@ jobs:
 
           # Generate diff-cover report for changed lines only
           # --exclude uses fnmatch patterns (shell-style wildcards)
+          # tt-inference-server-v2 is excluded from coverage checks entirely
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' \
+            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' 'tt-inference-server-v2/*'\
             --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 

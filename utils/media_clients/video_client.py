@@ -11,6 +11,7 @@ import requests
 
 from utils.media_clients.test_status import VideoGenerationTestStatus
 from workflows.utils import get_num_calls
+from workflows.workflow_types import ReportCheckTypes
 
 from .base_strategy_interface import BaseMediaStrategy
 
@@ -78,7 +79,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             benchmark_data["clip_standard_deviation"] = clip_results.get(
                 "clip_standard_deviation", 0.0
             )
-            benchmark_data["accuracy_check"] = eval_result.get("accuracy_check", 0)
+            benchmark_data["accuracy_check"] = eval_result.get(
+                "accuracy_check", ReportCheckTypes.NA
+            )
         else:
             logger.warning("No eval results from video generation test")
 

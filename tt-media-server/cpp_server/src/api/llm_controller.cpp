@@ -369,8 +369,29 @@ void LLMController::handleStreaming(
                   "[LLMController] Using disaggregated prefill for request "
                   "with sessionId: {}",
                   reqPtr->sessionId.value_or("none"));
-              disaggregationService->handleStreamingRequest(*reqPtr,
-                                                            streamingCallback);
+              try {
+                disaggregationService->handleStreamingRequest(
+                    *reqPtr, streamingCallback);
+              } catch (const std::exception& e) {
+                if (reqPtr->prompt_tokens_count >=
+                    static_cast<int>(
+                        tt::config::maxTokensToPrefillOnDecode())) {
+                  TT_LOG_ERROR(
+                      "[LLMController] Disaggregated prefill failed: {}; "
+                      "prompt too "
+                      "large ({} tokens) to fall back to prefill-on-decode",
+                      e.what(), reqPtr->prompt_tokens_count);
+                  (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
+                                      "internal_error"));
+                  return;
+                }
+                TT_LOG_ERROR(
+                    "[LLMController] Disaggregated prefill failed: {}, falling "
+                    "back "
+                    "to prefill-on-decode",
+                    e.what());
+                service->submitStreamingRequest(*reqPtr, streamingCallback);
+              }
             }
           } else {
             (*cb)(errorResponse(

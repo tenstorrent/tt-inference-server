@@ -34,6 +34,9 @@ tt::domain::SamplingParams mapSamplingParams(
     params.json_schema_str = request.response_format->json_schema_str;
   }
 
+  params.tools = request.tools;
+  params.tool_choice = request.tool_choice;
+
   return params;
 }
 
