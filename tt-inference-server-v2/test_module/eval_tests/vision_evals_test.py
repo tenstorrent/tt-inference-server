@@ -461,7 +461,7 @@ class VisionEvalsTest(BaseTest):
     ) -> None:
         """Measure accuracy for models against an already-running server.
 
-        Note: Server must already be running. This method waits for health check
+        Note: Server must already be running. This method waits for health check,
         then runs accuracy measurements.
         """
         logger.info(f"Measuring accuracy for models: {models} in {mode} mode")
