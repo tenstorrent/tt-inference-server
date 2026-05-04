@@ -179,7 +179,7 @@ def setup_evals_meta(
                 f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
                 "--index-strategy unsafe-best-match "
                 "--extra-index-url https://download.pytorch.org/whl/cpu "
-                "lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
+                "lm-eval[math,ifeval,sentencepiece]==0.4.3 vllm=0.19.0 pyjwt==2.7.0 pillow==11.1 datasets==3.1.0",
                 logger=logger,
             )
             == 0
