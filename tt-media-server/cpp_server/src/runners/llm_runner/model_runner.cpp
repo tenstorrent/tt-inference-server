@@ -24,6 +24,15 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
                                               DecodeCallback callback) {
   switch (config.runner_type) {
     case ModelRunnerType::MOCK:
+#ifndef ENABLE_BLAZE
+    // When tt-blaze is not compiled in, the runner factory falls through to
+    // the mock LLMRunner for the pipeline-style backends (see
+    // RunnerRegistry fallback in modality_registration.cpp). Keep the inner
+    // IModelRunner selection consistent so the worker doesn't crash on the
+    // default LLM_DEVICE_BACKEND=mock_pipeline when ENABLE_BLAZE=OFF.
+    case ModelRunnerType::MOCK_PIPELINE:
+    case ModelRunnerType::PIPELINE_MANAGER:
+#endif
       return makeMockModelRunner(config, std::move(callback));
 #ifdef USE_METAL_CPP_LIB
     case ModelRunnerType::LLAMA:

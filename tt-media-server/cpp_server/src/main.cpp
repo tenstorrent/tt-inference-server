@@ -177,25 +177,26 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
   }
 
-  // Install the modality route allow-list FIRST so unknown paths get a clean
-  // 404 instead of leaking a `WWW-Authenticate` challenge from the auth
-  // advice. Advice runs in registration order.
-  drogon::app().registerPreHandlingAdvice(
-      [activeService = modelSvc](const drogon::HttpRequestPtr& req,
-                                 drogon::AdviceCallback&& callback,
-                                 drogon::AdviceChainCallback&& chainCallback) {
+  // Install the modality route allow-list as a *sync* advice so it runs
+  // BEFORE Drogon's own routing/method-validation. Otherwise Drogon would
+  // answer 405 ("Method Not Allowed") for endpoints that exist in the
+  // codebase but belong to a different MODEL_SERVICE (e.g. GET /v1/embeddings
+  // while running in LLM mode), leaking the controller's existence. Returning
+  // nullptr lets the request continue down the normal pipeline; returning a
+  // response short-circuits routing entirely.
+  drogon::app().registerSyncAdvice(
+      [activeService = modelSvc](const drogon::HttpRequestPtr& req)
+          -> drogon::HttpResponsePtr {
         const std::string& path = req->path();
         const std::string method = req->methodString();
         if (tt::api::RouteRegistry::instance().isAllowed(activeService, method,
                                                          path)) {
-          chainCallback();
-          return;
+          return nullptr;
         }
-        auto resp = tt::api::errorResponse(
+        return tt::api::errorResponse(
             drogon::k404NotFound,
             "Endpoint not available for the active MODEL_SERVICE",
             "route_not_found");
-        callback(resp);
       });
 
   drogon::app().registerPreHandlingAdvice(
