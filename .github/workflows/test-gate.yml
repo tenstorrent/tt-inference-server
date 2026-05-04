@@ -545,7 +545,9 @@ jobs:
           # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
           # Track upstream and remove pin once 5.6.x is fixed or bench is
           # made resilient to client tokenizer cost.
-          uv pip install vllm 'transformers<5.6'
+          # aiohttp is used directly by the inline non-streaming bench below;
+          # declare it explicitly so we don't rely on vllm's transitive dep.
+          uv pip install vllm 'transformers<5.6' aiohttp
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Mock backend benchmarks ──────────────────────────────────────
@@ -594,6 +596,7 @@ jobs:
           python - <<'PY' 2>&1 | tee bench_mock_non_streaming_output.txt
           import asyncio
           import json
+          import math
           import os
           import statistics
           import time
@@ -602,7 +605,7 @@ jobs:
 
           URL = "http://127.0.0.1:8000/v1/chat/completions"
           HEADERS = {
-              "Authorization": "Bearer your-secret-key",
+              "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
               "Content-Type": "application/json",
           }
           MODEL = "deepseek-ai/DeepSeek-R1-0528"
@@ -654,6 +657,11 @@ jobs:
                   raise RuntimeError(f"all {NUM_PROMPTS} requests failed")
 
               latencies_ms = sorted(r * 1000.0 for r in latencies)
+
+              # Nearest-rank percentile: p-th percentile = ceil(p * n)-th smallest value.
+              def pct(p):
+                  return latencies_ms[max(0, math.ceil(p * len(latencies_ms)) - 1)]
+
               summary = {
                   "backend": "openai-chat",
                   "endpoint": "/v1/chat/completions",
@@ -667,8 +675,8 @@ jobs:
                   "wall_time_s": round(wall, 3),
                   "throughput_rps": round(completed / wall, 2),
                   "e2e_mean_ms": round(statistics.fmean(latencies_ms), 2),
-                  "e2e_p50_ms": round(latencies_ms[len(latencies_ms) // 2], 2),
-                  "e2e_p99_ms": round(latencies_ms[int(len(latencies_ms) * 0.99)], 2),
+                  "e2e_p50_ms": round(pct(0.50), 2),
+                  "e2e_p99_ms": round(pct(0.99), 2),
               }
               print(json.dumps(summary, indent=2))
               with open(RESULT_FILE, "w") as f:
@@ -1429,6 +1437,7 @@ jobs:
 
       - name: Run concurrent multi-turn workload (8 users x 8 turns)
         env:
+          OPENAI_API_KEY: 'your-secret-key'
           # Suppressions are loaded by the server itself — the bench client
           # doesn't need them, but inheriting the env is harmless.
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
@@ -1442,7 +1451,7 @@ jobs:
             --rate 8 \
             --max-requests 64 \
             --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
-            --backend-kwargs '{"api_key": "your-secret-key"}' \
+            --backend-kwargs "{\"api_key\": \"${OPENAI_API_KEY}\"}" \
             --output-path "bench_results/tsan_ci" \
             2>&1 | tee tsan_bench.log
 
