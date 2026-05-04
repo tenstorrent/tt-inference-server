@@ -226,6 +226,60 @@ void testToolChoiceUnknownStringRejected() {
   std::cout << "✅ Test passed!\n";
 }
 
+void testToolChoiceFunction() {
+  std::cout << "\n=== Testing tool_choice With Function Object ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+  json["tools"].append(createToolJson("get_time", "Get time"));
+
+  Json::Value toolChoice;
+  toolChoice["type"] = "function";
+  toolChoice["function"]["name"] = "get_weather";
+  json["tool_choice"] = toolChoice;
+
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "function");
+  assert(request.tool_choice->function.has_value());
+  assert(request.tool_choice->function.value() == "get_weather");
+
+  auto llmRequest = request.toLLMRequest();
+  assert(llmRequest.tool_choice.has_value());
+  assert(llmRequest.tool_choice->type == "function");
+  assert(llmRequest.tool_choice->function.value() == "get_weather");
+
+  std::cout << "✓ tool_choice with function object parsed correctly\n";
+  std::cout << "✓ tool_choice propagated to LLMRequest\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolChoiceRequired() {
+  std::cout << "\n=== Testing tool_choice=required ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+  json["tools"].append(createToolJson("get_time", "Get time"));
+  json["tool_choice"] = "required";
+
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+
+  assert(request.tools.has_value());
+  assert(request.tools->size() == 2);
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "required");
+  assert(!request.tool_choice->function.has_value());
+
+  auto llmRequest = request.toLLMRequest();
+  assert(llmRequest.tool_choice.has_value());
+  assert(llmRequest.tool_choice->type == "required");
+
+  std::cout << "✓ tool_choice=required parsed correctly\n";
+  std::cout << "✓ tool_choice propagated to LLMRequest\n";
+  std::cout << "✅ Test passed!\n";
+}
+
 // ==================== validateToolMessages Tests ====================
 
 void testValidToolMessageSequence() {
@@ -357,6 +411,8 @@ int main() {
     testParseRequestWithTools();
     testToolChoiceNone();
     testToolChoiceAuto();
+    testToolChoiceFunction();
+    testToolChoiceRequired();
     testToolChoiceNoneWithoutTools();
     testToolChoiceNoneWithEmptyToolsArray();
     testToolChoiceAutoWithoutToolsRejected();
