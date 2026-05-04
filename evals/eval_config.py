@@ -1207,25 +1207,9 @@ _eval_config_list = [
         hf_model_repo="mistralai/Mistral-7B-Instruct-v0.3",
         tasks=[
             EvalTask(
-                task_name="ifeval",
-                score=EvalTaskScore(
-                    published_score=54.65,
-                    published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=48.24,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "prompt_level_strict_acc,none",
-                            "inst_level_strict_acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-            ),
-            EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
