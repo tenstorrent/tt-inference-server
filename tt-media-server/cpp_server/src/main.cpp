@@ -184,7 +184,8 @@ int main(int argc, char* argv[]) {
 
         if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
             path == "/swagger" || path == "/openapi.json" ||
-            path == "/metrics" || path == "/max-session-count") {
+            path == "/metrics" || path == "/max-session-count" ||
+            path == "/info") {
           chainCallback();
           return;
         }
@@ -258,6 +259,7 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("  POST /v1/embeddings   - OpenAI-compatible embeddings");
     TT_LOG_INFO("  GET  /health          - Health check");
     TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
+    TT_LOG_INFO("  GET  /info            - Build identity (version + commits)");
   } else {
     TT_LOG_INFO("[Main] Endpoints:");
     TT_LOG_INFO(
@@ -267,6 +269,7 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");
     TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
     TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
+    TT_LOG_INFO("  GET  /info                 - Build identity (version + commits)");
   }
 
   // Run the server

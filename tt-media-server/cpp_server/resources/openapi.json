@@ -457,6 +457,25 @@
           }
         }
       }
+    },
+    "/info": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Build identity",
+        "description": "Returns the build identity of the running server: tt-inference-server version and commit, tt-blaze commit, and tt-metal commit. Missing values appear as the literal string \"unknown\". No authentication required.",
+        "operationId": "getInfo",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Build identity",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InfoResponse" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -702,6 +721,47 @@
           "is_ready": {
             "type": "boolean",
             "description": "Whether worker is ready"
+          }
+        }
+      },
+      "InfoResponse": {
+        "type": "object",
+        "required": ["tt_inference_server", "tt_blaze", "tt_metal"],
+        "properties": {
+          "tt_inference_server": { "$ref": "#/components/schemas/ServerVersionInfo" },
+          "tt_blaze": { "$ref": "#/components/schemas/CommitInfo" },
+          "tt_metal": { "$ref": "#/components/schemas/CommitInfo" }
+        },
+        "example": {
+          "tt_inference_server": { "version": "0.13.0", "commit": "b0f8adfc1234567890abcdef1234567890abcdef" },
+          "tt_blaze": { "commit": "abc123def456abc123def456abc123def4567890" },
+          "tt_metal": { "commit": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3" }
+        }
+      },
+      "ServerVersionInfo": {
+        "type": "object",
+        "required": ["version", "commit"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Release version from the top-level VERSION file. \"unknown\" if the file was not found at build time.",
+            "example": "0.13.0"
+          },
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the inference-server tree at build time. \"unknown\" if .git was not available.",
+            "example": "b0f8adfc1234567890abcdef1234567890abcdef"
+          }
+        }
+      },
+      "CommitInfo": {
+        "type": "object",
+        "required": ["commit"],
+        "properties": {
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the dependency at build time. \"unknown\" if the dependency's working tree was not present.",
+            "example": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3"
           }
         }
       },

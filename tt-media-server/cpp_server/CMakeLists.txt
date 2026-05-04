@@ -613,6 +613,7 @@ set(SOURCES
     src/api/llm_controller.cpp
     src/api/sse_stream_writer.cpp
     src/api/health_controller.cpp
+    src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
@@ -646,10 +647,28 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_BINARY_DIR}/generated
     ${rapidjson_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
+
+# Build-time codegen for config/build_info.hpp (build-identity constants
+# consumed by InfoController and any future caller that wants to label a
+# log line / metric / response with the running binary's version + SHAs).
+# Runs on every build so commit SHAs reflect the current tree, not whatever
+# was checked out at the last `cmake -B build` invocation.
+add_custom_target(generate_build_info ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DCPP_SERVER_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/include/config/build_info.hpp.in
+        -DOUTPUT=${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuildInfo.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+    COMMENT "Generating config/build_info.hpp from VERSION + git"
+    VERBATIM
+)
+add_dependencies(${PROJECT_NAME} generate_build_info)
 
 # Link Drogon, llm_runner_lib, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)

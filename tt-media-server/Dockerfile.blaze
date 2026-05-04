@@ -16,7 +16,12 @@ LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
-# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
+# WARNING: TT_METAL_COMMIT_SHA_OR_TAG is documentation only — it does NOT pin
+# tt-metal. tt-metal is pulled in as a submodule of tt-blaze (cloned by branch
+# below), so the SHA actually compiled in is whatever the latest tt-blaze
+# branch tip resolves to at build time. Expect this default to drift from
+# reality. /info exposes the real tt-metal SHA from the cloned submodule's
+# .git tree at build time.
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 
 # make build commit SHA available in the image for reference and debugging
@@ -175,6 +180,8 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
+# WARNING: documentation only — drifts from reality; see comment in builder
+# stage above. /info on the running server reports the real tt-metal SHA.
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
