@@ -398,8 +398,7 @@ void testToolCallFewerOutputsThanExpected() {
     std::cout << "  Error message: " << errorMsg << "\n";
   }
 
-  assert(exceptionThrown &&
-         "Should throw when fewer outputs than tool calls");
+  assert(exceptionThrown && "Should throw when fewer outputs than tool calls");
 
   std::cout << "✓ Fewer outputs correctly rejected\n";
   std::cout << "✅ Test passed!\n";
@@ -659,8 +658,7 @@ void testToolCallValidSequenceWithSubsequentMessage() {
   assert(request.messages[1].tool_calls->size() == 2);
   assert(request.messages[4].role == "user");
 
-  std::cout
-      << "✓ Tool calls followed by user message correctly accepted\n";
+  std::cout << "✓ Tool calls followed by user message correctly accepted\n";
   std::cout << "✅ Test passed!\n";
 }
 

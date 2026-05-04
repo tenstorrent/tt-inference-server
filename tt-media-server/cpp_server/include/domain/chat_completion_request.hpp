@@ -5,12 +5,12 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <algorithm>
 
 #include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
@@ -396,7 +396,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
     for (const auto& expectedId : expectedToolCallIds) {
       size_t count = std::count(actualToolCallIds.begin(),
-                                 actualToolCallIds.end(), expectedId);
+                                actualToolCallIds.end(), expectedId);
 
       if (count == 0) {
         throw std::invalid_argument("Missing tool response for tool_call_id '" +
