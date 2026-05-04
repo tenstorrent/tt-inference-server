@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
-import asyncio
 from typing import List
 
 import torch
