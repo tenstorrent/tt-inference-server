@@ -15,26 +15,32 @@ void ServiceContainer::initialize(
     std::shared_ptr<sockets::InterServerService> socket,
     std::shared_ptr<DisaggregationService> disaggregation,
     std::shared_ptr<SessionManager> sessionMgr) {
-  llm_ = std::move(llm);
-  embedding_ = std::move(embedding);
   socket_ = std::move(socket);
   disaggregation_ = std::move(disaggregation);
   sessionManager_ = std::move(sessionMgr);
 
-  // Mirror typed slots into the generic map so getService() works uniformly
-  // across modalities.
-  if (llm_) {
+  if (llm) {
     services_[config::ModelService::LLM] =
-        std::static_pointer_cast<IService>(llm_);
+        std::static_pointer_cast<IService>(std::move(llm));
   }
-  if (embedding_) {
+  if (embedding) {
     services_[config::ModelService::EMBEDDING] =
-        std::static_pointer_cast<IService>(embedding_);
+        std::static_pointer_cast<IService>(std::move(embedding));
   }
 }
 
 std::shared_ptr<IService> ServiceContainer::configuredService() const {
   return getService(tt::config::modelService());
+}
+
+std::shared_ptr<LLMService> ServiceContainer::llm() const {
+  return std::dynamic_pointer_cast<LLMService>(
+      getService(config::ModelService::LLM));
+}
+
+std::shared_ptr<EmbeddingService> ServiceContainer::embedding() const {
+  return std::dynamic_pointer_cast<EmbeddingService>(
+      getService(config::ModelService::EMBEDDING));
 }
 
 void ServiceContainer::registerService(config::ModelService key,
