@@ -31,8 +31,17 @@ class EmbeddingLoadTest(BaseTest):
         devices = self.targets.get("num_of_devices", 1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
-        model = self.config.get("model", "test-model")
+        # Map short weight names → full HF repo IDs the runner expects
+        _HF_REPO_BY_WEIGHT = {
+            "Qwen3-Embedding-4B": "Qwen/Qwen3-Embedding-4B",
+            "Qwen3-Embedding-8B": "Qwen/Qwen3-Embedding-8B",
+            "bge-large-en-v1.5":  "BAAI/bge-large-en-v1.5",
+            "bge-m3":             "BAAI/bge-m3",
+        }
 
+        weights = getattr(self, "weights", []) or []
+        default_model = _HF_REPO_BY_WEIGHT.get(weights[0]) if weights else "test-model"
+        model = self.config.get("model") or default_model
         payload["model"] = model
 
         if dimensions is not None:
