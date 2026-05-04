@@ -269,7 +269,8 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");
     TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
     TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
-    TT_LOG_INFO("  GET  /info                 - Build identity (version + commits)");
+    TT_LOG_INFO(
+        "  GET  /info                 - Build identity (version + commits)");
   }
 
   // Run the server
