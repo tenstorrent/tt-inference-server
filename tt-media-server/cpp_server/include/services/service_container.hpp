@@ -5,6 +5,9 @@
 
 #include <memory>
 #include <stdexcept>
+#include <unordered_map>
+
+#include "config/types.hpp"
 
 namespace tt::services {
 class LLMService;
@@ -52,6 +55,14 @@ class ServiceContainer {
     return sessionManager_;
   }
 
+  /** Modality-agnostic slot for new services (image, video, audio, tts, cnn,
+   *  training). LLM and Embedding remain available through their typed
+   *  accessors above for backwards compatibility; new modalities use this
+   *  generic map exclusively. */
+  void registerService(config::ModelService key,
+                       std::shared_ptr<IService> service);
+  std::shared_ptr<IService> getService(config::ModelService key) const;
+
  private:
   ServiceContainer() = default;
 
@@ -60,6 +71,7 @@ class ServiceContainer {
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<DisaggregationService> disaggregation_;
   std::shared_ptr<SessionManager> sessionManager_;
+  std::unordered_map<config::ModelService, std::shared_ptr<IService>> services_;
 };
 
 }  // namespace tt::services

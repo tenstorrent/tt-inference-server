@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "api/error_response.hpp"
+#include "api/route_registry.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
@@ -176,6 +177,27 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
   }
 
+  // Install the modality route allow-list FIRST so unknown paths get a clean
+  // 404 instead of leaking a `WWW-Authenticate` challenge from the auth
+  // advice. Advice runs in registration order.
+  drogon::app().registerPreHandlingAdvice(
+      [activeService = modelSvc](const drogon::HttpRequestPtr& req,
+                                 drogon::AdviceCallback&& callback,
+                                 drogon::AdviceChainCallback&& chainCallback) {
+        const std::string& path = req->path();
+        const std::string method = req->methodString();
+        if (tt::api::RouteRegistry::instance().isAllowed(activeService, method,
+                                                         path)) {
+          chainCallback();
+          return;
+        }
+        auto resp = tt::api::errorResponse(
+            drogon::k404NotFound,
+            "Endpoint not available for the active MODEL_SERVICE",
+            "route_not_found");
+        callback(resp);
+      });
+
   drogon::app().registerPreHandlingAdvice(
       [apiKey](const drogon::HttpRequestPtr& req,
                drogon::AdviceCallback&& callback,
@@ -253,20 +275,15 @@ int main(int argc, char* argv[]) {
 
   TT_LOG_INFO("[Main] Starting Drogon HTTP server at http://{}:{}", host, port);
 
-  if (modelSvc == tt::config::ModelService::EMBEDDING) {
-    TT_LOG_INFO("[Main] Endpoints:");
-    TT_LOG_INFO("  POST /v1/embeddings   - OpenAI-compatible embeddings");
-    TT_LOG_INFO("  GET  /health          - Health check");
-    TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
-  } else {
-    TT_LOG_INFO("[Main] Endpoints:");
-    TT_LOG_INFO(
-        "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
-    TT_LOG_INFO("  GET  /health               - Health check");
-    TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
-    TT_LOG_INFO("  GET  /docs                 - Swagger UI");
-    TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
-    TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
+  TT_LOG_INFO("[Main] Endpoints for MODEL_SERVICE='{}':",
+              tt::config::toString(modelSvc));
+  for (const auto& route :
+       tt::api::RouteRegistry::instance().routesFor(modelSvc)) {
+    TT_LOG_INFO("  {} {}  - {}", route.method, route.path, route.description);
+  }
+  for (const auto& path :
+       tt::api::RouteRegistry::instance().alwaysExemptPaths()) {
+    TT_LOG_INFO("  *      {}  - always available", path);
   }
 
   // Run the server

@@ -291,6 +291,9 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
+    src/services/service_registry.cpp
+    src/utils/runner_registry.cpp
+    src/api/route_registry.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -495,6 +498,10 @@ target_include_directories(worker_metrics_shm_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(modality_registry_test tests/modality_registry_test.cpp)
+target_link_libraries(modality_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
+add_test(NAME modality_registry_test COMMAND modality_registry_test)
+
 add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
 target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
 target_include_directories(concurrent_map_test PRIVATE
@@ -623,6 +630,7 @@ set(SOURCES
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
     src/services/service_container.cpp
+    src/services/modality_registration.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp

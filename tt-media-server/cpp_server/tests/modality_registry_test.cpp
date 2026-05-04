@@ -1,0 +1,213 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+#include <gtest/gtest.h>
+
+#include <memory>
+#include <string>
+
+#include "api/route_registry.hpp"
+#include "config/types.hpp"
+#include "services/base_service.hpp"
+#include "services/service_registry.hpp"
+#include "utils/runner_registry.hpp"
+
+namespace {
+
+using tt::api::RouteRegistry;
+using tt::config::ModelRunnerType;
+using tt::config::ModelService;
+using tt::services::IService;
+using tt::services::ServiceRegistry;
+using tt::utils::RunnerRegistry;
+
+class FakeService : public IService {
+ public:
+  explicit FakeService(std::string tag) : tag_(std::move(tag)) {}
+  void start() override {}
+  void stop() override {}
+  bool isModelReady() const override { return true; }
+  tt::services::SystemStatus getSystemStatus() const override {
+    return tt::services::SystemStatus{};
+  }
+  const std::string& tag() const { return tag_; }
+
+ private:
+  std::string tag_;
+};
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// ServiceRegistry
+// ---------------------------------------------------------------------------
+
+TEST(ServiceRegistryTest, RegistersAndCreatesService) {
+  ServiceRegistry::instance().clear();
+  ServiceRegistry::instance().registerService(
+      ModelService::EMBEDDING, []() -> std::shared_ptr<IService> {
+        return std::make_shared<FakeService>("embed");
+      });
+
+  ASSERT_TRUE(ServiceRegistry::instance().has(ModelService::EMBEDDING));
+  EXPECT_FALSE(ServiceRegistry::instance().has(ModelService::LLM));
+
+  auto created = ServiceRegistry::instance().create(ModelService::EMBEDDING);
+  ASSERT_NE(created, nullptr);
+  auto fake = std::dynamic_pointer_cast<FakeService>(created);
+  ASSERT_NE(fake, nullptr);
+  EXPECT_EQ(fake->tag(), "embed");
+}
+
+TEST(ServiceRegistryTest, OverridesExistingFactory) {
+  ServiceRegistry::instance().clear();
+  ServiceRegistry::instance().registerService(
+      ModelService::LLM, []() -> std::shared_ptr<IService> {
+        return std::make_shared<FakeService>("v1");
+      });
+  ServiceRegistry::instance().registerService(
+      ModelService::LLM, []() -> std::shared_ptr<IService> {
+        return std::make_shared<FakeService>("v2");
+      });
+
+  auto fake = std::dynamic_pointer_cast<FakeService>(
+      ServiceRegistry::instance().create(ModelService::LLM));
+  ASSERT_NE(fake, nullptr);
+  EXPECT_EQ(fake->tag(), "v2");
+}
+
+TEST(ServiceRegistryTest, MissingFactoryReturnsNullptr) {
+  ServiceRegistry::instance().clear();
+  EXPECT_EQ(ServiceRegistry::instance().create(ModelService::LLM), nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// RunnerRegistry
+// ---------------------------------------------------------------------------
+
+namespace {
+
+class FakeRunner : public tt::runners::IRunner {
+ public:
+  explicit FakeRunner(std::string tag) : tag_(std::move(tag)) {}
+  void stop() override {}
+  const char* runnerType() const override { return tag_.c_str(); }
+
+ private:
+  void run() override {}
+  std::string tag_;
+};
+
+}  // namespace
+
+TEST(RunnerRegistryTest, ExactMatchPreferredOverFallback) {
+  RunnerRegistry::instance().clear();
+  RunnerRegistry::instance().registerRunner(
+      ModelService::LLM, ModelRunnerType::MOCK,
+      [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
+         tt::ipc::ITaskQueue*,
+         tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
+        return std::make_unique<FakeRunner>("mock");
+      });
+  RunnerRegistry::instance().registerRunner(
+      ModelService::LLM, ModelRunnerType::LLAMA,
+      [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
+         tt::ipc::ITaskQueue*,
+         tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
+        return std::make_unique<FakeRunner>("llama");
+      });
+
+  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
+  auto llama = RunnerRegistry::instance().create(ModelService::LLM,
+                                                 ModelRunnerType::LLAMA, cfg,
+                                                 nullptr, nullptr, nullptr);
+  ASSERT_NE(llama, nullptr);
+  EXPECT_STREQ(llama->runnerType(), "llama");
+}
+
+TEST(RunnerRegistryTest, FallsBackToMockWhenTypeNotRegistered) {
+  RunnerRegistry::instance().clear();
+  RunnerRegistry::instance().registerRunner(
+      ModelService::LLM, ModelRunnerType::MOCK,
+      [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
+         tt::ipc::ITaskQueue*,
+         tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
+        return std::make_unique<FakeRunner>("mock");
+      });
+
+  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
+  auto runner = RunnerRegistry::instance().create(
+      ModelService::LLM, ModelRunnerType::PIPELINE_MANAGER, cfg, nullptr,
+      nullptr, nullptr);
+  ASSERT_NE(runner, nullptr);
+  EXPECT_STREQ(runner->runnerType(), "mock");
+}
+
+TEST(RunnerRegistryTest, NoMatchReturnsNullptr) {
+  RunnerRegistry::instance().clear();
+  tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
+  EXPECT_EQ(RunnerRegistry::instance().create(ModelService::LLM,
+                                              ModelRunnerType::MOCK, cfg,
+                                              nullptr, nullptr, nullptr),
+            nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// RouteRegistry
+// ---------------------------------------------------------------------------
+
+TEST(RouteRegistryTest, ExactPathAllowedForActiveService) {
+  RouteRegistry::instance().clear();
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "POST",
+                                          "/v1/chat/completions", "");
+
+  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "POST",
+                                                  "/v1/chat/completions"));
+  EXPECT_FALSE(RouteRegistry::instance().isAllowed(ModelService::LLM, "GET",
+                                                   "/v1/chat/completions"));
+  EXPECT_FALSE(RouteRegistry::instance().isAllowed(
+      ModelService::EMBEDDING, "POST", "/v1/chat/completions"));
+}
+
+TEST(RouteRegistryTest, TemplatedPathMatchesAnyValue) {
+  RouteRegistry::instance().clear();
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "DELETE",
+                                          "/v1/sessions/{session_id}", "");
+
+  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "DELETE",
+                                                  "/v1/sessions/abc-123"));
+  // Trailing-slash equivalence.
+  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "DELETE",
+                                                  "/v1/sessions/abc-123/"));
+  // Wrong arity must not match.
+  EXPECT_FALSE(RouteRegistry::instance().isAllowed(
+      ModelService::LLM, "DELETE", "/v1/sessions/abc-123/extra"));
+}
+
+TEST(RouteRegistryTest, AlwaysExemptIsServiceAgnostic) {
+  RouteRegistry::instance().clear();
+  RouteRegistry::instance().registerAlwaysExempt("/health");
+  RouteRegistry::instance().registerAlwaysExempt("/health");  // dedupe
+
+  EXPECT_TRUE(
+      RouteRegistry::instance().isAllowed(ModelService::LLM, "GET", "/health"));
+  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::EMBEDDING,
+                                                  "GET", "/health"));
+  EXPECT_EQ(RouteRegistry::instance().alwaysExemptPaths().size(), 1u);
+}
+
+TEST(RouteRegistryTest, RoutesForReturnsRegistrationOrder) {
+  RouteRegistry::instance().clear();
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "post",
+                                          "/v1/chat/completions", "chat");
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "get",
+                                          "/v1/models", "models");
+
+  auto routes = RouteRegistry::instance().routesFor(ModelService::LLM);
+  ASSERT_EQ(routes.size(), 2u);
+  EXPECT_EQ(routes[0].method, "POST");
+  EXPECT_EQ(routes[0].path, "/v1/chat/completions");
+  EXPECT_EQ(routes[0].description, "chat");
+  EXPECT_EQ(routes[1].method, "GET");
+  EXPECT_EQ(routes[1].path, "/v1/models");
+}
