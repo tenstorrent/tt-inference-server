@@ -202,7 +202,10 @@ class TestFrameworkRunner:
 
             logger.info(f"Created {len(test_cases)} test case(s)")
 
-            runner = ServerRunner(test_cases)
+            runner = ServerRunner(
+                test_cases,
+                output_path=getattr(self._args, "output_path", None),
+            )
 
             start_time = time.perf_counter()
             reports = runner.run()

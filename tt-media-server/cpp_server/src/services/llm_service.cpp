@@ -205,15 +205,10 @@ domain::LLMStreamChunk buildStreamChunk(
     choice.reasoning = std::nullopt;
   }
 
-  if (token.isError()) {
-    choice.finish_reason = "error";
-  } else {
-    choice.token_id = static_cast<int64_t>(token.token_id);
-    if (token.isFinal()) {
-      bool isStop =
-          stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
-      choice.finish_reason = isStop ? "stop" : "length";
-    }
+  choice.token_id = static_cast<int64_t>(token.token_id);
+  if (token.isFinal()) {
+    bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+    choice.finish_reason = isStop ? "stop" : "length";
   }
   response.choices.push_back(std::move(choice));
   return response;
@@ -260,11 +255,33 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       anyActivity = true;
 
       uint32_t taskId = token.task_id;
+      bool isError = token.isError();
       bool isFinal = token.isFinal();
 
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {
         streamDecoders.erase(taskId);
+        continue;
+      }
+      if (isError) {
+        if (!isFinal) {
+          // resolveCallback only takes/decrements when isFinal; mirror that
+          // cleanup here so error tokens always terminate the stream cleanly.
+          streamCallbacks.erase(taskId);
+          pendingTasks.fetch_sub(1);
+          tt::metrics::ServerMetrics::instance().setQueueDepth(
+              static_cast<double>(pendingTasks.load()));
+        }
+        streamDecoders.erase(taskId);
+        reasoningSuppressedMap.take(taskId);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  "error");
+        if (reasoningParser) {
+          reasoningParser->finalizeTask(taskId);
+        }
+        auto errorChunk =
+            domain::makeErrorChunk(taskId, "runner reported error");
+        entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }
 
@@ -279,6 +296,15 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             taskId, static_cast<int64_t>(token.token_id), delta);
       }
 
+      bool suppressReasoning = reasoningSuppressedMap.get(taskId).has_value();
+      if (suppressReasoning && parseResult.type == ContentType::REASONING) {
+        if (isFinal) {
+          parseResult = {ContentType::ANSWER, "", true};
+        } else {
+          continue;
+        }
+      }
+
       if ((!parseResult.should_emit || parseResult.text.empty()) && !isFinal) {
         continue;
       }
@@ -288,6 +314,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       if (isFinal) {
         streamDecoders.erase(taskId);
+        reasoningSuppressedMap.take(taskId);
         std::string finishReason = "unknown";
         if (!response.choices.empty() &&
             response.choices[0].finish_reason.has_value()) {
@@ -398,6 +425,10 @@ void LLMService::processStreamingRequest(
 
   if (request.tool_choice.has_value()) {
     toolChoiceMap.insert(taskId, request.tool_choice.value());
+  }
+
+  if (!request.enable_reasoning) {
+    reasoningSuppressedMap.insert(taskId, true);
   }
 
   if (reasoningParser) {
@@ -533,6 +564,8 @@ void LLMService::abortRequest(uint32_t taskId) {
   }
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
+  reasoningSuppressedMap.take(taskId);
+
   if (reasoningParser) {
     reasoningParser->finalizeTask(taskId);
   }
