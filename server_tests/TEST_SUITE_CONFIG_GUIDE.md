@@ -249,6 +249,8 @@ request on a 32-chip Galaxy board):
 ```
 
 `num_of_devices` is reserved for the physical chip count consumed by
-`DeviceLivenessTest` / `DeviceStabilityTest`. It is still accepted as a
-deprecated alias inside load-test `targets:` (a warning is logged once per
-test instance).
+`DeviceLivenessTest` / `DeviceStabilityTest`. Inside a load-test `targets:`
+block it is **deprecated** (the canonical key is `num_concurrent_requests`)
+but still accepted: at expansion time any per-test-case `num_of_devices`
+override is mirrored into `num_concurrent_requests` and a deprecation
+warning is logged. Please migrate to `num_concurrent_requests`.
