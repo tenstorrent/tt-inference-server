@@ -24,16 +24,14 @@ logger = logging.getLogger(__name__)
 
 
 # v2-local performance targets JSON. Override at runtime by pointing
-# OVERRIDE_BENCHMARK_TARGETS at a different file (matches the v1 env var
-# name for continuity).
+# OVERRIDE_BENCHMARK_TARGETS at a different file
 _DEFAULT_TARGETS_PATH = (
     Path(__file__).parent / "targets" / "model_performance_reference.json"
 )
 
 
-# v1 tier multipliers (workflows/run_reports.py:56-57). For latency-style
-# metrics (lower is better) the threshold is target * multiplier; for
-# throughput-style metrics (higher is better) it is target / multiplier.
+# For latency-style metrics (lower is better) the threshold is target * multiplier;
+# for throughput-style metrics (higher is better) it is target / multiplier.
 TIER_MULTIPLIERS = {
     "functional": 10,
     "complete": 2,
@@ -44,10 +42,6 @@ TIER_MULTIPLIERS = {
 @dataclass
 class PerformanceTargets:
     """Parsed performance targets from model_performance_reference.json.
-
-    Vendored from v1 ``workflows.utils_report.PerformanceTargets`` so v2
-    has no runtime dependency on the v1 ``workflows`` package for target
-    loading.
     """
 
     ttft_ms: Optional[float] = None
@@ -170,13 +164,12 @@ def _check_from_ratio(ratio: float, lower_is_better: bool) -> ReportCheckTypes:
 def evaluate_tiered(
     targets: PerformanceTargets, specs: Sequence[MetricSpec]
 ) -> dict[str, dict]:
-    """V1-style 3-tier ``target_checks`` dict.
+    """Build the 3-tier ``target_checks`` dict.
 
     For each tier (functional/complete/target) and each metric spec,
     emit ``<field>``, ``<field>_ratio``, and ``<field>_check`` keys.
     Missing target → ``"Undefined"`` for value/ratio and ``NA`` for check.
-    Missing actual → ``0.0`` ratio and ``NA`` check (matches v1 behavior
-    in ``calculate_target_metrics``).
+    Missing actual → ``0.0`` ratio and ``NA`` check.
     """
     result: dict[str, dict] = {}
     for tier_name, multiplier in TIER_MULTIPLIERS.items():
