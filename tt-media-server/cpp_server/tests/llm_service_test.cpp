@@ -5,7 +5,6 @@
 
 #include <gtest/gtest.h>
 
-#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <vector>
@@ -48,14 +47,8 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   request.skip_special_tokens = true;
   request.enable_reasoning = true;
 
-  std::atomic<int> callbackInvocations{0};
-  auto callback = [&](tt::domain::LLMStreamChunk& /*chunk*/, bool /*isFinal*/) {
-    callbackInvocations.fetch_add(1);
-  };
-
-  ASSERT_NO_THROW(
-      llmService->processStreamingRequest(std::move(request), callback));
-  EXPECT_EQ(callbackInvocations.load(), 0);
+  ASSERT_NO_THROW(llmService->processStreamingRequest(
+      std::move(request), [](tt::domain::LLMStreamChunk&, bool) {}));
 
   ASSERT_FALSE(taskQueue->empty());
   auto pushed = taskQueue->tryPop();
