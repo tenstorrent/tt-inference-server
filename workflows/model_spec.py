@@ -222,6 +222,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+qwen35_9b_blackhole_impl = ImplSpec(
+    impl_id="qwen35_9b_blackhole",
+    impl_name="qwen3.5-9b-blackhole",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen3_5_9b",
+)
 gpt_oss_impl = ImplSpec(
     impl_id="gpt_oss",
     impl_name="gpt-oss",
@@ -1241,6 +1247,27 @@ llm_templates = [
                 "tool_call_parser_name": "hermes",
             },
         },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3.5-9B"],
+        impl=qwen35_9b_blackhole_impl,
+        version="0.12.0",
+        tt_metal_commit="c3a8d6c",
+        vllm_commit="7c6685a",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=128 * 1024,
+                default_impl=True,
+                # Prefix caching forces vLLM into "align" mamba-cache mode, which
+                # requires chunked prefill — forbidden by the TT platform.
+                vllm_args={"no-enable-prefix-caching": True},
+            ),
+        ],
+        has_builtin_warmup=True,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],

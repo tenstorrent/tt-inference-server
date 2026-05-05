@@ -368,6 +368,12 @@ def register_tt_models(impl_id=None):
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
+    # Qwen3.5-9B (hybrid DeltaNet + Full Attention) - Blackhole P150
+    ModelRegistry.register_model(
+        "Qwen3_5ForConditionalGeneration",
+        "models.demos.blackhole.qwen3_5_9b.tt.qwen35_vllm:TTQwen35ForCausalLM",
+    )
+
 
 def model_setup(model_spec_json):
     # step 1: validate env vars passed in
