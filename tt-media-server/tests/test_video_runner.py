@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -106,32 +107,58 @@ class TestWriteErrorToShm:
 
 class TestCreateDitRunner:
     @staticmethod
-    def _make_dit_module(mock_mochi, mock_wan):
+    def _make_dit_module(mock_mochi, mock_wan, mock_wan_i2v=None):
         mock_mochi.__name__ = "TTMochi1Runner"
         mock_wan.__name__ = "TTWan22Runner"
         mod = Mock()
         mod.TTMochi1Runner = mock_mochi
         mod.TTWan22Runner = mock_wan
+        if mock_wan_i2v is not None:
+            mock_wan_i2v.__name__ = "TTWan22I2VRunner"
+            mod.TTWan22I2VRunner = mock_wan_i2v
         return {"tt_model_runners.dit_runners": mod}
 
     def test_creates_mochi_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
+        mock_wan_i2v = Mock()
+        with patch.dict(
+            sys.modules, self._make_dit_module(mock_mochi, mock_wan, mock_wan_i2v)
+        ):
             _create_dit_runner("tt-mochi-1", 0)
             mock_mochi.assert_called_once_with("")
 
     def test_creates_wan_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
+        mock_wan_i2v = Mock()
+        with patch.dict(
+            sys.modules, self._make_dit_module(mock_mochi, mock_wan, mock_wan_i2v)
+        ):
             _create_dit_runner("tt-wan2.2", 1)
             mock_wan.assert_called_once_with("")
+
+    def test_creates_wan_i2v_runner(self):
+        """``tt-wan2.2-i2v`` must resolve to ``TTWan22I2VRunner`` so the
+        multi-host MPI entrypoint can serve I2V requests at all."""
+        mock_mochi = Mock()
+        mock_wan = Mock()
+        mock_wan_i2v = Mock()
+        with patch.dict(
+            sys.modules, self._make_dit_module(mock_mochi, mock_wan, mock_wan_i2v)
+        ):
+            _create_dit_runner("tt-wan2.2-i2v", 0)
+            mock_wan_i2v.assert_called_once_with("")
+            mock_wan.assert_not_called()
+            mock_mochi.assert_not_called()
 
     def test_raises_on_unsupported_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
+        mock_wan_i2v = Mock()
+        with patch.dict(
+            sys.modules, self._make_dit_module(mock_mochi, mock_wan, mock_wan_i2v)
+        ):
             with pytest.raises(ValueError, match="Unsupported MODEL_RUNNER"):
                 _create_dit_runner("invalid_runner", 0)
 
@@ -156,6 +183,42 @@ class TestVideoRequestToGenerateRequest:
         assert gen.num_inference_steps == 20
         assert gen.seed == 42
 
+    def test_returns_t2v_when_image_prompts_empty(self):
+        """Empty / None ``image_prompts`` falls through to the T2V path so
+        single-host T2V behaviour is byte-identical to before the change."""
+        from domain.video_generate_request import VideoGenerateRequest
+        from domain.video_i2v_generate_request import VideoI2VGenerateRequest
+
+        req = _make_request()
+        gen = video_request_to_generate_request(req, image_prompts=None)
+        assert isinstance(gen, VideoGenerateRequest)
+        assert not isinstance(gen, VideoI2VGenerateRequest)
+
+        gen_empty = video_request_to_generate_request(req, image_prompts=[])
+        assert isinstance(gen_empty, VideoGenerateRequest)
+        assert not isinstance(gen_empty, VideoI2VGenerateRequest)
+
+    def test_returns_i2v_when_image_prompts_non_empty(self):
+        """Non-empty ``image_prompts`` triggers the I2V request type with
+        the entries unpacked into ``ImagePromptEntry`` objects."""
+        from domain.video_i2v_generate_request import (
+            ImagePromptEntry,
+            VideoI2VGenerateRequest,
+        )
+
+        req = _make_request()
+        image_prompts = [
+            {"image": _tiny_png_b64(), "frame_pos": 0},
+            {"image": _tiny_png_b64(), "frame_pos": 40},
+        ]
+        gen = video_request_to_generate_request(req, image_prompts=image_prompts)
+
+        assert isinstance(gen, VideoI2VGenerateRequest)
+        assert len(gen.image_prompts) == 2
+        assert all(isinstance(p, ImagePromptEntry) for p in gen.image_prompts)
+        assert gen.image_prompts[0].frame_pos == 0
+        assert gen.image_prompts[1].frame_pos == 40
+
 
 class TestHandleSigterm:
     def test_sets_shutdown_flag(self):
@@ -168,20 +231,182 @@ class TestHandleSigterm:
         vr._shutdown = original
 
 
-class TestMPIHelpers:
-    def test_broadcast_request_calls_bcast(self):
+# NOTE: standalone happy-path / shutdown coverage for ``_broadcast_request``
+# now lives in ``TestI2VBroadcast`` below — the helper's contract changed
+# from "broadcast a single VideoRequest" to "broadcast a (request,
+# image_prompts) tuple" so I2V conditioning images reach ranks 1..N. Keeping
+# the old single-value assertions would be a contradiction with the new
+# contract, so they have been replaced rather than amended.
+
+
+class TestI2VBroadcast:
+    """Multi-host I2V requires the conditioning image_prompts to reach all
+    ranks alongside the text request. ``_broadcast_request`` is the chokepoint
+    that bundles ``(req, image_prompts)`` into a single MPI ``bcast`` call.
+    """
+
+    def test_broadcasts_request_and_image_prompts_tuple(self):
         mock_comm = MagicMock()
         req = _make_request()
-        mock_comm.bcast.return_value = req
-        result = _broadcast_request(mock_comm, req)
-        mock_comm.bcast.assert_called_once_with(req, root=0)
-        assert result.task_id == "t1"
+        image_prompts = [{"image": _tiny_png_b64(), "frame_pos": 0}]
+        mock_comm.bcast.return_value = (req, image_prompts)
 
-    def test_broadcast_none_signals_shutdown(self):
+        got_req, got_imgs = _broadcast_request(
+            mock_comm, req, image_prompts=image_prompts
+        )
+
+        mock_comm.bcast.assert_called_once_with((req, image_prompts), root=0)
+        assert got_req is req
+        assert got_imgs == image_prompts
+
+    def test_broadcasts_request_with_no_image_prompts(self):
+        """T2V backward compat: when ``image_prompts`` is omitted, the
+        broadcast payload is ``(req, None)`` so non-rank-0 receivers still
+        unpack a uniform tuple shape."""
         mock_comm = MagicMock()
-        mock_comm.bcast.return_value = None
-        result = _broadcast_request(mock_comm, None)
-        assert result is None
+        req = _make_request()
+        mock_comm.bcast.return_value = (req, None)
+
+        got_req, got_imgs = _broadcast_request(mock_comm, req)
+
+        mock_comm.bcast.assert_called_once_with((req, None), root=0)
+        assert got_req is req
+        assert got_imgs is None
+
+    def test_broadcasts_none_pair_for_shutdown(self):
+        """Shutdown signal: rank-0 ``read_request`` returned ``None``; the
+        broadcast unwraps to ``(None, None)`` so all ranks break out of the
+        inference loop in lock-step."""
+        mock_comm = MagicMock()
+        mock_comm.bcast.return_value = (None, None)
+
+        got_req, got_imgs = _broadcast_request(mock_comm, None)
+
+        assert got_req is None
+        assert got_imgs is None
+
+
+class TestI2VInferenceLoopSideFile:
+    """End-to-end behaviour of ``_run_inference_loop`` when an I2V request
+    references a side-file containing the JSON-serialised image_prompts."""
+
+    def _run_loop_once(self, mock_comm, mock_runner, mock_input_shm):
+        """Run the loop with a single iteration + shutdown sentinel."""
+        import queue as _queue
+
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        encode_queue: _queue.Queue = _queue.Queue()
+        _run_inference_loop(mock_comm, mock_runner, mock_input_shm, encode_queue)
+        return encode_queue
+
+    def test_rank0_reads_side_file_and_broadcasts_tuple(self, tmp_path):
+        """Rank 0 deserialises the side-file before broadcasting so all
+        ranks receive identical conditioning images for collective inference.
+        """
+        side_path = tmp_path / "tt_img_task1.json"
+        image_prompts = [
+            {"image": _tiny_png_b64(), "frame_pos": 0},
+            {"image": _tiny_png_b64(), "frame_pos": 40},
+        ]
+        side_path.write_text(json.dumps(image_prompts))
+
+        req = _make_request(image_path=str(side_path))
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        # Iteration 1: real payload. Iteration 2: shutdown sentinel.
+        mock_comm.bcast.side_effect = [(req, image_prompts), (None, None)]
+
+        mock_runner = MagicMock()
+        mock_runner.run.return_value = MagicMock()
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.side_effect = [req, None]
+
+        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+
+        first_call = mock_comm.bcast.call_args_list[0]
+        payload = first_call.args[0] if first_call.args else first_call[0][0]
+        assert payload[0].task_id == req.task_id
+        assert payload[1] == image_prompts
+
+    def test_rank0_non_list_side_file_falls_back_to_empty_prompts(self, tmp_path):
+        """Defence against a corrupt (or attacker-poisoned) side-file: if the
+        on-disk JSON parses but isn't a list (e.g. a dict, a string), we MUST
+        fall back to ``[]`` rather than letting the malformed payload reach
+        ``ImagePromptEntry(**entry)`` later — which would raise ``TypeError``
+        from ``**non_dict`` and produce a much harder-to-read failure than a
+        single-line warning + clean T2V degrade."""
+        side_path = tmp_path / "tt_img_corrupt.json"
+        side_path.write_text(json.dumps({"image": "b64", "frame_pos": 0}))
+
+        req = _make_request(image_path=str(side_path))
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.bcast.side_effect = [(req, []), (None, None)]
+
+        mock_runner = MagicMock()
+        mock_runner.run.return_value = MagicMock()
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.side_effect = [req, None]
+
+        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+
+        first_call = mock_comm.bcast.call_args_list[0]
+        payload = first_call.args[0] if first_call.args else first_call[0][0]
+        assert payload[1] == []
+
+    def test_rank0_missing_side_file_falls_back_to_empty_prompts(self, tmp_path):
+        """If the side-file vanished (e.g. tmpfs reaped by an oom-killer
+        between SHM hand-off and runner read), the loop must NOT crash the
+        whole MPI job — it falls back to empty ``image_prompts`` so the
+        broadcast still completes and the request fails downstream cleanly
+        instead of deadlocking peers that are blocked in ``bcast``.
+        """
+        missing = tmp_path / "tt_img_does_not_exist.json"
+        req = _make_request(image_path=str(missing))
+
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.bcast.side_effect = [(req, []), (None, None)]
+
+        mock_runner = MagicMock()
+        mock_runner.run.return_value = MagicMock()
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.side_effect = [req, None]
+
+        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+
+        first_call = mock_comm.bcast.call_args_list[0]
+        payload = first_call.args[0] if first_call.args else first_call[0][0]
+        assert payload[0].task_id == req.task_id
+        assert payload[1] == []
+
+    def test_rank0_skips_side_file_read_for_t2v(self, tmp_path, monkeypatch):
+        """T2V request (``image_path == ""``) must not attempt any file I/O
+        at all — keeps the T2V hot path identical to pre-I2V behaviour."""
+        opens_seen = []
+        real_open = open
+
+        def tracking_open(path, *args, **kwargs):
+            opens_seen.append(str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", tracking_open)
+
+        req = _make_request(image_path="")
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.bcast.side_effect = [(req, None), (None, None)]
+        mock_runner = MagicMock()
+        mock_runner.run.return_value = MagicMock()
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.side_effect = [req, None]
+
+        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+
+        # The runner code itself must not have opened any tt_img_*.json file.
+        assert not any("tt_img_" in p for p in opens_seen)
 
 
 class TestAttachMpiComm:
@@ -215,6 +440,10 @@ class TestRunInferenceLoop:
         """Successful inference on rank 0 hands frames off to the encoder
         queue. The inference loop itself must never write to ``output_shm``
         or call ``export_to_mp4`` — the encoder thread is the sole writer.
+
+        Broadcast payload is the new ``(req, image_prompts)`` tuple even on
+        the T2V hot path (image_prompts is None) so all ranks unpack a
+        uniformly-shaped value from ``comm.bcast``.
         """
         import queue as _queue
 
@@ -224,7 +453,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [req, None]
+        mock_comm.bcast.side_effect = [(req, None), (None, None)]
 
         mock_runner = MagicMock()
         mock_frames = MagicMock()
@@ -258,7 +487,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [req, None]
+        mock_comm.bcast.side_effect = [(req, None), (None, None)]
 
         mock_runner = MagicMock()
         mock_runner.run.side_effect = RuntimeError("inference exploded")
@@ -277,6 +506,9 @@ class TestRunInferenceLoop:
         assert "inference exploded" in job.error
 
     def test_none_request_breaks_loop(self):
+        """Shutdown sentinel: rank 0's ``read_request`` returned None and the
+        broadcast unwraps to ``(None, None)`` — all ranks break out of the
+        loop in lock-step without calling the runner."""
         import queue as _queue
 
         import tt_model_runners.video_runner as vr
@@ -284,7 +516,7 @@ class TestRunInferenceLoop:
         vr._shutdown = False
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.return_value = None
+        mock_comm.bcast.return_value = (None, None)
 
         mock_runner = MagicMock()
         mock_input_shm = MagicMock()
@@ -303,7 +535,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 1
-        mock_comm.bcast.side_effect = [req, None]
+        mock_comm.bcast.side_effect = [(req, None), (None, None)]
 
         mock_runner = MagicMock()
 
@@ -329,7 +561,8 @@ class TestRunAllRanks:
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
         mock_comm.Get_size.return_value = 4
-        mock_comm.bcast.return_value = None
+        # Shutdown payload is now a (None, None) tuple — see _broadcast_request.
+        mock_comm.bcast.return_value = (None, None)
 
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.return_value = None
@@ -407,7 +640,8 @@ class TestRunAllRanks:
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 1
         mock_comm.Get_size.return_value = 4
-        mock_comm.bcast.return_value = None
+        # Shutdown payload is now a (None, None) tuple — see _broadcast_request.
+        mock_comm.bcast.return_value = (None, None)
 
         env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "1"}
         with patch.dict(os.environ, env, clear=False), patch(
@@ -445,6 +679,27 @@ def _make_request(**overrides):
     )
     defaults.update(overrides)
     return VideoRequest(**defaults)
+
+
+_TINY_PNG_B64_CACHE: str = ""
+
+
+def _tiny_png_b64() -> str:
+    """Smallest valid PNG, base64-encoded — used as a stand-in for I2V
+    conditioning images in tests that don't actually decode them."""
+    global _TINY_PNG_B64_CACHE
+    if _TINY_PNG_B64_CACHE:
+        return _TINY_PNG_B64_CACHE
+
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1, 1), color=0).save(buf, format="PNG")
+    _TINY_PNG_B64_CACHE = base64.b64encode(buf.getvalue()).decode("ascii")
+    return _TINY_PNG_B64_CACHE
 
 
 if __name__ == "__main__":
