@@ -127,42 +127,31 @@ SingleProcessWorker* WorkerManager::worker(size_t idx) {
 
 bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   auto* w = workers[workerIdx].get();
-  if (w->pid <= 0) {
-    return false;
-  }
-  int status;
-  pid_t result = waitpid(w->pid, &status, WNOHANG);
-  if (result == 0) {
-    return true;
-  }
-  if (result == w->pid) {
-    w->is_alive = false;
-    if (WIFSIGNALED(status)) {
-      int sig = WTERMSIG(status);
-      TT_LOG_CRITICAL(
-          "[WorkerManager] Worker {} (PID {}) killed by signal {} ({})"
-          "{}",
-          workerIdx, w->pid, sig, strsignal(sig),
-          WCOREDUMP(status) ? " -- core dumped" : "");
-    } else if (WIFEXITED(status)) {
-      int exitCode = WEXITSTATUS(status);
-      if (exitCode != 0) {
-        TT_LOG_CRITICAL(
-            "[WorkerManager] Worker {} (PID {}) exited with code {}", workerIdx,
-            w->pid, exitCode);
-      } else {
-        TT_LOG_WARN(
-            "[WorkerManager] Worker {} (PID {}) exited normally (code 0)",
-            workerIdx, w->pid);
-      }
-    } else {
-      TT_LOG_CRITICAL(
-          "[WorkerManager] Worker {} (PID {}) terminated, raw status=0x{:x}",
-          workerIdx, w->pid, status);
+  auto result = pollProcessLiveness(w->pid, w->is_alive, workerIdx);
+  if (result.transitionedToDead) {
+    WorkerDeathCallback callback;
+    {
+      std::lock_guard<std::mutex> lock(deathCallbackMutex);
+      callback = deathCallback;
     }
-    return false;
+    if (callback) {
+      try {
+        callback(workerIdx, w->pid);
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[WorkerManager] Worker death callback threw: {}",
+                     e.what());
+      } catch (...) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Worker death callback threw a non-std exception");
+      }
+    }
   }
-  return true;  // waitpid error -- assume alive
+  return result.stillAlive;
+}
+
+void WorkerManager::setWorkerDeathCallback(WorkerDeathCallback callback) {
+  std::lock_guard<std::mutex> lock(deathCallbackMutex);
+  deathCallback = std::move(callback);
 }
 
 void WorkerManager::restartWorker(size_t workerIdx) {
