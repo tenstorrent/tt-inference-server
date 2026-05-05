@@ -292,7 +292,22 @@ Located in `hardware_defaults`, defines device-specific values:
 
 These are automatically applied to:
 - DeviceLivenessTest `retry_attempts`
-- Test `targets.num_of_devices` (unless overridden)
+- Test `targets.num_of_devices` — physical chip count, read by
+  `DeviceLivenessTest` and `DeviceStabilityTest`
+- Test `targets.num_concurrent_requests` — default client-side concurrency
+  for `*LoadTest` cases
+
+Per-test overrides inside a suite's `targets:` block should use:
+- `num_concurrent_requests` for load tests (e.g. to send a single request on
+  a multi-chip board like Galaxy)
+- `num_of_devices` only for liveness/stability tests that genuinely probe
+  the physical chip count
+
+For back-compat, `num_of_devices` is still accepted inside a load-test
+`targets:` block, but it is **deprecated** there — the canonical key is
+`num_concurrent_requests`. At expansion time, any per-test-case
+`num_of_devices` override is mirrored into `num_concurrent_requests` and a
+deprecation warning is logged. Please migrate to `num_concurrent_requests`.
 
 ### Test Suite Structure
 
