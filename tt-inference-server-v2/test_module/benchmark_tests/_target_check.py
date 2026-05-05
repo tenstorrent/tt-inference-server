@@ -8,14 +8,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
-
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from .._test_common import ReportCheckTypes
 from ..context import MediaContext
@@ -99,12 +94,19 @@ def _load_reference() -> Dict[str, Any]:
     return _REFERENCE_CACHE
 
 
-def get_performance_targets(model_name: str, device_str: str) -> PerformanceTargets:
+def get_performance_targets(
+    model_name: str, device_str: Optional[str]
+) -> PerformanceTargets:
     """Look up performance targets for ``model_name`` on ``device_str``.
 
     Returns an empty ``PerformanceTargets`` (all ``None``) if no entry is
     found; callers handle that as ``ReportCheckTypes.NA``.
     """
+    if not device_str:
+        logger.warning(
+            f"No device specified for model '{model_name}'; skipping target lookup"
+        )
+        return PerformanceTargets()
     device_key = device_str.lower()
     reference = _load_reference()
     model_data = reference.get(model_name, {})
