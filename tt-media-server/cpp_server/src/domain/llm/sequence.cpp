@@ -1,13 +1,13 @@
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
 #include "config/runner_config.hpp"
-#include "domain/sampling_params.hpp"
+#include "domain/llm/sampling_params.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 using Config = tt::config::LLMConfig;
 
@@ -108,4 +108,4 @@ Sequence Sequence::deserialize(std::istream& is) {
   return seq;
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

@@ -8,9 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 
 namespace tt::utils {
+
+using namespace tt::domain::llm;
 
 /**
  * Conversation hashing utilities for prefix caching simulation.
@@ -33,8 +35,8 @@ namespace tt::utils {
  * @param messages Input chat messages
  * @return Messages with tool/function messages filtered out
  */
-std::vector<domain::ChatMessage> stripToolMessages(
-    const std::vector<domain::ChatMessage>& messages);
+std::vector<ChatMessage> stripToolMessages(
+    const std::vector<ChatMessage>& messages);
 
 /**
  * Return the prefix used to LOOK UP a continuing session: messages with
@@ -52,8 +54,8 @@ std::vector<domain::ChatMessage> stripToolMessages(
  * @param messages Input chat messages (must end with user message)
  * @return Prior-turn prefix or nullopt if no prior turn exists
  */
-std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
-    const std::vector<domain::ChatMessage>& messages);
+std::optional<std::vector<ChatMessage>> extractPriorTurnPrefix(
+    const std::vector<ChatMessage>& messages);
 
 /**
  * Stable 64-bit hash of a chat-message prefix, computed from the rendered
@@ -65,7 +67,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
  *               messages stripped)
  * @return 64-bit hash value
  */
-uint64_t hashConversationPrefix(const std::vector<domain::ChatMessage>& prefix);
+uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix);
 
 /**
  * Render the LAST user message on its own, with addGenerationPrompt=true and
@@ -76,7 +78,7 @@ uint64_t hashConversationPrefix(const std::vector<domain::ChatMessage>& prefix);
  * @return Rendered delta prompt for the last user turn
  */
 std::string renderLastUserTurn(
-    const std::vector<domain::ChatMessage>& messages);
+    const std::vector<ChatMessage>& messages);
 
 /**
  * Routing information computed from conversation messages for prefix caching.
@@ -101,6 +103,6 @@ struct PrefixCachingInfo {
  * @return Complete routing information for prefix caching
  */
 PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<domain::ChatMessage>& messages);
+    const std::vector<ChatMessage>& messages);
 
 }  // namespace tt::utils

@@ -6,11 +6,13 @@
 #include <utility>
 
 #include "api/error_response.hpp"
-#include "domain/chat_completion_response.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
                                                  HttpCallback httpCallback)
@@ -24,7 +26,7 @@ std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
 }
 
 void NonStreamResponseWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+    const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -46,12 +48,12 @@ void NonStreamResponseWriter::handleTokenChunk(
 void NonStreamResponseWriter::finalize() {
   if (done.exchange(true)) return;
 
-  domain::LLMResponse llmResponse{params.taskId};
+  LLMResponse llmResponse{params.taskId};
   llmResponse.id = params.completionId;
   llmResponse.model = params.model;
   llmResponse.created = params.created;
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = 0;
   choice.text = accumulatedAnswer.str();
   choice.reasoning =
@@ -72,7 +74,7 @@ void NonStreamResponseWriter::finalize() {
   }
 
   auto chatResponse =
-      domain::ChatCompletionResponse::fromLLMResponse(llmResponse);
+      ChatCompletionResponse::fromLLMResponse(llmResponse);
 
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);

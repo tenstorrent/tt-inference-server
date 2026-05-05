@@ -7,11 +7,13 @@
 #include <sstream>
 #include <string>
 
-#include "domain/chat_completion_request.hpp"
+#include "domain/llm/chat_completion_request.hpp"
 #include "domain/response_format.hpp"
-#include "domain/sampling_params.hpp"
+#include "domain/llm/sampling_params.hpp"
 
 namespace {
+
+using namespace tt::domain::llm;
 
 Json::Value parseJson(const std::string& str) {
   Json::CharReaderBuilder builder;
@@ -105,13 +107,13 @@ TEST(ResponseFormatTest, RejectMissingType) {
 // ---------------------------------------------------------------------------
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatText) {
-  tt::domain::SamplingParams orig;
+  tt::domain::llm::SamplingParams orig;
   orig.response_format_type = tt::domain::ResponseFormatType::TEXT;
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = tt::domain::SamplingParams::deserialize(is);
+  auto restored = tt::domain::llm::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
             tt::domain::ResponseFormatType::TEXT);
@@ -119,13 +121,13 @@ TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatText) {
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonObject) {
-  tt::domain::SamplingParams orig;
+  tt::domain::llm::SamplingParams orig;
   orig.response_format_type = tt::domain::ResponseFormatType::JSON_OBJECT;
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = tt::domain::SamplingParams::deserialize(is);
+  auto restored = tt::domain::llm::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
             tt::domain::ResponseFormatType::JSON_OBJECT);
@@ -133,7 +135,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonObject) {
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonSchema) {
-  tt::domain::SamplingParams orig;
+  tt::domain::llm::SamplingParams orig;
   orig.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
   orig.json_schema_str =
       R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false})";
@@ -141,7 +143,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonSchema) {
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = tt::domain::SamplingParams::deserialize(is);
+  auto restored = tt::domain::llm::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
             tt::domain::ResponseFormatType::JSON_SCHEMA);
@@ -150,15 +152,15 @@ TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonSchema) {
 }
 
 TEST(SamplingParamsTest, HasGuidedDecoding) {
-  tt::domain::SamplingParams text;
+  tt::domain::llm::SamplingParams text;
   text.response_format_type = tt::domain::ResponseFormatType::TEXT;
   EXPECT_FALSE(text.hasGuidedDecoding());
 
-  tt::domain::SamplingParams jsonObj;
+  tt::domain::llm::SamplingParams jsonObj;
   jsonObj.response_format_type = tt::domain::ResponseFormatType::JSON_OBJECT;
   EXPECT_TRUE(jsonObj.hasGuidedDecoding());
 
-  tt::domain::SamplingParams jsonSchema;
+  tt::domain::llm::SamplingParams jsonSchema;
   jsonSchema.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
   EXPECT_TRUE(jsonSchema.hasGuidedDecoding());
 }
@@ -171,7 +173,7 @@ TEST(ChatCompletionRequestTest, ParseResponseFormatOmitted) {
   auto json = parseJson(R"({
     "messages": [{"role": "user", "content": "hello"}]
   })");
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   EXPECT_FALSE(req.response_format.has_value());
 }
 
@@ -180,7 +182,7 @@ TEST(ChatCompletionRequestTest, ParseResponseFormatText) {
     "messages": [{"role": "user", "content": "hello"}],
     "response_format": {"type": "text"}
   })");
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   ASSERT_TRUE(req.response_format.has_value());
   EXPECT_EQ(req.response_format->type, tt::domain::ResponseFormatType::TEXT);
 }
@@ -201,7 +203,7 @@ TEST(ChatCompletionRequestTest, ParseResponseFormatJsonSchema) {
       }
     }
   })");
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   ASSERT_TRUE(req.response_format.has_value());
   EXPECT_EQ(req.response_format->type,
             tt::domain::ResponseFormatType::JSON_SCHEMA);
@@ -213,7 +215,7 @@ TEST(ChatCompletionRequestTest, ToLLMRequestPreservesResponseFormat) {
     "messages": [{"role": "user", "content": "hello"}],
     "response_format": {"type": "json_object"}
   })");
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   auto llmReq = req.toLLMRequest();
   ASSERT_TRUE(llmReq.response_format.has_value());
   EXPECT_EQ(llmReq.response_format->type,
@@ -225,7 +227,7 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
     "messages": [{"role": "user", "content": "hello"}],
     "response_format": {"type": "invalid"}
   })");
-  EXPECT_THROW(tt::domain::ChatCompletionRequest::fromJson(json, 1),
+  EXPECT_THROW(tt::domain::llm::ChatCompletionRequest::fromJson(json, 1),
                std::invalid_argument);
 }
 
@@ -239,7 +241,7 @@ TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonObject) {
     "response_format": {"type": "json_object"}
   })");
 
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   auto llmReq = req.toLLMRequest();
 
   ASSERT_TRUE(llmReq.response_format.has_value());
@@ -267,7 +269,7 @@ TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonSchema) {
     }
   })");
 
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   auto llmReq = req.toLLMRequest();
 
   ASSERT_TRUE(llmReq.response_format.has_value());
@@ -286,7 +288,7 @@ TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
     "response_format": {"type": "text"}
   })");
 
-  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto req = tt::domain::llm::ChatCompletionRequest::fromJson(json, 1);
   auto llmReq = req.toLLMRequest();
 
   ASSERT_TRUE(llmReq.response_format.has_value());

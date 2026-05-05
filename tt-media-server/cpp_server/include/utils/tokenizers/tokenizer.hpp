@@ -13,10 +13,12 @@
 #include <vector>
 
 #include "config/types.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
+
+using namespace tt::domain::llm;
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -100,7 +102,7 @@ class Tokenizer {
    *   inject a closed think block to suppress chain-of-thought output.
    */
   virtual std::string applyChatTemplate(
-      const std::vector<tt::domain::ChatMessage>& messages,
+      const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt = true,
       const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
           std::nullopt,

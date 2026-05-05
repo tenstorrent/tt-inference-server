@@ -39,7 +39,7 @@ class LLMRunner : public IRunner {
   void step();
   void memoryLoop();
   void exit();
-  void applyGuidedDecodingMasks(const std::vector<tt::domain::Sequence*>& seqs,
+  void applyGuidedDecodingMasks(const std::vector<tt::domain::llm::Sequence*>& seqs,
                                 bool isPrefill);
 
   config::LLMConfig config;

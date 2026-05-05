@@ -17,8 +17,8 @@ namespace tt::runners {
 using namespace tt::runners::llm_engine;
 using namespace tt::runners::schedulers;
 using Config = tt::config::LLMConfig;
-using Sequence = tt::domain::Sequence;
-using SequenceStatus = tt::domain::SequenceStatus;
+using Sequence = tt::domain::llm::Sequence;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
 
 LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
                      tt::ipc::ITaskQueue* taskQueue,
@@ -47,7 +47,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
         e.what());
   }
 
-  auto decodeCb = [this](const domain::TokenResult& result) {
+  auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler->findSequence(result.taskId);
 

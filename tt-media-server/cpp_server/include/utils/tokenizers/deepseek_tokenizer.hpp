@@ -15,7 +15,7 @@ class DeepseekTokenizer final : public Tokenizer {
   std::vector<int64_t> stopTokenIds() const { return {1}; }
 
   std::string applyChatTemplate(
-      const std::vector<tt::domain::ChatMessage>& messages,
+      const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt,
       const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
           std::nullopt,

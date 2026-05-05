@@ -14,7 +14,7 @@
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/streaming_response_writer.hpp"
 #include "config/settings.hpp"
-#include "domain/chat_completion_request.hpp"
+#include "domain/llm/chat_completion_request.hpp"
 #include "domain/models_response.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
@@ -25,6 +25,8 @@
 #include "utils/logger.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 void LLMController::models(
     const drogon::HttpRequestPtr& _,
@@ -59,7 +61,7 @@ LLMController::LLMController() {
 }
 
 void LLMController::resolveSession(
-    std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
+    std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
@@ -195,11 +197,11 @@ void LLMController::chatCompletions(
     return;
   }
 
-  std::optional<domain::ChatCompletionRequest> chatReqOpt;
+  std::optional<ChatCompletionRequest> chatReqOpt;
   try {
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     chatReqOpt =
-        domain::ChatCompletionRequest::fromJson(*json, std::move(taskId));
+        ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
     callback(errorResponse(drogon::k400BadRequest,
                            std::string("Failed to parse request: ") + e.what(),
@@ -207,7 +209,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  domain::ChatCompletionRequest& chatReq = *chatReqOpt;
+  ChatCompletionRequest& chatReq = *chatReqOpt;
 
   TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
@@ -224,7 +226,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
+  auto request = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
     handleStreaming(request, std::move(callback));
@@ -234,7 +236,7 @@ void LLMController::chatCompletions(
 }
 
 ResponseWriterParams LLMController::makeWriterParams(
-    const domain::LLMRequest& request) const {
+    const LLMRequest& request) const {
   ResponseWriterParams params;
   params.completionId = "chatcmpl-" + std::to_string(request.task_id);
   params.model = request.model.value_or("default");
@@ -250,9 +252,9 @@ ResponseWriterParams LLMController::makeWriterParams(
   return params;
 }
 
-std::function<void(const domain::LLMStreamChunk&, bool)>
+std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer) {
-  return [writer = std::move(writer)](const domain::LLMStreamChunk& chunk,
+  return [writer = std::move(writer)](const LLMStreamChunk& chunk,
                                       bool isFinal) {
     if (writer->isDone()) return;
     if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
@@ -273,7 +275,7 @@ drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
 }
 
 void LLMController::handleStreaming(
-    std::shared_ptr<domain::LLMRequest> reqPtr,
+    std::shared_ptr<LLMRequest> reqPtr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -338,7 +340,7 @@ void LLMController::handleStreaming(
 }
 
 void LLMController::handleNonStreaming(
-    std::shared_ptr<domain::LLMRequest> reqPtr,
+    std::shared_ptr<LLMRequest> reqPtr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleNonStreaming");
 
@@ -395,8 +397,8 @@ void LLMController::handleNonStreaming(
 }
 
 void LLMController::dispatchGeneration(
-    domain::LLMRequest& request, bool validSessionFound,
-    const std::function<void(const domain::LLMStreamChunk&, bool)>& cb) const {
+    LLMRequest& request, bool validSessionFound,
+    const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
   if (mode == tt::config::LLMMode::REGULAR) {
     service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -429,7 +431,7 @@ void LLMController::releaseSessionInFlight(
   }
 }
 
-bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
                                             bool validSessionFound) const {
   if (validSessionFound) {
     return true;

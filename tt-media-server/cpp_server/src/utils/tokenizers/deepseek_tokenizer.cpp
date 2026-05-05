@@ -65,7 +65,7 @@ static const char* dsEndOfSentence =
     "sentence\xEF\xBD\x9C>";
 
 std::string DeepseekTokenizer::applyChatTemplate(
-    const std::vector<tt::domain::ChatMessage>& messages,
+    const std::vector<tt::domain::llm::ChatMessage>& messages,
     bool addGenerationPrompt,
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
     bool enableReasoning) const {

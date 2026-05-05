@@ -89,7 +89,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * objects. Automatically uses accumulated batching when enabled via config.
    */
   void handleStreaming(
-      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::shared_ptr<LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
@@ -98,7 +98,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * so disaggregated and prefill-on-decode routing is honored identically.
    */
   void handleNonStreaming(
-      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::shared_ptr<LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   struct SessionInfo {
@@ -122,7 +122,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * paths pass a cancelFn; when closeSession fires mid-flight the client
    * receives finish_reason="abort" (partial response for non-streaming).
    */
-  void resolveSession(std::shared_ptr<domain::LLMRequest> req,
+  void resolveSession(std::shared_ptr<LLMRequest> req,
                       trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
                       std::function<void(const SessionError&)> onError,
@@ -131,7 +131,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Determine if disaggregated prefill should be used for this request.
    */
-  bool shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+  bool shouldDoPrefillOnDecode(const LLMRequest& request,
                                bool validSessionFound) const;
 
   /**
@@ -141,8 +141,8 @@ class LLMController : public drogon::HttpController<LLMController> {
    * unsupported mode or queue/dispatch failures.
    */
   void dispatchGeneration(
-      domain::LLMRequest& request, bool validSessionFound,
-      const std::function<void(const domain::LLMStreamChunk&, bool)>& cb) const;
+      LLMRequest& request, bool validSessionFound,
+      const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
 
   /**
    * Release in-flight session slot if a session is present. No-op otherwise.
@@ -161,13 +161,13 @@ class LLMController : public drogon::HttpController<LLMController> {
    * writers.
    */
   ResponseWriterParams makeWriterParams(
-      const domain::LLMRequest& request) const;
+      const LLMRequest& request) const;
 
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
    * ResponseWriter. Common to both streaming and non-streaming code paths.
    */
-  static std::function<void(const domain::LLMStreamChunk&, bool)>
+  static std::function<void(const LLMStreamChunk&, bool)>
   makeStreamingCallback(std::shared_ptr<ResponseWriter> writer);
 };
 

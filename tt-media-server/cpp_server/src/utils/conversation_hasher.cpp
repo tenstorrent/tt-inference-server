@@ -11,9 +11,9 @@
 
 namespace tt::utils {
 
-std::vector<domain::ChatMessage> stripToolMessages(
-    const std::vector<domain::ChatMessage>& messages) {
-  std::vector<domain::ChatMessage> result;
+std::vector<ChatMessage> stripToolMessages(
+    const std::vector<ChatMessage>& messages) {
+  std::vector<ChatMessage> result;
   result.reserve(messages.size());
 
   for (const auto& msg : messages) {
@@ -25,8 +25,8 @@ std::vector<domain::ChatMessage> stripToolMessages(
   return result;
 }
 
-std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
-    const std::vector<domain::ChatMessage>& messages) {
+std::optional<std::vector<ChatMessage>> extractPriorTurnPrefix(
+    const std::vector<ChatMessage>& messages) {
   // Precondition check: messages should end with user
   if (messages.empty() || messages.back().role != "user") {
     return std::nullopt;
@@ -48,7 +48,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
   }
 
   // Remove the trailing [assistant, user] pair
-  std::vector<domain::ChatMessage> priorPrefix;
+  std::vector<ChatMessage> priorPrefix;
   priorPrefix.reserve(turns.size() - 2);
 
   for (size_t i = 0; i < turns.size() - 2; ++i) {
@@ -64,7 +64,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
 }
 
 uint64_t hashConversationPrefix(
-    const std::vector<domain::ChatMessage>& prefix) {
+    const std::vector<ChatMessage>& prefix) {
   // Empty prefix should have a deterministic hash
   if (prefix.empty()) {
     return 0;
@@ -80,10 +80,10 @@ uint64_t hashConversationPrefix(
 }
 
 std::string renderLastUserTurn(
-    const std::vector<domain::ChatMessage>& messages) {
+    const std::vector<ChatMessage>& messages) {
   auto it = std::find_if(
       messages.rbegin(), messages.rend(),
-      [](const domain::ChatMessage& msg) { return msg.role == "user"; });
+      [](const ChatMessage& msg) { return msg.role == "user"; });
   if (it == messages.rend()) {
     return "";
   }
@@ -92,7 +92,7 @@ std::string renderLastUserTurn(
 }
 
 PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<domain::ChatMessage>& messages) {
+    const std::vector<ChatMessage>& messages) {
   PrefixCachingInfo info;
 
   // Drop tool/function turns before hashing; system/developer messages stay

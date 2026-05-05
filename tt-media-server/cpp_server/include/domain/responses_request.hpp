@@ -14,12 +14,14 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/json_field.hpp"
-#include "domain/llm_request.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
+
+using namespace tt::domain::llm;
 
 struct ResponsesRequest : BaseRequest {
   using BaseRequest::BaseRequest;

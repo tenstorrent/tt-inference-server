@@ -32,7 +32,7 @@ class NonStreamResponseWriter : public ResponseWriter {
   static std::shared_ptr<NonStreamResponseWriter> create(
       ResponseWriterParams params, HttpCallback httpCallback);
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**

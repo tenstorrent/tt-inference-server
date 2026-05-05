@@ -13,15 +13,15 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/json_field.hpp"
-#include "domain/llm_request.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "domain/response_format.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 /** Legacy format: "Role: content\n\n" per message, ending with "Assistant: ".
  */
@@ -412,4 +412,4 @@ struct ChatCompletionRequest : BaseRequest {
   }
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

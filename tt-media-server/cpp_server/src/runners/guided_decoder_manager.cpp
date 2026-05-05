@@ -13,7 +13,7 @@
 
 namespace tt::runners {
 
-using SamplingParams = tt::domain::SamplingParams;
+using SamplingParams = tt::domain::llm::SamplingParams;
 
 static Json::Value buildToolSchema(const tt::domain::tool_calls::Tool& tool) {
   Json::Value schema;

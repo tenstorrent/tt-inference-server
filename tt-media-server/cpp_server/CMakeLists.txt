@@ -274,8 +274,8 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
     src/runners/llm_runner/schedulers/scheduler.cpp
-    src/domain/sequence.cpp
-    src/domain/sampling_params.cpp
+    src/domain/llm/sequence.cpp
+    src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
     src/config/settings.cpp

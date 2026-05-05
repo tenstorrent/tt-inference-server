@@ -22,15 +22,17 @@
 #include <iostream>
 
 #include "config/runner_config.hpp"
-#include "domain/sampling_params.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/schedulers/scheduler.hpp"
 
-using Sequence = tt::domain::Sequence;
-using SamplingParams = tt::domain::SamplingParams;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 namespace ipc = boost::interprocess;
+
+using namespace tt::domain::llm;
 
 static const char* queueName = "tt_ipc_scheduler_smoke_test";
 static constexpr size_t MAX_NUM_MSGS = 64;

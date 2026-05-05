@@ -92,14 +92,14 @@ void BlazeRunner::run() {
 }
 
 bool BlazeRunner::warmup() {
-  tt::domain::SamplingParams warmupParams;
+  tt::domain::llm::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
@@ -195,7 +195,7 @@ std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
+std::unique_ptr<tt::domain::llm::Sequence> BlazeRunner::getRequest() {
   if (requestToRetry) {
     return std::move(requestToRetry);
   }
@@ -284,7 +284,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
   TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
+void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());

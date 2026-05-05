@@ -10,11 +10,13 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
 
@@ -57,7 +59,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::vector<uint32_t> taskIds;
   int idCounter = 0;
   for (const auto& req : requests) {
-    tt::domain::Sequence& seq = engine.getScheduler().addRequest(
+    tt::domain::llm::Sequence& seq = engine.getScheduler().addRequest(
         tt::utils::TaskIDGenerator::generate(), req.prompt,
         {.max_tokens = req.max_tokens});
     taskIds.push_back(seq.taskId);

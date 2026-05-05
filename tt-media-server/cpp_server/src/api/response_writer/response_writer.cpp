@@ -22,10 +22,10 @@ int ResponseWriter::noteToken() {
   return current;
 }
 
-domain::CompletionUsage ResponseWriter::buildUsage() const {
+CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
-  domain::CompletionUsage usage{params.promptTokenCount,
+  CompletionUsage usage{params.promptTokenCount,
                                 tokens,
                                 totalTokens,
                                 std::nullopt,

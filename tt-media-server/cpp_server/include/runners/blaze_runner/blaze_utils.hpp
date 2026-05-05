@@ -4,10 +4,12 @@
 #pragma once
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
 
 namespace tt::runners::blaze_utils {
+
+using namespace tt::domain::llm;
 
 namespace pm = tt_blaze::pipeline_manager;
 
@@ -21,7 +23,7 @@ inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
 }
 
 inline pm::GenerationParams makeGenerationParams(
-    const tt::domain::Sequence& seq) {
+    const tt::domain::llm::Sequence& seq) {
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
@@ -35,13 +37,13 @@ inline pm::GenerationParams makeGenerationParams(
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,
-                               const tt::domain::Sequence& seq) {
+                               const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 
 inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const tt::domain::Sequence& seq) {
+                                       const tt::domain::llm::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::SUBMIT;
   req.slot_id = slotId;
@@ -50,7 +52,7 @@ inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline pm::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::Sequence& seq) {
+                                         const tt::domain::llm::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::CONTINUE;
   req.slot_id = slotId;
