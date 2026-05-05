@@ -34,6 +34,8 @@ class LLMService
   using StreamCallback =
       std::function<void(const domain::LLMStreamChunk&, bool)>;
 
+  LLMService();
+
   LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
              std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -41,13 +43,6 @@ class LLMService
              std::unique_ptr<IToolCallParser> toolCallParser,
              std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
-
-  /** Builds an LLMService configured for production: takes ownership of the
-   *  provided QueueManager so its shared-memory queues live exactly as long
-   *  as the service that drains them. */
-  static std::shared_ptr<LLMService> createDefault(
-      const tt::utils::tokenizers::Tokenizer* tokenizer,
-      std::unique_ptr<tt::ipc::QueueManager> queueManager);
 
   ~LLMService() override;
 

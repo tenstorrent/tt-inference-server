@@ -27,20 +27,17 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-std::shared_ptr<LLMService> LLMService::createDefault(
-    const tt::utils::tokenizers::Tokenizer* tokenizer,
-    std::unique_ptr<tt::ipc::QueueManager> queueManager) {
-  if (!queueManager) {
-    throw std::invalid_argument(
-        "LLMService::createDefault: queueManager must not be null");
-  }
-  auto taskQueue = queueManager->taskQueue;
-  return std::make_shared<LLMService>(
-      tokenizer, std::move(taskQueue),
-      std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers()),
-      std::make_unique<ReasoningParser>(),
-      createToolCallParser(tt::config::modelType()), std::move(queueManager),
-      tt::config::maxQueueSize());
+LLMService::LLMService() {
+  const size_t numWorkers = tt::config::numWorkers();
+  auto qm =
+      std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
+  auto tq = qm->taskQueue;
+
+  init(&tt::utils::tokenizers::activeTokenizer(), std::move(tq),
+       std::make_unique<tt::worker::WorkerManager>(numWorkers),
+       std::make_unique<ReasoningParser>(),
+       createToolCallParser(tt::config::modelType()), std::move(qm),
+       tt::config::maxQueueSize());
 }
 
 LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
