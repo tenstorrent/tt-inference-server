@@ -18,7 +18,7 @@ namespace tt::api {
  * Response writer that accumulates chunks into a single ChatCompletionResponse.
  *
  * The non-streaming counterpart to StreamingResponseWriter: the controller
- * drives the same Streamable producer (LLMService::submitStreamingRequest or
+ * drives the same Streamable producer (LLMService::processStreamingRequest or
  * the disaggregation service) and forwards every chunk here instead of out to
  * SSE. On the final chunk we build the full ChatCompletionResponse, run the
  * service's postProcess (reasoning strip + tool-call parsing — non-streaming

@@ -65,17 +65,16 @@ class LLMService
     return workerManager.get();
   }
 
+  void processStreamingRequest(
+      domain::LLMRequest request,
+      std::function<void(const domain::LLMStreamChunk&, bool isFinal)> callback)
+      override;
+
  protected:
   size_t currentQueueSize() const override;
   domain::LLMResponse processRequest(domain::LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
-
-  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
-  void processStreamingRequest(
-      domain::LLMRequest request,
-      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
-      override;
 
  private:
   struct StreamCallbackEntry {

@@ -399,7 +399,7 @@ void LLMController::dispatchGeneration(
     const std::function<void(const domain::LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
   if (mode == tt::config::LLMMode::REGULAR) {
-    service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
+    service->processStreamingRequest(std::move(request), cb);
     return;
   }
 
@@ -407,7 +407,7 @@ void LLMController::dispatchGeneration(
     if (shouldDoPrefillOnDecode(request, validSessionFound)) {
       TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
-      service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
+      service->processStreamingRequest(std::move(request), cb);
     } else {
       TT_LOG_DEBUG(
           "[LLMController] Using disaggregated prefill for request with "

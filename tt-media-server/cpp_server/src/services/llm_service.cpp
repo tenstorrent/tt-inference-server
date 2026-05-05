@@ -367,7 +367,8 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
-      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
+      std::move(request),
+      [&](const domain::LLMStreamChunk& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
           if (chunk.choices[0].reasoning.has_value()) {
             accumulatedReasoning.append(chunk.choices[0].reasoning.value());
@@ -414,7 +415,7 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
 
 void LLMService::processStreamingRequest(
     domain::LLMRequest request,
-    std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
+    std::function<void(const domain::LLMStreamChunk&, bool isFinal)> callback) {
   if (!callback) {
     throw std::invalid_argument("streaming callback must not be null");
   }

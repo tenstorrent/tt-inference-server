@@ -66,10 +66,13 @@ void DisaggregationService::setupSocketHandlers() {
             request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
+            request.prompt_tokens_count =
+                static_cast<int>(message.token_ids.size());
             request.max_tokens = message.remaining_tokens;
             auto slotId = message.slot_id;
             request.slotId = slotId;
-            llmService->submitStreamingRequest(request, callback.value());
+            llmService->processStreamingRequest(std::move(request),
+                                                callback.value());
           } else {
             auto finalResponse = domain::LLMStreamChunk(message.task_id);
             domain::LLMChoice finalChoice;
@@ -122,8 +125,9 @@ void DisaggregationService::setupSocketHandlers() {
                                                    message.token_ids.end()));
           auto slotId = message.slot_id;
 
-          llmService->submitStreamingRequest(
-              request,
+          llmService->preProcess(request);
+          llmService->processStreamingRequest(
+              std::move(request),
               [this, message, maxTokens, slotId](
                   const domain::LLMStreamChunk& response, bool /*isFinal*/) {
                 auto prefillResult =

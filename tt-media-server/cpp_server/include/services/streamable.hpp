@@ -17,28 +17,9 @@ class Streamable {
  public:
   virtual ~Streamable() = default;
 
-  void submitStreamingRequest(
-      RequestType& request,
-      std::function<void(const ResponseType&, bool isFinal)> callback,
-      bool skipPreProcess = false) {
-    if (!skipPreProcess) {
-      preProcess(request);
-    }
-    processStreamingRequest(
-        std::move(request),
-        [this, cb = std::move(callback)](ResponseType& response, bool isFinal) {
-          streamingPostProcess(response);
-          cb(response, isFinal);
-        });
-  }
-
- protected:
   virtual void processStreamingRequest(
       RequestType request,
-      std::function<void(ResponseType&, bool isFinal)> callback) = 0;
-
-  virtual void preProcess(RequestType& request) const = 0;
-  virtual void streamingPostProcess(ResponseType& response) const = 0;
+      std::function<void(const ResponseType&, bool isFinal)> callback) = 0;
 };
 
 }  // namespace tt::services
