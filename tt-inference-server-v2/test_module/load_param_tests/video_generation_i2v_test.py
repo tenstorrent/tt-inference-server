@@ -4,7 +4,7 @@
 
 """End-to-end test for Wan2.2 Image-to-Video generation.
 
-Uploads a fixture PNG as the conditioning frame, submits a job to
+Uploads a fixture image as the conditioning frame, submits a job to
 ``POST /v1/videos/generations/i2v``, polls until completion, and asserts
 the returned MP4 is a non-empty file.
 
@@ -42,8 +42,6 @@ DEFAULT_NUM_INFERENCE_STEPS = 40
 
 HTTP_OK = 200
 HTTP_ACCEPTED = 202
-
-DOWNLOAD_CHUNK_BYTES = 8192
 
 _HEADERS = {
     "accept": "application/json",
@@ -129,7 +127,13 @@ class VideoGenerationI2VTest(BaseTest):
                     f"I2V submit failed: status={response.status} body={body[:500]}"
                 )
                 return ""
-            data = json.loads(body) if body else {}
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"I2V submit returned 202 with malformed JSON: {e}; body={body[:500]}"
+                )
+                return ""
             job_id = data.get("id", "")
             logger.info(f"I2V job submitted: {job_id}")
             return job_id
@@ -149,7 +153,12 @@ class VideoGenerationI2VTest(BaseTest):
                     logger.warning(f"status poll http={response.status}")
                     await asyncio.sleep(self.poll_interval)
                     continue
-                data = await response.json()
+                try:
+                    data = await response.json(content_type=None)
+                except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+                    logger.warning(f"status poll malformed JSON: {e}")
+                    await asyncio.sleep(self.poll_interval)
+                    continue
                 status = data.get("status")
                 logger.info(f"job {job_id} status={status}")
                 if status == "completed":
@@ -174,8 +183,6 @@ class VideoGenerationI2VTest(BaseTest):
             if response.status != HTTP_OK:
                 logger.error(f"Download failed: status={response.status}")
                 return ""
-            with open(out_path, "wb") as f:
-                async for chunk in response.content.iter_chunked(DOWNLOAD_CHUNK_BYTES):
-                    f.write(chunk)
+            out_path.write_bytes(await response.read())
         logger.info(f"Downloaded I2V mp4: {out_path}")
         return str(out_path)

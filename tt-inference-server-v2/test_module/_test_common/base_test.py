@@ -59,7 +59,10 @@ class BaseTest(ABC):
         they read the new key first and fall back for back-compat.
         """
         if NUM_CONCURRENT_REQUESTS_KEY in self.targets:
-            return self.targets[NUM_CONCURRENT_REQUESTS_KEY]
+            return self._coerce_concurrency(
+                self.targets[NUM_CONCURRENT_REQUESTS_KEY],
+                NUM_CONCURRENT_REQUESTS_KEY,
+            )
 
         if NUM_OF_DEVICES_KEY in self.targets:
             if not getattr(self, "_warned_num_of_devices", False):
@@ -69,9 +72,24 @@ class BaseTest(ABC):
                     NUM_CONCURRENT_REQUESTS_KEY,
                 )
                 self._warned_num_of_devices = True
-            return self.targets[NUM_OF_DEVICES_KEY]
+            return self._coerce_concurrency(
+                self.targets[NUM_OF_DEVICES_KEY],
+                NUM_OF_DEVICES_KEY,
+            )
 
         return default
+
+    @staticmethod
+    def _coerce_concurrency(raw: Any, key: str) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"targets.{key} must be an int >= 1, got {raw!r}"
+            ) from e
+        if value < 1:
+            raise ValueError(f"targets.{key} must be >= 1, got {value}")
+        return value
 
     def run_tests(self):
         last_exception = None
