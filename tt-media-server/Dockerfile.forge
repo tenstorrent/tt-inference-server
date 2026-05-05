@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+#FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest 
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -44,6 +45,7 @@ RUN apt-get update && apt-get install -y \
     jq \
     vim \
     python3-pip \
+    python3-ven \
     # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
@@ -75,9 +77,9 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     cmake --version
 
 # build tt-metal
-RUN pip3 install --upgrade setuptools wheel \
-    && pip3 install cmake \
-    && pip3 install cmake --upgrade \
+RUN pip3 install --break-system-packages --upgrade setuptools wheel \
+    && pip3 install --break-system-packages cmake \
+    && pip3 install --break-system-packages cmake --upgrade \
     && hash -r
 
 # user setup
@@ -95,8 +97,8 @@ RUN /bin/bash -c "export CARGO_HOME=${HOME_DIR}/.cargo \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
-    && pip3 install --upgrade pip \
-    && pip3 install git+https://github.com/tenstorrent/tt-smi"
+    && pip3 install --break-system-packages --upgrade pip \
+    && pip3 install --break-system-packages git+https://github.com/tenstorrent/tt-smi"
 
 WORKDIR ${HOME_DIR}
 
