@@ -26,17 +26,22 @@ void configureEnvForTest() {
   setenv("LLM_DEVICE_BACKEND", "pipeline_manager", 1);
 }
 
+std::shared_ptr<tt::services::LLMService> makeService(
+    std::shared_ptr<tt::ipc::ITaskQueue> taskQueue) {
+  return std::make_shared<tt::services::LLMService>(
+      &tt::utils::tokenizers::activeTokenizer(), std::move(taskQueue),
+      std::make_unique<tt::worker::WorkerManager>(1),
+      std::make_unique<tt::services::ReasoningParser>(),
+      tt::services::createToolCallParser(tt::config::modelType()));
+}
+
 }  // namespace
 
 TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   auto taskQueue =
       std::make_shared<tt::runners::llm_engine::InMemoryTaskQueue>();
 
-  tt::services::LLMService service{
-      &tt::utils::tokenizers::activeTokenizer(), taskQueue,
-      std::make_unique<tt::worker::WorkerManager>(1),
-      std::make_unique<tt::services::ReasoningParser>(),
-      tt::services::createToolCallParser(tt::config::modelType())};
+  auto llmService = makeService(taskQueue);
 
   tt::domain::LLMRequest request{/*taskId=*/7};
   request.prompt = std::vector<int>{10, 20, 30};
@@ -49,7 +54,7 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   };
 
   ASSERT_NO_THROW(
-      service.processStreamingRequest(std::move(request), callback));
+      llmService->processStreamingRequest(std::move(request), callback));
   EXPECT_EQ(callbackInvocations.load(), 0);
 
   ASSERT_FALSE(taskQueue->empty());

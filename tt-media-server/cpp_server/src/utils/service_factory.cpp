@@ -6,7 +6,6 @@
 #include <memory>
 
 #include "config/settings.hpp"
-#include "ipc/queue_manager.hpp"
 #include "profiling/tracy.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
@@ -14,7 +13,6 @@
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils::service_factory {
 
@@ -33,10 +31,7 @@ void initializeServices() {
 
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM: {
-      auto queueManager = std::make_unique<tt::ipc::QueueManager>(
-          static_cast<int>(tt::config::numWorkers()));
-      llm = services::LLMService::createDefault(
-          &tt::utils::tokenizers::activeTokenizer(), std::move(queueManager));
+      llm = std::make_shared<services::LLMService>();
       auto mode = tt::config::llmMode();
       if (mode != tt::config::LLMMode::REGULAR) {
         socket = std::make_shared<sockets::InterServerService>();
