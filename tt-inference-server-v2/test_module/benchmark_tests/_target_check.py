@@ -41,8 +41,7 @@ TIER_MULTIPLIERS = {
 
 @dataclass
 class PerformanceTargets:
-    """Parsed performance targets from model_performance_reference.json.
-    """
+    """Parsed performance targets from model_performance_reference.json."""
 
     ttft_ms: Optional[float] = None
     ttft_streaming_ms: Optional[float] = None
