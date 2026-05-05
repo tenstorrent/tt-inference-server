@@ -4,13 +4,13 @@
 #
 # Build cpp_server on exabox (no sudo, ephemeral /home).
 #
-# All local installs (Drogon, Rust) go to /data/$USER/.local so they
-# persist across compute nodes.  System apt packages (libjsoncpp-dev,
-# uuid-dev, libboost-all-dev, …) are assumed to already be installed.
+# All local installs (jsoncpp, libuuid, Drogon, Rust) go to
+# /data/$USER/.local so they persist across compute nodes.
+# Only libboost-dev is expected to be a system package.
 #
 # Usage:
 #   ./build_exabox.sh [OPTIONS]        # same flags as build.sh
-#   ./build_exabox.sh --install-deps   # one-time: build+install Drogon & Rust
+#   ./build_exabox.sh --install-deps   # one-time: build jsoncpp, libuuid, Drogon + install Rust
 #
 # After building, run the binary with:
 #   LD_LIBRARY_PATH=/data/$USER/.local/lib:$LD_LIBRARY_PATH \
@@ -25,6 +25,14 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 LOCAL_PREFIX="/data/${USER}/.local"
 RUSTUP_DIR="/data/${USER}/.rustup"
 CARGO_DIR="/data/${USER}/.cargo"
+
+# Avoid /tmp-full build failures on shared login nodes: if /tmp has < 2 GB
+# free, redirect compiler temp files to /data.
+_tmp_avail_kb=$(df --output=avail /tmp 2>/dev/null | tail -1 | tr -d ' ')
+if [ -n "${_tmp_avail_kb}" ] && [ "${_tmp_avail_kb}" -lt 2097152 ]; then
+    export TMPDIR="/data/${USER}/tmp"
+    mkdir -p "${TMPDIR}"
+fi
 
 # ── Parse arguments ──────────────────────────────────────────────────────
 BUILD_TYPE="Release"
@@ -77,6 +85,65 @@ if [ "${SANITIZE_THREAD}" = "ON" ] && [ "${SANITIZE_ADDRESS}" = "ON" ]; then
 fi
 
 # ── Dependency installation (--install-deps) ─────────────────────────────
+# On exabox there is no sudo, so system packages that are missing
+# (libjsoncpp-dev, uuid-dev) are built from source into $LOCAL_PREFIX.
+
+_build_tmp="/data/${USER}/tmp/exabox_deps_$$"
+_nproc=$(nproc 2>/dev/null || echo 4)
+
+install_jsoncpp() {
+    if [ -f "${LOCAL_PREFIX}/lib/libjsoncpp.so" ] || \
+       [ -f "${LOCAL_PREFIX}/lib/libjsoncpp.a" ] || \
+       pkg-config --exists jsoncpp 2>/dev/null; then
+        echo "jsoncpp already available"
+        return 0
+    fi
+
+    echo ""
+    echo "Building jsoncpp → ${LOCAL_PREFIX} ..."
+    local src="${_build_tmp}/jsoncpp"
+    git clone --depth 1 --branch 1.9.6 \
+        https://github.com/open-source-parsers/jsoncpp.git "${src}"
+    mkdir -p "${src}/build" && cd "${src}/build"
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${LOCAL_PREFIX}" \
+        -DJSONCPP_WITH_TESTS=OFF \
+        -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF \
+        -DBUILD_SHARED_LIBS=ON
+    make -j"${_nproc}"
+    make install
+    cd "${SCRIPT_DIR}"
+    echo "jsoncpp installed to ${LOCAL_PREFIX}"
+}
+
+install_uuid() {
+    if [ -f "${LOCAL_PREFIX}/lib/libuuid.so" ] || \
+       [ -f "${LOCAL_PREFIX}/lib/libuuid.a" ] || \
+       pkg-config --exists uuid 2>/dev/null; then
+        echo "libuuid already available"
+        return 0
+    fi
+
+    echo ""
+    echo "Building libuuid → ${LOCAL_PREFIX} ..."
+    local src="${_build_tmp}/util-linux"
+    local ver="2.39.3"
+    local tarball="${_build_tmp}/util-linux-${ver}.tar.xz"
+    mkdir -p "${_build_tmp}"
+    wget -q -O "${tarball}" \
+        "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v${ver%.*}/util-linux-${ver}.tar.xz"
+    tar -xf "${tarball}" -C "${_build_tmp}"
+    cd "${_build_tmp}/util-linux-${ver}"
+    ./configure --prefix="${LOCAL_PREFIX}" \
+        --disable-all-programs --enable-libuuid \
+        --without-python --without-systemd --without-ncurses
+    make -j"${_nproc}"
+    make install
+    cd "${SCRIPT_DIR}"
+    echo "libuuid installed to ${LOCAL_PREFIX}"
+}
+
 install_drogon() {
     local drogon_cmake="${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake"
     if [ -f "${drogon_cmake}" ]; then
@@ -92,7 +159,7 @@ install_drogon() {
     if [ -d "${drogon_src}" ]; then
         echo "  Using bundled source: ${drogon_src}"
     else
-        drogon_tmp="/tmp/drogon_build_$$"
+        drogon_tmp="${_build_tmp}/drogon"
         echo "  Cloning drogon v1.9.12 → ${drogon_tmp}"
         git clone --depth 1 --branch v1.9.12 --recurse-submodules \
             https://github.com/drogonframework/drogon.git "${drogon_tmp}"
@@ -103,10 +170,15 @@ install_drogon() {
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${LOCAL_PREFIX}" \
+        -DCMAKE_PREFIX_PATH="${LOCAL_PREFIX}" \
         -DBUILD_EXAMPLES=OFF \
         -DBUILD_CTL=OFF \
-        -DBUILD_YAML_CONFIG=OFF
-    make -j"$(nproc 2>/dev/null || echo 4)"
+        -DBUILD_YAML_CONFIG=OFF \
+        -DBUILD_POSTGRESQL=OFF \
+        -DBUILD_MYSQL=OFF \
+        -DBUILD_SQLITE=OFF \
+        -DBUILD_REDIS=OFF
+    make -j"${_nproc}"
     make install
     cd "${SCRIPT_DIR}"
     [ -n "${drogon_tmp}" ] && rm -rf "${drogon_tmp}"
@@ -132,9 +204,12 @@ install_rust() {
 }
 
 if [ "${INSTALL_DEPS}" -eq 1 ]; then
-    mkdir -p "${LOCAL_PREFIX}"
+    mkdir -p "${LOCAL_PREFIX}" "${_build_tmp}"
+    install_jsoncpp
+    install_uuid
     install_drogon
     install_rust
+    rm -rf "${_build_tmp}"
     echo ""
     echo "=============================================="
     echo "  Dependencies installed to ${LOCAL_PREFIX}"
@@ -144,11 +219,25 @@ if [ "${INSTALL_DEPS}" -eq 1 ]; then
 fi
 
 # ── Verify prerequisites ─────────────────────────────────────────────────
-if [ ! -f "${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    echo "ERROR: Drogon not found at ${LOCAL_PREFIX}."
+_missing=()
+[ ! -f "${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake" ] && _missing+=("Drogon")
+if ! pkg-config --exists jsoncpp 2>/dev/null && \
+   [ ! -f "${LOCAL_PREFIX}/lib/libjsoncpp.so" ] && [ ! -f "${LOCAL_PREFIX}/lib/libjsoncpp.a" ]; then
+    _missing+=("jsoncpp")
+fi
+if ! pkg-config --exists uuid 2>/dev/null && \
+   [ ! -f "${LOCAL_PREFIX}/lib/libuuid.so" ] && [ ! -f "${LOCAL_PREFIX}/lib/libuuid.a" ]; then
+    _missing+=("libuuid")
+fi
+if [ ${#_missing[@]} -gt 0 ]; then
+    echo "ERROR: Missing dependencies at ${LOCAL_PREFIX}: ${_missing[*]}"
     echo "  Run:  $0 --install-deps"
     exit 1
 fi
+
+# Make local-prefix libs visible to CMake, pkg-config, and the linker
+export PKG_CONFIG_PATH="${LOCAL_PREFIX}/lib/pkgconfig:${LOCAL_PREFIX}/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+export LD_LIBRARY_PATH="${LOCAL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
 # ── Rust: prefer /data paths over ephemeral /home ────────────────────────
 # Rustup proxies in .cargo/bin (both /data and /home) fail unless a default
