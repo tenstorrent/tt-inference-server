@@ -3,10 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import base64
+import io
 import os
 from abc import abstractmethod
 
 import ttnn
+from PIL import Image
 from config.constants import (
     WAN22_NUM_FRAMES,
     ModelRunners,
@@ -18,7 +21,7 @@ from config.constants import (
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
-from domain.video_i2v_generate_request import VideoI2VGenerateRequest
+from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -355,6 +358,7 @@ def _wan22_pipeline_args(
     image_prompt=None,
 ):
     """Build the kwargs dict shared by Wan2.2 T2V and I2V ``__call__`` sites."""
+    seed = int(request.seed) if request.seed is not None else None
     pipeline_args = {
         "prompt": request.prompt,
         "height": resolution.height,
@@ -363,7 +367,7 @@ def _wan22_pipeline_args(
         "num_inference_steps": request.num_inference_steps,
         "guidance_scale": 4.0,
         "guidance_scale_2": 3.0,
-        "seed": int(request.seed or 0),
+        "seed": seed,
         "traced": True,
     }
     if image_prompt is not None:
@@ -377,14 +381,14 @@ def _wan22_pipeline_args(
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
 
     def create_pipeline(self):
-        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
         try:
             return WanPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=resolution.height,
-                target_width=resolution.width,
+                target_height=self.resolution.height,
+                target_width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
             )
         except Exception as e:
@@ -406,8 +410,7 @@ class TTWan22Runner(TTDiTRunner):
     )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
-        frames = self.pipeline(**_wan22_pipeline_args(requests[0], resolution))
+        frames = self.pipeline(**_wan22_pipeline_args(requests[0], self.resolution))
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -422,15 +425,15 @@ class TTWan22I2VRunner(TTDiTRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
         self.image_manager = ImageManager()
 
     def create_pipeline(self):
-        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
         try:
             return WanPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=resolution.height,
-                target_width=resolution.width,
+                target_height=self.resolution.height,
+                target_width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
             )
         except Exception as e:
@@ -463,10 +466,9 @@ class TTWan22I2VRunner(TTDiTRunner):
     def run(self, requests: list[VideoI2VGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
-        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
         pipeline_args = _wan22_pipeline_args(
             request,
-            resolution,
+            self.resolution,
             image_prompt=self._build_image_prompt(request),
         )
         frames = self.pipeline(**pipeline_args)
@@ -484,14 +486,7 @@ class TTWan22I2VRunner(TTDiTRunner):
         before VAE encoding, so the input resolution is irrelevant — a
         small black frame exercises the same kernels as a real photo.
         """
-        import base64
-        import io
-
-        import PIL.Image
-
-        from domain.video_i2v_generate_request import ImagePromptEntry
-
-        dummy = PIL.Image.new("RGB", (64, 64), color=0)
+        dummy = Image.new("RGB", (64, 64), color=0)
         buf = io.BytesIO()
         dummy.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
