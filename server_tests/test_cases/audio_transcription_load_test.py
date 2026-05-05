@@ -34,8 +34,8 @@ headers = {
 class AudioTranscriptionLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
-        print(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        logger.info(self.targets)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         audio_transcription_time = self.targets.get(
             "audio_transcription_time", 9
         )  # in seconds
@@ -47,7 +47,9 @@ class AudioTranscriptionLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_audio_transcription(batch_size=devices)
+        ) = await self.test_concurrent_audio_transcription(
+            batch_size=num_concurrent_requests
+        )
 
         self.test_payloads_path = "utils/test_payloads"
 
@@ -55,7 +57,7 @@ class AudioTranscriptionLoadTest(BaseTest):
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": audio_transcription_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": average_duration <= audio_transcription_time,
         }
 

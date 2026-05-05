@@ -228,3 +228,27 @@ The `id_name` is used in suite IDs (`distil-whisper-t3k`), while `model_marker` 
 | Timing that differs per model | `test_cases[].model_targets.<model>` | model-level override |
 | Timing that differs per model+device | `test_cases[].model_targets.<model>+<device>` | most specific override |
 | Suites with unique test lists | `test_suites/<category>.json` → `test_suites` | explicit definition |
+| Client-side concurrency for a load test | `test_cases[].targets.num_concurrent_requests` | overrides matrix/suite default |
+| Physical chip count probed by liveness | `hardware_defaults.<device>.num_of_devices` | inherited by `DeviceLivenessTest` |
+
+### `num_concurrent_requests` vs `num_of_devices`
+
+Inside a load-test `targets:` block, use `num_concurrent_requests` — it
+controls how many concurrent HTTP requests the test fires. Example (single
+request on a 32-chip Galaxy board):
+
+```json
+{
+    "template": "AudioTranscriptionLoadTest",
+    "description": "Test single audio 60s transcription and expect chunking",
+    "targets": {
+        "num_concurrent_requests": 1,
+        "dataset": "60s"
+    }
+}
+```
+
+`num_of_devices` is reserved for the physical chip count consumed by
+`DeviceLivenessTest` / `DeviceStabilityTest`. It is still accepted as a
+deprecated alias inside load-test `targets:` (a warning is logged once per
+test instance).

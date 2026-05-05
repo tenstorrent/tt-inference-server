@@ -32,8 +32,8 @@ headers = {
 class ImageGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/images/generations"
-        print(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        logger.info(self.targets)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         image_generation_target_time = self.targets.get(
             "image_generation_time", 9
         )  # in seconds
@@ -45,7 +45,9 @@ class ImageGenerationLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_image_generation(batch_size=devices)
+        ) = await self.test_concurrent_image_generation(
+            batch_size=num_concurrent_requests
+        )
 
         success = requests_duration <= image_generation_target_time
         logger.info(
@@ -59,7 +61,7 @@ class ImageGenerationLoadTest(BaseTest):
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "image_resolution": image_resolution,
             "success": success,
         }

@@ -28,7 +28,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN_SERVICE_ACCOUNT }}
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
 
       - name: Init tt-blaze submodule
         working-directory: ${{ github.workspace }}
