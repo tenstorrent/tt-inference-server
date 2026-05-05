@@ -1120,13 +1120,9 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=32,
-                max_context=40960,
+                max_concurrency=16,
+                max_context=32*1024,
                 default_impl=True,
-                vllm_args={
-                    "max_model_len": "32768",
-                    "max_num_seqs": 16,
-                },
                 override_tt_config={
                     "trace_region_size": 51000000,
                 },
@@ -1583,13 +1579,9 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
-                max_context=128 * 1024,
+                max_concurrency=16,
+                max_context=32 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "max_model_len": "32768",
-                    "max_num_seqs": 16,
-                },
                 override_tt_config={
                     "trace_region_size": 60000000,
                 },
@@ -2059,11 +2051,8 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "max_model_len": "32768",
-                },
                 override_tt_config={
                     "trace_region_size": 52000000,
                 },
@@ -2071,11 +2060,8 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "max_model_len": "32768",
-                },
                 override_tt_config={
                     "trace_region_size": 70000000,
                 },
