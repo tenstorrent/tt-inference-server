@@ -1,0 +1,71 @@
+# Docker Compose for vLLM inference server on Tenstorrent hardware.
+# Contract era: image versions < 0.10.1 (oldest supported, no-CLI legacy).
+#
+# This is the OLDEST of three vLLM contracts:
+#   - vllm-pre-0.10.1.yml — image versions < 0.10.1 — THIS FILE
+#   - vllm-0.10.1.yml     — image versions [0.10.1, 0.11.0)
+#   - vllm-0.11.yml       — image versions >= 0.11.0
+#
+# Differences from the 0.10.1 contract:
+#   - run_vllm_api_server.py takes NO CLI args. The model is selected via
+#     the TT_MODEL_SPEC_JSON_PATH env var pointing to a bind-mounted JSON
+#     spec file at /tmp/tt_model_spec.json.
+#   - We do NOT override `command:`. The image's default CMD already
+#     activates the venv and runs `python run_vllm_api_server.py` with no
+#     args. Letting the image's CMD run unchanged keeps the contract
+#     minimal — only env vars and mounts differ.
+#
+# Differences from the 0.11+ contract:
+#   - The image's docker-entrypoint.sh + gosu does the venv activation
+#     (not the ENTRYPOINT itself).
+#   - `MODEL_WEIGHTS_PATH` env var (renamed to MODEL_WEIGHTS_DIR in 0.11).
+#   - `TT_CACHE_PATH` must be passed explicitly (0.11 computes it from
+#     CACHE_ROOT internally).
+#   - `shm_size: "32g"` instead of `ipc: host`.
+#
+# Required env vars (set by run.py via .env.compose, or supply manually):
+#   DOCKER_IMAGE
+#   HF_TOKEN/JWT_SECRET (via env_file)
+#   TT_MODEL_SPEC_HOST_PATH — host path to the runtime model spec JSON; the
+#     image's run_vllm_api_server.py reads it via TT_MODEL_SPEC_JSON_PATH.
+#
+# Optional overlays:
+#   overlays/host-weights.yml  — bind-mount weights from host (sets MODEL_WEIGHTS_PATH).
+
+services:
+  inference-server:
+    image: ${DOCKER_IMAGE:?DOCKER_IMAGE is required}
+    container_name: ${CONTAINER_NAME:-tt-inference-server}
+    shm_size: "32g"
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - cache:/home/container_app_user/cache_root
+      - ${TT_MODEL_SPEC_HOST_PATH:?TT_MODEL_SPEC_HOST_PATH is required}:/tmp/tt_model_spec.json:ro
+      # Host-bound weights are added via overlays/host-weights.yml when
+      # setup_config.host_model_weights_mount_dir is set.
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      CACHE_ROOT: /home/container_app_user/cache_root
+      TT_CACHE_PATH: ${TT_CACHE_PATH:-/home/container_app_user/cache_root/tt_metal_cache}
+      TT_MODEL_SPEC_JSON_PATH: /tmp/tt_model_spec.json
+      # MODEL_WEIGHTS_PATH set by overlays/host-weights.yml when present.
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    # No `command:` override — the image's default CMD activates the venv
+    # and runs run_vllm_api_server.py with no args. Model selection is via
+    # the TT_MODEL_SPEC_JSON_PATH env var pointing to /tmp/tt_model_spec.json.
+    restart: on-failure:3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # See vllm-0.11.yml: cache generation on first run takes 40-60 min.
+      start_period: 5400s
+
+volumes:
+  cache:
+    name: ${CACHE_VOLUME:-tt-inference-cache}

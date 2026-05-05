@@ -1,17 +1,23 @@
 # Docker Compose for vLLM inference server on Tenstorrent hardware.
-# Contract era: image versions < 0.11.0 (legacy contract).
+# Contract era: image versions [0.10.1, 0.11.0).
 #
-# Real-world note: this contract targets 0.10.1+ images, which already accept
-# `--tt-device` / `--model` CLI args. The original audit suggested 0.10.0
-# used TT_MODEL_SPEC_JSON_PATH with no CLI args, but that contract was very
-# short-lived and is not supported here. If you need to run a 0.10.0-era
-# image, add a separate contract entry to deploy/contracts.yml.
+# This is the middle of three vLLM contracts:
+#   - vllm-pre-0.10.1.yml — image versions < 0.10.1 (no CLI args; uses
+#     TT_MODEL_SPEC_JSON_PATH env var to specify the model)
+#   - vllm-0.10.1.yml     — image versions [0.10.1, 0.11.0) — THIS FILE
+#   - vllm-0.11.yml       — image versions >= 0.11.0
 #
 # Differences from the 0.11+ contract:
 #   - `shm_size: "32g"` instead of `ipc: host` (matches what the 0.10.x
 #     `docker run` path passed via --shm-size 32g).
-#   - Otherwise identical command shape and env vars — the CLI interface
-#     stabilised at 0.10.1 and didn't change again until later post-0.11.
+#   - Image ENTRYPOINT is docker-entrypoint.sh + gosu (root → non-root)
+#     which does NOT activate the venv, so `command:` must wrap in
+#     `bash -c "source venv && exec python ..."`.
+#
+# Differences from pre-0.10.1:
+#   - run_vllm_api_server.py accepts --tt-device (required) and --model
+#     CLI args; we pass them in `command:`. Pre-0.10.1 takes neither and
+#     selects the model purely via TT_MODEL_SPEC_JSON_PATH env var.
 #
 # Required env vars (set by run.py via .env.compose, or supply manually):
 #   DOCKER_IMAGE, HF_MODEL, TT_DEVICE

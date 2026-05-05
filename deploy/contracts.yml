@@ -17,11 +17,27 @@
 
 contracts:
   vLLM:
-    # 0.11.0 changed the image entrypoint: venv is no longer pre-activated
-    # and run_vllm_api_server.py takes --model / --tt-device CLI args.
-    # Pre-0.11 selects the model via TT_MODEL_SPEC_JSON_PATH env var.
+    # Three eras for vLLM, each with a different image interface:
+    #
+    # < 0.10.1  : run_vllm_api_server.py takes NO CLI args. The model is
+    #             selected via the TT_MODEL_SPEC_JSON_PATH env var pointing
+    #             to a bind-mounted JSON spec. ENTRYPOINT is
+    #             docker-entrypoint.sh + gosu (which does not activate the
+    #             venv), and the image's default CMD does it.
+    #
+    # 0.10.1 .. 0.11.0  : --tt-device (required) and --model CLI args
+    #                     introduced. ENTRYPOINT/CMD shape unchanged from
+    #                     above, but `command:` overrides CMD with a
+    #                     bash -c wrapper that activates the venv and
+    #                     invokes run_vllm_api_server.py with the args.
+    #
+    # >= 0.11.0  : ENTRYPOINT itself is bash -c "source venv && exec python
+    #              run_vllm_api_server.py $@". `command:` passes simple
+    #              args (no double-wrapping).
     - min_version: "0.0.0"
-      file: docker-compose.vllm-pre-0.11.yml
+      file: docker-compose.vllm-pre-0.10.1.yml
+    - min_version: "0.10.1"
+      file: docker-compose.vllm-0.10.1.yml
     - min_version: "0.11.0"
       file: docker-compose.vllm-0.11.yml
 

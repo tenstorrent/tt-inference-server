@@ -167,11 +167,35 @@ class TestProductionContractsYaml:
         path = lookup_contract(InferenceEngine.VLLM.value, Version("0.11.0"))
         assert path.name == "docker-compose.vllm-0.11.yml"
 
-    def test_vllm_pre_0_11_resolves(self):
+    def test_vllm_0_10_1_resolves(self):
+        # 0.10.1 is the lower bound of the vllm-0.10.1 era (--tt-device CLI
+        # introduced; gosu/docker-entrypoint.sh still in use).
         from workflows.workflow_types import InferenceEngine
 
         path = lookup_contract(InferenceEngine.VLLM.value, Version("0.10.1"))
-        assert path.name == "docker-compose.vllm-pre-0.11.yml"
+        assert path.name == "docker-compose.vllm-0.10.1.yml"
+
+    def test_vllm_0_10_5_resolves_to_0_10_1_era(self):
+        # Anything in [0.10.1, 0.11.0) routes to the 0.10.1 era contract.
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.VLLM.value, Version("0.10.5"))
+        assert path.name == "docker-compose.vllm-0.10.1.yml"
+
+    def test_vllm_pre_0_10_1_resolves(self):
+        # 0.10.0 (and earlier) take no CLI args — model selected via
+        # TT_MODEL_SPEC_JSON_PATH env var. Routes to the legacy contract.
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.VLLM.value, Version("0.10.0"))
+        assert path.name == "docker-compose.vllm-pre-0.10.1.yml"
+
+    def test_vllm_below_0_10_1_resolves_to_legacy(self):
+        # Anything in [0.0.0, 0.10.1) routes to the pre-0.10.1 era contract.
+        from workflows.workflow_types import InferenceEngine
+
+        path = lookup_contract(InferenceEngine.VLLM.value, Version("0.9.0"))
+        assert path.name == "docker-compose.vllm-pre-0.10.1.yml"
 
     def test_media_engine_value_resolves(self):
         from workflows.workflow_types import InferenceEngine
@@ -434,14 +458,26 @@ class TestBuildComposeCommand:
         assert "TT_MODEL_SPEC_HOST_PATH" in env
 
     # ------------------------------------------------------------------
-    # 7. Pre-0.11 image tag — picks vllm-pre-0.11.yml contract
+    # 7. Pre-0.11 image tag (0.10.1 era) — picks vllm-0.10.1.yml contract
     # ------------------------------------------------------------------
-    def test_pre_0_11_image_picks_legacy_contract(self):
+    def test_0_10_1_image_picks_0_10_1_contract(self):
         ms = _model_spec(image_tag="0.10.4-abc")
         rc = _runtime_config()
         files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
 
-        assert files[0].name == "docker-compose.vllm-pre-0.11.yml"
+        assert files[0].name == "docker-compose.vllm-0.10.1.yml"
+        assert len(files) == 1
+        assert env["DOCKER_IMAGE"] == ms.docker_image
+
+    # ------------------------------------------------------------------
+    # 7b. Legacy image tag (< 0.10.1) — picks vllm-pre-0.10.1.yml contract
+    # ------------------------------------------------------------------
+    def test_pre_0_10_1_image_picks_legacy_contract(self):
+        ms = _model_spec(image_tag="0.9.0-abc")
+        rc = _runtime_config()
+        files, env = build_compose_command(ms, rc, setup_config=None, json_fpath=None)
+
+        assert files[0].name == "docker-compose.vllm-pre-0.10.1.yml"
         assert len(files) == 1
         assert env["DOCKER_IMAGE"] == ms.docker_image
 
