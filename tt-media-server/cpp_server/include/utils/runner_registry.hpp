@@ -22,8 +22,10 @@ namespace tt::utils {
  * register themselves from `services::registerBuiltinModelServices()` and
  * `runner_factory::createRunner` delegates here.
  *
- * Lookup falls back from `(service, type)` -> `(service, MOCK)` -> first
- * factory registered for `service`, logging a warning when it does so.
+ * Lookup falls back from `(service, type)` -> `(service, MOCK)` (logging a
+ * warning), and returns nullptr if neither is registered. There is no
+ * "first-available" fallback because unordered_map iteration is unordered
+ * and would make runner selection non-deterministic across runs.
  */
 class RunnerRegistry {
  public:

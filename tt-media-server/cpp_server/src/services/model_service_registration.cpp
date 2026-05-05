@@ -3,8 +3,8 @@
 
 #include "services/model_service_registration.hpp"
 
-#include <atomic>
 #include <memory>
+#include <mutex>
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
@@ -28,9 +28,8 @@ namespace {
 
 void registerLLM() {
   ServiceRegistry::instance().registerService(
-      config::ModelService::LLM, []() -> std::shared_ptr<IService> {
-        return std::make_shared<LLMService>();
-      });
+      config::ModelService::LLM,
+      []() -> std::shared_ptr<IService> { return std::make_shared<LLMService>(); });
 
   auto& runners = utils::RunnerRegistry::instance();
 
@@ -129,12 +128,14 @@ void registerAlwaysExemptRoutes() {
 }  // namespace
 
 void registerBuiltinModelServices() {
-  static std::atomic<bool> registered{false};
-  if (registered.exchange(true)) return;
-
-  registerLLM();
-  registerEmbedding();
-  registerAlwaysExemptRoutes();
+  // call_once provides the release/acquire that publishes the registry
+  // writes; an atomic bool flag would not. createRunner is a hot path.
+  static std::once_flag flag;
+  std::call_once(flag, []() {
+    registerLLM();
+    registerEmbedding();
+    registerAlwaysExemptRoutes();
+  });
 }
 
 }  // namespace tt::services

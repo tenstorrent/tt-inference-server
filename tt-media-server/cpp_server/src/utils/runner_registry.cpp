@@ -27,6 +27,8 @@ std::unique_ptr<runners::IRunner> RunnerRegistry::create(
     return exact->second(config, resultQueue, taskQueue, cancelQueue);
   }
 
+  // MOCK is the convention safety net. No "first available" scan: unordered
+  // map iteration is unordered, which would make selection non-deterministic.
   auto mock = factories_.find({service, config::ModelRunnerType::MOCK});
   if (mock != factories_.end() && mock->second) {
     TT_LOG_WARN(
@@ -34,17 +36,6 @@ std::unique_ptr<runners::IRunner> RunnerRegistry::create(
         "MOCK",
         config::toString(service), config::toString(type));
     return mock->second(config, resultQueue, taskQueue, cancelQueue);
-  }
-
-  for (const auto& [key, factory] : factories_) {
-    if (key.first == service && factory) {
-      TT_LOG_WARN(
-          "[RunnerRegistry] No factory for ({}, {}) and no MOCK registered; "
-          "falling back to first available runner ({})",
-          config::toString(service), config::toString(type),
-          config::toString(key.second));
-      return factory(config, resultQueue, taskQueue, cancelQueue);
-    }
   }
 
   return nullptr;

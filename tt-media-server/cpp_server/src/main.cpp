@@ -202,9 +202,9 @@ int main(int argc, char* argv[]) {
                drogon::AdviceChainCallback&& chainCallback) {
         const std::string& path = req->path();
 
-        if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-            path == "/swagger" || path == "/openapi.json" ||
-            path == "/metrics" || path == "/max-session-count") {
+        // Same exempt list SyncAdvice uses, so new exempt paths registered by
+        // future modalities skip auth automatically.
+        if (tt::api::RouteRegistry::instance().isAlwaysExempt(path)) {
           chainCallback();
           return;
         }

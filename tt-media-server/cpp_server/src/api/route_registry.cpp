@@ -23,7 +23,12 @@ void RouteRegistry::registerRoute(config::ModelService service,
     upper.push_back(
         static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
   }
-  routes_[service].push_back(
+  // Idempotent on (method, path); first description wins.
+  auto& bucket = routes_[service];
+  for (const auto& spec : bucket) {
+    if (spec.method == upper && spec.path == path) return;
+  }
+  bucket.push_back(
       RouteSpec{std::move(upper), std::move(path), std::move(description)});
 }
 
@@ -34,13 +39,18 @@ void RouteRegistry::registerAlwaysExempt(std::string path) {
   }
 }
 
-bool RouteRegistry::isAllowed(config::ModelService activeService,
-                              std::string_view method,
-                              std::string_view path) const {
+bool RouteRegistry::isAlwaysExempt(std::string_view path) const {
   // Linear scan: < 10 entries, no allocation from string_view.
   for (const auto& exempt : alwaysExempt_) {
     if (exempt == path) return true;
   }
+  return false;
+}
+
+bool RouteRegistry::isAllowed(config::ModelService activeService,
+                              std::string_view method,
+                              std::string_view path) const {
+  if (isAlwaysExempt(path)) return true;
   auto it = routes_.find(activeService);
   if (it == routes_.end()) return false;
   // registerRoute() upper-cases stored methods and Drogon::methodString()
@@ -89,8 +99,14 @@ bool RouteRegistry::pathMatches(std::string_view templatePath,
     auto rSeg = requestPath.substr(0, rEnd);
 
     if (tSeg.empty() || rSeg.empty()) return false;
-    const bool isWildcard =
-        tSeg.size() >= 2 && tSeg.front() == '{' && tSeg.back() == '}';
+    // Wildcard is exactly `{name}` — non-empty interior, no nested braces.
+    // Looser shapes ("{}", "{a{b}c}") fall through to literal compare.
+    bool isWildcard = false;
+    if (tSeg.size() >= 3 && tSeg.front() == '{' && tSeg.back() == '}') {
+      const auto interior = tSeg.substr(1, tSeg.size() - 2);
+      isWildcard = interior.find('{') == std::string_view::npos &&
+                   interior.find('}') == std::string_view::npos;
+    }
     if (!isWildcard && tSeg != rSeg) return false;
 
     templatePath.remove_prefix(tEnd);

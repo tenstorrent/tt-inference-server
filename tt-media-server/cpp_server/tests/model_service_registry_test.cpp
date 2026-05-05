@@ -9,6 +9,7 @@
 #include "api/route_registry.hpp"
 #include "config/types.hpp"
 #include "services/base_service.hpp"
+#include "services/service_container.hpp"
 #include "services/service_registry.hpp"
 #include "utils/runner_registry.hpp"
 
@@ -18,6 +19,7 @@ using tt::api::RouteRegistry;
 using tt::config::ModelRunnerType;
 using tt::config::ModelService;
 using tt::services::IService;
+using tt::services::ServiceContainer;
 using tt::services::ServiceRegistry;
 using tt::utils::RunnerRegistry;
 
@@ -196,6 +198,34 @@ TEST(RouteRegistryTest, AlwaysExemptIsServiceAgnostic) {
   EXPECT_EQ(RouteRegistry::instance().alwaysExemptPaths().size(), 1u);
 }
 
+TEST(RouteRegistryTest, IsAlwaysExemptDoesNotConsultPerServiceRoutes) {
+  RouteRegistry::instance().clear();
+  RouteRegistry::instance().registerAlwaysExempt("/metrics");
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "POST",
+                                          "/v1/chat/completions", "");
+
+  EXPECT_TRUE(RouteRegistry::instance().isAlwaysExempt("/metrics"));
+  EXPECT_FALSE(RouteRegistry::instance().isAlwaysExempt("/v1/chat/completions"));
+  EXPECT_FALSE(RouteRegistry::instance().isAlwaysExempt("/unknown"));
+}
+
+TEST(RouteRegistryTest, MalformedTemplateSegmentIsTreatedAsLiteral) {
+  RouteRegistry::instance().clear();
+  // Empty body and nested-brace shapes are NOT wildcards; they should match
+  // their literal selves only.
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "GET",
+                                          "/v1/{}", "empty");
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "GET",
+                                          "/v1/{a{b}c}", "nested");
+
+  EXPECT_TRUE(
+      RouteRegistry::instance().isAllowed(ModelService::LLM, "GET", "/v1/{}"));
+  EXPECT_FALSE(RouteRegistry::instance().isAllowed(ModelService::LLM, "GET",
+                                                   "/v1/anything"));
+  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "GET",
+                                                  "/v1/{a{b}c}"));
+}
+
 TEST(RouteRegistryTest, RoutesForReturnsRegistrationOrder) {
   RouteRegistry::instance().clear();
   RouteRegistry::instance().registerRoute(ModelService::LLM, "post",
@@ -210,4 +240,39 @@ TEST(RouteRegistryTest, RoutesForReturnsRegistrationOrder) {
   EXPECT_EQ(routes[0].description, "chat");
   EXPECT_EQ(routes[1].method, "GET");
   EXPECT_EQ(routes[1].path, "/v1/models");
+}
+
+// ---------------------------------------------------------------------------
+// ServiceContainer
+// ---------------------------------------------------------------------------
+
+TEST(ServiceContainerTest, RegisterAndRetrieveByKey) {
+  auto& c = ServiceContainer::instance();
+  auto llm = std::make_shared<FakeService>("llm");
+  auto emb = std::make_shared<FakeService>("emb");
+
+  c.registerService(ModelService::LLM, llm);
+  c.registerService(ModelService::EMBEDDING, emb);
+
+  auto retrievedLlm =
+      std::dynamic_pointer_cast<FakeService>(c.getService(ModelService::LLM));
+  auto retrievedEmb = std::dynamic_pointer_cast<FakeService>(
+      c.getService(ModelService::EMBEDDING));
+  ASSERT_NE(retrievedLlm, nullptr);
+  ASSERT_NE(retrievedEmb, nullptr);
+  EXPECT_EQ(retrievedLlm->tag(), "llm");
+  EXPECT_EQ(retrievedEmb->tag(), "emb");
+
+  // Cleanup so we don't leak fake pointers to tests in other suites.
+  c.registerService(ModelService::LLM, nullptr);
+  c.registerService(ModelService::EMBEDDING, nullptr);
+}
+
+TEST(ServiceContainerTest, MissingKeyReturnsNullptr) {
+  auto& c = ServiceContainer::instance();
+  c.registerService(ModelService::LLM, nullptr);
+  c.registerService(ModelService::EMBEDDING, nullptr);
+
+  EXPECT_EQ(c.getService(ModelService::LLM), nullptr);
+  EXPECT_EQ(c.getService(ModelService::EMBEDDING), nullptr);
 }

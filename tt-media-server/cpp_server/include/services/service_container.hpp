@@ -4,7 +4,6 @@
 #pragma once
 
 #include <memory>
-#include <stdexcept>
 #include <unordered_map>
 
 #include "config/types.hpp"

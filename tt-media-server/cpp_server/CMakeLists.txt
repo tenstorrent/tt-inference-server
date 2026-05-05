@@ -498,9 +498,11 @@ target_include_directories(worker_metrics_shm_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(model_service_registry_test tests/model_service_registry_test.cpp)
+add_executable(model_service_registry_test
+    tests/model_service_registry_test.cpp
+    src/services/service_container.cpp
+)
 target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
-add_test(NAME model_service_registry_test COMMAND model_service_registry_test)
 
 add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
 target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
@@ -556,6 +558,7 @@ gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
+gtest_discover_tests(model_service_registry_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)

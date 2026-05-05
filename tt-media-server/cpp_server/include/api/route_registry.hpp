@@ -38,6 +38,11 @@ class RouteRegistry {
   /** Always-allowed regardless of MODEL_SERVICE (health, docs, metrics, …). */
   void registerAlwaysExempt(std::string path);
 
+  /** True iff `path` is in the always-exempt list (e.g. /health, /metrics).
+   *  Use this to skip auth filters and similar cross-cutting checks so the
+   *  exempt list stays defined in one place. */
+  bool isAlwaysExempt(std::string_view path) const;
+
   /** True if `service` should serve `method path`. Templated route segments
    *  (`{name}`) match any single non-empty segment. */
   bool isAllowed(config::ModelService activeService, std::string_view method,
