@@ -17,8 +17,7 @@ from typing import Iterable, Protocol, Tuple, runtime_checkable
 
 @runtime_checkable
 class ServerController(Protocol):
-    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool:
-        ...
+    def wait_for_healthy(self, timeout: float = 1200.0, interval: int = 10) -> bool: ...
 
     def get_health(self):  # returns requests.Response-like with status_code
         ...
@@ -27,5 +26,4 @@ class ServerController(Protocol):
         self,
         context_lens: Iterable[Tuple[int, int]],
         timeout: float = 1200.0,
-    ) -> None:
-        ...
+    ) -> None: ...

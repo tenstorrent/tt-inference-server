@@ -33,9 +33,7 @@ class GuideLLMDriver(LLMDriver):
         venv_python: Optional[Path] = None,
         guidellm_binary: Optional[str] = None,
     ) -> None:
-        self.venv_python = (
-            Path(venv_python) if venv_python else Path(sys.executable)
-        )
+        self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)
         self.guidellm_binary = guidellm_binary or shutil.which("guidellm")
 
     def run(
@@ -46,19 +44,14 @@ class GuideLLMDriver(LLMDriver):
     ) -> DriverResult:
         context.output_dir.mkdir(parents=True, exist_ok=True)
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        out_path = (
-            context.output_dir
-            / (
-                f"guidellm_{_safe(server.model)}_{run_ts}"
-                f"_isl-{config.isl}_osl-{config.osl}"
-                f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
-            )
+        out_path = context.output_dir / (
+            f"guidellm_{_safe(server.model)}_{run_ts}"
+            f"_isl-{config.isl}_osl-{config.osl}"
+            f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
         target = server.url_with_port
-        data_spec = (
-            f"prompt_tokens={config.isl},output_tokens={config.osl}"
-        )
+        data_spec = f"prompt_tokens={config.isl},output_tokens={config.osl}"
 
         if self.guidellm_binary:
             cmd = [self.guidellm_binary, "benchmark"]
@@ -67,13 +60,20 @@ class GuideLLMDriver(LLMDriver):
 
         cmd.extend(
             [
-                "--target", target,
-                "--model", server.model,
-                "--data", data_spec,
-                "--rate-type", "concurrent",
-                "--rate", str(config.max_concurrency),
-                "--max-requests", str(config.num_prompts),
-                "--output-path", str(out_path),
+                "--target",
+                target,
+                "--model",
+                server.model,
+                "--data",
+                data_spec,
+                "--rate-type",
+                "concurrent",
+                "--rate",
+                str(config.max_concurrency),
+                "--max-requests",
+                str(config.num_prompts),
+                "--output-path",
+                str(out_path),
             ]
         )
 

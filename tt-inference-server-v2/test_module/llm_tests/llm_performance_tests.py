@@ -60,9 +60,7 @@ def run_llm_performance(
         model=ctx.model_spec.hf_model_repo,
     )
     output_dir = Path(ctx.output_path) / output_subdir
-    device_label = (
-        ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    )
+    device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     context = DriverContext(output_dir=output_dir, device=device_label)
 
     runner = LLMPerformanceRunner(

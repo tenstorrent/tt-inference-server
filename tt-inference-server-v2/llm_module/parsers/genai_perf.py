@@ -53,9 +53,7 @@ class GenAIPerfParser(LLMResultParser):
             "kind": self.kind,
             "model": _model_name(raw),
             "device": device,
-            "timestamp": dt.datetime.now(dt.timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
+            "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             "Run Configuration": _run_configuration(raw),
             "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
             "Throughput": _metric_table(raw, THROUGHPUT_METRICS),

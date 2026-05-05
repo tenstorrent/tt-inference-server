@@ -16,7 +16,6 @@ import json
 import logging
 import shutil
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
@@ -40,33 +39,42 @@ class VLLMBenchDriver(LLMDriver):
     ) -> DriverResult:
         context.output_dir.mkdir(parents=True, exist_ok=True)
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_filename = (
-            context.output_dir
-            / (
-                f"benchmark_{_safe(server.model)}_{run_ts}"
-                f"_isl-{config.isl}_osl-{config.osl}"
-                f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
-            )
+        result_filename = context.output_dir / (
+            f"benchmark_{_safe(server.model)}_{run_ts}"
+            f"_isl-{config.isl}_osl-{config.osl}"
+            f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
         cmd = [
             self.vllm_binary,
             "bench",
             "serve",
-            "--backend", "openai-chat",
-            "--endpoint", "/v1/chat/completions",
-            "--extra-body", json.dumps({"truncate_prompt_tokens": str(config.isl)}),
-            "--model", server.model,
-            "--port", str(server.service_port),
-            "--dataset-name", "random",
-            "--max-concurrency", str(config.max_concurrency),
-            "--num-prompts", str(config.num_prompts),
-            "--random-input-len", str(config.isl),
-            "--random-output-len", str(config.osl),
-            "--percentile-metrics", "ttft,tpot,itl,e2el",
+            "--backend",
+            "openai-chat",
+            "--endpoint",
+            "/v1/chat/completions",
+            "--extra-body",
+            json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+            "--model",
+            server.model,
+            "--port",
+            str(server.service_port),
+            "--dataset-name",
+            "random",
+            "--max-concurrency",
+            str(config.max_concurrency),
+            "--num-prompts",
+            str(config.num_prompts),
+            "--random-input-len",
+            str(config.isl),
+            "--random-output-len",
+            str(config.osl),
+            "--percentile-metrics",
+            "ttft,tpot,itl,e2el",
             "--save-result",
             "--save-detailed",
-            "--result-filename", str(result_filename),
+            "--result-filename",
+            str(result_filename),
         ]
 
         env = {}

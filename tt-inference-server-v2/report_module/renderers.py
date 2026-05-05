@@ -86,16 +86,10 @@ def _resolve_model_device(
     data = block.data if isinstance(block.data, Mapping) else {}
     targets = block.targets if isinstance(block.targets, Mapping) else {}
     model = str(
-        data.get("model")
-        or targets.get("model")
-        or metadata.get("model_name")
-        or ""
+        data.get("model") or targets.get("model") or metadata.get("model_name") or ""
     )
     device = str(
-        data.get("device")
-        or targets.get("device")
-        or metadata.get("device")
-        or ""
+        data.get("device") or targets.get("device") or metadata.get("device") or ""
     )
     if (not model or not device) and records:
         first = records[0]

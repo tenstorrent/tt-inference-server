@@ -29,9 +29,7 @@ class AIPerfDriver(LLMDriver):
     name = "aiperf"
 
     def __init__(self, venv_python: Optional[Path] = None) -> None:
-        self.venv_python = (
-            Path(venv_python) if venv_python else Path(sys.executable)
-        )
+        self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)
 
     def run(
         self,
@@ -53,20 +51,32 @@ class AIPerfDriver(LLMDriver):
 
         cmd = [
             str(self.venv_python),
-            "-m", "aiperf",
+            "-m",
+            "aiperf",
             "profile",
-            "--model", server.model,
-            "--tokenizer", server.tokenizer,
-            "--endpoint-type", "chat",
+            "--model",
+            server.model,
+            "--tokenizer",
+            server.tokenizer,
+            "--endpoint-type",
+            "chat",
             "--streaming",
-            "--concurrency", str(config.max_concurrency),
-            "--request-count", str(config.num_prompts),
-            "--synthetic-input-tokens-mean", str(config.isl),
-            "--synthetic-input-tokens-stddev", "0",
-            "--output-tokens-mean", str(config.osl),
-            "--output-tokens-stddev", "0",
-            "--url", url,
-            "--artifact-dir", str(artifact_dir),
+            "--concurrency",
+            str(config.max_concurrency),
+            "--request-count",
+            str(config.num_prompts),
+            "--synthetic-input-tokens-mean",
+            str(config.isl),
+            "--synthetic-input-tokens-stddev",
+            "0",
+            "--output-tokens-mean",
+            str(config.osl),
+            "--output-tokens-stddev",
+            "0",
+            "--url",
+            url,
+            "--artifact-dir",
+            str(artifact_dir),
         ]
         if server.auth_token:
             cmd.extend(["--api-key", server.auth_token])
