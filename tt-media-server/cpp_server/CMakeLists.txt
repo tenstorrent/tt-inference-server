@@ -286,11 +286,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
-    src/runners/blaze_runner/sp_pipeline_runner_demo.cpp
-    src/runners/blaze_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/mock_device_pipeline.cpp
-    src/runners/blaze_runner/mock_sp_pipeline_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
@@ -477,6 +472,20 @@ target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# Reasoning parser test
+add_executable(test_reasoning_parser
+    tests/test_reasoning_parser.cpp
+    src/services/reasoning_parser.cpp
+)
+target_link_libraries(test_reasoning_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_reasoning_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/worker/worker_metrics_shm.cpp
@@ -514,6 +523,17 @@ target_include_directories(session_manager_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(worker_manager_test
+    tests/worker_manager_test.cpp
+    src/worker/process_liveness.cpp
+)
+target_link_libraries(worker_manager_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -528,11 +548,13 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
+gtest_discover_tests(worker_manager_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
+add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -601,7 +623,9 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/sse_stream_writer.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
@@ -611,6 +635,7 @@ set(SOURCES
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
     src/utils/service_factory.cpp
     src/services/service_container.cpp
     src/utils/runner_factory.cpp
@@ -626,7 +651,7 @@ set(SOURCES
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp
-    src/worker/sp_pipeline_worker_metrics_renderer.cpp
+    src/worker/blaze_worker_metrics_renderer.cpp
 )
 
 # Create executable
@@ -660,6 +685,29 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# Make the executable's runtime library lookup self-contained relative to
+# its own location (DT_RUNPATH = $ORIGIN/...). Required so the build
+# artifact can be unpacked and run on a different machine than the
+# build runner (e.g. CI build on ubuntu-latest, bench on a self-hosted
+# runner with a different workspace path). Without this, CMake bakes the
+# absolute build-time path into RUNPATH and ld.so fails to find
+# libpipeline_manager_core.so.1 elsewhere.
+if(ENABLE_BLAZE)
+    # $ORIGIN/tt-blaze/pipeline_manager keeps libpipeline_manager_core.so.1
+    # resolvable when the build artifact is unpacked on a different machine
+    # (see commit that introduced this block).
+    # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
+    # directories (e.g. tt-blaze/tt-metal/build_Release/lib where libfmt.so.11,
+    # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
+    # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
+    # they just won't resolve on a different runner, while $ORIGIN still does.
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN/tt-blaze/pipeline_manager"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE

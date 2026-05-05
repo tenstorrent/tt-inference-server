@@ -46,6 +46,12 @@ class LLMService
   void preProcess(domain::LLMRequest& request) const override;
 
   /**
+   * Run post-processing (reasoning strip, tool-call parsing) on a fully
+   * accumulated response.
+   */
+  void postProcess(domain::LLMResponse& response) const override;
+
+  /**
    * Abort an in-flight request. Removes the streaming callback, decrements
    * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
    * synchronous waiters, and broadcasts cancel to all worker queues.
@@ -60,7 +66,6 @@ class LLMService
   }
 
  protected:
-  void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
   domain::LLMResponse processRequest(domain::LLMRequest request) override;
 
@@ -89,6 +94,7 @@ class LLMService
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
   mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
       toolChoiceMap;
+  utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};

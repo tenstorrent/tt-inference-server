@@ -1,3 +1,5 @@
 [submodule "tt-media-server/cpp_server/tt-blaze"]
 	path = tt-media-server/cpp_server/tt-blaze
 	url = https://github.com/tenstorrent/tt-blaze.git
+	branch = asaigal/relaxed_acceptance
+	ignore = dirty

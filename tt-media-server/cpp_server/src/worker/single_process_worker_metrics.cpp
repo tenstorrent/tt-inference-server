@@ -9,7 +9,7 @@
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
-#include "worker/sp_pipeline_metrics_layout.hpp"
+#include "worker/blaze_metrics_layout.hpp"
 #include "worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {

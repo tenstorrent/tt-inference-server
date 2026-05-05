@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -287,6 +288,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.truncate_prompt_tokens = truncate_prompt_tokens;
     out.fast_mode = fast_mode;
     out.response_format = response_format;
+    out.enable_reasoning = enable_reasoning;
     out.sessionId = sessionId;
     return out;
   }
@@ -326,32 +328,86 @@ struct ChatCompletionRequest : BaseRequest {
       return;
     }
 
-    const std::string& expectedCallId = lastAssistant.tool_calls->at(0).id;
-
     if (lastAssistantIdx + 1 >= req.messages.size()) {
       throw std::invalid_argument(
           "Expected message with role='tool' after assistant message with "
           "tool_calls, but didn't get any new messages");
     }
 
-    const auto& nextMessage = req.messages[lastAssistantIdx + 1];
+    const auto& toolCalls = *lastAssistant.tool_calls;
 
-    if (nextMessage.role != "tool") {
-      throw std::invalid_argument(
-          "Expected message with role='tool' after assistant message with "
-          "tool_calls, but got role='" +
-          nextMessage.role + "'");
+    std::vector<std::string> expectedToolCallIds;
+    for (const auto& toolCall : toolCalls) {
+      expectedToolCallIds.push_back(toolCall.id);
     }
 
-    if (!nextMessage.tool_call_id.has_value()) {
-      throw std::invalid_argument(
-          "Message with role='tool' must include 'tool_call_id' field");
+    std::vector<std::string> actualToolCallIds;
+    for (size_t i = lastAssistantIdx + 1; i < req.messages.size(); ++i) {
+      const auto& msg = req.messages[i];
+
+      if (msg.role != "tool") {
+        break;
+      }
+
+      if (!msg.tool_call_id.has_value()) {
+        throw std::invalid_argument(
+            "Message with role='tool' must include 'tool_call_id' field");
+      }
+
+      actualToolCallIds.push_back(*msg.tool_call_id);
     }
 
-    if (*nextMessage.tool_call_id != expectedCallId) {
-      throw std::invalid_argument("tool_call_id '" + *nextMessage.tool_call_id +
-                                  "' does not match expected call_id '" +
-                                  expectedCallId + "'");
+    if (actualToolCallIds.size() < expectedToolCallIds.size()) {
+      std::ostringstream err;
+      err << "Incomplete tool call conversation: assistant requested "
+          << expectedToolCallIds.size() << " tool call(s) but only received "
+          << actualToolCallIds.size() << " tool response(s). "
+          << "Missing tool_call_id(s): ";
+
+      bool first = true;
+      for (const auto& expectedId : expectedToolCallIds) {
+        if (std::find(actualToolCallIds.begin(), actualToolCallIds.end(),
+                      expectedId) == actualToolCallIds.end()) {
+          if (!first) err << ", ";
+          err << "'" << expectedId << "'";
+          first = false;
+        }
+      }
+      throw std::invalid_argument(err.str());
+    }
+
+    if (actualToolCallIds.size() > expectedToolCallIds.size()) {
+      std::ostringstream err;
+      err << "Too many tool call responses: assistant requested "
+          << expectedToolCallIds.size() << " tool call(s) but received "
+          << actualToolCallIds.size() << " tool response(s). "
+          << "Unexpected tool_call_id(s): ";
+
+      bool first = true;
+      for (const auto& actualId : actualToolCallIds) {
+        if (std::find(expectedToolCallIds.begin(), expectedToolCallIds.end(),
+                      actualId) == expectedToolCallIds.end()) {
+          if (!first) err << ", ";
+          err << "'" << actualId << "'";
+          first = false;
+        }
+      }
+      throw std::invalid_argument(err.str());
+    }
+    for (const auto& expectedId : expectedToolCallIds) {
+      size_t count = std::count(actualToolCallIds.begin(),
+                                actualToolCallIds.end(), expectedId);
+
+      if (count == 0) {
+        throw std::invalid_argument("Missing tool response for tool_call_id '" +
+                                    expectedId + "'");
+      }
+
+      if (count > 1) {
+        throw std::invalid_argument(
+            "Duplicate tool response for tool_call_id '" + expectedId +
+            "': found " + std::to_string(count) + " responses");
+      }
     }
   }
 };
