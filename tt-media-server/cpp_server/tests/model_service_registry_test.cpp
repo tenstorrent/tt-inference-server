@@ -205,7 +205,8 @@ TEST(RouteRegistryTest, IsAlwaysExemptDoesNotConsultPerServiceRoutes) {
                                           "/v1/chat/completions", "");
 
   EXPECT_TRUE(RouteRegistry::instance().isAlwaysExempt("/metrics"));
-  EXPECT_FALSE(RouteRegistry::instance().isAlwaysExempt("/v1/chat/completions"));
+  EXPECT_FALSE(
+      RouteRegistry::instance().isAlwaysExempt("/v1/chat/completions"));
   EXPECT_FALSE(RouteRegistry::instance().isAlwaysExempt("/unknown"));
 }
 
@@ -213,8 +214,8 @@ TEST(RouteRegistryTest, MalformedTemplateSegmentIsTreatedAsLiteral) {
   RouteRegistry::instance().clear();
   // Empty body and nested-brace shapes are NOT wildcards; they should match
   // their literal selves only.
-  RouteRegistry::instance().registerRoute(ModelService::LLM, "GET",
-                                          "/v1/{}", "empty");
+  RouteRegistry::instance().registerRoute(ModelService::LLM, "GET", "/v1/{}",
+                                          "empty");
   RouteRegistry::instance().registerRoute(ModelService::LLM, "GET",
                                           "/v1/{a{b}c}", "nested");
 

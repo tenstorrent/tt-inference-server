@@ -28,8 +28,9 @@ namespace {
 
 void registerLLM() {
   ServiceRegistry::instance().registerService(
-      config::ModelService::LLM,
-      []() -> std::shared_ptr<IService> { return std::make_shared<LLMService>(); });
+      config::ModelService::LLM, []() -> std::shared_ptr<IService> {
+        return std::make_shared<LLMService>();
+      });
 
   auto& runners = utils::RunnerRegistry::instance();
 
