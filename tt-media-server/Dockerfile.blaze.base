@@ -73,6 +73,15 @@ ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
 
+# Tell apt to retry transient HTTP failures. The tt-shield runner's in-cluster
+# apt proxy (10.43.242.248:3128) intermittently times out — without this,
+# apt's first failure on archive.ubuntu.com causes the whole `apt-get install`
+# to fall back to stale package lists and report "Unable to locate package
+# htop / Package 'zip' has no installation candidate" (cf. tt-shield runs
+# 25325113617, 25326963035, 25338811255). Retries=5 + Retries-Delay=5 lets
+# apt ride through ~25 seconds of proxy flakiness without faking success.
+RUN printf 'Acquire::Retries "5";\nAcquire::Retries::Delay::Maximum "5";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' > /etc/apt/apt.conf.d/80-retries
+
 # extra system deps (same set as the original Dockerfile.blaze pre-split)
 RUN apt-get update && apt-get install -y \
     gosu \
