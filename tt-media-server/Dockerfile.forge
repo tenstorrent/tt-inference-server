@@ -72,7 +72,7 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     cmake --version
 
 # build tt-metal
-RUN pip3 install --break-system-packages --upgrade setuptools wheel \
+RUN pip3 install --break-system-packages --ignore-installed --upgrade setuptools wheel \
     && pip3 install --break-system-packages cmake \
     && pip3 install --break-system-packages cmake --upgrade \
     && hash -r
