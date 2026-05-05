@@ -46,10 +46,8 @@ WORKDIR ${APP_DIR}
 
 # ----------------------------------------------------------------------------
 # 1. cpp_server source — the cache-breaking layer for everyday edits.
-#    --chown sets ownership during COPY (single layer) so we don't need a
-#    later `chown -R` mega-layer that would defeat the layer-inheritance
-#    benefit of having a base image. We COPY only tt-media-server/cpp_server
-#    (not the full tt-media-server tree) for two reasons:
+#    We COPY only tt-media-server/cpp_server (not the full tt-media-server
+#    tree) for two reasons:
 #      a. The blaze image is C++-only — the python uvicorn server is not
 #         run from this image, so editing main.py / tests/ / docs/ etc.
 #         should not invalidate this layer.
@@ -59,22 +57,26 @@ WORKDIR ${APP_DIR}
 #         docker 29.x).
 #    We still defensively rm any stray ./build artifact from a host checkout.
 # ----------------------------------------------------------------------------
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-     tt-media-server/cpp_server ${APP_DIR}/server/cpp_server
+COPY tt-media-server/cpp_server ${APP_DIR}/server/cpp_server
 RUN rm -rf ${APP_DIR}/server/cpp_server/build
 
 # ----------------------------------------------------------------------------
-# 2. Build cpp_server. Run as the container user so build artifacts land
-#    with the right ownership in a single layer (no chown afterwards).
+# 2. Build cpp_server. We build as root (no USER switch) for two reasons:
+#    (a) the parent dir ${APP_DIR}/server/cpp_server is root-owned in the
+#        base — switching to container_app_user here would fail to mkdir
+#        ./build inside it; (b) the base intentionally skips chown -R to
+#        avoid duplicating ~5GB of HOME_DIR content into a single docker
+#        layer (tt-shield run 25351705546 hit "No space left on device"
+#        when chown -R was in place). The cpp_server binary's default
+#        chmod 755 is enough for the deescalated runtime user (gosu via
+#        docker-entrypoint.sh) to execute it.
 #    The base image already put cargo on PATH globally, so build.sh's
 #    tokenizers-cpp dependency can find it.
 # ----------------------------------------------------------------------------
-USER ${CONTAINER_APP_USERNAME}
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh --blaze"
-USER root
 
 # ----------------------------------------------------------------------------
 # 3. Entrypoint setup. docker-entrypoint.sh starts as root (so it can
@@ -82,8 +84,7 @@ USER root
 #    ${CONTAINER_APP_USERNAME} via gosu — same pattern the original
 #    multi-stage runtime stage used.
 # ----------------------------------------------------------------------------
-COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-     tt-media-server/run_cpp.sh ${APP_DIR}/server/run_cpp.sh
+COPY tt-media-server/run_cpp.sh ${APP_DIR}/server/run_cpp.sh
 RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 COPY docker-entrypoint.sh ${APP_DIR}/server/docker-entrypoint.sh
 RUN chmod +x ${APP_DIR}/server/docker-entrypoint.sh

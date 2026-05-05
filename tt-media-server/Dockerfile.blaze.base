@@ -193,17 +193,26 @@ RUN apt-get update && apt-get install -y \
 
 # Create the non-root container user. UID 1000 matches the convention used by
 # the rest of the tt-* docker images (tt-inference-server, etc.) and by the
-# k8s manifests that mount host volumes into these containers. We do this AT
-# THE END (not at the start) on purpose: the heavy build steps above run as
-# root, so their files end up root-owned. A single chown -R afterwards bakes
-# the correct ownership into ONE layer in the base image; derived images
-# inherit that layer for free and only need to chown the small cpp_server
-# delta they add. (If we chown'd up front, every subsequent RUN as root
-# would re-create root-owned files and we'd be back to square one.)
+# k8s manifests that mount host volumes into these containers.
+#
+# Important: we do NOT `chown -R ${HOME_DIR}` here. Recursive chown rewrites
+# every file's metadata into a new docker layer whose content is the size
+# of the entire HOME_DIR tree (~several GB of tt-metal build artifacts,
+# python_env, tt-blaze sources). That doubled the base image on-disk during
+# build and overflowed the tt-shield runner's /opt disk
+# (tt-shield run 25351705546: "No space left on device" after ~65 min).
+#
+# Instead we leave the heavy content root-owned (default permissions are
+# world-readable + world-executable, which is all the deescalated cpp_server
+# process needs at runtime) and only chown the directories the runtime
+# user actually needs to write into:
+#   - ${HOME_DIR} itself: so docker-entrypoint.sh can `chmod g+s` the home
+#     dir for new files
+#   - ${HOME_DIR}/logs: cpp_server / uvicorn / tt-metal write log files here
 ARG CONTAINER_APP_UID=1000
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} -M ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR}/logs \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
+    && chown ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} ${HOME_DIR}/logs
 ENV TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Runtime layout vars Dockerfile.blaze and downstream consumers rely on.
