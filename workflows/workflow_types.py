@@ -380,3 +380,17 @@ class ModelType(IntEnum):
             ModelType.VIDEO: "Video",
         }
         return short_names[self]
+
+    @property
+    def task_type(self) -> str:
+        task_types = {
+            ModelType.LLM: "text",
+            ModelType.VLM: "vlm",
+            ModelType.AUDIO: "audio",
+            ModelType.IMAGE: "image",
+            ModelType.CNN: "cnn",
+            ModelType.EMBEDDING: "embedding",
+            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.VIDEO: "video",
+        }
+        return task_types[self]

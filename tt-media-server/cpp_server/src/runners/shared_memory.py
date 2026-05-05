@@ -13,8 +13,25 @@ from __future__ import annotations
 import os
 import struct
 from dataclasses import dataclass
+from multiprocessing import resource_tracker as _resource_tracker
 from multiprocessing import shared_memory as _shm
 from typing import Callable
+
+
+def _detach_from_resource_tracker(shm: _shm.SharedMemory) -> None:
+    """Prevent multiprocessing.resource_tracker from shm_unlink()-ing the
+    segment on Python process exit. The C++ peer is the segment's real owner;
+    if Python unlinks, C++'s still-mapped inode becomes orphaned and any
+    subsequent Python restart creates a *different* inode under the same name,
+    silently disconnecting the two processes.
+
+    See https://bugs.python.org/issue38119 for context.
+    """
+    try:
+        _resource_tracker.unregister(shm._name, "shared_memory")
+    except Exception:
+        pass
+
 
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
@@ -84,12 +101,14 @@ class SharedMemory:
             )
         except FileExistsError:
             self._shm = _shm.SharedMemory(name=self._name, create=False)
+        _detach_from_resource_tracker(self._shm)
         os.chmod(f"/dev/shm/{self._name}", 0o666)
         self._buf = self._shm.buf
 
-        # C++ may create "{name}_state" for the persisted cursor. Open it here too so
-        # multiprocessing.resource_tracker registers it and unlinks on process exit
-        # (same lifecycle as the ring buffer), even if C++ created the segment first.
+        # Open (or create) the persisted-cursor segment. We detach from
+        # resource_tracker below so Python does NOT unlink on process exit —
+        # C++ is the lifecycle owner, and unlinking while C++ still maps the
+        # segment would orphan the inode (see _detach_from_resource_tracker).
         state_name = f"{self._name}_state"
         try:
             self._shm_state = _shm.SharedMemory(name=state_name, create=False)
@@ -97,6 +116,7 @@ class SharedMemory:
             self._shm_state = _shm.SharedMemory(
                 name=state_name, create=True, size=_STATE_SHM_SIZE
             )
+        _detach_from_resource_tracker(self._shm_state)
         os.chmod(f"/dev/shm/{state_name}", 0o666)
 
         # Load writer/reader indices from state (matches C++ SlotRingBuffer::open()).

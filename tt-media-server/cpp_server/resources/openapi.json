@@ -336,6 +336,7 @@
         "summary": "Health check",
         "description": "Returns server health status.",
         "operationId": "healthCheck",
+        "security": [],
         "responses": {
           "200": {
             "description": "Server is healthy",
@@ -354,6 +355,7 @@
         "summary": "Liveness check",
         "description": "Liveness probe (same as Python tt-liveness). Returns 200 with {\"status\": \"alive\", ...system status} when the process can respond. model_ready in the body reflects whether any worker has warmed up. Does not return 503 for model not ready; 500 only on unrecoverable failure.",
         "operationId": "livenessCheck",
+        "security": [],
         "responses": {
           "200": {
             "description": "Process is alive; body includes status alive and system status (model_ready, workers, queue)",
@@ -374,12 +376,73 @@
         }
       }
     },
+    "/max-session-count": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Get maximum session count",
+        "description": "Returns the current maximum session count. This may be either the value set via the POST endpoint or the default from the MAX_SESSIONS_COUNT environment variable.",
+        "operationId": "getMaxSessionCount",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved max session count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaxSessionCountResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Health"],
+        "summary": "Set maximum session count",
+        "description": "Sets the maximum session count at runtime. This overrides the MAX_SESSIONS_COUNT environment variable. Set to 0 to clear the override and revert to the environment variable value. Changes take effect immediately for new session allocation attempts.",
+        "operationId": "setMaxSessionCount",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MaxSessionCountRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully set max session count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaxSessionCountSetResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing field or invalid value)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "tags": ["Monitoring"],
         "summary": "Prometheus metrics",
         "description": "Exposes all server metrics in Prometheus text exposition format (version 0.0.4). No authentication required. Intended to be scraped by a Prometheus server every few seconds.",
         "operationId": "getMetrics",
+        "security": [],
         "responses": {
           "200": {
             "description": "Prometheus text format metrics",
@@ -465,6 +528,11 @@
           "user": { "type": "string" },
           "response_format": {
             "$ref": "#/components/schemas/ResponseFormat"
+          },
+          "enable_reasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "When false, reasoning models (e.g. DeepSeek-R1) skip chain-of-thought and respond directly. Has no effect on non-reasoning models."
           }
         }
       },
@@ -634,6 +702,50 @@
           "is_ready": {
             "type": "boolean",
             "description": "Whether worker is ready"
+          }
+        }
+      },
+      "MaxSessionCountResponse": {
+        "type": "object",
+        "required": ["max_session_count"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Current maximum session count",
+            "example": 128
+          }
+        }
+      },
+      "MaxSessionCountRequest": {
+        "type": "object",
+        "required": ["max_session_count"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "New maximum session count. Set to 0 to clear override and use environment variable value.",
+            "example": 256
+          }
+        }
+      },
+      "MaxSessionCountSetResponse": {
+        "type": "object",
+        "required": ["max_session_count", "status"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The new maximum session count that was set",
+            "example": 256
+          },
+          "status": {
+            "type": "string",
+            "enum": ["success"],
+            "description": "Operation status"
           }
         }
       },

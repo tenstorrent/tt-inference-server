@@ -105,13 +105,19 @@ domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
 void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
   if (done_.load()) return;
 
-  const int currentTokens = completion_tokens_.fetch_add(1) + 1;
+  const bool isErrorChunk =
+      !chunk.choices.empty() && chunk.choices[0].finish_reason == "error";
 
-  auto now = std::chrono::high_resolution_clock::now();
-  if (!first_token_time_.has_value()) {
-    first_token_time_ = now;
-  } else if (currentTokens == 2 && !second_token_time_.has_value()) {
-    second_token_time_ = now;
+  const int currentTokens = isErrorChunk ? completion_tokens_.load()
+                                         : completion_tokens_.fetch_add(1) + 1;
+
+  if (!isErrorChunk) {
+    auto now = std::chrono::high_resolution_clock::now();
+    if (!first_token_time_.has_value()) {
+      first_token_time_ = now;
+    } else if (currentTokens == 2 && !second_token_time_.has_value()) {
+      second_token_time_ = now;
+    }
   }
 
   std::optional<domain::CompletionUsage> usage;
@@ -168,8 +174,8 @@ void SseStreamWriter::finalizeStream() {
       (*self->stream_ptr_)->close();
 
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
-        self->params_.sessionManager->setSessionInFlight(
-            self->params_.sessionId.value(), false);
+        self->params_.sessionManager->releaseInFlight(
+            self->params_.sessionId.value());
       }
     }
   });
@@ -181,8 +187,7 @@ void SseStreamWriter::abort() {
                 params_.taskId);
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
-      params_.sessionManager->setSessionInFlight(params_.sessionId.value(),
-                                                 false);
+      params_.sessionManager->releaseInFlight(params_.sessionId.value());
     }
   }
 }

@@ -1,30 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_pipeline_runner/blaze_runner.hpp"
+#include "runners/blaze_runner/blaze_runner.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <pipeline_manager/pipeline_manager_types.hpp>
-#include <thread>
+#include <services/memory_services/blaze_memory_manager.hpp>
 
 #include "config/settings.hpp"
-#include "domain/manage_memory.hpp"
 #include "ipc/token_push.hpp"
-#include "llm_runner/sequence.hpp"
-#include "runners/sp_pipeline_runner/blaze_utils.hpp"
-#include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
+
+namespace {
+using namespace tt_blaze::pipeline_manager;
+PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return SocketConfig{
+          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
+          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+          .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .decode_token_id = 12345,
+      };
+      /* spec decode config
+       return PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .accept_rate = 0.9f,
+          .safe_vocab_base = 1000,    // anything safely above your tokenizer's
+      stop ids .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower
+      coincidental-stop chance
+      };
+       */
+    default:
+      throw std::runtime_error("Invalid blaze runner type");
+  }
+}
+}  // namespace
 
 namespace tt::runners {
 namespace utils = blaze_utils;
 
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
-                         tt::runners::llm_engine::ITaskQueue* taskQueue)
+                         tt::ipc::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -32,16 +59,11 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
-  pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
-      .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
-      .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  // pm::MockConfig mock = {};
+  auto pipelineConfig = makePipelineConfig(config);
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(pipelineConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
@@ -70,14 +92,14 @@ void BlazeRunner::run() {
 }
 
 bool BlazeRunner::warmup() {
-  tt::runners::llm_engine::SamplingParams warmupParams;
+  tt::domain::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
@@ -173,7 +195,10 @@ std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::runners::llm_engine::Sequence> BlazeRunner::getRequest() {
+std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
+  if (requestToRetry) {
+    return std::move(requestToRetry);
+  }
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
@@ -196,29 +221,36 @@ BlazeRunner::getMemoryRequest() {
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
-  auto it = running.find(output.slot_id);
-  if (it == running.end()) {
+  auto it = slotContexts.find(output.slot_id);
+  if (it == slotContexts.end()) {
     TT_LOG_ERROR(
         "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
         "token_id={}, is_complete={}",
         output.slot_id, output.token_id, output.is_complete);
     return;
   }
-  auto& seq = *it->second;
-  seq.appendToken(output.token_id);
-  bool hitStop = !seq.getSamplingParams().ignore_eos &&
-                 stopTokenIds.count(output.token_id) > 0;
+  auto& context = it->second;
+  bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
-  auto taskId = seq.taskId;
+  auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   if (finished) {
+    uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
+                           context.specAcceptsAtStart;
+    uint32_t specRejects = pipelineManager->get_spec_rejects(output.slot_id) -
+                           context.specRejectsAtStart;
+    uint32_t specTotal = specAccepts + specRejects;
+    double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
+    TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
+                specAccepts, specTotal, acceptRate);
+    slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
 }
 
 void BlazeRunner::checkOutputHang() {
-  if (running.empty()) {
+  if (slotContexts.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
     return;
   }
@@ -229,9 +261,9 @@ void BlazeRunner::checkOutputHang() {
   }
   TT_LOG_CRITICAL(
       "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
-      "active slot(s) (threshold={} ms). Self-terminating worker so "
+      "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
       "infrastructure can restart the server.",
-      elapsed.count(), running.size(), outputHangTimeout.count());
+      elapsed.count(), slotContexts.size(), outputHangTimeout.count());
   // Use abort() so the existing fatalSignalHandler prints a visible
   // "killed by signal SIGABRT" line and the WorkerManager parent logs the
   // worker crash. Skipping destructors is acceptable here: the model/device
@@ -240,55 +272,58 @@ void BlazeRunner::checkOutputHang() {
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
-  auto it = running.find(slotId);
-  if (it != running.end()) {
-    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, was running taskId={}",
-                 slotId, it->second->taskId);
-  } else {
-    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (not in running map)",
-                 slotId);
+  auto it = slotContexts.find(slotId);
+  if (it != slotContexts.end()) {
+    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, had taskId={}", slotId,
+                 it->second.taskId);
+    slotContexts.erase(it);
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .decrementActiveRequests();
+    return;
   }
-  running.erase(slotId);
+  TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(
-    std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
-  if (running.empty()) {
-    lastOutputTime = std::chrono::steady_clock::now();
-  }
-  tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
+void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
+  assert(slotId < tt::config::pmMaxUsers());
 
-  bool isNew = !request->isContinuation();
+  bool isNew = !request->isContinuation() && !request->isDisaggregated();
+  if (isNew && request->getSamplingParams().hasGuidedDecoding()) {
+    TT_LOG_WARN(
+        "[BlazeRunner] task_id={} has response_format constraint but "
+        "SP Pipeline does not support per-step guided decoding yet. "
+        "Output may not conform to the requested schema.",
+        request->taskId);
+  }
 
   TT_LOG_DEBUG(
       "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
       "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
-      running.size());
-
-  if (isNew) {
-    if (request->getSamplingParams().hasGuidedDecoding()) {
-      TT_LOG_WARN(
-          "[BlazeRunner] task_id={} has response_format constraint but "
-          "SP Pipeline does not support per-step guided decoding yet. "
-          "Output may not conform to the requested schema.",
-          request->taskId);
-    }
-
-    TT_LOG_DEBUG("[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
-                 request->taskId, slotId);
-    pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-    running[slotId] = std::move(request);
+      slotContexts.size());
+  tt_blaze::pipeline_manager::ISRequest req =
+      isNew ? utils::makeSubmitRequest(slotId, *request)
+            : utils::makeContinueRequest(slotId, *request);
+  if (!pipelineManager->push_request(req)) {
+    TT_LOG_DEBUG(
+        "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
+        "slotId={}",
+        request->taskId, slotId);
+    requestToRetry = std::move(request);
     return;
-  } else {
-    TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
-                 request->taskId, slotId);
-    pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-    running[slotId] = std::move(request);
   }
+  if (slotContexts.empty()) {
+    lastOutputTime = std::chrono::steady_clock::now();
+  }
+  slotContexts.insert_or_assign(
+      slotId, blaze_utils::SlotContext{
+                  request->taskId, request->getSamplingParams().ignore_eos,
+                  pipelineManager->get_spec_accepts(slotId),
+                  pipelineManager->get_spec_rejects(slotId)});
+  tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 
 }  // namespace tt::runners

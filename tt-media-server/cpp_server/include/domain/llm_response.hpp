@@ -52,6 +52,7 @@ struct LLMChoice {
   std::optional<std::string> finish_reason;
   std::optional<int64_t> token_id;
   std::optional<std::string> reasoning;
+  std::optional<Json::Value> tool_calls;
 };
 
 /**
@@ -84,5 +85,18 @@ struct LLMStreamChunk : BaseResponse {
   std::optional<std::string> error;
   std::optional<CompletionUsage> usage;
 };
+
+/**
+ * Build a terminal error chunk carrying both `finish_reason="error"` on the
+ * choice and a human-readable message in the chunk-level `error` field.
+ */
+inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error) {
+  LLMStreamChunk chunk(taskId);
+  LLMChoice choice;
+  choice.finish_reason = "error";
+  chunk.choices.push_back(std::move(choice));
+  chunk.error = std::move(error);
+  return chunk;
+}
 
 }  // namespace tt::domain

@@ -34,6 +34,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -287,7 +288,11 @@ class TTMochi1Runner(TTDiTRunner):
             )
             raise
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
@@ -328,7 +333,11 @@ class TTWan22Runner(TTDiTRunner):
     def load_weights(self):
         return False
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
@@ -376,3 +385,28 @@ class TTWan22Runner(TTDiTRunner):
                 config.max_packet_payload_size_bytes = 8192
                 device_params["fabric_router_config"] = config
         return device_params
+
+
+class TTWan22I2VRunner(TTWan22Runner):
+    """Wan2.2 image-to-video runner.
+
+    Shares mesh/fabric/trace configuration with T2V (see investigation:
+    device params are identical at every supported mesh shape). The fork
+    lives inside the pipeline class — WanPipelineI2V allocates a VAE
+    encoder on mesh, overrides prepare_latents to encode the conditioning
+    image(s), and overrides get_model_input to channel-concat the mask +
+    encoded conditioning video into the 36-channel transformer input.
+
+    Wired in PR 2; this class is registered in runner_fabric now so the
+    config/selection layer is exercised end-to-end by the mock runner.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+
+    def create_pipeline(self):
+        raise NotImplementedError(
+            "TTWan22I2VRunner pipeline wiring ships in PR 2 (WanPipelineI2V). "
+            "This stub exists so the I2V request schema, HTTP route, and runner "
+            "selection can be validated against the mock runner."
+        )

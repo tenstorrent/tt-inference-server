@@ -4,6 +4,7 @@
 #include "config/settings.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
@@ -222,10 +223,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "pipeline") {
-      cfg.runner_type = ModelRunnerType::PIPELINE;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "prefill") {
+    if (backend == "prefill") {
       cfg.runner_type = ModelRunnerType::PREFILL;
       cfg.max_in_flight_count = 1;
     } else if (backend == "llama") {
@@ -305,9 +303,21 @@ size_t maxQueueSize() {
   return cached;
 }
 
+namespace {
+std::atomic<size_t> maxSessionsCountOverride{0};
+}
+
 size_t maxSessionsCount() {
+  size_t overrideVal = maxSessionsCountOverride.load(std::memory_order_relaxed);
+  if (overrideVal > 0) {
+    return overrideVal;
+  }
   return static_cast<size_t>(
       envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+void setMaxSessionsCount(size_t count) {
+  maxSessionsCountOverride.store(count, std::memory_order_relaxed);
 }
 
 unsigned sessionEvictionRate() {
@@ -324,6 +334,10 @@ size_t maxTokensToPrefillOnDecode() {
   return static_cast<size_t>(
       envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
+}
+
+bool useFastMode() {
+  return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
 
 std::string kafkaBrokers() {

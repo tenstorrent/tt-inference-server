@@ -1,0 +1,158 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z-Image-Turbo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0a0a0a; color: #e0e0e0;
+            min-height: 100vh; display: flex; justify-content: center; padding: 2rem;
+        }
+        .container { max-width: 720px; width: 100%; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+        .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .input-row {
+            display: flex; gap: 0.5rem; margin-bottom: 1rem;
+        }
+        input[type="text"] {
+            flex: 1; padding: 0.75rem 1rem; border-radius: 8px;
+            border: 1px solid #333; background: #141414; color: #e0e0e0;
+            font-size: 0.95rem; outline: none; transition: border-color 0.2s;
+        }
+        input[type="text"]:focus { border-color: #7c3aed; }
+        button {
+            padding: 0.75rem 1.5rem; border-radius: 8px; border: none;
+            background: #7c3aed; color: #fff; font-size: 0.95rem; font-weight: 500;
+            cursor: pointer; transition: background 0.2s; white-space: nowrap;
+        }
+        button:hover { background: #6d28d9; }
+        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .image-box {
+            width: 100%; aspect-ratio: 1; border-radius: 12px;
+            border: 1px solid #222; background: #111; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            position: relative;
+        }
+        .image-box img {
+            width: 100%; height: 100%; object-fit: contain; display: none;
+        }
+        .placeholder { color: #444; font-size: 0.9rem; }
+        .spinner {
+            display: none; width: 36px; height: 36px;
+            border: 3px solid #333; border-top-color: #7c3aed;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .timer {
+            position: absolute; bottom: 1rem; right: 1rem;
+            background: rgba(0,0,0,0.7); padding: 0.25rem 0.6rem;
+            border-radius: 6px; font-size: 0.8rem; color: #aaa; display: none;
+        }
+        .meta {
+            margin-top: 0.75rem; font-size: 0.8rem; color: #666;
+        }
+        .error {
+            margin-top: 0.5rem; color: #ef4444; font-size: 0.85rem; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Z-Image-Turbo</h1>
+        <p class="subtitle">512x512 text-to-image on TT-QuietBox™ 2</p>
+
+        <div class="input-row">
+            <input type="text" id="prompt" placeholder="Describe an image..."
+                   autofocus autocomplete="off">
+            <button id="btn" onclick="generate()">Generate</button>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="image-box">
+            <span class="placeholder" id="placeholder">Your image will appear here</span>
+            <div class="spinner" id="spinner"></div>
+            <img id="img" alt="Generated image">
+            <div class="timer" id="timer">0s</div>
+        </div>
+
+        <p class="meta" id="meta"></p>
+    </div>
+
+    <script>
+    const $ = id => document.getElementById(id);
+    let busy = false, interval;
+
+    $('prompt').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !busy) generate();
+    });
+
+    async function generate() {
+        const prompt = $('prompt').value.trim();
+        if (!prompt || busy) return;
+
+        busy = true;
+        $('btn').disabled = true;
+        $('error').style.display = 'none';
+        $('placeholder').style.display = 'none';
+        $('img').style.display = 'none';
+        $('spinner').style.display = 'block';
+        $('timer').style.display = 'block';
+        $('meta').textContent = '';
+
+        const t0 = Date.now();
+        $('timer').textContent = '0s';
+        interval = setInterval(() => {
+            $('timer').textContent = Math.floor((Date.now() - t0) / 1000) + 's';
+        }, 1000);
+
+        try {
+            const res = await fetch('/v1/images/generations', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer your-secret-key',
+                },
+                body: JSON.stringify({ prompt, num_inference_steps: 8 }),
+            });
+
+            clearInterval(interval);
+            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            const b64 = data.images[0];
+            const serverTime = data.generation_time;
+
+            $('img').src = `data:image/png;base64,${b64}`;
+            $('img').style.display = 'block';
+            $('spinner').style.display = 'none';
+            const timingText = serverTime
+                ? `server: ${serverTime}s / client: ${elapsed}s`
+                : `${elapsed}s`;
+            $('meta').textContent = `"${prompt}" \u2014 ${timingText}`;
+
+        } catch (err) {
+            clearInterval(interval);
+            $('spinner').style.display = 'none';
+            $('placeholder').style.display = 'block';
+            $('error').textContent = err.message;
+            $('error').style.display = 'block';
+        } finally {
+            $('timer').style.display = 'none';
+            $('btn').disabled = false;
+            busy = false;
+        }
+    }
+    </script>
+</body>
+</html>

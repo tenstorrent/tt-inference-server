@@ -30,7 +30,10 @@ async def get_catalog(api_key: str = Security(get_api_key)):
     settings = get_settings()
     num_workers = len(settings.device_ids.replace(" ", "").split("),("))
     catalog = build_training_catalog(
-        settings.model_runner, settings.device, settings.device_mesh_shape, num_workers
+        settings.device,
+        settings.device_mesh_shape,
+        num_workers,
+        settings.training_model,
     )
     return JSONResponse(content=catalog)
 

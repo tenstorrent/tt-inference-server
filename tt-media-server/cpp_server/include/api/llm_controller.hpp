@@ -12,6 +12,10 @@
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 
+namespace tt::sockets {
+class InterServerService;
+}
+
 namespace tt::api {
 
 /**
@@ -74,6 +78,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
+  std::shared_ptr<sockets::InterServerService> socketService;
 
   /**
    * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk
@@ -98,13 +103,16 @@ class LLMController : public drogon::HttpController<LLMController> {
   };
 
   /**
-   * Validate/create session, assign slot, populate request fields.
-   * Throws std::runtime_error if session creation fails.
+   * Validate/create session, mark it in-flight, and populate request fields.
+   * cancelFn is stored atomically with the in-flight state so that a concurrent
+   * closeSession always has a consistent view. Pass null for non-streaming
+   * requests that cannot be cancelled mid-flight.
    */
   void resolveSession(std::shared_ptr<domain::LLMRequest> req,
                       trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
-                      std::function<void(const SessionError&)> onError) const;
+                      std::function<void(const SessionError&)> onError,
+                      std::function<void()> cancelFn = nullptr) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.

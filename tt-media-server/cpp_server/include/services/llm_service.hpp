@@ -7,17 +7,18 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
 #include "domain/llm_request.hpp"
 #include "domain/llm_response.hpp"
+#include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
+#include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
@@ -54,8 +55,8 @@ class LLMService
 
   /** Borrowed pointer to the worker manager, used by main to wire the
    * worker metrics aggregator. Lifetime tied to this LLMService. */
-  tt::worker::WorkerManager* workerManager() const {
-    return worker_manager_.get();
+  tt::worker::WorkerManager* getWorkerManager() const {
+    return workerManager.get();
   }
 
  protected:
@@ -83,18 +84,22 @@ class LLMService
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
                                                      bool isFinal);
 
-  std::vector<std::thread> consumer_threads_;
+  std::vector<std::thread> consumerThreads;
 
-  utils::ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
+  utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
+  mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
+      toolChoiceMap;
+  utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
 
-  std::atomic<size_t> pending_tasks_{0};
-  std::atomic<bool> running_{false};
+  std::atomic<size_t> pendingTasks{0};
+  std::atomic<bool> running{false};
 
-  std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-  std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  const tt::utils::tokenizers::Tokenizer* tokenizer_;
-  std::unordered_set<int64_t> stop_token_set_;
-  std::unique_ptr<ReasoningParser> reasoning_parser_;
+  std::unique_ptr<tt::ipc::QueueManager> queueManager;
+  std::unique_ptr<tt::worker::WorkerManager> workerManager;
+  const tt::utils::tokenizers::Tokenizer* tokenizer;
+  std::unordered_set<int64_t> stopTokenSet;
+  std::unique_ptr<ReasoningParser> reasoningParser;
+  std::unique_ptr<IToolCallParser> toolCallParser;
 };
 
 }  // namespace tt::services

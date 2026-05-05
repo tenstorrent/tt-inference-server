@@ -9,13 +9,14 @@
 #include <cstdlib>
 #include <string>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 #include "utils/logger.hpp"
 
 namespace py = pybind11;
 
 namespace tt::runners::llm_engine {
-
+using Sequence = tt::domain::Sequence;
+using TokenResult = tt::domain::TokenResult;
 using Config = tt::config::LLMConfig;
 
 namespace {
@@ -56,7 +57,7 @@ bool LlamaModelRunner::initialize() {
       TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
       TT_LOG_INFO("[LlamaModelRunner] Llama runner ready (in-process)");
-      initialized_ = true;
+      initialized = true;
       success = true;
     }
   } catch (const py::error_already_set& e) {
@@ -70,20 +71,20 @@ bool LlamaModelRunner::initialize() {
 void LlamaModelRunner::failSequences(const std::vector<Sequence*>& seqs) {
   for (Sequence* seq : seqs) {
     TokenResult dr(seq->taskId, 0, {}, true);
-    decode_callback_(dr);
+    decodeCallback(dr);
   }
 }
 
 LlamaModelRunner::LlamaModelRunner(const Config& config,
                                    DecodeCallback callback)
-    : config_(config), decode_callback_(std::move(callback)) {
+    : config(config), decodeCallback(std::move(callback)) {
   initialize();
 }
 
 LlamaModelRunner::~LlamaModelRunner() { exit(); }
 
 void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
-  if (stop_.load() || !initialized_) return;
+  if (stop.load() || !initialized) return;
 
   bool hadError = false;
   {
@@ -107,7 +108,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             isPrefill ? 0 : static_cast<int>(seq->getTokenIds().size() - 1);
         int promptLen = static_cast<int>(seq->getNumPromptTokens());
 
-        const SamplingParams* sp = &seq->getSamplingParams();
+        const tt::domain::SamplingParams* sp = &seq->getSamplingParams();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 
@@ -172,8 +173,8 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
 
       // First decode step after prefill must set reset_batch=true so on-device
       // sampling state is initialized correctly.
-      bool resetBatch = !isPrefill && lastStepWasPrefill_;
-      lastStepWasPrefill_ = isPrefill;
+      bool resetBatch = !isPrefill && lastStepWasPrefill;
+      lastStepWasPrefill = isPrefill;
 
       py::object results = gRunner.attr("run")(isPrefill, pySeqs, resetBatch);
 
@@ -189,7 +190,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
                        error);
         }
         TokenResult dr(drTaskId, drTokenId, {}, drIsError);
-        decode_callback_(dr);
+        decodeCallback(dr);
       }
     } catch (const py::error_already_set& e) {
       TT_LOG_ERROR("[LlamaModelRunner] Python error in run_step: {}", e.what());
@@ -198,19 +199,19 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
   }
   if (hadError) {
     failSequences(seqs);
-    stop_.store(true);
+    stop.store(true);
   }
 }
 
 void LlamaModelRunner::exit() {
-  if (stop_.exchange(true)) return;
-  if (!initialized_) return;
+  if (stop.exchange(true)) return;
+  if (!initialized) return;
   {
     py::gil_scoped_acquire acquire;
     gRunner = py::object();
     gStepSeqClass = py::object();
   }
-  initialized_ = false;
+  initialized = false;
   TT_LOG_INFO("[LlamaModelRunner] Runner exited");
 }
 

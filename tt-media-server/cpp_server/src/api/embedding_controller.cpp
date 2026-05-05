@@ -10,8 +10,8 @@
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "services/base_service.hpp"
+#include "services/service_container.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_container.hpp"
 #include "utils/thread_pool.hpp"
 
 namespace tt::api {
@@ -29,7 +29,7 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::ServiceContainer::instance().embedding();
+  service_ = tt::services::ServiceContainer::instance().embedding();
   if (!service_) {
     throw std::runtime_error(
         "[EmbeddingController] Embedding service not found in container. "

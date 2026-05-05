@@ -5,16 +5,17 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
 namespace tt::runners::llm_engine {
 
-using DecodeCallback = std::function<void(const TokenResult&)>;
+using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
 
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual void run(const std::vector<Sequence*>& seqs, bool isPrefill) = 0;
+  virtual void run(const std::vector<tt::domain::Sequence*>& seqs,
+                   bool isPrefill) = 0;
   virtual void exit() = 0;
 };
 

@@ -9,9 +9,7 @@
 
 #include "domain/chat_completion_request.hpp"
 #include "domain/response_format.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-
-namespace llm_engine = tt::runners::llm_engine;
+#include "domain/sampling_params.hpp"
 
 namespace {
 
@@ -107,61 +105,61 @@ TEST(ResponseFormatTest, RejectMissingType) {
 // ---------------------------------------------------------------------------
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatText) {
-  llm_engine::SamplingParams orig;
-  orig.response_format_type = llm_engine::ResponseFormatType::TEXT;
+  tt::domain::SamplingParams orig;
+  orig.response_format_type = tt::domain::ResponseFormatType::TEXT;
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = llm_engine::SamplingParams::deserialize(is);
+  auto restored = tt::domain::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
-            llm_engine::ResponseFormatType::TEXT);
+            tt::domain::ResponseFormatType::TEXT);
   EXPECT_FALSE(restored->json_schema_str.has_value());
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonObject) {
-  llm_engine::SamplingParams orig;
-  orig.response_format_type = llm_engine::ResponseFormatType::JSON_OBJECT;
+  tt::domain::SamplingParams orig;
+  orig.response_format_type = tt::domain::ResponseFormatType::JSON_OBJECT;
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = llm_engine::SamplingParams::deserialize(is);
+  auto restored = tt::domain::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
-            llm_engine::ResponseFormatType::JSON_OBJECT);
+            tt::domain::ResponseFormatType::JSON_OBJECT);
   EXPECT_FALSE(restored->json_schema_str.has_value());
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_ResponseFormatJsonSchema) {
-  llm_engine::SamplingParams orig;
-  orig.response_format_type = llm_engine::ResponseFormatType::JSON_SCHEMA;
+  tt::domain::SamplingParams orig;
+  orig.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
   orig.json_schema_str =
       R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false})";
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  auto restored = llm_engine::SamplingParams::deserialize(is);
+  auto restored = tt::domain::SamplingParams::deserialize(is);
 
   EXPECT_EQ(restored->response_format_type,
-            llm_engine::ResponseFormatType::JSON_SCHEMA);
+            tt::domain::ResponseFormatType::JSON_SCHEMA);
   ASSERT_TRUE(restored->json_schema_str.has_value());
   EXPECT_EQ(*restored->json_schema_str, *orig.json_schema_str);
 }
 
 TEST(SamplingParamsTest, HasGuidedDecoding) {
-  llm_engine::SamplingParams text;
-  text.response_format_type = llm_engine::ResponseFormatType::TEXT;
+  tt::domain::SamplingParams text;
+  text.response_format_type = tt::domain::ResponseFormatType::TEXT;
   EXPECT_FALSE(text.hasGuidedDecoding());
 
-  llm_engine::SamplingParams jsonObj;
-  jsonObj.response_format_type = llm_engine::ResponseFormatType::JSON_OBJECT;
+  tt::domain::SamplingParams jsonObj;
+  jsonObj.response_format_type = tt::domain::ResponseFormatType::JSON_OBJECT;
   EXPECT_TRUE(jsonObj.hasGuidedDecoding());
 
-  llm_engine::SamplingParams jsonSchema;
-  jsonSchema.response_format_type = llm_engine::ResponseFormatType::JSON_SCHEMA;
+  tt::domain::SamplingParams jsonSchema;
+  jsonSchema.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
   EXPECT_TRUE(jsonSchema.hasGuidedDecoding());
 }
 
@@ -229,6 +227,70 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
   })");
   EXPECT_THROW(tt::domain::ChatCompletionRequest::fromJson(json, 1),
                std::invalid_argument);
+}
+
+// ---------------------------------------------------------------------------
+// Guided Decoding Application Tests
+// ---------------------------------------------------------------------------
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonObject) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Give me JSON output"}],
+    "response_format": {"type": "json_object"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_OBJECT);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonSchema) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Get the weather"}],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "weather_response",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "temperature": {"type": "number"},
+            "condition": {"type": "string"}
+          },
+          "required": ["temperature", "condition"],
+          "additionalProperties": false
+        }
+      }
+    }
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_SCHEMA);
+  ASSERT_TRUE(llmReq.response_format->json_schema_str.has_value());
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("temperature"),
+            std::string::npos);
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("condition"),
+            std::string::npos);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "response_format": {"type": "text"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type, tt::domain::ResponseFormatType::TEXT);
 }
 
 }  // namespace

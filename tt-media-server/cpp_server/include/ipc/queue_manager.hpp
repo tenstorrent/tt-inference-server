@@ -22,24 +22,24 @@ constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
  */
 class QueueManager {
  public:
-  std::shared_ptr<BoostIpcTaskQueue> task_queue;
-  std::vector<std::shared_ptr<BoostIpcResultQueue>> result_queues;
-  std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
+  std::shared_ptr<BoostIpcTaskQueue> taskQueue;
+  std::vector<std::shared_ptr<BoostIpcResultQueue>> resultQueues;
+  std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancelQueues;
 
   explicit QueueManager(int numWorkers) {
-    task_queue = std::make_shared<BoostIpcTaskQueue>(
+    taskQueue = std::make_shared<BoostIpcTaskQueue>(
         tt::config::ttTaskQueueName(), 1024);
-    result_queues.reserve(numWorkers);
-    cancel_queues.reserve(numWorkers);
+    resultQueues.reserve(numWorkers);
+    cancelQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
       std::string resultName =
           std::string(tt::config::ttResultQueueName()) + std::to_string(i);
-      result_queues.emplace_back(std::make_shared<BoostIpcResultQueue>(
+      resultQueues.emplace_back(std::make_shared<BoostIpcResultQueue>(
           resultName, RESULT_QUEUE_CAPACITY));
 
       std::string cancelName =
           tt::config::ttCancelQueueName() + std::to_string(i);
-      cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
+      cancelQueues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
           cancelName, CANCEL_QUEUE_CAPACITY));
     }
   }
@@ -48,12 +48,12 @@ class QueueManager {
 
   void clear() {
     BoostIpcTaskQueue::remove(tt::config::ttTaskQueueName());
-    for (auto& queue : result_queues) {
+    for (auto& queue : resultQueues) {
       queue->shutdown();
       queue->remove();
     }
-    for (size_t i = 0; i < cancel_queues.size(); i++) {
-      cancel_queues[i]->remove();
+    for (size_t i = 0; i < cancelQueues.size(); i++) {
+      cancelQueues[i]->remove();
     }
   }
 

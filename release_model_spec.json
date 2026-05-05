@@ -21667,7 +21667,7 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21748,10 +21748,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -21777,7 +21777,7 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -21860,10 +21860,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -21891,7 +21891,7 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21972,10 +21972,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22001,7 +22001,7 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22084,10 +22084,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22115,7 +22115,7 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22196,10 +22196,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22225,7 +22225,7 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22308,10 +22308,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22563,7 +22563,7 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22644,10 +22644,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22673,7 +22673,7 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22756,10 +22756,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22787,7 +22787,7 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22868,10 +22868,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22897,7 +22897,7 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22980,10 +22980,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"

@@ -39,6 +39,17 @@ void DisaggregationService::setupSocketHandlers() {
           }
           streamCallbacks.erase(message.task_id);
 
+          if (message.error) {
+            TT_LOG_ERROR(
+                "[DisaggregationService] Prefill error received for task {}, "
+                "propagating error to client",
+                message.task_id);
+            callback.value()(
+                domain::makeErrorChunk(message.task_id, "prefill error"),
+                /*isFinal=*/true);
+            return;
+          }
+
           auto response = domain::LLMStreamChunk(message.task_id);
           domain::LLMChoice choice;
           choice.text = message.generated_text;
@@ -51,6 +62,7 @@ void DisaggregationService::setupSocketHandlers() {
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
             auto request = domain::LLMRequest(message.task_id);
+            request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
@@ -71,11 +83,8 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
-            auto response = domain::LLMStreamChunk(taskId);
-            domain::LLMChoice errChoice;
-            errChoice.finish_reason = "error";
-            response.choices.push_back(std::move(errChoice));
-            callback(response, true);
+            callback(domain::makeErrorChunk(taskId, "connection lost"),
+                     /*isFinal=*/true);
           });
       streamCallbacks.clear();
     });
@@ -100,23 +109,34 @@ void DisaggregationService::setupSocketHandlers() {
               request,
               [this, message, maxTokens, slotId](
                   const domain::LLMStreamChunk& response, bool /*isFinal*/) {
-                auto remainingTokens =
-                    maxTokens.has_value()
-                        ? std::optional<int>(std::max(0, maxTokens.value() - 1))
-                        : std::nullopt;
-
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
-                prefillResult.remaining_tokens = remainingTokens;
-                prefillResult.token_ids.insert(prefillResult.token_ids.end(),
-                                               message.token_ids.begin(),
-                                               message.token_ids.end());
                 prefillResult.slot_id = slotId;
-                if (response.choices.back().token_id.has_value()) {
-                  prefillResult.token_ids.push_back(
-                      response.choices.back().token_id.value());
+
+                bool isError = !response.choices.empty() &&
+                               response.choices.back().finish_reason == "error";
+                if (isError) {
+                  TT_LOG_WARN(
+                      "[DisaggregationService] Prefill error for task {}, "
+                      "propagating to decode server",
+                      message.task_id);
+                  prefillResult.error = true;
+                  prefillResult.finished = true;
+                } else {
+                  prefillResult.remaining_tokens =
+                      maxTokens.has_value() ? std::optional<int>(std::max(
+                                                  0, maxTokens.value() - 1))
+                                            : std::nullopt;
+                  prefillResult.token_ids.insert(prefillResult.token_ids.end(),
+                                                 message.token_ids.begin(),
+                                                 message.token_ids.end());
+                  if (response.choices.back().token_id.has_value()) {
+                    prefillResult.token_ids.push_back(
+                        response.choices.back().token_id.value());
+                  }
+                  prefillResult.generated_text = response.choices.back().text;
                 }
-                prefillResult.generated_text = response.choices.back().text;
+
                 socketService->sendPrefillResult(prefillResult);
               });
         });

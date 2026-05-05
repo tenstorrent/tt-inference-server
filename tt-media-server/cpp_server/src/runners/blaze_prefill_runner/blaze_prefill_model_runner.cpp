@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_prefill_runner/blaze_prefill_model_runner.hpp"
+#include "runners/blaze_prefill_runner/blaze_prefill_model_runner.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -19,9 +19,8 @@ BlazePrefillModelRunner::BlazePrefillModelRunner()
 
 BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
-std::optional<tt::runners::llm_engine::TokenResult>
-BlazePrefillModelRunner::forward(uint32_t taskId,
-                                 const std::vector<int64_t>& tokenIds) {
+std::optional<tt::domain::TokenResult> BlazePrefillModelRunner::forward(
+    uint32_t taskId, const std::vector<int64_t>& tokenIds) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
   auto startTime = std::chrono::steady_clock::now();
 
@@ -65,8 +64,7 @@ BlazePrefillModelRunner::forward(uint32_t taskId,
       }
 
       // Return error token
-      return tt::runners::llm_engine::TokenResult(taskId, 0, std::nullopt,
-                                                  true);
+      return tt::domain::TokenResult(taskId, 0, std::nullopt, true);
     }
 
     if (deviceOutput.tryRead(readBuf)) {
@@ -76,8 +74,7 @@ BlazePrefillModelRunner::forward(uint32_t taskId,
           "token_id={}, token count={}",
           taskId, tokenId, readBuf.tokenIds.size());
 
-      auto result =
-          tt::runners::llm_engine::TokenResult(readBuf.taskId, tokenId);
+      auto result = tt::domain::TokenResult(readBuf.taskId, tokenId);
 
       // Check if it's an error token and handle consecutive errors
       if (result.isError) {

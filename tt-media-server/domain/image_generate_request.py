@@ -12,6 +12,7 @@ from pydantic import Field, PrivateAttr, field_validator
 _FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell"}
 _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
+_SKIP_STEP_VALIDATION_RUNNERS = {"tt-z-image-turbo"}
 
 
 class BaseImageRequest(BaseRequest):
@@ -34,6 +35,8 @@ class BaseImageRequest(BaseRequest):
         if v is None:
             return v
         model_runner = get_settings().model_runner
+        if model_runner in _SKIP_STEP_VALIDATION_RUNNERS:
+            return v
         min_steps = (
             _FLUX_MIN_INFERENCE_STEPS
             if model_runner in _FLUX_RUNNERS
