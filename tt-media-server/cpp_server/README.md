@@ -603,7 +603,7 @@ pkill -9 -f tt_media_server_cpp
 | `/v1/chat/completions` | POST   | ✅ Yes         | OpenAI-compatible chat completion                                                                                   |
 | `/health`              | GET    | ❌ No          | Health check (unchanged: always 200 with status + timestamp)                                                        |
 | `/tt-liveness`         | GET    | ❌ No          | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
-| `/info`                | GET    | ❌ No          | Build identity: tt-inference-server version + commit, tt-blaze commit, tt-metal commit        |
+| `/info`                | GET    | ❌ No          | Build identity: tt-inference-server version + commit, tt-blaze commit, tt-metal commit                              |
 | `/docs`                | GET    | ❌ No          | Swagger UI documentation                                                                                            |
 | `/openapi.json`        | GET    | ❌ No          | OpenAPI specification                                                                                               |
 
