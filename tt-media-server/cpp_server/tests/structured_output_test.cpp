@@ -336,8 +336,8 @@ class GuidedDecoderManagerTest : public ::testing::Test {
   }
 
   // Schema: {"x": integer} — minimal, deterministic, fast to compile.
-  static tt::domain::SamplingParams integerXSchema() {
-    tt::domain::SamplingParams sp;
+  static tt::domain::llm::SamplingParams integerXSchema() {
+    tt::domain::llm::SamplingParams sp;
     sp.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
     sp.json_schema_str =
         R"({"type":"object","properties":{"x":{"type":"integer"}})"
