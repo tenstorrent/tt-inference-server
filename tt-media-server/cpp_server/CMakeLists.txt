@@ -543,6 +543,37 @@ target_include_directories(worker_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# LLMService unit test: drives processStreamingRequest in-process.
+# Pulls in the same translation units that the main server links so the
+# real LLMService can be constructed without forking workers.
+add_executable(llm_service_test
+    tests/llm_service_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+)
+target_link_libraries(llm_service_test PRIVATE
+    llm_runner_lib
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(llm_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -558,6 +589,7 @@ gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
+gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 
 # Register tool call tests
