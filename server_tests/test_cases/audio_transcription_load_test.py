@@ -34,8 +34,8 @@ headers = {
 class AudioTranscriptionLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
-        print(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        logger.info("AudioTranscriptionLoadTest targets: %s", self.targets)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         audio_transcription_time = self.targets.get(
             "audio_transcription_time", 9
         )  # in seconds
@@ -47,7 +47,9 @@ class AudioTranscriptionLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_audio_transcription(batch_size=devices)
+        ) = await self.test_concurrent_audio_transcription(
+            batch_size=num_concurrent_requests
+        )
 
         self.test_payloads_path = "utils/test_payloads"
 
@@ -55,7 +57,7 @@ class AudioTranscriptionLoadTest(BaseTest):
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": audio_transcription_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": average_duration <= audio_transcription_time,
         }
 
@@ -84,7 +86,7 @@ class AudioTranscriptionLoadTest(BaseTest):
 
         # First iteration is warmup, second is measured (original behavior)
         for iteration in range(2):
-            session_timeout = aiohttp.ClientTimeout(total=2000)
+            session_timeout = aiohttp.ClientTimeout(total=6000)
             async with aiohttp.ClientSession(
                 headers=headers, timeout=session_timeout
             ) as session:
@@ -93,7 +95,6 @@ class AudioTranscriptionLoadTest(BaseTest):
                 requests_duration = max(results)
                 total_duration = sum(results)
                 avg_duration = total_duration / batch_size
-                return requests_duration, avg_duration
             if iteration == 0:
                 print("🔥 Warm up run done.")
 
@@ -104,11 +105,11 @@ class AudioTranscriptionLoadTest(BaseTest):
         print(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+        return requests_duration, avg_duration
 
     async def _run_burst_concurrent(self, num_concurrent: int, payload: dict):
         """Fire num_concurrent POST requests; return (requests_duration, avg_duration, num_ok)."""
-        session_timeout = aiohttp.ClientTimeout(total=2000)
+        session_timeout = aiohttp.ClientTimeout(total=6000)
 
         async def one_request(session: aiohttp.ClientSession, index: int):
             start = time.perf_counter()
