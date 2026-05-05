@@ -28,20 +28,43 @@ using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
 LLMService::LLMService()
-    : tokenizer(&tt::utils::tokenizers::activeTokenizer()) {
-  size_t numWorkers = tt::config::numWorkers();
-  this->maxQueueSize = tt::config::maxQueueSize();
+    : LLMService{
+          &tt::utils::tokenizers::activeTokenizer(),
+          std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers()),
+          std::make_unique<tt::ipc::QueueManager>(
+              static_cast<int>(tt::config::numWorkers())),
+          std::make_unique<ReasoningParser>(),
+          createToolCallParser(tt::config::modelType()),
+          tt::config::maxQueueSize()} {}
 
-  const auto stopIds = tokenizer->stopTokenIds();
+LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
+                       std::unique_ptr<tt::worker::WorkerManager> workerManager,
+                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
+                       std::unique_ptr<ReasoningParser> reasoningParser,
+                       std::unique_ptr<IToolCallParser> toolCallParser,
+                       size_t maxQueueSize)
+    : queueManager{std::move(queueManager)},
+      workerManager{std::move(workerManager)},
+      tokenizer{tokenizer},
+      reasoningParser{std::move(reasoningParser)},
+      toolCallParser{std::move(toolCallParser)} {
+  if (this->tokenizer == nullptr) {
+    throw std::invalid_argument("LLMService: tokenizer must not be null");
+  }
+  if (!this->workerManager) {
+    throw std::invalid_argument("LLMService: workerManager must not be null");
+  }
+  if (!this->queueManager) {
+    throw std::invalid_argument("LLMService: queueManager must not be null");
+  }
+
+  this->maxQueueSize = maxQueueSize;
+
+  const auto stopIds = this->tokenizer->stopTokenIds();
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
-  workerManager = std::make_unique<tt::worker::WorkerManager>(numWorkers);
-  reasoningParser = std::make_unique<ReasoningParser>();
-  toolCallParser = createToolCallParser(tt::config::modelType());
-
-  TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
-  queueManager =
-      std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
+  TT_LOG_INFO("[LLMService] Initialized (workers={})",
+              this->workerManager->numWorkers());
 }
 
 LLMService::~LLMService() { stop(); }
