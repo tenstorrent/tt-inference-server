@@ -5,8 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
-#include <fstream>
-#include <memory>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -18,71 +17,72 @@ class Sequence;
 namespace tt::utils::recorder {
 
 /**
- * Modes:
- *  - OFF    -- no-op (default; production)
- *  - RECORD -- append events as JSONL to TT_RUNNER_RECORDER_PATH
- *  - ASSERT -- compare events emitted at runtime against the JSONL fixture
- *              at TT_RUNNER_RECORDER_PATH; mismatches are logged and cause
- *              finalize() to return false.
+ * In-memory event log that captures everything the API/Service layer hands
+ * to the worker queue (Sequences submitted to the task queue, cancel
+ * signals broadcast to cancel queues).
  *
- * Activation is driven by env vars (read once at first access):
- *   TT_RUNNER_RECORDER_MODE = off | record | assert
- *   TT_RUNNER_RECORDER_PATH = path to JSONL file
+ * The recorder is hooked at the producer side of the queues from
+ * LLMService, so it lives in the main server process and observes events
+ * regardless of which runner the worker uses.
  *
- * The recorder lives in the main server process (where API/Service code
- * runs). It is instrumented at the producer side of the task / cancel
- * queues, capturing exactly what the API+Service layer hands to the
- * worker/runner. This makes it stable across refactors of API,
- * controllers, services, session manager, and disaggregation glue.
+ * Activation: opt-in via env var TT_RUNNER_RECORDER_ENABLED=1. When
+ * disabled, the hook calls compile down to atomic-load + branch and the
+ * buffer stays empty.
  *
- * Thread-safety: a single mutex serializes record/assert events. The set
- * of API request submissions is sequential per scenario script, so total
- * order is well-defined.
+ * Tests do not read fixtures from disk -- a debug HTTP endpoint
+ * (`GET /debug/runner-events`, `DELETE /debug/runner-events`) exposes the
+ * buffer so test code can assert inline:
+ *
+ *     DELETE /debug/runner-events
+ *     POST   /v1/chat/completions  ...
+ *     GET    /debug/runner-events  -> assert what was submitted
+ *
+ * Thread safety: snapshots and writes are serialized by an internal mutex.
+ * The buffer is bounded; oldest events are dropped with a logged warning
+ * once MAX_EVENTS is reached.
  */
-enum class Mode { OFF, RECORD, ASSERT };
-
 class RunnerEventRecorder {
  public:
+  static constexpr size_t MAX_EVENTS = 4096;
+
+  struct Event {
+    uint64_t seq = 0;
+    std::string json;  // self-contained JSON object, no trailing newline
+  };
+
   static RunnerEventRecorder& instance();
 
-  Mode mode() const { return mode_; }
-  bool isActive() const { return mode_ != Mode::OFF; }
+  bool isEnabled() const { return enabled_.load(std::memory_order_acquire); }
 
-  /** Called from LLMService::processStreamingRequest just before push. */
+  /** Producer-side hooks (called from LLMService). */
   void onTaskSubmitted(const tt::domain::Sequence& sequence);
-
-  /** Called from LLMService::abortRequest just before broadcasting cancel. */
   void onCancelRequested(uint32_t taskId);
 
-  /**
-   * Flush the record file (RECORD) or verify all expected events have been
-   * consumed (ASSERT). Returns true on success.
-   * Safe to call multiple times.
-   */
-  bool finalize();
-
-  /** Mismatch counter, useful for tests. */
-  size_t mismatchCount() const { return mismatchCount_.load(); }
+  /** Reader API for the debug HTTP controller. */
+  std::vector<Event> snapshot(uint64_t sinceSeq = 0) const;
+  void clear();
+  uint64_t lastSeq() const {
+    return seqCounter_.load(std::memory_order_acquire);
+  }
+  size_t droppedCount() const {
+    return droppedCount_.load(std::memory_order_acquire);
+  }
 
  private:
   RunnerEventRecorder();
-  ~RunnerEventRecorder();
+  ~RunnerEventRecorder() = default;
 
   RunnerEventRecorder(const RunnerEventRecorder&) = delete;
   RunnerEventRecorder& operator=(const RunnerEventRecorder&) = delete;
 
-  void emit(const std::string& jsonLine);
+  void append(std::string json);
 
-  Mode mode_ = Mode::OFF;
-  std::string path_;
+  std::atomic<bool> enabled_{false};
+  std::atomic<uint64_t> seqCounter_{0};
+  std::atomic<size_t> droppedCount_{0};
 
-  std::mutex mutex_;
-  std::ofstream out_;
-
-  std::vector<std::string> expected_;
-  size_t expectedCursor_ = 0;
-  std::atomic<size_t> mismatchCount_{0};
-  std::atomic<bool> finalized_{false};
+  mutable std::mutex mutex_;
+  std::deque<Event> events_;
 };
 
 }  // namespace tt::utils::recorder

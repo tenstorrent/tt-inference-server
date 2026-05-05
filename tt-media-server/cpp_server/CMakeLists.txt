@@ -561,17 +561,16 @@ add_test(NAME CancellationE2E
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 
-# Runner event recorder: verifies that the API/service layer hands the
-# expected sequence of tasks/cancels to the worker queue. Refactor-safety
-# net: edit the layers above the queue freely; CI fails this test if the
-# emitted event stream diverges from the committed fixture.
-# Re-record after intentional behavior changes:
-#   ./tests/recorder/run_recorder_e2e.sh record
-add_test(NAME RunnerRecorderAssert
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder/run_recorder_e2e.sh assert
+# Runner event tests: drive HTTP requests against a single-worker mock
+# server and assert (inline, in Python) what the API/service layer hands
+# to the worker queue via /debug/runner-events. Refactor-safety net for
+# anything in API / controllers / services / sessions / disaggregation
+# glue that lives above the producer side of the task queue.
+add_test(NAME RunnerEventTests
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder/run_recorder_e2e.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-set_tests_properties(RunnerRecorderAssert PROPERTIES TIMEOUT 90)
+set_tests_properties(RunnerEventTests PROPERTIES TIMEOUT 90)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
@@ -626,6 +625,7 @@ set(SOURCES
     src/api/llm_controller.cpp
     src/api/sse_stream_writer.cpp
     src/api/health_controller.cpp
+    src/api/debug_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp

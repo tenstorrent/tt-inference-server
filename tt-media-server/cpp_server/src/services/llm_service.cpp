@@ -466,7 +466,7 @@ void LLMService::processStreamingRequest(
       tt::utils::mapper::mapSamplingParams(request)));
 
   auto& recorder = tt::utils::recorder::RunnerEventRecorder::instance();
-  if (recorder.isActive()) {
+  if (recorder.isEnabled()) {
     recorder.onTaskSubmitted(*sequence);
   }
   queueManager->taskQueue->push(*std::move(sequence));
@@ -587,7 +587,7 @@ void LLMService::abortRequest(uint32_t taskId) {
   }
 
   auto& recorder = tt::utils::recorder::RunnerEventRecorder::instance();
-  if (recorder.isActive()) {
+  if (recorder.isEnabled()) {
     recorder.onCancelRequested(taskId);
   }
 

@@ -3,11 +3,11 @@
 
 #include "utils/recorder/runner_event_recorder.hpp"
 
-#include <cctype>
+#include <strings.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <sstream>
 #include <string>
 
 #include "config/types.hpp"
@@ -23,18 +23,14 @@ namespace tt::utils::recorder {
 
 namespace {
 
-constexpr const char* MODE_ENV = "TT_RUNNER_RECORDER_MODE";
-constexpr const char* PATH_ENV = "TT_RUNNER_RECORDER_PATH";
+constexpr const char* ENABLED_ENV = "TT_RUNNER_RECORDER_ENABLED";
 
-Mode parseMode(const char* value) {
-  if (value == nullptr) {
-    return Mode::OFF;
-  }
-  std::string s(value);
-  for (auto& c : s) c = static_cast<char>(std::tolower(c));
-  if (s == "record") return Mode::RECORD;
-  if (s == "assert") return Mode::ASSERT;
-  return Mode::OFF;
+bool parseEnabled(const char* value) {
+  if (value == nullptr || value[0] == '\0') return false;
+  if (std::strcmp(value, "0") == 0) return false;
+  if (strcasecmp(value, "false") == 0) return false;
+  if (strcasecmp(value, "off") == 0) return false;
+  return true;
 }
 
 const char* responseFormatToString(tt::config::ResponseFormatType type) {
@@ -58,9 +54,6 @@ std::string tokensFingerprint(const std::vector<int64_t>& tokens) {
   return std::string(buf, 16);
 }
 
-/** Append a quoted JSON string literal. We only need to escape ", \\, and
- *  control chars; recorded fields are model identifiers, fingerprints,
- *  and enum strings, so the simple escape set is sufficient. */
 void appendJsonString(std::string& out, const std::string& value) {
   out.push_back('"');
   for (char c : value) {
@@ -190,50 +183,15 @@ std::string serializeSamplingParams(const tt::domain::SamplingParams& sp) {
 }  // namespace
 
 RunnerEventRecorder::RunnerEventRecorder() {
-  mode_ = parseMode(std::getenv(MODE_ENV));
-  if (mode_ == Mode::OFF) {
-    return;
-  }
-
-  const char* pathEnv = std::getenv(PATH_ENV);
-  if (pathEnv == nullptr || pathEnv[0] == '\0') {
-    TT_LOG_ERROR(
-        "[RunnerEventRecorder] {} is set but {} is empty; disabling recorder",
-        MODE_ENV, PATH_ENV);
-    mode_ = Mode::OFF;
-    return;
-  }
-  path_ = pathEnv;
-
-  if (mode_ == Mode::RECORD) {
-    out_.open(path_, std::ios::out | std::ios::trunc);
-    if (!out_.is_open()) {
-      TT_LOG_ERROR("[RunnerEventRecorder] Failed to open {} for writing",
-                   path_);
-      mode_ = Mode::OFF;
-      return;
-    }
-    TT_LOG_INFO("[RunnerEventRecorder] RECORD mode -> {}", path_);
-  } else {
-    std::ifstream in(path_);
-    if (!in.is_open()) {
-      TT_LOG_ERROR(
-          "[RunnerEventRecorder] ASSERT mode but cannot open fixture {}",
-          path_);
-      mode_ = Mode::OFF;
-      return;
-    }
-    std::string line;
-    while (std::getline(in, line)) {
-      if (line.empty()) continue;
-      expected_.push_back(std::move(line));
-    }
-    TT_LOG_INFO("[RunnerEventRecorder] ASSERT mode <- {} ({} expected events)",
-                path_, expected_.size());
+  bool enabled = parseEnabled(std::getenv(ENABLED_ENV));
+  enabled_.store(enabled, std::memory_order_release);
+  if (enabled) {
+    TT_LOG_INFO(
+        "[RunnerEventRecorder] enabled (in-memory log, max {} events). "
+        "Debug API: GET/DELETE /debug/runner-events",
+        MAX_EVENTS);
   }
 }
-
-RunnerEventRecorder::~RunnerEventRecorder() { finalize(); }
 
 RunnerEventRecorder& RunnerEventRecorder::instance() {
   static RunnerEventRecorder kInstance;
@@ -242,112 +200,89 @@ RunnerEventRecorder& RunnerEventRecorder::instance() {
 
 void RunnerEventRecorder::onTaskSubmitted(
     const tt::domain::Sequence& sequence) {
-  if (mode_ == Mode::OFF) return;
+  if (!isEnabled()) return;
 
-  std::string line;
-  line.reserve(384);
-  line.push_back('{');
+  std::string body;
+  body.reserve(384);
+  body.push_back('{');
   bool first = true;
 
-  appendString(line, "kind", "task_submitted", first);
+  appendString(body, "kind", "task_submitted", first);
   first = false;
-  appendUInt(line, "task_id", sequence.taskId, first);
-  appendBool(line, "continuation", sequence.isContinuation(), first);
-  appendBool(line, "disaggregated", sequence.isDisaggregated(), first);
-  appendUInt(line, "num_prompt_tokens", sequence.getNumPromptTokens(), first);
-  appendUInt(line, "tokens_len", sequence.getTokenIds().size(), first);
-  appendString(line, "tokens_xx64", tokensFingerprint(sequence.getTokenIds()),
+  appendUInt(body, "task_id", sequence.taskId, first);
+  appendBool(body, "continuation", sequence.isContinuation(), first);
+  appendBool(body, "disaggregated", sequence.isDisaggregated(), first);
+  appendUInt(body, "num_prompt_tokens", sequence.getNumPromptTokens(), first);
+  appendUInt(body, "tokens_len", sequence.getTokenIds().size(), first);
+  appendString(body, "tokens_xx64", tokensFingerprint(sequence.getTokenIds()),
                first);
 
   bool slotIdSet = sequence.getKVCacheSlot() != tt::domain::INVALID_SLOT_ID;
-  appendBool(line, "slot_id_set", slotIdSet, first);
+  appendBool(body, "slot_id_set", slotIdSet, first);
   if (slotIdSet) {
-    appendUInt(line, "slot_id", sequence.getKVCacheSlot(), first);
+    appendUInt(body, "slot_id", sequence.getKVCacheSlot(), first);
   } else {
-    appendNull(line, "slot_id", first);
+    appendNull(body, "slot_id", first);
   }
 
-  line.append(",\"sampling\":");
-  line.append(serializeSamplingParams(sequence.getSamplingParams()));
-  line.push_back('}');
+  body.append(",\"sampling\":");
+  body.append(serializeSamplingParams(sequence.getSamplingParams()));
+  body.push_back('}');
 
-  emit(line);
+  append(std::move(body));
 }
 
 void RunnerEventRecorder::onCancelRequested(uint32_t taskId) {
-  if (mode_ == Mode::OFF) return;
+  if (!isEnabled()) return;
 
-  std::string line;
-  line.reserve(48);
-  line.push_back('{');
-  appendString(line, "kind", "cancel_requested", true);
-  appendUInt(line, "task_id", taskId, false);
-  line.push_back('}');
+  std::string body;
+  body.reserve(48);
+  body.push_back('{');
+  appendString(body, "kind", "cancel_requested", true);
+  appendUInt(body, "task_id", taskId, false);
+  body.push_back('}');
 
-  emit(line);
+  append(std::move(body));
 }
 
-void RunnerEventRecorder::emit(const std::string& jsonLine) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  if (mode_ == Mode::RECORD) {
-    out_ << jsonLine << '\n';
-    return;
-  }
-
-  // ASSERT
-  if (expectedCursor_ >= expected_.size()) {
-    mismatchCount_.fetch_add(1);
-    TT_LOG_ERROR(
-        "[RunnerEventRecorder] ASSERT: extra event beyond fixture (idx={}): "
-        "{}",
-        expectedCursor_, jsonLine);
-    return;
-  }
-
-  const std::string& expected = expected_[expectedCursor_];
-  if (expected != jsonLine) {
-    mismatchCount_.fetch_add(1);
-    TT_LOG_ERROR(
-        "[RunnerEventRecorder] ASSERT: mismatch at idx={}\n  expected: {}\n  "
-        "actual:   {}",
-        expectedCursor_, expected, jsonLine);
-  }
-  ++expectedCursor_;
-}
-
-bool RunnerEventRecorder::finalize() {
-  if (mode_ == Mode::OFF) return true;
-  if (finalized_.exchange(true)) return mismatchCount_.load() == 0;
+void RunnerEventRecorder::append(std::string json) {
+  uint64_t seq = seqCounter_.fetch_add(1, std::memory_order_acq_rel) + 1;
 
   std::lock_guard<std::mutex> lock(mutex_);
-
-  if (mode_ == Mode::RECORD) {
-    if (out_.is_open()) {
-      out_.flush();
-      out_.close();
+  if (events_.size() >= MAX_EVENTS) {
+    events_.pop_front();
+    size_t dropped = droppedCount_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    if (dropped == 1 || (dropped & (dropped - 1)) == 0) {
+      // Log on the first drop and at every power-of-two boundary so a
+      // misbehaving test that fails to clear the buffer still leaves a
+      // visible breadcrumb without flooding the log.
+      TT_LOG_WARN(
+          "[RunnerEventRecorder] buffer at capacity ({}); dropping oldest "
+          "event (total dropped: {})",
+          MAX_EVENTS, dropped);
     }
-    TT_LOG_INFO("[RunnerEventRecorder] Recording complete: {}", path_);
-    return true;
   }
+  events_.push_back(Event{seq, std::move(json)});
+}
 
-  // ASSERT: ensure we consumed every expected event.
-  if (expectedCursor_ < expected_.size()) {
-    size_t missing = expected_.size() - expectedCursor_;
-    mismatchCount_.fetch_add(missing);
-    TT_LOG_ERROR(
-        "[RunnerEventRecorder] ASSERT: {} expected event(s) not produced "
-        "(consumed {}/{})",
-        missing, expectedCursor_, expected_.size());
+std::vector<RunnerEventRecorder::Event> RunnerEventRecorder::snapshot(
+    uint64_t sinceSeq) const {
+  std::vector<Event> out;
+  std::lock_guard<std::mutex> lock(mutex_);
+  out.reserve(events_.size());
+  for (const auto& e : events_) {
+    if (e.seq > sinceSeq) {
+      out.push_back(e);
+    }
   }
-  size_t mismatches = mismatchCount_.load();
-  if (mismatches == 0) {
-    TT_LOG_INFO("[RunnerEventRecorder] ASSERT PASS ({} events)",
-                expected_.size());
-    return true;
-  }
-  TT_LOG_ERROR("[RunnerEventRecorder] ASSERT FAIL ({} mismatches)", mismatches);
-  return false;
+  return out;
+}
+
+void RunnerEventRecorder::clear() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  events_.clear();
+  // Keep seqCounter_ monotonic across clears so tests can reason about
+  // strictly-increasing sequence numbers.
 }
 
 }  // namespace tt::utils::recorder
