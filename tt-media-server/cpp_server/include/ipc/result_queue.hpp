@@ -29,8 +29,10 @@ struct SharedToken {
     os.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
     os.write(reinterpret_cast<const char*>(&token_id), sizeof(token_id));
     os.write(reinterpret_cast<const char*>(&task_id), sizeof(task_id));
-    os.write(reinterpret_cast<const char*>(&spec_accepts), sizeof(spec_accepts));
-    os.write(reinterpret_cast<const char*>(&spec_rejects), sizeof(spec_rejects));
+    os.write(reinterpret_cast<const char*>(&spec_accepts),
+             sizeof(spec_accepts));
+    os.write(reinterpret_cast<const char*>(&spec_rejects),
+             sizeof(spec_rejects));
   }
 
   static SharedToken deserialize(std::istream& is) {
