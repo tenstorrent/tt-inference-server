@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Exabox-specific options:"
-            echo "  --install-deps       One-time setup: build Drogon + install Rust to /data/\$USER/.local"
+            echo "  --install-deps       One-time setup: build jsoncpp, libuuid, Drogon + install Rust to /data/\$USER/.local"
             echo ""
             echo "Build options (same as build.sh):"
             echo "  --debug              Debug build (default: Release)"
