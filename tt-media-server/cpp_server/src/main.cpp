@@ -25,6 +25,7 @@
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "utils/logger.hpp"
+#include "utils/recorder/runner_event_recorder.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/blaze_worker_metrics_renderer.hpp"
 #include "worker/single_process_worker_metrics.hpp"
@@ -272,7 +273,13 @@ int main(int argc, char* argv[]) {
   // Run the server
   drogon::app().run();
 
+  // Flush/verify the runner event recorder before any singletons unwind.
+  // In ASSERT mode this turns the process exit code non-zero on mismatch so
+  // CI / CTest can fail the run.
+  auto& recorder = tt::utils::recorder::RunnerEventRecorder::instance();
+  bool recorderOk = recorder.finalize();
+
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
-  return 0;
+  return recorderOk ? 0 : 2;
 }

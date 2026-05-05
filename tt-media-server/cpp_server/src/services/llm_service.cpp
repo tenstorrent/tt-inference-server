@@ -17,6 +17,7 @@
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
+#include "utils/recorder/runner_event_recorder.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tool_call_id_generator.hpp"
 #include "worker/worker_manager.hpp"
@@ -463,6 +464,11 @@ void LLMService::processStreamingRequest(
   sequence->setDisaggregated(request.disaggregated);
   sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));
+
+  auto& recorder = tt::utils::recorder::RunnerEventRecorder::instance();
+  if (recorder.isActive()) {
+    recorder.onTaskSubmitted(*sequence);
+  }
   queueManager->taskQueue->push(*std::move(sequence));
 }
 
@@ -578,6 +584,11 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   if (reasoningParser) {
     reasoningParser->finalizeTask(taskId);
+  }
+
+  auto& recorder = tt::utils::recorder::RunnerEventRecorder::instance();
+  if (recorder.isActive()) {
+    recorder.onCancelRequested(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.

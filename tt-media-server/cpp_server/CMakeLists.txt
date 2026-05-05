@@ -291,6 +291,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
+    src/utils/recorder/runner_event_recorder.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -559,6 +560,18 @@ add_test(NAME CancellationE2E
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
+
+# Runner event recorder: verifies that the API/service layer hands the
+# expected sequence of tasks/cancels to the worker queue. Refactor-safety
+# net: edit the layers above the queue freely; CI fails this test if the
+# emitted event stream diverges from the committed fixture.
+# Re-record after intentional behavior changes:
+#   ./tests/recorder/run_recorder_e2e.sh record
+add_test(NAME RunnerRecorderAssert
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder/run_recorder_e2e.sh assert
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(RunnerRecorderAssert PROPERTIES TIMEOUT 90)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
