@@ -544,6 +544,7 @@ add_executable(llm_service_test
     src/worker/worker_manager.cpp
     src/worker/process_liveness.cpp
     src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
