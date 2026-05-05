@@ -25,7 +25,7 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.workflow_types import ReportCheckTypes
+from .._test_common import ReportCheckTypes
 
 from ..context import MediaContext, common_eval_metadata, count_tokens, require_health
 from ..test_status import AudioTestStatus

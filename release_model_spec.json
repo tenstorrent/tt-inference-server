@@ -116,7 +116,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -192,7 +196,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -304,7 +312,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       }
@@ -419,7 +431,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -537,7 +553,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       }
@@ -613,7 +633,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -687,7 +708,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -766,7 +788,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -878,7 +901,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -990,7 +1017,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1102,7 +1133,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1183,7 +1218,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1299,7 +1338,11 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1379,7 +1422,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -1515,7 +1562,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           },
           "tt_transformers": {
             "model_id": "id_tt-transformers_Qwen3-32B_galaxy",
@@ -1631,7 +1682,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1744,7 +1799,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1826,7 +1885,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1911,7 +1974,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2031,7 +2098,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -2144,7 +2215,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -2218,7 +2290,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -2292,7 +2365,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -2407,7 +2481,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2526,7 +2604,11 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2608,7 +2690,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -2766,7 +2852,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2924,7 +3013,10 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3009,7 +3101,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3167,7 +3262,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3325,7 +3423,10 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3410,7 +3511,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3525,7 +3629,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3597,7 +3704,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3712,7 +3822,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3784,7 +3897,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3956,7 +4072,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4085,7 +4204,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4217,7 +4339,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4349,7 +4474,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4472,7 +4600,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4566,7 +4697,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -4738,7 +4872,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4867,7 +5004,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4999,7 +5139,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5131,7 +5274,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5254,7 +5400,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5348,7 +5497,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -5520,7 +5672,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5649,7 +5804,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5781,7 +5939,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5913,7 +6074,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -6036,7 +6200,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -6130,7 +6297,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -6302,7 +6472,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6431,7 +6605,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6563,7 +6741,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6695,7 +6877,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6818,7 +7004,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6912,7 +7102,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       }
@@ -6985,7 +7179,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -7071,7 +7269,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -7157,7 +7359,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       }
@@ -7270,7 +7476,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7383,7 +7592,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7496,7 +7708,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -7609,7 +7824,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7722,7 +7940,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7835,7 +8056,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -7951,7 +8175,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         },
         "forge": {
@@ -8065,7 +8292,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -8177,7 +8405,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         },
         "forge": {
@@ -8293,7 +8524,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -8405,7 +8637,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -8521,7 +8756,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8633,7 +8871,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8745,7 +8986,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -8857,7 +9101,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8973,7 +9220,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9127,7 +9377,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9196,7 +9449,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9310,7 +9566,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9420,7 +9679,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9538,7 +9800,10 @@
             "subdevice_type": "P150",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9662,7 +9927,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9787,7 +10055,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9873,7 +10144,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10001,7 +10275,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10093,7 +10370,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -10205,7 +10485,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10321,7 +10604,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10475,7 +10761,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10544,7 +10833,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10658,7 +10950,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10768,7 +11063,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10886,7 +11184,10 @@
             "subdevice_type": "P150",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11010,7 +11311,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11135,7 +11439,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11221,7 +11528,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11349,7 +11659,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11441,7 +11754,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -11556,7 +11872,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -11638,7 +11957,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -11759,7 +12081,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -11880,7 +12203,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12001,7 +12325,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12122,7 +12447,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12247,7 +12573,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12335,7 +12662,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12459,7 +12787,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12584,7 +12913,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12672,7 +13002,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12796,7 +13127,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12913,7 +13245,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -13027,7 +13360,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -13141,7 +13477,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13255,7 +13594,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -13373,7 +13715,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13489,7 +13834,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13609,7 +13957,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13724,7 +14075,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -13837,7 +14189,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -13952,7 +14305,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14065,7 +14419,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14182,7 +14537,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14299,7 +14655,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14413,7 +14770,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14523,7 +14881,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14637,7 +14996,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14751,7 +15111,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14865,7 +15226,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14979,7 +15341,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15089,7 +15452,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15203,7 +15567,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15317,7 +15682,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15431,7 +15797,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -15543,7 +15910,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15655,7 +16023,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15767,7 +16136,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15877,7 +16247,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -15989,7 +16360,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16101,7 +16473,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16213,7 +16586,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16323,7 +16697,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16437,7 +16812,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16547,7 +16923,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16659,7 +17036,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16732,7 +17110,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16805,7 +17184,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16876,7 +17256,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16990,7 +17371,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17100,7 +17482,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17210,7 +17593,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17320,7 +17704,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17430,7 +17815,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17540,7 +17926,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -17654,7 +18041,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17764,7 +18152,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17874,7 +18263,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17984,7 +18374,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18094,7 +18485,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18204,7 +18596,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18318,7 +18711,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18428,7 +18822,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18538,7 +18933,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18609,7 +19005,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18686,7 +19083,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18757,7 +19155,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18834,7 +19233,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18905,7 +19305,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -19017,7 +19418,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19090,7 +19492,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19200,7 +19603,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19312,7 +19716,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -19424,7 +19829,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19497,7 +19903,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19607,7 +20014,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19719,7 +20127,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -19831,7 +20240,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19943,7 +20353,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -20067,7 +20478,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20191,7 +20603,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20315,7 +20728,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20439,7 +20853,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -20559,7 +20974,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20679,7 +21095,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20799,7 +21216,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20917,7 +21335,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21041,7 +21460,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21165,7 +21585,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21289,7 +21710,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21411,7 +21833,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21529,7 +21952,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21647,7 +22071,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21759,7 +22184,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21871,7 +22297,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21983,7 +22410,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22095,7 +22523,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22207,7 +22636,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22319,7 +22749,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22431,7 +22862,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22543,7 +22975,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22655,7 +23088,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22767,7 +23201,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22879,7 +23314,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22991,7 +23427,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -23103,7 +23540,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -23215,7 +23653,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }

@@ -170,7 +170,6 @@ def build_benchmark_command(
         "serve",
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
-        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
@@ -183,6 +182,13 @@ def build_benchmark_command(
         "--save-detailed",
         "--result-filename", str(result_filename),
     ]
+
+    # only truncate prompts for text-only tasks; VLMs interleave vision tokens
+    # in the prompt and truncation can drop them, causing 400s at the preprocessor
+    if params.task_type == "text":
+        cmd.extend([
+            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+        ])
 
     if params.task_type == "vlm":
         if params.image_height and params.image_width:
