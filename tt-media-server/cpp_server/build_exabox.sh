@@ -29,7 +29,7 @@ CARGO_DIR="/data/${USER}/.cargo"
 # Avoid /tmp-full build failures on shared login nodes: if /tmp has < 2 GB
 # free, redirect compiler temp files to /data.
 _tmp_avail_kb=$(df --output=avail /tmp 2>/dev/null | tail -1 | tr -d ' ')
-if [ -n "${_tmp_avail_kb}" ] && [ "${_tmp_avail_kb}" -lt 2097152 ]; then
+if [[ "${_tmp_avail_kb}" =~ ^[0-9]+$ ]] && [ "${_tmp_avail_kb}" -lt 2097152 ]; then
     export TMPDIR="/data/${USER}/tmp"
     mkdir -p "${TMPDIR}"
 fi
@@ -91,10 +91,15 @@ fi
 _build_tmp="/data/${USER}/tmp/exabox_deps_$$"
 _nproc=$(nproc 2>/dev/null || echo 4)
 
+have_lib() {
+    local pkg="$1" lib="$2"
+    pkg-config --exists "${pkg}" 2>/dev/null || \
+    [ -f "${LOCAL_PREFIX}/lib/lib${lib}.so" ] || \
+    [ -f "${LOCAL_PREFIX}/lib/lib${lib}.a" ]
+}
+
 install_jsoncpp() {
-    if [ -f "${LOCAL_PREFIX}/lib/libjsoncpp.so" ] || \
-       [ -f "${LOCAL_PREFIX}/lib/libjsoncpp.a" ] || \
-       pkg-config --exists jsoncpp 2>/dev/null; then
+    if have_lib jsoncpp jsoncpp; then
         echo "jsoncpp already available"
         return 0
     fi
@@ -118,9 +123,7 @@ install_jsoncpp() {
 }
 
 install_uuid() {
-    if [ -f "${LOCAL_PREFIX}/lib/libuuid.so" ] || \
-       [ -f "${LOCAL_PREFIX}/lib/libuuid.a" ] || \
-       pkg-config --exists uuid 2>/dev/null; then
+    if have_lib uuid uuid; then
         echo "libuuid already available"
         return 0
     fi
@@ -129,10 +132,13 @@ install_uuid() {
     echo "Building libuuid → ${LOCAL_PREFIX} ..."
     local src="${_build_tmp}/util-linux"
     local ver="2.39.3"
+    local sha256="7b6605e48d1a49f43cc4b4cfc59f313d0dd5402fa40b96810bd572e167dfed0f"
     local tarball="${_build_tmp}/util-linux-${ver}.tar.xz"
     mkdir -p "${_build_tmp}"
     wget -q -O "${tarball}" \
         "https://mirrors.edge.kernel.org/pub/linux/utils/util-linux/v${ver%.*}/util-linux-${ver}.tar.xz"
+    echo "${sha256}  ${tarball}" | sha256sum -c - || {
+        echo "ERROR: SHA-256 mismatch for util-linux-${ver}.tar.xz"; return 1; }
     tar -xf "${tarball}" -C "${_build_tmp}"
     cd "${_build_tmp}/util-linux-${ver}"
     ./configure --prefix="${LOCAL_PREFIX}" \
@@ -205,11 +211,11 @@ install_rust() {
 
 if [ "${INSTALL_DEPS}" -eq 1 ]; then
     mkdir -p "${LOCAL_PREFIX}" "${_build_tmp}"
+    trap 'rm -rf "${_build_tmp}"' EXIT
     install_jsoncpp
     install_uuid
     install_drogon
     install_rust
-    rm -rf "${_build_tmp}"
     echo ""
     echo "=============================================="
     echo "  Dependencies installed to ${LOCAL_PREFIX}"
@@ -221,14 +227,8 @@ fi
 # ── Verify prerequisites ─────────────────────────────────────────────────
 _missing=()
 [ ! -f "${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake" ] && _missing+=("Drogon")
-if ! pkg-config --exists jsoncpp 2>/dev/null && \
-   [ ! -f "${LOCAL_PREFIX}/lib/libjsoncpp.so" ] && [ ! -f "${LOCAL_PREFIX}/lib/libjsoncpp.a" ]; then
-    _missing+=("jsoncpp")
-fi
-if ! pkg-config --exists uuid 2>/dev/null && \
-   [ ! -f "${LOCAL_PREFIX}/lib/libuuid.so" ] && [ ! -f "${LOCAL_PREFIX}/lib/libuuid.a" ]; then
-    _missing+=("libuuid")
-fi
+have_lib jsoncpp jsoncpp || _missing+=("jsoncpp")
+have_lib uuid uuid       || _missing+=("libuuid")
 if [ ${#_missing[@]} -gt 0 ]; then
     echo "ERROR: Missing dependencies at ${LOCAL_PREFIX}: ${_missing[*]}"
     echo "  Run:  $0 --install-deps"
