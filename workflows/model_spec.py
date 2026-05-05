@@ -1120,8 +1120,8 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=16,
-                max_context=32*1024,
+                max_concurrency=32,
+                max_context=32 * 1024,
                 default_impl=True,
                 override_tt_config={
                     "trace_region_size": 51000000,
