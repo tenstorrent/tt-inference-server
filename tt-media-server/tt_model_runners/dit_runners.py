@@ -161,12 +161,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         return True
 
     def _build_warmup_video_request(self) -> VideoGenerateRequest:
-        """Build the throwaway request used to trigger compile/trace on warmup.
-
-        Override in runners that need a richer request (e.g. I2V needs an
-        image_prompts field). Uses ``model_construct`` to skip validation —
-        2 inference steps is below the normal minimum but sufficient for
-        the warmup compile path.
+        """
+        Build the throwaway request used to trigger compile/trace on warmup.
         """
         return VideoGenerateRequest.model_construct(
             prompt="Sunrise on a beach",
