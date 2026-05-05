@@ -2471,28 +2471,62 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c18569e",
-        vllm_commit="b2894d3",
+        tt_metal_commit="f77a648",
+        vllm_commit="79e2624b6",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=32 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
-                max_context=32 * 1024,
+                max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 10000000,
+                    "trace_region_size": 60000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                    "async-scheduling": True,
+                    "generation-config": "vllm",
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    "TT_MM_THROTTLE_PERF": 5,
+                    # "TT_PERF_DECODE_LOG_EVERY": 100,
+                },
+                override_tt_config={
+                    "trace_region_size": 100000000,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
                 },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -2502,6 +2536,80 @@ vlm_templates = [
                 "tool_call_parser_name": "hermes",
             },
         },
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "allenai/olmOCR-2-7B-1025",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="f77a648",
+        vllm_commit="79e2624b6",
+        inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                    "async-scheduling": True,
+                    "generation-config": "vllm",
+                    # Match allenai/olmOCR-2-7B-1025 generation_config.json:
+                    # nearly greedy sampling plus a small repetition penalty.
+                    # "override_generation_config": json.dumps(
+                    #     {
+                    #         "temperature": 1e-6,
+                    #         "repetition_penalty": 1.05,
+                    #     }
+                    # ),
+                },
+                env_vars={
+                    "VLLM_USE_V1": "1",
+                    # "TT_PERF_DECODE_LOG_EVERY": 100,
+                },
+                override_tt_config={
+                    "trace_region_size": 100000000,
+                    "data_parallel": 4,
+                    "sample_on_device_mode": "decode_only",
+                },
+                
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image"],
     ),
     ModelSpecTemplate(
         weights=[
