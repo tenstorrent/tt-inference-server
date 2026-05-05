@@ -34,22 +34,18 @@ void BlazeMemoryManager::handleRequest(
         pendingRetry = request;
         return;
       }
-      ++nextRequestID;
+      nextRequestID++;
       allocating[requestId] = request.taskId;
-      TT_LOG_CRITICAL(
+      TT_LOG_DEBUG(
           "[BlazeMemoryManager] ALLOCATE: taskId={}, assigned "
           "requestId={}, pending allocations={}",
           request.taskId, requestId, allocating.size());
       break;
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
-      // Per slot, push CANCEL with a unique requestId, record it in the
-      // cancelling map, and DO NOT call onEvict. Eviction is deferred until
-      // handleResponse sees the matching PM ack, at which point the slot is
-      // guaranteed to have been fully torn down on the PM side.
-      size_t pushed = 0;
-      for (; pushed < request.slotIds.size(); ++pushed) {
-        auto slotId = request.slotIds[pushed];
+      for (size_t slotIndex = 0; slotIndex < request.slotIds.size();
+           slotIndex++) {
+        auto slotId = request.slotIds[slotIndex];
         auto requestId = nextRequestID;
         if (!pipelineManager.push_request(
                 utils::makeCancelRequest(requestId, slotId))) {
@@ -57,21 +53,21 @@ void BlazeMemoryManager::handleRequest(
               "[BlazeMemoryManager] DEALLOCATE push_request failed for "
               "slotId={}; deferring retry for {} remaining slot(s) of "
               "taskId={}",
-              slotId, request.slotIds.size() - pushed, request.taskId);
+              slotId, request.slotIds.size() - slotIndex, request.taskId);
+          domain::ManageMemoryTask retry;
+          retry.taskId = request.taskId;
+          retry.action = request.action;
+          retry.slotIds.assign(request.slotIds.begin() + slotIndex,
+                               request.slotIds.end());
+          pendingRetry = std::move(retry);
           break;
         }
-        ++nextRequestID;
+        nextRequestID++;
         cancelling[requestId] = slotId;
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] DEALLOCATE: taskId={}, slotId={}, "
             "cancel requestId={}, pending cancellations={}",
             request.taskId, slotId, requestId, cancelling.size());
-      }
-      if (pushed < request.slotIds.size()) {
-        domain::ManageMemoryTask retry = request;
-        retry.slotIds.assign(request.slotIds.begin() + pushed,
-                             request.slotIds.end());
-        pendingRetry = std::move(retry);
       }
       break;
     }
@@ -97,7 +93,7 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
     if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
       TT_LOG_DEBUG(
           "[BlazeMemoryManager] handleResponse[ALLOCATE]: FAILURE "
-          "(INVALID_SLOT) for taskId={}",
+          "No slot available for taskId={}",
           taskId);
       result.status = domain::ManageMemoryStatus::FAILURE;
       result.slotIds = {tt_blaze::pipeline_manager::INVALID_SLOT};
@@ -117,7 +113,7 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
     auto recordedSlotId = it->second;
     cancelling.erase(it);
     if (slotId != recordedSlotId) {
-      TT_LOG_WARN(
+      TT_LOG_ERROR(
           "[BlazeMemoryManager] handleResponse[CANCEL]: requestId={} "
           "ack slotId={} does not match recorded slotId={}; evicting "
           "the recorded slot",
