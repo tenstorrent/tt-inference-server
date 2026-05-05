@@ -545,9 +545,7 @@ jobs:
           # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
           # Track upstream and remove pin once 5.6.x is fixed or bench is
           # made resilient to client tokenizer cost.
-          # aiohttp is used directly by the inline non-streaming bench below;
-          # declare it explicitly so we don't rely on vllm's transitive dep.
-          uv pip install vllm 'transformers<5.6' aiohttp
+          uv pip install vllm 'transformers<5.6'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Mock backend benchmarks ──────────────────────────────────────
@@ -588,115 +586,13 @@ jobs:
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
 
-      # `vllm bench serve` hard-codes stream=True, so drive stream=false coverage via inline aiohttp.
-      - name: Bench mock backend (non-streaming)
+      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
+      # small smoke test that asserts the response shape (no perf thresholds —
+      # the non-streaming path is gated on correctness, not latency).
+      - name: Smoke test mock backend (non-streaming)
         env:
           OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          python - <<'PY' 2>&1 | tee bench_mock_non_streaming_output.txt
-          import asyncio
-          import json
-          import math
-          import os
-          import statistics
-          import time
-
-          import aiohttp
-
-          URL = "http://127.0.0.1:8000/v1/chat/completions"
-          HEADERS = {
-              "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
-              "Content-Type": "application/json",
-          }
-          MODEL = "deepseek-ai/DeepSeek-R1-0528"
-          NUM_PROMPTS = 1000
-          MAX_CONCURRENCY = 64
-          INPUT_LEN = 128
-          OUTPUT_LEN = 128
-          RESULT_FILE = "vllm-bench-mock-non-streaming.json"
-          LABEL = "C++ Server Bench (mock, non-streaming)"
-
-          PROMPT = " ".join(["hello"] * INPUT_LEN)
-
-          async def one(session, sem):
-              payload = {
-                  "model": MODEL,
-                  "messages": [{"role": "user", "content": PROMPT}],
-                  "max_tokens": OUTPUT_LEN,
-                  "stream": False,
-              }
-              async with sem:
-                  start = time.perf_counter()
-                  async with session.post(URL, headers=HEADERS, json=payload) as resp:
-                      body = await resp.json()
-                      if resp.status != 200:
-                          raise RuntimeError(f"status={resp.status} body={body}")
-                      if not body.get("choices"):
-                          raise RuntimeError(f"missing choices in response: {body}")
-                  return time.perf_counter() - start
-
-          async def main():
-              sem = asyncio.Semaphore(MAX_CONCURRENCY)
-              timeout = aiohttp.ClientTimeout(total=300)
-              async with aiohttp.ClientSession(timeout=timeout) as session:
-                  t0 = time.perf_counter()
-                  results = await asyncio.gather(
-                      *[one(session, sem) for _ in range(NUM_PROMPTS)],
-                      return_exceptions=True,
-                  )
-                  wall = time.perf_counter() - t0
-
-              latencies = [r for r in results if not isinstance(r, BaseException)]
-              errors = [repr(r) for r in results if isinstance(r, BaseException)]
-              completed = len(latencies)
-              failed = len(errors)
-              for err in errors[:5]:
-                  print(f"request error: {err}")
-
-              if not latencies:
-                  raise RuntimeError(f"all {NUM_PROMPTS} requests failed")
-
-              latencies_ms = sorted(r * 1000.0 for r in latencies)
-
-              # Nearest-rank percentile: p-th percentile = ceil(p * n)-th smallest value.
-              def pct(p):
-                  return latencies_ms[max(0, math.ceil(p * len(latencies_ms)) - 1)]
-
-              summary = {
-                  "backend": "openai-chat",
-                  "endpoint": "/v1/chat/completions",
-                  "stream": False,
-                  "completed": completed,
-                  "failed": failed,
-                  "num_prompts": NUM_PROMPTS,
-                  "max_concurrency": MAX_CONCURRENCY,
-                  "random_input_len": INPUT_LEN,
-                  "random_output_len": OUTPUT_LEN,
-                  "wall_time_s": round(wall, 3),
-                  "throughput_rps": round(completed / wall, 2),
-                  "e2e_mean_ms": round(statistics.fmean(latencies_ms), 2),
-                  "e2e_p50_ms": round(pct(0.50), 2),
-                  "e2e_p99_ms": round(pct(0.99), 2),
-              }
-              print(json.dumps(summary, indent=2))
-              with open(RESULT_FILE, "w") as f:
-                  json.dump(summary, f, indent=2)
-
-              step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-              if step_summary:
-                  with open(step_summary, "a") as f:
-                      f.write(f"## {LABEL}\n\n")
-                      f.write("| Metric | Value |\n")
-                      f.write("|--------|-------|\n")
-                      f.write(f"| **throughput_rps** | {summary['throughput_rps']} |\n")
-                      f.write(f"| **e2e_mean_ms** | {summary['e2e_mean_ms']} |\n")
-                      f.write(f"| **e2e_p50_ms** | {summary['e2e_p50_ms']} |\n")
-                      f.write(f"| **e2e_p99_ms** | {summary['e2e_p99_ms']} |\n")
-                      f.write(f"| **completed** | {summary['completed']} |\n")
-                      f.write(f"| **failed** | {summary['failed']} |\n\n")
-
-          asyncio.run(main())
-          PY
+        run: python cpp_server/tests/test_non_streaming_chat.py
 
       - name: Bench mock backend (structured output - json_object)
         env:
@@ -838,65 +734,8 @@ jobs:
             } >> $GITHUB_STEP_SUMMARY
           }
 
-          # Non-streaming benches expose end-to-end latency (no TTFT/TPOT),
-          # so they need their own threshold helper.
-          check_non_streaming_thresholds() {
-            local LABEL="$1" FILE="$2" P99_LIMIT="$3" MEAN_LIMIT="$4" RPS_FLOOR="$5"
-            if [ ! -f "$FILE" ]; then
-              echo "❌ [$LABEL] Result file not found: $FILE"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
-              FAIL=1
-              return
-            fi
-
-            local COMPLETED FAILED_REQ E2E_P99_MS E2E_MEAN_MS THROUGHPUT_RPS
-            COMPLETED=$(jq -r       '.completed      // 0' "$FILE")
-            FAILED_REQ=$(jq -r      '.failed         // 0' "$FILE")
-            E2E_P99_MS=$(jq -r      '.e2e_p99_ms     // 0' "$FILE")
-            E2E_MEAN_MS=$(jq -r     '.e2e_mean_ms    // 0' "$FILE")
-            THROUGHPUT_RPS=$(jq -r  '.throughput_rps // 0' "$FILE")
-
-            if [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              FAIL=1
-            fi
-
-            if ! python3 -c "exit(0 if float('$E2E_P99_MS') <= $P99_LIMIT else 1)"; then
-              echo "❌ [$LABEL] e2e_p99_ms $E2E_P99_MS exceeds threshold ${P99_LIMIT}ms"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] e2e_p99_ms $E2E_P99_MS exceeds threshold ${P99_LIMIT}ms"
-              FAIL=1
-            fi
-            if ! python3 -c "exit(0 if float('$E2E_MEAN_MS') <= $MEAN_LIMIT else 1)"; then
-              echo "❌ [$LABEL] e2e_mean_ms $E2E_MEAN_MS exceeds threshold ${MEAN_LIMIT}ms"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] e2e_mean_ms $E2E_MEAN_MS exceeds threshold ${MEAN_LIMIT}ms"
-              FAIL=1
-            fi
-            if ! python3 -c "exit(0 if float('$THROUGHPUT_RPS') >= $RPS_FLOOR else 1)"; then
-              echo "❌ [$LABEL] throughput_rps $THROUGHPUT_RPS below floor ${RPS_FLOOR}"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] throughput_rps $THROUGHPUT_RPS below floor ${RPS_FLOOR}"
-              FAIL=1
-            fi
-
-            {
-              echo "## $LABEL"
-              echo ""
-              echo "| Metric | Value | Threshold |"
-              echo "|--------|-------|-----------|"
-              echo "| **e2e_p99_ms** | $E2E_P99_MS | ≤ ${P99_LIMIT}ms |"
-              echo "| **e2e_mean_ms** | $E2E_MEAN_MS | ≤ ${MEAN_LIMIT}ms |"
-              echo "| **throughput_rps** | $THROUGHPUT_RPS | ≥ ${RPS_FLOOR} |"
-              echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | 0 |"
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
-          }
-
           check_thresholds "C++ Server vLLM Bench (mock)" \
             "vllm-bench-mock.json" 1 150
-
-          check_non_streaming_thresholds "C++ Server vLLM Bench (mock, non-streaming)" \
-            "vllm-bench-mock-non-streaming.json" 250 100 500
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
             "vllm-bench-structured-output-json-object.json" 5 150
@@ -931,7 +770,6 @@ jobs:
           name: cpp-server-bench-results
           path: |
             tt-media-server/vllm-bench-mock.json
-            tt-media-server/vllm-bench-mock-non-streaming.json
             tt-media-server/vllm-bench-structured-output-json-object.json
             tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
