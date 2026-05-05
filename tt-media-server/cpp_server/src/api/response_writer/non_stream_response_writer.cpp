@@ -34,9 +34,7 @@ void NonStreamResponseWriter::handleTokenChunk(
   }
   accumulatedAnswer << choice.text;
 
-  if (!choice.text.empty() || choice.reasoning.has_value()) {
-    noteToken();
-  }
+  noteToken(choice);
 
   if (choice.finish_reason.has_value()) {
     finishReason = choice.finish_reason.value();

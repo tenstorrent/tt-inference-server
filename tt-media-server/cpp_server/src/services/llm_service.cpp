@@ -258,6 +258,8 @@ domain::LLMStreamChunk buildStreamChunk(
   }
 
   choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.spec_accepts = token.spec_accepts;
+  choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
     bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
@@ -390,9 +392,74 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::LLMResponse LLMService::processRequest(domain::LLMRequest /*request*/) {
-  throw std::runtime_error(
-      "LLMService::processRequest is not supported; use streaming interface");
+domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
+  ZoneScopedN("LLMService::processRequest");
+
+  std::mutex mtx;
+  std::condition_variable cv;
+  bool done = false;
+
+  std::string accumulatedAnswer;
+  std::string accumulatedReasoning;
+  int completionTokens = 0;
+  std::string finishReason = "stop";
+
+  const int promptTokens =
+      std::holds_alternative<std::vector<int>>(request.prompt)
+          ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
+          : 0;
+  const uint32_t taskId = request.task_id;
+  const std::string model = request.model.value_or("default");
+
+  processStreamingRequest(
+      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
+        if (!chunk.choices.empty()) {
+          if (chunk.choices[0].reasoning.has_value()) {
+            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
+          }
+          accumulatedAnswer.append(chunk.choices[0].text);
+          completionTokens++;
+          if (chunk.choices[0].finish_reason.has_value()) {
+            finishReason = chunk.choices[0].finish_reason.value();
+          }
+        }
+        if (isFinal) {
+          std::lock_guard<std::mutex> lock(mtx);
+          done = true;
+          cv.notify_one();
+        }
+      });
+
+  std::unique_lock<std::mutex> lock(mtx);
+  cv.wait(lock, [&] { return done; });
+
+  domain::LLMResponse response{taskId};
+  response.id = std::to_string(taskId);
+  response.model = model;
+  response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+
+  domain::LLMChoice choice;
+  choice.text = std::move(accumulatedAnswer);
+  choice.reasoning =
+      accumulatedReasoning.empty()
+          ? std::nullopt
+          : std::optional<std::string>(std::move(accumulatedReasoning));
+  choice.index = 0;
+  choice.finish_reason = finishReason;
+  response.choices.push_back(std::move(choice));
+
+  response.usage = {promptTokens,
+                    completionTokens,
+                    promptTokens + completionTokens,
+                    {},
+                    {},
+                    std::nullopt,
+                    std::nullopt,
+                    std::nullopt};
+
+  return response;
 }
 
 void LLMService::processStreamingRequest(

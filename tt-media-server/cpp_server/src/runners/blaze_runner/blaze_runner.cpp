@@ -255,13 +255,20 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
-  ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+
+  uint32_t currentAccepts = pipelineManager->get_spec_accepts(output.slot_id);
+  uint32_t currentRejects = pipelineManager->get_spec_rejects(output.slot_id);
+  uint32_t deltaAccepts = currentAccepts - context.lastSpecAccepts;
+  uint32_t deltaRejects = currentRejects - context.lastSpecRejects;
+  context.lastSpecAccepts = currentAccepts;
+  context.lastSpecRejects = currentRejects;
+
+  ipc::pushToken(*resultQueue, taskId, output.token_id, finished, deltaAccepts,
+                 deltaRejects);
   context.tokensGenerated++;
   if (finished) {
-    uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
-                           context.specAcceptsAtStart;
-    uint32_t specRejects = pipelineManager->get_spec_rejects(output.slot_id) -
-                           context.specRejectsAtStart;
+    uint32_t specAccepts = currentAccepts - context.specAcceptsAtStart;
+    uint32_t specRejects = currentRejects - context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
     TT_LOG_INFO(
@@ -345,11 +352,12 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   if (slotContexts.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
+  uint32_t initAccepts = pipelineManager->get_spec_accepts(slotId);
+  uint32_t initRejects = pipelineManager->get_spec_rejects(slotId);
   slotContexts.insert_or_assign(
       slotId, blaze_utils::SlotContext{
                   request->taskId, request->getSamplingParams().ignore_eos,
-                  pipelineManager->get_spec_accepts(slotId),
-                  pipelineManager->get_spec_rejects(slotId)});
+                  initAccepts, initRejects, initAccepts, initRejects});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 
