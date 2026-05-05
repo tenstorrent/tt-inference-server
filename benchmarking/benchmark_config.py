@@ -95,10 +95,6 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 ]
 
 
-# Structured-output benchmark sweep. Each entry yields one run of
-# benchmark_serving_structured_output.py at fixed max_concurrency=1,
-# num_prompts=1000, output-len=128. structured_output_ratio=None maps to
-# --no-structured-output (the baseline run).
 # (dataset, structured_output_ratio)
 STRUCTURED_OUTPUT_PAIRS = [
     ("json", 1.0),
@@ -621,18 +617,9 @@ for model_id, model_spec in MODEL_SPECS.items():
 
         tasks.append(benchmark_task_runs)
 
-    # Structured-output benchmarks: text LLMs only, vLLM engine only, fixed
-    # max_concurrency=1. Skip VLM (image), CNN, embedding, video, TTS.
+    # Structured-output benchmarks: text LLMs only, but can be extended
     structured_output_eligible = (
-        model_spec.model_type
-        not in (
-            ModelType.CNN,
-            ModelType.EMBEDDING,
-            ModelType.VIDEO,
-            ModelType.TEXT_TO_SPEECH,
-        )
-        and "image" not in model_spec.supported_modalities
-        and model_spec.inference_engine == InferenceEngine.VLLM.value
+        model_spec.model_type == ModelType.LLM
     )
     if structured_output_eligible:
         tasks.append(
