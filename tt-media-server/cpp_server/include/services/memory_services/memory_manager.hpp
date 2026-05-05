@@ -23,6 +23,16 @@ class MemoryManager {
   virtual std::optional<domain::ManageMemoryTask> getRequest();
   virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
 
+  // Optional method for asynchronous memory managers that receive responses
+  // from an external system. Synchronous managers don't
+  // need to override this. Async managers override to
+  // complete allocation after receiving a response.
+  virtual void handleResponse(uint32_t requestId, uint32_t slotId) {
+    // Default implementation does nothing - only async managers need this
+    (void)requestId;
+    (void)slotId;
+  }
+
  protected:
   std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> resultQueue;

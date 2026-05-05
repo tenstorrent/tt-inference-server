@@ -273,7 +273,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/schedulers/scheduler.cpp
+    src/runners/schedulers/scheduler.cpp
     src/domain/sequence.cpp
     src/domain/sampling_params.cpp
     src/utils/logger.cpp
@@ -523,6 +523,17 @@ target_include_directories(session_manager_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(worker_manager_test
+    tests/worker_manager_test.cpp
+    src/worker/process_liveness.cpp
+)
+target_link_libraries(worker_manager_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -537,6 +548,7 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
+gtest_discover_tests(worker_manager_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
@@ -611,7 +623,9 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/sse_stream_writer.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
@@ -621,6 +635,7 @@ set(SOURCES
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
     src/utils/service_factory.cpp
     src/services/service_container.cpp
     src/utils/runner_factory.cpp

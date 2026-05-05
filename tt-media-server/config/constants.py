@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum
+from typing import NamedTuple, Tuple
 
 
 class SupportedModels(Enum):
@@ -299,6 +300,46 @@ class AudioResponseFormat(Enum):
 
 
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
+
+
+class Resolution(NamedTuple):
+    """
+    Image / video frame resolution, in pixels.
+    """
+
+    height: int
+    width: int
+
+
+# --- Wan2.2 (T2V / I2V) inference shape policy --------------------------------
+# Galaxy-class meshes (e.g. WH GLX (4, 8) = 32 chips, BH GLX (4, 32) = 128
+# chips) are treated as "large" for both DiT resolution and fabric config
+# selection; T3K (2, 4), P150X4 (1, 4), P300X2 (2, 2), N300/N150 are "small".
+LARGE_MESH_SIZE_THRESHOLD = 32
+
+
+def is_large_mesh(mesh_shape: Tuple[int, int]) -> bool:
+    """Return True if a (rows, cols) mesh is Galaxy-class.
+
+    The "large mesh" predicate drives several pipeline-time decisions
+    (target resolution, fabric topology, trace region size) that would
+    otherwise drift apart if duplicated as inline ``mesh_size >= 32`` checks.
+    """
+    return (mesh_shape[0] * mesh_shape[1]) >= LARGE_MESH_SIZE_THRESHOLD
+
+
+WAN22_NUM_FRAMES = 81
+WAN22_RESOLUTION_LARGE_MESH = Resolution(height=720, width=1280)
+WAN22_RESOLUTION_SMALL_MESH = Resolution(height=480, width=832)
+
+
+def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
+    """Resolve Wan2.2 target resolution from a (rows, cols) mesh shape."""
+    if is_large_mesh(mesh_shape):
+        return WAN22_RESOLUTION_LARGE_MESH
+    return WAN22_RESOLUTION_SMALL_MESH
+
+
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)
@@ -768,9 +809,6 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
-    # Wan2.2 I2V — device config is identical to T2V at every supported mesh
-    # shape. The model fork lives in the pipeline class (WanPipelineI2V), not
-    # in fabric/trace settings; see runner implementation in dit_runners.py.
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -792,6 +830,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.P150X8): {
         "device_mesh_shape": (2, 4),
@@ -799,6 +838,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
@@ -806,6 +846,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
