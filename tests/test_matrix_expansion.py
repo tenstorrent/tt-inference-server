@@ -468,6 +468,41 @@ class TestVideoMatrixExpansion:
             "model_marker": "wan",
         },
         {
+            "id": "wan-i2v-t3k",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "t3k",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-galaxy",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "galaxy",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p150x4",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p150x4",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p150x8",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p150x8",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p300x2",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p300x2",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
             "id": "mochi-p150x4",
             "weights": ["mochi-1-preview"],
             "device": "p150x4",
@@ -511,6 +546,33 @@ class TestVideoMatrixExpansion:
         "wan-p150x8": {"video_generation_target_time": 600, "poll_timeout": 900},
         "wan-p300x2": {"video_generation_target_time": 500, "poll_timeout": 800},
     }
+    WAN_I2V_TARGETS = {
+        "wan-i2v-t3k": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1500,
+            "poll_interval": 5,
+        },
+        "wan-i2v-galaxy": {
+            "num_inference_steps": 40,
+            "poll_timeout": 550,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x4": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1200,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x8": {
+            "num_inference_steps": 40,
+            "poll_timeout": 900,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p300x2": {
+            "num_inference_steps": 40,
+            "poll_timeout": 800,
+            "poll_interval": 5,
+        },
+    }
     MOCHI_LOAD_TARGETS = {
         "mochi-p150x4": {
             "video_generation_target_time": 480,
@@ -540,7 +602,7 @@ class TestVideoMatrixExpansion:
 
     def test_video_suite_count(self):
         suites = load_suite_files_by_category("video")
-        assert len(suites) == 10
+        assert len(suites) == 15
 
     def test_video_suite_ids_match(self):
         suites = load_suite_files_by_category("video")
@@ -586,6 +648,23 @@ class TestVideoMatrixExpansion:
             param_test = suite["test_cases"][1]
             assert param_test["template"] == "VideoGenerationParamTest"
             assert "targets" not in param_test
+
+    def test_video_wan_i2v_test_cases(self):
+        suites = load_suite_files_by_category("video")
+        i2v_suites = [s for s in suites if s["model_marker"] == "wan_i2v"]
+
+        assert len(i2v_suites) == len(self.WAN_I2V_TARGETS)
+
+        for suite in i2v_suites:
+            assert len(suite["test_cases"]) == 1, (
+                f"Expected 1 test case for {suite['id']}"
+            )
+            test_case = suite["test_cases"][0]
+            assert test_case["template"] == "VideoGenerationI2VTest"
+            expected_targets = self.WAN_I2V_TARGETS[suite["id"]]
+            assert test_case["targets"] == expected_targets, (
+                f"targets mismatch for {suite['id']}"
+            )
 
     def test_video_mochi_test_cases(self):
         suites = load_suite_files_by_category("video")
@@ -1028,7 +1107,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 64
+        assert len(all_suites) == 69
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()
