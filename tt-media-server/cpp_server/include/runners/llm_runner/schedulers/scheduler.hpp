@@ -38,7 +38,8 @@ class Scheduler {
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
   tt::domain::llm::Sequence& addRequest(
       uint32_t taskId, std::vector<int64_t> prompt,
-      const tt::domain::llm::SamplingParams& params = tt::domain::llm::SamplingParams());
+      const tt::domain::llm::SamplingParams& params =
+          tt::domain::llm::SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(tt::domain::llm::Sequence& seq);
@@ -105,9 +106,9 @@ class Scheduler {
 
  private:
   size_t blockSize;
-  bool trySchedulePrefill(std::vector<tt::domain::llm::Sequence*>& scheduledSeqs,
-                          size_t& numSeqs, size_t& numBatchedTokens,
-                          size_t seqLimit);
+  bool trySchedulePrefill(
+      std::vector<tt::domain::llm::Sequence*>& scheduledSeqs, size_t& numSeqs,
+      size_t& numBatchedTokens, size_t seqLimit);
   void tryScheduleDecode(std::vector<tt::domain::llm::Sequence*>& scheduledSeqs,
                          size_t& numSeqs);
 
@@ -116,7 +117,8 @@ class Scheduler {
   std::unordered_set<int64_t> stopTokenIds;
   llm_engine::BlockManager blockManager;
   ipc::ITaskQueue* prefillQueue;
-  std::unordered_map<uint32_t, std::unique_ptr<tt::domain::llm::Sequence>> sequences;
+  std::unordered_map<uint32_t, std::unique_ptr<tt::domain::llm::Sequence>>
+      sequences;
   std::deque<tt::domain::llm::Sequence*> decodeQueue;
   // IDs aborted before their copy was dequeued from the prefill queue.
   // Checked in trySchedulePrefill to skip stale copies.

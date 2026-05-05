@@ -32,7 +32,9 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
   explicit BoostIpcTaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  void push(const tt::domain::llm::Sequence& seq) override { queue_->push(seq); }
+  void push(const tt::domain::llm::Sequence& seq) override {
+    queue_->push(seq);
+  }
 
   std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
     tt::domain::llm::Sequence seq(0, 1, {});

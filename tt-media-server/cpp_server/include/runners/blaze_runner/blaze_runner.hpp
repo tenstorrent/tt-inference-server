@@ -11,8 +11,8 @@
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
-#include "domain/manage_memory.hpp"
 #include "domain/llm/sequence.hpp"
+#include "domain/manage_memory.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"

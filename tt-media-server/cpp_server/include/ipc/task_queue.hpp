@@ -23,7 +23,8 @@ class ITaskQueue {
   virtual void push(const tt::domain::llm::Sequence& seq) = 0;
   virtual std::unique_ptr<tt::domain::llm::Sequence>
   tryPop() = 0;  // non-blocking pop;
-  virtual std::unique_ptr<tt::domain::llm::Sequence> receive() = 0;  // blocking pop;
+  virtual std::unique_ptr<tt::domain::llm::Sequence>
+  receive() = 0;  // blocking pop;
   virtual bool empty() const = 0;
 };
 

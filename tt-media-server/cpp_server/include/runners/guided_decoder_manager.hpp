@@ -28,7 +28,8 @@ class GuidedDecoderManager {
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;
   GuidedDecoderManager& operator=(const GuidedDecoderManager&) = delete;
 
-  void initRequest(uint32_t taskId, const tt::domain::llm::SamplingParams& params);
+  void initRequest(uint32_t taskId,
+                   const tt::domain::llm::SamplingParams& params);
 
   void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
 

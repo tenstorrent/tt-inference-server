@@ -26,11 +26,11 @@ CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
   CompletionUsage usage{params.promptTokenCount,
-                                tokens,
-                                totalTokens,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt};
+                        tokens,
+                        totalTokens,
+                        std::nullopt,
+                        std::nullopt,
+                        std::nullopt};
 
   if (firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(

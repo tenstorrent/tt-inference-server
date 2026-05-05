@@ -200,8 +200,7 @@ void LLMController::chatCompletions(
   std::optional<ChatCompletionRequest> chatReqOpt;
   try {
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-    chatReqOpt =
-        ChatCompletionRequest::fromJson(*json, std::move(taskId));
+    chatReqOpt = ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
     callback(errorResponse(drogon::k400BadRequest,
                            std::string("Failed to parse request: ") + e.what(),
@@ -254,12 +253,12 @@ ResponseWriterParams LLMController::makeWriterParams(
 
 std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer) {
-  return [writer = std::move(writer)](const LLMStreamChunk& chunk,
-                                      bool isFinal) {
-    if (writer->isDone()) return;
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-    if (isFinal) writer->finalize();
-  };
+  return
+      [writer = std::move(writer)](const LLMStreamChunk& chunk, bool isFinal) {
+        if (writer->isDone()) return;
+        if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+        if (isFinal) writer->finalize();
+      };
 }
 
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(

@@ -47,9 +47,8 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            callback.value()(
-                makeErrorChunk(message.task_id, "prefill error"),
-                /*isFinal=*/true);
+            callback.value()(makeErrorChunk(message.task_id, "prefill error"),
+                             /*isFinal=*/true);
             return;
           }
 
@@ -125,9 +124,8 @@ void DisaggregationService::setupSocketHandlers() {
           auto slotId = message.slot_id;
 
           llmService->submitStreamingRequest(
-              request,
-              [this, message, maxTokens, slotId](
-                  const LLMStreamChunk& response, bool /*isFinal*/) {
+              request, [this, message, maxTokens, slotId](
+                           const LLMStreamChunk& response, bool /*isFinal*/) {
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;

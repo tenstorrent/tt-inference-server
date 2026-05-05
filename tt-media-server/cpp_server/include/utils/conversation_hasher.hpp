@@ -77,8 +77,7 @@ uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix);
  * @param messages Input chat messages (must end with user message)
  * @return Rendered delta prompt for the last user turn
  */
-std::string renderLastUserTurn(
-    const std::vector<ChatMessage>& messages);
+std::string renderLastUserTurn(const std::vector<ChatMessage>& messages);
 
 /**
  * Routing information computed from conversation messages for prefix caching.

@@ -16,7 +16,7 @@ namespace tt::sockets {
 
 using namespace tt::domain::llm;
 class InterServerService;
-}
+}  // namespace tt::sockets
 
 namespace tt::services {
 
@@ -25,8 +25,7 @@ using namespace tt::domain::llm;
 class LLMService;
 
 class DisaggregationService {
-  using StreamCallback =
-      std::function<void(const LLMStreamChunk&, bool)>;
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
  public:
   DisaggregationService(

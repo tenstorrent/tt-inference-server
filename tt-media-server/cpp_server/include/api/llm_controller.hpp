@@ -122,8 +122,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * paths pass a cancelFn; when closeSession fires mid-flight the client
    * receives finish_reason="abort" (partial response for non-streaming).
    */
-  void resolveSession(std::shared_ptr<LLMRequest> req,
-                      trantor::EventLoop* loop,
+  void resolveSession(std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
                       std::function<void(const SessionError&)> onError,
                       std::function<void()> cancelFn = nullptr) const;
@@ -160,15 +159,14 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Build the ResponseWriterParams shared by both streaming and non-streaming
    * writers.
    */
-  ResponseWriterParams makeWriterParams(
-      const LLMRequest& request) const;
+  ResponseWriterParams makeWriterParams(const LLMRequest& request) const;
 
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
    * ResponseWriter. Common to both streaming and non-streaming code paths.
    */
-  static std::function<void(const LLMStreamChunk&, bool)>
-  makeStreamingCallback(std::shared_ptr<ResponseWriter> writer);
+  static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
+      std::shared_ptr<ResponseWriter> writer);
 };
 
 }  // namespace tt::api

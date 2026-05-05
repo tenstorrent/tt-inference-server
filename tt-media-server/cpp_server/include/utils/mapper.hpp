@@ -8,4 +8,4 @@ namespace tt::utils::mapper {
 using namespace tt::domain::llm;
 
 SamplingParams mapSamplingParams(const LLMRequest&);
-}
+}  // namespace tt::utils::mapper

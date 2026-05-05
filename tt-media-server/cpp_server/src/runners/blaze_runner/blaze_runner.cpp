@@ -284,7 +284,8 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
   TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request) {
+void BlazeRunner::handleRequest(
+    std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());

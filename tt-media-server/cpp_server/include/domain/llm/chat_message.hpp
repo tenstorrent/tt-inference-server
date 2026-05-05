@@ -75,4 +75,4 @@ struct ChatMessage {
   }
 };
 
-}  // namespace tt::domain::llm::llm
+}  // namespace tt::domain::llm

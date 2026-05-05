@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
-#include "domain/llm/chat_message.hpp"
 #include "domain/json_field.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"

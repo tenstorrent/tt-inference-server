@@ -8,8 +8,8 @@
 #include <string>
 
 #include "domain/llm/chat_completion_request.hpp"
-#include "domain/response_format.hpp"
 #include "domain/llm/sampling_params.hpp"
+#include "domain/response_format.hpp"
 
 namespace {
 

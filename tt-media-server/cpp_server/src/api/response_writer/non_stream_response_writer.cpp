@@ -25,8 +25,7 @@ std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
       new NonStreamResponseWriter(std::move(params), std::move(httpCallback)));
 }
 
-void NonStreamResponseWriter::handleTokenChunk(
-    const LLMStreamChunk& chunk) {
+void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -73,8 +72,7 @@ void NonStreamResponseWriter::finalize() {
     }
   }
 
-  auto chatResponse =
-      ChatCompletionResponse::fromLLMResponse(llmResponse);
+  auto chatResponse = ChatCompletionResponse::fromLLMResponse(llmResponse);
 
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);

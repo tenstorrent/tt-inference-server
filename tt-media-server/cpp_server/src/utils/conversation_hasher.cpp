@@ -63,8 +63,7 @@ std::optional<std::vector<ChatMessage>> extractPriorTurnPrefix(
   return priorPrefix;
 }
 
-uint64_t hashConversationPrefix(
-    const std::vector<ChatMessage>& prefix) {
+uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix) {
   // Empty prefix should have a deterministic hash
   if (prefix.empty()) {
     return 0;
@@ -79,11 +78,10 @@ uint64_t hashConversationPrefix(
   return XXH64(rendered.data(), rendered.size(), 0);
 }
 
-std::string renderLastUserTurn(
-    const std::vector<ChatMessage>& messages) {
-  auto it = std::find_if(
-      messages.rbegin(), messages.rend(),
-      [](const ChatMessage& msg) { return msg.role == "user"; });
+std::string renderLastUserTurn(const std::vector<ChatMessage>& messages) {
+  auto it =
+      std::find_if(messages.rbegin(), messages.rend(),
+                   [](const ChatMessage& msg) { return msg.role == "user"; });
   if (it == messages.rend()) {
     return "";
   }

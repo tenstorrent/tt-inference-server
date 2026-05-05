@@ -289,8 +289,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
-        auto errorChunk =
-            makeErrorChunk(taskId, "runner reported error");
+        auto errorChunk = makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }

@@ -77,8 +77,7 @@ void StreamingResponseWriter::flushAccumulated() {
   }
 }
 
-void StreamingResponseWriter::handleTokenChunk(
-    const LLMStreamChunk& chunk) {
+void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -90,11 +89,11 @@ void StreamingResponseWriter::handleTokenChunk(
   if (continuousUsage) {
     const int currentTokens = completionTokens.load();
     usage = CompletionUsage{params.promptTokenCount,
-                                    currentTokens,
-                                    params.promptTokenCount + currentTokens,
-                                    std::nullopt,
-                                    std::nullopt,
-                                    params.sessionId};
+                            currentTokens,
+                            params.promptTokenCount + currentTokens,
+                            std::nullopt,
+                            std::nullopt,
+                            params.sessionId};
   }
 
   auto streamChunk = ChatCompletionStreamChunk::makeContentChunk(

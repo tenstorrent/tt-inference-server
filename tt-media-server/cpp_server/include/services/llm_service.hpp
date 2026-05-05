@@ -27,12 +27,10 @@ namespace tt::services {
 
 using namespace tt::domain::llm;
 
-class LLMService
-    : public BaseService<LLMRequest, LLMResponse>,
-      public Streamable<LLMRequest, LLMStreamChunk> {
+class LLMService : public BaseService<LLMRequest, LLMResponse>,
+                   public Streamable<LLMRequest, LLMStreamChunk> {
  public:
-  using StreamCallback =
-      std::function<void(const LLMStreamChunk&, bool)>;
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
   LLMService();
   ~LLMService() override;
@@ -76,8 +74,7 @@ class LLMService
   void streamingPostProcess(LLMStreamChunk&) const override {}
   void processStreamingRequest(
       LLMRequest request,
-      std::function<void(LLMStreamChunk&, bool isFinal)> callback)
-      override;
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
  private:
   struct StreamCallbackEntry {
