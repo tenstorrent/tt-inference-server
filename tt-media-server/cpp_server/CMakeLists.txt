@@ -566,8 +566,14 @@ set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 # to the worker queue via /debug/runner-events. Refactor-safety net for
 # anything in API / controllers / services / sessions / disaggregation
 # glue that lives above the producer side of the task queue.
+#
+# Pytest fixtures in tests/recorder/conftest.py boot the server with
+# TT_RUNNER_RECORDER_ENABLED=1 and tear it down on session exit.
+# `--rootdir` keeps unrelated parent conftests out of scope.
 add_test(NAME RunnerEventTests
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder/run_recorder_e2e.sh
+    COMMAND ${Python3_EXECUTABLE} -m pytest -v
+            --rootdir=${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/recorder/test_runner_events.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set_tests_properties(RunnerEventTests PROPERTIES TIMEOUT 90)
