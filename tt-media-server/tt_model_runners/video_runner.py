@@ -41,6 +41,7 @@ Environment variables:
 """
 
 import asyncio
+import json
 import os
 import queue
 import signal
@@ -49,12 +50,16 @@ import threading
 import traceback
 from dataclasses import dataclass
 from dataclasses import fields as dc_fields
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import (
+    ImagePromptEntry,
+    VideoI2VGenerateRequest,
+)
 from ipc.video_shm import (
     VideoRequest,
     VideoResponse,
@@ -142,11 +147,16 @@ def _attach_mpi_comm():
 
 def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
-    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
+    from tt_model_runners.dit_runners import (
+        TTMochi1Runner,
+        TTWan22I2VRunner,
+        TTWan22Runner,
+    )
 
     runner_map = {
         ModelRunners.TT_MOCHI_1.value: TTMochi1Runner,
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
+        ModelRunners.TT_WAN_2_2_I2V.value: TTWan22I2VRunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:
@@ -158,16 +168,53 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
-    """Map SHM VideoRequest to VideoGenerateRequest for DiT runners.
+def _read_image_prompts_side_file(path: str, task_id: str) -> List[dict]:
+    """Load the I2V image_prompts list written by ``SPRunner._write_image_side_file``.
+
+    The cross-process contract is a JSON array of ``{"image", "frame_pos"}``
+    dicts (see ``ipc.video_shm.image_prompts_path`` and the SPRunner helper).
+    Any I/O / parse failure OR a payload whose top-level shape isn't a list
+    degrades to an empty list so the MPI broadcast still completes
+    """
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        _log.warning(
+            f"Rank 0: failed to read I2V side-file {path!r} for task "
+            f"{task_id}: {e}; falling back to empty image_prompts"
+        )
+        return []
+    if not isinstance(data, list):
+        _log.warning(
+            f"Rank 0: I2V side-file {path!r} for task {task_id} is not a "
+            f"JSON list (got {type(data).__name__}); falling back to empty "
+            f"image_prompts"
+        )
+        return []
+    return data
+
+
+def video_request_to_generate_request(
+    req: VideoRequest,
+    image_prompts: Optional[List[dict]] = None,
+) -> VideoGenerateRequest:
+    """Map SHM VideoRequest (+ optional broadcast image_prompts) to a runner request.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
-    height, width) unless they exist on VideoGenerateRequest.
+    height, width, image_path) unless they exist on the target request schema.
     """
     shm_names = {f.name for f in dc_fields(VideoRequest)}
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
-    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
+    base_kwargs = {name: getattr(req, name) for name in common}
+
+    if image_prompts:
+        return VideoI2VGenerateRequest(
+            **base_kwargs,
+            image_prompts=[ImagePromptEntry(**entry) for entry in image_prompts],
+        )
+    return VideoGenerateRequest(**base_kwargs)
 
 
 def _write_response_to_shm(
@@ -197,13 +244,18 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
     )
 
 
-def _broadcast_request(comm, req: Optional[VideoRequest]) -> Optional[VideoRequest]:
-    """Collective: rank 0 provides the request, all ranks receive it.
+def _broadcast_request(
+    comm,
+    req: Optional[VideoRequest],
+    image_prompts: Optional[List[dict]] = None,
+) -> tuple:
+    """Collective: rank 0 provides ``(req, image_prompts)``, all ranks receive it.
 
-    Returns None when rank 0 signals shutdown (read_request returned None).
-    All ranks must call this on every iteration so MPI stays in sync.
+    Returns ``(None, None)`` when rank 0 signals shutdown (``read_request``
+    returned None). All ranks must call this on every iteration so MPI stays
+    in sync.
     """
-    return comm.bcast(req, root=0)
+    return comm.bcast((req, image_prompts), root=0)
 
 
 def _encoder_loop(
@@ -275,10 +327,18 @@ def _run_inference_loop(
 
     while not _shutdown:
         raw_req: Optional[VideoRequest] = None
+        rank0_image_prompts: Optional[List[dict]] = None
         if rank == 0:
             raw_req = input_shm.read_request()
+            # Side-file lives on host-0 tmpfs only;
+            if raw_req is not None and raw_req.image_path:
+                rank0_image_prompts = _read_image_prompts_side_file(
+                    raw_req.image_path, raw_req.task_id
+                )
 
-        req = _broadcast_request(comm, raw_req)
+        req, image_prompts = _broadcast_request(
+            comm, raw_req, image_prompts=rank0_image_prompts
+        )
 
         if req is None:
             _log.info(f"Rank {rank}: Shutdown signal received, exiting loop")
@@ -288,11 +348,12 @@ def _run_inference_loop(
             _log.info(
                 f"Rank 0: task_id={req.task_id}, "
                 f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
-                f"steps={req.num_inference_steps}, seed={req.seed}"
+                f"steps={req.num_inference_steps}, seed={req.seed}, "
+                f"image_prompts={len(image_prompts) if image_prompts else 0}"
             )
 
         try:
-            video_gen_req = video_request_to_generate_request(req)
+            video_gen_req = video_request_to_generate_request(req, image_prompts)
 
             _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
             frames = runner.run([video_gen_req])
