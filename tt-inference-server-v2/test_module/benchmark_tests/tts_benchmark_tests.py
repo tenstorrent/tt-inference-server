@@ -21,7 +21,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from workflows.utils import get_num_calls
 
-from ..context import MediaContext, common_report_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import block_id, block_targets
+from ..context import MediaContext, require_health
 from ..test_status import TtsTestStatus
 
 logger = logging.getLogger(__name__)
@@ -188,7 +191,7 @@ def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
     return sorted_ttft[p90_index], sorted_ttft[p95_index]
 
 
-def run_tts_benchmark(ctx: MediaContext) -> dict:
+def run_tts_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for a TTS model (SpeechT5, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -207,16 +210,20 @@ def run_tts_benchmark(ctx: MediaContext) -> dict:
     rtr_value = _tts_avg(status_list, "rtr")
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
 
-    report_data = common_report_metadata(ctx, "tts")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "ttft": ttft_value / 1000,
-        "rtr": rtr_value,
-        "ttft_p90": p90_ttft / 1000,
-        "ttft_p95": p95_ttft / 1000,
-    }
-
-    return report_data
+    return Block(
+        kind="tts_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="tts"),
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "ttft": ttft_value / 1000,
+                "rtr": rtr_value,
+                "ttft_p90": p90_ttft / 1000,
+                "ttft_p95": p95_ttft / 1000,
+            },
+        },
+    )
 
 
 __all__ = ["run_tts_benchmark"]

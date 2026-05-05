@@ -18,9 +18,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from report_module.schema import Block
 from workflows.workflow_types import ReportCheckTypes
 
-from ..context import MediaContext, common_eval_metadata, require_health
+from .._test_common import block_id, block_targets
+from ..context import MediaContext, require_health
 from ..test_status import CnnGenerationTestStatus
 
 logger = logging.getLogger(__name__)
@@ -180,7 +182,7 @@ def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     return device_result
 
 
-def run_cnn_eval(ctx: MediaContext) -> dict:
+def run_cnn_eval(ctx: MediaContext) -> Block:
     """Run evaluations for a CNN model (MobileNetV2, ResNet, etc.)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -200,29 +202,32 @@ def run_cnn_eval(ctx: MediaContext) -> dict:
         raise
 
     logger.info("Generating eval report...")
-    benchmark_data = common_eval_metadata(ctx, "cnn")
+    task = ctx.all_params.tasks[0]
+    data: dict = {
+        "task_name": task.task_name,
+        "tolerance": task.score.tolerance,
+    }
 
     if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
         logger.info("Adding eval results from eval spec test to benchmark data")
-        benchmark_data["accuracy_check"] = eval_result.get(
-            "accuracy_status", ReportCheckTypes.NA
-        )
-        benchmark_data["correct"] = eval_result["correct"]
-        benchmark_data["total"] = eval_result["total"]
-        benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
+        data["accuracy_check"] = eval_result.get("accuracy_status", ReportCheckTypes.NA)
+        data["correct"] = eval_result["correct"]
+        data["total"] = eval_result["total"]
+        data["mismatches_count"] = eval_result["mismatches_count"]
     else:
         logger.info("No eval results from eval spec test to add to benchmark data")
         ttft_value = _cnn_ttft(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value}")
-        benchmark_data["published_score"] = ctx.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = ctx.all_params.tasks[
-            0
-        ].score.published_score_ref
+        data["published_score"] = task.score.published_score
+        data["score"] = ttft_value
+        data["published_score_ref"] = task.score.published_score_ref
 
-    return benchmark_data
+    return Block(
+        kind="cnn_eval",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="cnn"),
+        data=data,
+    )
 
 
 __all__ = ["run_cnn_eval"]

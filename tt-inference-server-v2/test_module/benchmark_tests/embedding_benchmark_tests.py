@@ -19,7 +19,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
-from ..context import MediaContext, common_report_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import block_id, block_targets
+from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +101,7 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
     return _parse_embedding_benchmark_output(output)
 
 
-def run_embedding_benchmark(ctx: MediaContext) -> dict:
+def run_embedding_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for an embedding model."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -125,18 +128,24 @@ def run_embedding_benchmark(ctx: MediaContext) -> dict:
         total_input_tokens / benchmark_duration if benchmark_duration else 0.0
     )
 
-    report_data = common_report_metadata(ctx, "embedding")
-    report_data["benchmarks"] = {
-        "isl": isl,
-        "concurrency": concurrency,
-        "num_requests": successful_requests + failed_requests,
-        "tput_user": tput_prefill / float(concurrency) if concurrency else 0.0,
-        "tput_prefill": tput_prefill,
-        "e2el": mean_e2el,
-        "req_tput": req_tput,
-    }
-
-    return report_data
+    return Block(
+        kind="embedding_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="embedding"),
+        data={
+            "Benchmarks": {
+                "isl": isl,
+                "concurrency": concurrency,
+                "num_requests": successful_requests + failed_requests,
+                "tput_user": (
+                    tput_prefill / float(concurrency) if concurrency else 0.0
+                ),
+                "tput_prefill": tput_prefill,
+                "e2el": mean_e2el,
+                "req_tput": req_tput,
+            },
+        },
+    )
 
 
 __all__ = ["run_embedding_benchmark"]
