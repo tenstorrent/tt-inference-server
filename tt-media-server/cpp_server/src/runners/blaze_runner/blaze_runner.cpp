@@ -102,15 +102,15 @@ bool BlazeRunner::warmup() {
   auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
-  constexpr uint32_t WARMUP_ALLOCATE_REQUEST_ID = 0;
-  constexpr uint32_t WARMUP_CANCEL_REQUEST_ID = 1;
+  constexpr uint32_t warmupAllocateRequestId = 0;
+  constexpr uint32_t warmupCancelRequestId = 1;
 
   const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
   const auto pollInterval = std::chrono::milliseconds(10);
 
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
   pipelineManager->push_request(
-      utils::makeAllocateRequest(WARMUP_ALLOCATE_REQUEST_ID));
+      utils::makeAllocateRequest(warmupAllocateRequestId));
 
   TT_LOG_INFO("BlazeRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
@@ -155,10 +155,7 @@ bool BlazeRunner::warmup() {
   }
 
   pipelineManager->push_request(
-      utils::makeCancelRequest(WARMUP_CANCEL_REQUEST_ID, slotId));
-  // Drain the CANCEL ack so the first run() step doesn't see an unknown
-  // request_id. The PM finalizes the cancel asynchronously, so we poll with
-  // a deadline to avoid hanging warmup forever on a wedged PM.
+      utils::makeCancelRequest(warmupCancelRequestId, slotId));
   pm::PMResponse cancelResponse{};
   const auto cancelDeadline = std::chrono::steady_clock::now() + timeout;
   while (!pipelineManager->try_pop_response(cancelResponse)) {
