@@ -19,6 +19,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -26,7 +27,9 @@ from ipc.video_shm import (
     VideoRequest,
     VideoShm,
     VideoStatus,
+    cleanup_orphaned_image_files,
     cleanup_orphaned_video_files,
+    image_prompts_path,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -78,6 +81,13 @@ class SPRunner(BaseDeviceRunner):
         # them in place would desync ridx by N and every future request would
         # silently receive the previous task's file_path. Drain + unlink now.
         self._drain_stale_responses()
+        # Sweep any I2V side-files left behind by a prior crashed session.
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
+                f"orphaned image side-file(s)"
+            )
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
@@ -111,6 +121,12 @@ class SPRunner(BaseDeviceRunner):
             self.logger.info(
                 f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
             )
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
+                f"orphaned image side-file(s)"
+            )
         self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
         return True
 
@@ -130,42 +146,65 @@ class SPRunner(BaseDeviceRunner):
         request = requests[0]
         task_id = request._task_id
 
-        video_req = VideoRequest(
-            task_id=task_id,
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt or "",
-            num_inference_steps=request.num_inference_steps or 20,
-            seed=int(request.seed or 0),
-            height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
-            width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
-            num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
-            guidance_scale=getattr(
-                request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
-            ),
-            guidance_scale_2=getattr(
-                request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
-            ),
-        )
+        image_path = self._write_image_side_file(request, task_id)
+        try:
+            video_req = VideoRequest(
+                task_id=task_id,
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt or "",
+                num_inference_steps=request.num_inference_steps or 20,
+                seed=int(request.seed or 0),
+                height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
+                width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
+                num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
+                guidance_scale=getattr(
+                    request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
+                ),
+                guidance_scale_2=getattr(
+                    request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
+                ),
+                image_path=image_path,
+            )
 
-        self._input_shm.write_request(video_req)
-        self.logger.info(f"[SP] Request {task_id} sent to SHM input")
+            self._input_shm.write_request(video_req)
+            self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
-        timeout_s = self.settings.video_request_timeout_seconds
-        resp = self._read_response_for(task_id, timeout_s)
-        if resp.status == VideoStatus.ERROR:
-            self._try_unlink(resp.file_path)
-            raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
+            timeout_s = self.settings.video_request_timeout_seconds
+            resp = self._read_response_for(task_id, timeout_s)
+            if resp.status == VideoStatus.ERROR:
+                self._try_unlink(resp.file_path)
+                raise RuntimeError(
+                    f"Runner error for task {task_id}: {resp.error_message}"
+                )
 
-        mp4_path = resp.file_path
-        exists = os.path.exists(mp4_path)
-        size_bytes = os.path.getsize(mp4_path) if exists else None
-        size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
-        self.logger.info(
-            f"[SP] Received mp4 path from SHM: {mp4_path} "
-            f"(exists={exists}, size={size_part})"
-        )
-        # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
-        return [mp4_path]
+            mp4_path = resp.file_path
+            exists = os.path.exists(mp4_path)
+            size_bytes = os.path.getsize(mp4_path) if exists else None
+            size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
+            self.logger.info(
+                f"[SP] Received mp4 path from SHM: {mp4_path} "
+                f"(exists={exists}, size={size_part})"
+            )
+            # List so device_worker's responses[i] matches one path per request.
+            return [mp4_path]
+        finally:
+            if image_path:
+                self._try_unlink(image_path)
+
+    @staticmethod
+    def _write_image_side_file(request, task_id: str) -> str:
+        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs"""
+        image_prompts = getattr(request, "image_prompts", None)
+        if not image_prompts:
+            return ""
+        path = image_prompts_path(task_id)
+        payload = [
+            {"image": entry.image, "frame_pos": entry.frame_pos}
+            for entry in image_prompts
+        ]
+        with open(path, "w") as f:
+            json.dump(payload, f)
+        return path
 
     def _read_response_for(self, task_id: str, timeout_s: float):
         """Read the next output slot that matches ``task_id``.
