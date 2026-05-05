@@ -48,8 +48,15 @@ if(EXISTS "${_version_file}")
     string(STRIP "${_version_raw}" TT_INFERENCE_SERVER_VERSION)
 endif()
 
-# tt-inference-server commit: git rev-parse on the repo containing cpp_server
-_resolve_git_commit("${CPP_SERVER_DIR}/../.." TT_INFERENCE_SERVER_COMMIT)
+# tt-inference-server commit: passed in by the docker build via
+# --build-arg TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=$(git rev-parse HEAD).
+# The inference-server's .git is not available at build time inside the
+# image (only tt-media-server/ is COPY'd), so the env var is the sole
+# source — no git fallback. Empty/missing -> "unknown".
+set(TT_INFERENCE_SERVER_COMMIT "$ENV{TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG}")
+if(TT_INFERENCE_SERVER_COMMIT STREQUAL "")
+    set(TT_INFERENCE_SERVER_COMMIT "unknown")
+endif()
 
 # tt-blaze commit: git rev-parse on the cloned tt-blaze working tree.
 # Present at this path inside Dockerfile.blaze (cloned at build time);
