@@ -586,6 +586,14 @@ jobs:
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
 
+      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
+      # small smoke test that asserts the response shape (no perf thresholds —
+      # the non-streaming path is gated on correctness, not latency).
+      - name: Smoke test mock backend (non-streaming)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: python cpp_server/tests/test_non_streaming_chat.py
+
       - name: Bench mock backend (structured output - json_object)
         env:
           OPENAI_API_KEY: 'your-secret-key'
@@ -1267,6 +1275,7 @@ jobs:
 
       - name: Run concurrent multi-turn workload (8 users x 8 turns)
         env:
+          OPENAI_API_KEY: 'your-secret-key'
           # Suppressions are loaded by the server itself — the bench client
           # doesn't need them, but inheriting the env is harmless.
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
@@ -1280,7 +1289,7 @@ jobs:
             --rate 8 \
             --max-requests 64 \
             --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
-            --backend-kwargs '{"api_key": "your-secret-key"}' \
+            --backend-kwargs "{\"api_key\": \"${OPENAI_API_KEY}\"}" \
             --output-path "bench_results/tsan_ci" \
             2>&1 | tee tsan_bench.log
 
