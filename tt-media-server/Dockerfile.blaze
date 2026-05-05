@@ -114,7 +114,7 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 # ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${APP_DIR}/server"
-COPY VERSION "${APP_DIR}/VERSION"
+COPY VERSION ${APP_DIR}/VERSION
 
 # Remove any local build artifacts that were copied
 RUN rm -rf ${APP_DIR}/server/cpp_server/build \

@@ -65,9 +65,8 @@ _resolve_git_commit("${CPP_SERVER_DIR}/tt-blaze" TT_BLAZE_COMMIT)
 
 # tt-metal commit: git rev-parse on tt-blaze's tt-metal submodule working tree.
 # Intentionally NOT reading $ENV{TT_METAL_COMMIT_SHA_OR_TAG} — that ARG in
-# Dockerfile.blaze is only static documentation; tt-metal is pulled in as a
-# submodule of tt-blaze (cloned by branch), so the env value drifts from the
-# SHA actually compiled in. Always trust the .git tree.
+# Dockerfile.blaze will be removed; tt-metal is pulled in as a
+# submodule of tt-blaze (cloned by branch).
 _resolve_git_commit("${CPP_SERVER_DIR}/tt-blaze/tt-metal" TT_METAL_COMMIT)
 
 # Render the header. configure_file with @ONLY substitutes only @VAR@ tokens
