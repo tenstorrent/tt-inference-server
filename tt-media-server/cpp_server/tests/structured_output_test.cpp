@@ -326,11 +326,10 @@ class GuidedDecoderManagerTest : public ::testing::Test {
         vocab, vocabSize, stopIds);
   }
 
-  static int32_t encodeSingleChar(
-      const tt::utils::tokenizers::Tokenizer& tok, char c) {
+  static int32_t encodeSingleChar(const tt::utils::tokenizers::Tokenizer& tok,
+                                  char c) {
     auto ids = tok.encode(std::string(1, c));
-    EXPECT_EQ(ids.size(), 1u)
-        << "'" << c << "' must encode to a single token";
+    EXPECT_EQ(ids.size(), 1u) << "'" << c << "' must encode to a single token";
     return ids.empty() ? -1 : static_cast<int32_t>(ids[0]);
   }
 
