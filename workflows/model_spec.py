@@ -161,8 +161,8 @@ def scale_llm_perf_targets(
 
 
 def get_perf_reference(device_model_spec, perf_reference_map):
-    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
-    data_parallel = device_model_spec.override_tt_config.get("data_parallel")
+    # Migrated to vLLM API for data parallelism
+    data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
 
     if data_parallel:
         # need to adjust perf target device for data_parallel factor
@@ -489,8 +489,8 @@ class ModelSpec:
                 f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
             )
 
-        if self.override_tt_config and "data_parallel" in self.override_tt_config:
-            data_parallel = self.override_tt_config["data_parallel"]
+        data_parallel = self.device_model_spec.vllm_args.get("data_parallel_size")
+        if data_parallel:
             object.__setattr__(
                 self,
                 "subdevice_type",
@@ -1124,7 +1124,7 @@ llm_templates = [
                 max_context=40960,
                 default_impl=True,
                 vllm_args={
-                    "max_model_len": 32768,
+                    "max_model_len": "32768",
                     "max_num_seqs": 16,
                 },
                 override_tt_config={
@@ -1587,7 +1587,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "max_model_len": 32768,
+                    "max_model_len": "32768",
                     "max_num_seqs": 16,
                 },
                 override_tt_config={
