@@ -27,7 +27,7 @@ headers = {
 class EmbeddingLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
-        logger.info(self.targets)
+        logger.info("EmbeddingLoadTest targets: %s", self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)

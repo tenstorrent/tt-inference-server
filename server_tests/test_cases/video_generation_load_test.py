@@ -30,7 +30,7 @@ headers = {
 class VideoGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
-        logger.info(self.targets)
+        logger.info("VideoGenerationLoadTest targets: %s", self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         video_generation_target_time = self.targets.get(
             "video_generation_target_time", 480
