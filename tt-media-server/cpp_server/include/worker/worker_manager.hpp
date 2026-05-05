@@ -64,6 +64,10 @@ class WorkerManager {
 
   SingleProcessWorker* worker(size_t idx);
 
+  /** Broadcast a cancel signal for the given task to every per-worker cancel
+   *  queue. Each worker's scheduler is idempotent for unknown task IDs. */
+  void broadcastCancel(uint32_t taskId);
+
   /** Returns false if the worker process has exited; updates is_alive and
    * fires the death callback exactly once on the alive -> dead transition. */
   bool checkWorkerAlive(size_t workerIdx);
@@ -85,6 +89,11 @@ class WorkerManager {
   void stopProcesses();
   void startLivenessChecker();
   void stopLivenessChecker();
+  /** Push a poison-pill into every per-worker result queue so external
+   *  consumers (e.g. LLMService consumer threads) blocked in
+   *  blockingPop() return and the owning service can join them without
+   *  std::terminate. */
+  void shutdownResultQueues();
   WorkerConfig makeWorkerConfig(int workerId);
 
   /** Parent: fork/exec worker subprocess; sets worker.pid to child pid. Does

@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "config/settings.hpp"
+#include "ipc/queue_manager.hpp"
 #include "profiling/tracy.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
@@ -13,6 +14,7 @@
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils::service_factory {
 
@@ -26,15 +28,16 @@ void initializeServices() {
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
   std::shared_ptr<services::SessionManager> sessionManager;
+  std::shared_ptr<tt::ipc::QueueManager> queueManager;
 
-  // Create SessionManager for all modes
   sessionManager = std::make_shared<services::SessionManager>();
 
-  // Only construct services for MODEL_SERVICE (see config::modelService()).
-  // Additional modes (e.g. videogen) extend config::ModelService and add cases.
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM: {
-      llm = std::make_shared<services::LLMService>();
+      queueManager = std::make_shared<tt::ipc::QueueManager>(
+          static_cast<int>(tt::config::numWorkers()));
+      llm = services::LLMService::createDefault(
+          &tt::utils::tokenizers::activeTokenizer(), queueManager->taskQueue);
       auto mode = tt::config::llmMode();
       if (mode != tt::config::LLMMode::REGULAR) {
         socket = std::make_shared<sockets::InterServerService>();
@@ -50,7 +53,8 @@ void initializeServices() {
   }
 
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
-               std::move(disaggregation), std::move(sessionManager));
+               std::move(disaggregation), std::move(sessionManager),
+               std::move(queueManager));
 
   if (c.llm()) {
     c.llm()->start();

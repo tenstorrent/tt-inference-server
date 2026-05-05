@@ -27,37 +27,48 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-LLMService::LLMService()
-    : LLMService{
-          &tt::utils::tokenizers::activeTokenizer(),
-          std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers()),
-          std::make_unique<tt::ipc::QueueManager>(
-              static_cast<int>(tt::config::numWorkers())),
-          std::make_unique<ReasoningParser>(),
-          createToolCallParser(tt::config::modelType()),
-          tt::config::maxQueueSize()} {}
+std::shared_ptr<LLMService> LLMService::createDefault(
+    const tt::utils::tokenizers::Tokenizer* tokenizer,
+    std::shared_ptr<tt::ipc::ITaskQueue> taskQueue) {
+  return std::make_shared<LLMService>(
+      tokenizer, std::move(taskQueue),
+      std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers()),
+      std::make_unique<ReasoningParser>(),
+      createToolCallParser(tt::config::modelType()),
+      tt::config::maxQueueSize());
+}
 
 LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
+                       std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
-                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
                        std::unique_ptr<ReasoningParser> reasoningParser,
                        std::unique_ptr<IToolCallParser> toolCallParser,
-                       size_t maxQueueSize)
-    : queueManager{std::move(queueManager)},
-      workerManager{std::move(workerManager)},
-      tokenizer{tokenizer},
-      reasoningParser{std::move(reasoningParser)},
-      toolCallParser{std::move(toolCallParser)} {
-  if (this->tokenizer == nullptr) {
+                       size_t maxQueueSize) {
+  init(tokenizer, std::move(taskQueue), std::move(workerManager),
+       std::move(reasoningParser), std::move(toolCallParser), maxQueueSize);
+}
+
+void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
+                      std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+                      std::unique_ptr<tt::worker::WorkerManager> workerManager,
+                      std::unique_ptr<ReasoningParser> reasoningParser,
+                      std::unique_ptr<IToolCallParser> toolCallParser,
+                      size_t maxQueueSize) {
+  if (tokenizer == nullptr) {
     throw std::invalid_argument("LLMService: tokenizer must not be null");
   }
-  if (!this->workerManager) {
+  if (!taskQueue) {
+    throw std::invalid_argument("LLMService: taskQueue must not be null");
+  }
+  if (!workerManager) {
     throw std::invalid_argument("LLMService: workerManager must not be null");
   }
-  if (!this->queueManager) {
-    throw std::invalid_argument("LLMService: queueManager must not be null");
-  }
 
+  this->tokenizer = tokenizer;
+  this->taskQueue = std::move(taskQueue);
+  this->workerManager = std::move(workerManager);
+  this->reasoningParser = std::move(reasoningParser);
+  this->toolCallParser = std::move(toolCallParser);
   this->maxQueueSize = maxQueueSize;
 
   const auto stopIds = this->tokenizer->stopTokenIds();
@@ -185,9 +196,7 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  for (auto& q : queueManager->resultQueues) {
-    q->shutdown();
-  }
+  workerManager->stop();
 
   for (auto& thread : consumerThreads) {
     if (thread.joinable()) {
@@ -196,10 +205,7 @@ void LLMService::stop() {
   }
   consumerThreads.clear();
 
-  workerManager->stop();
-
   TT_LOG_INFO("[LLMService] Stopped");
-  queueManager->clear();
 }
 
 namespace {
@@ -270,10 +276,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
   auto* worker = workerManager->worker(workerIdx);
-  if (!worker->cfg.result_queue) {
+  if (!worker || !worker->cfg.result_queue) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
+  auto resultQueue = worker->cfg.result_queue;
 
   std::unordered_map<
       uint32_t,
@@ -284,7 +291,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     bool anyActivity = false;
 
     ipc::SharedToken token;
-    while (worker->cfg.result_queue->blockingPop(token)) {
+    while (resultQueue->blockingPop(token)) {
       anyActivity = true;
 
       uint32_t taskId = token.task_id;
@@ -486,7 +493,7 @@ void LLMService::processStreamingRequest(
   sequence->setDisaggregated(request.disaggregated);
   sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));
-  queueManager->taskQueue->push(*std::move(sequence));
+  taskQueue->push(*std::move(sequence));
 }
 
 void LLMService::postProcess(domain::LLMResponse& response) const {
@@ -603,13 +610,7 @@ void LLMService::abortRequest(uint32_t taskId) {
     reasoningParser->finalizeTask(taskId);
   }
 
-  // Broadcast the cancel signal to every per-worker cancel queue.
-  // Each worker's scheduler::abortRequest is idempotent for unknown task IDs.
-  if (queueManager) {
-    for (auto& cq : queueManager->cancelQueues) {
-      cq->push(taskId);
-    }
-  }
+  workerManager->broadcastCancel(taskId);
 
   TT_LOG_INFO("[LLMService] Aborted request {}", taskId);
 }

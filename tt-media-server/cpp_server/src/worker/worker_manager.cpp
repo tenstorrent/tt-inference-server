@@ -76,7 +76,24 @@ void WorkerManager::start() {
 void WorkerManager::stop() {
   stopLivenessChecker();
   stopWarmupListener();
+  shutdownResultQueues();
   stopProcesses();
+}
+
+void WorkerManager::shutdownResultQueues() {
+  for (auto& w : workers) {
+    if (w && w->cfg.result_queue) {
+      w->cfg.result_queue->shutdown();
+    }
+  }
+}
+
+void WorkerManager::broadcastCancel(uint32_t taskId) {
+  for (auto& w : workers) {
+    if (w && w->cfg.cancel_queue) {
+      w->cfg.cancel_queue->push(taskId);
+    }
+  }
 }
 
 void WorkerManager::stopWarmupListener() {

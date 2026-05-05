@@ -6,6 +6,10 @@
 #include <memory>
 #include <stdexcept>
 
+namespace tt::ipc {
+class QueueManager;
+}
+
 namespace tt::services {
 class LLMService;
 class EmbeddingService;
@@ -36,7 +40,8 @@ class ServiceContainer {
                   std::shared_ptr<EmbeddingService> embedding,
                   std::shared_ptr<sockets::InterServerService> socket,
                   std::shared_ptr<DisaggregationService> disaggregation,
-                  std::shared_ptr<SessionManager> sessionMgr);
+                  std::shared_ptr<SessionManager> sessionMgr,
+                  std::shared_ptr<tt::ipc::QueueManager> queueManager);
 
   std::shared_ptr<IService> configuredService() const;
 
@@ -54,6 +59,11 @@ class ServiceContainer {
 
  private:
   ServiceContainer() = default;
+
+  // Declared first so it is destroyed last: LLMService's stop() must finish
+  // (consumer threads joined, workers killed) before QueueManager removes the
+  // underlying shared-memory queues in its destructor.
+  std::shared_ptr<tt::ipc::QueueManager> queueManager_;
 
   std::shared_ptr<LLMService> llm_;
   std::shared_ptr<EmbeddingService> embedding_;
