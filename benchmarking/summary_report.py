@@ -210,13 +210,15 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         return params
 
     # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
-    # Example: benchmark_structured_id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_2026-04-28_18-01-30_dataset-json_so-1.0_osl-128_maxcon-4_n-100.json
+    # Dataset is non-greedy so names that contain underscores (e.g.
+    # "xgrammar_bench") are captured up to the so-/no-so anchor that follows.
+    # Example: benchmark_structured_id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_2026-04-28_18-01-30_dataset-xgrammar_bench_so-1.0_osl-128_maxcon-4_n-100.json
     structured_pattern = r"""
         ^benchmark_structured_
         (?P<model>.+?)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _dataset-(?P<dataset>[^_]+)
+        _dataset-(?P<dataset>.+?)
         _(?P<so_tag>no-so|so-[\d.]+)
         _osl-(?P<osl>\d+)
         _maxcon-(?P<maxcon>\d+)
