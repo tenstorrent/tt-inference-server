@@ -128,8 +128,8 @@ void registerAlwaysExemptRoutes() {
 }  // namespace
 
 void registerBuiltinModelServices() {
-  // call_once provides the release/acquire that publishes the registry
-  // writes; an atomic bool flag would not. createRunner is a hot path.
+  // call_once publishes the registry writes to subsequent readers via its
+  // happens-before guarantee; a plain atomic<bool> exchange would not.
   static std::once_flag flag;
   std::call_once(flag, []() {
     registerLLM();
