@@ -185,4 +185,4 @@ The server provides OpenAI-compatible endpoints:
 - `GET /docs` - Swagger UI documentation
 - `GET /openapi.json` - OpenAPI specification
 
-All endpoints except health/tt-liveness/info/docs require Bearer token authentication.
+Bearer token authentication is required for all endpoints, with the following exceptions: /health, /tt-liveness, /info, and /docs.
