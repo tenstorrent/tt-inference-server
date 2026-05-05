@@ -248,14 +248,26 @@ export PATH="${CLEAN_PATH}"
 
 RESOLVED_CARGO=""
 find_rust() {
-    # 1. Direct toolchain binary (bypasses all rustup proxies)
-    local tc_bin="${RUSTUP_DIR}/toolchains/stable-x86_64-unknown-linux-gnu/bin"
+    local _tc_suffix="toolchains/stable-x86_64-unknown-linux-gnu/bin"
+
+    # 1. Preferred: direct toolchain binary under /data (bypasses rustup proxies)
+    local tc_bin="${RUSTUP_DIR}/${_tc_suffix}"
     if [ -x "${tc_bin}/cargo" ]; then
         export PATH="${tc_bin}:${PATH}"
         RESOLVED_CARGO="${tc_bin}/cargo"
         return 0
     fi
-    # 2. System cargo (if it works)
+
+    # 2. Fallback: rustup may have installed to $HOME/.rustup (e.g. when an
+    #    existing settings.toml redirected the install despite RUSTUP_HOME override)
+    local home_tc_bin="${HOME}/.rustup/${_tc_suffix}"
+    if [ -x "${home_tc_bin}/cargo" ]; then
+        export PATH="${home_tc_bin}:${PATH}"
+        RESOLVED_CARGO="${home_tc_bin}/cargo"
+        return 0
+    fi
+
+    # 3. System cargo (last resort — may be too old for crates that require 1.80+)
     if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
         RESOLVED_CARGO="$(command -v cargo)"
         return 0
@@ -355,9 +367,17 @@ fi
 # ── CMake configure ──────────────────────────────────────────────────────
 mkdir -p "${BUILD_DIR}"
 
-# Clear any cached cargo path from a previous broken configure
+# Clear any cached cargo path from a previous broken configure.
+# Remove both the comment line and the value line to avoid orphaning the
+# "//Path to a program." comment, which cmake's cache parser rejects.
 if [ -f "${BUILD_DIR}/CMakeCache.txt" ]; then
-    sed -i '/CARGO_EXECUTABLE/d' "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null || true
+    python3 -c "
+import re, sys
+f = sys.argv[1]
+txt = open(f).read()
+txt = re.sub(r'//[^\n]*\nCARGO_EXECUTABLE:[^\n]*\n?', '', txt)
+open(f, 'w').write(txt)
+" "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null || rm -f "${BUILD_DIR}/CMakeCache.txt"
 fi
 
 CMAKE_ARGS=(
