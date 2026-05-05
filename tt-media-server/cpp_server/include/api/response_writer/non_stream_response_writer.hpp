@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include "api/response_writer/response_writer.hpp"
@@ -48,8 +49,8 @@ class NonStreamResponseWriter : public ResponseWriter {
 
   HttpCallback httpCallback;
 
-  std::string accumulatedAnswer;
-  std::string accumulatedReasoning;
+  std::ostringstream accumulatedAnswer;
+  std::ostringstream accumulatedReasoning;
   std::string finishReason = "stop";
 };
 

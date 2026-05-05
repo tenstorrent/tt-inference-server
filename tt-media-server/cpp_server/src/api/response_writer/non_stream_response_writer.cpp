@@ -30,9 +30,9 @@ void NonStreamResponseWriter::handleTokenChunk(
 
   const auto& choice = chunk.choices[0];
   if (choice.reasoning.has_value()) {
-    accumulatedReasoning.append(choice.reasoning.value());
+    accumulatedReasoning << choice.reasoning.value();
   }
-  accumulatedAnswer.append(choice.text);
+  accumulatedAnswer << choice.text;
 
   noteToken();
 
@@ -51,11 +51,11 @@ void NonStreamResponseWriter::finalize() {
 
   domain::LLMChoice choice;
   choice.index = 0;
-  choice.text = std::move(accumulatedAnswer);
+  choice.text = accumulatedAnswer.str();
   choice.reasoning =
-      accumulatedReasoning.empty()
+      accumulatedReasoning.tellp() == 0
           ? std::nullopt
-          : std::optional<std::string>(std::move(accumulatedReasoning));
+          : std::optional<std::string>(accumulatedReasoning.str());
   choice.finish_reason = finishReason;
   llmResponse.choices.push_back(std::move(choice));
 
