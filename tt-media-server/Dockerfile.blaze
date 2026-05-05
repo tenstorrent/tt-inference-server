@@ -123,11 +123,12 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && rustup default stable
 
 # add tt-blaze (clone using GitHub token from secret)
+# Change BRANCH HERE
 RUN --mount=type=secret,id=github_token \
     rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/ds_pm_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch asaigal/pm_debug https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
     && cd ${APP_DIR}/server/cpp_server/tt-blaze \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
     && ./install.sh  \

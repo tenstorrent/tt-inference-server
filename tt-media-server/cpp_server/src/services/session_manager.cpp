@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <thread>
 
 #include "config/settings.hpp"
@@ -105,12 +106,11 @@ void SessionManager::finalizeSessionClose(const std::string& sessionId,
 }
 
 CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
-  TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
-               sessionId);
+  std::cout << "[SM] CLOSE_REQUESTED session=" << sessionId << std::endl;
 
   auto ms = sessions.take(sessionId);
   if (!ms.has_value()) {
-    TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
+    std::cout << "[SM] CLOSE_NOT_FOUND session=" << sessionId << std::endl;
     return CloseSessionResult::NOT_FOUND;
   }
 
@@ -119,10 +119,12 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
 
   if (ms->cancelFn) {
     ms->cancelFn();
-    TT_LOG_INFO("[SessionManager] Cancelled in-flight request for session: {}",
-                sessionId);
+    std::cout << "[SM] CLOSE_CANCEL_INFLIGHT session=" << sessionId
+              << " slot=" << ms->session.getSlotId() << std::endl;
   }
 
+  std::cout << "[SM] CLOSE session=" << sessionId
+            << " slot=" << ms->session.getSlotId() << std::endl;
   finalizeSessionClose(sessionId, ms->session);
   return CloseSessionResult::SUCCESS;
 }
@@ -174,21 +176,17 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
       });
 
   if (!found) {
-    TT_LOG_WARN("[SessionManager] acquireSessionSlot: sessionId={} not found",
-                sessionId);
+    std::cout << "[SM] ACQUIRE_NOT_FOUND session=" << sessionId << std::endl;
     return domain::INVALID_SLOT_ID;
   }
 
   if (wasInFlight) {
-    TT_LOG_WARN(
-        "[SessionManager] acquireInFlight: sessionId={} already has a "
-        "request in flight",
-        sessionId);
+    std::cout << "[SM] ACQUIRE_BUSY session=" << sessionId << std::endl;
     throw SessionInFlightException();
   }
 
-  TT_LOG_DEBUG("[SessionManager] acquireInFlight sessionId={} -> slotId={}",
-               sessionId, result);
+  std::cout << "[SM] ACQUIRE session=" << sessionId << " slot=" << result
+            << std::endl;
   return result;
 }
 
@@ -202,8 +200,10 @@ std::optional<domain::Session> SessionManager::getSession(
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::releaseInFlight(const std::string& sessionId) {
-  bool found = sessions.modify(sessionId, [](ManagedSession& ms) {
+  uint32_t releasedSlot = domain::INVALID_SLOT_ID;
+  bool found = sessions.modify(sessionId, [&releasedSlot](ManagedSession& ms) {
     ms.cancelFn = nullptr;
+    releasedSlot = ms.session.getSlotId();
     if (!ms.session.clearInFlight()) {
       TT_LOG_WARN("[Session] clearInFlight: unexpected state {}",
                   static_cast<int>(ms.session.getState()));
@@ -211,14 +211,13 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
   });
 
   if (!found) {
-    TT_LOG_DEBUG(
-        "[SessionManager] releaseInFlight: session {} already removed "
-        "(closed concurrently), ignoring",
-        sessionId);
+    std::cout << "[SM] RELEASE_NOT_FOUND session=" << sessionId
+              << " (closed concurrently)" << std::endl;
     return;
   }
 
-  TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
+  std::cout << "[SM] RELEASE session=" << sessionId << " slot=" << releasedSlot
+            << std::endl;
 }
 
 void SessionManager::evictOldSessions() {
@@ -270,15 +269,12 @@ void SessionManager::evictOldSessions() {
       return ms.session.isIdle();
     });
     if (!ms.has_value()) {
-      TT_LOG_DEBUG(
-          "[SessionManager] evictOldSessions: sessionId={} no longer idle, "
-          "skipping",
-          sessionId);
+      std::cout << "[SM] EVICT_SKIP session=" << sessionId
+                << " (no longer idle)" << std::endl;
       continue;
     }
-    TT_LOG_DEBUG(
-        "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
-        sessionId, ms->session.getSlotId());
+    std::cout << "[SM] EVICT session=" << sessionId
+              << " slot=" << ms->session.getSlotId() << std::endl;
     removeFromPrefixIndex(sessionId, ms->session.getHash());
     finalizeSessionClose(sessionId, ms->session);
     ++evicted;
@@ -299,15 +295,12 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   }
 
   auto task = makeDeallocTask(slotId);
-  TT_LOG_DEBUG(
-      "[SessionManager] sendDeallocRequest: sessionId={}, slotId={}, "
-      "taskId={}",
-      sessionId, slotId, task.taskId);
+  std::cout << "[SM] DEALLOC_REQ session=" << sessionId << " slot=" << slotId
+            << " task=" << task.taskId << std::endl;
 
   if (!memoryRequestQueue->tryPush(task)) {
-    TT_LOG_WARN(
-        "[SessionManager] Dealloc queue full, deferring session {} slot {}",
-        sessionId, slotId);
+    std::cout << "[SM] DEALLOC_DEFERRED session=" << sessionId
+              << " slot=" << slotId << std::endl;
     deferredDeallocQueue.push({sessionId, slotId});
   }
 }
@@ -331,8 +324,8 @@ void SessionManager::createSession(
     if (initialHash != 0) {
       addToPrefixIndex(session.getSessionId(), initialHash);
     }
-    TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
-                slotId.value());
+    std::cout << "[SM] CREATE session=" << session.getSessionId()
+              << " slot=" << slotId.value() << " (pre-assigned)" << std::endl;
     updateSessionCountMetric();
     callerEventLoop->queueInLoop([onCompletion = std::move(onCompletion),
                                   session]() { onCompletion(session); });
@@ -483,11 +476,10 @@ void SessionManager::handleMemoryResult(
       addToPrefixIndex(pendingAllocation.session.getSessionId(),
                        pendingAllocation.session.getHash());
     }
-    TT_LOG_DEBUG(
-        "[SessionManager] handleMemoryResult: SUCCESS sessionId={}, hash={}, "
-        "assigned slotId={}",
-        pendingAllocation.session.getSessionId(),
-        pendingAllocation.session.getHash(), result.slotIds.front());
+    std::cout << "[SM] CREATE session="
+              << pendingAllocation.session.getSessionId()
+              << " slot=" << result.slotIds.front() << " (allocated)"
+              << std::endl;
     updateSessionCountMetric();
     pendingAllocation.eventLoop->queueInLoop(
         [onCompletion = std::move(pendingAllocation.onCompletion),

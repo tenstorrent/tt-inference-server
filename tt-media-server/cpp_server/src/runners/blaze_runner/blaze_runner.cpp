@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
@@ -199,18 +200,28 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
   metrics.updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
+
   auto it = slotContexts.find(output.slot_id);
   if (it == slotContexts.end()) {
-    TT_LOG_ERROR(
-        "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
-        "token_id={}, is_complete={}",
-        output.slot_id, output.token_id, output.is_complete);
+    std::cout << "[BLAZE] UNKNOWN_OUTPUT slot=" << output.slot_id
+              << " token=" << output.token_id
+              << " is_complete=" << output.is_complete
+              << " tokens_generated=" << output.tokens_generated
+              << " gen=" << output.generation << std::endl;
     return;
   }
   auto& context = it->second;
   bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
+
+  if (hitStop && !output.is_complete) {
+    std::cout << "[BLAZE] STOP_TOKEN slot=" << output.slot_id
+              << " task=" << taskId << " token=" << output.token_id
+              << " tokens_generated=" << output.tokens_generated
+              << " (PM still active, slot will be erased)" << std::endl;
+  }
+
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   metrics.onOutputToken(output.slot_id);
   if (finished) {
@@ -220,6 +231,14 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
                            context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
+    const char* reason = output.is_complete ? "is_complete" : "hit_stop_token";
+    std::cout << "[BLAZE] TURN_END slot=" << output.slot_id
+              << " task=" << taskId << " reason=" << reason
+              << " tokens_generated=" << output.tokens_generated
+              << " ctx_exhausted=" << output.ctx_exhausted
+              << " gen=" << output.generation
+              << " accepts=" << specAccepts << "/" << specTotal
+              << " rate=" << acceptRate << "%" << std::endl;
     TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
                 specAccepts, specTotal, acceptRate);
     metrics.onTurnComplete(output.slot_id, specAccepts, specRejects);
@@ -253,14 +272,16 @@ void BlazeRunner::checkOutputHang() {
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
   auto it = slotContexts.find(slotId);
   if (it != slotContexts.end()) {
-    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, had taskId={}", slotId,
-                 it->second.taskId);
+    auto taskId = it->second.taskId;
+    std::cout << "[BLAZE] EVICT slot=" << slotId << " task=" << taskId
+              << std::endl;
     slotContexts.erase(it);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
     return;
   }
-  TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
+  std::cout << "[BLAZE] EVICT slot=" << slotId << " (no slotContext)"
+            << std::endl;
 }
 
 void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
@@ -277,20 +298,29 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
         request->taskId);
   }
 
-  TT_LOG_DEBUG(
-      "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-      "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
-      request->taskId, slotId, isNew, request->isContinuation(),
-      request->getNumPromptTokens(), request->getTokenIds().size(),
-      slotContexts.size());
+  if (auto existing = slotContexts.find(slotId);
+      existing != slotContexts.end()) {
+    std::cout << "[BLAZE] OVERWRITE slot=" << slotId
+              << " prev_task=" << existing->second.taskId
+              << " new_task=" << request->taskId << std::endl;
+  }
+
+  const char* kind = isNew ? "SUBMIT"
+                           : (request->isContinuation() ? "CONTINUE"
+                                                        : "DISAGG_CONTINUE");
+  std::cout << "[BLAZE] " << kind << " slot=" << slotId
+            << " task=" << request->taskId
+            << " prompt_tokens=" << request->getNumPromptTokens()
+            << " total_tokens=" << request->getTokenIds().size()
+            << " max_tokens=" << request->getSamplingParams().max_tokens.value_or(-1)
+            << " ignore_eos=" << request->getSamplingParams().ignore_eos
+            << " running=" << slotContexts.size() << std::endl;
   tt_blaze::pipeline_manager::ISRequest req =
       isNew ? utils::makeSubmitRequest(slotId, *request)
             : utils::makeContinueRequest(slotId, *request);
   if (!pipelineManager->push_request(req)) {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
-        "slotId={}",
-        request->taskId, slotId);
+    std::cout << "[BLAZE] PUSH_RETRY slot=" << slotId
+              << " task=" << request->taskId << std::endl;
     requestToRetry = std::move(request);
     return;
   }

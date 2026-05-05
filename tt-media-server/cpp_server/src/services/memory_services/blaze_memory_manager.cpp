@@ -1,5 +1,7 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
 
+#include <iostream>
+
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 
@@ -17,6 +19,9 @@ void BlazeMemoryManager::handleRequest(
     case domain::MemoryManagementAction::ALLOCATE: {
       auto requestId = nextRequestID++;
       allocating[requestId] = request.taskId;
+      std::cout << "[MM] ALLOCATE_REQ task=" << request.taskId
+                << " request_id=" << requestId
+                << " pending=" << allocating.size() << std::endl;
       TT_LOG_DEBUG(
           "[BlazeMemoryManager] ALLOCATE: taskId={}, assigned "
           "requestId={}, pending allocations={}",
@@ -26,6 +31,8 @@ void BlazeMemoryManager::handleRequest(
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
       for (auto slotId : request.slotIds) {
+        std::cout << "[MM] CANCEL_AND_EVICT task=" << request.taskId
+                  << " slot=" << slotId << std::endl;
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] DEALLOCATE: taskId={}, cancelling "
             "slotId={}, then evicting",
@@ -47,6 +54,8 @@ void BlazeMemoryManager::handleRequest(
 void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
   auto it = allocating.find(requestId);
   if (it == allocating.end()) {
+    std::cout << "[MM] UNKNOWN_RESPONSE request_id=" << requestId
+              << " slot=" << slotId << std::endl;
     TT_LOG_WARN(
         "[BlazeMemoryManager] handleResponse: unknown requestId={}, "
         "slotId={}",
@@ -62,6 +71,8 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
   domain::ManageMemoryResult result;
   result.taskId = taskId;
   if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
+    std::cout << "[MM] ALLOCATE_FAIL task=" << taskId << " (INVALID_SLOT)"
+              << std::endl;
     TT_LOG_DEBUG(
         "[BlazeMemoryManager] handleResponse: FAILURE (INVALID_SLOT) "
         "for taskId={}",
@@ -71,6 +82,8 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
     resultQueue->push(result);
     return;
   }
+  std::cout << "[MM] ALLOCATE_OK task=" << taskId << " slot=" << slotId
+            << " request_id=" << requestId << std::endl;
   TT_LOG_DEBUG(
       "[BlazeMemoryManager] handleResponse: SUCCESS taskId={}, "
       "slotId={}",
