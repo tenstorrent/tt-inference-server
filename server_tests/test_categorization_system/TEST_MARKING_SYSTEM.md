@@ -303,9 +303,11 @@ Per-test overrides inside a suite's `targets:` block should use:
 - `num_of_devices` only for liveness/stability tests that genuinely probe
   the physical chip count
 
-`num_of_devices` continues to be accepted inside load-test `targets:` as a
-deprecated alias for `num_concurrent_requests`; a warning is logged the
-first time it's read.
+For back-compat, `num_of_devices` is still accepted inside a load-test
+`targets:` block, but it is **deprecated** there — the canonical key is
+`num_concurrent_requests`. At expansion time, any per-test-case
+`num_of_devices` override is mirrored into `num_concurrent_requests` and a
+deprecation warning is logged. Please migrate to `num_concurrent_requests`.
 
 ### Test Suite Structure
 

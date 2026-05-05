@@ -169,7 +169,7 @@ class TestFilter:
             expanded["test_config"].update(test_case["test_config"])
 
         # Populate both keys from the suite/hardware default so that:
-        #   - DeviceLivenessTest / DeviceStabilityTest read num_of_devices (chip count).
+        #   - DeviceStabilityTest reads num_of_devices (chip count).
         #   - *LoadTest read num_concurrent_requests (client-side fan-out).
         # Per-test-case targets below may override either independently.
         num_devices = self._get_num_of_devices(suite)
@@ -177,8 +177,22 @@ class TestFilter:
             expanded["targets"][NUM_OF_DEVICES] = num_devices
             expanded["targets"][NUM_CONCURRENT_REQUESTS] = num_devices
 
-        if TARGETS in test_case:
-            expanded["targets"].update(test_case["targets"])
+        case_targets = test_case.get(TARGETS) or {}
+        case_overrides_devices = NUM_OF_DEVICES in case_targets
+        case_overrides_concurrent = NUM_CONCURRENT_REQUESTS in case_targets
+        expanded["targets"].update(case_targets)
+
+        if case_overrides_devices and not case_overrides_concurrent:
+            expanded["targets"][NUM_CONCURRENT_REQUESTS] = case_targets[NUM_OF_DEVICES]
+            logger.warning(
+                "Suite '%s' test case '%s' uses targets.%s; this is a "
+                "deprecated alias for targets.%s in load tests. Please "
+                "update the suite config.",
+                suite.get("id", "unknown"),
+                template_name,
+                NUM_OF_DEVICES,
+                NUM_CONCURRENT_REQUESTS,
+            )
 
         # Build markers: template + category + model_marker + hardware
         markers = set(template.get("markers", []))

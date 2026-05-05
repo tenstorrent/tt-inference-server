@@ -1059,12 +1059,14 @@ class TestNumConcurrentRequestsExpansion:
     `num_of_devices` key reappearing inside load-test `targets`.
     """
 
-    def _expand(self, suite, test_case):
+    def _make_filter(self):
         from server_tests.test_categorization_system.test_filter import TestFilter
 
-        # Build a minimal TestFilter with just the suite under test so we can
-        # drive _expand_test_case directly without touching disk.
-        tf = TestFilter(suites=[suite])
+        tf = TestFilter.__new__(TestFilter)
+        tf.config = {}
+        tf.model_categories = {}
+        tf.hardware_defaults = {}
+        tf._model_to_category = {}
         tf.test_templates = {
             "LoadTest": {
                 "module": "x",
@@ -1072,7 +1074,10 @@ class TestNumConcurrentRequestsExpansion:
                 "test_config": {},
             }
         }
-        return tf._expand_test_case(test_case, suite)
+        return tf
+
+    def _expand(self, suite, test_case):
+        return self._make_filter()._expand_test_case(test_case, suite)
 
     def test_expand_populates_both_keys_from_suite_num_of_devices(self):
         suite = {
@@ -1104,10 +1109,14 @@ class TestNumConcurrentRequestsExpansion:
         expanded = self._expand(suite, test_case)
 
         assert expanded["targets"]["num_concurrent_requests"] == 1
-        # num_of_devices (chip count for liveness) stays at the suite default.
+        # num_of_devices (chip count for stability) stays at the suite default.
         assert expanded["targets"]["num_of_devices"] == 32
 
-    def test_test_case_num_of_devices_override_still_works_for_backcompat(self):
+    def test_test_case_num_of_devices_override_mirrors_into_concurrent_requests(
+        self, caplog
+    ):
+        import logging
+
         suite = {
             "id": "s1",
             "device": "galaxy",
@@ -1120,13 +1129,53 @@ class TestNumConcurrentRequestsExpansion:
             "enabled": True,
             "targets": {"num_of_devices": 1},
         }
-        expanded = self._expand(suite, test_case)
 
-        # Override flows through to num_of_devices; num_concurrent_requests
-        # retains the suite default. BaseTest._get_num_concurrent_requests will
-        # still read num_concurrent_requests first at runtime.
+        with caplog.at_level(
+            logging.WARNING,
+            logger="server_tests.test_categorization_system.test_filter",
+        ):
+            expanded = self._expand(suite, test_case)
+
         assert expanded["targets"]["num_of_devices"] == 1
-        assert expanded["targets"]["num_concurrent_requests"] == 32
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+
+        deprecation_messages = [
+            r
+            for r in caplog.records
+            if "deprecated alias" in r.getMessage()
+            and "num_of_devices" in r.getMessage()
+        ]
+        assert len(deprecation_messages) == 1
+
+    def test_test_case_explicit_both_keys_keeps_both_overrides(self, caplog):
+        """When a test case sets both keys explicitly, each is honored
+        independently and no deprecation warning is emitted (the user is
+        already on the new key).
+        """
+        import logging
+
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_of_devices": 8, "num_concurrent_requests": 1},
+        }
+
+        with caplog.at_level(
+            logging.WARNING,
+            logger="server_tests.test_categorization_system.test_filter",
+        ):
+            expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_of_devices"] == 8
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+        assert not any("deprecated alias" in r.getMessage() for r in caplog.records)
 
 
 class TestBaseTestConcurrencyResolution:
