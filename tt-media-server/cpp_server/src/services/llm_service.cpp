@@ -29,12 +29,17 @@ using tt::services::TokenParseResult;
 
 std::shared_ptr<LLMService> LLMService::createDefault(
     const tt::utils::tokenizers::Tokenizer* tokenizer,
-    std::shared_ptr<tt::ipc::ITaskQueue> taskQueue) {
+    std::unique_ptr<tt::ipc::QueueManager> queueManager) {
+  if (!queueManager) {
+    throw std::invalid_argument(
+        "LLMService::createDefault: queueManager must not be null");
+  }
+  auto taskQueue = queueManager->taskQueue;
   return std::make_shared<LLMService>(
       tokenizer, std::move(taskQueue),
       std::make_unique<tt::worker::WorkerManager>(tt::config::numWorkers()),
       std::make_unique<ReasoningParser>(),
-      createToolCallParser(tt::config::modelType()),
+      createToolCallParser(tt::config::modelType()), std::move(queueManager),
       tt::config::maxQueueSize());
 }
 
@@ -43,9 +48,11 @@ LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
                        std::unique_ptr<ReasoningParser> reasoningParser,
                        std::unique_ptr<IToolCallParser> toolCallParser,
+                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
                        size_t maxQueueSize) {
   init(tokenizer, std::move(taskQueue), std::move(workerManager),
-       std::move(reasoningParser), std::move(toolCallParser), maxQueueSize);
+       std::move(reasoningParser), std::move(toolCallParser),
+       std::move(queueManager), maxQueueSize);
 }
 
 void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
@@ -53,6 +60,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
                       std::unique_ptr<tt::worker::WorkerManager> workerManager,
                       std::unique_ptr<ReasoningParser> reasoningParser,
                       std::unique_ptr<IToolCallParser> toolCallParser,
+                      std::unique_ptr<tt::ipc::QueueManager> queueManager,
                       size_t maxQueueSize) {
   if (tokenizer == nullptr) {
     throw std::invalid_argument("LLMService: tokenizer must not be null");
@@ -69,6 +77,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
   this->workerManager = std::move(workerManager);
   this->reasoningParser = std::move(reasoningParser);
   this->toolCallParser = std::move(toolCallParser);
+  this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
   const auto stopIds = this->tokenizer->stopTokenIds();
@@ -196,7 +205,11 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  workerManager->stop();
+  if (queueManager) {
+    for (auto& q : queueManager->resultQueues) {
+      q->shutdown();
+    }
+  }
 
   for (auto& thread : consumerThreads) {
     if (thread.joinable()) {
@@ -205,7 +218,12 @@ void LLMService::stop() {
   }
   consumerThreads.clear();
 
+  workerManager->stop();
+
   TT_LOG_INFO("[LLMService] Stopped");
+  if (queueManager) {
+    queueManager->clear();
+  }
 }
 
 namespace {
@@ -610,7 +628,11 @@ void LLMService::abortRequest(uint32_t taskId) {
     reasoningParser->finalizeTask(taskId);
   }
 
-  workerManager->broadcastCancel(taskId);
+  if (queueManager) {
+    for (auto& cq : queueManager->cancelQueues) {
+      cq->push(taskId);
+    }
+  }
 
   TT_LOG_INFO("[LLMService] Aborted request {}", taskId);
 }

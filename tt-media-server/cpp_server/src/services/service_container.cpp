@@ -4,7 +4,6 @@
 #include "services/service_container.hpp"
 
 #include "config/settings.hpp"
-#include "ipc/queue_manager.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
 
@@ -15,9 +14,7 @@ void ServiceContainer::initialize(
     std::shared_ptr<EmbeddingService> embedding,
     std::shared_ptr<sockets::InterServerService> socket,
     std::shared_ptr<DisaggregationService> disaggregation,
-    std::shared_ptr<SessionManager> sessionMgr,
-    std::shared_ptr<tt::ipc::QueueManager> queueManager) {
-  queueManager_ = std::move(queueManager);
+    std::shared_ptr<SessionManager> sessionMgr) {
   llm_ = std::move(llm);
   embedding_ = std::move(embedding);
   socket_ = std::move(socket);

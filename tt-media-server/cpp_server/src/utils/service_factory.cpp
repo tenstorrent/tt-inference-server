@@ -28,16 +28,15 @@ void initializeServices() {
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
   std::shared_ptr<services::SessionManager> sessionManager;
-  std::shared_ptr<tt::ipc::QueueManager> queueManager;
 
   sessionManager = std::make_shared<services::SessionManager>();
 
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM: {
-      queueManager = std::make_shared<tt::ipc::QueueManager>(
+      auto queueManager = std::make_unique<tt::ipc::QueueManager>(
           static_cast<int>(tt::config::numWorkers()));
       llm = services::LLMService::createDefault(
-          &tt::utils::tokenizers::activeTokenizer(), queueManager->taskQueue);
+          &tt::utils::tokenizers::activeTokenizer(), std::move(queueManager));
       auto mode = tt::config::llmMode();
       if (mode != tt::config::LLMMode::REGULAR) {
         socket = std::make_shared<sockets::InterServerService>();
@@ -53,8 +52,7 @@ void initializeServices() {
   }
 
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
-               std::move(disaggregation), std::move(sessionManager),
-               std::move(queueManager));
+               std::move(disaggregation), std::move(sessionManager));
 
   if (c.llm()) {
     c.llm()->start();

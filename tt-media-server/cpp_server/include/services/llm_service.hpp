@@ -15,6 +15,7 @@
 #include "domain/llm_request.hpp"
 #include "domain/llm_response.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
+#include "ipc/queue_manager.hpp"
 #include "ipc/task_queue.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
@@ -38,11 +39,15 @@ class LLMService
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
              std::unique_ptr<ReasoningParser> reasoningParser,
              std::unique_ptr<IToolCallParser> toolCallParser,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
+  /** Builds an LLMService configured for production: takes ownership of the
+   *  provided QueueManager so its shared-memory queues live exactly as long
+   *  as the service that drains them. */
   static std::shared_ptr<LLMService> createDefault(
       const tt::utils::tokenizers::Tokenizer* tokenizer,
-      std::shared_ptr<tt::ipc::ITaskQueue> taskQueue);
+      std::unique_ptr<tt::ipc::QueueManager> queueManager);
 
   ~LLMService() override;
 
@@ -94,6 +99,7 @@ class LLMService
             std::unique_ptr<tt::worker::WorkerManager> workerManager,
             std::unique_ptr<ReasoningParser> reasoningParser,
             std::unique_ptr<IToolCallParser> toolCallParser,
+            std::unique_ptr<tt::ipc::QueueManager> queueManager,
             size_t maxQueueSize);
 
   std::vector<std::thread> consumerThreads;
@@ -108,6 +114,7 @@ class LLMService
 
   std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
+  std::unique_ptr<tt::ipc::QueueManager> queueManager;
   const tt::utils::tokenizers::Tokenizer* tokenizer;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
