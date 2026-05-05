@@ -183,7 +183,8 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
-    # truncate chat templating only for text only prompts
+    # only truncate prompts for text-only tasks; VLMs interleave vision tokens
+    # in the prompt and truncation can drop them, causing 400s at the preprocessor
     if params.task_type == "text":
         cmd.extend([
             "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
