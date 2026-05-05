@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
-ARG CONTAINER_APP_UID=1001
+ARG CONTAINER_APP_UID=1234
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV ENVIRONMENT=development
