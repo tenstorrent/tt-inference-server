@@ -136,13 +136,7 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
     request.prompt = tokenizer->encode(text);
   }
   const auto& tokens = std::get<std::vector<int>>(request.prompt);
-  if (tokens.size() > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
-    throw std::invalid_argument(
-        "Input too long: " + std::to_string(tokens.size()) +
-        " tokens exceeds maximum of " +
-        std::to_string(tt::config::LLMConfig::MAX_INPUT_TOKENS));
-  }
-  request.prompt_tokens_count = static_cast<int>(tokens.size());
+
 }
 
 void LLMService::startConsumers() {
