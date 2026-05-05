@@ -1,4 +1,60 @@
 {
+    "Ling-mini-2.0": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1613,
+                        "tput_user": 4.7
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1834,
+                        "tput_user": 4.6
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 8486,
+                        "tput_user": 4.5
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16438,
+                        "tput_user": 4.7
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-VL-32B-Instruct": {
         "t3k": [
             {

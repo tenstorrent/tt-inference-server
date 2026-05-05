@@ -1,9 +1,10 @@
 # Model Readiness Workflows User Guide
 
-The `run.py` CLI is the main entry point for running workflows against Tenstorrent inference servers. There are two independent ways to run the inference server:
+The `run.py` CLI is the main entry point for running workflows against Tenstorrent inference servers. There are three independent ways to run the inference server:
 
 1. **`run.py --docker-server`** -- automates Docker setup, weight downloads, and container launch.
-2. **Direct `docker run`** -- run the container independently with `--model` and `--tt-device`. See the [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run).
+2. **`run.py --local-server`** -- launches the vLLM server directly from local `tt-metal` and vLLM checkouts. See the [local server workflow guide](local_server_workflow.md).
+3. **Direct `docker run`** -- run the container independently with `--model` and `--tt-device`. See the [container interface documentation](../vllm-tt-metal/README.md#container-interface-direct-docker-run).
 
 Client-side workflows (`benchmarks`, `evals`, `reports`) can run against any compatible model server, whether started by `run.py` or externally. For LLMs we use vLLM and the [tt-media-server](../tt-media-server) otherwise.
 
@@ -12,10 +13,12 @@ flowchart TD
   start{How do you want to run?}
 
   start -->|"First time / automated"| runpyDocker["python3 run.py --model MODEL<br/>--workflow server --docker-server"]
+  start -->|"Local source development"| runpyLocal["python3 run.py --model MODEL<br/>--workflow server --local-server"]
   start -->|"Direct Docker"| directDocker["docker run IMAGE<br/>--model MODEL --tt-device DEVICE"]
   start -->|"Client workflows only<br/>(server already running)"| clientOnly["python3 run.py --model MODEL<br/>--workflow benchmarks"]
 
   runpyDocker -->|"Handles weights, secrets,<br/>Docker volume, container launch"| server["Inference Server Running"]
+  runpyLocal -->|"Uses local tt-metal + vLLM<br/>host process"| server
   directDocker -->|"Container self-resolves<br/>model spec, downloads weights"| server
   clientOnly -->|"HTTP requests to<br/>localhost:8000"| server
 ```
@@ -25,7 +28,7 @@ flowchart TD
 - `evals`: Send evaluation dataset prompts to the inference server, score output for accuracy.
 - `reports`: Generate summary reports from `benchmarks` and `evals` output data.
 - `release`: Run `evals`, `benchmarks`, `spec_tests`, `tests`, and `reports` in sequence for release certification.
-- `server`: Start the inference server only (requires `--docker-server`).
+- `server`: Start the inference server only (requires `--docker-server` or `--local-server`).
 - `spec_tests` (internal): Run server integration tests (device liveness, load tests) against the inference server.
 - `stress_tests` (internal): Run sustained load tests to measure server stability and throughput.
 - `tests` (internal): Run pytest-based vLLM API parameter tests against the inference server (model-dependent).
@@ -206,6 +209,8 @@ To run the vLLM server directly on the host, use `--local-server` and point `--t
 python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server \
   --local-server --tt-metal-home /opt/tt-metal
 ```
+
+For a complete setup walkthrough with local `tt-metal` and vLLM source trees, plus the internal execution flow from `run.py` to the vLLM OpenAI server, see [Running Models with `run.py --local-server`](local_server_workflow.md).
 
 If you omit all host storage flags, local server runs use `REPO_ROOT/persistent_volume/` for logs, TT caches, and downloaded weights. `--host-hf-cache` reuses an existing Hugging Face cache for weights, and `--host-weights-dir` points at a pre-downloaded weights directory. In both of those modes, TT caches and logs still use the host volume path.
 

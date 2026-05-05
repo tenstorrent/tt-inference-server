@@ -1159,6 +1159,157 @@ llm_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
     ),
+    # Ling-mini-2.0 (BailingMoeV2) via tt_symbiote.
+    #
+    # HF arch BailingMoeV2ForCausalLM is registered under the
+    # SYMBIOTE_MODEL_REGISTRY key "TTBailingMoeV2ForCausalLM" pointing at
+    # SymbioteBailingMoeV2ForCausalLM in
+    # tt-metal/models/experimental/tt_symbiote/vllm/generator_vllm_ling.py.
+    # The tokenizer ships its own chat template so no Jinja file is needed.
+    #
+    # max_context = 2048 is an empirical cap, NOT the model's claimed limit
+    # (HF config advertises 16384). Two independent constraints set the cap:
+    #
+    #   1. MoE expert-output OOM at large ISL. The ttnn.permute in
+    #      tt-metal/models/experimental/tt_symbiote/modules/moe.py:1297
+    #      materialises a peak buffer of roughly
+    #      `num_experts * seq_len * head_dim_per_expert` bytes (input plus
+    #      transposed copy). On T3K at ISL=4096 this requests a 4 GiB DRAM
+    #      buffer; aggregate free DRAM at startup is ~3 GiB and the largest
+    #      contiguous bank block is ~165 MiB, so the allocation fails.
+    #      ISL=2048 fits comfortably at ~2 GiB peak. Lifting the ceiling
+    #      above ~3 K tokens requires a kernel-layout fix (chunked permute
+    #      or alternate tile layout).
+    #
+    #   2. Long-real-text generation regression. Real-text prompts longer
+    #      than ~128 tokens currently degrade to token-repetition output
+    #      ("the the the...") on the TT serving stack. The behaviour is
+    #      reproducible via both /v1/chat/completions and the raw
+    #      /v1/completions endpoints; it is independent of model warmup and
+    #      independent of the cross-request prefill sync barrier
+    #      (TT_SYMBIOTE_LING_PREFILL_SYNC). The standalone pytest reference
+    #      path that would otherwise enable a CPU-vs-device logit diff
+    #      currently segfaults inside ttnn.from_torch at
+    #      bailing_moe_v2.py:153 on the first real-text forward, blocking
+    #      that comparison. Resolution is tracked as a model-side item.
+    #
+    # Capping max_context to 2048 confines the benchmark sweep to ISL bins
+    # where the harness acceptance gates (HTTP 200, non-zero tokens,
+    # completion of all rows) pass cleanly while these two issues are
+    # addressed.
+    ModelSpecTemplate(
+        weights=["inclusionAI/Ling-mini-2.0"],
+        impl=tt_symbiote_impl,
+        # Pinned to the heads of branch adam/tt_symbiote_ling on both
+        # repos at the time this spec was added; bump after future
+        # commits to track a known-good baseline.
+        tt_metal_commit="489d8b0",
+        vllm_commit="6f6d817",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                # max_concurrency=1 is enforced by the model code, NOT a
+                # tunable. paged_fill_on_device is invoked with the literal
+                # batch_idx=0 in both prefill attention paths (see
+                # tt-metal/models/experimental/tt_symbiote/modules/attention.py
+                # lines 1810 and 2623), so any second sequence in a batch
+                # would silently overwrite sequence 0's KV slot. The decode
+                # side IS batch-aware (_get_cur_pos_device_tensor at
+                # attention.py:2666 flattens [B,1] -> [B]) and the paged KV
+                # cache config respects batch_size, but the prefill fill is
+                # the bottleneck. Raising max_concurrency requires model-team
+                # work to either loop over batch_idx or vectorize the fill;
+                # bailing_moe_v2.py:165 also needs position_ids broadcast to
+                # [B, seq_len] before that change is meaningful.
+                max_concurrency=1,
+                # Capped at 2048: see model-level comment above for the
+                # OOM-at-ISL=4096 and long-ISL-gibberish constraints.
+                max_context=2048,
+                default_impl=True,
+                vllm_args={
+                    "max_model_len": "2048",
+                    "max_num_seqs": "1",
+                    "block_size": "64",
+                    "trust-remote-code": True,
+                },
+                override_tt_config={
+                    "enable_model_warmup": True,
+                    "trace_mode": "none",
+                    "trace_region_size": 200000000,
+                    # Match the validated standalone pytest configuration
+                    # (test_ling_mini_2_0.py pins FabricConfig.FABRIC_1D_RING).
+                    # The default for non-Galaxy multi-chip is FABRIC_1D
+                    # (linear), which deterministically deadlocks during
+                    # ISL=1024 warmup inside ttnn::experimental::rotary_embedding_llama.
+                    "fabric_config": "FABRIC_1D_RING",
+                },
+                env_vars={
+                    "TT_SYMBIOTE_DISPATCHER": "CPU",
+                    "MESH_DEVICE": "T3K",
+                    "DISABLE_METAL_OP_TIMEOUT": "1",
+                    # Cross-request TTNN command-queue deadlock mitigation.
+                    # The model wrapper brackets prefill with two
+                    # ttnn.synchronize_device calls (see
+                    # tt_symbiote/models/bailing_moe_v2.py); this env var
+                    # toggles those barriers and is set explicitly so the
+                    # runtime configuration is self-documenting. Default ON;
+                    # required to keep the FABRIC_1D_RING multi-chip
+                    # configuration deterministic across requests.
+                    "TT_SYMBIOTE_LING_PREFILL_SYNC": "1",
+                    # Adapter-level decode-stride sync caps the in-flight
+                    # command-queue depth WITHIN a request (vLLM async decode
+                    # otherwise queues all decode steps before the final
+                    # read).
+                    "TT_SYMBIOTE_SYNC_EVERY_N_DECODES": "32",
+                    # Watchdogs surface clear log lines if any single op
+                    # exceeds the configured wall budget. They cannot
+                    # preempt a stuck C++ TTNN op but make hangs visible.
+                    # 180s covers cold-boot JIT compilation (~80s observed);
+                    # steady-state prefill should be well under 10s.
+                    "TT_SYMBIOTE_PREFILL_WATCHDOG_SEC": "180",
+                    "TT_SYMBIOTE_DECODE_WATCHDOG_SEC": "30",
+                    # DIAG instrumentation stays on so any future regression
+                    # is correlated with progcache / gc_objs / rss_mb.
+                    "TT_SYMBIOTE_DIAG": "1",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                # Mirror the T3K cap; N300 is unvalidated for Ling but inherits
+                # the same MoE-permute OOM and long-ISL gibberish constraints.
+                max_context=2048,
+                # T3K is the validated default; N300 is opt-in.
+                default_impl=False,
+                vllm_args={
+                    "max_model_len": "2048",
+                    "max_num_seqs": "1",
+                    "block_size": "64",
+                    "trust-remote-code": True,
+                },
+                override_tt_config={
+                    "enable_model_warmup": True,
+                    "trace_mode": "none",
+                    "trace_region_size": 200000000,
+                    # Match the standalone pytest configuration; see T3K spec above.
+                    "fabric_config": "FABRIC_1D_RING",
+                },
+                env_vars={
+                    "TT_SYMBIOTE_DISPATCHER": "CPU",
+                    "MESH_DEVICE": "N300",
+                    "DISABLE_METAL_OP_TIMEOUT": "1",
+                    "TT_SYMBIOTE_LING_PREFILL_SYNC": "1",
+                    "TT_SYMBIOTE_SYNC_EVERY_N_DECODES": "32",
+                    "TT_SYMBIOTE_PREFILL_WATCHDOG_SEC": "180",
+                    "TT_SYMBIOTE_DECODE_WATCHDOG_SEC": "30",
+                    "TT_SYMBIOTE_DIAG": "1",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+    ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,

@@ -126,6 +126,58 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Ling-mini-2.0 (BailingMoeV2). published_score is left as None until
+    # the long-ISL generation behaviour documented on this model's spec
+    # entry in workflows/model_spec.py is resolved at the model layer;
+    # adding inclusionAI's published reference scores before that point
+    # would produce misleading acceptance signals because the few-shot
+    # contexts used by both tasks exceed the ISL ceiling at which output
+    # quality is currently reliable. limit_samples_map bounds CI runtime
+    # once these tasks become informative; SMOKE_TEST keeps the release
+    # workflow's dry run cheap.
+    EvalConfig(
+        hf_model_repo="inclusionAI/Ling-mini-2.0",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[

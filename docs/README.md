@@ -5,6 +5,7 @@ Directory of development docs for working on tt-inference-server.
 ## Getting Started
 
 - [Workflows User Guide](workflows_user_guide.md) - Main entry point for using the `run.py` CLI, including requirements, CLI options, serving LLMs, benchmarks, evals, and reports
+- [Local Server Workflow](local_server_workflow.md) - How to run `run.py --workflow server --local-server` with local `tt-metal` and vLLM checkouts, including setup and execution flow
 - [Workflow Runner](../workflows/README.md) - Detailed reference for the workflow runner CLI, execution modes, client-side scripts, and model configuration
 
 ## Development
