@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Adapter for the ai-dynamo/aiperf ``JsonExportData`` shape."""
+"""Parser for the ai-dynamo/aiperf ``JsonExportData`` shape."""
 
 from __future__ import annotations
 
 import datetime as dt
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
+
+from report_module.schema import Block
+
+from .base import LLMResultParser
 
 LATENCY_METRICS: Tuple[Tuple[str, str], ...] = (
     ("request_latency", "request_latency"),
@@ -55,23 +59,23 @@ ORDERED_STATS: Tuple[str, ...] = (
 )
 
 
-def to_report_record(
-    raw: Mapping[str, Any],
-    *,
-    device: str = "",
-) -> Dict[str, Any]:
-    return {
-        "kind": "aiperf",
-        "model": _model_name(raw),
-        "device": device,
-        "timestamp": _timestamp(raw),
-        "Run Configuration": _run_configuration(raw),
-        "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
-        "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
-        "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
-        "Counts & Totals": _metric_table(raw, COUNT_METRICS),
-        "Telemetry": _telemetry(raw),
-    }
+class AIPerfParser(LLMResultParser):
+    kind = "aiperf"
+
+    def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
+        record: Dict[str, Any] = {
+            "kind": self.kind,
+            "model": _model_name(raw),
+            "device": device,
+            "timestamp": _timestamp(raw),
+            "Run Configuration": _run_configuration(raw),
+            "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
+            "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
+            "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
+            "Counts & Totals": _metric_table(raw, COUNT_METRICS),
+            "Telemetry": _telemetry(raw),
+        }
+        return self._wrap_record(record)
 
 
 def _metric_table(

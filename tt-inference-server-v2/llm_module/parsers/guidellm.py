@@ -1,21 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Convert a raw guidellm benchmark dump into one ``kind="guidellm"`` record.
+"""Parser for the GuideLLM benchmarks dump.
 
 Performs every aggregation, percentile lookup, and derived calculation
 the report tables need so the report module just renders. No math
 inside the renderer / generator / schema.
 
-The output is a single record ready to drop into the unified
-``[{kind, model, device, timestamp, ...}]`` schema alongside other kinds
-like ``evals``, ``benchmarks`` or ``server_tests``. Section keys are
-display-friendly strings (``"Run Configuration"``, ``"Request Totals"``,
-``"TTFT vs. Context (Linear Regression)"``, ...); each value is a flat
-dict, list of dicts, or dict-of-dicts that ``render_generic_table`` in
-:mod:`report_module.renderers` emits as its own H4 sub-table beneath
-the kind heading.
+Section keys are display-friendly strings (``"Run Configuration"``,
+``"Request Totals"``, ``"TTFT vs. Context (Linear Regression)"``, ...);
+each value is a flat dict, list of dicts, or dict-of-dicts that
+``render_generic_table`` in :mod:`report_module.renderers` emits as its
+own H4 sub-table beneath the kind heading.
 """
 
 from __future__ import annotations
@@ -24,6 +21,10 @@ import datetime as dt
 import math
 import statistics
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
+
+from report_module.schema import Block
+
+from .base import LLMResultParser
 
 SUMMARY_METRICS: Tuple[str, ...] = (
     "time_to_first_token_ms",
@@ -56,47 +57,45 @@ SLO = {
 }
 
 
-def to_report_record(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    """Build a single ``kind="guidellm"`` record from a raw guidellm dump.
+class GuideLLMParser(LLMResultParser):
+    kind = "guidellm"
 
-    The returned record carries the universal record fields (``kind``,
-    ``model``, ``device``, ``timestamp``) plus one nested entry per
-    table the guidellm renderer emits.
-    """
-    md = raw.get("metadata", {})
-    benchmark = raw["benchmarks"][0]
-    config = benchmark["config"]
-    metrics = benchmark["metrics"]
-    scheduler = benchmark["scheduler_state"]
-    successful = benchmark["requests"]["successful"]
+    def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
+        md = raw.get("metadata", {})
+        benchmark = raw["benchmarks"][0]
+        config = benchmark["config"]
+        metrics = benchmark["metrics"]
+        scheduler = benchmark["scheduler_state"]
+        successful = benchmark["requests"]["successful"]
 
-    backend = config.get("backend", {}) or {}
+        backend = config.get("backend", {}) or {}
 
-    return {
-        "kind": "guidellm",
-        "model": backend.get("model", ""),
-        "device": "",
-        "timestamp": _epoch_to_timestamp(benchmark.get("end_time", 0)),
-        "Run Configuration": _run_header(md, benchmark, config),
-        "Request Totals": _request_totals(metrics, scheduler),
-        "Stopping Conditions": _stop_conditions(scheduler),
-        "Summary Statistics": _summary_stats(metrics),
-        "Latency Percentiles (ms)": _latency_percentiles(metrics),
-        "Tail Ratios": _tail_ratios(metrics),
-        "Token Accounting Sanity Check": _token_sanity(metrics, successful),
-        "Per-Turn Breakdown": _per_turn(successful),
-        "Cold vs. Warm TTFT": _cold_vs_warm(successful),
-        "TTFT vs. Context (Linear Regression)": _ttft_vs_context(successful),
-        "ITL / TPOT Stability": _stability(successful),
-        "Per-Request Latency Breakdown (ms)": _latency_breakdown(successful),
-        "Server vs. Harness Time": _server_vs_harness(successful, scheduler),
-        "Key Takeaways": _key_takeaways(metrics),
-        "Top 3 Latency Outliers": _top_outliers(successful),
-        "Errors / Incomplete": _errors_summary(benchmark),
-        "Time Accounting": _time_accounting(benchmark, scheduler, metrics),
-        "Workload Shape Verification": _shape_verification(config, successful),
-        "SLO Checks": _slo_checks(metrics),
-    }
+        record: Dict[str, Any] = {
+            "kind": self.kind,
+            "model": backend.get("model", ""),
+            "device": device,
+            "timestamp": _epoch_to_timestamp(benchmark.get("end_time", 0)),
+            "Run Configuration": _run_header(md, benchmark, config),
+            "Request Totals": _request_totals(metrics, scheduler),
+            "Stopping Conditions": _stop_conditions(scheduler),
+            "Summary Statistics": _summary_stats(metrics),
+            "Latency Percentiles (ms)": _latency_percentiles(metrics),
+            "Tail Ratios": _tail_ratios(metrics),
+            "Token Accounting Sanity Check": _token_sanity(metrics, successful),
+            "Per-Turn Breakdown": _per_turn(successful),
+            "Cold vs. Warm TTFT": _cold_vs_warm(successful),
+            "TTFT vs. Context (Linear Regression)": _ttft_vs_context(successful),
+            "ITL / TPOT Stability": _stability(successful),
+            "Per-Request Latency Breakdown (ms)": _latency_breakdown(successful),
+            "Server vs. Harness Time": _server_vs_harness(successful, scheduler),
+            "Key Takeaways": _key_takeaways(metrics),
+            "Top 3 Latency Outliers": _top_outliers(successful),
+            "Errors / Incomplete": _errors_summary(benchmark),
+            "Time Accounting": _time_accounting(benchmark, scheduler, metrics),
+            "Workload Shape Verification": _shape_verification(config, successful),
+            "SLO Checks": _slo_checks(metrics),
+        }
+        return self._wrap_record(record)
 
 
 def _epoch_to_timestamp(epoch: float) -> str:

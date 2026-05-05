@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Adapter for the NVIDIA genai-perf ``*_genai_perf.json`` shape."""
+"""Parser for the NVIDIA genai-perf ``*_genai_perf.json`` shape."""
 
 from __future__ import annotations
 
 import datetime as dt
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
+
+from report_module.schema import Block
+
+from .base import LLMResultParser
 
 LATENCY_METRICS: Tuple[Tuple[str, str], ...] = (
     ("request_latency", "request_latency"),
@@ -41,21 +45,23 @@ ORDERED_STATS: Tuple[str, ...] = (
 )
 
 
-def to_report_record(
-    raw: Mapping[str, Any],
-    *,
-    device: str = "",
-) -> Dict[str, Any]:
-    return {
-        "kind": "genai_perf",
-        "model": _model_name(raw),
-        "device": device,
-        "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "Run Configuration": _run_configuration(raw),
-        "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
-        "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
-        "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
-    }
+class GenAIPerfParser(LLMResultParser):
+    kind = "genai_perf"
+
+    def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
+        record: Dict[str, Any] = {
+            "kind": self.kind,
+            "model": _model_name(raw),
+            "device": device,
+            "timestamp": dt.datetime.now(dt.timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "Run Configuration": _run_configuration(raw),
+            "Latency Statistics": _metric_table(raw, LATENCY_METRICS),
+            "Throughput": _metric_table(raw, THROUGHPUT_METRICS),
+            "Sequence Lengths": _metric_table(raw, SEQUENCE_LENGTH_METRICS),
+        }
+        return self._wrap_record(record)
 
 
 def _metric_table(
