@@ -105,14 +105,25 @@ bool BlazeRunner::warmup() {
   constexpr uint32_t WARMUP_ALLOCATE_REQUEST_ID = 0;
   constexpr uint32_t WARMUP_CANCEL_REQUEST_ID = 1;
 
+  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto pollInterval = std::chrono::milliseconds(10);
+
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
   pipelineManager->push_request(
       utils::makeAllocateRequest(WARMUP_ALLOCATE_REQUEST_ID));
 
   TT_LOG_INFO("BlazeRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
+  const auto allocateDeadline = std::chrono::steady_clock::now() + timeout;
   while (!pipelineManager->try_pop_response(response)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (std::chrono::steady_clock::now() >= allocateDeadline) {
+      TT_LOG_ERROR(
+          "[BlazeRunner] Warmup timed out waiting for ALLOCATE response after "
+          "{} ms",
+          timeout.count());
+      return false;
+    }
+    std::this_thread::sleep_for(pollInterval);
   }
 
   auto slotId = response.slot_id;
@@ -125,8 +136,6 @@ bool BlazeRunner::warmup() {
   TT_LOG_INFO("BlazeRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
 
-  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
-  const auto pollInterval = std::chrono::milliseconds(10);
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
@@ -148,10 +157,19 @@ bool BlazeRunner::warmup() {
   pipelineManager->push_request(
       utils::makeCancelRequest(WARMUP_CANCEL_REQUEST_ID, slotId));
   // Drain the CANCEL ack so the first run() step doesn't see an unknown
-  // request_id. The PM finalizes the cancel asynchronously, so we poll.
+  // request_id. The PM finalizes the cancel asynchronously, so we poll with
+  // a deadline to avoid hanging warmup forever on a wedged PM.
   pm::PMResponse cancelResponse{};
+  const auto cancelDeadline = std::chrono::steady_clock::now() + timeout;
   while (!pipelineManager->try_pop_response(cancelResponse)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (std::chrono::steady_clock::now() >= cancelDeadline) {
+      TT_LOG_ERROR(
+          "[BlazeRunner] Warmup timed out waiting for CANCEL ack after {} ms "
+          "(slotId={})",
+          timeout.count(), slotId);
+      return false;
+    }
+    std::this_thread::sleep_for(pollInterval);
   }
   TT_LOG_INFO("BlazeRunner: Warmup successful");
   return true;
@@ -161,22 +179,14 @@ void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
+  drainAndHandleResponses();
+  drainAndHandleOutputs();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
                  memoryRequest->taskId,
                  static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
-  }
-  auto response = getResponse();
-  if (response.has_value()) {
-    TT_LOG_DEBUG("[BlazeRunner] step: got PMResponse request_id={}, slot_id={}",
-                 response->request_id, response->slot_id);
-    handleResponse(*response);
-  }
-  auto output = getOutput();
-  if (output.has_value()) {
-    handleOutput(*output);
   }
   auto request = getRequest();
   if (request) {
@@ -190,20 +200,24 @@ void BlazeRunner::step() {
   checkOutputHang();
 }
 
-std::optional<pm::PMResponse> BlazeRunner::getResponse() {
+void BlazeRunner::drainAndHandleResponses() {
   pm::PMResponse response;
-  if (pipelineManager->try_pop_response(response)) {
-    return response;
+  size_t drained = 0;
+  while (drained < tt::config::pmMaxUsers() &&
+         pipelineManager->try_pop_response(response)) {
+    handleResponse(response);
+    drained++;
   }
-  return std::nullopt;
 }
 
-std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
+void BlazeRunner::drainAndHandleOutputs() {
   pm::OutputMessage output;
-  if (pipelineManager->try_pop_output(output)) {
-    return output;
+  size_t drained = 0;
+  while (drained < tt::config::pmMaxUsers() &&
+         pipelineManager->try_pop_output(output)) {
+    handleOutput(output);
+    drained++;
   }
-  return std::nullopt;
 }
 
 std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
@@ -253,7 +267,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
                            context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
-    TT_LOG_CRITICAL(
+    TT_LOG_INFO(
         "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
         "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
         output.slot_id, specAccepts, specTotal, acceptRate, taskId,

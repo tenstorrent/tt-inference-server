@@ -38,8 +38,8 @@ class BlazeRunner : public IRunner {
  private:
   void step();
 
-  std::optional<pm::PMResponse> getResponse();
-  std::optional<pm::OutputMessage> getOutput();
+  void drainAndHandleResponses();
+  void drainAndHandleOutputs();
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleResponse(const pm::PMResponse& response);

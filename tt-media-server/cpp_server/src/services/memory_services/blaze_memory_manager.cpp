@@ -57,6 +57,8 @@ void BlazeMemoryManager::handleRequest(
           domain::ManageMemoryTask retry;
           retry.taskId = request.taskId;
           retry.action = request.action;
+          // earlier slots are already in cancelling; retry only covers the
+          // remaining slots.
           retry.slotIds.assign(request.slotIds.begin() + slotIndex,
                                request.slotIds.end());
           pendingRetry = std::move(retry);
