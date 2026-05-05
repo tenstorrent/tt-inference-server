@@ -25,19 +25,16 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from .._test_common import ReportCheckTypes
+from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
 from ..context import MediaContext, common_report_metadata, count_tokens, require_health
 from ..test_status import AudioTestStatus
-from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 
 
-def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> float:
-    if not status_list:
-        return 0.0
+def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]:
     valid = [getattr(s, attr) for s in status_list if getattr(s, attr) is not None]
-    return sum(valid) / len(valid) if valid else 0.0
+    return sum(valid) / len(valid) if valid else None
 
 
 def _transcribe_audio_streaming_off(
@@ -239,9 +236,9 @@ def _run_audio_transcription_benchmark(
 
 def _audio_target_checks(
     ctx: MediaContext,
-    ttft_value: float,
-    tsu_value: float,
-    rtr_value: float,
+    ttft_value: Optional[float],
+    tsu_value: Optional[float],
+    rtr_value: Optional[float],
 ) -> tuple[dict, ReportCheckTypes]:
     logger.info("Computing 3-tier target checks for TTFT, T/S/U (tput_user), RTR")
     return run_tiered_check(

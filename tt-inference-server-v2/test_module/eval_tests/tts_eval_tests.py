@@ -21,8 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from workflows.utils import get_num_calls
 
-from .._test_common import ReportCheckTypes
-from ..benchmark_tests._target_check import MetricSpec, run_tiered_check
+from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
 from ..context import MediaContext, common_eval_metadata, require_health
 from ..test_status import TtsTestStatus
 
@@ -32,14 +31,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 
 
-def _tts_ttft(status_list: list[TtsTestStatus]) -> float:
+def _tts_ttft(status_list: list[TtsTestStatus]) -> Optional[float]:
     valid = [s.ttft_ms for s in status_list if s.ttft_ms is not None]
-    return sum(valid) / len(valid) if valid else 0
+    return sum(valid) / len(valid) if valid else None
 
 
-def _tts_rtr(status_list: list[TtsTestStatus]) -> float:
+def _tts_rtr(status_list: list[TtsTestStatus]) -> Optional[float]:
     valid = [s.rtr for s in status_list if s.rtr is not None]
-    return sum(valid) / len(valid) if valid else 0
+    return sum(valid) / len(valid) if valid else None
 
 
 def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
@@ -227,8 +226,10 @@ def run_tts_eval(ctx: MediaContext) -> dict:
     ttft_value = _tts_ttft(status_list)
     rtr_value = _tts_rtr(status_list)
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
-    logger.info(f"Extracted TTFT value: {ttft_value:.2f}ms")
-    logger.info(f"Extracted RTR value: {rtr_value:.2f}")
+    ttft_str = f"{ttft_value:.2f}ms" if ttft_value is not None else "N/A"
+    rtr_str = f"{rtr_value:.2f}" if rtr_value is not None else "N/A"
+    logger.info(f"Extracted TTFT value: {ttft_str}")
+    logger.info(f"Extracted RTR value: {rtr_str}")
     logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
 
     benchmark_data = common_eval_metadata(ctx, "text_to_speech")

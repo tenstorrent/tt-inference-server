@@ -18,10 +18,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from .._test_common import ReportCheckTypes
+from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
 from ..context import MediaContext, common_report_metadata, require_health
 from ..test_status import CnnGenerationTestStatus
-from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 

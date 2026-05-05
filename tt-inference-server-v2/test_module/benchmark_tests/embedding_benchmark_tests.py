@@ -19,9 +19,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
-from .._test_common import ReportCheckTypes
+from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
 from ..context import MediaContext, common_report_metadata, require_health
-from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 

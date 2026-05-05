@@ -20,10 +20,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from workflows.utils import get_num_calls
-from .._test_common import ReportCheckTypes
+from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
 from ..context import MediaContext, common_report_metadata, require_health
 from ..test_status import TtsTestStatus
-from ._target_check import MetricSpec, run_tiered_check
 
 logger = logging.getLogger(__name__)
 
@@ -168,15 +167,13 @@ def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]
     return status_list
 
 
-def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> float:
-    if not status_list:
-        return 0.0
+def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> Optional[float]:
     valid = [getattr(s, attr) for s in status_list if getattr(s, attr) is not None]
-    return sum(valid) / len(valid) if valid else 0.0
+    return sum(valid) / len(valid) if valid else None
 
 
 def _tts_target_checks(
-    ctx: MediaContext, ttft_ms_value: float, rtr_value: float
+    ctx: MediaContext, ttft_ms_value: Optional[float], rtr_value: Optional[float]
 ) -> tuple[dict, ReportCheckTypes]:
     logger.info("Computing 3-tier target checks for TTFT, RTR")
     return run_tiered_check(
@@ -233,7 +230,7 @@ def run_tts_benchmark(ctx: MediaContext) -> dict:
     report_data = common_report_metadata(ctx, "tts")
     report_data["benchmarks"] = {
         "num_requests": len(status_list),
-        "ttft": ttft_value / 1000,
+        "ttft": ttft_value / 1000 if ttft_value is not None else None,
         "rtr": rtr_value,
         "ttft_p90": p90_ttft / 1000,
         "ttft_p95": p95_ttft / 1000,

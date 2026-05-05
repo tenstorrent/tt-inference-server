@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
-from .._test_common import ReportCheckTypes
+from .report_types import ReportCheckTypes
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -129,19 +129,14 @@ class MetricSpec:
     ``target_attr`` names a field on ``PerformanceTargets`` (e.g.
     ``"ttft_ms"``). ``lower_is_better=True`` for latency-style metrics,
     ``False`` for throughput-style. ``field_name`` is the key prefix used
-    in the emitted ``target_checks`` dict; defaults to a sanitised
-    lowercase form of ``name``.
+    in the emitted ``target_checks`` dict.
     """
 
     name: str
     actual: Optional[float]
     target_attr: str
     lower_is_better: bool
-    field_name: Optional[str] = None
-
-    def __post_init__(self):
-        if self.field_name is None:
-            self.field_name = self.name.lower().replace("/", "_").replace(" ", "_")
+    field_name: str
 
 
 def load_targets(ctx: MediaContext) -> PerformanceTargets:
