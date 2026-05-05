@@ -84,9 +84,7 @@ class BaseTest(ABC):
         try:
             value = int(raw)
         except (TypeError, ValueError) as e:
-            raise ValueError(
-                f"targets.{key} must be an int >= 1, got {raw!r}"
-            ) from e
+            raise ValueError(f"targets.{key} must be an int >= 1, got {raw!r}") from e
         if value < 1:
             raise ValueError(f"targets.{key} must be >= 1, got {value}")
         return value
