@@ -46,7 +46,7 @@
                     "enabled": true,
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
-                        "num_of_devices": 1,
+                        "num_concurrent_requests": 1,
                         "dataset": "60s"
                     },
                     "model_targets": {
@@ -127,7 +127,7 @@
                     "enabled": true,
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
-                        "num_of_devices": 1,
+                        "num_concurrent_requests": 1,
                         "dataset": "60s"
                     },
                     "model_targets": {
@@ -218,7 +218,7 @@
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
                         "audio_transcription_time": 12,
-                        "num_of_devices": 1,
+                        "num_concurrent_requests": 1,
                         "dataset": "60s"
                     }
                 }
