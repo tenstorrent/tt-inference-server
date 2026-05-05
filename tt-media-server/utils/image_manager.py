@@ -12,7 +12,7 @@ from PIL import Image
 
 
 class ImageManager:
-    def __init__(self, storage_dir: str):
+    def __init__(self, storage_dir: str = ""):
         self.storage_dir = storage_dir
         # self.storage_dir.mkdir(parents=True, exist_ok=True)
 
