@@ -123,9 +123,11 @@ def cleanup_orphaned_video_files() -> int:
 def cleanup_orphaned_image_files() -> int:
     """Remove any leftover ``tt_img_*`` side-files from :data:`VIDEO_FILE_DIR`.
 
-    Mirrors :func:`cleanup_orphaned_video_files`. Called by both the server
-    proxy and runner sides on startup/shutdown so a crashed I2V request does
-    not leak hundreds of megabytes of base64 conditioning data on tmpfs.
+    Mirrors :func:`cleanup_orphaned_video_files`. Called by the server proxy
+    (``SPRunner.set_device`` / ``SPRunner.close_device``) and by the operator
+    bootstrap CLI on tear-down so a crashed I2V request does not leak hundreds
+    of megabytes of base64 conditioning data on tmpfs. The runner side does
+    not write side-files and therefore does not need to sweep them.
     """
     return _cleanup_glob(IMAGE_FILE_GLOB)
 
