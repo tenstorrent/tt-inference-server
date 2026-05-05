@@ -273,7 +273,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/schedulers/scheduler.cpp
+    src/runners/schedulers/scheduler.cpp
     src/domain/sequence.cpp
     src/domain/sampling_params.cpp
     src/utils/logger.cpp
