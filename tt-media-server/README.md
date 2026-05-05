@@ -94,7 +94,7 @@ These endpoints are always registered (regardless of `MODEL_SERVICE`) and do not
 |---------------------|--------|----------------------------------------------------------------------------------------------|
 | `/tt-liveness`      | GET    | Service liveness + model readiness payload (Tenstorrent-specific)                            |
 | `/health`           | GET    | OpenAI/vLLM-compatible health check. 200 when ready, 503 when not                            |
-| `/tt-deep-reset`    | POST   | Schedules a deep reset of the service and its model (requires `ALLOW_DEEP_RESET=True`)        |
+| `/tt-deep-reset`    | POST   | Schedules a deep reset of the service and its model                                          |
 | `/tt-reset-device`  | POST   | Schedules a reset for a single device. Requires `device_id` query parameter                  |
 | `/metrics`          | GET    | Prometheus metrics (path configurable via `PROMETHEUS_ENDPOINT`)                              |
 | `/docs`             | GET    | Swagger UI (only when `ENVIRONMENT=development`)                                             |
@@ -111,7 +111,7 @@ curl 'http://127.0.0.1:8000/tt-liveness'
 # Health (200 when model is ready, 503 otherwise)
 curl -i 'http://127.0.0.1:8000/health'
 
-# Schedule a deep reset (requires ALLOW_DEEP_RESET=true)
+# Schedule a deep reset of the service and its model
 curl -X POST 'http://127.0.0.1:8000/tt-deep-reset'
 
 # Reset a specific device by ID
@@ -919,7 +919,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `DEVICE_MESH_SHAPE` | `(1, 1)` | Tuple defining the device mesh topology. Format: `(rows, columns)` for multi-device setups |
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
 | `RESET_DEVICE_SLEEP_TIME` | `5.0` | Time in seconds to wait after device reset before attempting reconnection |
-| `ALLOW_DEEP_RESET` | `False` | Boolean flag to enable deep device reset functionality. When enabled, allows more aggressive device reset operations beyond standard reset procedures |
+| `ALLOW_DEEP_RESET` | `False` | Boolean flag that gates the **internal worker-health auto-recovery** path. When `True`, the scheduler may trigger `deep_restart_workers()` after a worker has exceeded `MAX_WORKER_RESTART_COUNT`. Note: this flag does **not** gate the externally-triggered `/tt-deep-reset` endpoint, which is always available |
 | `USE_GREEDY_BASED_ALLOCATION` | `True` | Boolean flag to enable greedy-based device allocation strategy. When enabled with single device mesh shape (1,1), automatically allocates all available devices from the system |
 
 ## Model Configuration
