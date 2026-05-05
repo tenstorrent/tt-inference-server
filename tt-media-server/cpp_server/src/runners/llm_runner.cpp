@@ -76,7 +76,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
             "aborting sequence",
             result.tokenId, result.taskId);
         guidedDecoder->removeRequest(result.taskId);
-        seq->setStatus(SequenceStatus::FINISHED);
+        seq->setStatus(SequenceStatus::ABORTED);
         ipc::pushErrorToken(*this->resultQueue, result.taskId);
         scheduler->removeSequence(result.taskId);
         return;

@@ -300,15 +300,8 @@ TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
 }  // namespace
 
 // GuidedDecoderManager — bitmask, token acceptance, and grammar completion.
-// DeepSeek-R1-0528 single-character token IDs verified against tokenizer.json.
-static constexpr int K_JSON_OPEN_BRACE = 93;   // {
-static constexpr int K_JSON_CLOSE_BRACE = 95;  // }
-static constexpr int K_JSON_QUOTE = 4;         // "
-static constexpr int K_JSON_COLON = 28;        // :
-static constexpr int K_JSON_DIGIT_4 = 22;      // '4'
-static constexpr int K_JSON_LETTER_X = 90;     // 'x'
-static constexpr int K_JSON_LETTER_A = 35;     // 'A' – invalid outside strings
-
+// Token IDs are resolved from the active tokenizer at runtime to stay
+// tokenizer-agnostic.
 class GuidedDecoderManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -320,8 +313,25 @@ class GuidedDecoderManagerTest : public ::testing::Test {
     }
     ASSERT_FALSE(stopIds.empty())
         << "Tokenizer must expose at least one EOS token";
+
+    openBrace = encodeSingleChar(tok, '{');
+    closeBrace = encodeSingleChar(tok, '}');
+    quote = encodeSingleChar(tok, '"');
+    colon = encodeSingleChar(tok, ':');
+    digit4 = encodeSingleChar(tok, '4');
+    letterX = encodeSingleChar(tok, 'x');
+    letterA = encodeSingleChar(tok, 'A');
+
     decoder = std::make_unique<tt::runners::GuidedDecoderManager>(
         vocab, vocabSize, stopIds);
+  }
+
+  static int32_t encodeSingleChar(
+      const tt::utils::tokenizers::Tokenizer& tok, char c) {
+    auto ids = tok.encode(std::string(1, c));
+    EXPECT_EQ(ids.size(), 1u)
+        << "'" << c << "' must encode to a single token";
+    return ids.empty() ? -1 : static_cast<int32_t>(ids[0]);
   }
 
   // Schema: {"x": integer} — minimal, deterministic, fast to compile.
@@ -344,6 +354,13 @@ class GuidedDecoderManagerTest : public ::testing::Test {
   std::vector<std::string> vocab;
   int vocabSize = 0;
   std::vector<int32_t> stopIds;
+  int32_t openBrace = -1;
+  int32_t closeBrace = -1;
+  int32_t quote = -1;
+  int32_t colon = -1;
+  int32_t digit4 = -1;
+  int32_t letterX = -1;
+  int32_t letterA = -1;  // invalid outside string values
   std::unique_ptr<tt::runners::GuidedDecoderManager> decoder;
 };
 
@@ -356,9 +373,9 @@ TEST_F(GuidedDecoderManagerTest, InitialBitmaskAllowsOpenBrace) {
   decoder->fillNextBitmask(1, bitmask);
 
   EXPECT_FALSE(bitmask.empty());
-  EXPECT_TRUE(isBitmaskSet(bitmask, K_JSON_OPEN_BRACE))
+  EXPECT_TRUE(isBitmaskSet(bitmask, openBrace))
       << "'{' must be valid at the start of a JSON schema response";
-  EXPECT_FALSE(isBitmaskSet(bitmask, K_JSON_LETTER_A))
+  EXPECT_FALSE(isBitmaskSet(bitmask, letterA))
       << "'A' must not be valid at the start of a JSON schema response";
 }
 
@@ -367,9 +384,8 @@ TEST_F(GuidedDecoderManagerTest, InitialBitmaskAllowsOpenBrace) {
 TEST_F(GuidedDecoderManagerTest, AcceptsValidJsonSequenceAndCompletesOnEos) {
   decoder->initRequest(1, integerXSchema());
 
-  const int32_t tokens[] = {K_JSON_OPEN_BRACE, K_JSON_QUOTE, K_JSON_LETTER_X,
-                            K_JSON_QUOTE,      K_JSON_COLON, K_JSON_DIGIT_4,
-                            K_JSON_CLOSE_BRACE};
+  const int32_t tokens[] = {openBrace, quote,  letterX,   quote,
+                            colon,     digit4, closeBrace};
   for (int32_t tid : tokens) {
     auto r = decoder->acceptToken(1, tid);
     EXPECT_TRUE(r.accepted) << "Token " << tid << " should be accepted";
@@ -387,6 +403,6 @@ TEST_F(GuidedDecoderManagerTest, AcceptsValidJsonSequenceAndCompletesOnEos) {
 TEST_F(GuidedDecoderManagerTest, RejectsTokenOutsideGrammar) {
   decoder->initRequest(1, integerXSchema());
 
-  auto r = decoder->acceptToken(1, K_JSON_LETTER_A);
+  auto r = decoder->acceptToken(1, letterA);
   EXPECT_FALSE(r.accepted) << "'A' must be rejected when grammar expects '{'";
 }

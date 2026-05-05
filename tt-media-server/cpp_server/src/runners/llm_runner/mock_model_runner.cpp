@@ -107,6 +107,10 @@ class MockModelRunner : public IModelRunner {
   //                   has been emitted (digit is lowest bit but close token
   //                   is also valid).
   //   '-'           — substitute a task-varied positive digit.
+  //
+  // Known to abort with the current content generator: string minLength > 1,
+  // string pattern: ..., enum: [...]. Fine for {"x": integer}-style schemas;
+  // richer integration tests will need smarter content generation here.
   uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) const {
     const auto& sp = seq->getSamplingParams();
     const auto& bitmask = sp.token_bitmask;

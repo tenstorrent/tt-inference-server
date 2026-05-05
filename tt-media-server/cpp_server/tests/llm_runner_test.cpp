@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <thread>
 #include <unordered_map>
@@ -160,11 +161,13 @@ TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
   engine.start();
   consumer.join();
 
-  EXPECT_FALSE(tokens.empty());
-  // Grammar for {"x": N} completes in ~8 tokens; hitting 100 would indicate
-  // the sequence ran out of budget rather than terminating grammatically.
+  ASSERT_FALSE(tokens.empty());
   EXPECT_LT(static_cast<int>(tokens.size()), 100)
       << "Structured output should complete via grammar, not max_tokens";
+  const auto& stopIds = tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  EXPECT_NE(std::find(stopIds.begin(), stopIds.end(), tokens.back()),
+            stopIds.end())
+      << "Sequence should terminate on EOS, not via grammar rejection";
 
   resultQueue.shutdown();
   resultQueue.remove();
