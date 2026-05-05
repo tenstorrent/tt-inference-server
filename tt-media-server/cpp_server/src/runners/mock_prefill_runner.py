@@ -175,7 +175,7 @@ def run_rank0_coordinator() -> None:
                         )
 
                 # Return exactly one token (first token from reasoning sequence)
-                prefill_token = 128798  # <think> token
+                prefill_token = "12345" + str(task_id)
 
                 p2c.write_token(task_id, prefill_token)
 

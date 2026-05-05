@@ -23,11 +23,11 @@
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
+#include "services/service_container.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_container.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/blaze_worker_metrics_renderer.hpp"
 #include "worker/single_process_worker_metrics.hpp"
-#include "worker/sp_pipeline_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
 #include "worker/worker_metrics_aggregator.hpp"
 #include "worker/worker_metrics_shm.hpp"
@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
   if (shm != nullptr) {
     auto& agg = tt::worker::WorkerMetricsAggregator::instance();
     tt::worker::WorkerManager* mgr = nullptr;
-    auto llm = tt::utils::ServiceContainer::instance().llm();
+    auto llm = tt::services::ServiceContainer::instance().llm();
     if (llm) {
       mgr = llm->getWorkerManager();
     }
@@ -184,7 +184,7 @@ int main(int argc, char* argv[]) {
 
         if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
             path == "/swagger" || path == "/openapi.json" ||
-            path == "/metrics") {
+            path == "/metrics" || path == "/max-session-count") {
           chainCallback();
           return;
         }
@@ -251,7 +251,7 @@ int main(int argc, char* argv[]) {
       .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
-  TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);
+  TT_LOG_INFO("[Main] Starting Drogon HTTP server at http://{}:{}", host, port);
 
   if (modelSvc == tt::config::ModelService::EMBEDDING) {
     TT_LOG_INFO("[Main] Endpoints:");

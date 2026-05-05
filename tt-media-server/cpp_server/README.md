@@ -4,6 +4,11 @@ Production-grade, zero-overhead C++ inference server for AI workloads on
 Tenstorrent hardware. Supports LLM serving today; image, video, audio,
 and text-to-speech models are on the roadmap.
 
+> **Looking for the Prometheus / Grafana monitoring stack?** It now lives at
+> [`tt-media-server/monitoring/`](../monitoring) (sibling of `cpp_server/`,
+> next to `telemetry/`). It observes both the C++ and Python servers, so it
+> no longer belongs nested under `cpp_server/`.
+
 ## Non-Functional Requirements
 
 These requirements drive design decisions in this codebase. They are ordered

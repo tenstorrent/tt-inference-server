@@ -88,6 +88,20 @@ class ServerMetrics {
    */
   void onHttpResponse(const std::string& method, int statusCode);
 
+  /**
+   * Record one prefix-cache lookup attempt. Called once per request that
+   * enters the hash-based prefix cache routing path (i.e. has a prior
+   * [assistant, user] turn pair).
+   *
+   * `hit` is true if an existing session matching the lookup hash was
+   * acquired and its KV cache reused; false if the lookup missed and a new
+   * session had to be allocated.
+   *
+   * Writes directly to the counter; lookup rate is request-level, not
+   * token-level, so queueing would be unnecessary overhead.
+   */
+  void onPrefixCacheLookup(bool hit);
+
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
 
@@ -141,6 +155,7 @@ class ServerMetrics {
   // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
+    std::chrono::steady_clock::time_point first_token_time;
     std::chrono::steady_clock::time_point prev_token_time;
     int prompt_tokens = 0;
     int generation_tokens = 0;
@@ -159,6 +174,8 @@ class ServerMetrics {
   prometheus::Counter* generation_tokens_total_{nullptr};
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
   prometheus::Family<prometheus::Counter>* http_requests_family_{nullptr};
+  prometheus::Counter* prefix_cache_queries_total_{nullptr};
+  prometheus::Counter* prefix_cache_hits_total_{nullptr};
 
   // --- gauges ---
   prometheus::Gauge* queue_depth_{nullptr};
@@ -170,6 +187,7 @@ class ServerMetrics {
   prometheus::Summary* e2e_latency_seconds_{nullptr};
   prometheus::Summary* ttft_seconds_{nullptr};
   prometheus::Summary* inter_token_latency_seconds_{nullptr};
+  prometheus::Summary* tpot_seconds_{nullptr};
 
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};

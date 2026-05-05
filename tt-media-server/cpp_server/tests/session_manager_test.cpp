@@ -55,7 +55,7 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
         promise.set_exception(
             std::make_exception_ptr(std::runtime_error(std::string(err))));
       },
-      loop, slotId);
+      loop, 0, slotId);
 
   return future.get();
 }

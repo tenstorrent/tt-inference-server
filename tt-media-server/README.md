@@ -36,23 +36,41 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 
 ## Versioned vs legacy paths
 
-| Primary (use this)             | Legacy (deprecated)        |
-|--------------------------------|----------------------------|
-| `/v1/images/generations`        | `/image/generations`       |
-| `/v1/audio/transcriptions`     | `/audio/transcriptions`    |
-| `/v1/audio/speech`             | `/audio/speech`            |
-| `/v1/videos/generations`        | `/video/generations`       |
-| `/v1/cnn/search-image`         | `/cnn/search-image`        |
-| `/v1/fine_tuning/jobs`         | `/fine_tuning/jobs`        |
-| `/v1/tokenize`                 | `/tokenize`                |
+| Primary (use this)                                          | Legacy (deprecated)                                  | Method | Description                                |
+|-------------------------------------------------------------|------------------------------------------------------|--------|--------------------------------------------|
+| `/v1/images/generations`                                    | `/image/generations`                                 | POST   | Text-to-image generation                   |
+| `/v1/images/image-to-image`                                 | `/image/image-to-image`                              | POST   | Image-to-image (SDXL img2img)              |
+| `/v1/images/edits`                                          | `/image/edits`                                       | POST   | Image editing (SDXL edit)                  |
+| `/v1/audio/transcriptions`                                  | `/audio/transcriptions`                              | POST   | Speech-to-text                             |
+| `/v1/audio/translations`                                    | `/audio/translations`                                | POST   | Speech-to-English (translation)            |
+| `/v1/audio/speech`                                          | `/audio/speech`                                      | POST   | Text-to-speech                             |
+| `/v1/videos/generations`                                    | `/video/generations`                                 | POST   | Text-to-video generation                   |
+| `/v1/videos/generations/i2v`                                | `/video/generations/i2v`                             | POST   | Image-to-video generation (Wan2.2 I2V)     |
+| `/v1/videos/generations/{job_id}`                           | `/video/generations/{job_id}`                        | GET    | Get video job metadata                     |
+| `/v1/videos/generations/{job_id}/download`                  | `/video/generations/{job_id}/download`               | GET    | Download generated video                   |
+| `/v1/videos/generations/{job_id}/cancel`                    | `/video/generations/{job_id}/cancel`                 | POST   | Cancel video job and assets                |
+| `/v1/videos/jobs`                                           | `/video/jobs`                                        | GET    | List all video jobs                        |
+| `/v1/cnn/search-image`                                      | `/cnn/search-image`                                  | POST   | CNN image search                           |
+| `/v1/fine_tuning/catalog`                                   | n/a                                                  | GET    | Available fine-tuning catalog              |
+| `/v1/fine_tuning/jobs`                                      | n/a                                                  | POST   | Create fine-tuning job                     |
+| `/v1/fine_tuning/jobs`                                      | n/a                                                  | GET    | List fine-tuning jobs                      |
+| `/v1/fine_tuning/jobs/{job_id}`                             | n/a                                                  | GET    | Get fine-tuning job metadata               |
+| `/v1/fine_tuning/jobs/{job_id}/cancel`                      | n/a                                                  | POST   | Cancel fine-tuning job                     |
+| `/v1/fine_tuning/jobs/{job_id}/metrics`                     | n/a                                                  | GET    | Get training metrics                       |
+| `/v1/fine_tuning/jobs/{job_id}/logs`                        | n/a                                                  | GET    | Get job logs                               |
+| `/v1/fine_tuning/jobs/{job_id}/checkpoints`                 | n/a                                                  | GET    | List checkpoints for a job                 |
+| `/v1/fine_tuning/jobs/{job_id}/checkpoints/{checkpoint_id}` | n/a                                                  | GET    | Download checkpoint as a zip               |
+| `/v1/tokenize`                                              | `/tokenize`                                          | POST   | Tokenize text                              |
+| `/v1/detokenize`                                            | `/detokenize`                                        | POST   | Detokenize token ids back to text          |
 
 The following endpoints were already on `/v1` and have no legacy path:
 
-| Endpoint                       |
-|--------------------------------|
-| `/v1/completions`              |
-| `/v1/chat/completions`         |
-| `/v1/embeddings`               |
+| Endpoint                       | Method | Description                                                     |
+|--------------------------------|--------|-----------------------------------------------------------------|
+| `/v1/completions`              | POST   | OpenAI-compatible text completions (vLLM)                       |
+| `/v1/chat/completions`         | POST   | OpenAI-compatible chat completions (vLLM)                       |
+| `/v1/embeddings`               | POST   | OpenAI-compatible text embeddings                               |
+| `/v1/models`                   | GET    | OpenAI-compatible model discovery (returns active model + schema) |
 
 ## Deprecation headers
 
@@ -68,7 +86,40 @@ Link: </v1/images/generations>; rel="successor-version"
 - **`Sunset: 2026-06-30`** -- the date after which the legacy path will be removed.
 - **`Link`** -- points to the replacement `/v1/...` endpoint.
 
-Maintenance endpoints (`/tt-liveness`, `/tt-deep-reset`, `/tt-reset-device`) are internal and do not use the `/v1` prefix.
+## Maintenance and observability endpoints
+
+These endpoints are always registered (regardless of `MODEL_SERVICE`) and do not use the `/v1` prefix:
+
+| Endpoint            | Method | Description                                                                                  |
+|---------------------|--------|----------------------------------------------------------------------------------------------|
+| `/tt-liveness`      | GET    | Service liveness + model readiness payload (Tenstorrent-specific)                            |
+| `/health`           | GET    | OpenAI/vLLM-compatible health check. 200 when ready, 503 when not                            |
+| `/tt-deep-reset`    | POST   | Schedules a deep reset of the service and its model                                          |
+| `/tt-reset-device`  | POST   | Schedules a reset for a single device. Requires `device_id` query parameter                  |
+| `/metrics`          | GET    | Prometheus metrics (path configurable via `PROMETHEUS_ENDPOINT`)                              |
+| `/docs`             | GET    | Swagger UI (only when `ENVIRONMENT=development`)                                             |
+| `/redoc`            | GET    | ReDoc UI (only when `ENVIRONMENT=development`)                                               |
+| `/openapi.json`     | GET    | OpenAPI schema (only when `ENVIRONMENT=development`)                                         |
+| `/static/*`         | GET    | Static assets served from `tt-media-server/static/`                                           |
+
+Examples:
+
+```bash
+# Liveness (no auth required)
+curl 'http://127.0.0.1:8000/tt-liveness'
+
+# Health (200 when model is ready, 503 otherwise)
+curl -i 'http://127.0.0.1:8000/health'
+
+# Schedule a deep reset of the service and its model
+curl -X POST 'http://127.0.0.1:8000/tt-deep-reset'
+
+# Reset a specific device by ID
+curl -X POST 'http://127.0.0.1:8000/tt-reset-device?device_id=0'
+
+# Prometheus metrics scrape
+curl 'http://127.0.0.1:8000/metrics'
+```
 
 # Installation instructions
 
@@ -233,7 +284,101 @@ This is required for downloading and using the models during audio preprocessing
 
 If server is running in development mode (ENVIRONMENT=development), OpenAPI endpoint is available on /docs URL.
 
-# Image generation test call
+# Models discovery
+
+The `/v1/models` endpoint is OpenAI-compatible and returns the active model loaded into the server. For image runners it also returns the JSON schema of the request body. No authentication is required.
+
+```bash
+curl 'http://127.0.0.1:8000/v1/models'
+```
+
+# Chat completions test call
+
+Available when running an LLM via the VLLM TT plugin (see [VLLM with TT Plugin Setup](#vllm-with-tt-plugin-setup)). OpenAI-compatible endpoint. Set `"stream": true` to receive Server-Sent Events.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/chat/completions' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello!"}
+    ],
+    "max_tokens": 256,
+    "temperature": 0.7,
+    "stream": false
+  }'
+```
+
+# Text completions test call
+
+OpenAI-compatible legacy text completion endpoint. Streaming is enabled with `"stream": true`.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/completions' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Once upon a time",
+    "max_tokens": 200,
+    "temperature": 0.8,
+    "stream": true
+  }' \
+  --no-buffer
+```
+
+# Embeddings test call
+
+Available when `MODEL_RUNNER` is set to an embedding runner (e.g. `tt-bge-large-en-v1.5`, `tt-qwen3-embedding-8b`). OpenAI-compatible response shape.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/embeddings' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "BAAI/bge-large-en-v1.5",
+    "input": "Hello world"
+  }'
+```
+
+# Tokenize / detokenize test call
+
+The tokenizer endpoints load the HuggingFace tokenizer for the requested `model` (must be a value present in `SupportedModels`). They do not run on the device and do not require the model to be loaded as the active runner.
+
+```bash
+# Tokenize text
+curl -X POST 'http://127.0.0.1:8000/v1/tokenize' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "Hello world",
+    "add_special_tokens": true,
+    "return_token_strs": true
+  }'
+
+# Detokenize
+curl -X POST 'http://127.0.0.1:8000/v1/detokenize' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "tokens": [128000, 9906, 1917]
+  }'
+```
+
+# Image API
+
+The image router exposes one of three endpoints depending on `MODEL_RUNNER`:
+
+| `MODEL_RUNNER`             | Active endpoint                     |
+|----------------------------|-------------------------------------|
+| `tt-sdxl-image-to-image`   | `POST /v1/images/image-to-image`    |
+| `tt-sdxl-edit`             | `POST /v1/images/edits`             |
+| any other image runner     | `POST /v1/images/generations`       |
+
+## Image generation test call
 
 Sample for calling the endpoint for image generation via curl:
 ```bash
@@ -252,11 +397,58 @@ curl -X 'POST' \
 }'
 ```
 
+The response includes the list of base64-encoded images and total `generation_time` in seconds.
+
+## Image-to-image test call
+
+Available when `MODEL_RUNNER=tt-sdxl-image-to-image`.
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/images/image-to-image' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Make it look like a watercolor painting",
+  "image": "[base64 encoded image]",
+  "num_inference_steps": 20,
+  "guidance_scale": 7.0,
+  "strength": 0.7
+}'
+```
+
+## Image edit test call
+
+Available when `MODEL_RUNNER=tt-sdxl-edit`.
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/images/edits' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Replace the masked area with a sunset",
+  "image": "[base64 encoded image]",
+  "mask": "[base64 encoded mask]",
+  "num_inference_steps": 20,
+  "guidance_scale": 7.0
+}'
+```
+
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
 
 # Audio transcription and translation test call
 
 The audio transcription and translation API supports multiple audio formats and input methods with automatic format detection and conversion.
+
+The active endpoint depends on the `AUDIO_TASK` environment variable:
+
+| `AUDIO_TASK`     | Active endpoint                  |
+|------------------|----------------------------------|
+| `transcribe` (default) | `POST /v1/audio/transcriptions` |
+| `translate`            | `POST /v1/audio/translations`   |
+
+Both endpoints accept the same payload (base64 JSON or multipart file upload) and produce the same response shape.
 
 - Base64 JSON Request: Send a JSON POST request to `/v1/audio/transcriptions` or `/v1/audio/translations`
 Sample for calling the audio transcription/translations endpoint via curl:
@@ -444,7 +636,12 @@ curl -X POST "http://localhost:8000/v1/cnn/search-image" \
 
 # Video generation API
 
-## Submit video generation job
+The video API supports both **async** (job-based) and **sync** modes, controlled via the `USE_ASYNC_VIDEO` environment variable:
+
+- `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
+- `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
+
+## Submit text-to-video generation job
 
 ```bash
 curl -X 'POST' \
@@ -459,7 +656,7 @@ curl -X 'POST' \
 }'
 ```
 
-**Response example:**
+**Response example (async mode, HTTP 202):**
 ```json
 {
   "id": "video_id_1",
@@ -472,11 +669,40 @@ curl -X 'POST' \
 
 Save the `id` field from the response (e.g., `video_id_1`) to use as `{video_id}` in subsequent requests.
 
+In sync mode (`USE_ASYNC_VIDEO=False`) the response is the raw MP4 (`Content-Type: video/mp4`) with an `X-Generation-Time` header.
+
+## Submit image-to-video generation job
+
+Available with the Wan2.2 I2V runner. Requires at least one entry in `image_prompts`.
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8000/v1/videos/generations/i2v' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "prompt": "Camera slowly zooms in",
+  "negative_prompt": "low quality",
+  "num_inference_steps": 20,
+  "image_prompts": ["[base64 encoded image]"]
+}'
+```
+
 ## Get video job metadata
 
 ```bash
 curl -X 'GET' \
   'http://127.0.0.1:8000/v1/videos/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+## List all video jobs
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/v1/videos/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
 ```
@@ -505,6 +731,18 @@ curl -X 'POST' \
 
 # Fine-tuning API
 
+All fine-tuning endpoints require the API key **and** an organization header (default name `X-TT-Organization`, configurable via `ORG_ID_HEADER`). The org id is used to scope jobs to a tenant.
+
+## Get fine-tuning catalog
+
+Lists available models, datasets, trainers, optimizers, and clusters that this server instance can fine-tune.
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/v1/fine_tuning/catalog' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
 ## Create fine-tuning job
 
 ```bash
@@ -512,6 +750,7 @@ curl -X 'POST' \
   'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org' \
   -H 'Content-Type: application/json' \
   -d '{
   "model": "meta-llama/Llama-3.1-8B-Instruct",
@@ -542,8 +781,8 @@ Save the `id` field from the response (e.g., `ftjob-abc123`) to use as `{job_id}
 ```bash
 curl -X 'GET' \
   'http://127.0.0.1:8000/v1/fine_tuning/jobs' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer your-secret-key'
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
 ```
 
 ## Get fine-tuning job details
@@ -551,8 +790,26 @@ curl -X 'GET' \
 ```bash
 curl -X 'GET' \
   'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer your-secret-key'
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
+```
+
+## Get training metrics
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/metrics' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
+```
+
+## Get fine-tuning job logs
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/logs' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
 ```
 
 ## Cancel fine-tuning job
@@ -560,8 +817,8 @@ curl -X 'GET' \
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/cancel' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer your-secret-key'
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
 ```
 
 ## List fine-tuning job checkpoints
@@ -569,11 +826,23 @@ curl -X 'POST' \
 ```bash
 curl -X 'GET' \
   'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/checkpoints' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer your-secret-key'
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org'
 ```
 
-**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
+## Download checkpoint adapter weights
+
+Returns a zip archive of the adapter weights for the requested checkpoint.
+
+```bash
+curl -X 'GET' \
+  'http://127.0.0.1:8000/v1/fine_tuning/jobs/{job_id}/checkpoints/{checkpoint_id}' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -H 'X-TT-Organization: my-org' \
+  -o adapter_{checkpoint_id}.zip
+```
+
+**Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable, and `my-org` with the value clients should send for `X-TT-Organization` (or the header name configured via `ORG_ID_HEADER`).
 
 ## Unit Testing Setup in VS Code
 
@@ -650,7 +919,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | `DEVICE_MESH_SHAPE` | `(1, 1)` | Tuple defining the device mesh topology. Format: `(rows, columns)` for multi-device setups |
 | `RESET_DEVICE_COMMAND` | `"tt-smi -r"` | Command used to reset TT devices when needed |
 | `RESET_DEVICE_SLEEP_TIME` | `5.0` | Time in seconds to wait after device reset before attempting reconnection |
-| `ALLOW_DEEP_RESET` | `False` | Boolean flag to enable deep device reset functionality. When enabled, allows more aggressive device reset operations beyond standard reset procedures |
+| `ALLOW_DEEP_RESET` | `False` | Boolean flag that gates the **internal worker-health auto-recovery** path. When `True`, the scheduler may trigger `deep_restart_workers()` after a worker has exceeded `MAX_WORKER_RESTART_COUNT`. Note: this flag does **not** gate the externally-triggered `/tt-deep-reset` endpoint, which is always available |
 | `USE_GREEDY_BASED_ALLOCATION` | `True` | Boolean flag to enable greedy-based device allocation strategy. When enabled with single device mesh shape (1,1), automatically allocates all available devices from the system |
 
 ## Model Configuration
@@ -661,6 +930,9 @@ The TT Inference Server can be configured using environment variables or by modi
 | `MODEL_SERVICE` | `None` | Specifies which model service implementation to use for inference. If not set, the default service for the selected model runner will be used |
 | `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
+| `TRAINING_MODEL` | `None` | HuggingFace model ID used by the fine-tuning catalog when `MODEL_SERVICE=training` |
+| `CHAT_TEMPLATE_KWARGS` | `{}` | Extra kwargs passed to `tokenizer.apply_chat_template` for chat completions (e.g. Qwen3 thinking mode flags) |
+| `SDXL_IMAGE_RESOLUTION` | `(1024, 1024)` | Output resolution for SDXL text-to-image. Must be one of the values in `SDXL_VALID_IMAGE_RESOLUTIONS` |
 | `TRACE_REGION_SIZE` | `34541598` | Memory size allocated for model tracing operations (in bytes) |
 | `DOWNLOAD_WEIGHTS_FROM_SERVICE` | `True` | Boolean flag to enable downloading weights when initializing service. When enabled, ensures that weights are downloaded once per instance of the server |
 
@@ -709,6 +981,8 @@ export MAX_BATCH_DELAY_TIME_MS=50
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
+| `WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS` | `1200` | Maximum time in seconds to wait for weights to be distributed to all workers before failing startup |
+| `VIDEO_REQUEST_TIMEOUT_SECONDS` | `300.0` | SHM response deadline used by the video sub-process runner (`SPRunner` proxy to `video_runner`). Tune for long video generations |
 
 ## Job Management Settings
 
@@ -730,9 +1004,11 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__MODEL` | `meta-llama/Llama-3.2-3B-Instruct` | Hugging Face model identifier for VLLM inference. |
 | `VLLM__MIN_CONTEXT_LENGTH` | `32` | Sets the minimum number of tokens that can be processed per sequence. Must be a power of two. Must be less than max_model_length. Min value is 32. |
 | `VLLM__MAX_MODEL_LENGTH` | `2048` | Sets the maximum number of tokens that can be processed per sequence, including both input and output tokens. Determines the model's context window size. |
-| `VLLM__MAX_NUM_BATCHED_TOKENS` | `2048` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
+| `VLLM__MAX_NUM_BATCHED_TOKENS` | `max_model_length * max_num_seqs` | Sets the maximum total number of tokens processed in a single iteration across all active sequences. Higher values improve throughput but increase memory usage and latency. |
 | `VLLM__MAX_NUM_SEQS` | `1` | Defines the maximum number of sequences that can be batched and processed simultaneously in one iteration. Note: tt-xla currently only supports max_num_seqs=1. |
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
+| `MAX_MODEL_LENGTH` | `4096` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_model_length`) |
+| `MAX_NUM_SEQS` | `1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_num_seqs`) |
 
 ## Audio Processing Settings
 
@@ -747,6 +1023,33 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `AUDIO_TASK` | `"transcribe"` | Specifies the audio processing task: transcription (speech-to-text in original language) or translation (speech-to-English or other supported language) |
 | `AUDIO_LANGUAGE` | `"English"` | Specifies the language for audio processing (transcription or translation). Supported languages depend on the selected Whisper model. |
 
+## Video Generation Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
+| `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
+| `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
+| `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
+| `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
+| `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+
+## Operational TT Settings
+
+These environment variables are typically set automatically by the worker bootstrap (`utils/runner_utils.py`) but can be overridden when needed:
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `TT_METAL_HOME` | _required_ | Path to the tt-metal install. Used by `run_uvicorn.sh` to activate the Python env and by workers to locate cache and mesh descriptors |
+| `SERVICE_PORT` | `8000` | Port used by `run_uvicorn.sh` when launching uvicorn |
+| `TT_DIT_CACHE_DIR` | `/tmp/TT_DIT_CACHE` | Cache directory used by DiT model runners (set automatically by the runner) |
+| `TT_SMI_TIMEOUT` | `30` | Timeout in seconds for `tt-smi` calls performed by `DeviceManager` |
+| `TT_SYSTEM_HEALTH_TIMEOUT` | `60` | Timeout in seconds for `Cluster.ReportSystemHealth` based device discovery |
+| `TT_VISIBLE_DEVICES` | _set per worker_ | Set internally by the worker bootstrap to expose a single device id to a worker process |
+| `TT_METAL_CACHE` | _set per worker_ | Set internally to `${TT_METAL_HOME}/built/<device_ids>` so each worker uses a distinct cache directory |
+| `TT_MM_THROTTLE_PERF` | _runner-dependent_ | Set internally based on `DEFAULT_THROTTLE_LEVEL`; some DiT runners disable throttling automatically |
+| `TT_MESH_GRAPH_DESC_PATH` | _runner-dependent_ | Set internally to point at the correct mesh graph descriptor for the current `device_mesh_shape` |
+
 ### Telemetry Settings
 
 | Environment Variable | Default Value | Description |
@@ -759,6 +1062,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `API_KEY` | `"your-secret-key"` | Secret key used for API authentication. All requests must include `Authorization: Bearer <API_KEY>` header |
+| `ORG_ID_HEADER` | `"X-TT-Organization"` | Name of the HTTP header that fine-tuning endpoints read to scope jobs to a tenant. Requests to `/v1/fine_tuning/*` must include this header |
 
 ## Hugging Face Configuration
 
@@ -782,14 +1086,25 @@ When both `MODEL` and `DEVICE` are set, the server will look up the correspondin
 
 The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
 
+### Observability stack
+
+Metrics emission lives with each server; collection and visualization
+live in a shared, top-level [`monitoring/`](./monitoring) directory:
+
+- [`telemetry/`](./telemetry) — Python instrumentation that exposes `/metrics`.
+- [`cpp_server/`](./cpp_server) — C++ instrumentation that exposes `/metrics`.
+- [`monitoring/`](./monitoring) — Prometheus + Grafana + process-exporter
+  Docker Compose stack that scrapes whichever server is running. Picks
+  the dashboard via `SERVER_SERVICE` (`cpp` | `python`).
+
+Quick start: see [`monitoring/README.md`](./monitoring/README.md).
+
 ### Available Metrics
 
 #### Request Processing Metrics
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|---------|
-| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
-| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
 | `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
 | `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
 | `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
@@ -810,7 +1125,6 @@ The TT Media Server provides comprehensive Prometheus metrics for monitoring per
 | `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
 | `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
 | `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
-| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
 
 ### Labels Description
 
@@ -836,6 +1150,7 @@ The server supports special environment variables for configuring device mesh sh
 | `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
 | `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
 | `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
+| `SP_MESH_4X32` | `None` | Configures device mesh as 4x32 (sequence-parallel mesh) when set to `"true"` (case-insensitive). Used for very large mesh deployments |
 
 ### Usage Examples
 

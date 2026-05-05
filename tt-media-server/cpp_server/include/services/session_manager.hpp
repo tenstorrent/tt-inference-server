@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <list>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -43,6 +44,12 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
+  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
+  struct AcquiredSession {
+    std::string sessionId;
+    uint32_t slotId;
+  };
+
   SessionManager();
   ~SessionManager();
 
@@ -52,7 +59,7 @@ class SessionManager {
   void createSession(
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
-      trantor::EventLoop* eventLoop,
+      trantor::EventLoop* eventLoop, size_t initialHash = 0,
       std::optional<uint32_t> slotId = std::nullopt);
 
   CloseSessionResult closeSession(const std::string& sessionId);
@@ -69,6 +76,37 @@ class SessionManager {
   size_t getActiveSessionCount() const;
 
   void releaseInFlight(const std::string& sessionId);
+
+  /**
+   * Try to find a session whose registered prefix hash matches, atomically
+   * mark it in-flight, and register the cancel function — all under the same
+   * lock so no concurrent request can steal it.
+   *
+   * Returns:
+   *   AcquiredSession — session found and successfully locked; contains both
+   *                     slotId and sessionId (UUID). Caller owns the in-flight
+   *                     state and MUST call releaseInFlight(sessionId) when
+   *                     the request completes (success or error).
+   *   nullopt         — no session registered under this hash. Caller should
+   *                     fall back to createSession.
+   *
+   * Throws:
+   *   SessionInFlightException — all sessions under this hash are already
+   *                              serving other requests. Controller maps
+   *                              this to HTTP 429.
+   */
+  std::optional<AcquiredSession> tryAcquireByPrefixHash(
+      uint64_t prefixHash, std::function<void()> cancelFn);
+
+  /**
+   * Route future lookups of `prefixHash` to this session. This registers the
+   * session under the given hash so the next turn's lookup can find it.
+   *
+   * If the session was previously registered under a different hash, it is
+   * removed from that hash's index entry and added to the new hash's index
+   * entry.
+   */
+  void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
  private:
   // cancelFn is null when idle, set atomically with in-flight state by
@@ -103,7 +141,14 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
+  // Prefix index helpers: maintain prefixIndex alongside the sessions map.
+  void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
+  void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
+
   mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
+  // Secondary index: prefix hash -> sessionIds registered under that hash.
+  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
+  utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
+#include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
 #include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
@@ -54,7 +54,7 @@ void BlazePrefillRunner::run() {
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
-      ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
+      ipc::pushToken(*resultQueue, sequence->taskId, result->tokenId, true);
     }
 
     // sequence automatically cleaned up at end of scope

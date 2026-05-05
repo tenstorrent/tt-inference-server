@@ -9,14 +9,22 @@
 
 namespace tt::domain {
 
-Session::Session(uint32_t slotId)
-    : slot_id_(slotId), last_activity_time_(std::chrono::system_clock::now()) {
-  session_id_ = generateUuid();
-}
+Session::Session(uint32_t slotId, size_t initialHash)
+    : session_id_(generateUuid()),
+      hash_(initialHash),
+      slot_id_(slotId),
+      last_activity_time_(std::chrono::system_clock::now()) {}
 
 bool Session::markInFlight() {
-  if (state_ != SessionState::IDLE) return false;
+  if (state_ != SessionState::PREPARED && state_ != SessionState::IDLE)
+    return false;
   state_ = SessionState::IN_FLIGHT;
+  return true;
+}
+
+bool Session::markPrepared() {
+  if (state_ != SessionState::IDLE) return false;
+  state_ = SessionState::PREPARED;
   return true;
 }
 
@@ -27,6 +35,7 @@ bool Session::clearInFlight() {
 }
 
 std::string Session::generateUuid() {
+  // Generate a stable UUID v4 for session identity
   static std::mutex genMutex;
   static std::mt19937_64 gen(std::random_device{}());
 

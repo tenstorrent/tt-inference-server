@@ -229,4 +229,68 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
                std::invalid_argument);
 }
 
+// ---------------------------------------------------------------------------
+// Guided Decoding Application Tests
+// ---------------------------------------------------------------------------
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonObject) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Give me JSON output"}],
+    "response_format": {"type": "json_object"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_OBJECT);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonSchema) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Get the weather"}],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "weather_response",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "temperature": {"type": "number"},
+            "condition": {"type": "string"}
+          },
+          "required": ["temperature", "condition"],
+          "additionalProperties": false
+        }
+      }
+    }
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_SCHEMA);
+  ASSERT_TRUE(llmReq.response_format->json_schema_str.has_value());
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("temperature"),
+            std::string::npos);
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("condition"),
+            std::string::npos);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "response_format": {"type": "text"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type, tt::domain::ResponseFormatType::TEXT);
+}
+
 }  // namespace

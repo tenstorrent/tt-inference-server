@@ -35,6 +35,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --tracy)
             ENABLE_TRACY="ON"
+            BUILD_TYPE="Debug"
             shift
             ;;
         --blaze)
