@@ -38,9 +38,9 @@ class LLMController : public drogon::HttpController<LLMController> {
 
   LLMController();
 
-  void models(const drogon::HttpRequestPtr&,
-              std::function<void(const drogon::HttpResponsePtr&)>&& callback)
-      const {
+  void models(
+      const drogon::HttpRequestPtr&,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
     domain::ModelsResponse response;
     response.data.push_back({toString(tt::config::model())});
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
