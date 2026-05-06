@@ -195,6 +195,74 @@ class TestWriteImageSideFile:
 
         assert os.path.dirname(path) == str(tmp_video_dir)
 
+    def test_atomic_publish_leaves_no_tmp_file_on_success(self, tmp_video_dir):
+        """The temp file used to stage the JSON write must be renamed away
+        (not left as a sibling) once publish succeeds. Lingering
+        ``*.json.tmp`` files would accumulate on tmpfs across thousands of
+        I2V requests and eventually trip the operator's bootstrap sweep."""
+        prompts = [_ImagePromptStub(image="b64", frame_pos=0)]
+        request = _MockI2VRequest(task_id="atomic-ok", image_prompts=prompts)
+
+        path = SPRunner._write_image_side_file(request, "atomic-ok")
+
+        assert os.path.exists(path)
+        leftovers = [
+            p
+            for p in tmp_video_dir.iterdir()
+            if p.name.startswith("tt_img_atomic-ok.") and p.name.endswith(".json.tmp")
+        ]
+        assert leftovers == [], (
+            f"atomic publish must rename the temp file away, got: {leftovers}"
+        )
+
+    def test_atomic_publish_no_partial_file_on_dump_failure(self, tmp_video_dir):
+        """If ``json.dump`` raises mid-write (disk full, OOM, etc.), the
+        FINAL path must not exist. Without atomic publish the runner peer
+        would see a half-written file at the final name and either
+        ``json.load``-fail or parse truncated bytes."""
+        prompts = [_ImagePromptStub(image="b64", frame_pos=0)]
+        request = _MockI2VRequest(task_id="atomic-fail", image_prompts=prompts)
+
+        with patch(
+            "tt_model_runners.sp_runner.json.dump",
+            side_effect=RuntimeError("disk full"),
+        ):
+            with pytest.raises(RuntimeError, match="disk full"):
+                SPRunner._write_image_side_file(request, "atomic-fail")
+
+        assert not (tmp_video_dir / "tt_img_atomic-fail.json").exists()
+        leftovers = list(tmp_video_dir.glob("tt_img_atomic-fail.*.json.tmp"))
+        assert leftovers == [], (
+            f"failed write must clean up its own temp file, got: {leftovers}"
+        )
+
+    def test_path_exceeding_shm_cap_raises_before_write(self, tmp_path, monkeypatch):
+        """``image_prompts_path`` overrunning ``MAX_IMAGE_PATH_LEN`` must
+        fail-fast at the writer instead of relying on ``_pack_string`` to
+        silently truncate the path on the SHM input slot — the runner peer
+        would hit ``ENOENT`` on the truncated path and silently degrade I2V
+        to T2V, which is the failure mode the precondition exists to avoid.
+        """
+        from ipc.video_shm import MAX_IMAGE_PATH_LEN
+
+        # Pad the directory so the resulting tt_img_<task>.json path is just
+        # over the SHM cap. Any task_id wider than 0 chars now overflows.
+        long_dir = tmp_path / ("x" * (MAX_IMAGE_PATH_LEN - 10))
+        long_dir.mkdir()
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(long_dir))
+
+        prompts = [_ImagePromptStub(image="b64", frame_pos=0)]
+        request = _MockI2VRequest(
+            task_id="long-path-task-id-000000000000",
+            image_prompts=prompts,
+        )
+
+        with pytest.raises(RuntimeError, match="exceeds SHM cap"):
+            SPRunner._write_image_side_file(request, "long-path-task-id-000000000000")
+
+        # And the precondition must fire BEFORE any file is written.
+        assert list(long_dir.iterdir()) == []
+
 
 class TestI2VRunSideFileLifecycle:
     """End-to-end: ``SPRunner.run()`` must (1) write the side-file, (2) set
