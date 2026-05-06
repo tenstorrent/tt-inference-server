@@ -73,12 +73,11 @@ jobs:
           enable-cache: true
 
       - name: Create venv and seed tt-metal-equivalent pins
-        # tt-metal's python_env carries numpy<2; seed it via uv-overrides.txt
-        # (single source of truth) so the resolver in the next step sees the
-        # same constraints it would in the Dockerfile install layer.
+        # Simulates tt-metal's pre-existing numpy<2 pin so this gate fails
+        # if uv-overrides.txt's numpy override is removed.
         run: |
           uv venv
-          uv pip install --overrides uv-overrides.txt numpy
+          uv pip install 'numpy>=1.24.4,<2'
 
       - name: Install media-server requirements (strict, no fallback)
         # Mirrors tt-media-server/Dockerfile, but drops its `|| (grep -v
