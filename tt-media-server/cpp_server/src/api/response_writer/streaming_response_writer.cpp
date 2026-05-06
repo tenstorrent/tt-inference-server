@@ -81,15 +81,15 @@ void StreamingResponseWriter::handleTokenChunk(
   if (chunk.choices.empty()) return;
 
   const auto& choice = chunk.choices[0];
-  if (!choice.text.empty() || choice.reasoning.has_value()) {
-    noteToken();
-  }
+  noteToken(choice);
   std::optional<domain::CompletionUsage> usage;
   if (continuousUsage) {
     const int currentTokens = completionTokens.load();
     usage = domain::CompletionUsage{params.promptTokenCount,
                                     currentTokens,
                                     params.promptTokenCount + currentTokens,
+                                    {},
+                                    {},
                                     std::nullopt,
                                     std::nullopt,
                                     params.sessionId};
@@ -103,7 +103,7 @@ void StreamingResponseWriter::handleTokenChunk(
     std::optional<domain::CompletionUsage> initialUsage;
     if (continuousUsage) {
       initialUsage = domain::CompletionUsage{
-          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
+          params.promptTokenCount, 0, 0, {}, {}, std::nullopt, std::nullopt,
           params.sessionId};
     }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(

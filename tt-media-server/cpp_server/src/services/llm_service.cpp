@@ -260,6 +260,8 @@ domain::LLMStreamChunk buildStreamChunk(
   }
 
   choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.spec_accepts = token.spec_accepts;
+  choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
     bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
@@ -450,9 +452,14 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {
-      promptTokens, completionTokens, promptTokens + completionTokens,
-      std::nullopt, std::nullopt,     std::nullopt};
+  response.usage = {promptTokens,
+                    completionTokens,
+                    promptTokens + completionTokens,
+                    {},
+                    {},
+                    std::nullopt,
+                    std::nullopt,
+                    std::nullopt};
 
   return response;
 }

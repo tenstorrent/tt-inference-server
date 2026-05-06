@@ -11,8 +11,18 @@ namespace tt::api {
 ResponseWriter::ResponseWriter(ResponseWriterParams params)
     : params(std::move(params)) {}
 
-int ResponseWriter::noteToken() {
+int ResponseWriter::noteToken(const domain::LLMChoice& choice) {
+  specAccepts.fetch_add(choice.spec_accepts);
+  specRejects.fetch_add(choice.spec_rejects);
+
+  if (choice.text.empty() && !choice.reasoning.has_value()) {
+    return completionTokens.load();
+  }
+
   const int current = completionTokens.fetch_add(1) + 1;
+  if (choice.reasoning.has_value()) {
+    reasoningTokens.fetch_add(1);
+  }
   auto now = std::chrono::high_resolution_clock::now();
   if (!firstTokenTime.has_value()) {
     firstTokenTime = now;
@@ -24,13 +34,22 @@ int ResponseWriter::noteToken() {
 
 domain::CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
+  const int reasoning = reasoningTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
-  domain::CompletionUsage usage{params.promptTokenCount,
-                                tokens,
-                                totalTokens,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt};
+
+  domain::PromptTokensDetails promptDetails;
+  promptDetails.cached_tokens = params.cachedTokenCount;
+
+  domain::CompletionTokensDetails completionDetails;
+  completionDetails.reasoning_tokens = reasoning;
+  completionDetails.accepted_prediction_tokens =
+      static_cast<int>(specAccepts.load());
+  completionDetails.rejected_prediction_tokens =
+      static_cast<int>(specRejects.load());
+
+  domain::CompletionUsage usage{
+      params.promptTokenCount, tokens,       totalTokens,  promptDetails,
+      completionDetails,       std::nullopt, std::nullopt, std::nullopt};
 
   if (firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(

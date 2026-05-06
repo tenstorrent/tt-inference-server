@@ -23,6 +23,7 @@
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
@@ -243,7 +244,13 @@ ResponseWriterParams LLMController::makeWriterParams(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  params.promptTokenCount = request.prompt_tokens_count;
+  params.promptTokenCount = request.full_prompt_tokens_count > 0
+                                ? request.full_prompt_tokens_count
+                                : request.prompt_tokens_count;
+  params.cachedTokenCount =
+      request.continuation
+          ? request.full_prompt_tokens_count - request.prompt_tokens_count
+          : 0;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
@@ -282,6 +289,11 @@ void LLMController::handleStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+
+  if (const auto* promptStr = std::get_if<std::string>(&reqPtr->prompt)) {
+    reqPtr->full_prompt_tokens_count = static_cast<int>(
+        tt::utils::tokenizers::activeTokenizer().encode(*promptStr).size());
+  }
 
   auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
@@ -347,6 +359,11 @@ void LLMController::handleNonStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+
+  if (const auto* promptStr = std::get_if<std::string>(&reqPtr->prompt)) {
+    reqPtr->full_prompt_tokens_count = static_cast<int>(
+        tt::utils::tokenizers::activeTokenizer().encode(*promptStr).size());
+  }
 
   auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
