@@ -134,7 +134,11 @@ def test_acceptance_criteria_check_returns_blockers_when_all_benchmark_levels_fa
     assert "actual ttft=1.2000" in blockers["benchmarks.functional.ttft_check"]
     assert "threshold ttft=10.0000" in blockers["benchmarks.functional.ttft_check"]
     assert "ratio=0.1200" in blockers["benchmarks.functional.ttft_check"]
-    assert set(metadata["failed_enforced_tiers"]) == {"functional", "complete", "target"}
+    assert set(metadata["failed_enforced_tiers"]) == {
+        "functional",
+        "complete",
+        "target",
+    }
 
 
 def test_experimental_status_treats_all_tier_failures_as_informational(report_data):
@@ -346,9 +350,9 @@ def test_final_report_json_shape_contains_bool_and_metadata(report_data, tmp_pat
     assert expected_metadata_keys.issubset(metadata_payload.keys())
     assert metadata_payload["model_status"] == "FUNCTIONAL"
     assert metadata_payload["enforced_tiers"] == ["functional"]
-    assert "benchmarks.complete.ttft_check" in metadata_payload[
-        "informational_blockers"
-    ]
+    assert (
+        "benchmarks.complete.ttft_check" in metadata_payload["informational_blockers"]
+    )
     assert metadata_payload["known_issues_declared"][0]["workflow_type"] == "EVALS"
 
 
