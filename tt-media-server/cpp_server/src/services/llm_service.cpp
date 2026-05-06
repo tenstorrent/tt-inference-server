@@ -392,7 +392,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
+domain::LLMResponse LLMService::processRequest(domain::LLMRequest /*request*/) {
   throw std::runtime_error(
       "LLMService::processRequest is not supported; use streaming interface");
 }

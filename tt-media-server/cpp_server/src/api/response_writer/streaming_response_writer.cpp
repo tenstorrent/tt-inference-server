@@ -79,31 +79,14 @@ void StreamingResponseWriter::handleTokenChunk(
 
   const auto& choice = chunk.choices[0];
   noteToken(choice);
-  std::optional<domain::CompletionUsage> chunkUsage;
-  if (includeUsage) {
-    chunkUsage = buildUsage();
-  }
 
   auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-      params.completionId, params.model, params.created, choice, chunkUsage);
+      params.completionId, params.model, params.created, choice, std::nullopt);
 
   std::string sse;
   if (firstContentChunk.exchange(false)) {
-    std::optional<domain::CompletionUsage> initialUsage;
-    if (includeUsage) {
-      domain::PromptTokensDetails promptDetails;
-      promptDetails.cached_tokens = params.cachedTokenCount;
-      initialUsage = domain::CompletionUsage{params.promptTokenCount,
-                                             0,
-                                             params.promptTokenCount,
-                                             promptDetails,
-                                             {},
-                                             std::nullopt,
-                                             std::nullopt,
-                                             params.sessionId};
-    }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-        params.completionId, params.model, params.created, initialUsage);
+        params.completionId, params.model, params.created, std::nullopt);
     sse = initialChunk.toSSE() + streamChunk.toSSE();
   } else {
     sse = streamChunk.toSSE();
