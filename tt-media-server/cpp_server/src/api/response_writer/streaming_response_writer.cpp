@@ -88,12 +88,9 @@ void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   std::optional<CompletionUsage> usage;
   if (continuousUsage) {
     const int currentTokens = completionTokens.load();
-    usage = CompletionUsage{params.promptTokenCount,
-                            currentTokens,
+    usage = CompletionUsage{params.promptTokenCount, currentTokens,
                             params.promptTokenCount + currentTokens,
-                            std::nullopt,
-                            std::nullopt,
-                            params.sessionId};
+                            std::nullopt, std::nullopt};
   }
 
   auto streamChunk = ChatCompletionStreamChunk::makeContentChunk(
@@ -103,9 +100,8 @@ void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (firstContentChunk.exchange(false)) {
     std::optional<CompletionUsage> initialUsage;
     if (continuousUsage) {
-      initialUsage = CompletionUsage{
-          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
-          params.sessionId};
+      initialUsage = CompletionUsage{params.promptTokenCount, 0, 0,
+                                     std::nullopt, std::nullopt};
     }
     auto initialChunk = ChatCompletionStreamChunk::makeInitialChunk(
         params.completionId, params.model, params.created, initialUsage);
@@ -140,7 +136,9 @@ void StreamingResponseWriter::finalize() {
       (*self->streamPtr)->send("data: [DONE]\n\n");
       (*self->streamPtr)->close();
 
-      self->releaseInFlight();
+      if (self->params.session) {
+        self->params.session->clearInFlight();
+      }
     }
   });
 }
@@ -151,7 +149,9 @@ void StreamingResponseWriter::abort() {
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
-    releaseInFlight();
+    if (params.session) {
+      params.session->clearInFlight();
+    }
   }
 }
 

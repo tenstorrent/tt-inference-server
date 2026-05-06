@@ -15,6 +15,7 @@
 #include "domain/json_field.hpp"
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
+#include "domain/session.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 
@@ -141,6 +142,7 @@ struct LLMRequest : BaseRequest {
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  std::shared_ptr<tt::domain::Session> session;  // Shared reference to session
   bool continuation =
       false;  // True if this request continues an existing session
 

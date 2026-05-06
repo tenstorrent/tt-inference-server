@@ -192,34 +192,14 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   return result;
 }
 
-std::optional<domain::Session> SessionManager::getSession(
+std::shared_ptr<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
   auto ms = sessions.get(sessionId);
-  if (!ms.has_value()) return std::nullopt;
-  return ms->session;
+  if (!ms.has_value()) return nullptr;
+  return std::make_shared<domain::Session>(ms->session);
 }
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
-
-void SessionManager::releaseInFlight(const std::string& sessionId) {
-  bool found = sessions.modify(sessionId, [](ManagedSession& ms) {
-    ms.cancelFn = nullptr;
-    if (!ms.session.clearInFlight()) {
-      TT_LOG_WARN("[Session] clearInFlight: unexpected state {}",
-                  static_cast<int>(ms.session.getState()));
-    }
-  });
-
-  if (!found) {
-    TT_LOG_DEBUG(
-        "[SessionManager] releaseInFlight: session {} already removed "
-        "(closed concurrently), ignoring",
-        sessionId);
-    return;
-  }
-
-  TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
-}
 
 void SessionManager::evictOldSessions() {
   bool expected = false;

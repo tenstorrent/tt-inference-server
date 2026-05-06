@@ -72,10 +72,9 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
-  std::optional<domain::Session> getSession(const std::string& sessionId) const;
+  std::shared_ptr<domain::Session> getSession(
+      const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
-
-  void releaseInFlight(const std::string& sessionId);
 
   /**
    * Try to find a session whose registered prefix hash matches, atomically
