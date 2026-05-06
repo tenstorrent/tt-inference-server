@@ -96,6 +96,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} 
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
+    && if [ -d plugins/vllm-tt-plugin ]; then uv pip install --no-deps -e plugins/vllm-tt-plugin; fi \  
     && rm -rf ${vllm_dir}/.git"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
