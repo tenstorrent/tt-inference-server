@@ -393,80 +393,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 }
 
 domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
-  ZoneScopedN("LLMService::processRequest");
-
-  std::mutex mtx;
-  std::condition_variable cv;
-  bool done = false;
-
-  std::string accumulatedAnswer;
-  std::string accumulatedReasoning;
-  int completionTokens = 0;
-  int reasoningTokens = 0;
-  int specAccepts = 0;
-  int specRejects = 0;
-  std::string finishReason = "stop";
-
-  const int promptTokens =
-      std::holds_alternative<std::vector<int>>(request.prompt)
-          ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
-          : 0;
-  const uint32_t taskId = request.task_id;
-  const std::string model = request.model.value_or("default");
-
-  processStreamingRequest(
-      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
-        if (!chunk.choices.empty()) {
-          if (chunk.choices[0].reasoning.has_value()) {
-            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
-            reasoningTokens++;
-          }
-          accumulatedAnswer.append(chunk.choices[0].text);
-          completionTokens++;
-          specAccepts += chunk.choices[0].spec_accepts;
-          specRejects += chunk.choices[0].spec_rejects;
-          if (chunk.choices[0].finish_reason.has_value()) {
-            finishReason = chunk.choices[0].finish_reason.value();
-          }
-        }
-        if (isFinal) {
-          std::lock_guard<std::mutex> lock(mtx);
-          done = true;
-          cv.notify_one();
-        }
-      });
-
-  std::unique_lock<std::mutex> lock(mtx);
-  cv.wait(lock, [&] { return done; });
-
-  domain::LLMResponse response{taskId};
-  response.id = std::to_string(taskId);
-  response.model = model;
-  response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-  domain::LLMChoice choice;
-  choice.text = std::move(accumulatedAnswer);
-  choice.reasoning =
-      accumulatedReasoning.empty()
-          ? std::nullopt
-          : std::optional<std::string>(std::move(accumulatedReasoning));
-  choice.index = 0;
-  choice.finish_reason = finishReason;
-  response.choices.push_back(std::move(choice));
-
-  response.usage = {
-      promptTokens,
-      completionTokens,
-      promptTokens + completionTokens,
-      {0, 0},  // prompt_tokens_details: cached_tokens, audio_tokens
-      {reasoningTokens, 0, specAccepts, specRejects},
-      std::nullopt,
-      std::nullopt,
-      std::nullopt};
-
-  return response;
+  throw std::runtime_error(
+    "LLMService::processRequest is not supported; use streaming interface");
 }
 
 void LLMService::processStreamingRequest(
