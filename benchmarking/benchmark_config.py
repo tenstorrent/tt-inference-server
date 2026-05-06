@@ -11,7 +11,6 @@ from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
-    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -618,9 +617,7 @@ for model_id, model_spec in MODEL_SPECS.items():
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: text LLMs only, but can be extended
-    structured_output_eligible = (
-        model_spec.model_type == ModelType.LLM
-    )
+    structured_output_eligible = model_spec.model_type == ModelType.LLM
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(
