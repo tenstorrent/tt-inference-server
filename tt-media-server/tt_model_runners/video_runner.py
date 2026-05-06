@@ -168,31 +168,52 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-def _read_image_prompts_side_file(path: str, task_id: str) -> List[dict]:
+def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict]]:
     """Load the I2V image_prompts list written by ``SPRunner._write_image_side_file``.
 
     The cross-process contract is a JSON array of ``{"image", "frame_pos"}``
     dicts (see ``ipc.video_shm.image_prompts_path`` and the SPRunner helper).
-    Any I/O / parse failure OR a payload whose top-level shape isn't a list
-    degrades to an empty list so the MPI broadcast still completes
+    Returns the parsed list on success, or ``None`` on any failure (missing
+    file, parse error, unexpected top-level shape).
     """
     try:
         with open(path, "r") as f:
             data = json.load(f)
     except (OSError, ValueError) as e:
         _log.warning(
-            f"Rank 0: failed to read I2V side-file {path!r} for task "
-            f"{task_id}: {e}; falling back to empty image_prompts"
+            f"Rank 0: failed to read I2V side-file {path!r} for task {task_id}: {e}"
         )
-        return []
+        return None
     if not isinstance(data, list):
         _log.warning(
             f"Rank 0: I2V side-file {path!r} for task {task_id} is not a "
-            f"JSON list (got {type(data).__name__}); falling back to empty "
-            f"image_prompts"
+            f"JSON list (got {type(data).__name__})"
         )
-        return []
+        return None
     return data
+
+
+def _rank0_load_image_prompts(
+    raw_req: Optional[VideoRequest],
+    encode_queue: "queue.Queue[Optional[_EncodeJob]]",
+) -> tuple:
+    """
+    Rank-0-only: resolve ``image_prompts`` for one inference iteration.
+    Returns ``(image_prompts, skip)`` where ``skip=True`` means rank 0 has
+    already enqueued an error response on the caller's behalf.
+    """
+    if raw_req is None or not raw_req.image_path:
+        return None, False
+    prompts = _read_image_prompts_side_file(raw_req.image_path, raw_req.task_id)
+    if prompts is not None:
+        return prompts, False
+    err = (
+        f"I2V conditioning side-file unreadable: "
+        f"{raw_req.image_path!r} for task {raw_req.task_id}"
+    )
+    _log.error(f"Rank 0: {err}")
+    encode_queue.put(_EncodeJob(task_id=raw_req.task_id, error=err))
+    return [], True
 
 
 def video_request_to_generate_request(
@@ -248,14 +269,21 @@ def _broadcast_request(
     comm,
     req: Optional[VideoRequest],
     image_prompts: Optional[List[dict]] = None,
+    skip: bool = False,
 ) -> tuple:
-    """Collective: rank 0 provides ``(req, image_prompts)``, all ranks receive it.
+    """Collective: rank 0 provides ``(req, image_prompts, skip)``; all ranks
+    receive it.
 
-    Returns ``(None, None)`` when rank 0 signals shutdown (``read_request``
-    returned None). All ranks must call this on every iteration so MPI stays
-    in sync.
+    Returns ``(None, None, False)`` when rank 0 signals shutdown
+    (``read_request`` returned None). All ranks must call this on every
+    iteration so MPI stays in sync.
+
+    ``skip=True`` signals that rank 0 has already produced an error response
+    for this iteration (e.g. the I2V side-file was unreadable) and the
+    inference call must be skipped on every rank in lockstep — otherwise
+    ranks 1..N would block on collective ops with no rank-0 peer.
     """
-    return comm.bcast((req, image_prompts), root=0)
+    return comm.bcast((req, image_prompts, skip), root=0)
 
 
 def _encoder_loop(
@@ -328,21 +356,31 @@ def _run_inference_loop(
     while not _shutdown:
         raw_req: Optional[VideoRequest] = None
         rank0_image_prompts: Optional[List[dict]] = None
+        rank0_skip = False
         if rank == 0:
             raw_req = input_shm.read_request()
-            # Side-file lives on host-0 tmpfs only;
-            if raw_req is not None and raw_req.image_path:
-                rank0_image_prompts = _read_image_prompts_side_file(
-                    raw_req.image_path, raw_req.task_id
-                )
+            rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
+                raw_req, encode_queue
+            )
 
-        req, image_prompts = _broadcast_request(
-            comm, raw_req, image_prompts=rank0_image_prompts
+        req, image_prompts, skip = _broadcast_request(
+            comm,
+            raw_req,
+            image_prompts=rank0_image_prompts,
+            skip=rank0_skip,
         )
 
         if req is None:
             _log.info(f"Rank {rank}: Shutdown signal received, exiting loop")
             break
+
+        if skip:
+            if rank == 0:
+                _log.info(
+                    f"Rank 0: skipping inference for task {req.task_id} "
+                    f"(rank 0 already submitted error response)"
+                )
+            continue
 
         if rank == 0:
             _log.info(
