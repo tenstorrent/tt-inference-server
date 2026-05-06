@@ -291,6 +291,9 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
+    src/services/service_registry.cpp
+    src/utils/runner_registry.cpp
+    src/api/route_registry.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -495,6 +498,12 @@ target_include_directories(worker_metrics_shm_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(model_service_registry_test
+    tests/model_service_registry_test.cpp
+    src/services/service_container.cpp
+)
+target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
 target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
 target_include_directories(concurrent_map_test PRIVATE
@@ -534,6 +543,37 @@ target_include_directories(worker_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# LLMService unit test: drives processStreamingRequest in-process.
+# Pulls in the same translation units that the main server links so the
+# real LLMService can be constructed without forking workers.
+add_executable(llm_service_test
+    tests/llm_service_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+)
+target_link_libraries(llm_service_test PRIVATE
+    llm_runner_lib
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(llm_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -549,6 +589,8 @@ gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
+gtest_discover_tests(llm_service_test)
+gtest_discover_tests(model_service_registry_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
@@ -627,6 +669,7 @@ set(SOURCES
     src/api/response_writer/streaming_response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
+    src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
@@ -638,6 +681,7 @@ set(SOURCES
     src/worker/process_liveness.cpp
     src/utils/service_factory.cpp
     src/services/service_container.cpp
+    src/services/model_service_registration.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
@@ -661,10 +705,28 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_BINARY_DIR}/generated
     ${rapidjson_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
+
+# Build-time codegen for config/build_info.hpp (build-identity constants
+# consumed by InfoController and any future caller that wants to label a
+# log line / metric / response with the running binary's version + SHAs).
+# Runs on every build so commit SHAs reflect the current tree, not whatever
+# was checked out at the last `cmake -B build` invocation.
+add_custom_target(generate_build_info ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DCPP_SERVER_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/include/config/build_info.hpp.in
+        -DOUTPUT=${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuildInfo.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+    COMMENT "Generating config/build_info.hpp from VERSION + git"
+    VERBATIM
+)
+add_dependencies(${PROJECT_NAME} generate_build_info)
 
 # Link Drogon, llm_runner_lib, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)

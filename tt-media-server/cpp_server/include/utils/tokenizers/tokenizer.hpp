@@ -100,13 +100,16 @@ class Tokenizer {
    * Apply the model-specific chat template to a list of messages.
    * @param enableReasoning When false, reasoning models (e.g. DeepSeek-R1)
    *   inject a closed think block to suppress chain-of-thought output.
+   * @param skipApplyChatTemplate When true, skip adding <bos><user> and
+   *   <assistant> tags (returns raw message content only).
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt = true,
       const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
           std::nullopt,
-      bool enableReasoning = true) const = 0;
+      bool enableReasoning = true,
+      bool skipApplyChatTemplate = false) const = 0;
 
   /**
    * Stream decoder for incremental token-by-token decoding.

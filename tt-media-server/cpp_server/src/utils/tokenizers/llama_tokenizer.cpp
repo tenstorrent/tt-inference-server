@@ -19,8 +19,15 @@ std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<tt::domain::llm::ChatMessage>& messages,
     bool addGenerationPrompt,
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
-    [[maybe_unused]] bool enableReasoning) const {
+    [[maybe_unused]] bool enableReasoning, bool skipApplyChatTemplate) const {
   std::ostringstream out;
+
+  if (skipApplyChatTemplate) {
+    for (const auto& m : messages) {
+      out << m.content;
+    }
+    return out.str();
+  }
 
   // Extract system message
   std::string systemContent;
