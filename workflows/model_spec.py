@@ -226,6 +226,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+qwen35_27b_impl = ImplSpec(
+    impl_id="qwen35_27b",
+    impl_name="qwen35-27b",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen35_27b",
+)
 gpt_oss_impl = ImplSpec(
     impl_id="gpt_oss",
     impl_name="gpt-oss",
@@ -1252,6 +1258,36 @@ llm_templates = [
         has_builtin_warmup=True,
         metadata={
             "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3.5-27B-FP8"],
+        impl=qwen35_27b_impl,
+        version="0.10.0",
+        tt_metal_commit="47a7c16c8157514fcc68e6cff6f703b4e52b5690",
+        vllm_commit="a6abfbeddbc33d8642727b9772e29c6537ec516f",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                override_tt_config={
+                    "trace_region_size": 200000000,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen3.5-27B-FP8": {
                 "reasoning_parser_name": "qwen3",
                 "tool_call_parser_name": "hermes",
             },

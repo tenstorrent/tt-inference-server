@@ -602,6 +602,43 @@ class TestModelSpecsStructure:
             assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
 
+    def test_qwen35_27b_fp8_p150x4_spec(self):
+        """Test Qwen3.5-27B FP8 is exposed for the P150X4 vLLM path."""
+        spec = MODEL_SPECS["id_qwen35-27b_Qwen3.5-27B-FP8_p150x4"]
+
+        assert spec.hf_model_repo == "Qwen/Qwen3.5-27B-FP8"
+        assert spec.model_name == "Qwen3.5-27B-FP8"
+        assert spec.impl.impl_id == "qwen35_27b"
+        assert spec.impl.code_path == "models/demos/qwen35_27b"
+        assert spec.device_type == DeviceTypes.P150X4
+        assert spec.inference_engine == InferenceEngine.VLLM.value
+        assert spec.tt_metal_commit == "47a7c16c8157514fcc68e6cff6f703b4e52b5690"
+        assert spec.vllm_commit == "a6abfbeddbc33d8642727b9772e29c6537ec516f"
+        assert spec.status == ModelStatusTypes.EXPERIMENTAL
+        assert spec.device_model_spec.default_impl is True
+        assert spec.device_model_spec.max_concurrency == 32
+        assert spec.device_model_spec.max_context == 128 * 1024
+        assert spec.device_model_spec.tensor_cache_timeout == 5400.0
+        assert spec.device_model_spec.override_tt_config == {
+            "trace_region_size": 200000000,
+        }
+        assert spec.env_vars["MESH_DEVICE"] == "P150x4"
+        assert spec.env_vars["ARCH_NAME"] == "blackhole"
+        assert spec.env_vars["VLLM_ALLOW_LONG_MAX_MODEL_LEN"] == 1
+        assert spec.metadata == {
+            "reasoning_parser_name": "qwen3",
+            "tool_call_parser_name": "hermes",
+        }
+
+    def test_qwen35_27b_fp8_has_chat_completion_server_test(self):
+        """Test Qwen3.5-27B FP8 participates in server smoke tests."""
+        from server_tests.test_config import TEST_CONFIGS
+
+        config = TEST_CONFIGS["Qwen3.5-27B-FP8"]
+
+        assert config.hf_model_repo == "Qwen/Qwen3.5-27B-FP8"
+        assert [task.task_name for task in config.tasks] == ["vllm_chat_completions"]
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

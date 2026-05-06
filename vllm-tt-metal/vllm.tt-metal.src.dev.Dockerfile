@@ -80,12 +80,19 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
+    && sed -i 's/from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoModelForVision2Seq/from transformers import AutoModelForCausalLM, AutoModelForImageTextToText\n        AutoModelForVision2Seq = AutoModelForImageTextToText/' models/tt_transformers/tt/model_config.py \
+    && sed -i 's/from transformers import AutoModelForVision2Seq, AutoProcessor, pipeline/from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq, AutoProcessor, pipeline/' models/common/llama_models.py \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
+    && sed -i '/^datasets==2.9.0$/d' tt_metal/python_env/requirements-dev.txt \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"
+
+RUN python3 -c 'from pathlib import Path; p = Path("/home/container_app_user/tt-metal/models/demos/qwen35_27b/tt/model.py"); s = p.read_text(); s = s.replace("model_path = os.path.expanduser(\"~/models/Qwen3.5-27B-FP8\")", "model_path = os.environ.get(\"MODEL_WEIGHTS_DIR\") or os.environ.get(\"HF_MODEL\") or os.path.expanduser(\"~/models/Qwen3.5-27B-FP8\")"); p.write_text(s)'
+
+RUN python3 -c 'from pathlib import Path; p = Path("/home/container_app_user/tt-metal/models/demos/qwen35_27b/tt/model_config.py"); s = p.read_text(); s = s.replace("    def __init__(self, mesh_device, **kwargs):\n        super().__init__(mesh_device, **kwargs)\n\n        # Restore real n_kv_heads after parent init", "    def __init__(self, mesh_device, **kwargs):\n        super().__init__(mesh_device, **kwargs)\n        self.is_multimodal = False\n\n        # Restore real n_kv_heads after parent init"); p.write_text(s)'
 
 # Build vllm - clone with minimal history and clean
 # Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
@@ -93,10 +100,13 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
     && cd ${vllm_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && python3 -c 'from pathlib import Path; p = Path(\"vllm/multimodal/registry.py\"); s = p.read_text(); old = \"        if not model_config.is_multimodal_model:\\n            return False\\n\\n        mm_config = model_config.get_multimodal_config()\"; new = \"        if not model_config.is_multimodal_model:\\n            return False\\n\\n        from vllm.model_executor.model_loader import get_model_architecture\\n        model_cls, _ = get_model_architecture(model_config)\\n        if not hasattr(model_cls, \\\"_processor_factory\\\"):\\n            logger.info_once(\\\"Model class %s has no multimodal processor; running in text-only mode.\\\", model_cls)\\n            return False\\n\\n        mm_config = model_config.get_multimodal_config()\"; assert old in s, \"registry.py patch target not found\"; p.write_text(s.replace(old, new))' \
+    && python3 -c 'from pathlib import Path; p = Path(\"vllm/v1/worker/tt_model_runner.py\"); s = p.read_text(); old = \"        self.request_specific_rope = bool(self.model_config.uses_mrope)\"; new = \"        self.request_specific_rope = bool(self.model_config.uses_mrope) and self.model_config.hf_config.model_type != \\\"qwen3_5\\\"\"; assert old in s, \"tt_model_runner.py rope patch target not found\"; p.write_text(s.replace(old, new))' \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
     && if [ -d plugins/vllm-tt-plugin ]; then uv pip install --no-deps -e plugins/vllm-tt-plugin; fi \  
+    && uv pip install --force-reinstall 'git+https://github.com/huggingface/transformers.git' \
     && rm -rf ${vllm_dir}/.git"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv

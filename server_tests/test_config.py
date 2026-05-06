@@ -47,6 +47,16 @@ _test_config_list = [
         ],
     ),
     TestConfig(
+        hf_model_repo="Qwen/Qwen3.5-27B-FP8",
+        tasks=[
+            TestTask(
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
+                test_args=("s", "v"),
+            ),
+        ],
+    ),
+    TestConfig(
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tasks=[
             TestTask(
