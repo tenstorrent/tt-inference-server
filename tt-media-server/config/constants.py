@@ -23,6 +23,7 @@ class SupportedModels(Enum):
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
+    QWEN_3_EMBEDDING_0_6B = "Qwen/Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
@@ -67,6 +68,7 @@ class ModelNames(Enum):
     SEGFORMER = "segformer"
     UNET = "unet"
     VIT = "vit"
+    QWEN_3_EMBEDDING_0_6B= "Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
@@ -222,6 +224,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
+    ModelRunners.QWEN_EMBEDDING_0_6B: {ModelNames.QWEN_3_EMBEDDING_0_6B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
@@ -1028,6 +1031,22 @@ ModelConfigs = {
             "min_context_length": 32,
             "max_num_seqs": 1,
         },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.QWEN_EMBEDDING_0_6B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+        "use_queue_per_worker": True,
+        "default_throttle_level": 0,
+        "request_processing_timeout_seconds": 2000,
+        "vllm": _vllm_config(
+            model=SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
+            max_model_length=1024,
+            max_num_batched_tokens=1024,
+            max_num_seqs=1,
+        ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N150): {

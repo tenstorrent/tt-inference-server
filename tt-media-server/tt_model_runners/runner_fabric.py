@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from config.constants import ModelRunners
+from config.constants import ModelRunners, SupportedModels
 from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
@@ -61,10 +61,14 @@ AVAILABLE_RUNNERS = {
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
+    ModelRunners.QWEN_EMBEDDING_0_6B: lambda wid: __import__(
+        "tt_model_runners.embedding_runner",
+        fromlist=["Qwen3Embedding8BRunner"],
+    ).Qwen3Embedding8BRunner(wid, SupportedModels.QWEN_3_EMBEDDING_0_6B.value),
     ModelRunners.QWEN_EMBEDDING_8B: lambda wid: __import__(
         "tt_model_runners.embedding_runner",
         fromlist=["Qwen3Embedding8BRunner"],
-    ).Qwen3Embedding8BRunner(wid),
+    ).Qwen3Embedding8BRunner(wid, SupportedModels.QWEN_3_EMBEDDING_8B.value),
     ModelRunners.TT_YOLOV4: lambda wid: __import__(
         "tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]
     ).TTYolov4Runner(wid),
