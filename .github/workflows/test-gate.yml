@@ -569,6 +569,26 @@ jobs:
             exit 1
           fi
 
+      # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
+      # tokenizer init cost (#3179) before the measured bench starts. Without
+      # this, mean_ttft_ms on the first bench is dominated by the cold-start
+      # P99 tail. Concurrency of 16 across 4 IO threads reliably touches every
+      # thread.
+      - name: Warm up mock backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
+
       - name: Bench mock backend
         env:
           OPENAI_API_KEY: 'your-secret-key'
@@ -656,6 +676,21 @@ jobs:
             echo "ERROR: Server did not become ready within 30 seconds"
             exit 1
           fi
+
+      - name: Warm up mock_pipeline backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 32 \
+            --random-output-len 32 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
 
       - name: Bench mock_pipeline backend
         env:
