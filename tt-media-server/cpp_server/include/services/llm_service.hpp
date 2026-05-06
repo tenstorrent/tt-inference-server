@@ -36,8 +36,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   LLMService();
 
-  LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
-             std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+  LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
              std::unique_ptr<ReasoningParser> reasoningParser,
              std::unique_ptr<IToolCallParser> toolCallParser,
@@ -88,8 +87,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
                                                      bool isFinal);
 
-  void init(const tt::utils::tokenizers::Tokenizer* tokenizer,
-            std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+  void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
             std::unique_ptr<tt::worker::WorkerManager> workerManager,
             std::unique_ptr<ReasoningParser> reasoningParser,
             std::unique_ptr<IToolCallParser> toolCallParser,
@@ -106,16 +104,9 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
 
-  // Tokenizer override for tests; null in production. Production code resolves
-  // the tokenizer per call via `tokenizerForCurrentThread()` so each thread
-  // touches its own thread-local instance (the underlying Rust tokenizer is
-  // not safe to share across threads).
-  const tt::utils::tokenizers::Tokenizer& tokenizerForCurrentThread() const;
-
   std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
-  const tt::utils::tokenizers::Tokenizer* injectedTokenizer = nullptr;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;
