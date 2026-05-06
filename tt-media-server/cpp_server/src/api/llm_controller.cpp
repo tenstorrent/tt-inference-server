@@ -233,14 +233,11 @@ void LLMController::chatCompletions(
   const size_t promptTokens =
       static_cast<size_t>(std::max(0, request->prompt_tokens_count));
 
-  bool exceedsContext = false;
-  if (request->max_tokens.has_value()) {
-    const size_t maxTok =
-        static_cast<size_t>(std::max(0, request->max_tokens.value()));
-    exceedsContext = promptTokens + maxTok >= maxContextLength;
-  } else {
-    exceedsContext = promptTokens >= maxContextLength;
-  }
+  const size_t requested = promptTokens +
+      (request->max_tokens.has_value()
+           ? static_cast<size_t>(std::max(0, *request->max_tokens))
+           : 1);
+  const bool exceedsContext = requested > maxContextLength;
 
   if (exceedsContext) {
     std::string detail =
