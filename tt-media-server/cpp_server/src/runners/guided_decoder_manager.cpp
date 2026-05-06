@@ -3,14 +3,28 @@
 
 #include "runners/guided_decoder_manager.hpp"
 
+#include <json/json.h>
 #include <xgrammar/xgrammar.h>
 
 #include <stdexcept>
 #include <unordered_map>
 
+#include "domain/tool_calls/tool.hpp"
+
 namespace tt::runners {
 
 using SamplingParams = tt::domain::SamplingParams;
+
+static Json::Value buildToolSchema(const tt::domain::tool_calls::Tool& tool) {
+  Json::Value schema;
+  schema["type"] = "object";
+  schema["properties"]["name"]["const"] = tool.functionDefinition.name;
+  schema["properties"]["arguments"] = tool.functionDefinition.parameters;
+  schema["properties"]["arguments"]["additionalProperties"] = false;
+  schema["required"].append("name");
+  schema["required"].append("arguments");
+  return schema;
+}
 
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
@@ -24,16 +38,21 @@ struct GuidedDecoderManager::Impl {
 
   std::unordered_map<uint32_t, std::unique_ptr<RequestState>> requests;
 
-  Impl(const std::vector<std::string>& encodedVocab, int vocabSize)
-      : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize),
+  Impl(const std::vector<std::string>& encodedVocab, int vocabSize,
+       const std::vector<int32_t>& stopTokenIds)
+      : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize,
+                      stopTokenIds.empty()
+                          ? std::optional<std::vector<int32_t>>(std::nullopt)
+                          : std::optional<std::vector<int32_t>>(stopTokenIds)),
         compiler(tokenizerInfo),
         vocabSize(vocabSize),
         bitmaskSize(xgrammar::GetBitmaskSize(vocabSize)) {}
 };
 
 GuidedDecoderManager::GuidedDecoderManager(
-    const std::vector<std::string>& encodedVocab, int vocabSize)
-    : impl(std::make_unique<Impl>(encodedVocab, vocabSize)) {}
+    const std::vector<std::string>& encodedVocab, int vocabSize,
+    const std::vector<int32_t>& stopTokenIds)
+    : impl(std::make_unique<Impl>(encodedVocab, vocabSize, stopTokenIds)) {}
 
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 
@@ -43,29 +62,37 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
   ResponseFormatType formatType = params.response_format_type;
   std::optional<std::string> schemaStr = params.json_schema_str;
 
-  if (params.tool_choice.has_value() &&
-      params.tool_choice->type == "function" &&
-      params.tool_choice->function.has_value() && params.tools.has_value()) {
-    const auto& functionName = params.tool_choice->function.value();
-    for (const auto& tool : params.tools.value()) {
-      if (tool.functionDefinition.name == functionName) {
-        formatType = ResponseFormatType::JSON_SCHEMA;
+  if (params.tool_choice.has_value() && params.tools.has_value()) {
+    if (params.tool_choice->type == "function" &&
+        params.tool_choice->function.has_value()) {
+      const auto& functionName = params.tool_choice->function.value();
+      for (const auto& tool : params.tools.value()) {
+        if (tool.functionDefinition.name == functionName) {
+          formatType = ResponseFormatType::JSON_SCHEMA;
 
-        Json::Value wrappedSchema;
-        wrappedSchema["type"] = "object";
+          Json::Value wrappedSchema = buildToolSchema(tool);
 
-        wrappedSchema["properties"]["name"]["const"] =
-            tool.functionDefinition.name;
-        wrappedSchema["properties"]["arguments"] =
-            tool.functionDefinition.parameters;
-        wrappedSchema["properties"]["arguments"]["additionalProperties"] =
-            false;
-        wrappedSchema["required"].append("name");
-        wrappedSchema["required"].append("arguments");
-
-        schemaStr = wrappedSchema.toStyledString();
-        break;
+          Json::StreamWriterBuilder builder;
+          builder["indentation"] = "";
+          schemaStr = Json::writeString(builder, wrappedSchema);
+          break;
+        }
       }
+    } else if (params.tool_choice->type == "required") {
+      formatType = ResponseFormatType::JSON_SCHEMA;
+
+      Json::Value wrappedSchema;
+      wrappedSchema["type"] = "object";
+
+      Json::Value anyOfSchema(Json::arrayValue);
+      for (const auto& tool : params.tools.value()) {
+        anyOfSchema.append(buildToolSchema(tool));
+      }
+
+      wrappedSchema["anyOf"] = anyOfSchema;
+      Json::StreamWriterBuilder builder;
+      builder["indentation"] = "";
+      schemaStr = Json::writeString(builder, wrappedSchema);
     }
   }
 

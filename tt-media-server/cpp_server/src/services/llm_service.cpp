@@ -29,21 +29,61 @@ using tt::services::TokenParseResult;
 using tt::services::ToolCallContentType;
 using tt::services::ToolCallTokenResult;
 
-LLMService::LLMService()
-    : tokenizer(&tt::utils::tokenizers::activeTokenizer()) {
-  size_t numWorkers = tt::config::numWorkers();
-  this->maxQueueSize = tt::config::maxQueueSize();
+LLMService::LLMService() {
+  const size_t numWorkers = tt::config::numWorkers();
+  auto qm =
+      std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
+  auto tq = qm->taskQueue;
 
-  const auto stopIds = tokenizer->stopTokenIds();
+  init(&tt::utils::tokenizers::activeTokenizer(), std::move(tq),
+       std::make_unique<tt::worker::WorkerManager>(numWorkers),
+       std::make_unique<ReasoningParser>(),
+       createToolCallParser(tt::config::modelType()), std::move(qm),
+       tt::config::maxQueueSize());
+}
+
+LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
+                       std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+                       std::unique_ptr<tt::worker::WorkerManager> workerManager,
+                       std::unique_ptr<ReasoningParser> reasoningParser,
+                       std::unique_ptr<IToolCallParser> toolCallParser,
+                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
+                       size_t maxQueueSize) {
+  init(tokenizer, std::move(taskQueue), std::move(workerManager),
+       std::move(reasoningParser), std::move(toolCallParser),
+       std::move(queueManager), maxQueueSize);
+}
+
+void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
+                      std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+                      std::unique_ptr<tt::worker::WorkerManager> workerManager,
+                      std::unique_ptr<ReasoningParser> reasoningParser,
+                      std::unique_ptr<IToolCallParser> toolCallParser,
+                      std::unique_ptr<tt::ipc::QueueManager> queueManager,
+                      size_t maxQueueSize) {
+  if (tokenizer == nullptr) {
+    throw std::invalid_argument("LLMService: tokenizer must not be null");
+  }
+  if (!taskQueue) {
+    throw std::invalid_argument("LLMService: taskQueue must not be null");
+  }
+  if (!workerManager) {
+    throw std::invalid_argument("LLMService: workerManager must not be null");
+  }
+
+  this->tokenizer = tokenizer;
+  this->taskQueue = std::move(taskQueue);
+  this->workerManager = std::move(workerManager);
+  this->reasoningParser = std::move(reasoningParser);
+  this->toolCallParser = std::move(toolCallParser);
+  this->queueManager = std::move(queueManager);
+  this->maxQueueSize = maxQueueSize;
+
+  const auto stopIds = this->tokenizer->stopTokenIds();
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
-  workerManager = std::make_unique<tt::worker::WorkerManager>(numWorkers);
-  reasoningParser = std::make_unique<ReasoningParser>();
-  toolCallParser = createToolCallParser(tt::config::modelType());
-
-  TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
-  queueManager =
-      std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
+  TT_LOG_INFO("[LLMService] Initialized (workers={})",
+              this->workerManager->numWorkers());
 }
 
 LLMService::~LLMService() { stop(); }
@@ -78,7 +118,8 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
   if (request.tool_choice.has_value()) {
     const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function" && type != "required") {
+    if (type != "auto" && type != "none" && type != "function" &&
+        type != "required") {
       throw std::invalid_argument(
           "tool_choice='" + type +
           "' is not yet supported by this server; only 'auto', 'none', "
@@ -113,6 +154,15 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
       if (!found) {
         throw std::invalid_argument("tool_choice.function.name '" +
                                     functionName + "' not found in tools");
+      }
+    }
+
+    // Validate required tool choice
+    if (type == "required") {
+      if (!request.tools.has_value() || request.tools->empty()) {
+        throw std::invalid_argument(
+            "tools array is required and must not be empty when tool_choice "
+            "type is 'required'");
       }
     }
   }
@@ -154,8 +204,10 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  for (auto& q : queueManager->resultQueues) {
-    q->shutdown();
+  if (queueManager) {
+    for (auto& q : queueManager->resultQueues) {
+      q->shutdown();
+    }
   }
 
   for (auto& thread : consumerThreads) {
@@ -168,7 +220,9 @@ void LLMService::stop() {
   workerManager->stop();
 
   TT_LOG_INFO("[LLMService] Stopped");
-  queueManager->clear();
+  if (queueManager) {
+    queueManager->clear();
+  }
 }
 
 namespace {
@@ -291,10 +345,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
   auto* worker = workerManager->worker(workerIdx);
-  if (!worker->cfg.result_queue) {
+  if (!worker || !worker->cfg.result_queue) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
+  auto resultQueue = worker->cfg.result_queue;
 
   std::unordered_map<
       uint32_t,
@@ -305,7 +360,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     bool anyActivity = false;
 
     ipc::SharedToken token;
-    while (worker->cfg.result_queue->blockingPop(token)) {
+    while (resultQueue->blockingPop(token)) {
       anyActivity = true;
 
       uint32_t taskId = token.task_id;
@@ -684,7 +739,7 @@ void LLMService::processStreamingRequest(
   sequence->setDisaggregated(request.disaggregated);
   sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));
-  queueManager->taskQueue->push(*std::move(sequence));
+  taskQueue->push(*std::move(sequence));
 }
 
 void LLMService::postProcess(domain::LLMResponse& response) const {
@@ -832,8 +887,6 @@ void LLMService::abortRequest(uint32_t taskId) {
     reasoningParser->finalizeTask(taskId);
   }
 
-  // Broadcast the cancel signal to every per-worker cancel queue.
-  // Each worker's scheduler::abortRequest is idempotent for unknown task IDs.
   if (queueManager) {
     for (auto& cq : queueManager->cancelQueues) {
       cq->push(taskId);

@@ -24,6 +24,10 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
                                               DecodeCallback callback) {
   switch (config.runner_type) {
     case ModelRunnerType::MOCK:
+#ifndef ENABLE_BLAZE
+    case ModelRunnerType::MOCK_PIPELINE:
+    case ModelRunnerType::PIPELINE_MANAGER:
+#endif
       return makeMockModelRunner(config, std::move(callback));
 #ifdef USE_METAL_CPP_LIB
     case ModelRunnerType::LLAMA:

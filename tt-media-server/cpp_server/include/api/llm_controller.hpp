@@ -118,8 +118,9 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Validate/create session, mark it in-flight, and populate request fields.
    * cancelFn is stored atomically with the in-flight state so that a concurrent
-   * closeSession always has a consistent view. Pass null for non-streaming
-   * requests that cannot be cancelled mid-flight.
+   * closeSession always has a consistent view. Both streaming and non-streaming
+   * paths pass a cancelFn; when closeSession fires mid-flight the client
+   * receives finish_reason="abort" (partial response for non-streaming).
    */
   void resolveSession(std::shared_ptr<domain::LLMRequest> req,
                       trantor::EventLoop* loop,

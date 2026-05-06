@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -15,6 +16,7 @@
 #include "domain/llm_response.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/queue_manager.hpp"
+#include "ipc/task_queue.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
@@ -48,6 +50,15 @@ class LLMService
       std::function<void(const domain::LLMStreamChunk&, bool)>;
 
   LLMService();
+
+  LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
+             std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+             std::unique_ptr<tt::worker::WorkerManager> workerManager,
+             std::unique_ptr<ReasoningParser> reasoningParser,
+             std::unique_ptr<IToolCallParser> toolCallParser,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
+             size_t maxQueueSize = std::numeric_limits<size_t>::max());
+
   ~LLMService() override;
 
   LLMService(const LLMService&) = delete;
@@ -66,16 +77,19 @@ class LLMService
    */
   void postProcess(domain::LLMResponse& response) const override;
 
+  void processStreamingRequest(
+      domain::LLMRequest request,
+      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
+      override;
+
   /**
    * Abort an in-flight request. Removes the streaming callback, decrements
-   * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
+   * pendingTasks, invokes the callback with finish_reason="abort" to unblock
    * synchronous waiters, and broadcasts cancel to all worker queues.
    * Idempotent and thread-safe.
    */
   void abortRequest(uint32_t taskId);
 
-  /** Borrowed pointer to the worker manager, used by main to wire the
-   * worker metrics aggregator. Lifetime tied to this LLMService. */
   tt::worker::WorkerManager* getWorkerManager() const {
     return workerManager.get();
   }
@@ -87,10 +101,6 @@ class LLMService
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
   void streamingPostProcess(domain::LLMStreamChunk&) const override {}
-  void processStreamingRequest(
-      domain::LLMRequest request,
-      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
-      override;
 
  private:
   struct StreamCallbackEntry {
@@ -104,6 +114,14 @@ class LLMService
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
                                                      bool isFinal);
 
+  void init(const tt::utils::tokenizers::Tokenizer* tokenizer,
+            std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+            std::unique_ptr<tt::worker::WorkerManager> workerManager,
+            std::unique_ptr<ReasoningParser> reasoningParser,
+            std::unique_ptr<IToolCallParser> toolCallParser,
+            std::unique_ptr<tt::ipc::QueueManager> queueManager,
+            size_t maxQueueSize);
+
   std::vector<std::thread> consumerThreads;
 
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
@@ -115,8 +133,9 @@ class LLMService
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
 
-  std::unique_ptr<tt::ipc::QueueManager> queueManager;
+  std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
+  std::unique_ptr<tt::ipc::QueueManager> queueManager;
   const tt::utils::tokenizers::Tokenizer* tokenizer;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;

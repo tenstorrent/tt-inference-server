@@ -34,7 +34,6 @@ void NonStreamResponseWriter::handleTokenChunk(
   }
   accumulatedAnswer.append(choice.text);
 
-  // Accumulate tool call arguments for structured output
   if (choice.tool_calls.has_value()) {
     const auto& toolCalls = choice.tool_calls.value();
     if (toolCalls.isArray() && !toolCalls.empty()) {
@@ -47,7 +46,10 @@ void NonStreamResponseWriter::handleTokenChunk(
     }
   }
 
-  noteToken();
+  if (!choice.text.empty() || choice.reasoning.has_value() ||
+      choice.tool_calls.has_value()) {
+    noteToken();
+  }
 
   if (choice.finish_reason.has_value()) {
     finishReason = choice.finish_reason.value();
@@ -64,7 +66,6 @@ void NonStreamResponseWriter::finalize() {
 
   domain::LLMChoice choice;
   choice.index = 0;
-  // For tool calls, use accumulated arguments; otherwise use accumulated answer
   choice.text = accumulatedArguments.empty() ? std::move(accumulatedAnswer)
                                              : std::move(accumulatedArguments);
   choice.reasoning =
