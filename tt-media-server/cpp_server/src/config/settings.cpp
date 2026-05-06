@@ -336,9 +336,9 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
-size_t maxInputTokens() {
+size_t maxContextLength() {
   static const size_t cached = static_cast<size_t>(
-      envUlong("MAX_INPUT_TOKENS", defaults::MAX_INPUT_TOKENS));
+      envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
   return cached;
 }
 

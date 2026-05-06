@@ -18,7 +18,7 @@ namespace tt::config {
  * Includes model runner settings, scheduling policy, and KV cache parameters.
  */
 struct LLMConfig {
-  size_t max_num_batched_tokens = 64 * defaults::MAX_INPUT_TOKENS;
+  size_t max_num_batched_tokens = 64 * defaults::MAX_CONTEXT_LENGTH;
   size_t max_in_flight_count = 64;
   std::vector<int64_t> stop_token_ids;  // Set by tt::config::llmEngineConfig()
                                         // from active tokenizer strategy

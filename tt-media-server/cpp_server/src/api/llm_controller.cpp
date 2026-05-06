@@ -5,10 +5,12 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "api/error_response.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
@@ -227,11 +229,31 @@ void LLMController::chatCompletions(
   }
 
   auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
-  const size_t maxInputTokens = tt::config::maxInputTokens();
-  if (static_cast<size_t>(request->prompt_tokens_count) > maxInputTokens) {
-    throw std::invalid_argument(
-        "Input too long: " + std::to_string(request->prompt_tokens_count) +
-        " tokens exceeds maximum of " + std::to_string(maxInputTokens));
+  const size_t maxContextLength = tt::config::maxContextLength();
+  const size_t promptTokens =
+      static_cast<size_t>(std::max(0, request->prompt_tokens_count));
+
+  bool exceedsContext = false;
+  if (request->max_tokens.has_value()) {
+    const size_t maxTok =
+        static_cast<size_t>(std::max(0, request->max_tokens.value()));
+    exceedsContext = promptTokens + maxTok >= maxContextLength;
+  } else {
+    exceedsContext = promptTokens >= maxContextLength;
+  }
+
+  if (exceedsContext) {
+    std::string detail =
+        "prompt_tokens=" + std::to_string(request->prompt_tokens_count);
+    if (request->max_tokens.has_value()) {
+      detail += ", max_tokens=" + std::to_string(*request->max_tokens);
+    }
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Request exceeds maximum context length (" +
+                               std::to_string(maxContextLength) +
+                               " tokens): " + detail,
+                           "invalid_request_error"));
+    return;
   }
 
   if (request->stream) {
@@ -251,7 +273,6 @@ ResponseWriterParams LLMController::makeWriterParams(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
   params.promptTokenCount = request.prompt_tokens_count;
-  params.cachedTokenCount = request.cached_tokens_count;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;

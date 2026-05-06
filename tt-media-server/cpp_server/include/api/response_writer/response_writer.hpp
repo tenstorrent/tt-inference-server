@@ -24,7 +24,6 @@ struct ResponseWriterParams {
   std::string model;
   int64_t created;
   int promptTokenCount;
-  int cachedTokenCount = 0;
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;

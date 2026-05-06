@@ -91,7 +91,6 @@ void StreamingResponseWriter::handleTokenChunk(
     u.prompt_tokens = params.promptTokenCount;
     u.completion_tokens = currentTokens;
     u.total_tokens = params.promptTokenCount + currentTokens;
-    u.cached_tokens = params.cachedTokenCount;
     u.sessionId = params.sessionId;
     usage = u;
   }
@@ -107,7 +106,6 @@ void StreamingResponseWriter::handleTokenChunk(
       u.prompt_tokens = params.promptTokenCount;
       u.completion_tokens = 0;
       u.total_tokens = 0;
-      u.cached_tokens = params.cachedTokenCount;
       u.sessionId = params.sessionId;
       initialUsage = u;
     }

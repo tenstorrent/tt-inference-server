@@ -114,9 +114,9 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
-/** Max input prompt tokens from MAX_INPUT_TOKENS. Default:
- * defaults::MAX_INPUT_TOKENS. */
-size_t maxInputTokens();
+/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
+ * defaults::MAX_CONTEXT_LENGTH. */
+size_t maxContextLength();
 
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();

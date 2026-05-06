@@ -19,7 +19,7 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
  public:
   static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
   static constexpr size_t MAX_MSG_SIZE =
-      tt::config::defaults::MAX_INPUT_TOKENS * sizeof(int64_t) +
+      tt::config::defaults::MAX_CONTEXT_LENGTH * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
   using Queue = BoostIpcMemoryQueue<tt::domain::Sequence, MAX_MSG_SIZE>;

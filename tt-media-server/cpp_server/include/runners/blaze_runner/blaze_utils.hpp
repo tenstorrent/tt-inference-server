@@ -25,7 +25,7 @@ inline pm::GenerationParams makeGenerationParams(
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
-              static_cast<int>(tt::config::defaults::MAX_INPUT_TOKENS))),
+              static_cast<int>(tt::config::defaults::MAX_CONTEXT_LENGTH))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .temperature = seq.getSamplingParams().temperature,
