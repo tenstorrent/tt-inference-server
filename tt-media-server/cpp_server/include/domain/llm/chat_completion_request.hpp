@@ -266,8 +266,8 @@ struct ChatCompletionRequest : BaseRequest {
     out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
         messages, true, tools, enable_reasoning, skip_apply_chat_template);
     if (auto* promptStr = std::get_if<std::string>(&out.prompt)) {
-      TT_LOG_INFO("Prompt: {}",
-                  detail::truncate(*promptStr, detail::MAX_PROMPT_LOG_LENGTH));
+      TT_LOG_DEBUG("Prompt: {}",
+                   detail::truncate(*promptStr, detail::MAX_PROMPT_LOG_LENGTH));
     }
     out.prompt_tokens_count = tt::utils::tokenizers::activeTokenizer()
                                   .encode(std::get<std::string>(out.prompt))
