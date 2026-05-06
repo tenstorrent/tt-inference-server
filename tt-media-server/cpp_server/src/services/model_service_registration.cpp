@@ -124,6 +124,7 @@ void registerAlwaysExemptRoutes() {
   routes.registerAlwaysExempt("/openapi.json");
   routes.registerAlwaysExempt("/metrics");
   routes.registerAlwaysExempt("/max-session-count");
+  routes.registerAlwaysExempt("/info");
 }
 
 }  // namespace
