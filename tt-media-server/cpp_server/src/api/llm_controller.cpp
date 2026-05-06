@@ -45,7 +45,8 @@ LLMController::LLMController() {
   tt::config::model();
 
   const auto& c = tt::services::ServiceContainer::instance();
-  service = c.llm();
+  service = std::dynamic_pointer_cast<tt::services::LLMService>(
+      c.getService(tt::config::ModelService::LLM));
   disaggregationService = c.disaggregation();
   sessionManager = c.sessionManager();
   socketService = c.socket();

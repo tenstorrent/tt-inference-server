@@ -19,8 +19,9 @@ struct TokenAcceptResult {
 
 class GuidedDecoderManager {
  public:
-  explicit GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
-                                int vocabSize);
+  GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
+                       int vocabSize,
+                       const std::vector<int32_t>& stopTokenIds = {});
   ~GuidedDecoderManager();
 
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;

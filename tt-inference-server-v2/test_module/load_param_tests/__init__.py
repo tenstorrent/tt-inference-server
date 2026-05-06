@@ -24,6 +24,8 @@ from .tts_load_test import TTSLoadTest
 from .tts_param_test import TTSParamTest
 from .video_generation_load_test import VideoGenerationLoadTest
 from .video_generation_param_test import VideoGenerationParamTest
+from .video_generation_i2v_test import VideoGenerationI2VTest
+
 
 __all__ = [
     "BaseTest",
@@ -48,4 +50,5 @@ __all__ = [
     "TTSParamTest",
     "VideoGenerationLoadTest",
     "VideoGenerationParamTest",
+    "VideoGenerationI2VTest",
 ]

@@ -157,13 +157,34 @@ class SPRunner(BaseDeviceRunner):
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
         mp4_path = resp.file_path
-        exists = os.path.exists(mp4_path)
-        size_bytes = os.path.getsize(mp4_path) if exists else None
-        size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
+
+        # Validate file exists and has size before returning
+        if not os.path.exists(mp4_path):
+            raise RuntimeError(
+                f"Video file does not exist for task {task_id}: {mp4_path}"
+            )
+
+        # Get actual file size from disk
+        try:
+            actual_size_bytes = os.path.getsize(mp4_path)
+        except OSError as e:
+            raise RuntimeError(
+                f"Cannot get file size for task {task_id}: {mp4_path}. Error: {e}"
+            )
+
+        MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
+        if actual_size_bytes < MIN_VIDEO_SIZE_BYTES:
+            self._try_unlink(mp4_path)
+            raise RuntimeError(
+                f"Video file too small for task {task_id}: {actual_size_bytes:,} bytes "
+                f"(minimum {MIN_VIDEO_SIZE_BYTES:,} bytes). File: {mp4_path}"
+            )
+
         self.logger.info(
-            f"[SP] Received mp4 path from SHM: {mp4_path} "
-            f"(exists={exists}, size={size_part})"
+            f"[SP] Validated video file for task {task_id}: {mp4_path} "
+            f"({actual_size_bytes:,} bytes)"
         )
+
         # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
         return [mp4_path]
 

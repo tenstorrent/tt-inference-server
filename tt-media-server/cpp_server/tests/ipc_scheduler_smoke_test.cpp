@@ -25,8 +25,8 @@
 #include "domain/sampling_params.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
-#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/schedulers/scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 using Sequence = tt::domain::Sequence;
 using SamplingParams = tt::domain::SamplingParams;

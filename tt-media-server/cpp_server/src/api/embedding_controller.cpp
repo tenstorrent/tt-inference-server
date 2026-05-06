@@ -29,7 +29,9 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::services::ServiceContainer::instance().embedding();
+  service_ = std::dynamic_pointer_cast<tt::services::EmbeddingService>(
+      tt::services::ServiceContainer::instance().getService(
+          tt::config::ModelService::EMBEDDING));
   if (!service_) {
     throw std::runtime_error(
         "[EmbeddingController] Embedding service not found in container. "
