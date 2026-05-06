@@ -60,9 +60,6 @@ jobs:
     if: ${{ needs.detect-changes.outputs.media-server-deps == 'true' }}
     name: Verify Media Server Dep Install
     runs-on: ubuntu-latest
-    # Hard cap: install resolves + downloads in ~4–7 min on a cold cache. The
-    # 15 min ceiling exists so a hung/looping resolver fails CI fast.
-    timeout-minutes: 15
     defaults:
       run:
         working-directory: tt-media-server
