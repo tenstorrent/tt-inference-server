@@ -12,8 +12,8 @@ ResponseWriter::ResponseWriter(ResponseWriterParams params)
     : params(std::move(params)) {}
 
 int ResponseWriter::noteToken(const domain::LLMChoice& choice) {
-  specAccepts.fetch_add(choice.spec_accepts);
-  specRejects.fetch_add(choice.spec_rejects);
+  specAccepts.store(choice.spec_accepts);
+  specRejects.store(choice.spec_rejects);
 
   if (choice.text.empty() && !choice.reasoning.has_value()) {
     return completionTokens.load();
