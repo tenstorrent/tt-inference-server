@@ -16,8 +16,11 @@ inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
       .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
-inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL, .slot_id = slotId, .tokens = {}};
+inline pm::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
+  return {.type = pm::RequestType::CANCEL,
+          .request_id = requestId,
+          .slot_id = slotId,
+          .tokens = {}};
 }
 
 inline pm::GenerationParams makeGenerationParams(
@@ -63,6 +66,7 @@ struct SlotContext {
   bool ignoreEos;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
+  uint32_t tokensGenerated = 0;
 };
 
 }  // namespace tt::runners::blaze_utils
