@@ -7,7 +7,7 @@
 
 set -e  # Exit on any error
 
-FORGE_MODELS_SHA="6159b4d6b98cda551c1233e5688ae5ade90378c1"
+FORGE_MODELS_SHA="e0b9cb1915970bdd2e089c1b613658a092c5ca15"
 
 REPO_URL="https://github.com/tenstorrent/tt-forge-models.git"
 TARGET_DIR="model_loaders"
