@@ -92,23 +92,38 @@ void BlazeRunner::run() {
 }
 
 bool BlazeRunner::warmup() {
-  tt::domain::SamplingParams warmupParams;
+  tt::domain::llm::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
+  constexpr uint32_t warmupAllocateRequestId = 0;
+  constexpr uint32_t warmupCancelRequestId = 1;
+
+  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto pollInterval = std::chrono::milliseconds(10);
+
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
-  pipelineManager->push_request(utils::makeAllocateRequest(0));
+  pipelineManager->push_request(
+      utils::makeAllocateRequest(warmupAllocateRequestId));
 
   TT_LOG_INFO("BlazeRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
+  const auto allocateDeadline = std::chrono::steady_clock::now() + timeout;
   while (!pipelineManager->try_pop_response(response)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (std::chrono::steady_clock::now() >= allocateDeadline) {
+      TT_LOG_ERROR(
+          "[BlazeRunner] Warmup timed out waiting for ALLOCATE response after "
+          "{} ms",
+          timeout.count());
+      return false;
+    }
+    std::this_thread::sleep_for(pollInterval);
   }
 
   auto slotId = response.slot_id;
@@ -121,8 +136,6 @@ bool BlazeRunner::warmup() {
   TT_LOG_INFO("BlazeRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
 
-  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
-  const auto pollInterval = std::chrono::milliseconds(10);
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
@@ -141,8 +154,21 @@ bool BlazeRunner::warmup() {
     return false;
   }
 
+  pipelineManager->push_request(
+      utils::makeCancelRequest(warmupCancelRequestId, slotId));
+  pm::PMResponse cancelResponse{};
+  const auto cancelDeadline = std::chrono::steady_clock::now() + timeout;
+  while (!pipelineManager->try_pop_response(cancelResponse)) {
+    if (std::chrono::steady_clock::now() >= cancelDeadline) {
+      TT_LOG_ERROR(
+          "[BlazeRunner] Warmup timed out waiting for CANCEL ack after {} ms "
+          "(slotId={})",
+          timeout.count(), slotId);
+      return false;
+    }
+    std::this_thread::sleep_for(pollInterval);
+  }
   TT_LOG_INFO("BlazeRunner: Warmup successful");
-  pipelineManager->push_request(utils::makeCancelRequest(slotId));
   return true;
 }
 
@@ -150,22 +176,14 @@ void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
+  drainAndHandleResponses();
+  drainAndHandleOutputs();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
                  memoryRequest->taskId,
                  static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
-  }
-  auto response = getResponse();
-  if (response.has_value()) {
-    TT_LOG_DEBUG("[BlazeRunner] step: got PMResponse request_id={}, slot_id={}",
-                 response->request_id, response->slot_id);
-    handleResponse(*response);
-  }
-  auto output = getOutput();
-  if (output.has_value()) {
-    handleOutput(*output);
   }
   auto request = getRequest();
   if (request) {
@@ -179,23 +197,27 @@ void BlazeRunner::step() {
   checkOutputHang();
 }
 
-std::optional<pm::PMResponse> BlazeRunner::getResponse() {
+void BlazeRunner::drainAndHandleResponses() {
   pm::PMResponse response;
-  if (pipelineManager->try_pop_response(response)) {
-    return response;
+  size_t drained = 0;
+  while (drained < tt::config::pmMaxUsers() &&
+         pipelineManager->try_pop_response(response)) {
+    handleResponse(response);
+    drained++;
   }
-  return std::nullopt;
 }
 
-std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
+void BlazeRunner::drainAndHandleOutputs() {
   pm::OutputMessage output;
-  if (pipelineManager->try_pop_output(output)) {
-    return output;
+  size_t drained = 0;
+  while (drained < tt::config::pmMaxUsers() &&
+         pipelineManager->try_pop_output(output)) {
+    handleOutput(output);
+    drained++;
   }
-  return std::nullopt;
 }
 
-std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
+std::unique_ptr<tt::domain::llm::Sequence> BlazeRunner::getRequest() {
   if (requestToRetry) {
     return std::move(requestToRetry);
   }
@@ -234,6 +256,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  context.tokensGenerated++;
   if (finished) {
     uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
                            context.specAcceptsAtStart;
@@ -241,8 +264,12 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
                            context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
-    TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
-                specAccepts, specTotal, acceptRate);
+    TT_LOG_INFO(
+        "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
+        "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
+        output.slot_id, specAccepts, specTotal, acceptRate, taskId,
+        output.token_id, output.is_complete, context.ignoreEos, hitStop,
+        context.tokensGenerated);
     slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
@@ -284,7 +311,8 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
   TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
+void BlazeRunner::handleRequest(
+    std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());

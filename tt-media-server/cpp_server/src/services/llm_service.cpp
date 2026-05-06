@@ -115,7 +115,7 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
   return workerManager->getWorkerInfo();
 }
 
-void LLMService::preProcess(domain::LLMRequest& request) const {
+void LLMService::preProcess(LLMRequest& request) const {
   BaseService::preProcess(request);
 
   if (request.tool_choice.has_value()) {
@@ -235,16 +235,16 @@ std::string decodeToken(
   return delta;
 }
 
-domain::LLMStreamChunk buildStreamChunk(
+LLMStreamChunk buildStreamChunk(
     const ipc::SharedToken& token, const TokenParseResult& parseResult,
     const std::unordered_set<int64_t>& stopTokenSet) {
-  domain::LLMStreamChunk response{token.task_id};
+  LLMStreamChunk response{token.task_id};
   response.id = std::to_string(token.task_id);
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = token.token_index;
 
   if (parseResult.type == ContentType::REASONING) {
@@ -330,8 +330,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
-        auto errorChunk =
-            domain::makeErrorChunk(taskId, "runner reported error");
+        auto errorChunk = makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }
@@ -388,7 +387,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
+LLMResponse LLMService::processRequest(LLMRequest request) {
   ZoneScopedN("LLMService::processRequest");
 
   std::mutex mtx;
@@ -408,7 +407,7 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
-      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
+      std::move(request), [&](LLMStreamChunk& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
           if (chunk.choices[0].reasoning.has_value()) {
             accumulatedReasoning.append(chunk.choices[0].reasoning.value());
@@ -429,14 +428,14 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait(lock, [&] { return done; });
 
-  domain::LLMResponse response{taskId};
+  LLMResponse response{taskId};
   response.id = std::to_string(taskId);
   response.model = model;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.text = std::move(accumulatedAnswer);
   choice.reasoning =
       accumulatedReasoning.empty()
@@ -454,8 +453,8 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
 }
 
 void LLMService::processStreamingRequest(
-    domain::LLMRequest request,
-    std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
+    LLMRequest request,
+    std::function<void(LLMStreamChunk&, bool isFinal)> callback) {
   if (!callback) {
     throw std::invalid_argument("streaming callback must not be null");
   }
@@ -492,7 +491,7 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-  auto sequence = std::make_unique<tt::domain::Sequence>(
+  auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
@@ -502,12 +501,12 @@ void LLMService::processStreamingRequest(
   }
   sequence->setContinuation(request.continuation);
   sequence->setDisaggregated(request.disaggregated);
-  sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
+  sequence->setSamplingParams(std::make_unique<tt::domain::llm::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));
   taskQueue->push(*std::move(sequence));
 }
 
-void LLMService::postProcess(domain::LLMResponse& response) const {
+void LLMService::postProcess(LLMResponse& response) const {
   // Parse and strip reasoning blocks from all choices
   if (reasoningParser) {
     for (auto& choice : response.choices) {
@@ -607,8 +606,8 @@ void LLMService::abortRequest(uint32_t taskId) {
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {
-    domain::LLMStreamChunk abortResponse{taskId};
-    domain::LLMChoice choice;
+    LLMStreamChunk abortResponse{taskId};
+    LLMChoice choice;
     choice.finish_reason = "abort";
     abortResponse.choices.push_back(std::move(choice));
     entry->callback(abortResponse, /*isFinal=*/true);

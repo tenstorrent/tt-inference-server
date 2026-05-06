@@ -6,11 +6,13 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "domain/chat_completion_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 StreamingResponseWriter::StreamingResponseWriter(trantor::EventLoop* loop,
                                                  ResponseWriterParams params,
@@ -75,8 +77,7 @@ void StreamingResponseWriter::flushAccumulated() {
   }
 }
 
-void StreamingResponseWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -84,32 +85,29 @@ void StreamingResponseWriter::handleTokenChunk(
   if (!choice.text.empty() || choice.reasoning.has_value()) {
     noteToken();
   }
-  std::optional<domain::CompletionUsage> usage;
+  std::optional<CompletionUsage> usage;
   if (continuousUsage) {
     const int currentTokens = completionTokens.load();
-    domain::CompletionUsage u{};
-    u.prompt_tokens = params.promptTokenCount;
-    u.completion_tokens = currentTokens;
-    u.total_tokens = params.promptTokenCount + currentTokens;
-    u.sessionId = params.sessionId;
-    usage = u;
+    usage = CompletionUsage{params.promptTokenCount,
+                            currentTokens,
+                            params.promptTokenCount + currentTokens,
+                            std::nullopt,
+                            std::nullopt,
+                            params.sessionId};
   }
 
-  auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+  auto streamChunk = ChatCompletionStreamChunk::makeContentChunk(
       params.completionId, params.model, params.created, choice, usage);
 
   std::string sse;
   if (firstContentChunk.exchange(false)) {
-    std::optional<domain::CompletionUsage> initialUsage;
+    std::optional<CompletionUsage> initialUsage;
     if (continuousUsage) {
-      domain::CompletionUsage u{};
-      u.prompt_tokens = params.promptTokenCount;
-      u.completion_tokens = 0;
-      u.total_tokens = 0;
-      u.sessionId = params.sessionId;
-      initialUsage = u;
+      initialUsage = CompletionUsage{
+          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
+          params.sessionId};
     }
-    auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+    auto initialChunk = ChatCompletionStreamChunk::makeInitialChunk(
         params.completionId, params.model, params.created, initialUsage);
     sse = initialChunk.toSSE() + streamChunk.toSSE();
   } else {
@@ -133,7 +131,7 @@ void StreamingResponseWriter::finalize() {
       if (self->includeUsage) {
         auto usage = self->buildUsage();
         (*self->streamPtr)
-            ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
+            ->send(ChatCompletionStreamChunk::makeUsageChunk(
                        self->params.completionId, self->params.model,
                        self->params.created, usage)
                        .toSSE());

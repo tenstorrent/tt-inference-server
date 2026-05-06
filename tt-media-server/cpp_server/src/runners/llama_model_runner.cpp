@@ -9,14 +9,16 @@
 #include <cstdlib>
 #include <string>
 
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "utils/logger.hpp"
 
 namespace py = pybind11;
 
+using namespace tt::domain::llm;
+
 namespace tt::runners::llm_engine {
-using Sequence = tt::domain::Sequence;
-using TokenResult = tt::domain::TokenResult;
+using Sequence = tt::domain::llm::Sequence;
+using TokenResult = tt::domain::llm::TokenResult;
 using Config = tt::config::LLMConfig;
 
 namespace {
@@ -108,7 +110,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             isPrefill ? 0 : static_cast<int>(seq->getTokenIds().size() - 1);
         int promptLen = static_cast<int>(seq->getNumPromptTokens());
 
-        const tt::domain::SamplingParams* sp = &seq->getSamplingParams();
+        const tt::domain::llm::SamplingParams* sp = &seq->getSamplingParams();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 
