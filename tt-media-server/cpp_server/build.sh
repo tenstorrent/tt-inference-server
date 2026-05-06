@@ -118,49 +118,6 @@ if ! command -v cargo >/dev/null 2>&1; then
     fi
 fi
 
-# Check for Drogon
-DROGON_FOUND=0
-if pkg-config --exists drogon 2>/dev/null; then
-    DROGON_FOUND=1
-elif [ -f "/usr/local/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
-elif [ -f "/usr/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
-elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
-    DROGON_FOUND=1
-fi
-
-if [ "${DROGON_FOUND}" -eq 0 ]; then
-    echo ""
-    echo "Drogon not found. Installing dependencies..."
-    echo ""
-
-    # Check if we need to build Drogon from deps
-    DROGON_DIR="${SCRIPT_DIR}/deps/drogon"
-    if [ -d "${DROGON_DIR}" ]; then
-        echo "Building Drogon from ${DROGON_DIR}..."
-        mkdir -p "${DROGON_DIR}/build"
-        cd "${DROGON_DIR}/build"
-        cmake -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_EXAMPLES=OFF \
-              -DBUILD_CTL=OFF \
-              -DBUILD_YAML_CONFIG=OFF \
-              ..
-        NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
-        make -j"${NPROC}"
-        sudo make install
-        if [ "$(uname -s)" = "Linux" ]; then
-            sudo ldconfig
-        fi
-        cd "${SCRIPT_DIR}"
-    else
-        echo "Please install Drogon framework first:"
-        echo "  Ubuntu/Debian: sudo apt install libdrogon-dev"
-        echo "  Or build from source: https://github.com/drogonframework/drogon"
-        exit 1
-    fi
-fi
-
 # ---------------------------------------------------------------------------
 # Pre-fetch tokenizer files for all supported models
 # ---------------------------------------------------------------------------

@@ -20,8 +20,35 @@ endif()
 # Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
 option(CLANG_TIDY "Run clang-tidy during build" OFF)
 
-# Find Drogon and JsonCpp (tokenizer_config parsing)
-find_package(Drogon REQUIRED)
+# Drogon HTTP framework. Vendored via FetchContent so the build is
+# self-contained (no sudo required). BUILD_POSTGRESQL/MYSQL/SQLITE/REDIS=OFF
+# prevent Drogon from auto-detecting those client libs at configure time and
+# transitively linking them into our binary via Drogon::Drogon based on
+# whatever happens to be installed on the build machine.
+include(FetchContent)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_CTL OFF CACHE BOOL "" FORCE)
+set(BUILD_YAML_CONFIG OFF CACHE BOOL "" FORCE)
+set(BUILD_POSTGRESQL OFF CACHE BOOL "" FORCE)
+set(BUILD_MYSQL OFF CACHE BOOL "" FORCE)
+set(BUILD_SQLITE OFF CACHE BOOL "" FORCE)
+set(BUILD_REDIS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    drogon
+    GIT_REPOSITORY https://github.com/drogonframework/drogon.git
+    GIT_TAG        v1.9.12
+    GIT_SHALLOW    TRUE
+    GIT_SUBMODULES_RECURSE TRUE
+)
+FetchContent_MakeAvailable(drogon)
+# Drogon's DrogonConfig.cmake (used by find_package) creates the Drogon::Drogon
+# alias; the add_subdirectory path doesn't, so define it ourselves to keep the
+# target_link_libraries(... Drogon::Drogon) call sites unchanged.
+if(NOT TARGET Drogon::Drogon)
+    add_library(Drogon::Drogon ALIAS drogon)
+endif()
+
+# JsonCpp (tokenizer_config parsing)
 find_package(jsoncpp REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 

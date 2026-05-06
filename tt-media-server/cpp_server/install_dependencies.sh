@@ -1,7 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
-# cpp_server build deps: apt + Rust (if needed) + Drogon (if not found).
+# cpp_server build deps: apt + Rust (if needed). Drogon is vendored via
+# FetchContent in CMakeLists.txt — no system install required.
 # Optional: ./install_dependencies.sh --kafka for librdkafka when using -DKAFKA_ENABLED=ON.
 set -euo pipefail
 
@@ -60,28 +61,3 @@ if ! command -v cargo >/dev/null 2>&1; then
     fi
 fi
 
-drogon_found() {
-    pkg-config --exists drogon 2>/dev/null || [ -f /usr/local/lib/cmake/Drogon/DrogonConfig.cmake ] || [ -f /usr/lib/cmake/Drogon/DrogonConfig.cmake ]
-}
-if ! drogon_found; then
-    DROGON_TMP="/tmp/drogon_build"
-    rm -rf "${DROGON_TMP}"
-    git clone --depth 1 --branch v1.9.12 --recurse-submodules https://github.com/drogonframework/drogon.git "${DROGON_TMP}"
-    mkdir -p "${DROGON_TMP}/build" && cd "${DROGON_TMP}/build"
-    # Disable Drogon's optional ORM/DB modules. We don't use them, and
-    # leaving them on causes Drogon to auto-detect libpq/libmysqlclient/
-    # libsqlite3/libhiredis at configure time and link them transitively
-    # into our binary via Drogon::Drogon. That made the build artifact's
-    # runtime deps a function of whatever happened to be installed on the
-    # build runner — see PR history for the libpq.so.5-on-bench-runner
-    # incident this avoids.
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DBUILD_EXAMPLES=OFF -DBUILD_CTL=OFF -DBUILD_YAML_CONFIG=OFF \
-        -DBUILD_POSTGRESQL=OFF -DBUILD_MYSQL=OFF -DBUILD_SQLITE=OFF -DBUILD_REDIS=OFF
-    make -j"$(nproc 2>/dev/null || echo 4)"
-    $SUDO make install
-    [ "$(uname -s)" = "Linux" ] && $SUDO ldconfig
-    cd "${SCRIPT_DIR}" && rm -rf "${DROGON_TMP}"
-fi

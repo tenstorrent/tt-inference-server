@@ -4,13 +4,15 @@
 #
 # Build cpp_server on exabox (no sudo, ephemeral /home).
 #
-# All local installs (jsoncpp, libuuid, Drogon, Rust) go to
+# All local installs (jsoncpp, libuuid, Rust) go to
 # /data/$USER/.local so they persist across compute nodes.
 # Only libboost-dev is expected to be a system package.
+# Drogon is vendored via CMake FetchContent (see CMakeLists.txt) — no local
+# install required.
 #
 # Usage:
 #   ./build_exabox.sh [OPTIONS]        # same flags as build.sh
-#   ./build_exabox.sh --install-deps   # one-time: build jsoncpp, libuuid, Drogon + install Rust
+#   ./build_exabox.sh --install-deps   # one-time: build jsoncpp, libuuid + install Rust
 #
 # After building, run the binary with:
 #   LD_LIBRARY_PATH=/data/$USER/.local/lib:$LD_LIBRARY_PATH \
@@ -62,7 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Exabox-specific options:"
-            echo "  --install-deps       One-time setup: build jsoncpp, libuuid, Drogon + install Rust to /data/\$USER/.local"
+            echo "  --install-deps       One-time setup: build jsoncpp, libuuid + install Rust to /data/\$USER/.local"
             echo ""
             echo "Build options (same as build.sh):"
             echo "  --debug              Debug build (default: Release)"
@@ -150,48 +152,6 @@ install_uuid() {
     echo "libuuid installed to ${LOCAL_PREFIX}"
 }
 
-install_drogon() {
-    local drogon_cmake="${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake"
-    if [ -f "${drogon_cmake}" ]; then
-        echo "Drogon already installed at ${LOCAL_PREFIX}"
-        return 0
-    fi
-
-    echo ""
-    echo "Building Drogon → ${LOCAL_PREFIX} ..."
-
-    local drogon_src="${SCRIPT_DIR}/deps/drogon"
-    local drogon_tmp=""
-    if [ -d "${drogon_src}" ]; then
-        echo "  Using bundled source: ${drogon_src}"
-    else
-        drogon_tmp="${_build_tmp}/drogon"
-        echo "  Cloning drogon v1.9.12 → ${drogon_tmp}"
-        git clone --depth 1 --branch v1.9.12 --recurse-submodules \
-            https://github.com/drogonframework/drogon.git "${drogon_tmp}"
-        drogon_src="${drogon_tmp}"
-    fi
-
-    mkdir -p "${drogon_src}/build" && cd "${drogon_src}/build"
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="${LOCAL_PREFIX}" \
-        -DCMAKE_PREFIX_PATH="${LOCAL_PREFIX}" \
-        -DBUILD_EXAMPLES=OFF \
-        -DBUILD_CTL=OFF \
-        -DBUILD_YAML_CONFIG=OFF \
-        -DBUILD_POSTGRESQL=OFF \
-        -DBUILD_MYSQL=OFF \
-        -DBUILD_SQLITE=OFF \
-        -DBUILD_REDIS=OFF
-    make -j"${_nproc}"
-    make install
-    cd "${SCRIPT_DIR}"
-    [ -n "${drogon_tmp}" ] && rm -rf "${drogon_tmp}"
-
-    echo "Drogon installed to ${LOCAL_PREFIX}"
-}
-
 install_rust() {
     local cargo_bin="${CARGO_DIR}/bin/cargo"
     local rustup_cargo="${RUSTUP_DIR}/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"
@@ -214,7 +174,6 @@ if [ "${INSTALL_DEPS}" -eq 1 ]; then
     trap 'rm -rf "${_build_tmp}"' EXIT
     install_jsoncpp
     install_uuid
-    install_drogon
     install_rust
     echo ""
     echo "=============================================="
@@ -226,7 +185,6 @@ fi
 
 # ── Verify prerequisites ─────────────────────────────────────────────────
 _missing=()
-[ ! -f "${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake" ] && _missing+=("Drogon")
 have_lib jsoncpp jsoncpp || _missing+=("jsoncpp")
 have_lib uuid uuid       || _missing+=("libuuid")
 if [ ${#_missing[@]} -gt 0 ]; then

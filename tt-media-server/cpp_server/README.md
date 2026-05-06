@@ -873,27 +873,11 @@ With `LLM_DEVICE_BACKEND=mock`, the stub runner can be used to benchmark server 
 ### Prerequisites
 
 1. **CMake** >= 3.19
-2. **Drogon Framework** >= 1.8
-3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
-4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue).
-5. **JsonCpp** (used for tokenizer_config parsing).
+2. **C++20 compatible compiler** (GCC 10+, Clang 12+)
+3. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue).
+4. **JsonCpp** (used for tokenizer_config parsing).
 
-### Install Drogon (Ubuntu/Debian)
-
-```bash
-# Install dependencies
-sudo apt install git gcc g++ cmake libjsoncpp-dev uuid-dev \
-     openssl libssl-dev zlib1g-dev libbrotli-dev libboost-dev
-
-# Clone and build Drogon
-git clone https://github.com/drogonframework/drogon
-cd drogon
-git submodule update --init
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-sudo make install
-```
+Drogon and its trantor dependency are vendored via CMake `FetchContent` and built as part of the project — no system install required. Other system dependencies (jsoncpp, libuuid, openssl, zlib, boost headers, plus Rust for tokenizers-cpp) can be installed with `./install_dependencies.sh`.
 
 ### Build the Server
 
@@ -1012,14 +996,7 @@ To compare with the Python server:
 
 ### Build fails
 
-1. **Drogon not found:**
-  ```bash
-   # Install Drogon system-wide
-   cd /path/to/drogon/build
-   sudo make install
-   sudo ldconfig
-  ```
-2. **CMake too old:**
+1. **CMake too old:**
   ```bash
    cmake --version  # Need 3.19+
   ```
