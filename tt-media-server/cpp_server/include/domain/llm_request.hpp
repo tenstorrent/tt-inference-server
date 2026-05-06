@@ -46,16 +46,12 @@ std::string optStr(const std::optional<T>& opt) {
  */
 struct StreamOptions {
   bool include_usage = true;
-  bool continuous_usage_stats = false;
 
   static StreamOptions fromJson(const Json::Value& json) {
     StreamOptions opts;
     if (json.isMember("include_usage"))
       opts.include_usage =
           json_field::getBool(json["include_usage"], "include_usage");
-    if (json.isMember("continuous_usage_stats"))
-      opts.continuous_usage_stats = json_field::getBool(
-          json["continuous_usage_stats"], "continuous_usage_stats");
     return opts;
   }
 };
