@@ -114,57 +114,6 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 void LLMService::preProcess(LLMRequest& request) const {
   BaseService::preProcess(request);
 
-  if (request.tool_choice.has_value()) {
-    const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function" &&
-        type != "required") {
-      throw std::invalid_argument("tool_choice='" + type +
-                                  "' is not yet supported by this server; only "
-                                  "'auto', 'none', 'required', and "
-                                  "'function' are currently implemented");
-    }
-
-    // Validate named function call
-    if (type == "function") {
-      if (!request.tool_choice->function.has_value() ||
-          request.tool_choice->function.value().empty()) {
-        throw std::invalid_argument(
-            "tool_choice.function.name is required when type is 'function'. "
-            "Expected format: {\"type\": \"function\", \"function\": "
-            "{\"name\": \"function_name\"}}");
-      }
-
-      if (!request.tools.has_value()) {
-        throw std::invalid_argument(
-            "tools array is required when tool_choice type is 'function'");
-      }
-
-      // Validate function name exists in tools
-      const auto& functionName = request.tool_choice->function.value();
-      bool found = false;
-      for (const auto& tool : request.tools.value()) {
-        if (tool.functionDefinition.name == functionName) {
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw std::invalid_argument("tool_choice.function.name '" +
-                                    functionName + "' not found in tools");
-      }
-    }
-
-    // Validate required tool choice
-    if (type == "required") {
-      if (!request.tools.has_value() || request.tools->empty()) {
-        throw std::invalid_argument(
-            "tools array is required and must not be empty when tool_choice "
-            "type is 'required'");
-      }
-    }
-  }
-
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
