@@ -33,6 +33,7 @@ from tt_model_runners.video_runner import (
     _create_dit_runner,
     _is_shutdown,
     _rank,
+    _rank0_load_image_prompts,
     _run_inference_loop,
     _write_error_to_shm,
     _write_response_to_shm,
@@ -242,48 +243,136 @@ class TestHandleSigterm:
 class TestI2VBroadcast:
     """Multi-host I2V requires the conditioning image_prompts to reach all
     ranks alongside the text request. ``_broadcast_request`` is the chokepoint
-    that bundles ``(req, image_prompts)`` into a single MPI ``bcast`` call.
+    that bundles ``(req, image_prompts, skip)`` into a single MPI ``bcast``
+    call. ``skip`` is the lockstep-skip signal for rank-0-detected errors
+    (e.g. unreadable side-file); see ``_run_inference_loop``.
     """
 
     def test_broadcasts_request_and_image_prompts_tuple(self):
         mock_comm = MagicMock()
         req = _make_request()
         image_prompts = [{"image": _tiny_png_b64(), "frame_pos": 0}]
-        mock_comm.bcast.return_value = (req, image_prompts)
+        mock_comm.bcast.return_value = (req, image_prompts, False)
 
-        got_req, got_imgs = _broadcast_request(
+        got_req, got_imgs, got_skip = _broadcast_request(
             mock_comm, req, image_prompts=image_prompts
         )
 
-        mock_comm.bcast.assert_called_once_with((req, image_prompts), root=0)
+        mock_comm.bcast.assert_called_once_with((req, image_prompts, False), root=0)
         assert got_req is req
         assert got_imgs == image_prompts
+        assert got_skip is False
 
     def test_broadcasts_request_with_no_image_prompts(self):
         """T2V backward compat: when ``image_prompts`` is omitted, the
-        broadcast payload is ``(req, None)`` so non-rank-0 receivers still
-        unpack a uniform tuple shape."""
+        broadcast payload is ``(req, None, False)`` so non-rank-0 receivers
+        still unpack a uniform tuple shape."""
         mock_comm = MagicMock()
         req = _make_request()
-        mock_comm.bcast.return_value = (req, None)
+        mock_comm.bcast.return_value = (req, None, False)
 
-        got_req, got_imgs = _broadcast_request(mock_comm, req)
+        got_req, got_imgs, got_skip = _broadcast_request(mock_comm, req)
 
-        mock_comm.bcast.assert_called_once_with((req, None), root=0)
+        mock_comm.bcast.assert_called_once_with((req, None, False), root=0)
         assert got_req is req
         assert got_imgs is None
+        assert got_skip is False
 
     def test_broadcasts_none_pair_for_shutdown(self):
         """Shutdown signal: rank-0 ``read_request`` returned ``None``; the
-        broadcast unwraps to ``(None, None)`` so all ranks break out of the
-        inference loop in lock-step."""
+        broadcast unwraps to ``(None, None, False)`` so all ranks break out
+        of the inference loop in lock-step."""
         mock_comm = MagicMock()
-        mock_comm.bcast.return_value = (None, None)
+        mock_comm.bcast.return_value = (None, None, False)
 
-        got_req, got_imgs = _broadcast_request(mock_comm, None)
+        got_req, got_imgs, got_skip = _broadcast_request(mock_comm, None)
 
         assert got_req is None
         assert got_imgs is None
+        assert got_skip is False
+
+    def test_broadcasts_skip_flag_when_set(self):
+        """Skip flag must propagate through the broadcast so ranks 1..N
+        can no-op the iteration in lockstep with rank 0 — otherwise they
+        would block on collective ops with no peer."""
+        mock_comm = MagicMock()
+        req = _make_request()
+        mock_comm.bcast.return_value = (req, [], True)
+
+        got_req, got_imgs, got_skip = _broadcast_request(
+            mock_comm, req, image_prompts=[], skip=True
+        )
+
+        mock_comm.bcast.assert_called_once_with((req, [], True), root=0)
+        assert got_skip is True
+
+
+class TestRank0LoadImagePrompts:
+    """Direct coverage of the rank-0 side-file resolver. The end-to-end
+    behaviour is also verified via ``TestI2VInferenceLoopSideFile`` below,
+    but pinning the three branches at the helper level keeps the contract
+    explicit and survives future refactors of the loop body."""
+
+    def test_returns_none_false_for_t2v_request(self):
+        import queue as _queue
+
+        req = _make_request(image_path="")
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(req, encode_queue)
+
+        assert prompts is None
+        assert skip is False
+        assert encode_queue.qsize() == 0
+
+    def test_returns_none_false_when_raw_req_is_none(self):
+        """Shutdown iteration: rank 0 read None from input ring. The helper
+        must not touch the queue or attempt any I/O."""
+        import queue as _queue
+
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(None, encode_queue)
+
+        assert prompts is None
+        assert skip is False
+        assert encode_queue.qsize() == 0
+
+    def test_returns_prompts_false_for_readable_side_file(self, tmp_path):
+        import queue as _queue
+
+        side_path = tmp_path / "tt_img_ok.json"
+        payload = [{"image": _tiny_png_b64(), "frame_pos": 0}]
+        side_path.write_text(json.dumps(payload))
+        req = _make_request(image_path=str(side_path))
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(req, encode_queue)
+
+        assert prompts == payload
+        assert skip is False
+        assert encode_queue.qsize() == 0
+
+    def test_returns_empty_true_and_enqueues_error_when_unreadable(self, tmp_path):
+        """The fail-fast invariant: a missing/corrupt side-file must enqueue
+        an error job AND return ``skip=True`` so the loop body broadcasts
+        that flag and ranks 1..N no-op in lockstep."""
+        import queue as _queue
+
+        missing = tmp_path / "tt_img_missing.json"
+        req = _make_request(image_path=str(missing))
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(req, encode_queue)
+
+        assert prompts == []
+        assert skip is True
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.error is not None
+        assert "side-file unreadable" in job.error
+        assert str(missing) in job.error
 
 
 class TestI2VInferenceLoopSideFile:
@@ -316,7 +405,10 @@ class TestI2VInferenceLoopSideFile:
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
         # Iteration 1: real payload. Iteration 2: shutdown sentinel.
-        mock_comm.bcast.side_effect = [(req, image_prompts), (None, None)]
+        mock_comm.bcast.side_effect = [
+            (req, image_prompts, False),
+            (None, None, False),
+        ]
 
         mock_runner = MagicMock()
         mock_runner.run.return_value = MagicMock()
@@ -329,58 +421,92 @@ class TestI2VInferenceLoopSideFile:
         payload = first_call.args[0] if first_call.args else first_call[0][0]
         assert payload[0].task_id == req.task_id
         assert payload[1] == image_prompts
+        assert payload[2] is False
 
-    def test_rank0_non_list_side_file_falls_back_to_empty_prompts(self, tmp_path):
-        """Defence against a corrupt (or attacker-poisoned) side-file: if the
-        on-disk JSON parses but isn't a list (e.g. a dict, a string), we MUST
-        fall back to ``[]`` rather than letting the malformed payload reach
-        ``ImagePromptEntry(**entry)`` later — which would raise ``TypeError``
-        from ``**non_dict`` and produce a much harder-to-read failure than a
-        single-line warning + clean T2V degrade."""
+    def test_rank0_non_list_side_file_enqueues_error_and_skips(self, tmp_path):
+        """Corrupt side-file (parses, but top-level shape isn't a list) must
+        produce an explicit error response AND set ``skip=True`` on the
+        broadcast so all ranks no-op this iteration. Falling back to ``[]``
+        as a "clean T2V degrade" is wrong: ``TTWan22I2VRunner.run`` would
+        then raise ``AttributeError`` on ``request.image_prompts`` at a
+        downstream layer where the API has no useful context for the
+        failure, while a fail-fast at the side-file boundary surfaces the
+        actual cause (unreadable file)."""
         side_path = tmp_path / "tt_img_corrupt.json"
         side_path.write_text(json.dumps({"image": "b64", "frame_pos": 0}))
 
         req = _make_request(image_path=str(side_path))
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [(req, []), (None, None)]
+        # Iteration 1: skip=True (rank-0 error path). Iteration 2: shutdown.
+        mock_comm.bcast.side_effect = [(req, [], True), (None, None, False)]
 
         mock_runner = MagicMock()
-        mock_runner.run.return_value = MagicMock()
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.side_effect = [req, None]
 
-        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+        encode_queue = self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
 
+        # Inference must NOT have run on rank 0 (or any rank) for this iter.
+        mock_runner.run.assert_not_called()
+        # And the broadcast carried skip=True so ranks 1..N also no-op.
         first_call = mock_comm.bcast.call_args_list[0]
         payload = first_call.args[0] if first_call.args else first_call[0][0]
-        assert payload[1] == []
+        assert payload[2] is True
+        # Encoder thread received an error job for this task id.
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.error is not None
+        assert "side-file unreadable" in job.error
 
-    def test_rank0_missing_side_file_falls_back_to_empty_prompts(self, tmp_path):
-        """If the side-file vanished (e.g. tmpfs reaped by an oom-killer
-        between SHM hand-off and runner read), the loop must NOT crash the
-        whole MPI job — it falls back to empty ``image_prompts`` so the
-        broadcast still completes and the request fails downstream cleanly
-        instead of deadlocking peers that are blocked in ``bcast``.
-        """
+    def test_rank0_missing_side_file_enqueues_error_and_skips(self, tmp_path):
+        """Missing side-file (e.g. tmpfs reaped between SHM hand-off and
+        runner read) takes the same fail-fast path as a corrupt one — the
+        API must see a clear error, not a silent T2V output."""
         missing = tmp_path / "tt_img_does_not_exist.json"
         req = _make_request(image_path=str(missing))
 
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [(req, []), (None, None)]
+        mock_comm.bcast.side_effect = [(req, [], True), (None, None, False)]
 
         mock_runner = MagicMock()
-        mock_runner.run.return_value = MagicMock()
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.side_effect = [req, None]
 
-        self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
+        encode_queue = self._run_loop_once(mock_comm, mock_runner, mock_input_shm)
 
+        mock_runner.run.assert_not_called()
         first_call = mock_comm.bcast.call_args_list[0]
         payload = first_call.args[0] if first_call.args else first_call[0][0]
-        assert payload[0].task_id == req.task_id
-        assert payload[1] == []
+        assert payload[2] is True
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert "side-file unreadable" in job.error
+
+    def test_nonrank0_skips_inference_when_skip_flag_set(self, tmp_path):
+        """Ranks 1..N must skip ``runner.run`` whenever the broadcast
+        carries ``skip=True``, otherwise they'd block forever on collective
+        ops with no rank-0 peer (rank 0 already exited the iteration via
+        the encode_queue error path).
+
+        Production passes ``encode_queue=None`` for non-rank-0 ranks (only
+        rank 0 owns the queue); the skip path must not touch the queue on
+        these ranks, so passing ``None`` here pins that contract."""
+        req = _make_request(image_path="")
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 1
+        mock_comm.bcast.side_effect = [(req, [], True), (None, None, False)]
+
+        mock_runner = MagicMock()
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        _run_inference_loop(mock_comm, mock_runner, None, None)
+
+        mock_runner.run.assert_not_called()
 
     def test_rank0_skips_side_file_read_for_t2v(self, tmp_path, monkeypatch):
         """T2V request (``image_path == ""``) must not attempt any file I/O
@@ -397,7 +523,7 @@ class TestI2VInferenceLoopSideFile:
         req = _make_request(image_path="")
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [(req, None), (None, None)]
+        mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
         mock_runner = MagicMock()
         mock_runner.run.return_value = MagicMock()
         mock_input_shm = MagicMock()
@@ -453,7 +579,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [(req, None), (None, None)]
+        mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
         mock_frames = MagicMock()
@@ -487,7 +613,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.side_effect = [(req, None), (None, None)]
+        mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
         mock_runner.run.side_effect = RuntimeError("inference exploded")
@@ -516,7 +642,7 @@ class TestRunInferenceLoop:
         vr._shutdown = False
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
-        mock_comm.bcast.return_value = (None, None)
+        mock_comm.bcast.return_value = (None, None, False)
 
         mock_runner = MagicMock()
         mock_input_shm = MagicMock()
@@ -535,7 +661,7 @@ class TestRunInferenceLoop:
         req = _make_request()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 1
-        mock_comm.bcast.side_effect = [(req, None), (None, None)]
+        mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
 
@@ -561,8 +687,8 @@ class TestRunAllRanks:
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
         mock_comm.Get_size.return_value = 4
-        # Shutdown payload is now a (None, None) tuple — see _broadcast_request.
-        mock_comm.bcast.return_value = (None, None)
+        # Shutdown payload is a (None, None, False) tuple — see _broadcast_request.
+        mock_comm.bcast.return_value = (None, None, False)
 
         mock_input_shm = MagicMock()
         mock_input_shm.read_request.return_value = None
@@ -640,8 +766,8 @@ class TestRunAllRanks:
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 1
         mock_comm.Get_size.return_value = 4
-        # Shutdown payload is now a (None, None) tuple — see _broadcast_request.
-        mock_comm.bcast.return_value = (None, None)
+        # Shutdown payload is a (None, None, False) tuple — see _broadcast_request.
+        mock_comm.bcast.return_value = (None, None, False)
 
         env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "1"}
         with patch.dict(os.environ, env, clear=False), patch(
