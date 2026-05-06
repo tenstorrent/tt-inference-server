@@ -20,7 +20,7 @@ class MemoryManager {
   MemoryManager(MemoryManager&&) = delete;
   MemoryManager& operator=(MemoryManager&&) = delete;
 
-  std::optional<domain::ManageMemoryTask> getRequest();
+  virtual std::optional<domain::ManageMemoryTask> getRequest();
   virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
 
   // Optional method for asynchronous memory managers that receive responses
