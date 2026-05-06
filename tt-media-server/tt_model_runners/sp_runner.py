@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 
 from ipc.video_shm import (
+    MAX_IMAGE_PATH_LEN,
     VideoRequest,
     VideoShm,
     VideoStatus,
@@ -193,18 +195,46 @@ class SPRunner(BaseDeviceRunner):
 
     @staticmethod
     def _write_image_side_file(request, task_id: str) -> str:
-        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs"""
+        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs.
+
+        Atomic publish: write to a temp file in the same directory and then
+        ``os.rename`` to the final path. The runner peer never observes a
+        partially-written file at the final name — it sees either no file or
+        the fully-written JSON.
+        """
         image_prompts = getattr(request, "image_prompts", None)
         if not image_prompts:
             return ""
-        path = image_prompts_path(task_id)
+
+        final_path = image_prompts_path(task_id)
+        path_bytes = len(final_path.encode("utf-8"))
+        if path_bytes > MAX_IMAGE_PATH_LEN:
+            raise RuntimeError(
+                f"image_prompts side-file path exceeds SHM cap "
+                f"({path_bytes} > {MAX_IMAGE_PATH_LEN} bytes); "
+                f"reduce TT_VIDEO_FILE_DIR length"
+            )
+
         payload = [
             {"image": entry.image, "frame_pos": entry.frame_pos}
             for entry in image_prompts
         ]
-        with open(path, "w") as f:
-            json.dump(payload, f)
-        return path
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f"tt_img_{task_id}.",
+            suffix=".json.tmp",
+            dir=os.path.dirname(final_path),
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f)
+            os.rename(tmp_path, final_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return final_path
 
     def _read_response_for(self, task_id: str, timeout_s: float):
         """Read the next output slot that matches ``task_id``.
