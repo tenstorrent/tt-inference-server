@@ -92,7 +92,7 @@ void LLMController::resolveSession(
         req->slotId = slotId;
         req->continuation = true;
         req->prompt = routingInfo.deltaPrompt;
-        
+
         sessionManager->registerPrefixHash(sessionId,
                                            routingInfo.registrationHash);
         TT_LOG_INFO(
@@ -227,11 +227,11 @@ void LLMController::chatCompletions(
   }
 
   auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
-  if (request->prompt_tokens_count > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
+  const size_t maxInputTokens = tt::config::maxInputTokens();
+  if (static_cast<size_t>(request->prompt_tokens_count) > maxInputTokens) {
     throw std::invalid_argument(
         "Input too long: " + std::to_string(request->prompt_tokens_count) +
-        " tokens exceeds maximum of " +
-        std::to_string(tt::config::LLMConfig::MAX_INPUT_TOKENS));
+        " tokens exceeds maximum of " + std::to_string(maxInputTokens));
   }
 
   if (request->stream) {
@@ -251,6 +251,7 @@ ResponseWriterParams LLMController::makeWriterParams(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
   params.promptTokenCount = request.prompt_tokens_count;
+  params.cachedTokenCount = request.cached_tokens_count;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;

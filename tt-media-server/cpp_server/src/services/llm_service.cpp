@@ -3,6 +3,7 @@
 
 #include "services/llm_service.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -136,7 +137,8 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
     request.prompt = tokenizer->encode(text);
   }
   const auto& tokens = std::get<std::vector<int>>(request.prompt);
-
+  request.cached_tokens_count = std::max(
+      0, request.prompt_tokens_count - static_cast<int>(tokens.size()));
 }
 
 void LLMService::startConsumers() {
@@ -399,9 +401,13 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {
-      promptTokens, completionTokens, promptTokens + completionTokens,
-      std::nullopt, std::nullopt,     std::nullopt};
+  response.usage = {promptTokens,
+                    completionTokens,
+                    promptTokens + completionTokens,
+                    0,
+                    std::nullopt,
+                    std::nullopt,
+                    std::nullopt};
 
   return response;
 }

@@ -19,6 +19,7 @@ struct CompletionUsage {
   int prompt_tokens = 0;
   int completion_tokens = 0;
   int total_tokens = 0;
+  int cached_tokens = 0;
   std::optional<double> ttft_ms;  // Time to first token in milliseconds
   std::optional<double> tps;      // Tokens per second (excluding first token)
   std::optional<std::string>
@@ -29,6 +30,11 @@ struct CompletionUsage {
     json["prompt_tokens"] = prompt_tokens;
     json["completion_tokens"] = completion_tokens;
     json["total_tokens"] = total_tokens;
+    if (cached_tokens > 0) {
+      Json::Value details;
+      details["cached_tokens"] = cached_tokens;
+      json["prompt_tokens_details"] = details;
+    }
     if (ttft_ms.has_value()) {
       json["ttft_ms"] = ttft_ms.value();
     }

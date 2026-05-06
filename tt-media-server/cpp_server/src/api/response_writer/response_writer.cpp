@@ -28,6 +28,7 @@ domain::CompletionUsage ResponseWriter::buildUsage() const {
   domain::CompletionUsage usage{params.promptTokenCount,
                                 tokens,
                                 totalTokens,
+                                params.cachedTokenCount,
                                 std::nullopt,
                                 std::nullopt,
                                 std::nullopt};

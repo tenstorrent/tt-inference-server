@@ -87,12 +87,13 @@ void StreamingResponseWriter::handleTokenChunk(
   std::optional<domain::CompletionUsage> usage;
   if (continuousUsage) {
     const int currentTokens = completionTokens.load();
-    usage = domain::CompletionUsage{params.promptTokenCount,
-                                    currentTokens,
-                                    params.promptTokenCount + currentTokens,
-                                    std::nullopt,
-                                    std::nullopt,
-                                    params.sessionId};
+    domain::CompletionUsage u{};
+    u.prompt_tokens = params.promptTokenCount;
+    u.completion_tokens = currentTokens;
+    u.total_tokens = params.promptTokenCount + currentTokens;
+    u.cached_tokens = params.cachedTokenCount;
+    u.sessionId = params.sessionId;
+    usage = u;
   }
 
   auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
@@ -102,9 +103,13 @@ void StreamingResponseWriter::handleTokenChunk(
   if (firstContentChunk.exchange(false)) {
     std::optional<domain::CompletionUsage> initialUsage;
     if (continuousUsage) {
-      initialUsage = domain::CompletionUsage{
-          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
-          params.sessionId};
+      domain::CompletionUsage u{};
+      u.prompt_tokens = params.promptTokenCount;
+      u.completion_tokens = 0;
+      u.total_tokens = 0;
+      u.cached_tokens = params.cachedTokenCount;
+      u.sessionId = params.sessionId;
+      initialUsage = u;
     }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
         params.completionId, params.model, params.created, initialUsage);

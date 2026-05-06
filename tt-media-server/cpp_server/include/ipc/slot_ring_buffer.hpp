@@ -21,7 +21,7 @@ namespace tt::ipc {
 
 constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS =
-    131072;  // matches Config::MAX_INPUT_TOKENS (128k)
+    131072;  // upper bound for prefill prompt size
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
 enum SlotState { EMPTY, FILLED };

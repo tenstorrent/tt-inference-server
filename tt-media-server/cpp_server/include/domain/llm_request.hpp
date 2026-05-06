@@ -122,6 +122,7 @@ struct LLMRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
+  int cached_tokens_count = 0;
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 

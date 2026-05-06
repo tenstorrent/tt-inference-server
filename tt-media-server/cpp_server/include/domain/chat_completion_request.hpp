@@ -254,7 +254,9 @@ struct ChatCompletionRequest : BaseRequest {
     out.messages = messages;
     out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
         messages, true, tools, enable_reasoning);
-    out.prompt_tokens_count = tt::utils::tokenizers::activeTokenizer().encode(std::get<std::string>(out.prompt)).size();
+    out.prompt_tokens_count = tt::utils::tokenizers::activeTokenizer()
+                                  .encode(std::get<std::string>(out.prompt))
+                                  .size();
 
     out.echo = echo;
     out.max_tokens = max_tokens;
