@@ -162,14 +162,23 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   uint32_t result = domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
 
+  // Capture sessionId and this for the callback
+  auto manager = this;
+  auto sessionIdCopy = sessionId;
+
   bool found = sessions.modify(
-      sessionId, [&result, &wasInFlight,
+      sessionId, [&result, &wasInFlight, manager, sessionIdCopy,
                   cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
         wasInFlight = ms.session.isInFlight();
         if (wasInFlight) return;
         ms.session.updateActivityTime();
         ms.session.markInFlight();
         ms.cancelFn = std::move(cancelFn);
+        // Set callback to clear cancelFn when clearInFlight is called
+        ms.session.setOnClearInFlightCallback([manager, sessionIdCopy]() {
+          manager->sessions.modify(
+              sessionIdCopy, [](ManagedSession& ms) { ms.cancelFn = nullptr; });
+        });
         result = ms.session.getSlotId();
       });
 
@@ -194,9 +203,12 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
 
 std::shared_ptr<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
-  auto ms = sessions.get(sessionId);
-  if (!ms.has_value()) return nullptr;
-  return std::make_shared<domain::Session>(ms->session);
+  auto* ms = const_cast<SessionManager*>(this)->sessions.getPtr(sessionId);
+  if (!ms) return nullptr;
+
+  // Return shared_ptr pointing to the actual session in the map
+  return std::shared_ptr<domain::Session>(&ms->session,
+                                          [](domain::Session*) {});
 }
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }

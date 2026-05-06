@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "domain/manage_memory.hpp"
@@ -67,6 +68,10 @@ class Session {
   bool markInFlight();   // IDLE      -> IN_FLIGHT
   bool clearInFlight();  // IN_FLIGHT -> IDLE
 
+  void setOnClearInFlightCallback(std::function<void()> callback) {
+    onClearInFlight_ = std::move(callback);
+  }
+
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;
   }
@@ -88,6 +93,7 @@ class Session {
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
+  std::function<void()> onClearInFlight_;
 
   static std::string generateUuid();
 };

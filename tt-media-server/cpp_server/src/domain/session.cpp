@@ -31,6 +31,9 @@ bool Session::markPrepared() {
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
+  if (onClearInFlight_) {
+    onClearInFlight_();
+  }
   return true;
 }
 
