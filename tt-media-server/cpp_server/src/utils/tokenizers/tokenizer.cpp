@@ -92,6 +92,7 @@ std::vector<int> Tokenizer::encode(const std::string& text) const {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot encode");
   }
+  std::lock_guard<std::mutex> lock(tok_mutex_);
   return tok_->Encode(text);
 }
 
@@ -102,6 +103,8 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
   }
   if (tokenIds.empty()) return "";
+
+  std::lock_guard<std::mutex> lock(tok_mutex_);
 
   // Fast path: no special tokens to filter
   if (!skipSpecialTokens || specialTokenIds_.empty()) {
@@ -133,6 +136,7 @@ std::vector<std::string> Tokenizer::getEncodedVocab() const {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot get vocabulary");
   }
+  std::lock_guard<std::mutex> lock(tok_mutex_);
   size_t size = tok_->GetVocabSize();
   std::vector<std::string> vocab(size);
   for (size_t i = 0; i < size; ++i) {

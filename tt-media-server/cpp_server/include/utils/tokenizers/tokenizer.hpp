@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -49,8 +50,9 @@ TokenizerConfig getTokenizerConfig(const std::string& configPath);
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace /
- * SentencePiece). Each instance owns its own underlying tokenizer, so separate
- * instances are safe to use from different threads without synchronization.
+ * SentencePiece). The underlying Rust tokenizer is not thread-safe; encode,
+ * decode, and vocabulary introspection are serialized with an internal mutex.
+ * Separate instances still do not share state and need no cross-instance lock.
  *
  * Model-specific behavior (chat template format, special token decode
  * filtering, stop tokens) is provided by subclasses: DeepseekTokenizer and
@@ -69,8 +71,8 @@ class Tokenizer {
 
   Tokenizer(const Tokenizer&) = delete;
   Tokenizer& operator=(const Tokenizer&) = delete;
-  Tokenizer(Tokenizer&&) = default;
-  Tokenizer& operator=(Tokenizer&&) = default;
+  Tokenizer(Tokenizer&&) = delete;
+  Tokenizer& operator=(Tokenizer&&) = delete;
 
   /**
    * Encode text to token IDs.
@@ -142,6 +144,7 @@ class Tokenizer {
 
  protected:
   std::unique_ptr<::tokenizers::Tokenizer> tok_;
+  mutable std::mutex tok_mutex_;
   TokenizerConfig cfg_;
   std::unordered_set<int> specialTokenIds_;
 };
@@ -162,9 +165,8 @@ std::string tokenizerDirForModel(config::ModelType model);
 
 /**
  * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first
- * access. Thread-safe (C++11 function-local static initialization). Intended
- * for metadata access (model_name, stop_token_ids, apply_chat_template); for
- * encode/decode in multithreaded contexts, create separate instances.
+ * access. Thread-safe (C++11 function-local static initialization). Safe to use
+ * from any thread for encode/decode (serialized inside Tokenizer).
  */
 const Tokenizer& activeTokenizer();
 
