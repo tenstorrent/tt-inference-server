@@ -421,11 +421,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool isStructuredOutput = toolChoiceOpt.has_value() &&
                                 toolChoiceOpt.value().type == "function";
 
-      // Handle structured output (tool_choice="function") - filter out {"arguments": wrapper
-      // Model outputs: {"arguments":{"location":"SF"}} or {"arguments":{...},"name":"func"}
+      // Handle structured output (tool_choice="function") - filter out wrapper
+      // Model outputs variations like:
+      //   {"arguments":{"location":"SF"}}
+      //   {"arguments":{"location":"SF"},"name":"get_weather"}
+      //   {"name":"get_weather","arguments":{"location":"SF"}}
       // We stream only the inner arguments: {"location":"SF"}
       if (isStructuredOutput) {
-        static constexpr std::string_view PREFIX = "{\"arguments\":";
+        static constexpr std::string_view ARGS_MARKER = "\"arguments\":";
 
         auto stateOpt = structuredOutputStateMap.get(taskId);
         StructuredOutputParseState parseState;
@@ -440,34 +443,29 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         for (char c : delta) {
           switch (parseState.state) {
             case StructuredOutputState::SKIPPING_PREFIX:
+              // Accumulate until we find "arguments":
               parseState.buffer += c;
-              // Check if buffer matches prefix so far
-              if (parseState.buffer.size() <= PREFIX.size()) {
-                if (parseState.buffer == PREFIX.substr(0, parseState.buffer.size())) {
-                  // Still matching prefix
-                  if (parseState.buffer.size() == PREFIX.size()) {
-                    // Fully matched prefix, switch to streaming
-                    parseState.state = StructuredOutputState::STREAMING;
-                    parseState.buffer.clear();
-                    parseState.brace_depth = 0;
-                  }
-                } else {
-                  // Prefix doesn't match - stream buffer content and continue
-                  // (This handles cases where model outputs raw JSON without wrapper)
+              {
+                // Check if buffer ends with "arguments":
+                size_t pos = parseState.buffer.find(ARGS_MARKER);
+                if (pos != std::string::npos) {
+                  // Found the marker - switch to streaming
+                  parseState.state = StructuredOutputState::STREAMING;
+                  parseState.buffer.clear();
+                  parseState.brace_depth = 0;
+                }
+                // Keep accumulating until we find the marker or hit a reasonable limit
+                // If buffer gets too long without finding marker, assume no wrapper
+                else if (parseState.buffer.size() > 100) {
+                  // No wrapper found - stream everything as raw arguments
                   filteredDelta += parseState.buffer;
                   parseState.buffer.clear();
                   parseState.state = StructuredOutputState::STREAMING;
-                  parseState.brace_depth = (c == '{') ? 1 : 0;
-                }
-              } else {
-                // Buffer longer than prefix without match - not a wrapper
-                filteredDelta += parseState.buffer;
-                parseState.buffer.clear();
-                parseState.state = StructuredOutputState::STREAMING;
-                parseState.brace_depth = 0;
-                for (char bc : filteredDelta) {
-                  if (bc == '{') parseState.brace_depth++;
-                  else if (bc == '}') parseState.brace_depth--;
+                  parseState.brace_depth = 0;
+                  for (char bc : filteredDelta) {
+                    if (bc == '{') parseState.brace_depth++;
+                    else if (bc == '}') parseState.brace_depth--;
+                  }
                 }
               }
               break;
@@ -482,7 +480,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                   filteredDelta += c;
                 }
                 // When brace_depth hits 0, we've finished the arguments object
-                // Skip any trailing content (like },"name":"..." wrapper close)
+                // Skip any trailing content (like ,"name":"..." or wrapper close)
                 if (parseState.brace_depth == 0) {
                   parseState.state = StructuredOutputState::DONE;
                 }
@@ -559,6 +557,22 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           }
 
           entry->callback(response, isFinal);
+
+        } else if (isStructuredOutput) {
+          // Structured output mode: suppress regular content emission
+          // Only emit tool call deltas, never regular content
+          if (!isFinal) {
+            continue;
+          }
+          // On final token, emit empty tool call delta with finish_reason
+          auto stateOpt = structuredOutputStateMap.get(taskId);
+          if (stateOpt.has_value() && stateOpt->sent_start) {
+            ToolCallTokenResult finalResult{ToolCallContentType::TOOL_CALL, "", true,
+                                           ToolCallDeltaType::ARGUMENTS_DELTA, 0, "", ""};
+            auto response = buildToolCallDeltaChunk(token, finalResult);
+            response.choices[0].finish_reason = "tool_calls";
+            entry->callback(response, isFinal);
+          }
 
         } else {
           // Regular content (text or reasoning)
