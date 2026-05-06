@@ -349,11 +349,10 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
   slotContexts.insert_or_assign(
-      slotId,
-      blaze_utils::SlotContext{request->taskId,
-                               request->getSamplingParams().ignore_eos,
-                               pipelineManager->get_spec_accepts(slotId),
-                               pipelineManager->get_spec_rejects(slotId)});
+      slotId, blaze_utils::SlotContext{
+                  request->taskId, request->getSamplingParams().ignore_eos,
+                  pipelineManager->get_spec_accepts(slotId),
+                  pipelineManager->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 

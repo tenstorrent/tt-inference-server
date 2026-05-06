@@ -402,6 +402,9 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   std::string accumulatedAnswer;
   std::string accumulatedReasoning;
   int completionTokens = 0;
+  int reasoningTokens = 0;
+  int specAccepts = 0;
+  int specRejects = 0;
   std::string finishReason = "stop";
 
   const int promptTokens =
@@ -416,9 +419,12 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
         if (!chunk.choices.empty()) {
           if (chunk.choices[0].reasoning.has_value()) {
             accumulatedReasoning.append(chunk.choices[0].reasoning.value());
+            reasoningTokens++;
           }
           accumulatedAnswer.append(chunk.choices[0].text);
           completionTokens++;
+          specAccepts += chunk.choices[0].spec_accepts;
+          specRejects += chunk.choices[0].spec_rejects;
           if (chunk.choices[0].finish_reason.has_value()) {
             finishReason = chunk.choices[0].finish_reason.value();
           }
@@ -450,14 +456,15 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {promptTokens,
-                    completionTokens,
-                    promptTokens + completionTokens,
-                    {},
-                    {},
-                    std::nullopt,
-                    std::nullopt,
-                    std::nullopt};
+  response.usage = {
+      promptTokens,
+      completionTokens,
+      promptTokens + completionTokens,
+      {0, 0},  // prompt_tokens_details: cached_tokens, audio_tokens
+      {reasoningTokens, 0, specAccepts, specRejects},
+      std::nullopt,
+      std::nullopt,
+      std::nullopt};
 
   return response;
 }
