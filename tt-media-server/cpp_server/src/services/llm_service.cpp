@@ -34,7 +34,7 @@ LLMService::LLMService() {
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
   auto tq = qm->taskQueue;
 
-  init(&tt::utils::tokenizers::activeTokenizer(), std::move(tq),
+  init(/*tokenizer=*/nullptr, std::move(tq),
        std::make_unique<tt::worker::WorkerManager>(numWorkers),
        std::make_unique<ReasoningParser>(),
        createToolCallParser(tt::config::modelType()), std::move(qm),
@@ -60,9 +60,6 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
                       std::unique_ptr<IToolCallParser> toolCallParser,
                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
                       size_t maxQueueSize) {
-  if (tokenizer == nullptr) {
-    throw std::invalid_argument("LLMService: tokenizer must not be null");
-  }
   if (!taskQueue) {
     throw std::invalid_argument("LLMService: taskQueue must not be null");
   }
@@ -70,7 +67,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
     throw std::invalid_argument("LLMService: workerManager must not be null");
   }
 
-  this->tokenizer = tokenizer;
+  this->injectedTokenizer = tokenizer;
   this->taskQueue = std::move(taskQueue);
   this->workerManager = std::move(workerManager);
   this->reasoningParser = std::move(reasoningParser);
@@ -78,7 +75,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
-  const auto stopIds = this->tokenizer->stopTokenIds();
+  const auto stopIds = tokenizerForCurrentThread().stopTokenIds();
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
@@ -86,6 +83,12 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
 }
 
 LLMService::~LLMService() { stop(); }
+
+const tt::utils::tokenizers::Tokenizer& LLMService::tokenizerForCurrentThread()
+    const {
+  return injectedTokenizer ? *injectedTokenizer
+                           : tt::utils::tokenizers::activeTokenizer();
+}
 
 void LLMService::start() {
   ZoneScopedN("LLMService::start");
@@ -174,7 +177,7 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
-    request.prompt = tokenizer->encode(text);
+    request.prompt = tokenizerForCurrentThread().encode(text);
   }
 }
 
@@ -334,8 +337,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       std::string delta =
-          decodeToken(streamDecoders, tokenizer, taskId, token.token_id,
-                      isFinal, entry->skip_special_tokens);
+          decodeToken(streamDecoders, &tokenizerForCurrentThread(), taskId,
+                      token.token_id, isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};

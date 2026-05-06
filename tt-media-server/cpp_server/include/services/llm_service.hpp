@@ -107,10 +107,16 @@ class LLMService
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
 
+  // Tokenizer override for tests; null in production. Production code resolves
+  // the tokenizer per call via `tokenizerForCurrentThread()` so each thread
+  // touches its own thread-local instance (the underlying Rust tokenizer is
+  // not safe to share across threads).
+  const tt::utils::tokenizers::Tokenizer& tokenizerForCurrentThread() const;
+
   std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
-  const tt::utils::tokenizers::Tokenizer* tokenizer;
+  const tt::utils::tokenizers::Tokenizer* injectedTokenizer = nullptr;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;

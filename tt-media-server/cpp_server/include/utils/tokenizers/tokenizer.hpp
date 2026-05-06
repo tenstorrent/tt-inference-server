@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -50,9 +49,9 @@ TokenizerConfig getTokenizerConfig(const std::string& configPath);
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace /
- * SentencePiece). The underlying Rust tokenizer is not thread-safe; encode,
- * decode, and vocabulary introspection are serialized with an internal mutex.
- * Separate instances still do not share state and need no cross-instance lock.
+ * SentencePiece). The underlying Rust tokenizer is not thread-safe and a single
+ * instance must not be shared across threads. Use `activeTokenizer()` to obtain
+ * a thread-local instance.
  *
  * Model-specific behavior (chat template format, special token decode
  * filtering, stop tokens) is provided by subclasses: DeepseekTokenizer and
@@ -71,8 +70,8 @@ class Tokenizer {
 
   Tokenizer(const Tokenizer&) = delete;
   Tokenizer& operator=(const Tokenizer&) = delete;
-  Tokenizer(Tokenizer&&) = delete;
-  Tokenizer& operator=(Tokenizer&&) = delete;
+  Tokenizer(Tokenizer&&) = default;
+  Tokenizer& operator=(Tokenizer&&) = default;
 
   /**
    * Encode text to token IDs.
@@ -144,7 +143,6 @@ class Tokenizer {
 
  protected:
   std::unique_ptr<::tokenizers::Tokenizer> tok_;
-  mutable std::mutex tok_mutex_;
   TokenizerConfig cfg_;
   std::unordered_set<int> specialTokenIds_;
 };
@@ -164,9 +162,10 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
 std::string tokenizerDirForModel(config::ModelType model);
 
 /**
- * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first
- * access. Thread-safe (C++11 function-local static initialization). Safe to use
- * from any thread for encode/decode (serialized inside Tokenizer).
+ * Active tokenizer for the calling thread, auto-initialized from
+ * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
+ * instance so encode/decode are race-free without locking. The reference is
+ * only valid on the calling thread; do not capture it for cross-thread use.
  */
 const Tokenizer& activeTokenizer();
 
