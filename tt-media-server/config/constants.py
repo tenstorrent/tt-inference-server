@@ -207,7 +207,11 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_I2V: {ModelNames.WAN_2_2_I2V},
-    ModelRunners.SP_RUNNER: {ModelNames.WAN_2_2, ModelNames.MOCHI_1},
+    ModelRunners.SP_RUNNER: {
+        ModelNames.WAN_2_2,
+        ModelNames.WAN_2_2_I2V,
+        ModelNames.MOCHI_1,
+    },
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
