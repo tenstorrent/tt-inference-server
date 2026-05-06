@@ -23,13 +23,17 @@ from workflows.model_spec import (
     spec_templates,
     SystemRequirements,
 )
-from workflows.run_reports import enforce_acceptance_criteria, _is_check_failing
+from workflows.acceptance_criteria import (
+    _is_check_failing,
+    enforce_acceptance_criteria,
+)
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     ModelStatusTypes,
     ReportCheckTypes,
     VersionMode,
+    WorkflowType,
 )
 
 
@@ -107,15 +111,14 @@ class TestModelSpecTemplateSystem:
             assert spec.device_model_spec.tensor_cache_timeout == expected_timeout
 
     def test_expand_to_specs_propagates_known_issues(self, sample_impl):
-        """Test that known_issues on DeviceModelSpec survive template expansion."""
         known_issues = [
             KnownIssue(
-                workflow_type="BENCHMARKS",
+                workflow_type=WorkflowType.BENCHMARKS,
                 reason="GH#2600 - OOM on N150",
                 task_name="isl-128_osl-1024_con-32",
             ),
             KnownIssue(
-                workflow_type="EVALS",
+                workflow_type=WorkflowType.EVALS,
                 reason="GH#2550 - eval harness crash",
             ),
         ]
@@ -138,9 +141,9 @@ class TestModelSpecTemplateSystem:
         assert len(specs) == 1
         expanded_issues = specs[0].device_model_spec.known_issues
         assert len(expanded_issues) == 2
-        assert expanded_issues[0].workflow_type == "BENCHMARKS"
+        assert expanded_issues[0].workflow_type is WorkflowType.BENCHMARKS
         assert expanded_issues[0].task_name == "isl-128_osl-1024_con-32"
-        assert expanded_issues[1].workflow_type == "EVALS"
+        assert expanded_issues[1].workflow_type is WorkflowType.EVALS
         assert expanded_issues[1].task_name is None
 
     def test_template_defaults(self, sample_impl):
@@ -775,20 +778,26 @@ class TestEnforceAcceptanceCriteria:
 
 
 class TestKnownIssue:
-    """Tests for KnownIssue and DeviceModelSpec skip logic."""
-
-    def test_known_issue_creation(self):
+    def test_known_issue_creation_with_enum(self):
         ki = KnownIssue(
-            workflow_type="BENCHMARKS",
+            workflow_type=WorkflowType.BENCHMARKS,
             reason="GH#2600 - OOM on T3K",
             task_name="isl-128_osl-1024_con-32",
         )
-        assert ki.workflow_type == "BENCHMARKS"
+        assert ki.workflow_type is WorkflowType.BENCHMARKS
         assert ki.reason == "GH#2600 - OOM on T3K"
         assert ki.task_name == "isl-128_osl-1024_con-32"
 
+    def test_known_issue_string_workflow_type_is_coerced(self):
+        ki = KnownIssue(workflow_type="benchmarks", reason="case insensitive")
+        assert ki.workflow_type is WorkflowType.BENCHMARKS
+
+    def test_known_issue_invalid_workflow_type_raises(self):
+        with pytest.raises(ValueError):
+            KnownIssue(workflow_type="BENCHMRKS", reason="typo should fail")
+
     def test_known_issue_defaults(self):
-        ki = KnownIssue(workflow_type="EVALS", reason="test reason")
+        ki = KnownIssue(workflow_type=WorkflowType.EVALS, reason="test reason")
         assert ki.task_name is None
 
     def test_device_model_spec_with_known_issues(self):
@@ -798,89 +807,60 @@ class TestKnownIssue:
             max_context=8192,
             known_issues=[
                 KnownIssue(
-                    workflow_type="BENCHMARKS",
-                    reason="whole workflow skip",
+                    workflow_type=WorkflowType.BENCHMARKS,
+                    reason="whole workflow mask",
                 ),
                 KnownIssue(
-                    workflow_type="EVALS",
-                    reason="specific task skip",
+                    workflow_type=WorkflowType.EVALS,
+                    reason="specific task mask",
                     task_name="mmlu",
                 ),
             ],
         )
         assert len(dms.known_issues) == 2
 
-    def test_should_skip_workflow(self):
-        dms = DeviceModelSpec(
-            device=DeviceTypes.N150,
-            max_concurrency=16,
-            max_context=8192,
-            known_issues=[
-                KnownIssue(
-                    workflow_type="BENCHMARKS",
-                    reason="skip all benchmarks",
-                ),
-            ],
-        )
-        assert dms.should_skip_workflow("BENCHMARKS") is not None
-        assert dms.should_skip_workflow("EVALS") is None
+    def test_matches_workflow_level(self):
+        ki = KnownIssue(workflow_type=WorkflowType.BENCHMARKS, reason="mask all")
+        assert ki.matches(WorkflowType.BENCHMARKS, None) is True
+        assert ki.matches(WorkflowType.BENCHMARKS, "any_task") is True
+        assert ki.matches(WorkflowType.EVALS, None) is False
 
-    def test_should_skip_task_whole_workflow(self):
-        dms = DeviceModelSpec(
-            device=DeviceTypes.N150,
-            max_concurrency=16,
-            max_context=8192,
-            known_issues=[
-                KnownIssue(
-                    workflow_type="BENCHMARKS",
-                    reason="skip all benchmarks",
-                ),
-            ],
+    def test_matches_task_level(self):
+        ki = KnownIssue(
+            workflow_type=WorkflowType.EVALS, reason="mask mmlu", task_name="mmlu"
         )
-        assert dms.should_skip_task("BENCHMARKS", "any_task") is not None
+        assert ki.matches(WorkflowType.EVALS, "mmlu") is True
+        assert ki.matches(WorkflowType.EVALS, "hellaswag") is False
+        assert ki.matches(WorkflowType.EVALS, None) is False
+        assert ki.matches(WorkflowType.BENCHMARKS, "mmlu") is False
 
-    def test_should_skip_task_specific(self):
+    def test_find_known_issue_returns_first_match(self):
         dms = DeviceModelSpec(
             device=DeviceTypes.N150,
             max_concurrency=16,
             max_context=8192,
             known_issues=[
                 KnownIssue(
-                    workflow_type="EVALS",
+                    workflow_type=WorkflowType.EVALS,
                     reason="mmlu broken",
                     task_name="mmlu",
                 ),
             ],
         )
-        assert dms.should_skip_task("EVALS", "mmlu") is not None
-        assert dms.should_skip_task("EVALS", "hellaswag") is None
-        assert dms.should_skip_workflow("EVALS") is None
+        assert dms.find_known_issue(WorkflowType.EVALS, "mmlu") is not None
+        assert dms.find_known_issue(WorkflowType.EVALS, "hellaswag") is None
+        assert dms.find_known_issue(WorkflowType.BENCHMARKS) is None
 
-    def test_should_skip_case_insensitive_workflow(self):
-        dms = DeviceModelSpec(
-            device=DeviceTypes.N150,
-            max_concurrency=16,
-            max_context=8192,
-            known_issues=[
-                KnownIssue(
-                    workflow_type="benchmarks",
-                    reason="test",
-                ),
-            ],
-        )
-        assert dms.should_skip_workflow("BENCHMARKS") is not None
-
-    def test_no_known_issues_skips_nothing(self):
+    def test_no_known_issues_matches_nothing(self):
         dms = DeviceModelSpec(
             device=DeviceTypes.N150,
             max_concurrency=16,
             max_context=8192,
         )
-        assert dms.should_skip_workflow("BENCHMARKS") is None
-        assert dms.should_skip_task("EVALS", "mmlu") is None
+        assert dms.find_known_issue(WorkflowType.BENCHMARKS) is None
+        assert dms.find_known_issue(WorkflowType.EVALS, "mmlu") is None
 
     def test_known_issue_json_roundtrip(self, tmp_path):
-        """Test KnownIssue survives JSON serialization/deserialization."""
         impl = ImplSpec(
             impl_id="test-impl",
             impl_name="test-impl",
@@ -893,12 +873,12 @@ class TestKnownIssue:
             max_context=8192,
             known_issues=[
                 KnownIssue(
-                    workflow_type="BENCHMARKS",
+                    workflow_type=WorkflowType.BENCHMARKS,
                     reason="GH#100 - test issue",
                     task_name="specific_task",
                 ),
                 KnownIssue(
-                    workflow_type="EVALS",
+                    workflow_type=WorkflowType.EVALS,
                     reason="GH#200 - another issue",
                 ),
             ],
@@ -921,11 +901,81 @@ class TestKnownIssue:
         assert len(loaded_spec.device_model_spec.known_issues) == 2
         ki0 = loaded_spec.device_model_spec.known_issues[0]
         ki1 = loaded_spec.device_model_spec.known_issues[1]
-        assert ki0.workflow_type == "BENCHMARKS"
+        assert ki0.workflow_type is WorkflowType.BENCHMARKS
         assert ki0.reason == "GH#100 - test issue"
         assert ki0.task_name == "specific_task"
-        assert ki1.workflow_type == "EVALS"
+        assert ki1.workflow_type is WorkflowType.EVALS
         assert ki1.task_name is None
+
+    def test_known_issue_json_roundtrip_serializes_enum_name(self, tmp_path):
+        impl = ImplSpec(
+            impl_id="test-impl",
+            impl_name="test-impl",
+            repo_url="https://github.com/test/repo",
+            code_path="models/test",
+        )
+        dms = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=8192,
+            known_issues=[
+                KnownIssue(
+                    workflow_type=WorkflowType.BENCHMARKS,
+                    reason="GH#1 - serialized as name",
+                ),
+            ],
+        )
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=impl,
+            hf_model_repo="test/model-7B",
+            model_id="test_id",
+            model_name="model-7B",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=dms,
+        )
+        json_file = spec.to_json(run_id="test_ki_wire", output_dir=str(tmp_path))
+        with open(json_file, "r", encoding="utf-8") as f:
+            wire = json.load(f)
+
+        ki_wire = wire["device_model_spec"]["known_issues"][0]
+        assert ki_wire["workflow_type"] == "BENCHMARKS"
+
+    def test_known_issue_from_json_with_invalid_workflow_type_raises(self, tmp_path):
+        spec_json = tmp_path / "bad_known_issue_spec.json"
+        spec_payload = {
+            "device_type": "N150",
+            "impl": {
+                "impl_id": "test-impl",
+                "impl_name": "test-impl",
+                "repo_url": "https://github.com/test/repo",
+                "code_path": "models/test",
+            },
+            "hf_model_repo": "test/model-7B",
+            "model_id": "test_id",
+            "model_name": "model-7B",
+            "tt_metal_commit": "v1.0.0",
+            "vllm_commit": "abc123",
+            "inference_engine": InferenceEngine.VLLM.value,
+            "device_model_spec": {
+                "device": "N150",
+                "max_concurrency": 16,
+                "max_context": 8192,
+                "known_issues": [
+                    {
+                        "workflow_type": "BOGUS_WORKFLOW",
+                        "reason": "this should fail to deserialize",
+                        "task_name": None,
+                    }
+                ],
+            },
+        }
+        with open(spec_json, "w", encoding="utf-8") as f:
+            json.dump(spec_payload, f)
+        with pytest.raises(ValueError):
+            ModelSpec.from_json(spec_json)
 
 
 class TestIsCheckFailing:

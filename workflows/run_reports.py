@@ -3424,62 +3424,6 @@ def add_target_checks_tts(metrics):
     return target_checks
 
 
-def _is_check_failing(value) -> bool:
-    """Determine if a check value represents a failure.
-
-    Handles both ReportCheckTypes enum values and raw integers used across
-    LLM/VLM and media model report paths.
-    """
-    if isinstance(value, ReportCheckTypes):
-        return value == ReportCheckTypes.FAIL
-    if isinstance(value, int):
-        return value == ReportCheckTypes.FAIL
-    return False
-
-
-def enforce_acceptance_criteria(target_checks, model_status):
-    """Evaluate target_checks against the model's status-based required tiers.
-
-    Args:
-        target_checks: Dict mapping tier names (functional/complete/target)
-            to dicts of metric checks. Values ending in ``_check`` are compared
-            against ``ReportCheckTypes.FAIL``.
-        model_status: ``ModelStatusTypes`` for the model under test.
-
-    Returns:
-        Dict with enforcement metadata::
-
-            {
-                "enforcement_result": "PASS" | "FAIL",
-                "model_status": str,
-                "enforced_tiers": [...],
-                "informational_tiers": [...],
-                "failed_enforced_tiers": [...],
-            }
-    """
-    required_tiers = model_status.required_target_tiers
-    all_tiers = list(target_checks.keys())
-    informational_tiers = [t for t in all_tiers if t not in required_tiers]
-
-    failed_enforced_tiers = []
-    for tier in required_tiers:
-        tier_checks = target_checks.get(tier, {})
-        for key, value in tier_checks.items():
-            if key.endswith("_check") and _is_check_failing(value):
-                failed_enforced_tiers.append(tier)
-                break
-
-    enforcement_result = "FAIL" if failed_enforced_tiers else "PASS"
-
-    return {
-        "enforcement_result": enforcement_result,
-        "model_status": model_status.name,
-        "enforced_tiers": required_tiers,
-        "informational_tiers": informational_tiers,
-        "failed_enforced_tiers": failed_enforced_tiers,
-    }
-
-
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -3876,32 +3820,6 @@ def main():
                             f"Could not read server test file {json_file}: {e}"
                         )
 
-        # Enforce acceptance criteria based on model status
-        enforcement_metadata = None
-        collected_target_checks = {}
-        if benchmarks_release_data:
-            for entry in benchmarks_release_data:
-                entry_checks = entry.get("target_checks", {})
-                if entry_checks:
-                    for tier, checks in entry_checks.items():
-                        if tier not in collected_target_checks:
-                            collected_target_checks[tier] = dict(checks)
-                        else:
-                            for key, value in checks.items():
-                                if key.endswith("_check") and _is_check_failing(value):
-                                    collected_target_checks[tier][key] = value
-
-        if collected_target_checks:
-            enforcement_metadata = enforce_acceptance_criteria(
-                collected_target_checks, model_spec.status
-            )
-            logger.info(
-                f"Acceptance criteria enforcement: {enforcement_metadata['enforcement_result']} "
-                f"(status={enforcement_metadata['model_status']}, "
-                f"enforced={enforcement_metadata['enforced_tiers']}, "
-                f"failed={enforcement_metadata['failed_enforced_tiers']})"
-            )
-
         # Build the final JSON output
         output_data = {
             "metadata": metadata,
@@ -3922,38 +3840,34 @@ def main():
             else [],
         }
 
-        if enforcement_metadata:
-            output_data["acceptance_criteria"] = enforcement_metadata
-
-        # Surface known issues that caused workflows/tasks to be skipped
-        known_issues = model_spec.device_model_spec.known_issues
-        if known_issues:
-            output_data["skipped_due_to_known_issues"] = [
-                {
-                    "workflow_type": ki.workflow_type,
-                    "task_name": ki.task_name,
-                    "reason": ki.reason,
-                }
-                for ki in known_issues
-            ]
-
-        # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
-        # Add parameter_support_tests only if data exists
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
-        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
-            output_data
+        known_issues = model_spec.device_model_spec.known_issues
+        accepted, acceptance_blockers, enforcement_metadata = acceptance_criteria_check(
+            output_data, model_spec.status, known_issues
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria, acceptance_blockers
+            accepted, acceptance_blockers, enforcement_metadata
         )
-        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_criteria"] = accepted
         output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_criteria_metadata"] = enforcement_metadata
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+        if known_issues:
+            output_data["known_issues_declared"] = enforcement_metadata[
+                "known_issues_declared"
+            ]
+
+        logger.info(
+            f"Acceptance criteria enforcement: {enforcement_metadata['enforcement_result']} "
+            f"(status={enforcement_metadata['model_status']}, "
+            f"enforced={enforcement_metadata['enforced_tiers']}, "
+            f"failed={enforcement_metadata['failed_enforced_tiers']})"
+        )
 
         release_str = (
             f"{release_header}\n\n{metadata_str}\n\n"
@@ -3968,7 +3882,7 @@ def main():
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 
-    if enforcement_metadata and enforcement_metadata["enforcement_result"] == "FAIL":
+    if enforcement_metadata["enforcement_result"] == "FAIL":
         logger.warning(
             f"Acceptance criteria FAILED for {model_spec.model_name}: "
             f"required tiers {enforcement_metadata['failed_enforced_tiers']} "

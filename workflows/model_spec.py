@@ -23,6 +23,7 @@ from workflows.workflow_types import (
     ModelStatusTypes,
     ModelType,
     VersionMode,
+    WorkflowType,
 )
 
 if TYPE_CHECKING:
@@ -278,22 +279,21 @@ class SystemRequirements:
 
 @dataclass(frozen=True)
 class KnownIssue:
-    """Declares a known issue that should cause a workflow or task to be skipped.
-
-    When attached to a DeviceModelSpec, the workflow runners will skip
-    matching workflows/tasks and log the reason instead of running them.
-
-    Attributes:
-        workflow_type: The workflow to skip (e.g. "BENCHMARKS", "EVALS", "TESTS").
-        reason: Human-readable explanation, ideally with a tracking link
-            (e.g. "GH#2600 - OOM on T3K at high concurrency").
-        task_name: If set, only the named task within the workflow is skipped.
-            If None, the entire workflow is skipped.
-    """
-
-    workflow_type: str
+    workflow_type: WorkflowType
     reason: str
     task_name: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.workflow_type, WorkflowType):
+            coerced = WorkflowType.from_string(str(self.workflow_type))
+            object.__setattr__(self, "workflow_type", coerced)
+
+    def matches(self, workflow_type: WorkflowType, task_name: Optional[str]) -> bool:
+        if self.workflow_type != workflow_type:
+            return False
+        if self.task_name is None:
+            return True
+        return task_name is not None and self.task_name == task_name
 
 
 @dataclass(frozen=True)
@@ -351,55 +351,11 @@ class DeviceModelSpec:
 
         self._infer_env_vars()
 
-    def get_known_issues(
-        self, workflow_type: str, task_name: Optional[str] = None
-    ) -> List[KnownIssue]:
-        """Return matching known issues for a workflow/task combination.
-
-        Args:
-            workflow_type: Workflow type string (e.g. "BENCHMARKS").
-            task_name: Specific task name to check. When provided, returns
-                issues that match either this exact task or the whole workflow
-                (task_name=None on the issue).
-
-        Returns:
-            List of matching KnownIssue instances.
-        """
-        matches = []
-        for issue in self.known_issues:
-            if issue.workflow_type.upper() != workflow_type.upper():
-                continue
-            if issue.task_name is None:
-                matches.append(issue)
-            elif task_name is not None and issue.task_name == task_name:
-                matches.append(issue)
-        return matches
-
-    def should_skip_workflow(self, workflow_type: str) -> Optional[KnownIssue]:
-        """Check if the entire workflow should be skipped.
-
-        Returns the first whole-workflow KnownIssue if one exists, else None.
-        """
-        for issue in self.known_issues:
-            if (
-                issue.workflow_type.upper() == workflow_type.upper()
-                and issue.task_name is None
-            ):
-                return issue
-        return None
-
-    def should_skip_task(
-        self, workflow_type: str, task_name: str
+    def find_known_issue(
+        self, workflow_type: WorkflowType, task_name: Optional[str] = None
     ) -> Optional[KnownIssue]:
-        """Check if a specific task should be skipped.
-
-        Returns the first matching KnownIssue (whole-workflow or task-specific)
-        if one exists, else None.
-        """
         for issue in self.known_issues:
-            if issue.workflow_type.upper() != workflow_type.upper():
-                continue
-            if issue.task_name is None or issue.task_name == task_name:
+            if issue.matches(workflow_type, task_name):
                 return issue
         return None
 
