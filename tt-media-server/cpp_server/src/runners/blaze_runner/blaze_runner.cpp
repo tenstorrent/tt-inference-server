@@ -25,11 +25,6 @@ PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
           .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return PipelineSimulatorConfig{
-          .num_stages = 64,
-          .stage_duration_us = 44,
-          .decode_token_id = 12345,
-      };
       /* spec decode config
        return PipelineSimulatorConfig{
           .num_stages = 64,
