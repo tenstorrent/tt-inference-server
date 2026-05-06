@@ -93,15 +93,14 @@ void StreamingResponseWriter::handleTokenChunk(
     if (includeUsage) {
       domain::PromptTokensDetails promptDetails;
       promptDetails.cached_tokens = params.cachedTokenCount;
-      initialUsage = domain::CompletionUsage{
-          params.promptTokenCount,
-          0,
-          params.promptTokenCount,
-          promptDetails,
-          {},
-          std::nullopt,
-          std::nullopt,
-          params.sessionId};
+      initialUsage = domain::CompletionUsage{params.promptTokenCount,
+                                             0,
+                                             params.promptTokenCount,
+                                             promptDetails,
+                                             {},
+                                             std::nullopt,
+                                             std::nullopt,
+                                             params.sessionId};
     }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
         params.completionId, params.model, params.created, initialUsage);
