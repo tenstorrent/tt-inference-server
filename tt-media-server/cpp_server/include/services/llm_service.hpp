@@ -56,11 +56,11 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void preProcess(LLMRequest& request) const override;
 
-  void postProcess(domain::LLMResponse& response) const override;
+  void postProcess(LLMResponse& response) const override;
 
   void processStreamingRequest(
-      domain::LLMRequest request,
-      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback)
       override;
 
   void abortRequest(uint32_t taskId);
@@ -75,7 +75,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
+  void streamingPostProcess(LLMStreamChunk&) const override {}
 
  private:
   struct StreamCallbackEntry {
