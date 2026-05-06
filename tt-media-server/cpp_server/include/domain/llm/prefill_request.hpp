@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 /**
  * @brief Transport-agnostic prefill request
@@ -25,4 +25,4 @@ struct PrefillRequest {
   explicit PrefillRequest(uint32_t taskId) : task_id(taskId) {}
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

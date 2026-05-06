@@ -9,9 +9,11 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 namespace blaze_prefill {
+
+using namespace tt::domain::llm;
 
 class IBlazePrefillModelRunner {
  public:
@@ -19,7 +21,7 @@ class IBlazePrefillModelRunner {
 
   // Prefill runner always does prefill, returns the single result token
   // (nullopt if stopped before result arrives)
-  virtual std::optional<tt::domain::TokenResult> forward(
+  virtual std::optional<tt::domain::llm::TokenResult> forward(
       uint32_t taskId, const std::vector<int64_t>& tokenIds) = 0;
   virtual void exit() = 0;
 };

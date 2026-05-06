@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/cancel_queue.hpp"
 #include "runners/llm_runner.hpp"
@@ -19,6 +19,8 @@
 #include "runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
+
+using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
 using tt::runners::llm_engine::InMemoryTaskQueue;

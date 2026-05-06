@@ -10,13 +10,13 @@
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 using tt::config::ResponseFormatType;
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
- * Mirrors sampling-related fields from tt::domain::LLMRequest.
+ * Mirrors sampling-related fields from tt::domain::llm::LLMRequest.
  */
 struct SamplingParams {
   float temperature = 0.0f;
@@ -72,4 +72,4 @@ struct SamplingParams {
   static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

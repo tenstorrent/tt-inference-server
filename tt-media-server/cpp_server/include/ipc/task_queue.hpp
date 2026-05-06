@@ -3,9 +3,11 @@
 
 #pragma once
 
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 namespace tt::ipc {
+
+using namespace tt::domain::llm;
 
 /**
  * Abstract interface for the scheduler's task queue.
@@ -18,10 +20,11 @@ namespace tt::ipc {
 class ITaskQueue {
  public:
   virtual ~ITaskQueue() = default;
-  virtual void push(const tt::domain::Sequence& seq) = 0;
-  virtual std::unique_ptr<tt::domain::Sequence>
+  virtual void push(const tt::domain::llm::Sequence& seq) = 0;
+  virtual std::unique_ptr<tt::domain::llm::Sequence>
   tryPop() = 0;  // non-blocking pop;
-  virtual std::unique_ptr<tt::domain::Sequence> receive() = 0;  // blocking pop;
+  virtual std::unique_ptr<tt::domain::llm::Sequence>
+  receive() = 0;  // blocking pop;
   virtual bool empty() const = 0;
 };
 

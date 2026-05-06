@@ -7,10 +7,12 @@
 #include <memory>
 #include <sstream>
 
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "ipc/task_queue.hpp"
 
 namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 /**
  * In-process ITaskQueue backed by a deque of owned pointers.
@@ -19,22 +21,22 @@ namespace tt::runners::llm_engine {
  */
 class InMemoryTaskQueue : public tt::ipc::ITaskQueue {
  public:
-  void push(const tt::domain::Sequence& seq) override {
+  void push(const tt::domain::llm::Sequence& seq) override {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue.push_back(std::make_unique<tt::domain::Sequence>(
-        tt::domain::Sequence::deserialize(is)));
+    queue.push_back(std::make_unique<tt::domain::llm::Sequence>(
+        tt::domain::llm::Sequence::deserialize(is)));
   }
 
-  std::unique_ptr<tt::domain::Sequence> tryPop() override {
+  std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
     if (queue.empty()) return nullptr;
     auto seq = std::move(queue.front());
     queue.pop_front();
     return seq;
   }
 
-  std::unique_ptr<tt::domain::Sequence> receive() override {
+  std::unique_ptr<tt::domain::llm::Sequence> receive() override {
     if (queue.empty()) return nullptr;
     auto seq = std::move(queue.front());
     queue.pop_front();
@@ -44,7 +46,7 @@ class InMemoryTaskQueue : public tt::ipc::ITaskQueue {
   bool empty() const override { return queue.empty(); }
 
  private:
-  std::deque<std::unique_ptr<tt::domain::Sequence>> queue;
+  std::deque<std::unique_ptr<tt::domain::llm::Sequence>> queue;
 };
 
 }  // namespace tt::runners::llm_engine

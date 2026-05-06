@@ -12,14 +12,16 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
-#include "domain/sampling_params.hpp"
-#include "domain/sequence.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
 
@@ -62,7 +64,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::vector<uint32_t> taskIds;
   int idCounter = 0;
   for (const auto& req : requests) {
-    tt::domain::Sequence& seq = engine.getScheduler().addRequest(
+    tt::domain::llm::Sequence& seq = engine.getScheduler().addRequest(
         tt::utils::TaskIDGenerator::generate(), req.prompt,
         {.max_tokens = req.max_tokens});
     taskIds.push_back(seq.taskId);
@@ -131,7 +133,7 @@ TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
                                            tt::ipc::RESULT_QUEUE_CAPACITY);
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
-  tt::domain::SamplingParams sp;
+  tt::domain::llm::SamplingParams sp;
   sp.max_tokens = 100;
   sp.response_format_type = tt::domain::ResponseFormatType::JSON_SCHEMA;
   sp.json_schema_str =

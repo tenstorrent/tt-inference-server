@@ -7,9 +7,10 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "domain/chat_completion_request.hpp"
+#include "domain/llm/chat_completion_request.hpp"
 
 using namespace tt::domain;
+using namespace tt::domain::llm;
 
 // Helper to create a basic valid request JSON
 Json::Value createBasicRequestJson() {

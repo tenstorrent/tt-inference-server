@@ -16,7 +16,7 @@ static const char* llamaSystemPreamble =
     "Today Date: 26 Jul 2024\n\n";
 
 std::string LlamaTokenizer::applyChatTemplate(
-    const std::vector<tt::domain::ChatMessage>& messages,
+    const std::vector<tt::domain::llm::ChatMessage>& messages,
     bool addGenerationPrompt,
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
     [[maybe_unused]] bool enableReasoning, bool skipApplyChatTemplate) const {
@@ -34,7 +34,7 @@ std::string LlamaTokenizer::applyChatTemplate(
   auto filteredMessages = messages;
   if (!messages.empty() && messages[0].role == "system") {
     systemContent = messages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
+    filteredMessages = std::vector<tt::domain::llm::ChatMessage>(
         messages.begin() + 1, messages.end());
   } else if (tools.has_value() && !tools->empty()) {
     // Default system message when tools are provided
@@ -75,7 +75,7 @@ std::string LlamaTokenizer::applyChatTemplate(
 
     // Extract first user message
     auto firstUserMessage = filteredMessages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
+    filteredMessages = std::vector<tt::domain::llm::ChatMessage>(
         filteredMessages.begin() + 1, filteredMessages.end());
 
     out << llamaHeaderStart << "user" << llamaHeaderEnd << "\n\n";
