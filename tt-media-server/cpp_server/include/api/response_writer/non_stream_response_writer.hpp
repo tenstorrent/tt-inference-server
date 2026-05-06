@@ -50,6 +50,7 @@ class NonStreamResponseWriter : public ResponseWriter {
 
   std::string accumulatedAnswer;
   std::string accumulatedReasoning;
+  std::string accumulatedArguments;
   std::string finishReason = "stop";
 };
 

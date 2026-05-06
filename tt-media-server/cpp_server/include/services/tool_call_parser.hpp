@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,9 +15,37 @@
 
 namespace tt::services {
 
+// Type of content being generated
+enum class ToolCallContentType {
+  TOOL_CALL,  // Inside tool call block
+  REGULAR     // Outside tool call block (normal content)
+};
+
+// Type of tool call delta for streaming
+enum class ToolCallDeltaType {
+  NONE,              // Not in a tool call
+  TOOL_CALL_START,   // Starting a new tool call (send structure with id, type, function.name)
+  ARGUMENTS_DELTA,   // Adding to function.arguments
+  TOOL_CALL_END      // Ending current tool call
+};
+
+// Result of processing a single token for tool calls
+struct ToolCallTokenResult {
+  ToolCallContentType type;      // Type of content (tool call or regular)
+  std::string text;              // Decoded text for this token (or arguments delta)
+  bool should_emit;              // Whether to send to client
+  ToolCallDeltaType delta_type;  // Type of streaming delta to send
+  int tool_call_index;           // Index of current tool call (0-based)
+  std::string function_name;     // Function name (for TOOL_CALL_START)
+  std::string tool_call_id;      // Tool call ID (for TOOL_CALL_START)
+};
+
 /**
  * Interface for parsing model-specific tool call formats from generated text.
  * Each model (DeepSeek, Llama, etc.) has its own format for tool calls.
+ *
+ * Supports both complete text parsing (non-streaming) and token-by-token
+ * streaming parsing.
  */
 class IToolCallParser {
  public:
@@ -47,6 +76,41 @@ class IToolCallParser {
    * Used to clean up the message content after extracting tool calls.
    */
   virtual std::string stripMarkers(const std::string& text) const = 0;
+
+  /**
+   * Initialize streaming state for a task.
+   * Call before processing first token.
+   */
+  virtual void initializeTask(uint32_t task_id) = 0;
+
+  /**
+   * Process single token for streaming.
+   * Returns content type and whether to emit.
+   *
+   * @param task_id Unique task identifier
+   * @param token_id Token ID to process
+   * @param decoded_text Decoded text for this token
+   * @return ToolCallTokenResult with content type and emit flag
+   */
+  virtual ToolCallTokenResult processToken(uint32_t task_id, int64_t token_id,
+                                           const std::string& decoded_text) = 0;
+
+  /**
+   * Finalize task state and cleanup.
+   * Call when generation completes.
+   * Returns the parsed tool calls if any were found, or std::nullopt.
+   */
+  virtual std::optional<Json::Value> finalizeTask(uint32_t task_id) = 0;
+
+  /**
+   * Check if task is currently in tool call mode.
+   */
+  virtual bool isInToolCall(uint32_t task_id) const = 0;
+
+  /**
+   * Get count of active tasks.
+   */
+  virtual size_t activeTaskCount() const = 0;
 };
 
 /**

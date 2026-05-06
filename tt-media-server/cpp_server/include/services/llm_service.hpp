@@ -25,6 +25,21 @@
 
 namespace tt::services {
 
+// State for structured output streaming - filters out {"arguments": wrapper
+enum class StructuredOutputState {
+  SKIPPING_PREFIX,  // Accumulating and matching {"arguments":
+  STREAMING,        // Streaming the actual arguments content
+  DONE              // Finished (skipping trailing wrapper)
+};
+
+struct StructuredOutputParseState {
+  StructuredOutputState state = StructuredOutputState::SKIPPING_PREFIX;
+  std::string buffer;        // Accumulation buffer for prefix matching
+  int brace_depth = 0;       // Track nested braces to know when arguments end
+  bool sent_start = false;   // Whether TOOL_CALL_START has been sent
+  std::string tool_call_id;  // Generated tool call ID
+};
+
 class LLMService
     : public BaseService<domain::LLMRequest, domain::LLMResponse>,
       public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
@@ -95,6 +110,7 @@ class LLMService
   mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
       toolChoiceMap;
   utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
+  utils::ConcurrentMap<uint32_t, StructuredOutputParseState> structuredOutputStateMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
