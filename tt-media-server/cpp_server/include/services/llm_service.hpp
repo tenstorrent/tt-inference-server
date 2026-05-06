@@ -60,8 +60,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void processStreamingRequest(
       LLMRequest request,
-      std::function<void(LLMStreamChunk&, bool isFinal)> callback)
-      override;
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
   void abortRequest(uint32_t taskId);
 
