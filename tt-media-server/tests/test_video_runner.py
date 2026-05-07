@@ -374,6 +374,33 @@ class TestRank0LoadImagePrompts:
         assert "side-file unreadable" in job.error
         assert str(missing) in job.error
 
+    def test_returns_empty_true_and_enqueues_error_for_empty_list_side_file(
+        self, tmp_path
+    ):
+        """A side-file containing valid JSON ``[]`` is the only remaining
+        silent-T2V degradation path after ``bea8dad``: the parse succeeds,
+        ``prompts is not None``, but ``video_request_to_generate_request``'s
+        ``if image_prompts:`` is falsy for empty lists and would build a
+        T2V request for an I2V model. The helper must reject it the same
+        way it rejects unreadable files."""
+        import queue as _queue
+
+        side_path = tmp_path / "tt_img_empty.json"
+        side_path.write_text("[]")
+        req = _make_request(image_path=str(side_path))
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(req, encode_queue)
+
+        assert prompts == []
+        assert skip is True
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.error is not None
+        assert "empty list" in job.error
+        assert str(side_path) in job.error
+
 
 class TestI2VInferenceLoopSideFile:
     """End-to-end behaviour of ``_run_inference_loop`` when an I2V request
@@ -718,6 +745,67 @@ class TestRunAllRanks:
         mock_output_shm.close.assert_called_once()
         mock_output_shm.unlink.assert_not_called()
         mock_runner.close_device.assert_called_once()
+
+    def test_rank0_sweeps_orphaned_video_files_on_shutdown(self):
+        """Mirrors mock_video_runner_base + sp_runner: rank 0 must sweep
+        leftover mp4s on tmpfs at shutdown so a crash mid-encode doesn't
+        leak files until the next SP_RUNNER restart."""
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        mock_runner = MagicMock()
+        mock_runner.warmup = AsyncMock()
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.Get_size.return_value = 4
+        mock_comm.bcast.return_value = (None, None, False)
+
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.return_value = None
+        mock_output_shm = MagicMock()
+
+        env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "0"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tt_model_runners.video_runner._create_dit_runner", return_value=mock_runner
+        ), patch(
+            "tt_model_runners.video_runner._attach_mpi_comm", return_value=mock_comm
+        ), patch(
+            "tt_model_runners.video_runner.VideoShm",
+            side_effect=[mock_input_shm, mock_output_shm],
+        ), patch(
+            "tt_model_runners.video_runner.cleanup_orphaned_video_files",
+            return_value=3,
+        ) as mock_cleanup:
+            run_all_ranks()
+
+        mock_cleanup.assert_called_once_with()
+
+    def test_nonrank0_does_not_sweep_orphaned_video_files(self):
+        """Sweep is rank-0-only; runner peers on other hosts share no tmpfs
+        with the encoder thread, so calling cleanup there would either no-op
+        or (worse) race-delete files belonging to a different rank-0."""
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        mock_runner = MagicMock()
+        mock_runner.warmup = AsyncMock()
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 1
+        mock_comm.Get_size.return_value = 4
+        mock_comm.bcast.return_value = (None, None, False)
+
+        env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "1"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tt_model_runners.video_runner._create_dit_runner", return_value=mock_runner
+        ), patch(
+            "tt_model_runners.video_runner._attach_mpi_comm", return_value=mock_comm
+        ), patch(
+            "tt_model_runners.video_runner.cleanup_orphaned_video_files",
+            return_value=0,
+        ) as mock_cleanup:
+            run_all_ranks()
+
+        mock_cleanup.assert_not_called()
 
     def test_rank0_cleanup_on_keyboard_interrupt(self):
         import tt_model_runners.video_runner as vr
