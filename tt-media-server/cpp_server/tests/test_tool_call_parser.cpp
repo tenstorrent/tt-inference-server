@@ -365,7 +365,8 @@ void testStreamingTokens() {
 
   // Simulate: JSON arguments
   {
-    auto r = parser->processToken(taskId, 12348, "{\"location\":\"San Francisco\"}\n");
+    auto r = parser->processToken(taskId, 12348,
+                                  "{\"location\":\"San Francisco\"}\n");
     assert(!r.should_emit);
     assert(r.type == ToolCallContentType::TOOL_CALL);
   }

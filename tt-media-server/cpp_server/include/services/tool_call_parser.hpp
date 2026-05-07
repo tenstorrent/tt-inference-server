@@ -38,21 +38,24 @@ enum class ToolCallContentType {
 
 // Type of tool call delta for streaming
 enum class ToolCallDeltaType {
-  NONE,              // Not in a tool call
-  TOOL_CALL_START,   // Starting a new tool call (send structure with id, type, function.name)
-  ARGUMENTS_DELTA,   // Adding to function.arguments
-  TOOL_CALL_END      // Ending current tool call
+  NONE,             // Not in a tool call
+  TOOL_CALL_START,  // Starting a new tool call (send structure with id, type,
+                    // function.name)
+  ARGUMENTS_DELTA,  // Adding to function.arguments
+  TOOL_CALL_END     // Ending current tool call
 };
 
 // Result of processing a single token for tool calls
 struct ToolCallTokenResult {
-  ToolCallContentType type;      // Type of content (tool call or regular)
-  std::string text;              // Decoded text for this token (or arguments delta)
-  bool should_emit;              // Whether to send to client
+  ToolCallContentType type;  // Type of content (tool call or regular)
+  std::string text;          // Decoded text for this token (or arguments delta)
+  bool should_emit;          // Whether to send to client
   ToolCallDeltaType delta_type;  // Type of streaming delta to send
   int tool_call_index;           // Index of current tool call (0-based)
   std::string function_name;     // Function name (for TOOL_CALL_START)
   std::string tool_call_id;      // Tool call ID (for TOOL_CALL_START)
+  std::optional<Json::Value>
+      tool_calls_delta;  // Pre-built tool_calls array for the choice
 };
 
 /**

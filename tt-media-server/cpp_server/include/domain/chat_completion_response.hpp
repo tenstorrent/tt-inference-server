@@ -117,7 +117,7 @@ struct ChatCompletionResponse {
 struct ChatCompletionDelta {
   std::optional<std::string> role;
   std::optional<std::string> content;
-  std::optional<std::string> reasoning;  // Reasoning content for DeepSeek R1
+  std::optional<std::string> reasoning;   // Reasoning content for DeepSeek R1
   std::optional<Json::Value> tool_calls;  // Tool call deltas
 
   Json::Value toJson() const {

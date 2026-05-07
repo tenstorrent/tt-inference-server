@@ -67,11 +67,10 @@ void NonStreamResponseWriter::finalize() {
   choice.index = 0;
   std::string argsStr = accumulatedArguments.str();
   choice.text = argsStr.empty() ? accumulatedAnswer.str() : std::move(argsStr);
-  std::string reasoningStr = accumulatedReasoning.str();
   choice.reasoning =
-      reasoningStr.empty()
+      accumulatedReasoning.tellp() == 0
           ? std::nullopt
-          : std::optional<std::string>(std::move(reasoningStr));
+          : std::optional<std::string>(accumulatedReasoning.str());
   choice.finish_reason = finishReason;
   llmResponse.choices.push_back(std::move(choice));
 
