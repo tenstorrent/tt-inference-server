@@ -612,7 +612,7 @@ if __name__ == "__main__":
     if request:
         test = VisionEvalsTest(config, {"request": request})
         result = test.run_tests()
-        if not result.get("success"):
+        if not result.data.get("success"):
             logger.error("Test failed: %s", result)
             exit(1)
     else:

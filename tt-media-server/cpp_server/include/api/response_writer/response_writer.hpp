@@ -9,11 +9,13 @@
 #include <optional>
 #include <string>
 
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/session.hpp"
 #include "services/llm_service.hpp"
-#include "services/session_manager.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 /**
  * Parameters shared by every chat-completion response writer (streaming or
@@ -28,7 +30,7 @@ struct ResponseWriterParams {
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<services::SessionManager> sessionManager;
+  tt::domain::Session* session = nullptr;
 };
 
 /**
@@ -55,7 +57,7 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   ResponseWriter& operator=(const ResponseWriter&) = delete;
 
   /** Consume a single LLMStreamChunk produced by the streaming generator. */
-  virtual void handleTokenChunk(const domain::LLMStreamChunk& chunk) = 0;
+  virtual void handleTokenChunk(const LLMStreamChunk& chunk) = 0;
 
   /** Signal end-of-stream. Idempotent; releases in-flight slot. */
   virtual void finalize() = 0;
@@ -72,13 +74,10 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
    * tokens if the choice contains reasoning content. Returns the new token
    * count.
    */
-  int noteToken(const domain::LLMChoice& choice);
+  int noteToken(const LLMChoice& choice);
 
   /** Compute usage from the current accumulator state. */
-  domain::CompletionUsage buildUsage() const;
-
-  /** Release the session in-flight slot if a session is associated. */
-  void releaseInFlight();
+  CompletionUsage buildUsage() const;
 
   ResponseWriterParams params;
   std::chrono::high_resolution_clock::time_point startTime =

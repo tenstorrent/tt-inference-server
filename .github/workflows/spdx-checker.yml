@@ -10,8 +10,11 @@ on:
       - opened
       - reopened
       - synchronize
-      - assigned
-      - review_requested
+      - ready_for_review
+
+concurrency:
+  group: spdx-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   run-spdx-header-script:

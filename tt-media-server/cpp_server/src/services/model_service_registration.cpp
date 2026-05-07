@@ -83,13 +83,6 @@ void registerLLM() {
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
-  routes.registerRoute(config::ModelService::LLM, "POST", "/v1/sessions",
-                       "Create session (with optional slot)");
-  routes.registerRoute(config::ModelService::LLM, "DELETE",
-                       "/v1/sessions/{session_id}", "Close session");
-  routes.registerRoute(config::ModelService::LLM, "GET",
-                       "/v1/sessions/{session_id}/slot",
-                       "Get slot id for session");
   routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
                        "List models");
 }
@@ -124,6 +117,7 @@ void registerAlwaysExemptRoutes() {
   routes.registerAlwaysExempt("/openapi.json");
   routes.registerAlwaysExempt("/metrics");
   routes.registerAlwaysExempt("/max-session-count");
+  routes.registerAlwaysExempt("/info");
 }
 
 }  // namespace

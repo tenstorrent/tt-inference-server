@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -28,6 +33,9 @@ headers = {
 
 
 class VideoGenerationLoadTest(BaseTest):
+    KIND = "video_generation_load"
+    TASK_TYPE = "video"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
         logger.info(self.targets)
@@ -160,3 +168,18 @@ class VideoGenerationLoadTest(BaseTest):
         )
 
         return requests_duration, avg_duration
+
+
+def run_video_generation_load(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`VideoGenerationLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return VideoGenerationLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

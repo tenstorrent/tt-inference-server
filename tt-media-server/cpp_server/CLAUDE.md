@@ -181,7 +181,8 @@ The server provides OpenAI-compatible endpoints:
 - `POST /v1/embeddings` - Text embeddings (embedding mode only)
 - `GET /health` - Health check
 - `GET /tt-liveness` - Liveness check with detailed system status
+- `GET /info` - Build identity (tt-inference-server version + commit, tt-blaze commit, tt-metal commit)
 - `GET /docs` - Swagger UI documentation
 - `GET /openapi.json` - OpenAPI specification
 
-All endpoints except health/tt-liveness/docs require Bearer token authentication.
+Bearer token authentication is required for all endpoints, with the following exceptions: /health, /tt-liveness, /info, and /docs.

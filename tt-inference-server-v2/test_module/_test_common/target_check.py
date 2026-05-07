@@ -10,10 +10,12 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence
 
 from .report_types import ReportCheckTypes
-from ..context import MediaContext
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +141,7 @@ class MetricSpec:
     field_name: str
 
 
-def load_targets(ctx: MediaContext) -> PerformanceTargets:
+def load_targets(ctx: "MediaContext") -> PerformanceTargets:
     device_str = ctx.model_spec.cli_args.get("device")
     targets = get_performance_targets(ctx.model_spec.model_name, device_str)
     logger.info(f"Performance targets: {targets}")
@@ -231,7 +233,7 @@ def _log_tiered(target_checks: dict[str, dict]) -> None:
 
 
 def run_tiered_check(
-    ctx: MediaContext, specs: Sequence[MetricSpec]
+    ctx: "MediaContext", specs: Sequence[MetricSpec]
 ) -> tuple[dict[str, dict], ReportCheckTypes]:
     """Convenience wrapper: load targets, build 3-tier dict, log and summarise."""
     targets = load_targets(ctx)
