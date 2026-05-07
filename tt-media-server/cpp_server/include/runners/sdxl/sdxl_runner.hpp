@@ -12,7 +12,7 @@
 
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
-#include "runners/image_runner.hpp"
+#include "runners/media_runner.hpp"
 
 namespace tt::runners::sdxl {
 
@@ -27,7 +27,8 @@ namespace py = pybind11;
  * running between calls; all Python interactions are guarded by
  * `py::gil_scoped_acquire`.
  */
-class SDXLBaseRunner : public ImageRunner {
+class SDXLBaseRunner : public MediaRunner<domain::ImageGenerateRequest,
+                                          std::vector<std::string>> {
  public:
   ~SDXLBaseRunner() override;
 

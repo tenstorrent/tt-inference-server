@@ -14,10 +14,19 @@
 namespace tt::config {
 
 /**
+ * Common base for every per-service runner config. Carries the runner_type
+ * field so the runner factory can dispatch from any config without knowing
+ * the concrete service.
+ */
+struct RunnerConfigBase {
+  ModelRunnerType runner_type = ModelRunnerType::MOCK;
+};
+
+/**
  * Configuration for LLM inference engine.
  * Includes model runner settings, scheduling policy, and KV cache parameters.
  */
-struct LLMConfig {
+struct LLMConfig : RunnerConfigBase {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
   size_t max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
   size_t max_in_flight_count = 64;
@@ -26,24 +35,21 @@ struct LLMConfig {
   int eos = 1;
   size_t kvcache_block_size = 256;
   size_t num_kvcache_blocks = 512;
-  ModelRunnerType runner_type = ModelRunnerType::MOCK;
   SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 
 /**
- * Configuration for embedding service.
- * Currently a placeholder - will be expanded as embedding features are added.
+ * Configuration for embedding service. Placeholder; will grow as embedding
+ * features are added.
  */
-struct EmbeddingConfig {
-  ModelRunnerType runner_type = ModelRunnerType::MOCK;
-};
+struct EmbeddingConfig : RunnerConfigBase {};
 
 /**
  * Configuration for image generation service. Per-model knobs only; per-request
  * fields (prompt, num_inference_steps, guidance, ...) live on the request.
  */
-struct ImageConfig {
-  ModelRunnerType runner_type = ModelRunnerType::TT_SDXL_GENERATE;
+struct ImageConfig : RunnerConfigBase {
+  ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }
 
   size_t max_batch_size = 1;
 

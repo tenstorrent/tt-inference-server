@@ -5,18 +5,20 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
 #include "domain/image_response.hpp"
-#include "runners/image_runner.hpp"
+#include "runners/media_runner.hpp"
 #include "services/base_service.hpp"
 
 namespace tt::services {
 
 /**
  * In-process service for image generation / image-to-image / edit endpoints.
- * Owns one ImageRunner and dispatches requests synchronously; the Drogon
+ * Owns one runner and dispatches requests synchronously; the Drogon
  * controller offloads to a thread pool so the I/O loop is never blocked.
  */
 class ImageService
@@ -40,7 +42,9 @@ class ImageService
 
  private:
   config::ImageConfig config_;
-  std::unique_ptr<runners::ImageRunner> runner_;
+  std::unique_ptr<runners::MediaRunner<domain::ImageGenerateRequest,
+                                       std::vector<std::string>>>
+      runner_;
   std::atomic<bool> ready_{false};
 };
 

@@ -12,8 +12,8 @@
 #include "config/types.hpp"
 #include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runners/embedding_runner.hpp"
-#include "runners/image_runner.hpp"
 #include "runners/llm_runner.hpp"
+#include "runners/media_runner.hpp"
 #include "runners/sdxl/sdxl_runner.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
@@ -119,9 +119,10 @@ void registerImage() {
         return std::make_shared<ImageService>(config::imageEngineConfig());
       });
 
-  auto& imageRunners =
-      utils::MediaRunnerRegistry<runners::ImageRunner,
-                                 config::ImageConfig>::instance();
+  auto& imageRunners = utils::MediaRunnerRegistry<
+      runners::MediaRunner<domain::ImageGenerateRequest,
+                           std::vector<std::string>>,
+      config::ImageConfig>::instance();
   imageRunners.registerRunner(
       config::ModelRunnerType::TT_SDXL_GENERATE,
       [](const config::ImageConfig& cfg) {

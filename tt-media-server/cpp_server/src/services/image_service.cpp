@@ -14,10 +14,12 @@ namespace tt::services {
 
 ImageService::ImageService(config::ImageConfig config)
     : config_(std::move(config)) {
-  auto& registry = utils::MediaRunnerRegistry<runners::ImageRunner,
-                                              config::ImageConfig>::instance();
+  auto& registry = utils::MediaRunnerRegistry<
+      runners::MediaRunner<domain::ImageGenerateRequest,
+                           std::vector<std::string>>,
+      config::ImageConfig>::instance();
   try {
-    runner_ = registry.create(config_.runner_type, config_);
+    runner_ = registry.create(config_);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[ImageService] Failed to construct image runner: {}",
                  e.what());
