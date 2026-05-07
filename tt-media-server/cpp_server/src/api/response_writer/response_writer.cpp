@@ -50,13 +50,9 @@ CompletionUsage ResponseWriter::buildUsage() const {
   completionDetails.rejected_prediction_tokens =
       static_cast<int>(specRejects.load());
 
-  CompletionUsage usage{params.promptTokenCount,
-                        tokens,
-                        totalTokens,
-                        promptDetails,
-                        completionDetails,
-                        std::nullopt,
-                        std::nullopt};
+  CompletionUsage usage{
+      params.promptTokenCount, tokens,       totalTokens, promptDetails,
+      completionDetails,       std::nullopt, std::nullopt};
 
   if (firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
