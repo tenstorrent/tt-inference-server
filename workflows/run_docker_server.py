@@ -114,6 +114,25 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
     )
     return env_vars
 
+def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
+    src_root = Path(repo_root_path) / "tt-media-server"
+    dst_root = f"{user_home_path}/tt-metal/server"
+    if not _is_cpp_media_spec(model_spec):
+        return [
+            "--mount",
+            f"type=bind,src={src_root},dst={dst_root}",
+        ]
+
+    mounts: List[str] = []
+    for entry in sorted(src_root.iterdir()):
+        if entry.name == "cpp_server":
+            continue
+        mounts += [
+            "--mount",
+            f"type=bind,src={entry},dst={dst_root}/{entry.name}",
+        ]
+    return mounts
+
 
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
