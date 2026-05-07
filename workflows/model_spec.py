@@ -2867,7 +2867,7 @@ image_templates = [
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.IMAGE,
-        inference_engine=InferenceEngine.MEDIA_CPP.value,
+        inference_engine=InferenceEngine.MEDIA.value,
         # img2img uses the same weights as base SDXL
         hf_weights_repo="stabilityai/stable-diffusion-xl-base-1.0",
         device_model_specs=[
@@ -2956,7 +2956,7 @@ image_templates = [
         min_ram_gb=6,
         docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.IMAGE,
-        inference_engine=InferenceEngine.MEDIA_CPP.value,
+        inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,

@@ -44,21 +44,26 @@ def short_uuid():
 
 
 # ---------------------------------------------------------------------------
-# C++ media server (cpp_server) env-var derivation.
+# cpp_server backend opt-in for selected MEDIA models.
 #
-# The Python media server resolves all per-model config from MODEL+DEVICE
-# inside the container via tt-media-server/config/settings.py::Settings. The
-# C++ binary does not do that resolution; it expects each individual env var
-# to already be set when it starts. So when InferenceEngine.MEDIA_CPP is
-# selected, this module derives the C++ env vars from the model spec and
-# injects them into `docker run` along with SERVER_MODE=cpp (which the
-# Dockerfile's CMD uses to pick run_cpp.sh over run_uvicorn.sh).
+# The tt-media-server image bundles BOTH the Python uvicorn server and the C++
+# binary (cpp_server/build/tt_media_server_cpp). Its CMD picks one based on
+# SERVER_MODE: `cpp` -> run_cpp.sh, anything else -> run_uvicorn.sh.
+#
+# The Python media server resolves every per-model setting from MODEL+DEVICE
+# inside the container via tt-media-server/config/settings.py::Settings; the
+# C++ binary does not do that resolution and expects each setting as its own
+# env var. So for models routed to cpp_server, this module derives those env
+# vars on the host and injects them along with SERVER_MODE=cpp.
+#
+# A model is wired to cpp_server iff its model_name appears in
+# _CPP_SDXL_RUNNER_BY_MODEL_NAME below. Today this covers SDXL only; extend
+# the table to enable cpp_server for additional MEDIA models.
 #
 # IMPORTANT: the tables below mirror
 #     tt-media-server/config/constants.py::ModelConfigs[(TT_SDXL_*, *)]
 #     tt-media-server/config/constants.py::INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP
-# That file is the source of truth. Keep these tables in sync until the C++
-# binary learns to derive them from MODEL+DEVICE itself.
+# Keep these in sync until the C++ binary learns to derive them itself.
 # ---------------------------------------------------------------------------
 
 _SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
@@ -84,24 +89,25 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
 }
 
 
+def _is_cpp_media_spec(model_spec) -> bool:
+    """True if this MEDIA spec should run on the cpp_server backend."""
+    return (
+        model_spec.inference_engine == InferenceEngine.MEDIA.value
+        and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+    )
+
+
 def _get_cpp_media_server_docker_env_vars(model_spec):
     """Build the env-var set the cpp_server binary needs at startup."""
     device = model_spec.device_type.name.lower()
     model_name = model_spec.model_name
-    runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME.get(model_name)
-    if runner is None:
-        raise ValueError(
-            f"InferenceEngine.MEDIA_CPP requested for model={model_name!r}, "
-            f"but no cpp_server runner mapping exists. Add an entry to "
-            f"_CPP_SDXL_RUNNER_BY_MODEL_NAME (mirror tt-media-server/config/"
-            f"constants.py::INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP)."
-        )
+    runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME[model_name]
     defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(device)
     if defaults is None:
         raise ValueError(
-            f"InferenceEngine.MEDIA_CPP requested for device={device!r}, but "
-            f"no cpp_server device defaults exist. Add an entry to "
-            f"_CPP_SDXL_DEVICE_DEFAULTS (mirror tt-media-server/config/"
+            f"cpp_server backend requested for model={model_name!r} on "
+            f"device={device!r}, but no device defaults exist. Add an entry "
+            f"to _CPP_SDXL_DEVICE_DEFAULTS (mirror tt-media-server/config/"
             f"constants.py::ModelConfigs[(TT_SDXL_*, {device.upper()})])."
         )
     mesh_shape, is_galaxy, device_ids = defaults
@@ -126,7 +132,7 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
 
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
-    if model_spec.inference_engine == InferenceEngine.MEDIA_CPP.value:
+    if _is_cpp_media_spec(model_spec):
         return _get_cpp_media_server_docker_env_vars(model_spec)
 
     env_vars = {
@@ -260,7 +266,6 @@ def generate_docker_run_command(
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
-        InferenceEngine.MEDIA_CPP.value,
     ):
         # media/forge containers' run_uvicorn.sh defaults to listening on 8000;
         # cpp_server's run_cpp.sh also binds 8000.
@@ -313,17 +318,16 @@ def generate_docker_run_command(
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
 
-    if model_spec.inference_engine in (
-        InferenceEngine.FORGE.value,
-        InferenceEngine.MEDIA.value,
-        InferenceEngine.MEDIA_CPP.value,
+    if (
+        model_spec.inference_engine == InferenceEngine.FORGE.value
+        or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
         if api_key:
             docker_env_vars["API_KEY"] = api_key
         # cpp_server reads OPENAI_API_KEY (not API_KEY) for bearer auth.
-        if model_spec.inference_engine == InferenceEngine.MEDIA_CPP.value:
+        if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY")
             if openai_api_key:
                 docker_env_vars["OPENAI_API_KEY"] = openai_api_key
