@@ -1414,7 +1414,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 85950464,
+                    "trace_region_size": 115818496,
                 },
             ),
         ],
@@ -1925,7 +1925,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 93102080,
+                    "trace_region_size": 164552704,
                 },
             ),
         ],
