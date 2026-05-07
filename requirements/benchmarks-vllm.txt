@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_VLLM workflow venv (Python 3.11).
+# Used by: setup_benchmarks_vllm() in workflows/workflow_venvs.py
+#
+# vllm pinned to 0.13.0 for reproducibility and to guard against regressions.
+
+-c constraints.txt
+
+vllm==0.13.0
+torch
