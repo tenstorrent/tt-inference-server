@@ -51,6 +51,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
     ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
+    ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: "Wan22-I2V-Prodia",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -416,6 +417,125 @@ class TTWan22Runner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+
+class TTWan22I2VProdiaRunner(TTDiTRunner):
+    """Wan2.2 I2V runner using the Prodia distilled pipeline.
+    Single-image conditioning only — when the broadcast carries
+    ``image_prompts`` with multiple entries, the prompt with the lowest
+    ``frame_pos`` is selected and the rest are dropped (the distilled pipeline
+    does not accept multi-frame conditioning).
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+        # Export MP4 inside the device worker by default to avoid pickling the
+        # raw frame array (~226MB at 720p×81 frames) over IPC. The MPI launcher
+        # in ``video_runner.py`` flips this off for multi-rank runs because
+        # the encoder thread there is the sole writer to ``output_shm``.
+        self.export_in_runner = True
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        """Synthetic 64x64 PIL warmup — same approach as TTWan22I2VRunner.
+
+        The Prodia pipeline resizes to (height, width) before VAE encoding,
+        so the input resolution is irrelevant; a small black frame exercises
+        the same kernels as a real photo without paying the JPEG encode cost.
+        """
+        dummy = Image.new("RGB", (64, 64), color=0)
+        buf = io.BytesIO()
+        dummy.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return VideoI2VGenerateRequest.model_construct(
+            prompt="Sunrise on a beach",
+            negative_prompt="",
+            num_inference_steps=2,
+            image_prompts=[ImagePromptEntry(image=b64, frame_pos=0)],
+        )
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
+        if is_blackhole():
+            config = ttnn.FabricRouterConfig()
+            config.max_packet_payload_size_bytes = 8192
+            device_params["fabric_router_config"] = config
+            mesh_size = (
+                self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+            )
+            if mesh_size > 32:
+                device_params["trace_region_size"] = 120000000
+        return device_params
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.prodia.pipelines.pipeline_i2v import (
+                create_i2v_pipeline,
+            )
+
+            resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+            return create_i2v_pipeline(
+                self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                height=resolution.height,
+                width=resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Prodia I2V pipeline creation failed",
+                e,
+            )
+            raise
+
+    def _build_image_prompt(
+        self, request: VideoI2VGenerateRequest, target_size: tuple[int, int]
+    ) -> list:
+        """Decode ``image_prompts`` into the (PIL, frame_pos) tuple list the
+        Prodia pipeline expects for multi-frame conditioning.
+        """
+        return [
+            (
+                self.image_manager.base64_to_pil_image(
+                    entry.image, target_size=target_size, target_mode="RGB"
+                ),
+                entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        image_prompt = self._build_image_prompt(
+            request, target_size=(resolution.width, resolution.height)
+        )
+        frames = self.pipeline(
+            prompt=request.prompt,
+            image=image_prompt,
+            height=resolution.height,
+            width=resolution.width,
+            num_frames=WAN22_NUM_FRAMES,
+            seed=int(request.seed or 0),
+            traced=True,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        if self.export_in_runner:
+            from utils.video_manager import VideoManager
+
+            return [VideoManager().export_to_mp4(frames)]
+        return frames
 
 
 class TTWan22I2VRunner(TTDiTRunner):
