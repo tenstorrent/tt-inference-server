@@ -108,7 +108,9 @@ class TestWriteErrorToShm:
 
 class TestCreateDitRunner:
     @staticmethod
-    def _make_dit_module(mock_mochi, mock_wan, mock_wan_i2v=None):
+    def _make_dit_module(
+        mock_mochi, mock_wan, mock_wan_i2v=None, mock_wan_i2v_prodia=None
+    ):
         mock_mochi.__name__ = "TTMochi1Runner"
         mock_wan.__name__ = "TTWan22Runner"
         mod = Mock()
@@ -117,6 +119,9 @@ class TestCreateDitRunner:
         if mock_wan_i2v is not None:
             mock_wan_i2v.__name__ = "TTWan22I2VRunner"
             mod.TTWan22I2VRunner = mock_wan_i2v
+        if mock_wan_i2v_prodia is not None:
+            mock_wan_i2v_prodia.__name__ = "TTWan22I2VProdiaRunner"
+            mod.TTWan22I2VProdiaRunner = mock_wan_i2v_prodia
         return {"tt_model_runners.dit_runners": mod}
 
     def test_creates_mochi_runner(self):
@@ -150,6 +155,27 @@ class TestCreateDitRunner:
         ):
             _create_dit_runner("tt-wan2.2-i2v", 0)
             mock_wan_i2v.assert_called_once_with("")
+            mock_wan.assert_not_called()
+            mock_mochi.assert_not_called()
+
+    def test_creates_wan_i2v_prodia_runner(self):
+        """``tt-wan2.2-i2v-prodia`` must resolve to ``TTWan22I2VProdiaRunner``
+        — the distilled 3-step variant. Both I2V variants must be selectable
+        via MODEL_RUNNER so operators can swap quality vs. latency without
+        rebuilding."""
+        mock_mochi = Mock()
+        mock_wan = Mock()
+        mock_wan_i2v = Mock()
+        mock_wan_i2v_prodia = Mock()
+        with patch.dict(
+            sys.modules,
+            self._make_dit_module(
+                mock_mochi, mock_wan, mock_wan_i2v, mock_wan_i2v_prodia
+            ),
+        ):
+            _create_dit_runner("tt-wan2.2-i2v-prodia", 0)
+            mock_wan_i2v_prodia.assert_called_once_with("")
+            mock_wan_i2v.assert_not_called()
             mock_wan.assert_not_called()
             mock_mochi.assert_not_called()
 
@@ -745,6 +771,85 @@ class TestRunAllRanks:
         mock_output_shm.close.assert_called_once()
         mock_output_shm.unlink.assert_not_called()
         mock_runner.close_device.assert_called_once()
+
+    def test_disables_export_in_runner_when_attribute_present(self):
+        """When a runner opts into in-worker MP4 export (``export_in_runner``
+        attribute), the MPI launcher must override it back to False so the
+        encoder thread stays the sole writer to ``output_shm``. Otherwise the
+        runner returns a path-string and the encoder receives garbage on the
+        bcast hop."""
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        mock_runner = MagicMock()
+        mock_runner.export_in_runner = True
+        mock_runner.warmup = AsyncMock()
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.Get_size.return_value = 4
+        mock_comm.bcast.return_value = (None, None, False)
+
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.return_value = None
+        mock_output_shm = MagicMock()
+
+        env = {
+            "MODEL_RUNNER": "tt-wan2.2-i2v-prodia",
+            "OMPI_COMM_WORLD_RANK": "0",
+        }
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tt_model_runners.video_runner._create_dit_runner",
+            return_value=mock_runner,
+        ), patch(
+            "tt_model_runners.video_runner._attach_mpi_comm",
+            return_value=mock_comm,
+        ), patch(
+            "tt_model_runners.video_runner.VideoShm",
+            side_effect=[mock_input_shm, mock_output_shm],
+        ), patch(
+            "tt_model_runners.video_runner.cleanup_orphaned_video_files",
+            return_value=0,
+        ):
+            run_all_ranks()
+
+        assert mock_runner.export_in_runner is False
+
+    def test_export_in_runner_override_is_safe_for_runners_without_attribute(self):
+        """Runners that never opted into in-worker export (e.g. plain T2V)
+        must not gain an ``export_in_runner`` attribute via the override —
+        ``hasattr`` keeps the override a no-op there."""
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        # Use spec= to make hasattr return False for export_in_runner.
+        mock_runner = MagicMock(spec=["warmup", "set_device", "close_device", "run"])
+        mock_runner.warmup = AsyncMock()
+        mock_comm = MagicMock()
+        mock_comm.Get_rank.return_value = 0
+        mock_comm.Get_size.return_value = 4
+        mock_comm.bcast.return_value = (None, None, False)
+
+        mock_input_shm = MagicMock()
+        mock_input_shm.read_request.return_value = None
+        mock_output_shm = MagicMock()
+
+        env = {"MODEL_RUNNER": "tt-wan2.2", "OMPI_COMM_WORLD_RANK": "0"}
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tt_model_runners.video_runner._create_dit_runner",
+            return_value=mock_runner,
+        ), patch(
+            "tt_model_runners.video_runner._attach_mpi_comm",
+            return_value=mock_comm,
+        ), patch(
+            "tt_model_runners.video_runner.VideoShm",
+            side_effect=[mock_input_shm, mock_output_shm],
+        ), patch(
+            "tt_model_runners.video_runner.cleanup_orphaned_video_files",
+            return_value=0,
+        ):
+            run_all_ranks()
+
+        assert not hasattr(mock_runner, "export_in_runner")
 
     def test_rank0_sweeps_orphaned_video_files_on_shutdown(self):
         """Mirrors mock_video_runner_base + sp_runner: rank 0 must sweep
