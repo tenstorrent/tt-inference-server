@@ -667,7 +667,6 @@ set(SOURCES
     src/api/llm_controller.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
-    src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/info_controller.cpp
     src/api/openapi.cpp

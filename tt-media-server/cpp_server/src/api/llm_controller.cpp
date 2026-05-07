@@ -11,9 +11,10 @@
 #include <optional>
 
 #include "api/error_response.hpp"
-#include "api/response_writer/non_stream_response_writer.hpp"
+#include "api/llm_response_accumulator.hpp"
 #include "api/response_writer/streaming_response_writer.hpp"
 #include "domain/llm/chat_completion_request.hpp"
+#include "domain/llm/chat_completion_response.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/service_container.hpp"
@@ -234,8 +235,12 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.promptTokenCount = request.prompt_tokens_count;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
-  params.service = service;
-  params.sessionManager = sessionManager;
+  if (sessionManager && request.sessionId.has_value()) {
+    params.releaseInFlightFn = [mgr = sessionManager,
+                                sid = request.sessionId.value()]() {
+      mgr->releaseInFlight(sid);
+    };
+  }
   return params;
 }
 
@@ -295,8 +300,12 @@ void LLMController::handleStreaming(
         const bool includeUsage = !reqPtr->stream_options.has_value() ||
                                   reqPtr->stream_options->include_usage;
 
+        auto writerAbortFn = [svc = service, taskId = reqPtr->task_id]() {
+          svc->abortRequest(taskId);
+        };
         auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage);
+            loop, makeWriterParams(*reqPtr), includeUsage,
+            std::move(writerAbortFn));
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
@@ -354,22 +363,51 @@ void LLMController::handleNonStreaming(
           return;
         }
 
-        // Move the http callback into the writer; from here on out every
-        // success/error path goes through writer->finalize / sendError so
-        // the response is delivered exactly once and the session in-flight
-        // slot is always released.
-        auto writer = NonStreamResponseWriter::create(makeWriterParams(*reqPtr),
-                                                      std::move(*cb));
+        // The sink lambda below is the only success path; it consumes *cb
+        // exactly once on the final chunk. Every error path resets *cb to
+        // a no-op after invoking it so dispatch failures cannot fire the
+        // HTTP callback twice.
+        auto accumulator = std::make_shared<LLMResponseAccumulator>();
+        auto params = makeWriterParams(*reqPtr);
+
+        auto sink = [this, accumulator, params, cb](
+                        const LLMStreamChunk& chunk, bool isFinal) {
+          accumulator->add(chunk);
+          if (!isFinal) return;
+
+          auto response = accumulator->build(params);
+          service->postProcess(response);
+          if (params.releaseInFlightFn) params.releaseInFlightFn();
+
+          auto chat = ChatCompletionResponse::fromLLMResponse(response);
+          auto resp = drogon::HttpResponse::newHttpResponse();
+          resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+          resp->setBody(chat.toJsonString());
+
+          if (*cb) {
+            (*cb)(resp);
+            *cb = nullptr;
+          }
+        };
+
+        auto sendError = [cb, params](drogon::HttpStatusCode status,
+                                      const std::string& msg,
+                                      const std::string& type) {
+          if (params.releaseInFlightFn) params.releaseInFlightFn();
+          if (*cb) {
+            (*cb)(errorResponse(status, msg, type));
+            *cb = nullptr;
+          }
+        };
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             makeStreamingCallback(writer));
+          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound, sink);
         } catch (const services::QueueFullException& e) {
-          writer->sendError(drogon::k429TooManyRequests, e.what(),
-                            "rate_limit_exceeded");
+          sendError(drogon::k429TooManyRequests, e.what(),
+                    "rate_limit_exceeded");
         } catch (const std::exception& e) {
-          writer->sendError(drogon::k500InternalServerError, e.what(),
-                            "internal_error");
+          sendError(drogon::k500InternalServerError, e.what(),
+                    "internal_error");
         }
       },
       [cb](const SessionError& err) {

@@ -57,8 +57,8 @@ CompletionUsage ResponseWriter::buildUsage() const {
 }
 
 void ResponseWriter::releaseInFlight() {
-  if (params.sessionId.has_value() && params.sessionManager) {
-    params.sessionManager->releaseInFlight(params.sessionId.value());
+  if (params.releaseInFlightFn) {
+    params.releaseInFlightFn();
   }
 }
 

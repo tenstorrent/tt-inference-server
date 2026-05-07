@@ -5,21 +5,27 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
-#include "services/llm_service.hpp"
-#include "services/session_manager.hpp"
 
 namespace tt::api {
 
 using namespace tt::domain::llm;
 
 /**
- * Parameters shared by every chat-completion response writer (streaming or
- * non-streaming). Wire-format-specific options live on the concrete writer.
+ * Parameters shared by every chat-completion response writer.
+ *
+ * Holds presentation-layer values only: id, model, timestamp, prompt-token
+ * count, optional session id (for usage display), task id, and a
+ * controller-supplied callback that releases the session in-flight slot.
+ *
+ * Notably does NOT hold a service or session-manager pointer: the writer must
+ * stay agnostic of those layers. Cancellation is wired separately via the
+ * abortFn parameter on the streaming writer.
  */
 struct ResponseWriterParams {
   std::string completionId;
@@ -28,8 +34,7 @@ struct ResponseWriterParams {
   int promptTokenCount;
   std::optional<std::string> sessionId;
   uint32_t taskId;
-  std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<services::SessionManager> sessionManager;
+  std::function<void()> releaseInFlightFn;
 };
 
 /**
@@ -40,9 +45,10 @@ struct ResponseWriterParams {
  *  - the idempotent done flag,
  *  - session in-flight release.
  *
- * Concrete subclasses (StreamingResponseWriter, NonStreamResponseWriter)
- * implement the wire format by overriding handleTokenChunk and finalize. The
- * controller can therefore drive both with the same streaming callback shape.
+ * Concrete subclasses (currently StreamingResponseWriter) implement the wire
+ * format by overriding handleTokenChunk and finalize. The controller drives
+ * the writer with a chunk-callback shape; the non-streaming path uses
+ * LLMResponseAccumulator + a controller-side sink lambda instead.
  *
  * Thread safety: Callbacks are serialized by the LLMService consumer thread,
  * so noteToken() relies on this serialization for timing accuracy. The atomic

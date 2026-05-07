@@ -14,21 +14,23 @@ namespace tt::api {
 
 using namespace tt::domain::llm;
 
-StreamingResponseWriter::StreamingResponseWriter(trantor::EventLoop* loop,
-                                                 ResponseWriterParams params,
-                                                 bool includeUsage)
+StreamingResponseWriter::StreamingResponseWriter(
+    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
+    std::function<void()> abortFn)
     : ResponseWriter(std::move(params)),
       loop(loop),
-      includeUsage(includeUsage) {
+      includeUsage(includeUsage),
+      abortFn(std::move(abortFn)) {
   if (config::enableAccumulatedStreaming()) {
     sseBatchQueue = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
   }
 }
 
 std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
-    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage) {
-  return std::shared_ptr<StreamingResponseWriter>(
-      new StreamingResponseWriter(loop, std::move(params), includeUsage));
+    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
+    std::function<void()> abortFn) {
+  return std::shared_ptr<StreamingResponseWriter>(new StreamingResponseWriter(
+      loop, std::move(params), includeUsage, std::move(abortFn)));
 }
 
 void StreamingResponseWriter::sendSse(const std::string& sse,
@@ -131,7 +133,7 @@ void StreamingResponseWriter::abort() {
     TT_LOG_INFO(
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
-    if (params.service) params.service->abortRequest(params.taskId);
+    if (abortFn) abortFn();
     releaseInFlight();
   }
 }

@@ -24,13 +24,15 @@ namespace tt::api {
  * Sends an OpenAI-compatible chunked stream: optional initial role-only
  * chunk, one delta per token (optionally batched via the accumulated-
  * streaming config), an optional final usage chunk, and a "data: [DONE]\n\n"
- * terminator. Forwards client-disconnect detection back to the LLM service
- * via abortRequest.
+ * terminator. On client disconnect (drogon send() returns false) the writer
+ * invokes the controller-supplied abortFn so cancellation propagates to the
+ * underlying service without the writer needing a service pointer.
  */
 class StreamingResponseWriter : public ResponseWriter {
  public:
   static std::shared_ptr<StreamingResponseWriter> create(
-      trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage);
+      trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
+      std::function<void()> abortFn = nullptr);
 
   void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
@@ -46,7 +48,7 @@ class StreamingResponseWriter : public ResponseWriter {
 
  private:
   StreamingResponseWriter(trantor::EventLoop* loop, ResponseWriterParams params,
-                          bool includeUsage);
+                          bool includeUsage, std::function<void()> abortFn);
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
@@ -54,6 +56,7 @@ class StreamingResponseWriter : public ResponseWriter {
 
   trantor::EventLoop* loop;
   bool includeUsage;
+  std::function<void()> abortFn;
 
   std::shared_ptr<drogon::ResponseStreamPtr> streamPtr =
       std::make_shared<drogon::ResponseStreamPtr>();
