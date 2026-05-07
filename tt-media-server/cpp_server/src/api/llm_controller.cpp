@@ -255,12 +255,9 @@ void LLMController::handleStreaming(
 
         const bool includeUsage = !reqPtr->stream_options.has_value() ||
                                   reqPtr->stream_options->include_usage;
-        const bool continuousUsage =
-            reqPtr->stream_options.has_value() &&
-            reqPtr->stream_options->continuous_usage_stats;
 
         auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage, continuousUsage);
+            loop, makeWriterParams(*reqPtr), includeUsage);
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,

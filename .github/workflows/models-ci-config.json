@@ -356,6 +356,28 @@
         }
       }
     },
+    "Wan2.2-I2V-A14B-Diffusers": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "GALAXY_BH",
+            "P150X4",
+            "P150X8",
+            "P300X2",
+            "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
+          ]
+        }
+      }
+    },
     "bge-large-en-v1.5": {
       "inference_engine": "MEDIA",
       "ci": {
