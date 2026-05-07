@@ -11,9 +11,9 @@
 
 namespace tt::runners::schedulers {
 
-using Sequence = tt::domain::Sequence;
-using SamplingParams = tt::domain::SamplingParams;
-using SequenceStatus = tt::domain::SequenceStatus;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
 
 using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;

@@ -32,7 +32,7 @@ class StreamingResponseWriter : public ResponseWriter {
   static std::shared_ptr<StreamingResponseWriter> create(
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage);
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**

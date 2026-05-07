@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_response.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 /**
  * Message in a chat completion response choice.
@@ -275,4 +275,4 @@ struct ChatCompletionStreamChunk {
   }
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

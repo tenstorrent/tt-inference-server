@@ -8,8 +8,8 @@
 
 namespace tt::runners::llm_engine {
 
-using Sequence = tt::domain::Sequence;
-using TokenResult = tt::domain::TokenResult;
+using Sequence = tt::domain::llm::Sequence;
+using TokenResult = tt::domain::llm::TokenResult;
 using Config = tt::config::LLMConfig;
 
 namespace {
