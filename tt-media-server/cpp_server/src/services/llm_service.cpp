@@ -76,6 +76,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
   this->workerManager = std::move(workerManager);
   this->reasoningParser = std::move(reasoningParser);
   this->toolCallParser = std::move(toolCallParser);
+  this->jsonToolCallParser = createJsonToolCallParser();
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
@@ -293,38 +294,6 @@ domain::LLMStreamChunk buildToolCallStreamChunk(
   return response;
 }
 
-// Helper to build tool_calls delta JSON for structured output
-Json::Value makeStructuredOutputDelta(int index, ToolCallDeltaType deltaType,
-                                      const std::string& callId = "",
-                                      const std::string& functionName = "",
-                                      const std::string& argumentsDelta = "") {
-  Json::Value toolCallsArray(Json::arrayValue);
-  Json::Value toolCallDelta;
-  toolCallDelta["index"] = index;
-
-  switch (deltaType) {
-    case ToolCallDeltaType::TOOL_CALL_START:
-      toolCallDelta["id"] = callId;
-      toolCallDelta["type"] = "function";
-      toolCallDelta["function"]["name"] = functionName;
-      toolCallDelta["function"]["arguments"] = "";
-      break;
-
-    case ToolCallDeltaType::ARGUMENTS_DELTA:
-      toolCallDelta["function"]["arguments"] = argumentsDelta;
-      break;
-
-    case ToolCallDeltaType::TOOL_CALL_END:
-      break;
-
-    default:
-      break;
-  }
-
-  toolCallsArray.append(toolCallDelta);
-  return toolCallsArray;
-}
-
 }  // namespace
 
 std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
@@ -391,18 +360,17 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
-        // Only finalize if not structured output (parser wasn't initialized for
-        // those)
+        // Finalize the appropriate parser based on tool_choice
         auto toolChoiceOptErr = toolChoiceMap.get(taskId);
         bool isStructuredOutputErr =
             toolChoiceOptErr.has_value() &&
             toolChoiceOptErr.value().type == "function";
-        if (toolCallParser && !isStructuredOutputErr) {
+        if (isStructuredOutputErr && jsonToolCallParser) {
+          jsonToolCallParser->finalizeTask(taskId);
+        } else if (toolCallParser) {
           toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
-        structuredOutputStateMap.take(
-            taskId);  // Clean up structured output state
         auto errorChunk =
             domain::makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
@@ -433,139 +401,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool isStructuredOutput =
           toolChoiceOpt.has_value() && toolChoiceOpt.value().type == "function";
 
-      // Handle structured output (tool_choice="function") - filter out wrapper
-      // Model outputs variations like:
-      //   {"arguments":{"location":"SF"}}
-      //   {"arguments":{"location":"SF"},"name":"get_weather"}
-      //   {"name":"get_weather","arguments":{"location":"SF"}}
-      // We stream only the inner arguments: {"location":"SF"}
-      if (isStructuredOutput) {
-        static constexpr std::string_view ARGS_MARKER = "\"arguments\":";
-
-        auto stateOpt = structuredOutputStateMap.get(taskId);
-        StructuredOutputParseState parseState;
-        if (stateOpt.has_value()) {
-          parseState = stateOpt.value();
-        } else {
-          parseState.tool_call_id = tt::utils::ToolCallIDGenerator::generate();
-        }
-
-        std::string filteredDelta;
-
-        for (char c : delta) {
-          switch (parseState.state) {
-            case StructuredOutputState::SKIPPING_PREFIX:
-              // Accumulate until we find "arguments":
-              parseState.buffer += c;
-              {
-                // Check if buffer ends with "arguments":
-                size_t pos = parseState.buffer.find(ARGS_MARKER);
-                if (pos != std::string::npos) {
-                  // Found the marker - switch to streaming
-                  parseState.state = StructuredOutputState::STREAMING;
-                  parseState.buffer.clear();
-                  parseState.brace_depth = 0;
-                }
-                // Keep accumulating until we find the marker or hit a
-                // reasonable limit If buffer gets too long without finding
-                // marker, assume no wrapper
-                else if (parseState.buffer.size() > 100) {
-                  // No wrapper found - stream everything as raw arguments
-                  filteredDelta += parseState.buffer;
-                  parseState.buffer.clear();
-                  parseState.state = StructuredOutputState::STREAMING;
-                  parseState.brace_depth = 0;
-                  for (char bc : filteredDelta) {
-                    if (bc == '{')
-                      parseState.brace_depth++;
-                    else if (bc == '}')
-                      parseState.brace_depth--;
-                  }
-                }
-              }
-              break;
-
-            case StructuredOutputState::STREAMING:
-              if (c == '{') {
-                parseState.brace_depth++;
-                filteredDelta += c;
-              } else if (c == '}') {
-                if (parseState.brace_depth > 0) {
-                  parseState.brace_depth--;
-                  filteredDelta += c;
-                }
-                // When brace_depth hits 0, we've finished the arguments object
-                // Skip any trailing content (like ,"name":"..." or wrapper
-                // close)
-                if (parseState.brace_depth == 0) {
-                  parseState.state = StructuredOutputState::DONE;
-                }
-              } else {
-                filteredDelta += c;
-              }
-              break;
-
-            case StructuredOutputState::DONE:
-              // Skip trailing wrapper content
-              break;
-          }
-        }
-
-        structuredOutputStateMap.insert(taskId, parseState);
-
-        // Emit TOOL_CALL_START on first non-empty filtered delta
-        if (!filteredDelta.empty() && !parseState.sent_start) {
-          std::string functionName =
-              toolChoiceOpt.value().function.value_or("unknown");
-          auto startDelta = makeStructuredOutputDelta(
-              0, ToolCallDeltaType::TOOL_CALL_START, parseState.tool_call_id,
-              functionName);
-          auto startChunk = buildToolCallStreamChunk(token, startDelta, false);
-          entry->callback(startChunk, false);
-
-          // Update state to mark start as sent
-          parseState.sent_start = true;
-          structuredOutputStateMap.insert(taskId, parseState);
-        }
-
-        // Set up the tool call result for this token
-        if (!filteredDelta.empty()) {
-          toolCallResult = {
-              ToolCallContentType::TOOL_CALL,
-              filteredDelta,
-              true,
-              ToolCallDeltaType::ARGUMENTS_DELTA,
-              0,
-              "",
-              "",
-              makeStructuredOutputDelta(0, ToolCallDeltaType::ARGUMENTS_DELTA,
-                                        "", "", filteredDelta)};
-        } else if (isFinal && parseState.sent_start) {
-          // Final token with no content - emit empty delta to close the tool
-          // call
-          toolCallResult = {
-              ToolCallContentType::TOOL_CALL,
-              "",
-              true,
-              ToolCallDeltaType::ARGUMENTS_DELTA,
-              0,
-              "",
-              "",
-              makeStructuredOutputDelta(0, ToolCallDeltaType::ARGUMENTS_DELTA,
-                                        "", "", "")};
-        } else {
-          toolCallResult = {ToolCallContentType::TOOL_CALL,
-                            "",
-                            false,
-                            ToolCallDeltaType::NONE,
-                            0,
-                            "",
-                            "",
-                            std::nullopt};
-        }
+      // Handle structured output (tool_choice="function") via JsonToolCallParser
+      if (isStructuredOutput && jsonToolCallParser) {
+        toolCallResult = jsonToolCallParser->processToken(
+            taskId, static_cast<int64_t>(token.token_id), delta);
       }
-      // Handle natural tool calls (with markers)
-      else if (toolCallParser && !isStructuredOutput) {
+      // Handle natural tool calls (with markers) via model-specific parser
+      else if (toolCallParser) {
         toolCallResult = toolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
       }
@@ -582,9 +424,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       // Check if we should emit a tool call delta or regular content
       {
         bool emitToolCallDelta =
+            toolCallResult.tool_calls_delta.has_value() &&
             toolCallResult.delta_type != ToolCallDeltaType::NONE;
 
-        if (emitToolCallDelta && toolCallResult.tool_calls_delta.has_value()) {
+        if (emitToolCallDelta) {
           // Emit tool call delta (OpenAI-style)
           if (!toolCallResult.should_emit && !isFinal) {
             continue;
@@ -600,12 +443,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           if (!isFinal) {
             continue;
           }
-          // On final token, emit empty tool call delta with finish_reason
-          auto stateOpt = structuredOutputStateMap.get(taskId);
-          if (stateOpt.has_value() && stateOpt->sent_start) {
-            auto finalDelta = makeStructuredOutputDelta(
-                0, ToolCallDeltaType::ARGUMENTS_DELTA, "", "", "");
-            auto response = buildToolCallStreamChunk(token, finalDelta, true);
+          // Final token with no delta - emit empty chunk with finish_reason
+          if (jsonToolCallParser && jsonToolCallParser->isInToolCall(taskId)) {
+            Json::Value emptyDelta(Json::arrayValue);
+            Json::Value emptyCall;
+            emptyCall["index"] = 0;
+            emptyCall["function"]["arguments"] = "";
+            emptyDelta.append(emptyCall);
+            auto response = buildToolCallStreamChunk(token, emptyDelta, true);
             entry->callback(response, isFinal);
           }
 
@@ -626,14 +471,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
         toolChoiceMap.take(taskId);  // Clean up tool choice
-        structuredOutputStateMap.take(
-            taskId);  // Clean up structured output state
 
         // Finalize parsers
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
-        if (toolCallParser && !isStructuredOutput) {
+        if (isStructuredOutput && jsonToolCallParser) {
+          jsonToolCallParser->finalizeTask(taskId);
+        } else if (toolCallParser) {
           toolCallParser->finalizeTask(taskId);
         }
 
@@ -764,11 +609,16 @@ void LLMService::processStreamingRequest(
     reasoningParser->initializeTask(taskId);
   }
 
-  // Only initialize tool call parser for natural tool calls (not structured
-  // output) When tool_choice="function", model outputs raw JSON without markers
+  // Initialize the appropriate tool call parser based on tool_choice
   bool isStructuredOutput = request.tool_choice.has_value() &&
                             request.tool_choice->type == "function";
-  if (toolCallParser && !isStructuredOutput) {
+  if (isStructuredOutput && jsonToolCallParser) {
+    // Structured output: use JsonToolCallParser with function name
+    std::string functionName =
+        request.tool_choice->function.value_or("unknown");
+    jsonToolCallParser->initializeTask(taskId, functionName);
+  } else if (toolCallParser) {
+    // Natural tool calls: use model-specific parser
     toolCallParser->initializeTask(taskId);
   }
 

@@ -630,4 +630,226 @@ std::unique_ptr<IToolCallParser> createToolCallParser(
   }
 }
 
+/**
+ * JSON Tool Call Parser for structured output.
+ *
+ * Handles models outputting JSON wrapper format like:
+ *   {"arguments":{"location":"SF"}}
+ *   {"arguments":{"location":"SF"},"name":"get_weather"}
+ *   {"name":"get_weather","arguments":{"location":"SF"}}
+ *
+ * Strips the wrapper and streams only the inner arguments content.
+ * Used when tool_choice is "function" or "required".
+ */
+class JsonToolCallParser : public IToolCallParser {
+ public:
+  std::optional<Json::Value> parseComplete(
+      const std::string& text,
+      [[maybe_unused]] bool parallelToolCalls = true) const override {
+    // For structured output, the text IS the arguments (after filtering)
+    // Just wrap it in OpenAI format
+    Json::Value toolCallsArray(Json::arrayValue);
+    Json::Value toolCall;
+    toolCall["id"] = "call_0";
+    toolCall["type"] = "function";
+    toolCall["function"]["name"] = "structured_output";
+    toolCall["function"]["arguments"] = text;
+    toolCallsArray.append(toolCall);
+    return toolCallsArray;
+  }
+
+  std::string stripMarkers(const std::string& text) const override {
+    // No markers to strip for JSON format
+    return text;
+  }
+
+  void initializeTask(uint32_t taskId) override {
+    initializeTask(taskId, "unknown");
+  }
+
+  void initializeTask(uint32_t taskId,
+                      const std::string& functionName) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    JsonTaskState& state = taskStates_[taskId];
+    state.parseState = StructuredOutputParseState{};
+    state.parseState.tool_call_id = tt::utils::ToolCallIDGenerator::generate();
+    state.functionName = functionName;
+    state.accumulatedArgs.clear();
+
+    TT_LOG_DEBUG("[JsonToolCallParser] Initialized task: {} with function: {}",
+                 taskId, functionName);
+  }
+
+  ToolCallTokenResult processToken(uint32_t taskId,
+                                   [[maybe_unused]] int64_t tokenId,
+                                   const std::string& decodedText) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = taskStates_.find(taskId);
+    if (it == taskStates_.end()) {
+      TT_LOG_WARN(
+          "[JsonToolCallParser] processToken called for uninitialized task: {}",
+          taskId);
+      return makeRegularResult(decodedText);
+    }
+
+    JsonTaskState& state = it->second;
+    StructuredOutputParseState& parseState = state.parseState;
+
+    static constexpr std::string_view ARGS_MARKER = "\"arguments\":";
+    std::string filteredDelta;
+
+    for (char c : decodedText) {
+      switch (parseState.state) {
+        case StructuredOutputState::SKIPPING_PREFIX:
+          parseState.buffer += c;
+          {
+            size_t pos = parseState.buffer.find(ARGS_MARKER);
+            if (pos != std::string::npos) {
+              parseState.state = StructuredOutputState::STREAMING;
+              parseState.buffer.clear();
+              parseState.brace_depth = 0;
+            } else if (parseState.buffer.size() > 100) {
+              // No wrapper found - stream everything as raw arguments
+              filteredDelta += parseState.buffer;
+              parseState.buffer.clear();
+              parseState.state = StructuredOutputState::STREAMING;
+              parseState.brace_depth = 0;
+              for (char bc : filteredDelta) {
+                if (bc == '{')
+                  parseState.brace_depth++;
+                else if (bc == '}')
+                  parseState.brace_depth--;
+              }
+            }
+          }
+          break;
+
+        case StructuredOutputState::STREAMING:
+          if (c == '{') {
+            parseState.brace_depth++;
+            filteredDelta += c;
+          } else if (c == '}') {
+            if (parseState.brace_depth > 0) {
+              parseState.brace_depth--;
+              filteredDelta += c;
+            }
+            if (parseState.brace_depth == 0) {
+              parseState.state = StructuredOutputState::DONE;
+            }
+          } else {
+            filteredDelta += c;
+          }
+          break;
+
+        case StructuredOutputState::DONE:
+          // Skip trailing wrapper content
+          break;
+      }
+    }
+
+    state.accumulatedArgs += filteredDelta;
+
+    // Emit TOOL_CALL_START on first non-empty filtered delta
+    if (!filteredDelta.empty() && !parseState.sent_start) {
+      parseState.sent_start = true;
+      TT_LOG_DEBUG(
+          "[JsonToolCallParser] Task {} emitting TOOL_CALL_START: function={}",
+          taskId, state.functionName);
+      return {ToolCallContentType::TOOL_CALL,
+              "",
+              true,
+              ToolCallDeltaType::TOOL_CALL_START,
+              0,
+              state.functionName,
+              parseState.tool_call_id,
+              buildToolCallsDelta(0, ToolCallDeltaType::TOOL_CALL_START,
+                                  parseState.tool_call_id, state.functionName)};
+    }
+
+    // Emit arguments delta
+    if (!filteredDelta.empty()) {
+      return {ToolCallContentType::TOOL_CALL,
+              filteredDelta,
+              true,
+              ToolCallDeltaType::ARGUMENTS_DELTA,
+              0,
+              "",
+              "",
+              buildToolCallsDelta(0, ToolCallDeltaType::ARGUMENTS_DELTA, "", "",
+                                  filteredDelta)};
+    }
+
+    // No content to emit yet
+    return {ToolCallContentType::TOOL_CALL,
+            "",
+            false,
+            ToolCallDeltaType::NONE,
+            0,
+            "",
+            "",
+            std::nullopt};
+  }
+
+  std::optional<Json::Value> finalizeTask(uint32_t taskId) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto it = taskStates_.find(taskId);
+    if (it == taskStates_.end()) {
+      TT_LOG_WARN(
+          "[JsonToolCallParser] finalizeTask called for unknown task: {}",
+          taskId);
+      return std::nullopt;
+    }
+
+    JsonTaskState& state = it->second;
+
+    // Build final tool call result
+    std::optional<Json::Value> result;
+    if (!state.accumulatedArgs.empty()) {
+      Json::Value toolCallsArray(Json::arrayValue);
+      Json::Value toolCall;
+      toolCall["id"] = state.parseState.tool_call_id;
+      toolCall["type"] = "function";
+      toolCall["function"]["name"] = state.functionName;
+      toolCall["function"]["arguments"] = state.accumulatedArgs;
+      toolCallsArray.append(toolCall);
+      result = toolCallsArray;
+
+      TT_LOG_DEBUG(
+          "[JsonToolCallParser] Task {} finalized with tool call: function={}",
+          taskId, state.functionName);
+    }
+
+    taskStates_.erase(it);
+    return result;
+  }
+
+  bool isInToolCall(uint32_t taskId) const override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = taskStates_.find(taskId);
+    return it != taskStates_.end();
+  }
+
+  size_t activeTaskCount() const override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return taskStates_.size();
+  }
+
+ private:
+  struct JsonTaskState {
+    StructuredOutputParseState parseState;
+    std::string functionName;
+    std::string accumulatedArgs;
+  };
+
+  mutable std::mutex mutex_;
+  std::unordered_map<uint32_t, JsonTaskState> taskStates_;
+};
+
+std::unique_ptr<IToolCallParser> createJsonToolCallParser() {
+  return std::make_unique<JsonToolCallParser>();
+}
+
 }  // namespace tt::services
