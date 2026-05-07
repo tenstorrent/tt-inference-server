@@ -23,7 +23,6 @@
 #    in the venv when this override file is consumed). whisperx==3.4.3
 #    declares numpy>=2.0.2, which would force a venv-wide numpy upgrade and
 #    break tt-metal's pin. whisperx is observed to run fine on numpy<2;
-
 #    overriding here keeps the venv consistent with tt-metal.
 numpy>=1.24.4,<2
 lightning @ https://files.pythonhosted.org/packages/0f/dd/86bb3bebadcdbc6e6e5a63657f0a03f74cd065b5ea965896679f76fec0b4/lightning-2.5.5.tar.gz
