@@ -9,26 +9,10 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "config/types.hpp"
 
 namespace tt::services {
-
-// State for structured output streaming - filters out {"arguments": wrapper
-enum class StructuredOutputState {
-  SKIPPING_PREFIX,  // Accumulating and matching {"arguments":
-  STREAMING,        // Streaming the actual arguments content
-  DONE              // Finished (skipping trailing wrapper)
-};
-
-struct StructuredOutputParseState {
-  StructuredOutputState state = StructuredOutputState::SKIPPING_PREFIX;
-  std::string buffer;        // Accumulation buffer for prefix matching
-  int brace_depth = 0;       // Track nested braces to know when arguments end
-  bool sent_start = false;   // Whether TOOL_CALL_START has been sent
-  std::string tool_call_id;  // Generated tool call ID
-};
 
 // Type of content being generated
 enum class ToolCallContentType {
