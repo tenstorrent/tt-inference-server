@@ -92,7 +92,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
     download_test = VisionEvalsTest(config, {"request": request})
     download_result = download_test.run_tests()
-    if not download_result.get("success"):
+    if not download_result.data.get("success"):
         raise RuntimeError(f"Failed to download ImageNet samples: {download_result}")
 
     with metadata_path.open("r", encoding="utf-8") as f:

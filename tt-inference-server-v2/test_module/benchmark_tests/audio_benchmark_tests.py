@@ -303,11 +303,11 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
                 "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
+                "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+                "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
                 "accuracy_check": accuracy_check,
                 "target_checks": target_checks,
             },
-            "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
-            "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
         },
     )
 

@@ -53,7 +53,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     logger.info("Starting VideoGenerationEvalsTest")
     result = test.run_tests()
 
-    eval_results = result.get("result", {}).get("eval_results", {})
+    eval_results = result.data.get("result", {}).get("eval_results", {})
     logger.info(f"VideoGenerationEvalsTest eval_results: {eval_results}")
     return eval_results
 
@@ -87,9 +87,9 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     download_test = VideoFVDTest(config, {"request": download_request})
     download_result = download_test.run_tests()
-    if not download_result.get("success") or not download_result.get("result", {}).get(
-        "success"
-    ):
+    if not download_result.data.get("success") or not download_result.data.get(
+        "result", {}
+    ).get("success"):
         logger.warning(
             "Reference video download failed: %s. "
             "FVD/FVMD may fail if reference dir is empty.",
@@ -105,9 +105,11 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     fvd_test = VideoFVDTest(config, {"request": fvd_request})
     fvd_result = fvd_test.run_tests()
-    fvd_ok = fvd_result.get("success") and fvd_result.get("result", {}).get("success")
+    fvd_ok = fvd_result.data.get("success") and fvd_result.data.get("result", {}).get(
+        "success"
+    )
     if fvd_ok:
-        combined_results["fvd"] = fvd_result["result"].get("fvd_score")
+        combined_results["fvd"] = fvd_result.data["result"].get("fvd_score")
         logger.info("FVD score: %s", combined_results["fvd"])
     else:
         combined_results["fvd"] = None
@@ -120,11 +122,11 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     fvmd_test = VideoFVMDTest(config, {"request": fvmd_request})
     fvmd_result = fvmd_test.run_tests()
-    fvmd_ok = fvmd_result.get("success") and fvmd_result.get("result", {}).get(
-        "success"
-    )
+    fvmd_ok = fvmd_result.data.get("success") and fvmd_result.data.get(
+        "result", {}
+    ).get("success")
     if fvmd_ok:
-        combined_results["fvmd"] = fvmd_result["result"].get("fvmd_score")
+        combined_results["fvmd"] = fvmd_result.data["result"].get("fvmd_score")
         logger.info("FVMD score: %s", combined_results["fvmd"])
     else:
         combined_results["fvmd"] = None

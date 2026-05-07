@@ -82,7 +82,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
     download_test = VisionEvalsTest(config, {"request": request})
     download_result = download_test.run_tests()
-    if not download_result.get("success"):
+    if not download_result.data.get("success"):
         raise RuntimeError(f"Failed to download ImageNet samples: {download_result}")
 
     with metadata_path.open("r", encoding="utf-8") as f:
@@ -169,7 +169,7 @@ def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     logger.info("Starting VisionEvalsTest")
     result = test.run_tests()
 
-    eval_results = result.get("result", {}).get("eval_results", {})
+    eval_results = result.data.get("result", {}).get("eval_results", {})
     model_results = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
     logger.info(f"VisionEvalsTest model results: {model_results}")
 
