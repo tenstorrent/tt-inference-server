@@ -9,8 +9,10 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -58,7 +60,14 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
       is_tensor_parallel_(!config.device_mesh_shape.empty() &&
                           config.device_mesh_shape[0] > 1) {
   setupRunnerEnvironment();
-  if (!Py_IsInitialized()) {
+  // Track whether this constructor is the one that started the embedded
+  // interpreter. py::initialize_interpreter() leaves the GIL held by the
+  // calling thread, so on that path we have to drop it explicitly at the
+  // end of construction. If the interpreter was already running (another
+  // runner started it earlier in this process) the GIL isn't ours and the
+  // gil_scoped_acquire below handles release on its own.
+  const bool ownsInterpreter = !Py_IsInitialized();
+  if (ownsInterpreter) {
     py::initialize_interpreter();
   }
   try {
@@ -75,9 +84,13 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
                     "(torch / ttnn / huggingface_hub): ") +
         e.what());
   }
-  // Release the GIL so the controller thread pool isn't blocked while we
-  // wait for the first request. Mirrors LlamaModelRunner.
-  if (PyGILState_Check()) {
+  if (ownsInterpreter) {
+    // Drop the initial GIL the embedded interpreter handed us so the
+    // controller thread pool and runWithTimeout's worker can re-acquire.
+    // Mirrors LlamaModelRunner. Done unconditionally on this path because
+    // py::initialize_interpreter() bumps the per-thread gilstate counter
+    // to 1, and gil_scoped_acquire above only nests on top (1→2→1), so
+    // the GIL is still held here.
     PyEval_SaveThread();
   }
   TT_LOG_INFO(
@@ -114,24 +127,35 @@ void SDXLBaseRunner::runWithTimeout(
     work();
     return;
   }
-  // Caller releases the GIL via gil_scoped_release; the worker reacquires
-  // it. This mirrors `asyncio.wait_for(asyncio.to_thread(work))`.
-  std::exception_ptr workException;
-  auto fut = std::async(std::launch::async, [&]() {
+  // Run on a detached std::thread, not std::async: a future returned by
+  // std::async(launch::async, ...) blocks in its destructor, which would
+  // defeat the timeout. The detached worker posts its result via a shared
+  // promise so the post is well-defined even after a timeout has thrown.
+  // The worker (and `work` closure) keep running until they finish — the
+  // runner is unhealthy after a timeout, mirroring Python's
+  // `asyncio.wait_for(asyncio.to_thread(...))` which also doesn't kill
+  // the underlying thread.
+  auto promise = std::make_shared<std::promise<void>>();
+  auto fut = promise->get_future();
+  std::thread worker([promise, work]() {
     try {
       py::gil_scoped_acquire acquire;
       work();
+      promise->set_value();
     } catch (...) {
-      workException = std::current_exception();
+      try {
+        promise->set_exception(std::current_exception());
+      } catch (...) {
+      }
     }
   });
+  worker.detach();
   if (fut.wait_for(std::chrono::seconds(timeoutSeconds)) ==
       std::future_status::timeout) {
     throw std::runtime_error("[SDXL] " + tag + " timed out after " +
                              std::to_string(timeoutSeconds) + "s");
   }
   fut.get();
-  if (workException) std::rethrow_exception(workException);
 }
 
 py::dict SDXLBaseRunner::pipelineDeviceParams() {
@@ -529,16 +553,16 @@ py::object SDXLGenerateRunner::generateInputTensors(
 }
 
 domain::ImageGenerateRequest SDXLGenerateRunner::warmupRequest() const {
+  // Numeric SDXL defaults (steps, guidance, image_quality, crop coords, ...)
+  // are inherited from struct member init. Only overrides for warmup live
+  // here.
   domain::ImageGenerateRequest r(0);
   r.prompt = "Sunrise on a beach";
   r.prompt_2 = "Mountains in the background";
   r.negative_prompt = "low resolution";
   r.negative_prompt_2 = "blurry";
   r.num_inference_steps = 1;
-  r.guidance_scale = 5.0F;
   r.guidance_rescale = 0.7F;
-  r.number_of_images = 1;
-  r.crop_coords_top_left = std::make_pair(0, 0);
   return r;
 }
 
@@ -649,8 +673,6 @@ domain::ImageGenerateRequest SDXLImageToImageRunner::warmupRequest() const {
   r.prompt = "Sunrise on a beach";
   r.negative_prompt = "low resolution";
   r.num_inference_steps = 2;
-  r.guidance_scale = 5.0F;
-  r.number_of_images = 1;
   r.strength = 0.99F;
   r.image =
       "R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==";
@@ -717,7 +739,12 @@ py::object SDXLEditRunner::preprocessMask(const std::string& base64Mask) const {
   py::bytes raw = base64Mod.attr("b64decode")(clean).cast<py::bytes>();
   py::object buf = ioMod.attr("BytesIO")(raw);
   py::object pilImg = pil.attr("open")(buf);
-  py::object converted = pilImg.attr("convert")("RGB");
+  // Inpainting masks are conventionally single-channel ("L"). Converting
+  // to "RGB" would force PIL's grayscale -> RGB broadcast and let
+  // non-grayscale RGB inputs (where R != G != B) silently produce an
+  // incoherent mask. mask_processor.preprocess handles channel expansion
+  // downstream, matching diffusers' StableDiffusionXLInpaintPipeline.
+  py::object converted = pilImg.attr("convert")("L");
   converted = converted.attr("resize")(
       py::make_tuple(config_.image_width, config_.image_height),
       pil.attr("Resampling").attr("LANCZOS"));

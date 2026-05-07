@@ -21,8 +21,8 @@ enum class Format { PNG, JPEG };
 Format parseFormat(const std::string& s);
 
 /**
- * Encode a CHW float32 tensor produced by SDXL VAE-decode (range either
- * [-1, 1] or [0, 1]) into a base64-encoded PNG/JPEG string.
+ * Encode a CHW float32 tensor produced by SDXL VAE-decode (range [-1, 1])
+ * into a base64-encoded PNG/JPEG string.
  *
  * The float buffer is contiguous CHW with C ∈ {3, 4}; we apply diffusers'
  * `image_processor.postprocess` denormalization in C++:

@@ -68,6 +68,18 @@ void initializeServices() {
   c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
                std::make_shared<services::SessionManager>());
 
+  if (c.sessionManager()) {
+    TT_LOG_INFO("[ServiceFactory] Session manager initialized");
+  }
+
+  TT_LOG_INFO("[ServiceFactory] Active model service registered: {}",
+              tt::config::toString(active));
+}
+
+void startConfiguredService() {
+  auto& c = services::ServiceContainer::instance();
+  const auto active = tt::config::modelService();
+
   if (auto svc = c.configuredService()) {
     svc->start();
     TT_LOG_INFO("[ServiceFactory] {} service started",
@@ -77,12 +89,6 @@ void initializeServices() {
     c.disaggregation()->start();
     TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
   }
-  if (c.sessionManager()) {
-    TT_LOG_INFO("[ServiceFactory] Session manager initialized");
-  }
-
-  TT_LOG_INFO("[ServiceFactory] Active model service: {}",
-              tt::config::toString(active));
 }
 
 }  // namespace tt::utils::service_factory

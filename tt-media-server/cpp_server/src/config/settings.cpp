@@ -269,7 +269,10 @@ bool parseResolution(const std::string& s, size_t& width, size_t& height) {
   }
 }
 
-/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/invalid -> {1,1}. */
+/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}.
+ * Single-axis input (e.g. "8") is rejected with a clear error: silently
+ * promoting to {8, 1} would flip is_tensor_parallel_ on without the
+ * operator asking for it. */
 std::vector<size_t> parseMeshShape(const std::string& s) {
   std::vector<size_t> out;
   std::string token;
@@ -293,7 +296,12 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
     }
   }
   if (out.empty()) return {1, 1};
-  if (out.size() == 1) out.push_back(1);
+  if (out.size() == 1) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 'rows,cols' (e.g. '1,1' for "
+        "single device, '2,4' for 2x4 mesh); got '" +
+        s + "'");
+  }
   return out;
 }
 

@@ -565,6 +565,7 @@ add_executable(llm_service_test
     tests/llm_service_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
+    src/services/image_service.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/worker/worker_manager.cpp
@@ -574,7 +575,11 @@ add_executable(llm_service_test
     src/worker/worker_metrics_shm.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
+    src/utils/image_codec.cpp
     src/runners/embedding_runner.cpp
+    src/runners/image_runner.cpp
+    src/runners/sdxl/sdxl_runner.cpp
+    src/runners/sdxl/sdxl_python_helpers.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
 )
@@ -582,6 +587,7 @@ target_link_libraries(llm_service_test PRIVATE
     llm_runner_lib
     prometheus-cpp::core
     pybind11::embed
+    stb_image_write
     GTest::gtest_main)
 target_include_directories(llm_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

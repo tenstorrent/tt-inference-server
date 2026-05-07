@@ -152,6 +152,19 @@ int main(int argc, char* argv[]) {
 
   tt::utils::service_factory::initializeServices();
 
+  // Heavy model warmup runs on a background thread so the Drogon listener can
+  // bind to the port immediately. /tt-liveness reports model_ready=false until
+  // this thread flips the service's ready flag, mirroring the Python lifespan
+  // behaviour where uvicorn answers liveness while the model is still loading.
+  std::thread warmupThread([] {
+    try {
+      tt::utils::service_factory::startConfiguredService();
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[Main] Background warmup failed: {}", e.what());
+      drogon::app().quit();
+    }
+  });
+
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
   if (shm != nullptr) {
@@ -286,6 +299,11 @@ int main(int argc, char* argv[]) {
 
   // Run the server
   drogon::app().run();
+
+  // Drain the background warmup thread before exiting. If warmup is still in
+  // flight we joined to keep destructors well-ordered (services depend on
+  // python interpreter / tt-metal devices that must outlive any warmup work).
+  if (warmupThread.joinable()) warmupThread.join();
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");

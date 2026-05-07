@@ -52,9 +52,11 @@ struct ImageConfig {
 
   // Batch / mesh
   size_t max_batch_size = 1;
-  // 1D mesh shape, e.g. {1, 1} = single device, {2, 4} = TP across 8 devices.
-  // Tensor-parallel mode is enabled iff device_mesh_shape[0] > 1, mirroring
-  // BaseDeviceRunner.is_tensor_parallel.
+  // 2-D mesh shape {rows, cols}, e.g. {1, 1} = single device,
+  // {2, 4} = 2 TP shards x 4 replicas (8 devices).
+  // Index 0 (rows) controls tensor-parallel width — TP is enabled iff
+  // device_mesh_shape[0] > 1, mirroring BaseDeviceRunner.is_tensor_parallel.
+  // Index 1 (cols) is the per-replica axis.
   std::vector<size_t> device_mesh_shape{1, 1};
 
   // Resolution (parsed from SDXL_IMAGE_RESOLUTION env, e.g. "1024x1024").

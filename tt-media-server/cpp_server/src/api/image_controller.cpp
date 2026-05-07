@@ -63,42 +63,57 @@ void handle(const drogon::HttpRequestPtr& req,
     return;
   }
 
+  if (!service->isModelReady()) {
+    callback(errorResponse(
+        drogon::k503ServiceUnavailable,
+        "Model is still warming up. Poll /tt-liveness for model_ready=true.",
+        "service_unavailable"));
+    return;
+  }
+
   uint32_t taskId = tt::utils::TaskIDGenerator::generate();
   std::optional<tt::domain::ImageGenerateRequest> requestOpt;
   try {
     requestOpt = tt::domain::ImageGenerateRequest::fromJson(*json, taskId);
-  } catch (const std::invalid_argument& e) {
+  } catch (const std::exception& e) {
+    // fromJson throws std::invalid_argument from json_field helpers, but
+    // any std::exception (including Json::Exception from a malformed
+    // value JsonCpp couldn't reject earlier) is a client-side payload bug
+    // and should map to 400, not 500.
     callback(errorResponse(drogon::k400BadRequest, e.what(),
                            "invalid_request_error"));
     return;
   }
   auto request = std::move(*requestOpt);
   uint64_t reqNum = counter.fetch_add(1);
+  TT_LOG_INFO("[ImageController] {} req={} started", endpointTag, reqNum);
 
   callbackPool().submit([service, request = std::move(request),
                          callback = std::move(callback), reqNum, startTime,
                          endpointTag]() {
     try {
       auto response = service->submitRequest(std::move(request));
+      double totalMs = std::chrono::duration<double, std::milli>(
+                           std::chrono::steady_clock::now() - startTime)
+                           .count();
       if (!response.error.empty()) {
+        TT_LOG_ERROR("[ImageController] {} req={} failed in {}ms: {}",
+                     endpointTag, reqNum, totalMs, response.error);
         callback(errorResponse(drogon::k500InternalServerError, response.error,
                                "server_error"));
         return;
       }
       Json::Value jsonResponse = response.toOpenaiJson();
       auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
-      if (reqNum % 50 == 0) {
-        double totalMs = std::chrono::duration<double, std::milli>(
-                             std::chrono::steady_clock::now() - startTime)
-                             .count();
-        TT_LOG_DEBUG("[ImageController] {} req={} total={}ms", endpointTag,
-                     reqNum, totalMs);
-      }
+      TT_LOG_INFO("[ImageController] {} req={} done in {}ms", endpointTag,
+                  reqNum, totalMs);
       callback(resp);
     } catch (const tt::services::QueueFullException& e) {
       callback(errorResponse(drogon::k429TooManyRequests, e.what(),
                              "rate_limit_exceeded"));
     } catch (const std::exception& e) {
+      TT_LOG_ERROR("[ImageController] {} req={} threw: {}", endpointTag, reqNum,
+                   e.what());
       callback(errorResponse(drogon::k500InternalServerError,
                              std::string("Internal error: ") + e.what(),
                              "server_error"));
@@ -120,7 +135,7 @@ ImageController::ImageController() {
         "[ImageController] Image service not found in container. "
         "Ensure initializeServices() is called before Drogon starts.");
   }
-  TT_LOG_INFO("[ImageController] Initialized (service already started)");
+  TT_LOG_INFO("[ImageController] Initialized");
 }
 
 ImageController::~ImageController() = default;
