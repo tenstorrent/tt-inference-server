@@ -431,9 +431,7 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
         # Export MP4 inside the device worker by default to avoid pickling the
-        # raw frame array (~226MB at 720p×81 frames) over IPC. The MPI launcher
-        # in ``video_runner.py`` flips this off for multi-rank runs because
-        # the encoder thread there is the sole writer to ``output_shm``.
+        # raw frame array (~226MB at 720p×81 frames) over IPC.
         self.export_in_runner = True
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
@@ -458,16 +456,18 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
         return False
 
     def get_pipeline_device_params(self):
+        # The 4x8 LoudBox trace binary needs ~30.6MB; the default 30MB region
+        # rejects it and warmup OOMs. Both 4x8 (32 chips) and 4x32 (128 chips)
+        # Blackhole meshes get the bumped trace region.
         device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
-        if is_blackhole():
+        mesh_size = (
+            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+        )
+        if mesh_size >= 32 and is_blackhole():
+            device_params["trace_region_size"] = 120_000_000
             config = ttnn.FabricRouterConfig()
             config.max_packet_payload_size_bytes = 8192
             device_params["fabric_router_config"] = config
-            mesh_size = (
-                self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
-            )
-            if mesh_size > 32:
-                device_params["trace_region_size"] = 120000000
         return device_params
 
     def create_pipeline(self):
