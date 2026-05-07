@@ -94,6 +94,8 @@ class DeepSeekToolCallParser : public IToolCallParser {
  public:
   std::optional<Json::Value> parseComplete(
       const std::string& text, bool parallelToolCalls = true) const override {
+
+    TT_LOG_INFO("[DeepSeekToolCallParser] parseComplete text={}", text);
     // Look for tool call markers
     if (text.find(K_TOOL_CALLS_BEGIN) == std::string::npos) {
       return std::nullopt;
