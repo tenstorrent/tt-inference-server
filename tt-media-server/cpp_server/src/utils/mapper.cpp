@@ -4,9 +4,9 @@
 
 namespace tt::utils::mapper {
 
-tt::domain::SamplingParams mapSamplingParams(
-    const tt::domain::LLMRequest& request) {
-  tt::domain::SamplingParams params;
+tt::domain::llm::SamplingParams mapSamplingParams(
+    const tt::domain::llm::LLMRequest& request) {
+  tt::domain::llm::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);
   params.max_tokens = request.max_tokens;
   params.ignore_eos = request.ignore_eos;

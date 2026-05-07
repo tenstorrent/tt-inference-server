@@ -14,9 +14,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
 
-from .._test_common import block_id, block_targets
+from .._test_common import ReportCheckTypes, block_id, block_targets
 from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)

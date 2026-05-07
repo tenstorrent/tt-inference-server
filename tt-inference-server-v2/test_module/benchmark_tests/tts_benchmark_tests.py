@@ -23,7 +23,13 @@ from workflows.utils import get_num_calls
 
 from report_module.schema import Block
 
-from .._test_common import block_id, block_targets
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    block_targets,
+    run_tiered_check,
+)
 from ..context import MediaContext, require_health
 from ..test_status import TtsTestStatus
 
@@ -170,11 +176,30 @@ def _run_tts_benchmark(ctx: MediaContext, num_calls: int) -> list[TtsTestStatus]
     return status_list
 
 
-def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> float:
-    if not status_list:
-        return 0.0
+def _tts_avg(status_list: list[TtsTestStatus], attr: str) -> Optional[float]:
     valid = [getattr(s, attr) for s in status_list if getattr(s, attr) is not None]
-    return sum(valid) / len(valid) if valid else 0.0
+    return sum(valid) / len(valid) if valid else None
+
+
+def _tts_target_checks(
+    ctx: MediaContext, ttft_ms_value: Optional[float], rtr_value: Optional[float]
+) -> tuple[dict, ReportCheckTypes]:
+    logger.info("Computing 3-tier target checks for TTFT, RTR")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "TTFT",
+                ttft_ms_value,
+                "ttft_ms",
+                lower_is_better=True,
+                field_name="ttft",
+            ),
+            MetricSpec(
+                "RTR", rtr_value, "rtr", lower_is_better=False, field_name="rtr"
+            ),
+        ],
+    )
 
 
 def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
@@ -209,6 +234,7 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     ttft_value = _tts_avg(status_list, "ttft_ms")
     rtr_value = _tts_avg(status_list, "rtr")
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
+    target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     return Block(
         kind="tts_benchmark",
@@ -217,10 +243,12 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
         data={
             "Benchmarks": {
                 "num_requests": len(status_list),
-                "ttft": ttft_value / 1000,
+                "ttft": ttft_value / 1000 if ttft_value is not None else None,
                 "rtr": rtr_value,
                 "ttft_p90": p90_ttft / 1000,
                 "ttft_p95": p95_ttft / 1000,
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
             },
         },
     )

@@ -8,9 +8,9 @@
 #include <optional>
 #include <string>
 
-#include "tool_calls/tool_call.hpp"
+#include "domain/tool_calls/tool_call.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 /** OpenAI chat message: role + content (content may be string or array of
  * parts). */
@@ -75,4 +75,4 @@ struct ChatMessage {
   }
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

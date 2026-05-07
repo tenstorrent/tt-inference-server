@@ -9,14 +9,17 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::domain;
+using namespace tt::domain::llm;
 using namespace tt::utils;
 using tt::utils::tokenizers::activeTokenizer;
 
 namespace {
+
+using namespace tt::domain::llm;
 
 ChatMessage makeMessage(std::string role, std::string content) {
   ChatMessage m;

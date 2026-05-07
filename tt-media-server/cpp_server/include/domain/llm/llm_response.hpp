@@ -10,7 +10,7 @@
 
 #include "domain/base_response.hpp"
 
-namespace tt::domain {
+namespace tt::domain::llm {
 
 /**
  * Usage statistics for the completion.
@@ -99,4 +99,4 @@ inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error) {
   return chunk;
 }
 
-}  // namespace tt::domain
+}  // namespace tt::domain::llm

@@ -8,9 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "domain/sampling_params.hpp"
+#include "domain/llm/sampling_params.hpp"
 
 namespace tt::runners {
+
+using namespace tt::domain::llm;
 
 struct TokenAcceptResult {
   bool accepted = true;
@@ -19,14 +21,16 @@ struct TokenAcceptResult {
 
 class GuidedDecoderManager {
  public:
-  explicit GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
-                                int vocabSize);
+  GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
+                       int vocabSize,
+                       const std::vector<int32_t>& stopTokenIds = {});
   ~GuidedDecoderManager();
 
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;
   GuidedDecoderManager& operator=(const GuidedDecoderManager&) = delete;
 
-  void initRequest(uint32_t taskId, const tt::domain::SamplingParams& params);
+  void initRequest(uint32_t taskId,
+                   const tt::domain::llm::SamplingParams& params);
 
   void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
 

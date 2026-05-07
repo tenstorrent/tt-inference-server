@@ -9,11 +9,13 @@
 #include <optional>
 #include <string>
 
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 /**
  * Parameters shared by every chat-completion response writer (streaming or
@@ -54,7 +56,7 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   ResponseWriter& operator=(const ResponseWriter&) = delete;
 
   /** Consume a single LLMStreamChunk produced by the streaming generator. */
-  virtual void handleTokenChunk(const domain::LLMStreamChunk& chunk) = 0;
+  virtual void handleTokenChunk(const LLMStreamChunk& chunk) = 0;
 
   /** Signal end-of-stream. Idempotent; releases in-flight slot. */
   virtual void finalize() = 0;
@@ -72,7 +74,7 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   int noteToken();
 
   /** Compute usage from the current accumulator state. */
-  domain::CompletionUsage buildUsage() const;
+  CompletionUsage buildUsage() const;
 
   /** Release the session in-flight slot if a session is associated. */
   void releaseInFlight();

@@ -26,9 +26,8 @@ from workflows.utils import (
     is_streaming_enabled_for_whisper,
 )
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
 
-from .._test_common import block_id, block_targets
+from .._test_common import ReportCheckTypes, block_id, block_targets
 from ..context import MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 

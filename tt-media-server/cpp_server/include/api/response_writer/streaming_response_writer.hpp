@@ -33,7 +33,7 @@ class StreamingResponseWriter : public ResponseWriter {
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
       bool continuousUsage);
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**

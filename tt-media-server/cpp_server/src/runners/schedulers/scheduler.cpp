@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner/schedulers/scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 #include <algorithm>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/schedulers/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
 
-using Sequence = tt::domain::Sequence;
-using SamplingParams = tt::domain::SamplingParams;
-using SequenceStatus = tt::domain::SequenceStatus;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
 
 using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
@@ -185,7 +185,15 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   }
 }
 
-void Scheduler::removeSequence(uint32_t taskId) { sequences.erase(taskId); }
+void Scheduler::removeSequence(uint32_t taskId) {
+  auto it = sequences.find(taskId);
+  if (it == sequences.end()) return;
+
+  std::erase_if(decodeQueue,
+                [taskId](Sequence* s) { return s->taskId == taskId; });
+  blockManager.deallocate(*it->second);
+  sequences.erase(it);
+}
 
 void Scheduler::abortRequest(uint32_t taskId) {
   auto* seq = findSequence(taskId);
