@@ -2,18 +2,29 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
 class MediaServerLivenessTest(BaseTest):
+    KIND = "media_server_liveness"
+    TASK_TYPE = "health"
+
     async def _run_specific_test_async(self):
         url = f"http://localhost:{self.service_port}/tt-liveness"
 
@@ -26,7 +37,19 @@ class MediaServerLivenessTest(BaseTest):
                     )
                     data = await response.json()
                     logger.info(f"Liveness check response: {data}")
-                    return data
+                    worker_info = data.get("worker_info") or {}
+                    return {
+                        "status": data.get("status"),
+                        "model_ready": data.get("model_ready"),
+                        "runner_in_use": data.get("runner_in_use"),
+                        "total_workers": len(worker_info),
+                        "ready_workers": sum(
+                            1 for w in worker_info.values() if w.get("is_ready")
+                        ),
+                        "alive_workers": sum(
+                            1 for w in worker_info.values() if w.get("is_alive")
+                        ),
+                    }
 
         except (
             aiohttp.ClientConnectorError,
@@ -45,3 +68,19 @@ class MediaServerLivenessTest(BaseTest):
             # Log unexpected errors but don't exit - let retry logic handle it
             logger.error(f"⚠️  Unexpected error during liveness check: {e}")
             raise
+
+
+def run_media_server_liveness(ctx: MediaContext) -> Block:
+    """Run MediaServerLivenessTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 60,
+            "retry_attempts": 3,
+            "retry_delay": 5,
+            "break_on_failure": False,
+        }
+    )
+    return MediaServerLivenessTest(test_config, targets={}, ctx=ctx).run_tests()
+
+
+__all__ = ["MediaServerLivenessTest", "run_media_server_liveness"]

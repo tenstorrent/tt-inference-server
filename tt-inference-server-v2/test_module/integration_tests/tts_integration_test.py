@@ -14,12 +14,20 @@ Note: Basic TTS functionality is covered by speecht5_tts_test.py
       Load testing is covered by tts_load_test.py
 """
 
+from __future__ import annotations
+
 import logging
 import time
+from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +44,9 @@ class TTSIntegrationTest(BaseTest):
     This test focuses on edge cases and error scenarios that are not covered
     by other TTS tests (speecht5_tts_test, tts_quality_test, tts_load_test).
     """
+
+    KIND = "tts_integration"
+    TASK_TYPE = "integration"
 
     async def _run_specific_test_async(self):
         """Run integration tests for TTS API."""
@@ -168,3 +179,19 @@ class TTSIntegrationTest(BaseTest):
         except Exception as e:
             logger.error(f"Very long text test failed: {e}")
             return {"passed": False, "error": str(e)}
+
+
+def run_tts_integration(ctx: MediaContext) -> Block:
+    """Run TTSIntegrationTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 300,
+            "retry_attempts": 2,
+            "retry_delay": 5,
+            "break_on_failure": False,
+        }
+    )
+    return TTSIntegrationTest(test_config, targets={}, ctx=ctx).run_tests()
+
+
+__all__ = ["TTSIntegrationTest", "run_tts_integration"]
