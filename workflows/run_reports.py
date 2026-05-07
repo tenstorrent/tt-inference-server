@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import re
 import sys
 from datetime import datetime
@@ -1530,6 +1531,18 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     structured_files = glob(f"{benchmarks_output_dir}/{structured_pattern}")
     # vllm_pattern also matches structured files; subtract them so they're processed once.
     vllm_files = [f for f in vllm_files if f not in set(structured_files)]
+
+    # Mirror the runtime gate from run_benchmarks.py: when only structured-output
+    # tasks were executed, the report should not surface stale text/vlm/aiperf
+    # JSONs left in the shared benchmarks_output/ directory by prior runs.
+    if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
+        logger.info(
+            "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; restricting report to "
+            "structured-output result files only."
+        )
+        vllm_files = []
+        genai_files = []
+        aiperf_files = []
 
     logger.info(
         f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, "

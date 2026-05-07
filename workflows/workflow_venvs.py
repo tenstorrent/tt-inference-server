@@ -239,8 +239,8 @@ def setup_evals_meta(
     return setup_succeeded
 
 
-VLLM_BENCHMARKS_PIN = "v0.13.0"
-VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/{VLLM_BENCHMARKS_PIN}/benchmarks"
+VLLM_PIN_VERSION = "0.13.0"
+VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/v{VLLM_PIN_VERSION}/benchmarks"
 # Files fetched into work_dir for benchmark_serving_structured_output.py
 # (relative_path_in_vllm_repo, relative_path_in_work_dir)
 STRUCTURED_OUTPUT_FETCH_FILES = [
@@ -255,6 +255,11 @@ STRUCTURED_OUTPUT_FETCH_FILES = [
     ),
 ]
 
+# Filename of the structured-output benchmark script downloaded by
+# setup_benchmarks_vllm() into the BENCHMARKS_VLLM venv work_dir. Resolved
+# at run-time from venv_config.venv_path.
+STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
+
 
 def setup_benchmarks_vllm(
     venv_config: VenvConfig,
@@ -267,14 +272,16 @@ def setup_benchmarks_vllm(
         work_dir.mkdir(parents=True, exist_ok=True)
     else:
         logger.info(f"work_dir already exists for generic server testing: {work_dir}")
-    # pin vllm==0.13.0 for reproducibility and potential regressions
+    # pin vllm for reproducibility and potential regressions
     setup_succeeded = (
         run_command(
-            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip vllm==0.13.0 torch",
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip vllm=={VLLM_PIN_VERSION} torch",
             logger=logger,
         )
         == 0
     )
+    if not setup_succeeded:
+        return False
     # Extra deps for benchmark_serving_structured_output.py (fetched below).
     # The unified `vllm bench serve` CLI does not pull these in, so install
     # them explicitly.
@@ -284,8 +291,9 @@ def setup_benchmarks_vllm(
             logger=logger,
         )
         == 0
-        and setup_succeeded
     )
+    if not setup_succeeded:
+        return False
     # Fetch structured-output benchmark script (and its sibling deps) from the
     # pinned vLLM tag directly, rather than vendoring into the repo.
     for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
@@ -294,12 +302,13 @@ def setup_benchmarks_vllm(
         url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
         setup_succeeded = (
             run_command(
-                f"curl -fSL {url} -o {dst}",
+                f"curl -fSL --retry 3 --retry-delay 5 --retry-all-errors {url} -o {dst}",
                 logger=logger,
             )
             == 0
-            and setup_succeeded
         )
+        if not setup_succeeded:
+            return False
 
     return setup_succeeded
 

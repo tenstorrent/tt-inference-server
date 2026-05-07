@@ -231,7 +231,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             f"Found structured-output benchmark pattern in filename: {filename}"
         )
         so_tag = match.group("so_tag")
-        ratio = 0.0 if so_tag == "no-so" else float(so_tag.removeprefix("so-"))
+        ratio = None if so_tag == "no-so" else float(so_tag.removeprefix("so-"))
         return {
             "model_name": match.group("model"),
             "timestamp": match.group("timestamp"),
@@ -566,63 +566,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "structured_output":
         logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
-        # Mean ISL from upstream payload (filename omits isl).
+        # Filename omits isl for structured-output runs; derive mean ISL from
+        # the upstream payload so the default path below can use it.
         total_input_tokens = data.get("total_input_tokens") or 0
         num_prompts = data.get("num_prompts") or params["num_requests"]
-        isl = round(total_input_tokens / num_prompts) if num_prompts else 0
-
-        mean_tpot_ms = data.get("mean_tpot_ms")
-        if mean_tpot_ms:
-            mean_tpot = max(mean_tpot_ms, 1e-6)
-            mean_tps = 1000.0 / mean_tpot
-            std_tps = (
-                mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))
-                if data.get("std_tpot_ms")
-                else None
-            )
-        else:
-            mean_tps = None
-            std_tps = None
-
-        actual_max_con = min(params["max_con"], params["num_requests"])
-        tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-        tps_prefill_throughput = (
-            (isl * actual_max_con) / (data.get("mean_ttft_ms") / 1000)
-            if isl and data.get("mean_ttft_ms")
-            else None
+        params["input_sequence_length"] = (
+            round(total_input_tokens / num_prompts) if num_prompts else 0
         )
-
-        metrics = {
-            "timestamp": params["timestamp"],
-            "model_name": params["model_name"],
-            "model_id": data.get("model_id", ""),
-            "backend": data.get("backend", "vllm"),
-            "device": params.get("device", ""),
-            "input_sequence_length": isl,
-            "output_sequence_length": params["output_sequence_length"],
-            "max_con": actual_max_con,
-            "mean_ttft_ms": data.get("mean_ttft_ms"),
-            "std_ttft_ms": data.get("std_ttft_ms"),
-            "mean_tpot_ms": mean_tpot_ms,
-            "std_tpot_ms": data.get("std_tpot_ms"),
-            "mean_tps": mean_tps,
-            "std_tps": std_tps,
-            "tps_decode_throughput": tps_decode_throughput,
-            "tps_prefill_throughput": tps_prefill_throughput,
-            "mean_e2el_ms": data.get("mean_e2el_ms"),
-            "request_throughput": data.get("request_throughput"),
-            "total_input_tokens": data.get("total_input_tokens"),
-            "total_output_tokens": data.get("total_output_tokens"),
-            "total_token_throughput": data.get("total_token_throughput"),
-            "num_prompts": data.get("num_prompts", ""),
-            "num_requests": params["num_requests"],
-            "filename": filename,
-            "task_type": "structured_output",
-            "dataset": params["dataset"],
-            "structured_output_ratio": params["structured_output_ratio"],
-            "correct_rate_pct": data.get("correct_rate(%)"),
-        }
-        return format_metrics(metrics)
 
     # Calculate statistics for text/image benchmarks
     logger.info(
@@ -641,8 +591,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         std_tps = None
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-        data.get("mean_ttft_ms") / 1000
+    tps_prefill_throughput = (
+        (params["input_sequence_length"] * actual_max_con)
+        / (data.get("mean_ttft_ms") / 1000)
+        if params["input_sequence_length"] and data.get("mean_ttft_ms")
+        else None
     )
 
     metrics = {
@@ -680,6 +633,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "images_per_prompt": params["images_per_prompt"],
                 "image_height": params["image_height"],
                 "image_width": params["image_width"],
+            }
+        )
+
+    if params["task_type"] == "structured_output":
+        metrics.update(
+            {
+                "dataset": params["dataset"],
+                "structured_output_ratio": params["structured_output_ratio"],
+                "correct_rate_pct": data.get("correct_rate(%)"),
             }
         )
 
@@ -1126,14 +1088,19 @@ def render_structured_output_sections(
 
     sorted_keys = sorted(
         latest_by_key.keys(),
-        key=lambda kv: (kv[0], kv[1] if kv[1] is not None else 0.0),
+        key=lambda kv: (kv[0], kv[1] if isinstance(kv[1], (int, float)) else -1.0),
     )
 
     display_rows: List[Dict[str, str]] = []
     for key in sorted_keys:
         r = latest_by_key[key]
         ratio = r.get("structured_output_ratio")
-        ratio_str = f"{ratio:.1f}" if isinstance(ratio, (int, float)) else str(ratio)
+        if isinstance(ratio, (int, float)):
+            ratio_str = f"{ratio:.1f}"
+        elif ratio in (None, NOT_MEASURED_STR):
+            ratio_str = "off"
+        else:
+            ratio_str = str(ratio)
         cr = r.get("correct_rate_pct")
         if isinstance(cr, (int, float)):
             cr_str = f"{cr:g}%"

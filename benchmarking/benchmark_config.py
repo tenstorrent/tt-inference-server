@@ -94,7 +94,9 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 ]
 
 
-# (dataset, structured_output_ratio)
+# format: (dataset, structured_output_ratio)
+# vllm implements the following datasets: json, json-unique, grammar, regex, choice, xgrammar_bench, so they are all listed
+# to see structured outputs charactization overhead, only json, json-unique and xgrammar_bench is needed, so other datasets are commented out
 STRUCTURED_OUTPUT_PAIRS = [
     ("json", 1.0),
     ("json", 0.0),
@@ -617,7 +619,7 @@ for model_id, model_spec in MODEL_SPECS.items():
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: text LLMs only, but can be extended
-    structured_output_eligible = model_spec.model_type == ModelType.LLM
+    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(

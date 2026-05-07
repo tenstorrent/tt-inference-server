@@ -51,12 +51,8 @@ from workflows.workflow_types import (
     ModelType,
 )
 
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflows.workflow_venvs import VENV_CONFIGS, STRUCTURED_OUTPUT_SCRIPT_NAME
 
-# Filename of the structured-output benchmark script downloaded by
-# setup_benchmarks_vllm() into the BENCHMARKS_VLLM venv work_dir. Resolved
-# at run-time from venv_config.venv_path.
-STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 logger = logging.getLogger(__name__)
 
@@ -263,14 +259,14 @@ def annotate_structured_output_result(result_filepath):
         logger.warning("Structured-output result JSON not found: %s", result_filepath)
         return
     try:
-        with open(result_filepath) as f:
+        with open(result_filepath, "r+") as f:
             data = json.load(f)
+            data["benchmark_kind"] = "structured_output"
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, indent=2)
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Could not parse %s: %s", result_filepath, exc)
-        return
-    data["benchmark_kind"] = "structured_output"
-    with open(result_filepath, "w") as f:
-        json.dump(data, f, indent=2)
+        logger.warning("Could not annotate %s: %s", result_filepath, exc)
 
 
 def main():
