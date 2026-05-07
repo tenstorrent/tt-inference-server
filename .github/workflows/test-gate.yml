@@ -13,6 +13,7 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -26,6 +27,11 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+            media_server_deps:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/uv-overrides.txt'
+              - 'tt-media-server/fix_dependencies.sh'
+              - 'tt-media-server/Dockerfile*'
 
   lint:
     needs: detect-changes
@@ -48,6 +54,44 @@ jobs:
 
       - name: Run ruff format check
         run: ruff format --check .
+
+  verify-media-server-install:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.media-server-deps == 'true' }}
+    name: Verify Media Server Dep Install
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tt-media-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install media-server requirements (strict, no fallback)
+        # Mirrors tt-media-server/Dockerfile, minus its `|| (grep -v pyluwen ...)`
+        # fallback — that fallback masks resolver failures this gate must catch.
+        # The numpy<2 constraint mimics tt-metal's pin so removing uv-overrides.txt's
+        # numpy line fails CI here, before tt-metal's C extensions would crash on
+        # numpy 2 at runtime in docker.
+        run: |
+          uv venv
+          echo 'numpy>=1.24.4,<2' > tt-metal-pins.txt
+          uv pip install \
+            --constraint tt-metal-pins.txt \
+            --index-strategy unsafe-best-match \
+            --overrides uv-overrides.txt \
+            -r requirements.txt
+
+      - name: Run fix_dependencies.sh
+        # Validates the post-install CPU-torch swap-in still resolves.
+        run: |
+          chmod +x fix_dependencies.sh
+          ./fix_dependencies.sh
 
   unit-tests:
     needs: detect-changes
@@ -1622,6 +1666,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
+      - verify-media-server-install
       - unit-tests
       - forge-runner-cpu-tests
       - llm-streaming-performance
@@ -1638,6 +1683,7 @@ jobs:
           STATUS=0
           declare -A JOBS=(
             [lint]="${{ needs.lint.result }}"
+            [verify-media-server-install]="${{ needs.verify-media-server-install.result }}"
             [unit-tests]="${{ needs.unit-tests.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
             [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
