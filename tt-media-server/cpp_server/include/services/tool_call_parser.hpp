@@ -102,6 +102,17 @@ class IToolCallParser {
   virtual void initializeTask(uint32_t task_id) = 0;
 
   /**
+   * Initialize streaming state for a task with function name context.
+   * Used by JsonToolCallParser for structured output where we know
+   * the function name upfront from tool_choice.
+   */
+  virtual void initializeTask(uint32_t task_id,
+                              [[maybe_unused]] const std::string& function_name) {
+    // Default implementation ignores function_name
+    initializeTask(task_id);
+  }
+
+  /**
    * Process single token for streaming.
    * Returns content type and whether to emit.
    *
@@ -133,8 +144,16 @@ class IToolCallParser {
 
 /**
  * Factory function to create the appropriate parser based on model type.
+ * Used for natural tool calls with model-specific markers (e.g., DeepSeek).
  */
 std::unique_ptr<IToolCallParser> createToolCallParser(
     tt::config::ModelType modelType);
+
+/**
+ * Create a JSON tool call parser for structured output.
+ * Handles models outputting {"arguments": {...}} wrapper format.
+ * Used when tool_choice is "function" or "required".
+ */
+std::unique_ptr<IToolCallParser> createJsonToolCallParser();
 
 }  // namespace tt::services
