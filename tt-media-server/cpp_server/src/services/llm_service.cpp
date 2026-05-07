@@ -449,16 +449,6 @@ void LLMService::processStreamingRequest(
 }
 
 void LLMService::postProcess(LLMResponse& response) const {
-  // Parse and strip reasoning blocks from all choices
-  if (reasoningParser) {
-    for (auto& choice : response.choices) {
-      auto result = reasoningParser->parseComplete(choice.text);
-
-      // Replace text with answer only (reasoning stripped)
-      choice.text = std::move(result.answer);
-    }
-  }
-
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
   tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
