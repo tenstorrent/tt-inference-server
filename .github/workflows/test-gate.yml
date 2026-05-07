@@ -72,19 +72,17 @@ jobs:
           python-version: "3.10"
           enable-cache: true
 
-      - name: Create venv and seed tt-metal-equivalent pins
-        # Simulates tt-metal's pre-existing numpy<2 pin so this gate fails
-        # if uv-overrides.txt's numpy override is removed.
+      - name: Install media-server requirements (strict, no fallback)
+        # Mirrors tt-media-server/Dockerfile, minus its `|| (grep -v pyluwen ...)`
+        # fallback — that fallback masks resolver failures this gate must catch.
+        # The numpy<2 constraint mimics tt-metal's pin so removing uv-overrides.txt's
+        # numpy line fails CI here, before tt-metal's C extensions would crash on
+        # numpy 2 at runtime in docker.
         run: |
           uv venv
-          uv pip install 'numpy>=1.24.4,<2'
-
-      - name: Install media-server requirements (strict, no fallback)
-        # Mirrors tt-media-server/Dockerfile, but drops its `|| (grep -v
-        # pyluwen ...)` fallback — that fallback silently masks resolver
-        # failures, which is the class of bug this gate exists to catch.
-        run: |
+          echo 'numpy>=1.24.4,<2' > tt-metal-pins.txt
           uv pip install \
+            --constraint tt-metal-pins.txt \
             --index-strategy unsafe-best-match \
             --overrides uv-overrides.txt \
             -r requirements.txt
