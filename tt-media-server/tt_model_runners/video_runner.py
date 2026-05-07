@@ -65,6 +65,7 @@ from ipc.video_shm import (
     VideoResponse,
     VideoShm,
     VideoStatus,
+    cleanup_orphaned_video_files,
 )
 from utils.logger import TTLogger
 
@@ -193,6 +194,21 @@ def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict
     return data
 
 
+def _enqueue_rank0_error(
+    encode_queue: "queue.Queue[Optional[_EncodeJob]]",
+    task_id: str,
+    err: str,
+) -> tuple:
+    """Surface a rank-0-detected I2V error: log it, enqueue an ERROR job
+    for the encoder thread to write back, and return the
+    ``([], skip=True)`` tuple ``_rank0_load_image_prompts`` callers expect
+    so ranks 1..N no-op in lockstep on this iteration.
+    """
+    _log.error(f"Rank 0: {err}")
+    encode_queue.put(_EncodeJob(task_id=task_id, error=err))
+    return [], True
+
+
 def _rank0_load_image_prompts(
     raw_req: Optional[VideoRequest],
     encode_queue: "queue.Queue[Optional[_EncodeJob]]",
@@ -201,19 +217,26 @@ def _rank0_load_image_prompts(
     Rank-0-only: resolve ``image_prompts`` for one inference iteration.
     Returns ``(image_prompts, skip)`` where ``skip=True`` means rank 0 has
     already enqueued an error response on the caller's behalf.
+
     """
     if raw_req is None or not raw_req.image_path:
         return None, False
     prompts = _read_image_prompts_side_file(raw_req.image_path, raw_req.task_id)
-    if prompts is not None:
-        return prompts, False
-    err = (
-        f"I2V conditioning side-file unreadable: "
-        f"{raw_req.image_path!r} for task {raw_req.task_id}"
-    )
-    _log.error(f"Rank 0: {err}")
-    encode_queue.put(_EncodeJob(task_id=raw_req.task_id, error=err))
-    return [], True
+    if prompts is None:
+        return _enqueue_rank0_error(
+            encode_queue,
+            raw_req.task_id,
+            f"I2V conditioning side-file unreadable: "
+            f"{raw_req.image_path!r} for task {raw_req.task_id}",
+        )
+    if not prompts:
+        return _enqueue_rank0_error(
+            encode_queue,
+            raw_req.task_id,
+            f"I2V conditioning side-file is an empty list: "
+            f"{raw_req.image_path!r} for task {raw_req.task_id}",
+        )
+    return prompts, False
 
 
 def video_request_to_generate_request(
@@ -499,6 +522,13 @@ def run_all_ranks() -> None:
                 input_shm.close()
             if output_shm:
                 output_shm.close()
+            # Mirror mock_video_runner_base + sp_runner: a crash mid-encode
+            # can leave mp4 files on tmpfs. Sweeping here bounds orphan growth
+            # to one runner lifetime instead of relying on the next SP_RUNNER
+            # restart to clean up.
+            removed = cleanup_orphaned_video_files()
+            if removed:
+                _log.info(f"Rank 0: cleaned up {removed} orphaned video file(s)")
         runner.close_device()
 
     _log.info(f"Rank {rank}: Shutdown complete")
