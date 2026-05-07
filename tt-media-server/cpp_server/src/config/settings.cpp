@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -95,6 +96,8 @@ ModelService modelService() {
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
 bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
+
+bool isImageService() { return modelService() == ModelService::IMAGE; }
 
 std::string runnerType() { return toString(modelService()); }
 
@@ -240,6 +243,110 @@ LLMConfig llmEngineConfig() {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
     cfg.scheduling_policy = schedulingPolicy();
+    return cfg;
+  }();
+  return cached;
+}
+
+namespace {
+
+/** Parse "WxH" (case-insensitive 'x'). Returns false if the string is malformed
+ * or either dimension is non-positive. */
+bool parseResolution(const std::string& s, size_t& width, size_t& height) {
+  size_t xPos = s.find_first_of("xX");
+  if (xPos == std::string::npos || xPos == 0 || xPos + 1 >= s.size()) {
+    return false;
+  }
+  try {
+    long long w = std::stoll(s.substr(0, xPos));
+    long long h = std::stoll(s.substr(xPos + 1));
+    if (w <= 0 || h <= 0) return false;
+    width = static_cast<size_t>(w);
+    height = static_cast<size_t>(h);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/invalid -> {1,1}. */
+std::vector<size_t> parseMeshShape(const std::string& s) {
+  std::vector<size_t> out;
+  std::string token;
+  for (char c : s) {
+    if (c == ',') {
+      if (!token.empty()) {
+        try {
+          out.push_back(static_cast<size_t>(std::stoull(token)));
+        } catch (const std::exception&) {
+        }
+        token.clear();
+      }
+    } else if (!std::isspace(static_cast<unsigned char>(c))) {
+      token.push_back(c);
+    }
+  }
+  if (!token.empty()) {
+    try {
+      out.push_back(static_cast<size_t>(std::stoull(token)));
+    } catch (const std::exception&) {
+    }
+  }
+  if (out.empty()) return {1, 1};
+  if (out.size() == 1) out.push_back(1);
+  return out;
+}
+
+bool envBool(const char* name, bool defaultValue) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return defaultValue;
+  std::string lower;
+  for (; *v; ++v) lower.push_back(static_cast<char>(std::tolower(*v)));
+  if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
+    return true;
+  }
+  if (lower == "0" || lower == "false" || lower == "no" || lower == "off") {
+    return false;
+  }
+  return defaultValue;
+}
+
+}  // namespace
+
+ImageConfig imageEngineConfig() {
+  static const ImageConfig cached = [] {
+    ImageConfig cfg;
+    const std::string runner =
+        envStringLower("MODEL_RUNNER_TYPE", "tt_sdxl_generate");
+    if (runner == "tt_sdxl_generate") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_GENERATE;
+    } else if (runner == "tt_sdxl_image_to_image") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE;
+    } else if (runner == "tt_sdxl_edit") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_EDIT;
+    } else {
+      throw std::runtime_error(
+          "[Config] Unknown image MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_sdxl_generate, tt_sdxl_image_to_image, "
+          "tt_sdxl_edit");
+    }
+
+    cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
+
+    cfg.device_mesh_shape =
+        parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+
+    const std::string res = envString("SDXL_IMAGE_RESOLUTION", "1024x1024");
+    size_t w = 1024, h = 1024;
+    if (parseResolution(res, w, h)) {
+      cfg.image_width = w;
+      cfg.image_height = h;
+    }
+
+    cfg.is_galaxy = envBool("IS_GALAXY", false);
+    cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
+    cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
+        envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
     return cfg;
   }();
   return cached;

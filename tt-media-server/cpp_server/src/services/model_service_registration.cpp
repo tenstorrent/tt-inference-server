@@ -8,11 +8,13 @@
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "config/types.hpp"
 #include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
 #include "services/embedding_service.hpp"
+#include "services/image_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
@@ -108,6 +110,26 @@ void registerEmbedding() {
                                                "OpenAI-compatible embeddings");
 }
 
+void registerImage() {
+  // Image service is in-process (batch-1, seconds per request, no worker
+  // subprocess). The service constructs its runner directly from
+  // imageEngineConfig() rather than going through RunnerRegistry, since the
+  // runner has a different lifecycle than the IRunner-based LLM/Embedding
+  // workers.
+  ServiceRegistry::instance().registerService(
+      config::ModelService::IMAGE, []() -> std::shared_ptr<IService> {
+        return std::make_shared<ImageService>(config::imageEngineConfig());
+      });
+
+  auto& routes = api::RouteRegistry::instance();
+  routes.registerRoute(config::ModelService::IMAGE, "POST",
+                       "/v1/images/generations", "Text-to-image generation");
+  routes.registerRoute(config::ModelService::IMAGE, "POST",
+                       "/v1/images/image-to-image", "Image-to-image");
+  routes.registerRoute(config::ModelService::IMAGE, "POST",
+                       "/v1/images/edits", "Image edit / inpaint");
+}
+
 void registerAlwaysExemptRoutes() {
   auto& routes = api::RouteRegistry::instance();
   routes.registerAlwaysExempt("/health");
@@ -129,6 +151,7 @@ void registerBuiltinModelServices() {
   std::call_once(flag, []() {
     registerLLM();
     registerEmbedding();
+    registerImage();
     registerAlwaysExemptRoutes();
   });
 }

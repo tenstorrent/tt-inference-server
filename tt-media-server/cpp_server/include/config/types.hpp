@@ -17,13 +17,16 @@ namespace tt::config {
 enum class ModelService {
   LLM,
   EMBEDDING,
+  IMAGE,
 };
 
-/** String value for env MODEL_SERVICE (e.g. "llm", "embedding"). */
+/** String value for env MODEL_SERVICE (e.g. "llm", "embedding", "image"). */
 inline std::string toString(ModelService s) {
   switch (s) {
     case ModelService::EMBEDDING:
       return "embedding";
+    case ModelService::IMAGE:
+      return "image";
     case ModelService::LLM:
     default:
       return "llm";
@@ -33,6 +36,7 @@ inline std::string toString(ModelService s) {
 /** Parse MODEL_SERVICE; empty or unknown -> LLM. Expects lowercase input. */
 inline ModelService modelServiceFromString(const std::string& v) {
   if (v == "embedding") return ModelService::EMBEDDING;
+  if (v == "image") return ModelService::IMAGE;
   return ModelService::LLM;
 }
 
@@ -81,7 +85,10 @@ enum class ModelRunnerType {
   LLAMA,
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
-  PREFILL
+  PREFILL,
+  TT_SDXL_GENERATE,
+  TT_SDXL_IMAGE_TO_IMAGE,
+  TT_SDXL_EDIT,
 };
 
 enum class Model {
@@ -118,6 +125,12 @@ inline std::string toString(ModelRunnerType m) {
       return "pipeline_manager";
     case ModelRunnerType::PREFILL:
       return "prefill";
+    case ModelRunnerType::TT_SDXL_GENERATE:
+      return "tt_sdxl_generate";
+    case ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE:
+      return "tt_sdxl_image_to_image";
+    case ModelRunnerType::TT_SDXL_EDIT:
+      return "tt_sdxl_edit";
   }
   return "unknown";
 }
