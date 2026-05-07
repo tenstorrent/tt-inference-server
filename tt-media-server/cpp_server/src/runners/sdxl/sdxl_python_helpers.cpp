@@ -213,7 +213,7 @@ std::vector<std::string> PythonHelpers::getLoraTriggers(
 }
 
 std::string PythonHelpers::injectLoraTrigger(const std::string& prompt,
-                                              const std::string& loraRef) {
+                                             const std::string& loraRef) {
   try {
     return helpers()
         .attr("inject_lora_trigger")(prompt, loraRef)

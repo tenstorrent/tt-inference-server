@@ -143,8 +143,8 @@ void registerImage() {
                        "/v1/images/generations", "Text-to-image generation");
   routes.registerRoute(config::ModelService::IMAGE, "POST",
                        "/v1/images/image-to-image", "Image-to-image");
-  routes.registerRoute(config::ModelService::IMAGE, "POST",
-                       "/v1/images/edits", "Image edit / inpaint");
+  routes.registerRoute(config::ModelService::IMAGE, "POST", "/v1/images/edits",
+                       "Image edit / inpaint");
 }
 
 void registerAlwaysExemptRoutes() {

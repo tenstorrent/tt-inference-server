@@ -40,14 +40,13 @@ std::vector<uint8_t> chwFloatToHwcUint8(const float* chw, int channels,
   std::vector<uint8_t> out(hw * static_cast<size_t>(channels));
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      const size_t pixelIdx = (static_cast<size_t>(y) *
-                                   static_cast<size_t>(width) +
-                               static_cast<size_t>(x));
+      const size_t pixelIdx =
+          (static_cast<size_t>(y) * static_cast<size_t>(width) +
+           static_cast<size_t>(x));
       for (int c = 0; c < channels; ++c) {
-        const size_t srcIdx =
-            static_cast<size_t>(c) * hw + pixelIdx;
-        out[pixelIdx * static_cast<size_t>(channels) +
-            static_cast<size_t>(c)] = denormalize(chw[srcIdx]);
+        const size_t srcIdx = static_cast<size_t>(c) * hw + pixelIdx;
+        out[pixelIdx * static_cast<size_t>(channels) + static_cast<size_t>(c)] =
+            denormalize(chw[srcIdx]);
       }
     }
   }
@@ -110,9 +109,8 @@ std::string encodeFloatChwToBase64(const float* chw, int channels, int height,
 
   int rc = 0;
   if (format == Format::PNG) {
-    rc = stbi_write_png_to_func(
-        &stbWriteCallback, &encoded, width, height, channels, hwc.data(),
-        width * channels);
+    rc = stbi_write_png_to_func(&stbWriteCallback, &encoded, width, height,
+                                channels, hwc.data(), width * channels);
   } else {
     int q = jpegQuality;
     if (q < 1) q = 1;

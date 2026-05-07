@@ -64,13 +64,13 @@ class SDXLBaseRunner : public ImageRunner {
    * MUST NOT hold the GIL — the worker re-acquires it. After a timeout the
    * runner is unhealthy. */
   static void runWithTimeout(const std::string& tag, unsigned timeoutSeconds,
-                              const std::function<void()>& work);
+                             const std::function<void()>& work);
 
   /** Encode each (C,H,W) torch tensor to a base64 string and drop the
    * trailing `neededPadding` entries (dummy padding from processPrompts). */
   std::vector<std::string> postProcessImages(
-      const py::object& imgsList,
-      const domain::ImageGenerateRequest& request, int neededPadding) const;
+      const py::object& imgsList, const domain::ImageGenerateRequest& request,
+      int neededPadding) const;
 
   struct PromptPack {
     std::vector<std::string> prompts;
@@ -83,9 +83,8 @@ class SDXLBaseRunner : public ImageRunner {
   PromptPack processPrompts(
       const std::vector<domain::ImageGenerateRequest>& requests) const;
 
-  void injectLoraTriggers(
-      std::vector<std::string>& prompts,
-      const std::optional<std::string>& loraPath) const;
+  void injectLoraTriggers(std::vector<std::string>& prompts,
+                          const std::optional<std::string>& loraPath) const;
 
   void applyRequestSettings(const domain::ImageGenerateRequest& request);
 

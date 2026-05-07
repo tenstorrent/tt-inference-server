@@ -74,16 +74,15 @@ struct ImageGenerateRequest : BaseRequest {
           json_field::getString(json["negative_prompt_2"], "negative_prompt_2");
 
     if (present("num_inference_steps"))
-      req.num_inference_steps =
-          json_field::getInt(json["num_inference_steps"], "num_inference_steps");
+      req.num_inference_steps = json_field::getInt(json["num_inference_steps"],
+                                                   "num_inference_steps");
     if (present("guidance_scale"))
       req.guidance_scale =
           json_field::getFloat(json["guidance_scale"], "guidance_scale");
     if (present("guidance_rescale"))
       req.guidance_rescale =
           json_field::getFloat(json["guidance_rescale"], "guidance_rescale");
-    if (present("seed"))
-      req.seed = json_field::getInt(json["seed"], "seed");
+    if (present("seed")) req.seed = json_field::getInt(json["seed"], "seed");
     if (present("number_of_images"))
       req.number_of_images =
           json_field::getInt(json["number_of_images"], "number_of_images");
@@ -95,9 +94,9 @@ struct ImageGenerateRequest : BaseRequest {
         throw std::invalid_argument(
             "crop_coords_top_left must have exactly 2 elements");
       }
-      req.crop_coords_top_left = std::make_pair(
-          json_field::getInt(arr[0], "crop_coords_top_left[0]"),
-          json_field::getInt(arr[1], "crop_coords_top_left[1]"));
+      req.crop_coords_top_left =
+          std::make_pair(json_field::getInt(arr[0], "crop_coords_top_left[0]"),
+                         json_field::getInt(arr[1], "crop_coords_top_left[1]"));
     }
 
     auto readFloatArray = [](const Json::Value& arr, const char* field) {
@@ -128,8 +127,7 @@ struct ImageGenerateRequest : BaseRequest {
 
     if (present("image"))
       req.image = json_field::getString(json["image"], "image");
-    if (present("mask"))
-      req.mask = json_field::getString(json["mask"], "mask");
+    if (present("mask")) req.mask = json_field::getString(json["mask"], "mask");
     if (present("strength"))
       req.strength = json_field::getFloat(json["strength"], "strength");
     return req;

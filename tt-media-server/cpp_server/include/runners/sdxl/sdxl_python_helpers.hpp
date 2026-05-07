@@ -38,7 +38,7 @@ class PythonHelpers {
   /** Append the first trigger to `prompt` iff not already present
    * (case-insensitive). */
   static std::string injectLoraTrigger(const std::string& prompt,
-                                        const std::string& loraRef);
+                                       const std::string& loraRef);
 };
 
 }  // namespace tt::runners::sdxl
