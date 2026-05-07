@@ -510,6 +510,28 @@ target_include_directories(concurrent_map_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# LLMResponseAccumulator unit test (header-only, no runtime deps).
+add_executable(llm_response_accumulator_test
+    tests/llm_response_accumulator_test.cpp
+)
+target_link_libraries(llm_response_accumulator_test PRIVATE
+    JsonCpp::JsonCpp GTest::gtest_main)
+target_include_directories(llm_response_accumulator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# ResponseWriter base class unit test: verifies releaseInFlightFn plumbing,
+# noteToken/buildUsage timing, and the done flag.
+add_executable(response_writer_test
+    tests/response_writer_test.cpp
+    src/api/response_writer/response_writer.cpp
+)
+target_link_libraries(response_writer_test PRIVATE
+    JsonCpp::JsonCpp GTest::gtest_main)
+target_include_directories(response_writer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
@@ -586,6 +608,8 @@ gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
+gtest_discover_tests(llm_response_accumulator_test)
+gtest_discover_tests(response_writer_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
