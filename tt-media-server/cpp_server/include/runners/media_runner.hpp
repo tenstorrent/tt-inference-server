@@ -6,13 +6,8 @@
 namespace tt::runners {
 
 /**
- * Base class for in-process media runners (image today; audio, video, TTS
- * next). Runners of this kind are owned directly by their service, dispatched
- * to synchronously, and are not driven by the IPC worker loop that backs the
- * IRunner-based LLM/Embedding runners.
- *
- * Each modality picks its own Request/Response types and typically declares a
- * `using FooRunner = MediaRunner<FooRequest, FooResponse>;` alias.
+ * Base for in-process media runners — owned by a service and dispatched to
+ * synchronously, unlike the IPC-driven IRunner used by LLM/Embedding.
  */
 template <typename Request, typename Response>
 class MediaRunner {
@@ -21,8 +16,7 @@ class MediaRunner {
 
   virtual bool warmup() = 0;
 
-  /** Subclasses are expected to throw on failure; the service translates
-   * exceptions to error responses. */
+  /** Throw on failure; the service maps exceptions to error responses. */
   virtual Response run(const Request& request) = 0;
 
   virtual void stop() {}

@@ -13,11 +13,8 @@
 
 namespace tt::config {
 
-/**
- * Common base for every per-service runner config. Carries the runner_type
- * field so the runner factory can dispatch from any config without knowing
- * the concrete service.
- */
+/** Common base for runner configs; carries the runner_type used for factory
+ * dispatch. */
 struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };

@@ -15,15 +15,9 @@
 namespace tt::utils {
 
 /**
- * Registry for in-process media runners (image today, audio/video next).
- *
- * Each modality instantiates its own typed registry via
- * `MediaRunnerRegistry<Runner, Config>::instance()` and registers concrete
- * runners keyed by `ModelRunnerType`. `Config` must derive from
- * `config::RunnerConfigBase`; `create()` dispatches on `cfg.runner_type` and
- * returns nullptr when no factory matches.
- *
- * Thread-safe.
+ * Thread-safe registry for in-process media runners. Each modality uses its
+ * own typed instance and `create()` dispatches on `cfg.runner_type`,
+ * returning nullptr when no factory is registered.
  */
 template <typename Runner, typename Config>
 class MediaRunnerRegistry {
