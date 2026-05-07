@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -252,8 +252,9 @@ class ImageGenerationParamTest(BaseTest):
         ]
 
 
-
-def run_image_generation_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_image_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`ImageGenerationParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {

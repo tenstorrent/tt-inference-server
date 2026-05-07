@@ -10,7 +10,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -112,7 +112,6 @@ class CnnLoadTest(BaseTest):
         )
 
         return requests_duration, avg_duration
-
 
 
 def run_cnn_load(ctx: "MediaContext", targets: dict | None = None) -> Block:

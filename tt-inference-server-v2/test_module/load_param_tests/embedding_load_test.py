@@ -9,7 +9,7 @@ import time
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -107,7 +107,6 @@ class EmbeddingLoadTest(BaseTest):
         logger.info(
             f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
-
 
 
 def run_embedding_load(ctx: "MediaContext", targets: dict | None = None) -> Block:

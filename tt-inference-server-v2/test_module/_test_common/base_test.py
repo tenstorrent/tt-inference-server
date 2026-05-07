@@ -63,7 +63,9 @@ class BaseTest(ABC):
         # Prefer ctx.service_port over the env var so sweep-orchestrated runs
         # don't depend on SERVICE_PORT being exported in the shell.
         self.service_port = (
-            str(ctx.service_port) if ctx is not None else os.getenv("SERVICE_PORT", "8000")
+            str(ctx.service_port)
+            if ctx is not None
+            else os.getenv("SERVICE_PORT", "8000")
         )
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
@@ -258,7 +260,10 @@ class BaseTest(ABC):
                 "message": str(last_exception),
             }
             if last_exception is not None
-            else {"type": "RuntimeError", "message": "Tests failed after all retry attempts"}
+            else {
+                "type": "RuntimeError",
+                "message": "Tests failed after all retry attempts",
+            }
         )
         failure_block = self._block(
             {

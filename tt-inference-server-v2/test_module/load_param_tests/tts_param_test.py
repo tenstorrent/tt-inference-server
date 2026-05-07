@@ -9,7 +9,7 @@ import time
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -178,7 +178,6 @@ class TTSParamTest(BaseTest):
             result["data"]
             for result in sorted(response_data_list, key=lambda x: x["index"])
         ]
-
 
 
 def run_tts_param(ctx: "MediaContext", targets: dict | None = None) -> Block:

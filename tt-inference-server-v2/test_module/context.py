@@ -62,7 +62,9 @@ def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     data = block.data
     if data.get("success"):
         runner_in_use = data.get("runner_in_use")
-        logger.info(f"✅ Health check passed after {data.get('attempts', 1)} attempt(s)")
+        logger.info(
+            f"✅ Health check passed after {data.get('attempts', 1)} attempt(s)"
+        )
         return (True, runner_in_use)
 
     logger.error("Health check failed after all retry attempts")

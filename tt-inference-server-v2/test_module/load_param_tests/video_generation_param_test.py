@@ -10,7 +10,7 @@ import time
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -276,8 +276,9 @@ class VideoGenerationParamTest(BaseTest):
         return default
 
 
-
-def run_video_generation_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_video_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`VideoGenerationParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {

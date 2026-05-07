@@ -11,7 +11,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -283,7 +283,6 @@ class CnnParamTest(BaseTest):
 
         # Return list of response data in the same order as input payloads
         return sorted(response_data_list, key=lambda x: x["index"])
-
 
 
 def run_cnn_param(ctx: "MediaContext", targets: dict | None = None) -> Block:

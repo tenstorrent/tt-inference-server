@@ -20,7 +20,7 @@ from typing import Optional
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -284,8 +284,9 @@ class ImageGenerationLoraLoadTest(BaseTest):
         }
 
 
-
-def run_image_generation_lora_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_image_generation_lora_load(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`ImageGenerationLoraLoadTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {

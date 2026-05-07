@@ -21,7 +21,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -194,7 +194,6 @@ class VideoGenerationI2VTest(BaseTest):
             out_path.write_bytes(await response.read())
         logger.info(f"Downloaded I2V mp4: {out_path}")
         return str(out_path)
-
 
 
 def run_video_generation_i2v(ctx: "MediaContext", targets: dict | None = None) -> Block:

@@ -77,8 +77,9 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
         return out
 
 
-
-def run_audio_transcription_load_dp2_chunk5(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_audio_transcription_load_dp2_chunk5(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`AudioTranscriptionLoadDp2Chunk5Test` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
@@ -88,4 +89,6 @@ def run_audio_transcription_load_dp2_chunk5(ctx: "MediaContext", targets: dict |
             "break_on_failure": False,
         }
     )
-    return AudioTranscriptionLoadDp2Chunk5Test(test_config, targets or {}, ctx=ctx).run_tests()
+    return AudioTranscriptionLoadDp2Chunk5Test(
+        test_config, targets or {}, ctx=ctx
+    ).run_tests()

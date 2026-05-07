@@ -12,7 +12,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -356,7 +356,6 @@ class TTSLoadTest(BaseTest):
                 return current
             current = current.parent
         return Path.cwd()
-
 
 
 def run_tts_load(ctx: "MediaContext", targets: dict | None = None) -> Block:

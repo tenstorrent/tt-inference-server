@@ -9,7 +9,7 @@ import time
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -287,8 +287,9 @@ class AudioTranscriptionParamTest(BaseTest):
         return sorted(response_data_list, key=lambda x: x["index"])
 
 
-
-def run_audio_transcription_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_audio_transcription_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`AudioTranscriptionParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {

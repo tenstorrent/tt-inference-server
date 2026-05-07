@@ -11,7 +11,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -208,8 +208,9 @@ class InpaintingGenerationParamTest(BaseTest):
         return [r["data"] for r in sorted_results]
 
 
-
-def run_inpainting_generation_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_inpainting_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`InpaintingGenerationParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
@@ -219,4 +220,6 @@ def run_inpainting_generation_param(ctx: "MediaContext", targets: dict | None = 
             "break_on_failure": False,
         }
     )
-    return InpaintingGenerationParamTest(test_config, targets or {}, ctx=ctx).run_tests()
+    return InpaintingGenerationParamTest(
+        test_config, targets or {}, ctx=ctx
+    ).run_tests()

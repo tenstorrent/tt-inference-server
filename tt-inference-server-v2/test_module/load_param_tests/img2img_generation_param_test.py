@@ -11,7 +11,7 @@ from pathlib import Path
 import aiohttp
 
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig, TestConfig
+from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -203,8 +203,9 @@ class Img2ImgGenerationParamTest(BaseTest):
         return [r["data"] for r in sorted_results]
 
 
-
-def run_img2img_generation_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+def run_img2img_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
     """Run :class:`Img2ImgGenerationParamTest` under ``ctx`` and return its Block."""
     test_config = TestConfig(
         {
