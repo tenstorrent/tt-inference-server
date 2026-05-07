@@ -1113,8 +1113,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
-        version="0.10.0",
-        tt_metal_commit="e0e0500",
+        version="0.12.1",
+        tt_metal_commit="805f43d",
         vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2043,8 +2043,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        version="0.9.0",
-        tt_metal_commit="25305db",
+        version="0.12.1",
+        tt_metal_commit="805f43d",
         vllm_commit="6e67d2d",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
