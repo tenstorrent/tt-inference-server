@@ -68,7 +68,7 @@ class ModelNames(Enum):
     SEGFORMER = "segformer"
     UNET = "unet"
     VIT = "vit"
-    QWEN_3_EMBEDDING_0_6B= "Qwen3-Embedding-0.6B"
+    QWEN_3_EMBEDDING_0_6B = "Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
@@ -106,6 +106,7 @@ class ModelRunners(Enum):
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
+    QWEN_EMBEDDING_0_6B = "qwen_embedding_0_6b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
@@ -163,6 +164,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.QWEN_EMBEDDING_0_6B,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
         ModelRunners.BGEM3,
