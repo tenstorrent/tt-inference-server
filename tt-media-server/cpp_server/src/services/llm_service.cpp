@@ -4,10 +4,8 @@
 #include "services/llm_service.hpp"
 
 #include <chrono>
-#include <condition_variable>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -391,69 +389,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-LLMResponse LLMService::processRequest(LLMRequest request) {
-  ZoneScopedN("LLMService::processRequest");
-
-  std::mutex mtx;
-  std::condition_variable cv;
-  bool done = false;
-
-  std::string accumulatedAnswer;
-  std::string accumulatedReasoning;
-  int completionTokens = 0;
-  std::string finishReason = "stop";
-
-  const int promptTokens =
-      std::holds_alternative<std::vector<int>>(request.prompt)
-          ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
-          : 0;
-  const uint32_t taskId = request.task_id;
-  const std::string model = request.model.value_or("default");
-
-  processStreamingRequest(
-      std::move(request), [&](LLMStreamChunk& chunk, bool isFinal) {
-        if (!chunk.choices.empty()) {
-          if (chunk.choices[0].reasoning.has_value()) {
-            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
-          }
-          accumulatedAnswer.append(chunk.choices[0].text);
-          completionTokens++;
-          if (chunk.choices[0].finish_reason.has_value()) {
-            finishReason = chunk.choices[0].finish_reason.value();
-          }
-        }
-        if (isFinal) {
-          std::lock_guard<std::mutex> lock(mtx);
-          done = true;
-          cv.notify_one();
-        }
-      });
-
-  std::unique_lock<std::mutex> lock(mtx);
-  cv.wait(lock, [&] { return done; });
-
-  LLMResponse response{taskId};
-  response.id = std::to_string(taskId);
-  response.model = model;
-  response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-  LLMChoice choice;
-  choice.text = std::move(accumulatedAnswer);
-  choice.reasoning =
-      accumulatedReasoning.empty()
-          ? std::nullopt
-          : std::optional<std::string>(std::move(accumulatedReasoning));
-  choice.index = 0;
-  choice.finish_reason = finishReason;
-  response.choices.push_back(std::move(choice));
-
-  response.usage = {
-      promptTokens, completionTokens, promptTokens + completionTokens,
-      std::nullopt, std::nullopt,     std::nullopt};
-
-  return response;
+LLMResponse LLMService::processRequest(LLMRequest /*request*/) {
+  throw std::runtime_error(
+      "LLMService::processRequest is not supported; use streaming interface");
 }
 
 void LLMService::processStreamingRequest(
@@ -605,8 +543,7 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
-  // Invoke the detached callback with isFinal=true so any blocking waiter
-  // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
+  // Invoke the detached callback with isFinal=true. For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {
