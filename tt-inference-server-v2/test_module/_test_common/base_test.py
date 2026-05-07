@@ -123,8 +123,21 @@ class BaseTest(ABC):
     def run_tests(self) -> Block:
         """Run the test with retry/log accounting and return a Block.
 
-        On success ``Block.data`` carries::
-            {"success": bool, "attempts": int, "logs": list, "result": <raw>}
+        On success, ``Block.data`` carries the envelope keys
+        (``success``, ``attempts``, ``logs``) merged with the test's own
+        result dict at the top level — so a result like
+        ``{"runner_in_use": "vllm", "ttft": 0.18}`` becomes
+        ``{"success": True, "attempts": 1, "logs": [...],
+        "runner_in_use": "vllm", "ttft": 0.18}``.
+
+        Spreading at the top level (rather than nesting under ``"result"``)
+        lets the report renderer recurse one more level into nested test
+        data — otherwise dict-of-dicts result fields get JSON-blobbed into
+        a single cell.
+
+        Non-dict results fall back to the legacy ``{"result": <raw>}`` shape.
+        Envelope keys take precedence on collision so meta-info stays
+        reliable.
 
         On failure (all retries exhausted)::
             {"success": False, "attempts": int, "logs": list,
@@ -164,14 +177,14 @@ class BaseTest(ABC):
                 else:
                     logger.error("Tests failed")
 
-                return self._block(
-                    {
-                        "success": success,
-                        "attempts": attempts_used,
-                        "logs": list(self.logs),
-                        "result": result,
-                    }
-                )
+                if isinstance(result, dict):
+                    data: Dict[str, Any] = {**result}
+                else:
+                    data = {"result": result}
+                data["success"] = success
+                data["attempts"] = attempts_used
+                data["logs"] = list(self.logs)
+                return self._block(data)
 
             except asyncio.TimeoutError as e:
                 last_exception = e

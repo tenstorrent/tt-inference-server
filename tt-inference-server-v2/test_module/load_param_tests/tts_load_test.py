@@ -11,7 +11,12 @@ from pathlib import Path
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,9 @@ headers = {
 
 
 class TTSLoadTest(BaseTest):
+    KIND = "tts_load"
+    TASK_TYPE = "text_to_speech"
+
     """Load test for Text-to-Speech (SpeechT5) functionality.
 
     Tests concurrent TTS generation requests using samples from LibriTTS-R dataset.
@@ -348,3 +356,17 @@ class TTSLoadTest(BaseTest):
                 return current
             current = current.parent
         return Path.cwd()
+
+
+
+def run_tts_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`TTSLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return TTSLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

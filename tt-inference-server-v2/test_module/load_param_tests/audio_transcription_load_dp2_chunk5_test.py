@@ -20,7 +20,20 @@ logger = logging.getLogger(__name__)
 CHUNK_DURATION_SECONDS = 5
 
 
+from typing import TYPE_CHECKING
+
+from report_module.schema import Block
+
+from .._test_common import TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
+
+
 class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
+    KIND = "audio_transcription_load_dp2_chunk5"
+    TASK_TYPE = "audio"
+
     """DP2 burst load, 60s audio, chunk 5s. Server: AUDIO_CHUNK_DURATION_SECONDS=5."""
 
     async def _run_specific_test_async(self):
@@ -62,3 +75,17 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
             f"{num_ok}/{num_concurrent} OK, max={requests_duration:.2f}s, avg={avg_duration:.2f}s"
         )
         return out
+
+
+
+def run_audio_transcription_load_dp2_chunk5(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`AudioTranscriptionLoadDp2Chunk5Test` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return AudioTranscriptionLoadDp2Chunk5Test(test_config, targets or {}, ctx=ctx).run_tests()

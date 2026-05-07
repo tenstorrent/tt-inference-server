@@ -10,7 +10,12 @@ from pathlib import Path
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,9 @@ def create_payload(image: str, guidance_scale: float = GUIDANCE_SCALE) -> dict:
 
 
 class Img2ImgGenerationParamTest(BaseTest):
+    KIND = "img2img_generation_param"
+    TASK_TYPE = "image"
+
     """Test image-to-image generation with parameter variations.
 
     This test verifies:
@@ -193,3 +201,17 @@ class Img2ImgGenerationParamTest(BaseTest):
         # Return data sorted by index
         sorted_results = sorted(results, key=lambda x: x["index"])
         return [r["data"] for r in sorted_results]
+
+
+
+def run_img2img_generation_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`Img2ImgGenerationParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return Img2ImgGenerationParamTest(test_config, targets or {}, ctx=ctx).run_tests()

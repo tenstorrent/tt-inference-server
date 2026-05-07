@@ -169,7 +169,7 @@ def _run_mobilenetv2_eval(ctx: MediaContext) -> dict:
     logger.info("Starting VisionEvalsTest")
     result = test.run_tests()
 
-    eval_results = result.data.get("result", {}).get("eval_results", {})
+    eval_results = result.data.get("eval_results", {})
     model_results = eval_results.get(CNN_MOBILENETV2_RUNNER, {})
     logger.info(f"VisionEvalsTest model results: {model_results}")
 

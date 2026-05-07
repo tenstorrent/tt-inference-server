@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -30,6 +35,9 @@ headers = {
 
 
 class ImageGenerationLoadTest(BaseTest):
+    KIND = "image_generation_load"
+    TASK_TYPE = "image"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/images/generations"
         logger.info(self.targets)
@@ -110,3 +118,17 @@ class ImageGenerationLoadTest(BaseTest):
                     total_duration = sum(results)
                     avg_duration = total_duration / batch_size
                     return requests_duration, avg_duration
+
+
+
+def run_image_generation_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`ImageGenerationLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return ImageGenerationLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

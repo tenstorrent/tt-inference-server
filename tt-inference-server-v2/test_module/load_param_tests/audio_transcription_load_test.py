@@ -9,7 +9,12 @@ from pathlib import Path
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Import the dataset from the Python file
 from .test_payloads.audio_payload_30s import dataset as dataset30s
@@ -33,6 +38,9 @@ headers = {
 
 
 class AudioTranscriptionLoadTest(BaseTest):
+    KIND = "audio_transcription_load"
+    TASK_TYPE = "audio"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
         logger.info(self.targets)
@@ -140,3 +148,17 @@ class AudioTranscriptionLoadTest(BaseTest):
         requests_duration = max(durations)
         avg_duration = sum(durations) / num_concurrent if num_concurrent else 0
         return requests_duration, avg_duration, num_ok
+
+
+
+def run_audio_transcription_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`AudioTranscriptionLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return AudioTranscriptionLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

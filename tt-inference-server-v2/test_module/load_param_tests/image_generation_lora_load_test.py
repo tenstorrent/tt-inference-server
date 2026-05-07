@@ -19,7 +19,12 @@ from typing import Optional
 
 import aiohttp
 
-from .._test_common import BaseTest, TestConfig
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 from .server_helper import DEFAULT_AUTHORIZATION
 
 logger = logging.getLogger(__name__)
@@ -62,6 +67,9 @@ class RequestResult:
 
 
 class ImageGenerationLoraLoadTest(BaseTest):
+    KIND = "image_generation_lora_load"
+    TASK_TYPE = "image"
+
     """Concurrent load test mixing baseline and LoRA image-generation requests."""
 
     def __init__(self, config: TestConfig, targets: dict, description: str = ""):
@@ -274,3 +282,17 @@ class ImageGenerationLoraLoadTest(BaseTest):
             "within_target": within_target,
             "lora_differentiation": differentiation_results,
         }
+
+
+
+def run_image_generation_lora_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`ImageGenerationLoraLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return ImageGenerationLoraLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -34,6 +39,9 @@ headers = {
 
 
 class EmbeddingParamTest(BaseTest):
+    KIND = "embedding_param"
+    TASK_TYPE = "embedding"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
         logger.info(f"Testing embedding parameters at {self.url}")
@@ -188,3 +196,17 @@ class EmbeddingParamTest(BaseTest):
 
         # Return list of response data in the same order as input payloads
         return sorted(response_data_list, key=lambda x: x["index"])
+
+
+
+def run_embedding_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`EmbeddingParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return EmbeddingParamTest(test_config, targets or {}, ctx=ctx).run_tests()

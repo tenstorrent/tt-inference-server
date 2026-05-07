@@ -10,7 +10,12 @@ from pathlib import Path
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +63,9 @@ headers = {
 
 
 class CnnParamTest(BaseTest):
+    KIND = "cnn_param"
+    TASK_TYPE = "cnn"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/cnn/search-image"
         logger.info(f"Testing CNN parameters at {self.url}")
@@ -275,3 +283,17 @@ class CnnParamTest(BaseTest):
 
         # Return list of response data in the same order as input payloads
         return sorted(response_data_list, key=lambda x: x["index"])
+
+
+
+def run_cnn_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`CnnParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return CnnParamTest(test_config, targets or {}, ctx=ctx).run_tests()
