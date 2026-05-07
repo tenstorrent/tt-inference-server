@@ -1921,11 +1921,12 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 58000000,
+                    "trace_region_size": 93102080,
                 },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         metadata={
             "meta-llama/Llama-3.3-70B-Instruct": {
                 "tool_call_parser_name": "llama3_json",
