@@ -121,12 +121,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
 
   /**
-   * Release in-flight session slot if a session is present. No-op otherwise.
-   */
-  void releaseSessionInFlight(
-      const std::optional<std::string>& sessionId) const;
-
-  /**
    * Translate a SessionError into a drogon HTTP error response.
    */
   static drogon::HttpResponsePtr makeSessionErrorResponse(

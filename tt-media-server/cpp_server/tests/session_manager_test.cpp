@@ -79,7 +79,7 @@ TEST(SessionManagerLifecycle, CloseIdleSession_ReturnsSuccess) {
 
   EXPECT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+  EXPECT_FALSE(manager.getSession(sessionId));
 }
 
 TEST(SessionManagerLifecycle, CloseNonExistentSession_ReturnsNotFound) {
@@ -97,7 +97,9 @@ TEST(SessionManagerLifecycle, AcquireInFlight_ReturnsPreAssignedSlotId) {
   ASSERT_FALSE(sessionId.empty());
 
   EXPECT_EQ(acquireInFlight(manager, sessionId), 7u);
-  manager.releaseInFlight(sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 }
 
 TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
@@ -110,13 +112,16 @@ TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
   acquireInFlight(manager, sessionId);
   EXPECT_THROW(acquireInFlight(manager, sessionId),
                tt::services::SessionInFlightException);
-  manager.releaseInFlight(sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 }
 
 TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
   // closeSession must remove the session and trigger dealloc immediately,
-  // even when the session is in-flight. releaseInFlight called afterwards
-  // should be a safe no-op.
+  // even when the session is in-flight. Session clearInFlight called afterwards
+  // would fail since session is already gone (we don't test that here since
+  // we can't get the session pointer after it's closed).
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -125,11 +130,7 @@ TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
 
   acquireInFlight(manager, sessionId);
   manager.closeSession(sessionId);
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());
-
-  // releaseInFlight called by the SSE writer after the request drains must
-  // not crash or assert, even though the session is already gone.
-  EXPECT_NO_THROW(manager.releaseInFlight(sessionId));
+  EXPECT_FALSE(manager.getSession(sessionId));
 }
 
 TEST(SessionManagerLifecycle, GetActiveSessionCount_ReflectsLifecycle) {
@@ -159,10 +160,14 @@ TEST(SessionManagerLifecycle, AcquireAfterRelease_Succeeds) {
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
-  manager.releaseInFlight(sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 
   EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
-  manager.releaseInFlight(sessionId);
+  session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 }
 
 TEST(SessionManagerLifecycle, GetSession_ReturnsCorrectData) {
@@ -173,7 +178,7 @@ TEST(SessionManagerLifecycle, GetSession_ReturnsCorrectData) {
   ASSERT_FALSE(sessionId.empty());
 
   auto session = manager.getSession(sessionId);
-  ASSERT_TRUE(session.has_value());
+  ASSERT_TRUE(session);
   EXPECT_EQ(session->getSessionId(), sessionId);
   EXPECT_EQ(session->getSlotId(), 12u);
 }
@@ -188,7 +193,7 @@ TEST(SessionManagerLifecycle, AssignSlotId_UpdatesSession) {
   EXPECT_TRUE(manager.assignSlotId(sessionId, 99u));
 
   auto session = manager.getSession(sessionId);
-  ASSERT_TRUE(session.has_value());
+  ASSERT_TRUE(session);
   EXPECT_EQ(session->getSlotId(), 99u);
 }
 
@@ -225,7 +230,7 @@ TEST(SessionManagerClose, CloseInFlight_RemovesSessionImmediately) {
 
   EXPECT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+  EXPECT_FALSE(manager.getSession(sessionId));
 }
 
 TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
@@ -244,7 +249,7 @@ TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
   manager.closeSession(sessionId);
 
   EXPECT_TRUE(cancelCalled.load());
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+  EXPECT_FALSE(manager.getSession(sessionId));
 }
 
 TEST(SessionManagerClose, CloseIdle_NoCancelFired) {
@@ -259,12 +264,14 @@ TEST(SessionManagerClose, CloseIdle_NoCancelFired) {
   // Close without ever calling acquireInFlight — no cancel should be needed.
   EXPECT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+  EXPECT_FALSE(manager.getSession(sessionId));
 }
 
 TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
-  // Simulates the SSE writer calling releaseInFlight after the session was
-  // already removed by a concurrent closeSession.
+  // Simulates the SSE writer attempting to clear in-flight after the session
+  // was already removed by a concurrent closeSession. Since the session is
+  // gone, we can't call clearInFlight on it (it would be a dangling pointer).
+  // This test now just verifies that closing an in-flight session removes it.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -274,13 +281,14 @@ TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
   acquireInFlight(manager, sessionId);
   manager.closeSession(sessionId);
 
-  EXPECT_NO_THROW(manager.releaseInFlight(sessionId));
+  // Session is gone - we can't call clearInFlight on it
+  EXPECT_FALSE(manager.getSession(sessionId));
   EXPECT_EQ(manager.getActiveSessionCount(), 0u);
 }
 
 TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
-  // If the request completes normally, releaseInFlight must clear the cancel
-  // function so a subsequent close does not fire stale cancel logic.
+  // If the request completes normally, session clearInFlight must clear the
+  // in-flight state so a subsequent close does not fire stale cancel logic.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
@@ -291,8 +299,10 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
   manager.acquireInFlight(sessionId,
                           [&cancelCalled]() { cancelCalled = true; });
 
-  manager.releaseInFlight(sessionId);  // normal completion clears cancel fn
-  manager.closeSession(sessionId);     // should not fire cancel
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();         // normal completion clears in-flight state
+  manager.closeSession(sessionId);  // should not fire cancel
 
   EXPECT_FALSE(cancelCalled.load());
 }
@@ -305,12 +315,16 @@ TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
-  manager.releaseInFlight(sessionId);
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 
   // Session still present and acquirable again.
-  EXPECT_TRUE(manager.getSession(sessionId).has_value());
+  EXPECT_TRUE(manager.getSession(sessionId));
   EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
-  manager.releaseInFlight(sessionId);
+  session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +391,10 @@ TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
     });
 
     EXPECT_EQ(acquireCount.load(), 1) << "iteration " << i;
-    manager.releaseInFlight(sessionId);
+    auto session = manager.getSession(sessionId);
+    if (session) {
+      session->clearInFlight();
+    }
   }
 }
 
@@ -401,7 +418,10 @@ TEST(SessionManagerConcurrency,
       try {
         manager.acquireInFlight(sessionId,
                                 [&cancelCount] { cancelCount.fetch_add(1); });
-        manager.releaseInFlight(sessionId);
+        auto session = manager.getSession(sessionId);
+        if (session) {
+          session->clearInFlight();
+        }
       } catch (const tt::services::SessionRateLimitException&) {
       }
     });

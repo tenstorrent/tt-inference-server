@@ -72,45 +72,6 @@ void LLMController::resolveSession(
           : "none",
       routingInfo.registrationHash);
 
-  // Layer 1: Legacy path — client-provided sessionId wins if it resolves.
-  if (req->sessionId.has_value()) {
-    const std::string sessionId = req->sessionId.value();
-    try {
-      auto slotId = sessionManager->acquireInFlight(sessionId, cancelFn);
-      if (slotId != domain::INVALID_SLOT_ID) {
-        req->slotId = slotId;
-        req->continuation = true;
-        req->prompt = routingInfo.deltaPrompt;
-        sessionManager->registerPrefixHash(sessionId,
-                                           routingInfo.registrationHash);
-        TT_LOG_INFO(
-            "[LLMController] Legacy session continue: sessionId={}, "
-            "slotId={}, registered under hash={}",
-            sessionId, slotId, routingInfo.registrationHash);
-        info.validSessionFound = true;
-        onResolved(info);
-        return;
-      }
-
-      TT_LOG_INFO(
-          "[LLMController] sessionId={} not found; falling back to prefix "
-          "cache",
-          sessionId);
-      req->sessionId.reset();
-    } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMController] Session {} is busy: {}", sessionId,
-                  e.what());
-      onError({SessionErrorType::RATE_LIMIT, e.what()});
-      return;
-    } catch (const std::exception& e) {
-      TT_LOG_WARN(
-          "[LLMController] Legacy session acquisition failed for {}: {}; "
-          "falling back to prefix cache",
-          sessionId, e.what());
-      req->sessionId.reset();
-    }
-  }
-
   // Layer 2: Prefix-cache routing. Requires a prior [assistant, user] pair
   if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
     try {
@@ -125,7 +86,7 @@ void LLMController::resolveSession(
             "slotId={}",
             *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
         req->slotId = acquired->slotId;
-        req->sessionId = acquired->sessionId;
+        req->session = sessionManager->getSession(acquired->sessionId);
         req->continuation = true;
         req->prompt = routingInfo.deltaPrompt;
         sessionManager->registerPrefixHash(acquired->sessionId,
@@ -154,6 +115,7 @@ void LLMController::resolveSession(
         req->sessionId = session.getSessionId();
         req->slotId =
             mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
+        req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(),
                                 routingInfo.registrationHash);
@@ -232,10 +194,9 @@ ResponseWriterParams LLMController::makeWriterParams(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
   params.promptTokenCount = request.prompt_tokens_count;
-  params.sessionId = request.sessionId;
+  params.session = request.session;
   params.taskId = request.task_id;
   params.service = service;
-  params.sessionManager = sessionManager;
   return params;
 }
 
@@ -281,12 +242,12 @@ void LLMController::handleStreaming(
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
@@ -302,12 +263,12 @@ void LLMController::handleStreaming(
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
                              makeStreamingCallback(writer));
         } catch (const services::QueueFullException& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
                               "internal_error"));
           return;
@@ -343,12 +304,12 @@ void LLMController::handleNonStreaming(
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          releaseSessionInFlight(reqPtr->sessionId);
+          reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
@@ -406,13 +367,6 @@ void LLMController::dispatchGeneration(
 
   throw std::runtime_error(
       "LLM Mode must be regular or decode only for chat completions");
-}
-
-void LLMController::releaseSessionInFlight(
-    const std::optional<std::string>& sessionId) const {
-  if (sessionId.has_value() && sessionManager) {
-    sessionManager->releaseInFlight(sessionId.value());
-  }
 }
 
 bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
