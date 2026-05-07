@@ -103,8 +103,6 @@ class LLMService
   mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
       toolChoiceMap;
   utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
-  utils::ConcurrentMap<uint32_t, StructuredOutputParseState>
-      structuredOutputStateMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
@@ -116,6 +114,7 @@ class LLMService
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;
+  std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
 }  // namespace tt::services
