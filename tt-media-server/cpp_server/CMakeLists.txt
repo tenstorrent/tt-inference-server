@@ -198,9 +198,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prometheus-cpp)
 
-# stb_image_write (single-header, public-domain). Used by the SDXL image
-# runner to encode (C,H,W) float tensors to PNG/JPEG bytes for OpenAI
-# compatible base64 image responses, replacing PIL/diffusers postprocess.
+# stb_image_write: in-memory PNG/JPEG encoder used by image_codec.
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
@@ -577,7 +575,6 @@ add_executable(llm_service_test
     src/utils/mapper.cpp
     src/utils/image_codec.cpp
     src/runners/embedding_runner.cpp
-    src/runners/image_runner.cpp
     src/runners/sdxl/sdxl_runner.cpp
     src/runners/sdxl/sdxl_python_helpers.cpp
     src/metrics/metrics.cpp
@@ -709,7 +706,6 @@ set(SOURCES
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
-    src/runners/image_runner.cpp
     src/runners/sdxl/sdxl_runner.cpp
     src/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
@@ -775,7 +771,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 
-# stb_image_write (header-only) for SDXL image post-processing
 target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 
 # Make the executable's runtime library lookup self-contained relative to

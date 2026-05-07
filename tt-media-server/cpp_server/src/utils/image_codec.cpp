@@ -4,7 +4,7 @@
 #include "utils/image_codec.hpp"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STBI_WRITE_NO_STDIO  // we only need the in-memory writer
+#define STBI_WRITE_NO_STDIO
 #include <stb_image_write.h>
 
 #include <cctype>
@@ -26,11 +26,7 @@ void stbWriteCallback(void* context, void* data, int size) {
 }
 
 uint8_t denormalize(float v) {
-  // diffusers postprocess: x = x / 2 + 0.5; clamp to [0,1]; quantize to uint8.
-  // If the runner already produced [0,1] values, x/2+0.5 still keeps them
-  // monotonic but compresses the dynamic range; SDXL paths feed [-1,1] into
-  // this function, matching the Python pipeline contract, so the tensor
-  // contract is fixed by `tt_sdxl.generate_images()`.
+  // diffusers postprocess for [-1, 1] inputs: x/2 + 0.5, clamp, quantize.
   float scaled = (v * 0.5F + 0.5F) * 255.0F;
   if (std::isnan(scaled)) scaled = 0.0F;
   if (scaled < 0.0F) scaled = 0.0F;
@@ -65,7 +61,7 @@ Format parseFormat(const std::string& s) {
   lower.reserve(s.size());
   for (char c : s) lower.push_back(static_cast<char>(std::tolower(c)));
   if (lower == "png") return Format::PNG;
-  return Format::JPEG;  // jpeg / jpg / anything else falls back to JPEG
+  return Format::JPEG;
 }
 
 std::string base64Encode(const uint8_t* data, size_t size) {

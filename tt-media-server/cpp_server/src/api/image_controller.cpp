@@ -24,10 +24,6 @@ tt::utils::ThreadPool& callbackPool() {
   return pool;
 }
 
-// Endpoint kinds drive request validation. The runtime keeps using a single
-// ImageGenerateRequest carrier struct for all three modes (mirroring the
-// Python class hierarchy that overloads ImageToImageRequest from
-// ImageGenerateRequest), but each kind has its own required-field set.
 enum class EndpointKind { GENERATE, IMAGE_TO_IMAGE, EDIT };
 
 void handle(const drogon::HttpRequestPtr& req,
@@ -76,10 +72,6 @@ void handle(const drogon::HttpRequestPtr& req,
   try {
     requestOpt = tt::domain::ImageGenerateRequest::fromJson(*json, taskId);
   } catch (const std::exception& e) {
-    // fromJson throws std::invalid_argument from json_field helpers, but
-    // any std::exception (including Json::Exception from a malformed
-    // value JsonCpp couldn't reject earlier) is a client-side payload bug
-    // and should map to 400, not 500.
     callback(errorResponse(drogon::k400BadRequest, e.what(),
                            "invalid_request_error"));
     return;

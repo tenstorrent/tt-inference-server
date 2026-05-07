@@ -16,12 +16,9 @@
 namespace tt::domain {
 
 /**
- * OpenAI-compatible image generation request. Mirrors the Python
- * ImageGenerateRequest in `domain/image_generate_request.py` and is also the
- * superset shape consumed by the SDXL family of runners.
- *
- * Per-modality validation (e.g. min num_inference_steps for Flux) lives
- * downstream where the active model_runner is known.
+ * OpenAI-compatible image generation request. Carries the superset of fields
+ * for text-to-image, image-to-image, and edit/inpaint endpoints; the
+ * controller enforces the presence of mode-specific fields.
  */
 struct ImageGenerateRequest : BaseRequest {
   using BaseRequest::BaseRequest;
@@ -31,21 +28,15 @@ struct ImageGenerateRequest : BaseRequest {
   std::optional<std::string> negative_prompt;
   std::optional<std::string> negative_prompt_2;
 
-  // Defaults below mirror Python's pydantic ImageGenerateRequest defaults
-  // (domain/image_generate_request.py). They MUST stay in lockstep —
-  // omitting them caused a real-world divergence where
-  // `tt_sdxl.set_inference_params(...)` saw guidance_rescale=None instead
-  // of 0.0, producing a different image with the same seed. They live on
-  // the member declarations (rather than fromJson) so any other code path
-  // that constructs an ImageGenerateRequest directly — e.g. the per-mode
-  // warmupRequest() in sdxl_runner.cpp — picks them up automatically.
+  // Defaults must mirror the Python pydantic ImageGenerateRequest; they live
+  // on the member declarations so direct constructions (e.g. warmupRequest)
+  // pick them up automatically.
   std::optional<int> num_inference_steps = 20;
   std::optional<float> guidance_scale = 5.0F;
   std::optional<float> guidance_rescale = 0.0F;
   std::optional<int> seed;
   std::optional<int> number_of_images = 1;
 
-  // SDXL crop conditioning: (top, left). Stored as int pair.
   std::optional<std::pair<int, int>> crop_coords_top_left =
       std::make_pair(0, 0);
 
@@ -55,28 +46,18 @@ struct ImageGenerateRequest : BaseRequest {
   std::optional<std::string> lora_path;
   std::optional<float> lora_scale = 0.5F;
 
-  // Output encoding hints.
   std::optional<std::string> image_return_format = "JPEG";  // "JPEG" or "PNG"
-  std::optional<int> image_quality = 85;                    // 50..100
+  std::optional<int> image_quality = 85;
 
-  // Image-to-image / edit fields. Mirror the Python ImageToImageRequest
-  // and ImageEditRequest schemas; carried on the base struct so the runner
-  // base class can stay agnostic to the exact request type. The controller
-  // is responsible for enforcing presence of `image` for img2img and
-  // `image` + `mask` for edit endpoints.
-  std::optional<std::string> image;  // base64-encoded input image
-  std::optional<std::string> mask;   // base64-encoded mask (edit/inpaint)
+  std::optional<std::string> image;
+  std::optional<std::string> mask;
   std::optional<float> strength;
 
   static ImageGenerateRequest fromJson(const Json::Value& json,
                                        uint32_t taskId) {
     ImageGenerateRequest req(taskId);
-    // `present` is true only when the field is set AND not explicitly null.
-    // Json::Value::asInt()/asFloat() silently coerce null -> 0 / 0.0, so
-    // gating on isMember alone would let `{"seed": null}` overwrite the
-    // pydantic default with 0. The json_field helpers below also reject
-    // type mismatches with std::invalid_argument so the controller can
-    // turn malformed payloads into 400s rather than 500s.
+    // Treat explicit nulls as absent so they don't clobber pydantic defaults
+    // via Json::Value::asInt()/asFloat() silent-zero coercion.
     auto present = [&](const char* key) {
       return json.isMember(key) && !json[key].isNull();
     };

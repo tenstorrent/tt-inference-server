@@ -28,8 +28,6 @@ using ::tt::utils::image_codec::encodeFloatChwToBase64;
 using ::tt::utils::image_codec::Format;
 using ::tt::utils::image_codec::parseFormat;
 
-// HF Hub repo IDs that mirror Python `SupportedModels`. Hardcoded here so the
-// C++ runner has no dependency on `config/constants.py`.
 constexpr const char* SDXL_BASE_REPO = "stabilityai/stable-diffusion-xl-base-1.0";
 constexpr const char* SDXL_INPAINTING_REPO =
     "diffusers/stable-diffusion-xl-1.0-inpainting-0.1";
@@ -37,11 +35,8 @@ constexpr const char* SDXL_INPAINTING_REPO =
 py::module_ importTorch() { return py::module_::import("torch"); }
 py::module_ importTtnn() { return py::module_::import("ttnn"); }
 
-/** Minimal port of `utils.runner_utils.setup_cpu_threading_limits` — only
- * sets OMP / MKL / TORCH thread counts if they aren't already set so that
- * the C++ server doesn't clobber values supplied in the user's environment.
- * Galaxy / Blackhole `TT_MESH_GRAPH_DESC_PATH` and grid overrides are left
- * to the operator since they're hardware-topology specific. */
+/** Set OMP / MKL / TORCH thread caps only if unset, to avoid overriding the
+ * operator's environment. */
 void setupRunnerEnvironment() {
   setenv("OMP_NUM_THREADS", "2", 0);
   setenv("MKL_NUM_THREADS", "2", 0);
@@ -60,12 +55,8 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
       is_tensor_parallel_(!config.device_mesh_shape.empty() &&
                           config.device_mesh_shape[0] > 1) {
   setupRunnerEnvironment();
-  // Track whether this constructor is the one that started the embedded
-  // interpreter. py::initialize_interpreter() leaves the GIL held by the
-  // calling thread, so on that path we have to drop it explicitly at the
-  // end of construction. If the interpreter was already running (another
-  // runner started it earlier in this process) the GIL isn't ours and the
-  // gil_scoped_acquire below handles release on its own.
+  // py::initialize_interpreter leaves the GIL held by this thread; on that
+  // path we drop it explicitly below so the worker thread pool can acquire.
   const bool ownsInterpreter = !Py_IsInitialized();
   if (ownsInterpreter) {
     py::initialize_interpreter();
@@ -73,8 +64,6 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
   try {
     py::gil_scoped_acquire acquire;
     PythonHelpers::ensureSysPath();
-    // Touch huggingface_hub eagerly so import errors surface during
-    // construction rather than mid-request.
     PythonHelpers::helpers();
     torch_module_ = importTorch();
     ttnn_module_ = importTtnn();
@@ -85,12 +74,6 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
         e.what());
   }
   if (ownsInterpreter) {
-    // Drop the initial GIL the embedded interpreter handed us so the
-    // controller thread pool and runWithTimeout's worker can re-acquire.
-    // Mirrors LlamaModelRunner. Done unconditionally on this path because
-    // py::initialize_interpreter() bumps the per-thread gilstate counter
-    // to 1, and gil_scoped_acquire above only nests on top (1→2→1), so
-    // the GIL is still held here.
     PyEval_SaveThread();
   }
   TT_LOG_INFO(
@@ -127,14 +110,9 @@ void SDXLBaseRunner::runWithTimeout(
     work();
     return;
   }
-  // Run on a detached std::thread, not std::async: a future returned by
-  // std::async(launch::async, ...) blocks in its destructor, which would
-  // defeat the timeout. The detached worker posts its result via a shared
-  // promise so the post is well-defined even after a timeout has thrown.
-  // The worker (and `work` closure) keep running until they finish — the
-  // runner is unhealthy after a timeout, mirroring Python's
-  // `asyncio.wait_for(asyncio.to_thread(...))` which also doesn't kill
-  // the underlying thread.
+  // Detached std::thread (not std::async) so wait_for can return on timeout
+  // without blocking on a future destructor. The worker keeps running until
+  // it finishes; after a timeout the runner is considered unhealthy.
   auto promise = std::make_shared<std::promise<void>>();
   auto fut = promise->get_future();
   std::thread worker([promise, work]() {
@@ -160,10 +138,7 @@ void SDXLBaseRunner::runWithTimeout(
 
 py::dict SDXLBaseRunner::pipelineDeviceParams() {
   py::dict params;
-  // SDXL_L1_SMALL_SIZE / SDXL_FABRIC_CONFIG are constants in
-  // models.demos.stable_diffusion_xl_base.tests.test_common — pulled here so
-  // we get whatever value tt-metal currently ships, without re-defining it
-  // ourselves.
+  // Pull constants from tt-metal so we track whatever it currently ships.
   py::module_ testCommon = py::module_::import(
       "models.demos.stable_diffusion_xl_base.tests.test_common");
   params["l1_small_size"] = testCommon.attr("SDXL_L1_SMALL_SIZE");
@@ -174,18 +149,14 @@ py::dict SDXLBaseRunner::pipelineDeviceParams() {
 }
 
 void SDXLBaseRunner::initDevice() {
-  // Equivalent to BaseMetalDeviceRunner.set_device + BaseSDXLRunner
-  // ._configure_fabric, but factored into one C++ function. Caller must hold
-  // the GIL.
   py::dict params = pipelineDeviceParams();
 
-  // Fabric config has to be set BEFORE open_mesh_device. Pop it out first.
+  // Fabric config must be set BEFORE open_mesh_device.
   py::object fabricConfig = py::none();
   if (params.contains("fabric_config")) {
     fabricConfig = params["fabric_config"];
     params.attr("__delitem__")("fabric_config");
   }
-  // Strip BaseMetalDeviceRunner-only dispatch keys (we never set them in C++).
   for (const char* key : {"dispatch_core_axis", "dispatch_core_type",
                           "fabric_tensix_config"}) {
     if (params.contains(key)) {
@@ -202,7 +173,6 @@ void SDXLBaseRunner::initDevice() {
     }
   }
 
-  // mesh_shape := MeshShape(*device_mesh_shape)
   py::list shapeList;
   for (size_t v : config_.device_mesh_shape) shapeList.append(v);
   py::object meshShape =
@@ -243,8 +213,6 @@ bool SDXLBaseRunner::warmup() {
 }
 
 void SDXLBaseRunner::runFullWarmup() {
-  // Step 1: open device + load diffusers pipeline. These are quick, so we
-  // run them on the calling thread under the GIL.
   {
     py::gil_scoped_acquire acquire;
     initDevice();
@@ -252,24 +220,17 @@ void SDXLBaseRunner::runFullWarmup() {
     TT_LOG_INFO("[SDXL] diffusers pipeline loaded");
   }
 
-  // Step 2: distribute weights to device. This is the big one — minutes,
-  // wrapped in a timeout exactly like Python's
-  // `asyncio.wait_for(to_thread(_distribute_block))`. The calling thread
-  // does NOT hold the GIL at this point (it was dropped at the end of
-  // step 1's gil_scoped_acquire); runWithTimeout's worker reacquires it
-  // inside the std::async closure.
+  // Distribute weights: minutes-long, GIL is released at this point and
+  // runWithTimeout's worker re-acquires it.
   runWithTimeout("distribute_block",
                   config_.weights_distribution_timeout_seconds,
                   [&]() { distributeBlock(); });
   TT_LOG_INFO("[SDXL] tt-metal pipeline constructed");
 
-  // Step 3: warmup inference. Hard-coded 1000s timeout, same as Python.
   runWithTimeout("warmup_inference", 1000, [&]() {
       auto warmupReq = warmupRequest();
-      // Reuse the regular run() inference body. We are inside the GIL
-      // (gil_scoped_acquire above in runWithTimeout), so call the inner
-      // path directly without re-acquiring.
-      // We re-implement the tail of run() inline to avoid double-acquire.
+      // Inlined run() body: the worker already holds the GIL, so calling
+      // run() directly would double-acquire.
       auto prompts = processPrompts({warmupReq});
       injectLoraTriggers(prompts.prompts, warmupReq.lora_path);
       applyRequestSettings(warmupReq);
@@ -309,8 +270,7 @@ SDXLBaseRunner::PromptPack SDXLBaseRunner::processPrompts(
   for (const auto& r : requests) pack.prompts.push_back(r.prompt);
   for (int i = 0; i < pack.needed_padding; ++i) pack.prompts.emplace_back("");
 
-  // Negative prompts: list aligned with prompts, but if all entries are null
-  // (Python's `[None] * N`) we collapse to None.
+  // Collapse to absent when all entries are null (Python's `[None] * N`).
   std::vector<std::string> negs;
   bool anyNeg = false;
   negs.reserve(static_cast<size_t>(batch_size_));
@@ -325,7 +285,6 @@ SDXLBaseRunner::PromptPack SDXLBaseRunner::processPrompts(
   for (int i = 0; i < pack.needed_padding; ++i) negs.emplace_back("");
   if (anyNeg) pack.negative_prompts = std::move(negs);
 
-  // prompts_2 / negative_prompt_2 follow the request[0] convention.
   if (!requests.empty() && requests[0].prompt_2.has_value()) {
     std::vector<std::string> p2{*requests[0].prompt_2};
     for (int i = 0; i < pack.needed_padding; ++i) p2.emplace_back("");
@@ -414,16 +373,12 @@ std::vector<std::string> SDXLBaseRunner::postProcessImages(
   std::vector<std::string> out;
   py::list imgs(imgsList);
   const int total = static_cast<int>(imgs.size());
-  // Mirror BaseSDXLRunner._ttnn_inference: drop the trailing padding so
-  // callers only see real outputs.
+  // Drop trailing padding entries inserted by processPrompts.
   const int realCount =
       std::max(0, static_cast<int>(batch_size_) - neededPadding);
   const int limit = std::min(total, realCount);
   for (int i = 0; i < limit; ++i) {
     py::object img = imgs[py::int_(i)];
-    // tt_sdxl.generate_images() returns torch tensors of shape (C, H, W) in
-    // [-1, 1] (post-VAE). Make contiguous, detach, cast to float32, fetch
-    // as numpy, then encode to PNG/JPEG via stb_image_write.
     py::object tensor = img;
     tensor = tensor.attr("detach")();
     tensor = tensor.attr("to")(py::arg("dtype") = torch_module_.attr("float32"));
@@ -512,9 +467,6 @@ void SDXLGenerateRunner::distributeBlock() {
   cfgKwargs["num_inference_steps"] = 2;
   cfgKwargs["guidance_scale"] = 5.0F;
   cfgKwargs["use_cfg_parallel"] = py::bool_(is_tensor_parallel_);
-  // tt-metal expects a (width, height) tuple, matching Python's
-  // settings.sdxl_image_resolution. The runtime asserts membership in
-  // SDXL_VALID_IMAGE_RESOLUTIONS.
   cfgKwargs["image_resolution"] =
       py::make_tuple(config_.image_width, config_.image_height);
   py::object cfg = cfgClass(**cfgKwargs);
@@ -527,7 +479,7 @@ void SDXLGenerateRunner::distributeBlock() {
 }
 
 void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
-  // tensors = (tt_image_latents, tt_prompt_embeds, tt_add_text_embeds)
+  // (tt_image_latents, tt_prompt_embeds, tt_add_text_embeds)
   py::list args;
   args.append(tensors[py::int_(0)]);
   args.append(tensors[py::int_(1)][py::int_(0)]);
@@ -553,9 +505,8 @@ py::object SDXLGenerateRunner::generateInputTensors(
 }
 
 domain::ImageGenerateRequest SDXLGenerateRunner::warmupRequest() const {
-  // Numeric SDXL defaults (steps, guidance, image_quality, crop coords, ...)
-  // are inherited from struct member init. Only overrides for warmup live
-  // here.
+  // Numeric SDXL defaults come from struct member init; only warmup
+  // overrides live here.
   domain::ImageGenerateRequest r(0);
   r.prompt = "Sunrise on a beach";
   r.prompt_2 = "Mountains in the background";
@@ -616,8 +567,6 @@ void SDXLImageToImageRunner::prepareInputTensorsForIteration(
 
 py::object SDXLImageToImageRunner::preprocessImage(
     const std::string& base64Image) const {
-  // base64 -> PIL via diffusers' processor preprocess. Done in Python via
-  // pybind so we don't have to redo image format autodetection in C++.
   py::module_ base64Mod = py::module_::import("base64");
   py::module_ ioMod = py::module_::import("io");
   py::module_ pil = py::module_::import("PIL.Image");
@@ -631,7 +580,6 @@ py::object SDXLImageToImageRunner::preprocessImage(
   py::object buf = ioMod.attr("BytesIO")(raw);
   py::object pilImg = pil.attr("open")(buf);
   py::object converted = pilImg.attr("convert")("RGB");
-  // resize to (W, H) — PIL is (width, height).
   converted = converted.attr("resize")(
       py::make_tuple(config_.image_width, config_.image_height),
       pil.attr("Resampling").attr("LANCZOS"));
@@ -684,8 +632,7 @@ void SDXLImageToImageRunner::applyModeSpecificSettings(
   if (request.strength.has_value()) {
     tt_sdxl_.attr("set_strength")(*request.strength);
   }
-  // aesthetic_score / negative_aesthetic_score are intentionally not wired —
-  // see TODO in tt-metal#31032 referenced from the Python runner.
+  // aesthetic_score / negative_aesthetic_score: not wired (tt-metal#31032).
 }
 
 // ---------------------------------------------------------------------------
@@ -739,11 +686,9 @@ py::object SDXLEditRunner::preprocessMask(const std::string& base64Mask) const {
   py::bytes raw = base64Mod.attr("b64decode")(clean).cast<py::bytes>();
   py::object buf = ioMod.attr("BytesIO")(raw);
   py::object pilImg = pil.attr("open")(buf);
-  // Inpainting masks are conventionally single-channel ("L"). Converting
-  // to "RGB" would force PIL's grayscale -> RGB broadcast and let
-  // non-grayscale RGB inputs (where R != G != B) silently produce an
-  // incoherent mask. mask_processor.preprocess handles channel expansion
-  // downstream, matching diffusers' StableDiffusionXLInpaintPipeline.
+  // Force single-channel "L"; non-grayscale RGB masks would otherwise
+  // silently produce incoherent results. mask_processor.preprocess expands
+  // channels downstream.
   py::object converted = pilImg.attr("convert")("L");
   converted = converted.attr("resize")(
       py::make_tuple(config_.image_width, config_.image_height),
@@ -778,7 +723,7 @@ py::object SDXLEditRunner::generateInputTensors(
     py::object addTextEmbeds) {
   py::object image = preprocessImage(request.image.value_or(""));
   py::object mask = preprocessMask(request.mask.value_or(""));
-  // masked_image = image * (mask < 0.5) — element-wise, broadcast-style.
+  // masked_image = image * (mask < 0.5)
   py::object cond = mask.attr("__lt__")(0.5F);
   py::object maskedImage = image.attr("__mul__")(cond);
 

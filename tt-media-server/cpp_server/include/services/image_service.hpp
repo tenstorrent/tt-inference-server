@@ -16,14 +16,8 @@ namespace tt::services {
 
 /**
  * In-process service for image generation / image-to-image / edit endpoints.
- *
- * Image generation is batch-1 / seconds-long, so unlike LLM/Embedding the
- * service does not spawn worker subprocesses; it owns one ImageRunner and
- * dispatches requests to it directly. The Drogon controller hands off to a
- * background thread pool so the I/O loop is never blocked.
- *
- * P2+ subclasses or alternative service impls can swap in a worker-process
- * model if Python interpreter isolation becomes necessary for SDXL.
+ * Owns one ImageRunner and dispatches requests synchronously; the Drogon
+ * controller offloads to a thread pool so the I/O loop is never blocked.
  */
 class ImageService
     : public BaseService<domain::ImageGenerateRequest, domain::ImageResponse> {

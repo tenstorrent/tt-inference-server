@@ -53,6 +53,8 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
       return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
+    case tt::config::ModelService::IMAGE:
+      return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;
 }
@@ -152,10 +154,8 @@ int main(int argc, char* argv[]) {
 
   tt::utils::service_factory::initializeServices();
 
-  // Heavy model warmup runs on a background thread so the Drogon listener can
-  // bind to the port immediately. /tt-liveness reports model_ready=false until
-  // this thread flips the service's ready flag, mirroring the Python lifespan
-  // behaviour where uvicorn answers liveness while the model is still loading.
+  // Run warmup on a background thread so the listener can bind immediately;
+  // /tt-liveness reports model_ready=false until the service flips its flag.
   std::thread warmupThread([] {
     try {
       tt::utils::service_factory::startConfiguredService();
@@ -300,9 +300,8 @@ int main(int argc, char* argv[]) {
   // Run the server
   drogon::app().run();
 
-  // Drain the background warmup thread before exiting. If warmup is still in
-  // flight we joined to keep destructors well-ordered (services depend on
-  // python interpreter / tt-metal devices that must outlive any warmup work).
+  // Drain the warmup thread before destructing services that own the Python
+  // interpreter / tt-metal devices it depends on.
   if (warmupThread.joinable()) warmupThread.join();
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.

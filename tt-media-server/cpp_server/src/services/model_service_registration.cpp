@@ -12,12 +12,15 @@
 #include "config/types.hpp"
 #include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runners/embedding_runner.hpp"
+#include "runners/image_runner.hpp"
 #include "runners/llm_runner.hpp"
+#include "runners/sdxl/sdxl_runner.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
+#include "utils/media_runner_registry.hpp"
 #include "utils/runner_registry.hpp"
 
 #ifdef ENABLE_BLAZE
@@ -111,14 +114,28 @@ void registerEmbedding() {
 }
 
 void registerImage() {
-  // Image service is in-process (batch-1, seconds per request, no worker
-  // subprocess). The service constructs its runner directly from
-  // imageEngineConfig() rather than going through RunnerRegistry, since the
-  // runner has a different lifecycle than the IRunner-based LLM/Embedding
-  // workers.
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, []() -> std::shared_ptr<IService> {
         return std::make_shared<ImageService>(config::imageEngineConfig());
+      });
+
+  auto& imageRunners =
+      utils::MediaRunnerRegistry<runners::ImageRunner,
+                                 config::ImageConfig>::instance();
+  imageRunners.registerRunner(
+      config::ModelRunnerType::TT_SDXL_GENERATE,
+      [](const config::ImageConfig& cfg) {
+        return std::make_unique<runners::sdxl::SDXLGenerateRunner>(cfg);
+      });
+  imageRunners.registerRunner(
+      config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE,
+      [](const config::ImageConfig& cfg) {
+        return std::make_unique<runners::sdxl::SDXLImageToImageRunner>(cfg);
+      });
+  imageRunners.registerRunner(
+      config::ModelRunnerType::TT_SDXL_EDIT,
+      [](const config::ImageConfig& cfg) {
+        return std::make_unique<runners::sdxl::SDXLEditRunner>(cfg);
       });
 
   auto& routes = api::RouteRegistry::instance();

@@ -13,17 +13,9 @@
 namespace tt::api {
 
 /**
- * OpenAI-compatible image generation API controller.
- *
- * Endpoints:
- * - POST /v1/images/generations    — text-to-image
- * - POST /v1/images/image-to-image — image-to-image
- * - POST /v1/images/edits          — edit/inpaint
- *
- * Which routes are *enabled* for a given runtime is governed by the active
- * MODEL_RUNNER_TYPE — only one image mode is active per runner, mirroring the
- * Python `open_ai_api/image.py` setup. Routes that aren't selected return 404
- * via the RouteRegistry allow-list, not via this controller.
+ * OpenAI-compatible image generation controller. Only one image mode is
+ * active per runner; routes for the other modes are filtered out by the
+ * RouteRegistry allow-list, not by this controller.
  */
 class ImageController : public drogon::HttpController<ImageController> {
  public:

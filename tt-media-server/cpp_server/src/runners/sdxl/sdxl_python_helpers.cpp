@@ -15,17 +15,11 @@ namespace tt::runners::sdxl {
 
 namespace {
 
-// Inline Python helper module. Replaces utils.lora_utils + a small bootstrap
-// shim. Self-contained: only pulls in stdlib + huggingface_hub (a public
-// package, *not* tt-media-server code).
+// Inline Python helper module. Replaces utils.lora_utils with a narrow,
+// self-contained reimplementation that only depends on stdlib +
+// huggingface_hub.
 constexpr const char* HELPER_SOURCE = R"PY(
-"""C++-owned SDXL helpers. Loaded once into sys.modules['_tt_cpp_sdxl_helpers'].
-
-Reimplements the parts of utils.lora_utils that the SDXL runners actually
-use, calling huggingface_hub directly. Kept intentionally narrow so we don't
-have to ship parser regexes etc. when the user is running the C++ server
-without tt-media-server.
-"""
+"""C++-owned SDXL helpers, loaded into sys.modules['_tt_cpp_sdxl_helpers']."""
 
 import re
 from functools import lru_cache

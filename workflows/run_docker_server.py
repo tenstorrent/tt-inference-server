@@ -43,28 +43,15 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-# ---------------------------------------------------------------------------
 # cpp_server backend opt-in for selected MEDIA models.
 #
-# The tt-media-server image bundles BOTH the Python uvicorn server and the C++
-# binary (cpp_server/build/tt_media_server_cpp). Its CMD picks one based on
-# SERVER_MODE: `cpp` -> run_cpp.sh, anything else -> run_uvicorn.sh.
+# The tt-media-server image bundles both the Python uvicorn server and the C++
+# binary; its CMD picks one based on SERVER_MODE (`cpp` -> run_cpp.sh).
 #
-# The Python media server resolves every per-model setting from MODEL+DEVICE
-# inside the container via tt-media-server/config/settings.py::Settings; the
-# C++ binary does not do that resolution and expects each setting as its own
-# env var. So for models routed to cpp_server, this module derives those env
-# vars on the host and injects them along with SERVER_MODE=cpp.
-#
-# A model is wired to cpp_server iff its model_name appears in
-# _CPP_SDXL_RUNNER_BY_MODEL_NAME below. Today this covers SDXL only; extend
-# the table to enable cpp_server for additional MEDIA models.
-#
-# IMPORTANT: the tables below mirror
-#     tt-media-server/config/constants.py::ModelConfigs[(TT_SDXL_*, *)]
-#     tt-media-server/config/constants.py::INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP
-# Keep these in sync until the C++ binary learns to derive them itself.
-# ---------------------------------------------------------------------------
+# Unlike the Python server, the C++ binary doesn't derive per-model settings
+# from MODEL+DEVICE — it expects each as its own env var. The tables below
+# mirror tt-media-server/config/constants.py::ModelConfigs and must be kept
+# in sync until the C++ binary learns to derive them itself.
 
 _SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
 
@@ -106,9 +93,7 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
     if defaults is None:
         raise ValueError(
             f"cpp_server backend requested for model={model_name!r} on "
-            f"device={device!r}, but no device defaults exist. Add an entry "
-            f"to _CPP_SDXL_DEVICE_DEFAULTS (mirror tt-media-server/config/"
-            f"constants.py::ModelConfigs[(TT_SDXL_*, {device.upper()})])."
+            f"device={device!r}, but no entry in _CPP_SDXL_DEVICE_DEFAULTS."
         )
     mesh_shape, is_galaxy, device_ids = defaults
 
@@ -267,8 +252,7 @@ def generate_docker_run_command(
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
     ):
-        # media/forge containers' run_uvicorn.sh defaults to listening on 8000;
-        # cpp_server's run_cpp.sh also binds 8000.
+        # media/forge containers (run_uvicorn.sh and cpp_server) bind 8000.
         docker_command += [
             "--publish",
             f"{runtime_config.bind_host}:{runtime_config.service_port}:8000",
