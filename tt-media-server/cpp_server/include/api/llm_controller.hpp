@@ -137,7 +137,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * ResponseWriter. Common to both streaming and non-streaming code paths.
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
-      std::shared_ptr<ResponseWriter> writer);
+      std::shared_ptr<ResponseWriter> writer, domain::Session* session);
 };
 
 }  // namespace tt::api
