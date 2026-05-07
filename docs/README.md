@@ -12,6 +12,8 @@ Directory of development docs for working on tt-inference-server.
 
 - [Development](development.md) - Git workflows, branching strategy, pre-commit setup, and release process
 - [Add Support for New Model](add_support_for_new_model.md) - Step-by-step guide for adding new model support, including evals and benchmark targets
+- [Add Support for New tt_symbiote Model](add_support_for_new_symbiote_model.md) - tt_symbiote-specific bring-up flow (5-file scaffolder + spec validator)
+- [tt_symbiote Integration Pipeline](tt_symbiote_integration_pipeline.md) - Engineering design for the tt_symbiote pipeline (SymbioteAdapterBase, validators, scaffolder)
 
 ## Testing & Debugging
 

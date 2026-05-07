@@ -252,6 +252,44 @@ tt_symbiote_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/tt_symbiote",
 )
+
+
+# tt_symbiote integration constants. See docs/tt_symbiote_integration_pipeline.md
+# for the design rationale. These are referenced by ModelSpecTemplate's
+# _validate_tt_symbiote() validator and by ModelSpec.__post_init__'s env-var
+# injection when impl.impl_id == "tt_symbiote".
+
+# Allowed values for the TT_SYMBIOTE_DISPATCHER env var. Anything outside this
+# set is rejected at module-import time before the server ever boots.
+_TT_SYMBIOTE_DISPATCHER_VALUES = frozenset({"DEFAULT", "DEBUG", "CPU", "TENSOR_OPS"})
+
+# Default env vars merged into every tt_symbiote spec at ModelSpec
+# construction time. Per-spec env_vars (template- or device-level) win over
+# these defaults. Set explicitly in a spec to make non-default behaviour
+# self-documenting (e.g. Ling raises TT_SYMBIOTE_PREFILL_WATCHDOG_SEC to 180
+# to cover cold-boot JIT compile).
+_TT_SYMBIOTE_DEFAULT_ENV_VARS = {
+    "TT_SYMBIOTE_DISPATCHER": "CPU",
+    "TT_SYMBIOTE_DIAG": "1",
+    "TT_SYMBIOTE_PREFILL_WATCHDOG_SEC": "60",
+    "TT_SYMBIOTE_DECODE_WATCHDOG_SEC": "30",
+    "TT_SYMBIOTE_SYNC_EVERY_N_DECODES": "32",
+    "DISABLE_METAL_OP_TIMEOUT": "1",
+}
+
+# Devices that span multiple chips. tt_symbiote requires an explicit
+# fabric_config on these (FABRIC_1D_RING is the recommended setting; see
+# CLAUDE.md anti-patterns). N150 is the only single-chip Wormhole.
+_TT_SYMBIOTE_MULTICHIP_DEVICES = frozenset({
+    DeviceTypes.N300,
+    DeviceTypes.N150X4,
+    DeviceTypes.T3K,
+    DeviceTypes.GALAXY,
+    DeviceTypes.GALAXY_T3K,
+    DeviceTypes.BLACKHOLE_GALAXY,
+    DeviceTypes.DUAL_GALAXY,
+    DeviceTypes.QUAD_GALAXY,
+})
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -408,9 +446,19 @@ class ModelSpec:
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
         }
-        # order of precedence: default, env_vars, device_model_spec
+        # tt_symbiote env-var defaults are merged BETWEEN the framework-level
+        # defaults above and the per-spec env_vars below. Per-spec values win
+        # so a template can opt out (e.g. Ling raises
+        # TT_SYMBIOTE_PREFILL_WATCHDOG_SEC to 180 to cover cold-boot JIT).
+        # See docs/tt_symbiote_integration_pipeline.md §4.2.
+        symbiote_defaults: Dict[str, str] = {}
+        if getattr(self.impl, "impl_id", None) == "tt_symbiote":
+            symbiote_defaults = dict(_TT_SYMBIOTE_DEFAULT_ENV_VARS)
+
+        # order of precedence: default, tt_symbiote_default, env_vars, device_model_spec
         merged_env_vars = {
             **default_env_vars,
+            **symbiote_defaults,
             **self.env_vars,
             **self.device_model_spec.env_vars,
         }
@@ -836,6 +884,83 @@ class ModelSpecTemplate:
                 f"These keys do not exist as weights: {invalid_keys}, valid weights: {self.weights}"
             )
 
+        # tt_symbiote-specific validation (see
+        # docs/tt_symbiote_integration_pipeline.md §4.1). Fires only when this
+        # template targets the tt_symbiote impl; tt_transformers and other
+        # impls are unaffected.
+        if self.impl is tt_symbiote_impl or getattr(self.impl, "impl_id", None) == "tt_symbiote":
+            self._validate_tt_symbiote()
+
+    def _validate_tt_symbiote(self):
+        """Fast-fail validation for tt_symbiote ModelSpecTemplate entries.
+
+        Catches the common bring-up mistakes (TRACED mode, missing warmup,
+        unknown dispatcher, MESH_DEVICE / device mismatch) at module-import
+        time so they surface as a clear AssertionError rather than as a
+        runtime hang inside vLLM. fabric_config is logged as a warning rather
+        than asserted: some symbiote models (Gemma-4) work with the multi-chip
+        default while others (Ling-mini-2.0) require FABRIC_1D_RING.
+        """
+        # Lazy import to avoid a circular dependency at module load time.
+        import logging
+
+        _tt_symbiote_logger = logging.getLogger("workflows.model_spec.tt_symbiote")
+
+        weight_label = self.weights[0] if self.weights else "<unknown>"
+
+        assert self.has_builtin_warmup is True, (
+            f"tt_symbiote template '{weight_label}' must set has_builtin_warmup=True; "
+            "the symbiote adapter drives warmup itself via warmup_model_prefill / "
+            "warmup_model_decode and the inference server must skip its background "
+            "trace-capture client."
+        )
+
+        for ds in self.device_model_specs:
+            ctx = f"tt_symbiote template '{weight_label}' device={ds.device.name}"
+            override = ds.override_tt_config or {}
+            env = ds.env_vars or {}
+
+            assert override.get("enable_model_warmup") is True, (
+                f"{ctx}: override_tt_config['enable_model_warmup'] must be True; "
+                "the runner skips the adapter's warmup hooks otherwise."
+            )
+
+            trace_mode = override.get("trace_mode", "none")
+            assert trace_mode == "none", (
+                f"{ctx}: override_tt_config['trace_mode'] must be 'none'; "
+                f"got {trace_mode!r}. tt_symbiote tracing currently does not "
+                "handle vLLM's variable prefill shapes (CLAUDE.md §11)."
+            )
+
+            dispatcher = env.get("TT_SYMBIOTE_DISPATCHER")
+            if dispatcher is not None:
+                assert dispatcher in _TT_SYMBIOTE_DISPATCHER_VALUES, (
+                    f"{ctx}: env_vars['TT_SYMBIOTE_DISPATCHER']={dispatcher!r} is not a "
+                    f"valid tt_symbiote dispatcher. Allowed: "
+                    f"{sorted(_TT_SYMBIOTE_DISPATCHER_VALUES)}."
+                )
+
+            mesh_device_env = env.get("MESH_DEVICE")
+            if mesh_device_env is not None:
+                expected_mesh_device = ds.device.to_mesh_device_str()
+                assert mesh_device_env == expected_mesh_device, (
+                    f"{ctx}: env_vars['MESH_DEVICE']={mesh_device_env!r} does not match "
+                    f"DeviceModelSpec.device={ds.device.name} (expected MESH_DEVICE="
+                    f"{expected_mesh_device!r})."
+                )
+
+            if ds.device in _TT_SYMBIOTE_MULTICHIP_DEVICES:
+                fabric_config = override.get("fabric_config")
+                if fabric_config is None:
+                    _tt_symbiote_logger.warning(
+                        "%s: override_tt_config['fabric_config'] is unset on a "
+                        "multi-chip device; falling back to the tt-metal default. "
+                        "Consider setting 'FABRIC_1D_RING' explicitly: some symbiote "
+                        "attention kernels deadlock on the linear FABRIC_1D default "
+                        "(see Ling-mini-2.0 bring-up notes).",
+                        ctx,
+                    )
+
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
         # Note: ONLY run this in __post_init__
@@ -1107,7 +1232,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["google/gemma-4-31B"],
         impl=tt_symbiote_impl,
-        tt_metal_commit="91e9ce5",
+        tt_metal_commit="d27b37c",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1203,7 +1328,7 @@ llm_templates = [
         # Pinned to the heads of branch adam/tt_symbiote_ling on both
         # repos at the time this spec was added; bump after future
         # commits to track a known-good baseline.
-        tt_metal_commit="489d8b0",
+        tt_metal_commit="d27b37c",
         vllm_commit="6f6d817",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
