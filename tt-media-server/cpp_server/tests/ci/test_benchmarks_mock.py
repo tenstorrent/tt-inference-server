@@ -38,7 +38,9 @@ def mock_server(cpp_server_binary, cpp_server_dir):
 
     from _server import start_server, stop_server, wait_for_ready
 
-    artifacts_dir = Path(__file__).resolve().parent / "_artifacts" / "test_benchmarks_mock"
+    artifacts_dir = (
+        Path(__file__).resolve().parent / "_artifacts" / "test_benchmarks_mock"
+    )
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     handle = start_server(
@@ -84,7 +86,9 @@ def test_non_streaming_smoke(mock_server, api_key):
     def _send():
         return requests.post(url, json=payload, headers=headers, timeout=30)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=NON_STREAMING_CONCURRENCY) as pool:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=NON_STREAMING_CONCURRENCY
+    ) as pool:
         responses = list(pool.map(lambda _: _send(), range(NON_STREAMING_CONCURRENCY)))
 
     for i, response in enumerate(responses):
@@ -109,7 +113,9 @@ def test_non_streaming_smoke(mock_server, api_key):
         assert usage.get("completion_tokens", 0) > 0, usage
 
 
-def test_bench_mock_structured_output_json_object(mock_server, vllm_bench, assert_thresholds):
+def test_bench_mock_structured_output_json_object(
+    mock_server, vllm_bench, assert_thresholds
+):
     result = vllm_bench(
         label="C++ Server vLLM Bench (structured output - json_object)",
         base_url=mock_server.base_url,
@@ -120,7 +126,9 @@ def test_bench_mock_structured_output_json_object(mock_server, vllm_bench, asser
     assert_thresholds(result, mean_tpot_ms_max=5, mean_ttft_ms_max=150)
 
 
-def test_bench_mock_structured_output_json_schema(mock_server, vllm_bench, assert_thresholds):
+def test_bench_mock_structured_output_json_schema(
+    mock_server, vllm_bench, assert_thresholds
+):
     result = vllm_bench(
         label="C++ Server vLLM Bench (structured output - json_schema)",
         base_url=mock_server.base_url,

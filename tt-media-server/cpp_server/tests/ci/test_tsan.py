@@ -105,7 +105,9 @@ def test_no_data_races_after_ctest_and_workload(
         "tsan_server",
         port=8001,
         cwd=build_dir,
-        env={"TSAN_OPTIONS": _tsan_options(suppressions, log_path=str(tsan_log_prefix))},
+        env={
+            "TSAN_OPTIONS": _tsan_options(suppressions, log_path=str(tsan_log_prefix))
+        },
         timeout=180.0,
     )
 

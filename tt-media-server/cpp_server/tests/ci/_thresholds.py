@@ -28,7 +28,9 @@ def assert_bench_thresholds(
     """
     label = label or result.label
 
-    write_step_summary(_summary_section(label, result, mean_tpot_ms_max, mean_ttft_ms_max))
+    write_step_summary(
+        _summary_section(label, result, mean_tpot_ms_max, mean_ttft_ms_max)
+    )
 
     failures: list[str] = []
     if result.failed > 0:

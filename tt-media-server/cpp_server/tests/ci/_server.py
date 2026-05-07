@@ -228,5 +228,7 @@ def stop_process(
         pass
 
 
-def stop_server(handle: ServerHandle, *, timeout: float = DEFAULT_STOP_TIMEOUT_SEC) -> None:
+def stop_server(
+    handle: ServerHandle, *, timeout: float = DEFAULT_STOP_TIMEOUT_SEC
+) -> None:
     stop_process(handle.process, name=handle.name, timeout=timeout)

@@ -23,7 +23,6 @@ teardown is automatic. Round 2 also cleans `/dev/shm/tt_ipc_*` before and after.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
@@ -90,7 +89,9 @@ def test_split_with_mock_prefill_runner(
 ):
     """Round 2: split with mock_prefill_runner.py acting as rank-0 coordinator."""
     runner_script = cpp_server_dir / "src" / "runners" / "mock_prefill_runner.py"
-    assert runner_script.exists(), f"mock_prefill_runner.py not found at {runner_script}"
+    assert runner_script.exists(), (
+        f"mock_prefill_runner.py not found at {runner_script}"
+    )
 
     python_runner(
         "mock_prefill_runner",
@@ -137,9 +138,9 @@ def test_split_with_mock_prefill_runner(
 
     prefill_status = liveness(prefill)
     decode_status = liveness(decode)
-    assert prefill_status and prefill_status.get("socket_status") == "client:connected", (
-        f"prefill liveness: {prefill_status}"
-    )
+    assert (
+        prefill_status and prefill_status.get("socket_status") == "client:connected"
+    ), f"prefill liveness: {prefill_status}"
     assert decode_status and decode_status.get("socket_status") == "server:connected", (
         f"decode liveness: {decode_status}"
     )
