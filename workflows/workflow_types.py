@@ -322,6 +322,12 @@ class InferenceEngine(Enum):
     VLLM = "vLLM"
     MEDIA = "media"
     FORGE = "forge"
+    # tt-media-server image with the C++ backend (cpp_server) selected via
+    # SERVER_MODE=cpp inside the container. Same docker image as MEDIA, but the
+    # docker run command injects the C++ env vars (MODEL_SERVICE,
+    # MODEL_RUNNER_TYPE, DEVICE_MESH_SHAPE, IS_GALAXY, DEVICE_IDS, ...) instead
+    # of the Python-only MODEL+DEVICE pair.
+    MEDIA_CPP = "media_cpp"
 
     @property
     def display_name(self) -> str:
@@ -329,6 +335,7 @@ class InferenceEngine(Enum):
             InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
             InferenceEngine.MEDIA: "tt-media-server",
             InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+            InferenceEngine.MEDIA_CPP: "tt-media-server (C++ backend)",
         }[self]
 
     @classmethod

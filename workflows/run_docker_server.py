@@ -43,8 +43,92 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+# ---------------------------------------------------------------------------
+# C++ media server (cpp_server) env-var derivation.
+#
+# The Python media server resolves all per-model config from MODEL+DEVICE
+# inside the container via tt-media-server/config/settings.py::Settings. The
+# C++ binary does not do that resolution; it expects each individual env var
+# to already be set when it starts. So when InferenceEngine.MEDIA_CPP is
+# selected, this module derives the C++ env vars from the model spec and
+# injects them into `docker run` along with SERVER_MODE=cpp (which the
+# Dockerfile's CMD uses to pick run_cpp.sh over run_uvicorn.sh).
+#
+# IMPORTANT: the tables below mirror
+#     tt-media-server/config/constants.py::ModelConfigs[(TT_SDXL_*, *)]
+#     tt-media-server/config/constants.py::INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP
+# That file is the source of truth. Keep these tables in sync until the C++
+# binary learns to derive them from MODEL+DEVICE itself.
+# ---------------------------------------------------------------------------
+
+_SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
+
+_CPP_SDXL_RUNNER_BY_MODEL_NAME = {
+    "stable-diffusion-xl-base-1.0": "tt_sdxl_generate",
+    "stable-diffusion-xl-base-1.0-img-2-img": "tt_sdxl_image_to_image",
+    "stable-diffusion-xl-1.0-inpainting-0.1": "tt_sdxl_edit",
+}
+
+# device.name.lower() -> (device_mesh_shape_csv, is_galaxy, device_ids)
+_CPP_SDXL_DEVICE_DEFAULTS = {
+    "n150": ("1,1", False, "(0)"),
+    "n300": ("2,1", False, "(0)"),
+    "t3k": ("2,1", False, "(0),(1),(2),(3)"),
+    "galaxy": ("1,1", True, _SDXL_DEVICE_IDS_32),
+    "p150": ("1,1", False, "(0)"),
+    "p300": ("2,1", False, "(0,1)"),
+    "p300x2": ("2,1", False, "(0,1),(2,3)"),
+    "p150x4": ("2,1", False, "(0,1),(2,3)"),
+    "p150x8": ("2,1", False, "(0,1),(2,3),(4,5),(6,7)"),
+    "blackhole_galaxy": ("1,1", False, _SDXL_DEVICE_IDS_32),
+}
+
+
+def _get_cpp_media_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server binary needs at startup."""
+    device = model_spec.device_type.name.lower()
+    model_name = model_spec.model_name
+    runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME.get(model_name)
+    if runner is None:
+        raise ValueError(
+            f"InferenceEngine.MEDIA_CPP requested for model={model_name!r}, "
+            f"but no cpp_server runner mapping exists. Add an entry to "
+            f"_CPP_SDXL_RUNNER_BY_MODEL_NAME (mirror tt-media-server/config/"
+            f"constants.py::INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP)."
+        )
+    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(device)
+    if defaults is None:
+        raise ValueError(
+            f"InferenceEngine.MEDIA_CPP requested for device={device!r}, but "
+            f"no cpp_server device defaults exist. Add an entry to "
+            f"_CPP_SDXL_DEVICE_DEFAULTS (mirror tt-media-server/config/"
+            f"constants.py::ModelConfigs[(TT_SDXL_*, {device.upper()})])."
+        )
+    mesh_shape, is_galaxy, device_ids = defaults
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "image",
+        "MODEL_RUNNER_TYPE": runner,
+        "DEVICE_MESH_SHAPE": mesh_shape,
+        "IS_GALAXY": "true" if is_galaxy else "false",
+        "DEVICE_IDS": device_ids,
+        "MAX_BATCH_SIZE": "1",
+        "SDXL_IMAGE_RESOLUTION": "1024x1024",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=image, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE_MESH_SHAPE={mesh_shape}, "
+        f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
+    if model_spec.inference_engine == InferenceEngine.MEDIA_CPP.value:
+        return _get_cpp_media_server_docker_env_vars(model_spec)
+
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
@@ -176,8 +260,10 @@ def generate_docker_run_command(
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
+        InferenceEngine.MEDIA_CPP.value,
     ):
-        # media/forge containers' run_uvicorn.sh defaults to listening on 8000
+        # media/forge containers' run_uvicorn.sh defaults to listening on 8000;
+        # cpp_server's run_cpp.sh also binds 8000.
         docker_command += [
             "--publish",
             f"{runtime_config.bind_host}:{runtime_config.service_port}:8000",
@@ -227,14 +313,20 @@ def generate_docker_run_command(
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
 
-    if (
-        model_spec.inference_engine == InferenceEngine.FORGE.value
-        or model_spec.inference_engine == InferenceEngine.MEDIA.value
+    if model_spec.inference_engine in (
+        InferenceEngine.FORGE.value,
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.MEDIA_CPP.value,
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
         if api_key:
             docker_env_vars["API_KEY"] = api_key
+        # cpp_server reads OPENAI_API_KEY (not API_KEY) for bearer auth.
+        if model_spec.inference_engine == InferenceEngine.MEDIA_CPP.value:
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key:
+                docker_env_vars["OPENAI_API_KEY"] = openai_api_key
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:

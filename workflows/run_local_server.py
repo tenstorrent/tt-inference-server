@@ -196,10 +196,16 @@ def build_local_server_env(
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
+        InferenceEngine.MEDIA_CPP.value,
     ):
         api_key = os.getenv("API_KEY")
         if api_key:
             env["API_KEY"] = api_key
+        # cpp_server reads OPENAI_API_KEY (not API_KEY) for bearer auth.
+        if model_spec.inference_engine == InferenceEngine.MEDIA_CPP.value:
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key:
+                env["OPENAI_API_KEY"] = openai_api_key
 
     return env
 

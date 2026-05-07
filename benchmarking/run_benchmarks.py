@@ -274,9 +274,10 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    if (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        or model_spec.inference_engine == InferenceEngine.FORGE.value
+    if model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+        InferenceEngine.MEDIA_CPP.value,
     ):
         os.environ["OPENAI_API_KEY"] = "your-secret-key"
         os.environ["VLLM_API_KEY"] = "your-secret-key"
