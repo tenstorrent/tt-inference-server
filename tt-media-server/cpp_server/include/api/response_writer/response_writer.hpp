@@ -28,7 +28,7 @@ struct ResponseWriterParams {
   int promptTokenCount;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<tt::domain::Session> session;
+  tt::domain::Session* session = nullptr;
 };
 
 /**

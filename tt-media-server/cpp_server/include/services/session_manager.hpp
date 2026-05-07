@@ -72,8 +72,7 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
-  std::shared_ptr<domain::Session> getSession(
-      const std::string& sessionId) const;
+  domain::Session* getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
   /**
@@ -108,13 +107,6 @@ class SessionManager {
   void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
  private:
-  // cancelFn is null when idle, set atomically with in-flight state by
-  // acquireInFlight.
-  struct ManagedSession {
-    domain::Session session;
-    std::function<void()> cancelFn;
-  };
-
   struct PendingAllocation {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
@@ -144,7 +136,7 @@ class SessionManager {
   void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
-  mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
+  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
   // Secondary index: prefix hash -> sessionIds registered under that hash.
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;

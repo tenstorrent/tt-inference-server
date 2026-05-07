@@ -108,30 +108,30 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  auto ms = sessions.take(sessionId);
-  if (!ms.has_value()) {
+  auto session = sessions.take(sessionId);
+  if (!session.has_value()) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
     return CloseSessionResult::NOT_FOUND;
   }
 
   // Remove this session from the prefix index so future lookups miss.
-  removeFromPrefixIndex(sessionId, ms->session.getHash());
+  removeFromPrefixIndex(sessionId, session->getHash());
 
-  if (ms->cancelFn) {
-    ms->cancelFn();
+  auto cancelFn = session->takeCancelFn();
+  if (cancelFn) {
+    cancelFn();
     TT_LOG_INFO("[SessionManager] Cancelled in-flight request for session: {}",
                 sessionId);
   }
 
-  finalizeSessionClose(sessionId, ms->session);
+  finalizeSessionClose(sessionId, *session);
   return CloseSessionResult::SUCCESS;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
                                   uint32_t slotId) {
-  bool found = sessions.modify(sessionId, [slotId](ManagedSession& ms) {
-    ms.session.setSlotId(slotId);
-  });
+  bool found = sessions.modify(
+      sessionId, [slotId](domain::Session& s) { s.setSlotId(slotId); });
 
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for slot assignment: {}",
@@ -147,9 +147,9 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
   uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId, [&result](ManagedSession& ms) {
-    ms.session.updateActivityTime();
-    result = ms.session.getSlotId();
+  sessions.modify(sessionId, [&result](domain::Session& s) {
+    s.updateActivityTime();
+    result = s.getSlotId();
   });
   TT_LOG_DEBUG(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
@@ -162,24 +162,15 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   uint32_t result = domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
 
-  // Capture sessionId and this for the callback
-  auto manager = this;
-  auto sessionIdCopy = sessionId;
-
   bool found = sessions.modify(
-      sessionId, [&result, &wasInFlight, manager, sessionIdCopy,
-                  cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
-        wasInFlight = ms.session.isInFlight();
+      sessionId, [&result, &wasInFlight,
+                  cancelFn = std::move(cancelFn)](domain::Session& s) mutable {
+        wasInFlight = s.isInFlight();
         if (wasInFlight) return;
-        ms.session.updateActivityTime();
-        ms.session.markInFlight();
-        ms.cancelFn = std::move(cancelFn);
-        // Set callback to clear cancelFn when clearInFlight is called
-        ms.session.setOnClearInFlightCallback([manager, sessionIdCopy]() {
-          manager->sessions.modify(
-              sessionIdCopy, [](ManagedSession& ms) { ms.cancelFn = nullptr; });
-        });
-        result = ms.session.getSlotId();
+        s.updateActivityTime();
+        s.markInFlight();
+        s.setCancelFn(std::move(cancelFn));
+        result = s.getSlotId();
       });
 
   if (!found) {
@@ -201,14 +192,8 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   return result;
 }
 
-std::shared_ptr<domain::Session> SessionManager::getSession(
-    const std::string& sessionId) const {
-  auto* ms = const_cast<SessionManager*>(this)->sessions.getPtr(sessionId);
-  if (!ms) return nullptr;
-
-  // Return shared_ptr pointing to the actual session in the map
-  return std::shared_ptr<domain::Session>(&ms->session,
-                                          [](domain::Session*) {});
+domain::Session* SessionManager::getSession(const std::string& sessionId) {
+  return sessions.getPtr(sessionId);
 }
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
@@ -241,9 +226,8 @@ void SessionManager::evictOldSessions() {
   std::vector<Entry> candidates;
 
   sessions.forEach(
-      [&candidates](const std::string& id, const ManagedSession& ms) {
-        if (ms.session.isIdle())
-          candidates.emplace_back(ms.session.getLastActivityTime(), id);
+      [&candidates](const std::string& id, const domain::Session& s) {
+        if (s.isIdle()) candidates.emplace_back(s.getLastActivityTime(), id);
       });
 
   size_t n = std::min(evictionCount, candidates.size());
@@ -258,9 +242,8 @@ void SessionManager::evictOldSessions() {
   for (const auto& [_, sessionId] : candidates) {
     // A concurrent acquireInFlight call may mark the session in-flight
     // between the forEach above and here; takeIf skips it atomically.
-    auto ms = sessions.takeIf(sessionId, [](const ManagedSession& ms) {
-      return ms.session.isIdle();
-    });
+    auto ms = sessions.takeIf(
+        sessionId, [](const domain::Session& s) { return s.isIdle(); });
     if (!ms.has_value()) {
       TT_LOG_DEBUG(
           "[SessionManager] evictOldSessions: sessionId={} no longer idle, "
@@ -270,9 +253,9 @@ void SessionManager::evictOldSessions() {
     }
     TT_LOG_DEBUG(
         "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
-        sessionId, ms->session.getSlotId());
-    removeFromPrefixIndex(sessionId, ms->session.getHash());
-    finalizeSessionClose(sessionId, ms->session);
+        sessionId, ms->getSlotId());
+    removeFromPrefixIndex(sessionId, ms->getHash());
+    finalizeSessionClose(sessionId, *ms);
     ++evicted;
   }
 
@@ -319,7 +302,7 @@ void SessionManager::createSession(
   // insert the session synchronously.
   if (slotId.has_value()) {
     domain::Session session(slotId.value(), initialHash);
-    sessions.insert(session.getSessionId(), ManagedSession{session, {}});
+    sessions.insert(session.getSessionId(), session);
     if (initialHash != 0) {
       addToPrefixIndex(session.getSessionId(), initialHash);
     }
@@ -470,7 +453,7 @@ void SessionManager::handleMemoryResult(
     pendingAllocation.session.setSlotId(result.slotIds.front());
     pendingAllocation.session.markPrepared();
     sessions.insert(pendingAllocation.session.getSessionId(),
-                    ManagedSession{pendingAllocation.session, {}});
+                    pendingAllocation.session);
     if (pendingAllocation.session.getHash() != 0) {
       addToPrefixIndex(pendingAllocation.session.getSessionId(),
                        pendingAllocation.session.getHash());
@@ -546,22 +529,19 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
     bool busy = false;
     bool stale = false;
 
-    bool found = sessions.modify(sessionId, [&](ManagedSession& ms) {
-      // The session's stored hash is the source of truth; a mismatch means
-      // this index entry is stale (e.g. torn update from a concurrent
-      // registerPrefixHash). Treat as stale and clean up.
-      if (ms.session.getHash() != prefixHash) {
+    bool found = sessions.modify(sessionId, [&](domain::Session& s) {
+      if (s.getHash() != prefixHash) {
         stale = true;
         return;
       }
-      if (ms.session.isInFlight()) {
+      if (s.isInFlight()) {
         busy = true;
         return;
       }
-      ms.session.updateActivityTime();
-      ms.session.markInFlight();
-      ms.cancelFn = cancelFn;  // copied so we can retry other candidates
-      acquired = AcquiredSession{sessionId, ms.session.getSlotId()};
+      s.updateActivityTime();
+      s.markInFlight();
+      s.setCancelFn(cancelFn);  // copied so we can retry other candidates
+      acquired = AcquiredSession{sessionId, s.getSlotId()};
     });
 
     if (!found || stale) {
@@ -599,9 +579,9 @@ void SessionManager::registerPrefixHash(const std::string& sessionId,
   // Update session's hash field and pick up the old hash (for index update).
   uint64_t oldHash = 0;
   bool sessionFound =
-      sessions.modify(sessionId, [&oldHash, prefixHash](ManagedSession& ms) {
-        oldHash = ms.session.getHash();
-        ms.session.setHash(prefixHash);
+      sessions.modify(sessionId, [&oldHash, prefixHash](domain::Session& s) {
+        oldHash = s.getHash();
+        s.setHash(prefixHash);
       });
 
   if (!sessionFound) {

@@ -142,7 +142,8 @@ struct LLMRequest : BaseRequest {
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
-  std::shared_ptr<tt::domain::Session> session;  // Shared reference to session
+  tt::domain::Session* session =
+      nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
 

@@ -113,9 +113,9 @@ void LLMController::resolveSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
        mgr = sessionManager](const domain::Session& session) mutable {
         req->sessionId = session.getSessionId();
-        req->session = std::make_shared<domain::Session>(session);
         req->slotId =
             mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
+        req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(),
                                 routingInfo.registrationHash);
