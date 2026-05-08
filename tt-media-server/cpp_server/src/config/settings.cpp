@@ -9,8 +9,11 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "config/defaults.hpp"
@@ -250,50 +253,29 @@ LLMConfig llmEngineConfig() {
 
 namespace {
 
-/** Parse "WxH" (case-insensitive 'x'). Returns false if the string is malformed
- * or either dimension is non-positive. */
-bool parseResolution(const std::string& s, size_t& width, size_t& height) {
-  size_t xPos = s.find_first_of("xX");
-  if (xPos == std::string::npos || xPos == 0 || xPos + 1 >= s.size()) {
-    return false;
+/** Parse "WxH" (case-insensitive 'x'); std::nullopt if malformed or either
+ *  dimension is non-positive. */
+std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
+  std::istringstream ss(s);
+  long long w = 0, h = 0;
+  char sep = 0;
+  ss >> w >> sep >> h;
+  if (!ss || w <= 0 || h <= 0 || (sep != 'x' && sep != 'X')) {
+    return std::nullopt;
   }
-  try {
-    long long w = std::stoll(s.substr(0, xPos));
-    long long h = std::stoll(s.substr(xPos + 1));
-    if (w <= 0 || h <= 0) return false;
-    width = static_cast<size_t>(w);
-    height = static_cast<size_t>(h);
-    return true;
-  } catch (const std::exception&) {
-    return false;
-  }
+  return std::make_pair(static_cast<size_t>(w), static_cast<size_t>(h));
 }
 
-/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}.
- * Single-axis input (e.g. "8") is rejected with a clear error: silently
- * promoting to {8, 1} would flip is_tensor_parallel_ on without the
- * operator asking for it. */
+/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}. Rejects
+ *  single-axis input ("8") with a clear error: silently promoting to {8, 1}
+ *  would flip tensor parallelism on without the operator asking for it. */
 std::vector<size_t> parseMeshShape(const std::string& s) {
   std::vector<size_t> out;
-  std::string token;
-  for (char c : s) {
-    if (c == ',') {
-      if (!token.empty()) {
-        try {
-          out.push_back(static_cast<size_t>(std::stoull(token)));
-        } catch (const std::exception&) {
-        }
-        token.clear();
-      }
-    } else if (!std::isspace(static_cast<unsigned char>(c))) {
-      token.push_back(c);
-    }
-  }
-  if (!token.empty()) {
-    try {
-      out.push_back(static_cast<size_t>(std::stoull(token)));
-    } catch (const std::exception&) {
-    }
+  std::istringstream ss(s);
+  size_t v = 0;
+  while (ss >> v) {
+    out.push_back(v);
+    if (ss.peek() == ',') ss.ignore();
   }
   if (out.empty()) return {1, 1};
   if (out.size() == 1) {
@@ -308,8 +290,7 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
 bool envBool(const char* name, bool defaultValue) {
   const char* v = std::getenv(name);
   if (!v || !*v) return defaultValue;
-  std::string lower;
-  for (; *v; ++v) lower.push_back(static_cast<char>(std::tolower(*v)));
+  const std::string lower = toLower(v);
   if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
     return true;
   }
@@ -353,11 +334,9 @@ ImageConfig imageEngineConfig() {
 
     readMediaRunnerConfig(cfg);
 
-    const std::string res = envString("SDXL_IMAGE_RESOLUTION", "1024x1024");
-    size_t w = 1024, h = 1024;
-    if (parseResolution(res, w, h)) {
-      cfg.image_width = w;
-      cfg.image_height = h;
+    if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
+      cfg.image_width = wh->first;
+      cfg.image_height = wh->second;
     }
     return cfg;
   }();
