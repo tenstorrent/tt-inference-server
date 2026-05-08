@@ -298,6 +298,36 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   server_->setMemoryAutoRespond(true);
 }
 
+TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
+  // A first request that arrives with a multi-turn history baked into
+  // `messages` — for example a client replaying a saved conversation
+  // against a fresh server. hasPriorTurn=true triggers a prefix-cache
+  // lookup on the prior-turn prefix, but the lookup hash isn't registered
+  // yet (this is the first request mentioning this conversation), so the
+  // controller must fall through to ALLOCATE a new session — not flag
+  // the Sequence as a continuation.
+  //
+  // The first user message is unique to this test on purpose: the prefix
+  // hash is computed from messages[0..n-2] (everything except the trailing
+  // [assistant, user] pair), and the rest of the suite uses "hello" — we
+  // need a string no other test has registered.
+  auto future = asyncRequest(ChatRequest()
+                                 .user("history-test-unique-first-turn")
+                                 .assistant("hi back")
+                                 .user("how are you")
+                                 .maxTokens(1)
+                                 .stream());
+
+  auto seq = server_->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_FALSE(seq->isContinuation())
+      << "first request to a fresh server is never a continuation, even "
+         "when the request body contains prior assistant turns";
+
+  mockWorkerResponse(seq->taskId);
+  future.get();
+}
+
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
   auto future = asyncRequest(ChatRequest()
