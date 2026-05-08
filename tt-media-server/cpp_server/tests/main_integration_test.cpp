@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// API contract tests: gray-box round-trip verification of LLMController.
+// Main integration test: gray-box round-trip verification of LLMController.
 //
 // Each test fires an HTTP request, then inspects what the controller pushed
 // to the IPC task queue (the boundary between cpp_server and the worker).
@@ -41,7 +41,7 @@ void configureEnv() {
 
 }  // namespace
 
-class ApiContractTest : public ::testing::Test {
+class MainIntegrationTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
@@ -77,7 +77,7 @@ class ApiContractTest : public ::testing::Test {
   static std::unique_ptr<tt::test::TestServer> server_;
 };
 
-std::unique_ptr<tt::test::TestServer> ApiContractTest::server_;
+std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server_;
 
 using tt::test::ChatRequest;
 
@@ -85,7 +85,7 @@ using tt::test::ChatRequest;
 // Tests
 // ---------------------------------------------------------------------------
 
-TEST_F(ApiContractTest, SingleRequest_TaskQueueAndResponse) {
+TEST_F(MainIntegrationTest, SingleRequest_TaskQueueAndResponse) {
   auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
 
   auto seq = server_->taskQueue().receive();
@@ -100,7 +100,7 @@ TEST_F(ApiContractTest, SingleRequest_TaskQueueAndResponse) {
   EXPECT_NE(response.find("choices"), std::string::npos);
 }
 
-TEST_F(ApiContractTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
+TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   // Each turn appends a new user message to the running conversation. Turn
   // N+1's controller-side prefix lookup hash matches turn N's history, so
   // every turn after the first must be flagged as a continuation.
@@ -127,7 +127,7 @@ TEST_F(ApiContractTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   }
 }
 
-TEST_F(ApiContractTest, StreamingRequest_AlsoPushesToTaskQueue) {
+TEST_F(MainIntegrationTest, StreamingRequest_AlsoPushesToTaskQueue) {
   // stream=true goes through a different controller path but must still
   // push a Sequence to the task queue.
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
@@ -141,7 +141,7 @@ TEST_F(ApiContractTest, StreamingRequest_AlsoPushesToTaskQueue) {
   future.get();
 }
 
-TEST_F(ApiContractTest, SamplingParams_MaxTokensAndTemperature) {
+TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
   auto future =
       asyncRequest(ChatRequest().user("hello").maxTokens(42).temperature(0.7));
 
@@ -156,7 +156,7 @@ TEST_F(ApiContractTest, SamplingParams_MaxTokensAndTemperature) {
   future.get();
 }
 
-TEST_F(ApiContractTest, DisaggregatedFlag_IsFalse_InRegularMode) {
+TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   // LLM_MODE=regular: every request is served locally, never disaggregated.
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1));
 
@@ -168,7 +168,7 @@ TEST_F(ApiContractTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   future.get();
 }
 
-TEST_F(ApiContractTest, SystemMessage_DoesNotTriggerContinuation) {
+TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
   auto future = asyncRequest(
       ChatRequest().system("you are helpful").user("hello").maxTokens(1));

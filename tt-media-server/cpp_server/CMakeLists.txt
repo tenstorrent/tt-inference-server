@@ -574,8 +574,8 @@ target_include_directories(llm_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-add_executable(api_contract_test
-    tests/api_contract_test.cpp
+add_executable(main_integration_test
+    tests/main_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -607,14 +607,14 @@ add_executable(api_contract_test
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
 )
-target_link_libraries(api_contract_test PRIVATE
+target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
     Drogon::Drogon
     cereal::cereal
     prometheus-cpp::core
     pybind11::embed
     GTest::gtest_main)
-target_include_directories(api_contract_test PRIVATE
+target_include_directories(main_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
@@ -622,7 +622,7 @@ target_include_directories(api_contract_test PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(api_contract_test)
+gtest_discover_tests(main_integration_test)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
