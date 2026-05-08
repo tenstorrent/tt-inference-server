@@ -93,6 +93,81 @@ jobs:
           chmod +x fix_dependencies.sh
           ./fix_dependencies.sh
 
+  manage-docker-build-reminder:
+    needs: detect-changes
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Manage docker build reminder comment
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      # Reminds PR authors to run tt-shield's docker build before merge when
+      # docker-related files change. Posts at most once per PR; removes itself
+      # if all docker changes are later reverted.
+      - name: Create or remove sticky reminder
+        uses: actions/github-script@v7
+        env:
+          SHOULD_HAVE_COMMENT: ${{ needs.detect-changes.outputs.media-server-deps }}
+        with:
+          script: |
+            const shouldHave = process.env.SHOULD_HAVE_COMMENT === 'true';
+            const pr = context.payload.pull_request;
+            const isFromFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            const ref = isFromFork ? pr.head.sha : pr.head.ref;
+            const refLabel = isFromFork ? 'commit SHA' : 'branch name';
+            const marker = '<!-- docker-build-reminder -->';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (shouldHave) {
+              if (existing) {
+                core.info('Reminder already present; leaving it untouched.');
+                return;
+              }
+              const body = [
+                marker,
+                '## Docker build sanity check needed',
+                '',
+                'This PR touches docker-related files (`Dockerfile*`, `requirements.txt`,',
+                '`uv-overrides.txt`, or `fix_dependencies.sh`). The pre-merge',
+                '`Verify Media Server Dep Install` job catches install-resolution',
+                'regressions but does **not** build the actual docker image.',
+                '',
+                "Before merging, please run [tt-shield's Build Inference Server workflow]",
+                '(https://github.com/tenstorrent/tt-shield/actions/workflows/on-dispatch-build-media-server.yml)',
+                'with these inputs:',
+                '',
+                '| Input | Value |',
+                '|---|---|',
+                '| `inference-server-type` | `media-inference-server` |',
+                `| \`inference-server-git-ref\` | \`${ref}\` (${refLabel}) |`,
+                '| `tt-metal-git-ref` | leave default (`main`) |',
+                '',
+                'Confirm the run succeeds and post the run link as a comment for reviewers.',
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Reminder created.');
+            } else if (existing) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+              });
+              core.info('Docker changes reverted; reminder deleted.');
+            } else {
+              core.info('No docker changes and no reminder; nothing to do.');
+            }
+
   unit-tests:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.should-test == 'true' }}

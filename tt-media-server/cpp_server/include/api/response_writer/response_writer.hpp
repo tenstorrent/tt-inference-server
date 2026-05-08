@@ -5,12 +5,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
-#include "domain/session.hpp"
 #include "services/llm_service.hpp"
 
 namespace tt::api {
@@ -30,7 +30,7 @@ struct ResponseWriterParams {
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  tt::domain::Session* session = nullptr;
+  std::function<void()> onSessionRelease;
 };
 
 /**

@@ -378,7 +378,7 @@ struct ResponsesResponse : BaseResponse {
       Json::Value inputMessages = {}, Json::Value outputMessages = {},
       Json::Value kvTransfer = {}) {
     ResponsesResponse r(taskId);
-    r.id = request.request_id.value_or("");
+    r.id = request.request_id.value_or("resp_" + std::to_string(taskId));
     r.created_at = createdTime;
 
     if (status == "incomplete") {

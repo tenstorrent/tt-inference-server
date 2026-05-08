@@ -9,11 +9,16 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "api/error_response.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/streaming_response_writer.hpp"
+#include "api/stream_event_formatter.hpp"
 #include "domain/llm/chat_completion_request.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/responses_request.hpp"
+#include "domain/responses_response.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/service_container.hpp"
@@ -21,6 +26,7 @@
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
+#include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
@@ -73,7 +79,7 @@ void LLMController::resolveSession(
           : "none",
       routingInfo.registrationHash);
 
-  // Layer 2: Prefix-cache routing. Requires a prior [assistant, user] pair
+  // Layer 1: Prefix-cache routing. Requires a prior [assistant, user] pair
   if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
     try {
       auto acquired = sessionManager->tryAcquireByPrefixHash(
@@ -109,7 +115,7 @@ void LLMController::resolveSession(
     }
   }
 
-  // Layer 3: Allocate a new session. Async — onCompletion runs on loop.
+  // Layer 2: Allocate a new session. Async — onCompletion runs on loop.
   sessionManager->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
        mgr = sessionManager](const domain::Session& session) mutable {
@@ -176,13 +182,119 @@ void LLMController::chatCompletions(
     return;
   }
 
-  auto request = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
+  auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
 
-  if (request->stream) {
-    handleStreaming(request, std::move(callback));
+  if (reqPtr->stream) {
+    const bool includeUsage = !reqPtr->stream_options.has_value() ||
+                              reqPtr->stream_options->include_usage;
+    handleStreaming(reqPtr, std::make_shared<ChatCompletionEventFormatter>(),
+                    includeUsage, std::move(callback));
   } else {
-    handleNonStreaming(request, std::move(callback));
+    handleNonStreaming(reqPtr, /*builder=*/nullptr, std::move(callback));
   }
+}
+
+void LLMController::responses(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::responses");
+
+  auto json = req->getJsonObject();
+  if (!json) {
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
+    return;
+  }
+
+  std::optional<domain::ResponsesRequest> respReqOpt;
+  try {
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+
+  auto respReqPtr =
+      std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
+  const domain::ResponsesRequest& respReq = *respReqPtr;
+
+  TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
+              respReq.task_id, respReq.model.value_or("default"));
+
+  if (!service->isModelReady()) {
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
+    return;
+  }
+
+  auto reqPtr = std::make_shared<LLMRequest>(respReq.toLLMRequest());
+  auto samplingParams = tt::utils::mapper::mapSamplingParams(*reqPtr);
+
+  if (reqPtr->stream) {
+    auto formatter =
+        std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
+    handleStreaming(reqPtr, std::move(formatter),
+                    /*includeUsage=*/true, std::move(callback));
+    return;
+  }
+
+  auto builder = [respReqPtr, samplingParams](
+                     const LLMResponse& completion) -> std::string {
+    int64_t createdAt = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
+    Json::Value output(Json::arrayValue);
+    for (const auto& choice : completion.choices) {
+      Json::Value item;
+      item["type"] = "message";
+      item["id"] = "msg_" + std::to_string(choice.index);
+      item["status"] = "completed";
+      item["role"] = "assistant";
+
+      Json::Value content(Json::arrayValue);
+      Json::Value textPart;
+      textPart["type"] = "output_text";
+      textPart["text"] = choice.text;
+      content.append(std::move(textPart));
+
+      if (choice.reasoning.has_value()) {
+        Json::Value reasoningPart;
+        reasoningPart["type"] = "reasoning";
+        reasoningPart["text"] = *choice.reasoning;
+        content.append(std::move(reasoningPart));
+      }
+
+      item["content"] = std::move(content);
+      output.append(std::move(item));
+    }
+
+    domain::ResponseUsage usage;
+    usage.input_tokens = completion.usage.prompt_tokens;
+    usage.output_tokens = completion.usage.completion_tokens;
+    usage.total_tokens = completion.usage.total_tokens;
+
+    std::string status =
+        (!completion.choices.empty() &&
+         completion.choices[0].finish_reason.value_or("stop") == "length")
+            ? "incomplete"
+            : "completed";
+
+    auto resp = domain::ResponsesResponse::fromRequest(
+        completion.task_id, *respReqPtr, samplingParams, completion.model,
+        createdAt, std::move(output), std::move(status), std::move(usage));
+
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "";
+    writer["emitUTF8"] = true;
+    return Json::writeString(writer, resp.toOpenaiJson());
+  };
+
+  handleNonStreaming(reqPtr, std::move(builder), std::move(callback));
 }
 
 ResponseWriterParams LLMController::makeWriterParams(
@@ -202,20 +314,26 @@ ResponseWriterParams LLMController::makeWriterParams(
           ? request.full_prompt_tokens_count - request.prompt_tokens_count
           : 0;
   params.sessionId = request.sessionId;
-  params.session = request.session;
   params.taskId = request.task_id;
   params.service = service;
+  if (request.session) {
+    params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
+  }
   return params;
 }
 
 std::function<void(const LLMStreamChunk&, bool)>
-LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer) {
-  return
-      [writer = std::move(writer)](const LLMStreamChunk& chunk, bool isFinal) {
-        if (writer->isDone()) return;
-        if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-        if (isFinal) writer->finalize();
-      };
+LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
+                                     domain::Session* session) {
+  return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
+                                               bool isFinal) {
+    if (writer->isDone()) return;
+    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+    if (isFinal) {
+      if (session) session->clearInFlight();
+      writer->finalize();
+    }
+  };
 }
 
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
@@ -232,6 +350,7 @@ drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
 
 void LLMController::handleStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
+    std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -251,37 +370,35 @@ void LLMController::handleStreaming(
 
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
+      [this, reqPtr, cb, loop, formatter = std::move(formatter),
+       includeUsage](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
         }
 
-        const bool includeUsage = !reqPtr->stream_options.has_value() ||
-                                  reqPtr->stream_options->include_usage;
-
         auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage);
+            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             makeStreamingCallback(writer));
+                             makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
                               "internal_error"));
           return;
@@ -299,6 +416,7 @@ void LLMController::handleStreaming(
 
 void LLMController::handleNonStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
+    NonStreamResponseWriter::ResponseBuilder builder,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleNonStreaming");
 
@@ -318,16 +436,17 @@ void LLMController::handleNonStreaming(
 
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb](SessionInfo sessionInfo) {
+      [this, reqPtr, cb,
+       builder = std::move(builder)](SessionInfo sessionInfo) mutable {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          reqPtr->session->clearInFlight();
+          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
@@ -337,12 +456,12 @@ void LLMController::handleNonStreaming(
         // success/error path goes through writer->finalize / sendError so
         // the response is delivered exactly once and the session in-flight
         // slot is always released.
-        auto writer = NonStreamResponseWriter::create(makeWriterParams(*reqPtr),
-                                                      std::move(*cb));
+        auto writer = NonStreamResponseWriter::create(
+            makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             makeStreamingCallback(writer));
+                             makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
                             "rate_limit_exceeded");
