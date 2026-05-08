@@ -25,6 +25,7 @@
 
 #include "domain/manage_memory.hpp"
 #include "ipc/result_queue.hpp"
+#include "support/chat_completion_stream.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
@@ -131,27 +132,11 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_NE(response.header("content-type").find("text/event-stream"),
             std::string::npos);
 
-  const auto events = response.sseEvents();
-  ASSERT_GE(events.size(), 2u) << "at least one chunk + [DONE]";
-  EXPECT_EQ(events.back(), "[DONE]");
-
-  // First chunk announces the assistant role.
-  Json::Value first;
-  Json::Reader().parse(events.front(), first);
-  EXPECT_EQ(first["choices"][0]["delta"]["role"].asString(), "assistant");
-
-  // Some intermediate chunk carries the decoded token as a content delta.
-  bool sawContent = false;
-  for (size_t i = 1; i + 1 < events.size(); ++i) {
-    Json::Value chunk;
-    if (!Json::Reader().parse(events[i], chunk)) continue;
-    if (chunk["choices"][0]["delta"].isMember("content") &&
-        !chunk["choices"][0]["delta"]["content"].asString().empty()) {
-      sawContent = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(sawContent) << "expected at least one content delta";
+  const auto stream = tt::test::ChatCompletionStream::parse(response);
+  EXPECT_TRUE(stream.endedWithDone());
+  EXPECT_EQ(stream.initialRole(), "assistant");
+  EXPECT_FALSE(stream.contentDeltas().empty())
+      << "expected at least one content delta";
 
   server_->setMemoryAutoRespond(true);
 }
@@ -173,25 +158,12 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
   EXPECT_EQ(response.statusCode(), 200);
 
-  const auto events = response.sseEvents();
-  ASSERT_GE(events.size(), 2u);
-  EXPECT_EQ(events.back(), "[DONE]");
-
-  // Count chunks that carry a non-empty content delta. We pushed 3 tokens,
-  // so we expect roughly 3 content deltas (controller's exact accounting
-  // around FINAL is implementation-defined).
-  int contentDeltas = 0;
-  for (const auto& ev : events) {
-    if (ev == "[DONE]") continue;
-    Json::Value chunk;
-    if (!Json::Reader().parse(ev, chunk)) continue;
-    if (chunk["choices"][0]["delta"].isMember("content") &&
-        !chunk["choices"][0]["delta"]["content"].asString().empty()) {
-      ++contentDeltas;
-    }
-  }
-  EXPECT_GT(contentDeltas, 0);
-  EXPECT_LE(contentDeltas, 3);
+  const auto stream = tt::test::ChatCompletionStream::parse(response);
+  EXPECT_TRUE(stream.endedWithDone());
+  // Controller's exact accounting around FINAL is implementation-defined;
+  // we expect roughly one content delta per token we pushed.
+  EXPECT_GT(stream.contentDeltas().size(), 0u);
+  EXPECT_LE(stream.contentDeltas().size(), 3u);
 }
 
 TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
