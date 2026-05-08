@@ -729,6 +729,11 @@
           "workers": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/WorkerInfo" }
+          },
+          "worker_info": {
+            "type": "object",
+            "description": "Worker status keyed by worker ID (Python-server-compatible format)",
+            "additionalProperties": { "$ref": "#/components/schemas/WorkerInfo" }
           }
         }
       },
@@ -742,6 +747,14 @@
           "is_ready": {
             "type": "boolean",
             "description": "Whether worker is ready"
+          },
+          "is_alive": {
+            "type": "boolean",
+            "description": "Whether worker process is alive"
+          },
+          "pid": {
+            "type": "integer",
+            "description": "Worker process ID (-1 for in-process runners)"
           }
         }
       },

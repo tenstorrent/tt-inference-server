@@ -110,6 +110,7 @@ void HealthController::ready(
     }
 
     Json::Value workers(Json::arrayValue);
+    Json::Value workerInfo(Json::objectValue);
     for (const auto& w : status.workerInfo) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
@@ -117,8 +118,10 @@ void HealthController::ready(
       wj["is_alive"] = w.is_alive;
       wj["pid"] = static_cast<Json::Int64>(w.pid);
       workers.append(wj);
+      workerInfo[w.worker_id] = wj;
     }
     response["workers"] = workers;
+    response["worker_info"] = workerInfo;
 
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
   } catch (const std::exception& e) {

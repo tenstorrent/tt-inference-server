@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "utils/logger.hpp"
+#include "worker/worker_info.hpp"
 
 namespace tt::services {
 
@@ -40,6 +41,14 @@ void ImageService::stop() {
 
 bool ImageService::isModelReady() const {
   return ready_.load(std::memory_order_acquire);
+}
+
+std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
+  tt::worker::WorkerInfo info;
+  info.worker_id = "0";
+  info.is_ready = ready_.load(std::memory_order_acquire);
+  info.is_alive = true;
+  return {info};
 }
 
 domain::ImageResponse ImageService::processRequest(

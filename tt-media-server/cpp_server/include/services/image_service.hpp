@@ -37,6 +37,7 @@ class ImageService
  protected:
   domain::ImageResponse processRequest(
       domain::ImageGenerateRequest request) override;
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
   config::ImageConfig config_;
