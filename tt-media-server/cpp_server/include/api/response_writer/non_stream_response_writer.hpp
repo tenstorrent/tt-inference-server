@@ -9,6 +9,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "api/response_writer/response_writer.hpp"
 
@@ -20,10 +21,8 @@ namespace tt::api {
  * The non-streaming counterpart to StreamingResponseWriter: the controller
  * drives the same Streamable producer (LLMService::submitStreamingRequest or
  * the disaggregation service) and forwards every chunk here instead of out to
- * SSE. On the final chunk we build the full ChatCompletionResponse, run the
- * service's postProcess (reasoning strip + tool-call parsing — non-streaming
- * only), release the session in-flight slot, and invoke the http callback
- * exactly once.
+ * SSE. On the final chunk we build the full ChatCompletionResponse, release the
+ * session in-flight slot, and invoke the http callback exactly once.
  */
 class NonStreamResponseWriter : public ResponseWriter {
  public:
@@ -47,11 +46,18 @@ class NonStreamResponseWriter : public ResponseWriter {
   NonStreamResponseWriter(ResponseWriterParams params,
                           HttpCallback httpCallback);
 
+  // Accumulated tool call data from streaming deltas
+  struct AccumulatedToolCall {
+    std::string id;
+    std::string name;
+    std::ostringstream arguments;
+  };
+
   HttpCallback httpCallback;
 
   std::ostringstream accumulatedAnswer;
   std::ostringstream accumulatedReasoning;
-  std::ostringstream accumulatedArguments;
+  std::vector<AccumulatedToolCall> accumulatedToolCalls;
   std::string finishReason = "stop";
 };
 
