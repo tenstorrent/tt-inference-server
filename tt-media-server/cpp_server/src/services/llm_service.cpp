@@ -571,7 +571,6 @@ void LLMService::processStreamingRequest(
 
 void LLMService::postProcess(LLMResponse& response) const {
   // Clean up tool choice map entry if present
-  // Tool call formatting is now handled in NonStreamResponseWriter::finalize()
   toolChoiceMap.take(response.task_id);
 }
 
