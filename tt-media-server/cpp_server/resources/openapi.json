@@ -201,142 +201,6 @@
         }
       }
     },
-    "/v1/sessions": {
-      "post": {
-        "tags": ["Sessions"],
-        "summary": "Create a new session",
-        "description": "Create a new session with optional slot assignment",
-        "operationId": "createSession",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "description": "Optional slot ID to assign",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "slot_id": {
-                    "type": "integer",
-                    "description": "Slot ID to assign (-1 means unassigned)"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Session created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "session_id": { "type": "string", "format": "uuid" },
-                    "slot_id": { "type": "integer" }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions/{session_id}": {
-      "delete": {
-        "tags": ["Sessions"],
-        "summary": "Close a session",
-        "description": "Close an existing session by ID",
-        "operationId": "closeSession",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "description": "The session ID to close",
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session closed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean" },
-                    "message": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions/{session_id}/slot": {
-      "get": {
-        "tags": ["Sessions"],
-        "summary": "Get slot ID for a session",
-        "description": "Retrieve the slot ID assigned to a session (-1 if unassigned)",
-        "operationId": "getSlotId",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "description": "The session ID",
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Slot ID retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "session_id": { "type": "string", "format": "uuid" },
-                    "slot_id": {
-                      "type": "integer",
-                      "description": "Slot ID (-1 if unassigned)"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/models": {
       "get": {
         "tags": ["Models"],
@@ -391,6 +255,7 @@
         "summary": "Health check",
         "description": "Returns server health status.",
         "operationId": "healthCheck",
+        "security": [],
         "responses": {
           "200": {
             "description": "Server is healthy",
@@ -409,6 +274,7 @@
         "summary": "Liveness check",
         "description": "Liveness probe (same as Python tt-liveness). Returns 200 with {\"status\": \"alive\", ...system status} when the process can respond. model_ready in the body reflects whether any worker has warmed up. Does not return 503 for model not ready; 500 only on unrecoverable failure.",
         "operationId": "livenessCheck",
+        "security": [],
         "responses": {
           "200": {
             "description": "Process is alive; body includes status alive and system status (model_ready, workers, queue)",
@@ -429,12 +295,73 @@
         }
       }
     },
+    "/max-session-count": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Get maximum session count",
+        "description": "Returns the current maximum session count. This may be either the value set via the POST endpoint or the default from the MAX_SESSIONS_COUNT environment variable.",
+        "operationId": "getMaxSessionCount",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved max session count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaxSessionCountResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Health"],
+        "summary": "Set maximum session count",
+        "description": "Sets the maximum session count at runtime. This overrides the MAX_SESSIONS_COUNT environment variable. Set to 0 to clear the override and revert to the environment variable value. Changes take effect immediately for new session allocation attempts.",
+        "operationId": "setMaxSessionCount",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MaxSessionCountRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successfully set max session count",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaxSessionCountSetResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing field or invalid value)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "tags": ["Monitoring"],
         "summary": "Prometheus metrics",
         "description": "Exposes all server metrics in Prometheus text exposition format (version 0.0.4). No authentication required. Intended to be scraped by a Prometheus server every few seconds.",
         "operationId": "getMetrics",
+        "security": [],
         "responses": {
           "200": {
             "description": "Prometheus text format metrics",
@@ -444,6 +371,25 @@
                   "type": "string",
                   "example": "# HELP tt_generation_tokens_total Total number of generation tokens produced\n# TYPE tt_generation_tokens_total counter\ntt_generation_tokens_total{model_name=\"llm\"} 42\n"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/info": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Build identity",
+        "description": "Returns the build identity of the running server: tt-inference-server version and commit, tt-blaze commit, and tt-metal commit. Missing values appear as the literal string \"unknown\". No authentication required.",
+        "operationId": "getInfo",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Build identity",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InfoResponse" }
               }
             }
           }
@@ -592,6 +538,11 @@
           "user": { "type": "string" },
           "response_format": {
             "$ref": "#/components/schemas/ResponseFormat"
+          },
+          "enable_reasoning": {
+            "type": "boolean",
+            "default": true,
+            "description": "When false, reasoning models (e.g. DeepSeek-R1) skip chain-of-thought and respond directly. Has no effect on non-reasoning models."
           }
         }
       },
@@ -761,6 +712,91 @@
           "is_ready": {
             "type": "boolean",
             "description": "Whether worker is ready"
+          }
+        }
+      },
+      "InfoResponse": {
+        "type": "object",
+        "required": ["tt_inference_server", "tt_blaze", "tt_metal"],
+        "properties": {
+          "tt_inference_server": { "$ref": "#/components/schemas/ServerVersionInfo" },
+          "tt_blaze": { "$ref": "#/components/schemas/CommitInfo" },
+          "tt_metal": { "$ref": "#/components/schemas/CommitInfo" }
+        },
+        "example": {
+          "tt_inference_server": { "version": "0.13.0", "commit": "b0f8adfc1234567890abcdef1234567890abcdef" },
+          "tt_blaze": { "commit": "abc123def456abc123def456abc123def4567890" },
+          "tt_metal": { "commit": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3" }
+        }
+      },
+      "ServerVersionInfo": {
+        "type": "object",
+        "required": ["version", "commit"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Release version from the top-level VERSION file. \"unknown\" if the file was not found at build time.",
+            "example": "0.13.0"
+          },
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the inference-server tree at build time. \"unknown\" if .git was not available.",
+            "example": "b0f8adfc1234567890abcdef1234567890abcdef"
+          }
+        }
+      },
+      "CommitInfo": {
+        "type": "object",
+        "required": ["commit"],
+        "properties": {
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the dependency at build time. \"unknown\" if the dependency's working tree was not present.",
+            "example": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3"
+          }
+        }
+      },
+      "MaxSessionCountResponse": {
+        "type": "object",
+        "required": ["max_session_count"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Current maximum session count",
+            "example": 128
+          }
+        }
+      },
+      "MaxSessionCountRequest": {
+        "type": "object",
+        "required": ["max_session_count"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "New maximum session count. Set to 0 to clear override and use environment variable value.",
+            "example": 256
+          }
+        }
+      },
+      "MaxSessionCountSetResponse": {
+        "type": "object",
+        "required": ["max_session_count", "status"],
+        "properties": {
+          "max_session_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The new maximum session count that was set",
+            "example": 256
+          },
+          "status": {
+            "type": "string",
+            "enum": ["success"],
+            "description": "Operation status"
           }
         }
       },

@@ -3,14 +3,25 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import base64
+import io
 import os
 from abc import abstractmethod
 
 import ttnn
-from config.constants import ModelRunners, ModelServices, SupportedModels
+from PIL import Image
+from config.constants import (
+    WAN22_NUM_FRAMES,
+    ModelRunners,
+    ModelServices,
+    SupportedModels,
+    is_large_mesh,
+    wan22_target_resolution,
+)
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -22,9 +33,14 @@ from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion
     StableDiffusion3Pipeline,
 )
 from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
+    ImagePrompt,
+    WanPipelineI2V,
+)
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
 
 dit_runner_log_map = {
@@ -34,6 +50,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -140,19 +157,21 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 ],
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run(
-                [
-                    VideoGenerateRequest.model_construct(
-                        prompt="Sunrise on a beach",
-                        negative_prompt="",
-                        num_inference_steps=2,
-                    )
-                ],
-            )
+            self.run([self._build_warmup_video_request()])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
+
+    def _build_warmup_video_request(self) -> VideoGenerateRequest:
+        """
+        Build the throwaway request used to trigger compile/trace on warmup.
+        """
+        return VideoGenerateRequest.model_construct(
+            prompt="Sunrise on a beach",
+            negative_prompt="",
+            num_inference_steps=2,
+        )
 
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -287,7 +306,11 @@ class TTMochi1Runner(TTDiTRunner):
             )
             raise
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
@@ -309,13 +332,65 @@ class TTMochi1Runner(TTDiTRunner):
         return {}
 
 
+def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
+    """Fabric / trace-region defaults shared by Wan2.2 T2V and I2V runners.
+
+    Galaxy-class meshes need ring topology and (on Blackhole) a larger
+    trace region plus an explicit FabricRouterConfig. Smaller meshes use
+    plain 1D linear fabric and the framework defaults.
+    """
+    device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D}
+    if not is_large_mesh(mesh_shape):
+        return device_params
+
+    device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+    if is_blackhole():
+        device_params["trace_region_size"] = 120000000
+        router_config = ttnn.FabricRouterConfig()
+        router_config.max_packet_payload_size_bytes = 8192
+        device_params["fabric_router_config"] = router_config
+    return device_params
+
+
+def _wan22_pipeline_args(
+    request,
+    resolution,
+    image_prompt=None,
+):
+    """Build the kwargs dict shared by Wan2.2 T2V and I2V ``__call__`` sites."""
+    seed = int(request.seed) if request.seed is not None else None
+    pipeline_args = {
+        "prompt": request.prompt,
+        "height": resolution.height,
+        "width": resolution.width,
+        "num_frames": WAN22_NUM_FRAMES,
+        "num_inference_steps": request.num_inference_steps,
+        "guidance_scale": 4.0,
+        "guidance_scale_2": 3.0,
+        "seed": seed,
+        "traced": True,
+    }
+    if image_prompt is not None:
+        pipeline_args["image_prompt"] = image_prompt
+    # Only include negative_prompt when set; otherwise the pipeline default applies.
+    if bool(request.negative_prompt):
+        pipeline_args["negative_prompt"] = request.negative_prompt
+    return pipeline_args
+
+
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
 
     def create_pipeline(self):
         try:
-            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            return WanPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                target_height=self.resolution.height,
+                target_width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -328,51 +403,97 @@ class TTWan22Runner(TTDiTRunner):
     def load_weights(self):
         return False
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
+        frames = self.pipeline(**_wan22_pipeline_args(requests[0], self.resolution))
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+
+class TTWan22I2VRunner(TTDiTRunner):
+    """
+    Wan2.2 image-to-video runner.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            return WanPipelineI2V.create_pipeline(
+                mesh_device=self.ttnn_device,
+                target_height=self.resolution.height,
+                target_width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Wan I2V pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        """Decode base64 images into ``List[ImagePrompt]`` for the pipeline."""
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
-        # TODO: Move parameterization outside of runner class.
-        if (
-            self.pipeline.mesh_device.shape.mesh_size() >= 32
-        ):  # i.e GLX: ((4, 8), (4, 32))
-            width = 1280
-            height = 720
-        else:
-            width = 832
-            height = 480
-        num_frames = 81
-        pipeline_args = {
-            "prompt": request.prompt,
-            "height": height,
-            "width": width,
-            "num_frames": num_frames,
-            "num_inference_steps": request.num_inference_steps,
-            "guidance_scale": 4.0,
-            "guidance_scale_2": 3.0,
-            "seed": int(request.seed or 0),
-            "traced": True,
-        }
-        # Only include negative_prompt if it's not empty. Otherwise, implicitly trigger the pipeline default.
-        if bool(request.negative_prompt):
-            pipeline_args["negative_prompt"] = request.negative_prompt
+        pipeline_args = _wan22_pipeline_args(
+            request,
+            self.resolution,
+            image_prompt=self._build_image_prompt(request),
+        )
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
     def get_pipeline_device_params(self):
-        device_params = {
-            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
-        }
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
 
-        mesh_size = (
-            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        """Warmup request with a synthetic 64x64 PIL so the VAE encoder has
+        input to process.
+
+        The I2V pipeline resizes the image to the target (height, width)
+        before VAE encoding, so the input resolution is irrelevant — a
+        small black frame exercises the same kernels as a real photo.
+        """
+        dummy = Image.new("RGB", (64, 64), color=0)
+        buf = io.BytesIO()
+        dummy.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        return VideoI2VGenerateRequest.model_construct(
+            prompt="Sunrise on a beach",
+            negative_prompt="",
+            num_inference_steps=2,
+            image_prompts=[ImagePromptEntry(image=b64, frame_pos=0)],
         )
-        if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
-            device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
-            if is_blackhole():
-                device_params["trace_region_size"] = 120000000
-                config = ttnn.FabricRouterConfig()
-                config.max_packet_payload_size_bytes = 8192
-                device_params["fabric_router_config"] = config
-        return device_params

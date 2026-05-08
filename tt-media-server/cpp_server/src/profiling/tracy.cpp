@@ -14,45 +14,45 @@
 namespace tracy_config {
 
 #ifdef TRACY_ENABLE
-void TracySetPortForMain() {
+void tracySetPortForMain() {
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%d", TRACY_MAIN_PORT);
   setenv("TRACY_PORT", buf, 1);
 }
 
-void TracySetPortForWorker(int worker_id) {
+void tracySetPortForWorker(int workerId) {
   char buf[16];
-  std::snprintf(buf, sizeof(buf), "%d", TRACY_WORKER_PORT_BASE + worker_id);
+  std::snprintf(buf, sizeof(buf), "%d", TRACY_WORKER_PORT_BASE + workerId);
   setenv("TRACY_PORT", buf, 1);
 }
 
-void TracyStartMainProcess() {
-  TracySetPortForMain();
-  TracyStartupProfiler();
-  TracySetThreadName("Main");
-  TracyRegisterPlots();
+void tracyStartMainProcess() {
+  tracySetPortForMain();
+  tracyStartupProfiler();
+  tracySetThreadName("Main");
+  tracyRegisterPlots();
 }
 
-void TracyStartupSchedulerParent() {
+void tracyStartupSchedulerParent() {
   TracyPlotConfig("pending_tasks", tracy::PlotFormatType::Number, true, true,
                   0);
 }
 
-void TracyRegisterPlots() {
+void tracyRegisterPlots() {
   TracyPlotConfig("pending_tasks", tracy::PlotFormatType::Number, true, true,
                   0);
 }
 
-void TracyStartupWorker(int worker_id) {
-  TracySetPortForWorker(worker_id);
-  TracyStartupProfiler();
+void tracyStartupWorker(int workerId) {
+  tracySetPortForWorker(workerId);
+  tracyStartupProfiler();
 }
 #else
 void tracySetPortForMain() {}
-void tracySetPortForWorker(int /*worker_id*/) {}
+void tracySetPortForWorker(int /*workerId*/) {}
 void tracyStartMainProcess() {}
 void tracyStartupSchedulerParent() {}
-void tracyStartupWorker(int /*worker_id*/) {}
+void tracyStartupWorker(int /*workerId*/) {}
 void tracyRegisterPlots() {}
 #endif
 

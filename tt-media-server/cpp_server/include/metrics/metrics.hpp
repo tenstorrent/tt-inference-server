@@ -71,6 +71,37 @@ class ServerMetrics {
    */
   void setQueueDepth(double n);
 
+  /**
+   * Update the active sessions gauge.
+   * Called directly from SessionManager when sessions are created or removed.
+   */
+  void setActiveSessionsCount(double n);
+
+  /**
+   * Record one completed HTTP request/response pair. Called from the Drogon
+   * pre-sending advice hook. `status_code` is the numeric HTTP status
+   * (200, 4xx, 5xx).
+   *
+   * Writes directly to the counter; Prometheus counters are internally
+   * thread-safe, and HTTP response rate is orders of magnitude lower than
+   * token rate, so no queueing is necessary.
+   */
+  void onHttpResponse(const std::string& method, int statusCode);
+
+  /**
+   * Record one prefix-cache lookup attempt. Called once per request that
+   * enters the hash-based prefix cache routing path (i.e. has a prior
+   * [assistant, user] turn pair).
+   *
+   * `hit` is true if an existing session matching the lookup hash was
+   * acquired and its KV cache reused; false if the lookup missed and a new
+   * session had to be allocated.
+   *
+   * Writes directly to the counter; lookup rate is request-level, not
+   * token-level, so queueing would be unnecessary overhead.
+   */
+  void onPrefixCacheLookup(bool hit);
+
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
 
@@ -124,6 +155,7 @@ class ServerMetrics {
   // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
+    std::chrono::steady_clock::time_point first_token_time;
     std::chrono::steady_clock::time_point prev_token_time;
     int prompt_tokens = 0;
     int generation_tokens = 0;
@@ -141,16 +173,21 @@ class ServerMetrics {
   prometheus::Counter* prompt_tokens_total_{nullptr};
   prometheus::Counter* generation_tokens_total_{nullptr};
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
+  prometheus::Family<prometheus::Counter>* http_requests_family_{nullptr};
+  prometheus::Counter* prefix_cache_queries_total_{nullptr};
+  prometheus::Counter* prefix_cache_hits_total_{nullptr};
 
   // --- gauges ---
   prometheus::Gauge* queue_depth_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
   prometheus::Gauge* decoding_requests_{nullptr};
+  prometheus::Gauge* active_sessions_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
   prometheus::Summary* ttft_seconds_{nullptr};
   prometheus::Summary* inter_token_latency_seconds_{nullptr};
+  prometheus::Summary* tpot_seconds_{nullptr};
 
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};

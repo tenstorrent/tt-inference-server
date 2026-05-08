@@ -22,20 +22,24 @@
 #include <iostream>
 
 #include "config/runner_config.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 namespace ipc = boost::interprocess;
+
+using namespace tt::domain::llm;
 
 static const char* queueName = "tt_ipc_scheduler_smoke_test";
 static constexpr size_t MAX_NUM_MSGS = 64;
 static constexpr size_t MAX_MSG_SIZE = 4096;
 
 int main() {
-  using namespace tt::runners::llm_engine;
+  using namespace tt::runners::schedulers;
   using Config = tt::config::LLMConfig;
 
   // Clean up any leftover queue from a previous failed run.

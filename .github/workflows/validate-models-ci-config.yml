@@ -2,7 +2,7 @@ name: Validate Models CI Config
 
 on:
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main"]
     paths:
       - ".github/workflows/models-ci-config.json"
 
