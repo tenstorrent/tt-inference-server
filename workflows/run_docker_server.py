@@ -359,6 +359,8 @@ def run_docker_command(
 
         atexit.register(exit_log_messages)
 
+    os.environ["TT_INFERENCE_CONTAINER_NAME"] = container_name
+
     return {
         "container_name": container_name,
         "container_id": container_id,

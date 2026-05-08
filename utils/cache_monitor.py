@@ -610,6 +610,30 @@ class CacheMonitor:
             runtime_config=runtime_config,
         )
         self.cache_dir = self.cache_target.get_display_cache_dir()
+        self._log_resolved_cache_dir()
+
+    def _log_resolved_cache_dir(self) -> None:
+        if self.cache_dir is None:
+            logger.info(
+                "🔍 CacheMonitor watching: <none> (uses_docker_cli=%s)",
+                self.cache_target.uses_docker_cli(),
+            )
+            return
+        shared_root = os.environ.get("SHARED_STORAGE_ROOT")
+        try:
+            under_shared = bool(
+                shared_root
+                and Path(shared_root).resolve() in Path(self.cache_dir).resolve().parents
+            )
+        except OSError:
+            under_shared = False
+        logger.info(
+            "🔍 CacheMonitor watching: %s (exists=%s, is_dir=%s, under SHARED_STORAGE_ROOT=%s)",
+            self.cache_dir,
+            self.cache_dir.exists() if hasattr(self.cache_dir, "exists") else False,
+            self.cache_dir.is_dir() if hasattr(self.cache_dir, "is_dir") else False,
+            under_shared,
+        )
 
     def _uses_tensor_model_cache(self, model_spec) -> bool:
         return bool(

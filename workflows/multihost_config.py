@@ -109,7 +109,11 @@ def generate_rankfile(hosts: List[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_mpi_args(hosts: List[str], rankfile_path: str) -> str:
+def build_mpi_args(
+    hosts: List[str],
+    rankfile_path: str,
+    mpi_log_dir: Optional[str] = None,
+) -> str:
     """Build mpi_args string for override_tt_config.
 
     MPI requires --host to know available hosts, and rankfile for
@@ -118,12 +122,23 @@ def build_mpi_args(hosts: List[str], rankfile_path: str) -> str:
     Args:
         hosts: List of hostnames (e.g., ['host1', 'host2'])
         rankfile_path: Path to the rankfile inside the container
+        mpi_log_dir: Optional directory for per-rank stdout/stderr capture
+            via Open MPI's --output-filename. When set, also enables verbose
+            launcher/PML logging so multihost startup failures leave artifacts.
 
     Returns:
         mpi_args string for vLLM
     """
     host_list = ",".join(hosts)
-    return f"--host {host_list} --map-by rankfile:file={rankfile_path} --bind-to none"
+    args = f"--host {host_list} --map-by rankfile:file={rankfile_path} --bind-to none"
+    if mpi_log_dir:
+        args += (
+            f" --output-filename {mpi_log_dir}"
+            ' --mca plm_rsh_args "-vvv"'
+            " --mca pml_base_verbose 10"
+            " -x OMPI_MCA_orte_base_help_aggregate=0"
+        )
+    return args
 
 
 def get_rank_binding_path(device_type: DeviceTypes) -> str:
@@ -161,6 +176,7 @@ def build_override_tt_config(
     rankfile_path: str,
     device_type: DeviceTypes,
     rank_binding_path: Optional[str] = None,
+    mpi_log_dir: Optional[str] = None,
 ) -> dict:
     """Build override_tt_config dict for multi-host vLLM deployment.
 
@@ -171,6 +187,7 @@ def build_override_tt_config(
         rankfile_path: Path to rankfile inside container
         device_type: Device type for the deployment (determines rank binding file)
         rank_binding_path: Path to rank binding YAML (auto-detected from device_type if None)
+        mpi_log_dir: Optional directory for per-rank MPI stdout/stderr capture
 
     Returns:
         Dictionary suitable for JSON serialization and passing to vLLM
@@ -180,7 +197,7 @@ def build_override_tt_config(
 
     return {
         "rank_binding": rank_binding_path,
-        "mpi_args": build_mpi_args(hosts, rankfile_path),
+        "mpi_args": build_mpi_args(hosts, rankfile_path, mpi_log_dir=mpi_log_dir),
         "extra_ttrun_args": f"--tcp-interface {mpi_interface}",
         "config_pkl_dir": config_pkl_dir,
         "env_passthrough": ENV_PASSTHROUGH,

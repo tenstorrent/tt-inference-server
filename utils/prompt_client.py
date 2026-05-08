@@ -4,6 +4,8 @@
 
 import logging
 import json
+import os
+import subprocess
 import time
 from typing import List, Optional, Tuple, Union
 from pathlib import Path
@@ -87,6 +89,7 @@ class PromptClient:
         model_spec=None,
         cache_dir: Optional[Union[str, Path]] = None,
         runtime_config=None,
+        container_name: Optional[str] = None,
     ):
         self.env_config = env_config
         authorization = self._get_authorization()
@@ -104,6 +107,9 @@ class PromptClient:
         self.server_ready = False
         self.last_health_status_code: Optional[int] = None
         self.last_health_exception: Optional[Exception] = None
+        self.container_name = container_name or os.environ.get(
+            "TT_INFERENCE_CONTAINER_NAME"
+        )
 
     def _get_authorization(self) -> Optional[str]:
         if self.env_config.vllm_api_key:
@@ -336,7 +342,32 @@ class PromptClient:
                 f"⛔ Service did not become healthy within {effective_timeout}s"
             )
 
+        self._dump_container_logs_on_timeout()
         return False
+
+    def _dump_container_logs_on_timeout(self, tail: int = 500) -> None:
+        if not self.container_name:
+            return
+        try:
+            result = subprocess.run(
+                ["docker", "logs", "--tail", str(tail), self.container_name],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            combined = (result.stdout or "") + (result.stderr or "")
+            logger.error(
+                "--- %s container logs (last %d lines) ---\n%s",
+                self.container_name,
+                tail,
+                combined or "(empty)",
+            )
+        except Exception as exc:
+            logger.error(
+                "could not retrieve docker logs for %s: %s",
+                self.container_name,
+                exc,
+            )
 
     def capture_traces(
         self,

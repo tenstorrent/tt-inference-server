@@ -340,6 +340,13 @@ class MultiHostOrchestrator:
         self.setup: Optional[MultiHostSetup] = None
         self._cleanup_registered = False
 
+        self.run_tag = time.strftime("%Y%m%d-%H%M%S")
+        self.multihost_log_dir = (
+            Path(self.shared_storage_root) / "multihost_logs" / self.run_tag
+        )
+        self.mpi_log_dir = self.multihost_log_dir / "mpi"
+        self._worker_log_followers: List[subprocess.Popen] = []
+
     def prepare(self) -> MultiHostSetup:
         """Generate all configuration files for multi-host deployment.
 
@@ -378,12 +385,23 @@ class MultiHostOrchestrator:
 
         # Generate override_tt_config
         device_type = DeviceTypes.from_string(self.runtime_config.device)
+        try:
+            self.multihost_log_dir.mkdir(parents=True, exist_ok=True)
+            self.mpi_log_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                f"Multihost diagnostic logs will be written to {self.multihost_log_dir}"
+            )
+        except OSError as exc:
+            logger.warning(
+                f"Could not create multihost log dir {self.multihost_log_dir}: {exc}"
+            )
         override_tt_config = build_override_tt_config(
             hosts=self.hosts,
             mpi_interface=self.mpi_interface,
             config_pkl_dir=self.config_pkl_dir,
             rankfile_path="/etc/mpirun/rankfile",
             device_type=device_type,
+            mpi_log_dir=str(self.mpi_log_dir),
         )
 
         self.setup = MultiHostSetup(
@@ -667,7 +685,27 @@ class MultiHostOrchestrator:
         if self.setup:
             self.setup.worker_container_ids[host] = container_id
 
+        self._spawn_worker_log_follower(host, container_id)
         return container_id
+
+    def _spawn_worker_log_follower(self, host: str, container_id: str) -> None:
+        try:
+            log_path = self.multihost_log_dir / f"worker_{host}.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_file = open(log_path, "w", buffering=1)
+            follower = subprocess.Popen(
+                ["ssh", "-p", "22", host, "docker", "logs", "-f", container_id],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+            self._worker_log_followers.append(follower)
+            logger.info(
+                f"Streaming Worker logs from {host}:{container_id[:12]} → {log_path}"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Could not start log follower for Worker on {host}: {exc}"
+            )
 
     def ensure_image_on_host(self, host: str) -> bool:
         """Ensure Docker image exists and matches on remote host.
@@ -940,6 +978,13 @@ class MultiHostOrchestrator:
                 logger.info(f"Stopped Worker container on {host}")
             except Exception as e:
                 logger.warning(f"Failed to stop Worker on {host}: {e}")
+
+        for follower in self._worker_log_followers:
+            try:
+                follower.terminate()
+            except Exception as exc:
+                logger.warning(f"Failed to terminate worker log follower: {exc}")
+        self._worker_log_followers.clear()
 
     def check_worker_status(self, host: str) -> Tuple[bool, Optional[str]]:
         """Check if Worker container is still running on a host.
