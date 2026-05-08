@@ -105,8 +105,7 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   // Demonstrate the WorkerResponse builder + HttpResponse parser working
   // together: ask for up to 3 tokens, push exactly 3 specific token_ids
   // followed by a clean FINAL terminator, then assert on the parsed JSON.
-  auto responseFuture =
-      asyncRequest(ChatRequest().user("hello").maxTokens(3));
+  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(3));
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -196,6 +195,61 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 
   mockWorkerResponse(seq->taskId);
   future.get();
+}
+
+TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
+  // Two identical first-turn requests. Same content, same registration hash
+  // — but neither has a prior turn, so both bypass prefix-cache routing and
+  // each hits the Layer-2 ALLOCATE path. Verify they're independent: two
+  // distinct ALLOCATE requests, two distinct mocked slots, both flowing
+  // back to the Sequences pushed onto the task queue.
+  server_->setMemoryAutoRespond(false);
+
+  auto future1 = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  auto future2 = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+
+  // Drain both ALLOCATEs before responding to either, so the test can prove
+  // they ran concurrently rather than serialised behind one another.
+  tt::domain::ManageMemoryTask allocReq1{}, allocReq2{};
+  server_->memoryRequestQueue().receive(allocReq1);
+  server_->memoryRequestQueue().receive(allocReq2);
+  EXPECT_EQ(allocReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_EQ(allocReq2.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_NE(allocReq1.taskId, allocReq2.taskId)
+      << "two independent allocations should have distinct memory taskIds";
+
+  // Hand out distinct slots for the two sessions.
+  auto pushSuccess = [&](uint32_t allocTaskId, uint32_t slotId) {
+    tt::domain::ManageMemoryResult res{};
+    res.taskId = allocTaskId;
+    res.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    res.slotId = slotId;
+    server_->memoryResultQueue().push(res);
+  };
+  pushSuccess(allocReq1.taskId, 7);
+  pushSuccess(allocReq2.taskId, 11);
+
+  // Both sessions now allocate; controller pushes both Sequences.
+  auto seq1 = server_->taskQueue().receive();
+  auto seq2 = server_->taskQueue().receive();
+  ASSERT_NE(seq1, nullptr);
+  ASSERT_NE(seq2, nullptr);
+
+  // Mocked slot IDs propagated through SessionManager into the Sequences.
+  // Order of receive() vs the order of pushSuccess() isn't guaranteed, so
+  // assert on the unordered pair.
+  const uint32_t s1 = seq1->getKVCacheSlot();
+  const uint32_t s2 = seq2->getKVCacheSlot();
+  EXPECT_NE(s1, s2);
+  EXPECT_TRUE((s1 == 7u && s2 == 11u) || (s1 == 11u && s2 == 7u))
+      << "expected slots {7, 11}, got {" << s1 << ", " << s2 << "}";
+
+  mockWorkerResponse(seq1->taskId);
+  mockWorkerResponse(seq2->taskId);
+  future1.get();
+  future2.get();
+
+  server_->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, MemoryAllocate_RequestPushedAndResponseAccepted) {
