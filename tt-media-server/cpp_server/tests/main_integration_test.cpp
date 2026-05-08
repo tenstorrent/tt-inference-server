@@ -82,16 +82,48 @@ using tt::test::ChatRequest;
 // Tests
 // ---------------------------------------------------------------------------
 
-TEST_F(MainIntegrationTest, SingleRequest_TaskQueueAndResponse) {
+// Canonical happy-path walkthrough of a single /v1/chat/completions request.
+// Each subsequent test peels off a slice of this lifecycle and asserts on
+// just that slice — start here when reading the suite.
+//
+//   1. HTTP POST arrives at the controller
+//   2. SessionManager pushes an ALLOCATE onto the memory request queue
+//   3. We mock the memory manager: push SUCCESS to the result queue
+//   4. Controller pushes a Sequence onto the task queue
+//   5. We mock the worker: push one token + FINAL via WorkerResponse
+//   6. HTTP response completes; assert on the parsed JSON
+TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
+  server_->setMemoryAutoRespond(false);
+
+  // 1. Fire the request.
   auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
 
+  // 2. Receive and assert on the ALLOCATE.
+  tt::domain::ManageMemoryTask memReq{};
+  server_->memoryRequestQueue().receive(memReq);
+  EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_GT(memReq.taskId, 0u);
+
+  // 3. Mock the memory manager.
+  tt::domain::ManageMemoryResult memRes{};
+  memRes.taskId = memReq.taskId;
+  memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes.slotId = 0;
+  server_->memoryResultQueue().push(memRes);
+
+  // 4. Receive and assert on the Sequence.
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
 
-  mockWorkerResponse(seq->taskId);
+  // 5. Mock the worker.
+  tt::test::WorkerResponse(seq->taskId)
+      .token(42)
+      .finalize()
+      .sendTo(server_->resultQueue());
 
+  // 6. Assert on the HTTP response.
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
   EXPECT_EQ(response.statusCode(), 200);
   EXPECT_NE(response.header("content-type").find("application/json"),
@@ -99,6 +131,8 @@ TEST_F(MainIntegrationTest, SingleRequest_TaskQueueAndResponse) {
   const auto body = response.json();
   ASSERT_TRUE(body.isMember("choices"));
   EXPECT_EQ(body["choices"].size(), 1u);
+
+  server_->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
@@ -248,39 +282,6 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   mockWorkerResponse(seq2->taskId);
   future1.get();
   future2.get();
-
-  server_->setMemoryAutoRespond(true);
-}
-
-TEST_F(MainIntegrationTest, MemoryAllocate_RequestPushedAndResponseAccepted) {
-  // Disable the auto-responder so we can inspect what SessionManager pushed
-  // to the memory request queue, and inject the SUCCESS response ourselves.
-  // Restored at end of test so the next test sees default behavior.
-  server_->setMemoryAutoRespond(false);
-
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1));
-
-  // SessionManager should push exactly one ALLOCATE for the new session.
-  tt::domain::ManageMemoryTask memReq{};
-  server_->memoryRequestQueue().receive(memReq);
-  EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
-  EXPECT_GT(memReq.taskId, 0u);
-
-  // Mock the memory manager: SUCCESS unblocks SessionManager's allocation.
-  tt::domain::ManageMemoryResult memRes{};
-  memRes.taskId = memReq.taskId;
-  memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  memRes.slotId = 0;
-  server_->memoryResultQueue().push(memRes);
-
-  // Once we've answered the ALLOCATE, SessionManager unblocks and the
-  // controller pushes the Sequence onto the task queue. Without our
-  // response, this receive() would hang.
-  auto seq = server_->taskQueue().receive();
-  ASSERT_NE(seq, nullptr);
-
-  mockWorkerResponse(seq->taskId);
-  future.get();
 
   server_->setMemoryAutoRespond(true);
 }

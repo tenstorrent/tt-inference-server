@@ -29,9 +29,7 @@ class WorkerResponse {
  public:
   explicit WorkerResponse(uint32_t taskId) : taskId_(taskId) {}
 
-  WorkerResponse& token(uint64_t tokenId) {
-    return tokenWithFlags(tokenId, 0);
-  }
+  WorkerResponse& token(uint64_t tokenId) { return tokenWithFlags(tokenId, 0); }
 
   WorkerResponse& tokens(std::initializer_list<uint64_t> ids) {
     for (uint64_t id : ids) token(id);
