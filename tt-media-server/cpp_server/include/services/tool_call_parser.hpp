@@ -43,12 +43,6 @@ class IToolCallParser {
   virtual ~IToolCallParser() = default;
 
   /**
-   * Strip tool call markers from the text, leaving only regular content.
-   * Used to clean up the message content after extracting tool calls.
-   */
-  virtual std::string stripMarkers(const std::string& text) const = 0;
-
-  /**
    * Initialize streaming state for a task.
    * Call before processing first token.
    */
@@ -98,6 +92,14 @@ class IToolCallParser {
    */
   virtual size_t activeTaskCount() const = 0;
 };
+
+/**
+ * Create a model-specific tool call parser for natural tool calls.
+ * Handles marker-based formats like DeepSeek's <｜tool▁calls▁begin｜> tags.
+ * Used when tool_choice is "auto".
+ */
+std::unique_ptr<IToolCallParser> createToolCallParser(
+    tt::config::ModelType modelType);
 
 /**
  * Create a JSON tool call parser for structured output.
