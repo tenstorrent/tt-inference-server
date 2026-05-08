@@ -114,6 +114,7 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
     )
     return env_vars
 
+
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
     src_root = Path(repo_root_path) / "tt-media-server"
     dst_root = f"{user_home_path}/tt-metal/server"
@@ -367,9 +368,9 @@ def generate_docker_run_command(
                 ModelType.AUDIO,
             )
         ):
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-            ]
+            docker_command += _media_server_dev_mounts(
+                repo_root_path, user_home_path, model_spec
+            )
         else:
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
