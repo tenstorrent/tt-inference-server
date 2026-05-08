@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,8 @@
 #include <thread>
 
 #include "config/settings.hpp"
+#include "domain/manage_memory.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "services/llm_service.hpp"
@@ -46,6 +49,9 @@ class TestServer {
   }
 
   ~TestServer() {
+    stopAutoResponder_.store(true);
+    if (memoryAutoResponderThread_.joinable())
+      memoryAutoResponderThread_.join();
     drogon::app().quit();
     if (drogonThread_.joinable()) drogonThread_.join();
   }
@@ -59,6 +65,24 @@ class TestServer {
   // Test pushes tokens here to mock the model response.
   tt::ipc::BoostIpcResultQueue& resultQueue() { return *resultQueue_; }
 
+  // Test reads memory ALLOCATE/DEALLOCATE/MOVE requests pushed by
+  // SessionManager. Disable the auto-responder before consuming, otherwise
+  // the background thread will drain it first.
+  tt::ipc::MemoryRequestQueue& memoryRequestQueue() {
+    return *memoryRequestQueue_;
+  }
+
+  // Test pushes ManageMemoryResult here to satisfy SessionManager's
+  // outstanding allocations.
+  tt::ipc::MemoryResultQueue& memoryResultQueue() {
+    return *memoryResultQueue_;
+  }
+
+  // Toggle the background auto-responder. When ON (default), every ALLOCATE
+  // request is auto-acked with SUCCESS+slotId=0; tests don't have to think
+  // about memory. Turn OFF to assert on requests / inject custom responses.
+  void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
+
  private:
   static constexpr std::chrono::seconds kStartupTimeout{30};
   static constexpr std::chrono::milliseconds kPollInterval{100};
@@ -69,11 +93,13 @@ class TestServer {
   //   1. start services (forks worker via WorkerManager)
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
-  //   4. start HTTP listener and wait for it
+  //   4. start the memory auto-responder so most tests don't have to care
+  //   5. start HTTP listener and wait for it
   void init() {
     tt::utils::service_factory::initializeServices();
     waitForLLMReady();
     openIpcQueues();
+    startMemoryAutoResponder();
     startHttpListener();
     waitForListener();
   }
@@ -97,6 +123,33 @@ class TestServer {
         tt::config::ttTaskQueueName());
     resultQueue_ = std::make_unique<tt::ipc::BoostIpcResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
+    memoryRequestQueue_ = tt::ipc::MemoryRequestQueue::openExisting(
+        tt::config::ttMemoryRequestQueueName());
+    memoryResultQueue_ = tt::ipc::MemoryResultQueue::openExisting(
+        tt::config::ttMemoryResultQueueName());
+  }
+
+  // Background thread that ack's every ALLOCATE with SUCCESS while
+  // autoRespond_ is true. Tests that want to inspect requests turn it off,
+  // drain the queue manually, and push their own responses.
+  void startMemoryAutoResponder() {
+    memoryAutoResponderThread_ = std::thread([this] {
+      domain::ManageMemoryTask req{};
+      while (!stopAutoResponder_.load()) {
+        if (!autoRespond_.load() || !memoryRequestQueue_->tryPop(req)) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          continue;
+        }
+        if (req.action == domain::MemoryManagementAction::ALLOCATE) {
+          domain::ManageMemoryResult res{};
+          res.taskId = req.taskId;
+          res.status = domain::ManageMemoryStatus::SUCCESS;
+          res.slotId = 0;
+          memoryResultQueue_->push(res);
+        }
+        // DEALLOCATE / MOVE: no response expected by the default path.
+      }
+    });
   }
 
   // drogon::app().run() blocks until quit(); spin it on a dedicated thread so
@@ -126,7 +179,12 @@ class TestServer {
 
   std::unique_ptr<tt::ipc::BoostIpcTaskQueue> taskQueue_;
   std::unique_ptr<tt::ipc::BoostIpcResultQueue> resultQueue_;
+  std::unique_ptr<tt::ipc::MemoryRequestQueue> memoryRequestQueue_;
+  std::unique_ptr<tt::ipc::MemoryResultQueue> memoryResultQueue_;
   std::thread drogonThread_;
+  std::thread memoryAutoResponderThread_;
+  std::atomic<bool> autoRespond_{true};
+  std::atomic<bool> stopAutoResponder_{false};
 };
 
 }  // namespace tt::test

@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 
+#include "domain/manage_memory.hpp"
 #include "ipc/result_queue.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
@@ -166,6 +167,39 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 
   mockWorkerResponse(seq->taskId);
   future.get();
+}
+
+TEST_F(MainIntegrationTest, MemoryAllocate_RequestPushedAndResponseAccepted) {
+  // Disable the auto-responder so we can inspect what SessionManager pushed
+  // to the memory request queue, and inject the SUCCESS response ourselves.
+  // Restored at end of test so the next test sees default behavior.
+  server_->setMemoryAutoRespond(false);
+
+  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+
+  // SessionManager should push exactly one ALLOCATE for the new session.
+  tt::domain::ManageMemoryTask memReq{};
+  server_->memoryRequestQueue().receive(memReq);
+  EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_GT(memReq.taskId, 0u);
+
+  // Mock the memory manager: SUCCESS unblocks SessionManager's allocation.
+  tt::domain::ManageMemoryResult memRes{};
+  memRes.taskId = memReq.taskId;
+  memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes.slotId = 0;
+  server_->memoryResultQueue().push(memRes);
+
+  // Once we've answered the ALLOCATE, SessionManager unblocks and the
+  // controller pushes the Sequence onto the task queue. Without our
+  // response, this receive() would hang.
+  auto seq = server_->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+
+  mockWorkerResponse(seq->taskId);
+  future.get();
+
+  server_->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
