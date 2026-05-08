@@ -103,27 +103,6 @@ struct ToolCallTaskState {
  */
 class DeepSeekToolCallParser : public IToolCallParser {
  public:
-  std::string stripMarkers(const std::string& text) const override {
-    // Remove tool call markers and content
-    std::string result = text;
-
-    // Remove everything between <｜tool▁calls▁begin｜> and
-    // <｜tool▁calls▁end｜>
-    size_t startPos = result.find(K_TOOL_CALLS_BEGIN);
-    if (startPos != std::string::npos) {
-      size_t endPos = result.find(K_TOOL_CALLS_END, startPos);
-      if (endPos != std::string::npos) {
-        result.erase(startPos, endPos - startPos + K_TOOL_CALLS_END.size());
-      }
-    }
-
-    // Trim whitespace
-    result.erase(0, result.find_first_not_of(" \t\n\r"));
-    result.erase(result.find_last_not_of(" \t\n\r") + 1);
-
-    return result;
-  }
-
   void initializeTask(uint32_t taskId) override {
     std::lock_guard<std::mutex> lock(mutex_);
 

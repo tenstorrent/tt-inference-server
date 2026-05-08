@@ -100,13 +100,6 @@ class IToolCallParser {
 };
 
 /**
- * Factory function to create the appropriate parser based on model type.
- * Used for natural tool calls with model-specific markers (e.g., DeepSeek).
- */
-std::unique_ptr<IToolCallParser> createToolCallParser(
-    tt::config::ModelType modelType);
-
-/**
  * Create a JSON tool call parser for structured output.
  * Handles models outputting {"arguments": {...}} wrapper format.
  * Used when tool_choice is "function" or "required".

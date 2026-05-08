@@ -84,11 +84,6 @@ ToolCallTokenResult makeArgumentsDelta(int index, const std::string& delta) {
  */
 class JsonToolCallParser : public IToolCallParser {
  public:
-  std::string stripMarkers(const std::string& text) const override {
-    // No markers to strip for JSON format
-    return text;
-  }
-
   void initializeTask(uint32_t taskId) override {
     initializeTask(taskId, "unknown");
   }
