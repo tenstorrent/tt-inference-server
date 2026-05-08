@@ -63,15 +63,14 @@ Json::Value buildToolCallsDelta(int index, ToolCallDeltaType deltaType,
   return toolCallsArray;
 }
 
-ToolCallTokenResult makeRegularResult(const std::string& text) {
-  return {ToolCallContentType::REGULAR,
-          text,
-          true,
-          ToolCallDeltaType::NONE,
-          -1,
+ToolCallTokenResult makeArgumentsDelta(int index, const std::string& delta) {
+  return {ToolCallDeltaType::ARGUMENTS_DELTA,
+          index,
+          delta,
           "",
           "",
-          std::nullopt};
+          buildToolCallsDelta(index, ToolCallDeltaType::ARGUMENTS_DELTA, "", "",
+                              delta)};
 }
 
 /**
@@ -125,9 +124,9 @@ class JsonToolCallParser : public IToolCallParser {
                  taskId, functionName);
   }
 
-  ToolCallTokenResult processToken(uint32_t taskId,
-                                   [[maybe_unused]] int64_t tokenId,
-                                   const std::string& decodedText) override {
+  std::optional<ToolCallTokenResult> processToken(
+      uint32_t taskId, [[maybe_unused]] int64_t tokenId,
+      const std::string& decodedText) override {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = taskStates_.find(taskId);
@@ -135,7 +134,7 @@ class JsonToolCallParser : public IToolCallParser {
       TT_LOG_WARN(
           "[JsonToolCallParser] processToken called for uninitialized task: {}",
           taskId);
-      return makeRegularResult(decodedText);
+      return std::nullopt;
     }
 
     JsonTaskState& state = it->second;
@@ -155,7 +154,6 @@ class JsonToolCallParser : public IToolCallParser {
               parseState.buffer.clear();
               parseState.braceDepth = 0;
             } else if (parseState.buffer.size() > 100) {
-              // No wrapper found - stream everything as raw arguments
               filteredDelta += parseState.buffer;
               parseState.buffer.clear();
               parseState.state = StructuredOutputState::STREAMING;
@@ -188,7 +186,6 @@ class JsonToolCallParser : public IToolCallParser {
           break;
 
         case StructuredOutputState::DONE:
-          // Skip trailing wrapper content
           break;
       }
     }
@@ -201,39 +198,23 @@ class JsonToolCallParser : public IToolCallParser {
       TT_LOG_DEBUG(
           "[JsonToolCallParser] Task {} emitting TOOL_CALL_START: function={}",
           taskId, state.functionName);
-      return {ToolCallContentType::TOOL_CALL,
-              "",
-              true,
-              ToolCallDeltaType::TOOL_CALL_START,
-              0,
-              state.functionName,
-              parseState.toolCallId,
-              buildToolCallsDelta(0, ToolCallDeltaType::TOOL_CALL_START,
-                                  parseState.toolCallId, state.functionName)};
+      return ToolCallTokenResult{
+          ToolCallDeltaType::TOOL_CALL_START,
+          0,
+          "",
+          state.functionName,
+          parseState.toolCallId,
+          buildToolCallsDelta(0, ToolCallDeltaType::TOOL_CALL_START,
+                              parseState.toolCallId, state.functionName)};
     }
 
     // Emit arguments delta
     if (!filteredDelta.empty()) {
-      return {ToolCallContentType::TOOL_CALL,
-              filteredDelta,
-              true,
-              ToolCallDeltaType::ARGUMENTS_DELTA,
-              0,
-              "",
-              "",
-              buildToolCallsDelta(0, ToolCallDeltaType::ARGUMENTS_DELTA, "", "",
-                                  filteredDelta)};
+      return makeArgumentsDelta(0, filteredDelta);
     }
 
     // No content to emit yet
-    return {ToolCallContentType::TOOL_CALL,
-            "",
-            false,
-            ToolCallDeltaType::NONE,
-            0,
-            "",
-            "",
-            std::nullopt};
+    return std::nullopt;
   }
 
   std::optional<Json::Value> finalizeTask(uint32_t taskId) override {

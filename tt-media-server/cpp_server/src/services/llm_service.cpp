@@ -26,7 +26,6 @@ namespace tt::services {
 // Bring ContentType and TokenParseResult into scope
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
-using tt::services::ToolCallContentType;
 using tt::services::ToolCallTokenResult;
 
 LLMService::LLMService() {
@@ -389,27 +388,24 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       // Process through tool call parser for OpenAI-style deltas
-      ToolCallTokenResult toolCallResult{ToolCallContentType::REGULAR,
-                                         delta,
-                                         true,
-                                         ToolCallDeltaType::NONE,
-                                         -1,
-                                         "",
-                                         "",
-                                         std::nullopt};
       auto toolChoiceOpt = toolChoiceMap.get(taskId);
       bool isStructuredOutput =
           toolChoiceOpt.has_value() && toolChoiceOpt.value().type == "function";
+
+      std::optional<ToolCallTokenResult> toolCallResult;
+      bool inToolCall = false;
 
       // Handle structured output (tool_choice="function") via JsonToolCallParser
       if (isStructuredOutput && jsonToolCallParser) {
         toolCallResult = jsonToolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
+        inToolCall = jsonToolCallParser->isInToolCall(taskId);
       }
       // Handle natural tool calls (with markers) via model-specific parser
       else if (toolCallParser) {
         toolCallResult = toolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
+        inToolCall = toolCallParser->isInToolCall(taskId);
       }
 
       bool suppressReasoning = reasoningSuppressedMap.get(taskId).has_value();
@@ -421,49 +417,36 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
       }
 
-      // Check if we should emit a tool call delta or regular content
-      {
-        bool emitToolCallDelta =
-            toolCallResult.tool_calls_delta.has_value() &&
-            toolCallResult.delta_type != ToolCallDeltaType::NONE;
+      // Emit tool call delta, suppress if in tool call, or emit regular content
+      if (toolCallResult.has_value()) {
+        // Emit tool call delta
+        auto response = buildToolCallStreamChunk(
+            token, toolCallResult->tool_calls_delta, isFinal);
+        entry->callback(response, isFinal);
 
-        if (emitToolCallDelta) {
-          // Emit tool call delta (OpenAI-style)
-          if (!toolCallResult.should_emit && !isFinal) {
-            continue;
-          }
-
-          auto response = buildToolCallStreamChunk(
-              token, toolCallResult.tool_calls_delta.value(), isFinal);
-          entry->callback(response, isFinal);
-
-        } else if (isStructuredOutput) {
-          // Structured output mode: suppress regular content emission
-          // Only emit tool call deltas, never regular content
-          if (!isFinal) {
-            continue;
-          }
-          // Final token with no delta - emit empty chunk with finish_reason
-          if (jsonToolCallParser && jsonToolCallParser->isInToolCall(taskId)) {
-            Json::Value emptyDelta(Json::arrayValue);
-            Json::Value emptyCall;
-            emptyCall["index"] = 0;
-            emptyCall["function"]["arguments"] = "";
-            emptyDelta.append(emptyCall);
-            auto response = buildToolCallStreamChunk(token, emptyDelta, true);
-            entry->callback(response, isFinal);
-          }
-
-        } else {
-          // Regular content (text or reasoning)
-          if ((!parseResult.should_emit || parseResult.text.empty()) &&
-              !isFinal) {
-            continue;
-          }
-
-          auto response = buildStreamChunk(token, parseResult, stopTokenSet);
+      } else if (inToolCall) {
+        // Inside tool call parsing, suppress regular output
+        if (isFinal) {
+          // Final token - emit empty chunk with finish_reason
+          Json::Value emptyDelta(Json::arrayValue);
+          Json::Value emptyCall;
+          emptyCall["index"] = 0;
+          emptyCall["function"]["arguments"] = "";
+          emptyDelta.append(emptyCall);
+          auto response = buildToolCallStreamChunk(token, emptyDelta, true);
           entry->callback(response, isFinal);
         }
+        // else: suppress, don't emit
+
+      } else {
+        // Regular content (text or reasoning)
+        if ((!parseResult.should_emit || parseResult.text.empty()) &&
+            !isFinal) {
+          continue;
+        }
+
+        auto response = buildStreamChunk(token, parseResult, stopTokenSet);
+        entry->callback(response, isFinal);
       }
 
       // Cleanup at finalization

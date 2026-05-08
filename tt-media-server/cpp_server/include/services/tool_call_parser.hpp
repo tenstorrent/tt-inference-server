@@ -14,32 +14,21 @@
 
 namespace tt::services {
 
-// Type of content being generated
-enum class ToolCallContentType {
-  TOOL_CALL,  // Inside tool call block
-  REGULAR     // Outside tool call block (normal content)
-};
-
 // Type of tool call delta for streaming
 enum class ToolCallDeltaType {
-  NONE,             // Not in a tool call
-  TOOL_CALL_START,  // Starting a new tool call (send structure with id, type,
-                    // function.name)
+  TOOL_CALL_START,  // Starting a new tool call (id, type, function.name)
   ARGUMENTS_DELTA,  // Adding to function.arguments
   TOOL_CALL_END     // Ending current tool call
 };
 
-// Result of processing a single token for tool calls
+// Tool call delta to emit to client
 struct ToolCallTokenResult {
-  ToolCallContentType type;  // Type of content (tool call or regular)
-  std::string text;          // Decoded text for this token (or arguments delta)
-  bool should_emit;          // Whether to send to client
-  ToolCallDeltaType delta_type;  // Type of streaming delta to send
+  ToolCallDeltaType delta_type;  // Type of streaming delta
   int tool_call_index;           // Index of current tool call (0-based)
+  std::string text;              // Arguments delta text
   std::string function_name;     // Function name (for TOOL_CALL_START)
   std::string tool_call_id;      // Tool call ID (for TOOL_CALL_START)
-  std::optional<Json::Value>
-      tool_calls_delta;  // Pre-built tool_calls array for the choice
+  Json::Value tool_calls_delta;  // Pre-built tool_calls array for the choice
 };
 
 /**
@@ -98,15 +87,20 @@ class IToolCallParser {
 
   /**
    * Process single token for streaming.
-   * Returns content type and whether to emit.
+   * Returns a tool call delta to emit, or nullopt if nothing to emit.
+   *
+   * When nullopt is returned, caller should check isInToolCall():
+   * - If true: token was consumed by parser, suppress regular output
+   * - If false: token is regular content, emit normally
    *
    * @param task_id Unique task identifier
    * @param token_id Token ID to process
    * @param decoded_text Decoded text for this token
-   * @return ToolCallTokenResult with content type and emit flag
+   * @return Tool call delta to emit, or nullopt
    */
-  virtual ToolCallTokenResult processToken(uint32_t task_id, int64_t token_id,
-                                           const std::string& decoded_text) = 0;
+  virtual std::optional<ToolCallTokenResult> processToken(
+      uint32_t task_id, int64_t token_id,
+      const std::string& decoded_text) = 0;
 
   /**
    * Finalize task state and cleanup.

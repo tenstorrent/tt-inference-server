@@ -323,82 +323,75 @@ void testStreamingTokens() {
   // Simulate: <｜tool▁calls▁begin｜>
   {
     auto r = parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
-    assert(parser->isInToolCall(taskId));
+    assert(!r.has_value());  // No delta to emit
+    assert(parser->isInToolCall(taskId));  // But we're in tool call mode
   }
 
   // Simulate: <｜tool▁call▁begin｜>
   {
     auto r = parser->processToken(taskId, TOOL_CALL_BEGIN_TOKEN, "");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(!r.has_value());
   }
 
   // Simulate: "function"
   {
     auto r = parser->processToken(taskId, 12345, "function");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(!r.has_value());
   }
 
   // Simulate: <｜tool▁sep｜>
   {
     auto r = parser->processToken(taskId, TOOL_SEP_TOKEN, "");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(!r.has_value());
   }
 
-  // Simulate: "get_weather\n"
+  // Simulate: "get_weather\n" - this emits TOOL_CALL_START
   {
     auto r = parser->processToken(taskId, 12346, "get_weather\n");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(r.has_value());
+    assert(r->delta_type == ToolCallDeltaType::TOOL_CALL_START);
+    assert(r->function_name == "get_weather");
   }
 
   // Simulate: "```json\n"
   {
     auto r = parser->processToken(taskId, 12347, "```json\n");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(!r.has_value());
   }
 
-  // Simulate: JSON arguments
+  // Simulate: JSON arguments - emits ARGUMENTS_DELTA
   {
     auto r = parser->processToken(taskId, 12348,
                                   "{\"location\":\"San Francisco\"}\n");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(r.has_value());
+    assert(r->delta_type == ToolCallDeltaType::ARGUMENTS_DELTA);
   }
 
   // Simulate: "```\n"
   {
     auto r = parser->processToken(taskId, 12349, "```\n");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(!r.has_value());
   }
 
-  // Simulate: <｜tool▁call▁end｜>
+  // Simulate: <｜tool▁call▁end｜> - emits TOOL_CALL_END
   {
     auto r = parser->processToken(taskId, TOOL_CALL_END_TOKEN, "");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
+    assert(r.has_value());
+    assert(r->delta_type == ToolCallDeltaType::TOOL_CALL_END);
   }
 
   // Simulate: <｜tool▁calls▁end｜>
   {
     auto r = parser->processToken(taskId, TOOL_CALLS_END_TOKEN, "");
-    assert(!r.should_emit);
-    assert(r.type == ToolCallContentType::TOOL_CALL);
-    assert(!parser->isInToolCall(taskId));
+    assert(!r.has_value());
+    assert(!parser->isInToolCall(taskId));  // Exited tool call mode
   }
 
-  // Regular text after tool calls
+  // Regular text after tool calls - parser returns nullopt, not in tool call
   {
     auto r = parser->processToken(taskId, 11111, "The answer is ready.");
-    assert(r.should_emit);
-    assert(r.type == ToolCallContentType::REGULAR);
-    assert(r.text == "The answer is ready.");
+    assert(!r.has_value());
+    assert(!parser->isInToolCall(taskId));  // Caller handles as regular text
   }
 
   // Finalize and check tool calls were parsed
@@ -438,8 +431,8 @@ void testMultipleStreamingTasks() {
   // Process tokens for different tasks in interleaved manner
   for (uint32_t i = 0; i < 10; i += 2) {
     auto r = parser->processToken(i, TOOL_CALLS_BEGIN_TOKEN, "");
-    assert(!r.should_emit);
-    assert(parser->isInToolCall(i));
+    assert(!r.has_value());  // No delta to emit
+    assert(parser->isInToolCall(i));  // But in tool call mode
   }
 
   std::cout << "✓ Even-numbered tasks in tool call mode\n";
@@ -470,12 +463,12 @@ void testStreamingEdgeCases() {
   constexpr int64_t TOOL_CALLS_BEGIN_TOKEN = 128806;
   constexpr int64_t TOOL_CALLS_END_TOKEN = 128807;
 
-  // Test 1: Uninitialized task
+  // Test 1: Uninitialized task - returns nullopt, caller handles as regular
   {
     auto r = parser->processToken(99999, 12345, "text");
-    assert(r.should_emit);
-    assert(r.type == ToolCallContentType::REGULAR);
-    std::cout << "✓ Test 1 passed: Uninitialized task emits as regular\n";
+    assert(!r.has_value());
+    assert(!parser->isInToolCall(99999));  // Not in tool call mode
+    std::cout << "✓ Test 1 passed: Uninitialized task returns nullopt\n";
   }
 
   // Test 2: Finalize while in tool call
@@ -497,11 +490,11 @@ void testStreamingEdgeCases() {
     uint32_t taskId = 51;
     parser->initializeTask(taskId);
 
-    // Regular text before
+    // Regular text before - returns nullopt, not in tool call
     {
       auto r = parser->processToken(taskId, 12345, "Let me help you.");
-      assert(r.should_emit);
-      assert(r.type == ToolCallContentType::REGULAR);
+      assert(!r.has_value());
+      assert(!parser->isInToolCall(taskId));  // Caller handles as regular
     }
 
     // Tool calls block
@@ -511,11 +504,11 @@ void testStreamingEdgeCases() {
     parser->processToken(taskId, TOOL_CALLS_END_TOKEN, "");
     assert(!parser->isInToolCall(taskId));
 
-    // Regular text after
+    // Regular text after - returns nullopt, not in tool call
     {
       auto r = parser->processToken(taskId, 12346, "Done.");
-      assert(r.should_emit);
-      assert(r.type == ToolCallContentType::REGULAR);
+      assert(!r.has_value());
+      assert(!parser->isInToolCall(taskId));
     }
 
     parser->finalizeTask(taskId);
