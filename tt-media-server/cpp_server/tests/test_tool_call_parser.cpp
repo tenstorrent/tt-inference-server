@@ -323,7 +323,7 @@ void testStreamingTokens() {
   // Simulate: <｜tool▁calls▁begin｜>
   {
     auto r = parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
-    assert(!r.has_value());  // No delta to emit
+    assert(!r.has_value());                // No delta to emit
     assert(parser->isInToolCall(taskId));  // But we're in tool call mode
   }
 
@@ -431,7 +431,7 @@ void testMultipleStreamingTasks() {
   // Process tokens for different tasks in interleaved manner
   for (uint32_t i = 0; i < 10; i += 2) {
     auto r = parser->processToken(i, TOOL_CALLS_BEGIN_TOKEN, "");
-    assert(!r.has_value());  // No delta to emit
+    assert(!r.has_value());           // No delta to emit
     assert(parser->isInToolCall(i));  // But in tool call mode
   }
 

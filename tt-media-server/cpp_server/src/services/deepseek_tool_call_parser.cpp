@@ -317,7 +317,11 @@ class DeepSeekToolCallParser : public IToolCallParser {
       TT_LOG_DEBUG("[ToolCallParser] Task {} ended tool call index {}", taskId,
                    idx);
       return ToolCallTokenResult{
-          ToolCallDeltaType::TOOL_CALL_END, idx, "", "", "",
+          ToolCallDeltaType::TOOL_CALL_END,
+          idx,
+          "",
+          "",
+          "",
           buildToolCallsDelta(idx, ToolCallDeltaType::TOOL_CALL_END)};
 
     } else if (tokenId == TOOL_SEP_TOKEN) {

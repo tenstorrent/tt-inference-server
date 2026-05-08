@@ -395,7 +395,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
 
-      // Handle structured output (tool_choice="function") via JsonToolCallParser
+      // Handle structured output (tool_choice="function") via
+      // JsonToolCallParser
       if (isStructuredOutput && jsonToolCallParser) {
         toolCallResult = jsonToolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);

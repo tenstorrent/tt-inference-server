@@ -24,10 +24,10 @@ enum class StructuredOutputState {
 
 struct StructuredOutputParseState {
   StructuredOutputState state = StructuredOutputState::SKIPPING_PREFIX;
-  std::string buffer;        // Accumulation buffer for prefix matching
-  int braceDepth = 0;        // Track nested braces to know when arguments end
-  bool sentStart = false;    // Whether TOOL_CALL_START has been sent
-  std::string toolCallId;    // Generated tool call ID
+  std::string buffer;      // Accumulation buffer for prefix matching
+  int braceDepth = 0;      // Track nested braces to know when arguments end
+  bool sentStart = false;  // Whether TOOL_CALL_START has been sent
+  std::string toolCallId;  // Generated tool call ID
 };
 
 // Helper to build tool_calls JSON array for a delta

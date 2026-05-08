@@ -79,8 +79,8 @@ class IToolCallParser {
    * Used by JsonToolCallParser for structured output where we know
    * the function name upfront from tool_choice.
    */
-  virtual void initializeTask(uint32_t task_id,
-                              [[maybe_unused]] const std::string& function_name) {
+  virtual void initializeTask(
+      uint32_t task_id, [[maybe_unused]] const std::string& function_name) {
     // Default implementation ignores function_name
     initializeTask(task_id);
   }
@@ -99,8 +99,7 @@ class IToolCallParser {
    * @return Tool call delta to emit, or nullopt
    */
   virtual std::optional<ToolCallTokenResult> processToken(
-      uint32_t task_id, int64_t token_id,
-      const std::string& decoded_text) = 0;
+      uint32_t task_id, int64_t token_id, const std::string& decoded_text) = 0;
 
   /**
    * Finalize task state and cleanup.
