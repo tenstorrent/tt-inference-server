@@ -20,7 +20,12 @@ from pathlib import Path
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,9 @@ def _load_fixture_image_base64() -> str:
 
 
 class VideoGenerationI2VTest(BaseTest):
+    KIND = "video_generation_i2v"
+    TASK_TYPE = "video"
+
     """Happy-path test for the I2V endpoint end-to-end."""
 
     async def _run_specific_test_async(self):
@@ -186,3 +194,16 @@ class VideoGenerationI2VTest(BaseTest):
             out_path.write_bytes(await response.read())
         logger.info(f"Downloaded I2V mp4: {out_path}")
         return str(out_path)
+
+
+def run_video_generation_i2v(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`VideoGenerationI2VTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return VideoGenerationI2VTest(test_config, targets or {}, ctx=ctx).run_tests()

@@ -2,18 +2,29 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
 class DeviceLivenessTest(BaseTest):
+    KIND = "device_liveness"
+    TASK_TYPE = "health"
+
     async def _run_specific_test_async(self):
         url = f"http://localhost:{self.service_port}/tt-liveness"
 
@@ -99,7 +110,8 @@ class DeviceLivenessTest(BaseTest):
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
                         "alive_count": alive_count,
-                        "full_response": data,
+                        "model_ready": data.get("model_ready"),
+                        "runner_in_use": data.get("runner_in_use"),
                     }
 
         except (
@@ -119,3 +131,23 @@ class DeviceLivenessTest(BaseTest):
             # Log unexpected errors but don't exit - let retry logic handle it
             logger.warning(f"⚠️  Unexpected error during device liveness check: {e}")
             raise
+
+
+def run_device_liveness(ctx: MediaContext) -> Block:
+    """Run DeviceLivenessTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1200,
+            "retry_attempts": 229,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    num_devices = ctx.model_spec.device_model_spec.max_concurrency
+    targets = {
+        "num_of_devices": num_devices if num_devices and num_devices > 0 else None
+    }
+    return DeviceLivenessTest(test_config, targets, ctx=ctx).run_tests()
+
+
+__all__ = ["DeviceLivenessTest", "run_device_liveness"]

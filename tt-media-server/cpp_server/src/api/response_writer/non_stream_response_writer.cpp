@@ -78,8 +78,6 @@ void NonStreamResponseWriter::finalize() {
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   resp->setBody(chatResponse.toJsonString());
 
-  releaseInFlight();
-
   if (httpCallback) {
     auto cb = std::move(httpCallback);
     cb(resp);
@@ -90,7 +88,7 @@ void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
                                         const std::string& message,
                                         const std::string& type) {
   if (done.exchange(true)) return;
-  releaseInFlight();
+  if (params.onSessionRelease) params.onSessionRelease();
   if (httpCallback) {
     auto cb = std::move(httpCallback);
     cb(errorResponse(status, message, type));

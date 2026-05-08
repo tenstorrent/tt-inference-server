@@ -7,7 +7,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <utility>
 
 #include "domain/manage_memory.hpp"
 
@@ -65,7 +67,12 @@ class Session {
   // Transition methods return false (without changing state) if the
   // precondition is not met.
   bool markInFlight();   // IDLE      -> IN_FLIGHT
-  bool clearInFlight();  // IN_FLIGHT -> IDLE
+  bool clearInFlight();  // IN_FLIGHT -> IDLE, also clears cancelFn
+
+  void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
+  std::function<void()> takeCancelFn() {
+    return std::exchange(cancelFn_, nullptr);
+  }
 
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;
@@ -88,6 +95,7 @@ class Session {
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
+  std::function<void()> cancelFn_;
 
   static std::string generateUuid();
 };

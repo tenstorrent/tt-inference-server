@@ -2,13 +2,21 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import io
 import logging
 import os
 import signal
 import threading
+from typing import TYPE_CHECKING
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +53,9 @@ class LoggerForkSafetyTest(BaseTest):
     that replaces handler locks with fresh ones. This test validates that
     the mechanism works in the deployment environment.
     """
+
+    KIND = "logger_fork_safety"
+    TASK_TYPE = "unit"
 
     async def _run_specific_test_async(self):
         if not hasattr(os, "fork"):
@@ -107,3 +118,19 @@ class LoggerForkSafetyTest(BaseTest):
             )
         finally:
             test_logger.removeHandler(handler)
+
+
+def run_logger_fork_safety(ctx: MediaContext) -> Block:
+    """Run LoggerForkSafetyTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 30,
+            "retry_attempts": 1,
+            "retry_delay": 1,
+            "break_on_failure": False,
+        }
+    )
+    return LoggerForkSafetyTest(test_config, targets={}, ctx=ctx).run_tests()
+
+
+__all__ = ["LoggerForkSafetyTest", "run_logger_fork_safety"]

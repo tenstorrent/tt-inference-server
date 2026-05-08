@@ -19,8 +19,16 @@ if str(_PROJECT_ROOT) not in sys.path:
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
-from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
-from ..context import MediaContext, common_report_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    block_targets,
+    run_tiered_check,
+)
+from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +139,7 @@ def _embedding_target_checks(
     )
 
 
-def run_embedding_benchmark(ctx: MediaContext) -> dict:
+def run_embedding_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for an embedding model."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -162,20 +170,24 @@ def run_embedding_benchmark(ctx: MediaContext) -> dict:
         ctx, tput_user, tput_prefill, mean_e2el
     )
 
-    report_data = common_report_metadata(ctx, "embedding")
-    report_data["benchmarks"] = {
-        "isl": isl,
-        "concurrency": concurrency,
-        "num_requests": successful_requests + failed_requests,
-        "tput_user": tput_user,
-        "tput_prefill": tput_prefill,
-        "e2el": mean_e2el,
-        "req_tput": req_tput,
-        "accuracy_check": accuracy_check,
-        "target_checks": target_checks,
-    }
-
-    return report_data
+    return Block(
+        kind="embedding_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="embedding"),
+        data={
+            "Benchmarks": {
+                "isl": isl,
+                "concurrency": concurrency,
+                "num_requests": successful_requests + failed_requests,
+                "tput_user": tput_user,
+                "tput_prefill": tput_prefill,
+                "e2el": mean_e2el,
+                "req_tput": req_tput,
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_embedding_benchmark"]
