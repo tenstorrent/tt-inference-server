@@ -359,12 +359,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
         // Finalize the appropriate parser based on tool_choice
         auto toolChoiceOptErr = toolChoiceMap.get(taskId);
-        bool isStructuredOutputErr =
-            toolChoiceOptErr.has_value() &&
-            toolChoiceOptErr.value().type == "function";
-        if (isStructuredOutputErr && jsonToolCallParser) {
+        std::string toolChoiceTypeErr =
+            toolChoiceOptErr.has_value() ? toolChoiceOptErr.value().type : "";
+        bool useJsonParserErr =
+            toolChoiceTypeErr == "function" || toolChoiceTypeErr == "required";
+        if (useJsonParserErr && jsonToolCallParser) {
           jsonToolCallParser->finalizeTask(taskId);
-        } else if (toolCallParser) {
+        } else if (toolChoiceTypeErr == "auto" && toolCallParser) {
           toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
@@ -385,22 +386,25 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       // Process through tool call parser for OpenAI-style deltas
+      // Parser is only initialized if tools were provided in the request
       auto toolChoiceOpt = toolChoiceMap.get(taskId);
-      bool isStructuredOutput =
-          toolChoiceOpt.has_value() && toolChoiceOpt.value().type == "function";
+      std::string toolChoiceType =
+          toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
+      bool useJsonParser =
+          toolChoiceType == "function" || toolChoiceType == "required";
 
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
 
-      // Handle structured output (tool_choice="function") via
+      // Handle structured output (tool_choice="function" or "required") via
       // JsonToolCallParser
-      if (isStructuredOutput && jsonToolCallParser) {
+      if (useJsonParser && jsonToolCallParser) {
         toolCallResult = jsonToolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
         inToolCall = jsonToolCallParser->isInToolCall(taskId);
       }
-      // Handle natural tool calls (with markers) via model-specific parser
-      else if (toolCallParser) {
+      // Handle natural tool calls (tool_choice="auto") via model-specific parser
+      else if (toolChoiceType == "auto" && toolCallParser) {
         toolCallResult = toolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
         inToolCall = toolCallParser->isInToolCall(taskId);
@@ -457,9 +461,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
-        if (isStructuredOutput && jsonToolCallParser) {
+        if (useJsonParser && jsonToolCallParser) {
           jsonToolCallParser->finalizeTask(taskId);
-        } else if (toolCallParser) {
+        } else if (toolChoiceType == "auto" && toolCallParser) {
           toolCallParser->finalizeTask(taskId);
         }
 
@@ -501,10 +505,6 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  if (request.tool_choice.has_value()) {
-    toolChoiceMap.insert(taskId, request.tool_choice.value());
-  }
-
   if (!request.enable_reasoning) {
     reasoningSuppressedMap.insert(taskId, true);
   }
@@ -513,17 +513,38 @@ void LLMService::processStreamingRequest(
     reasoningParser->initializeTask(taskId);
   }
 
-  // Initialize the appropriate tool call parser based on tool_choice
-  bool isStructuredOutput = request.tool_choice.has_value() &&
-                            request.tool_choice->type == "function";
-  if (isStructuredOutput && jsonToolCallParser) {
-    // Structured output: use JsonToolCallParser with function name
-    std::string functionName =
-        request.tool_choice->function.value_or("unknown");
-    jsonToolCallParser->initializeTask(taskId, functionName);
-  } else if (toolCallParser) {
-    // Natural tool calls: use model-specific parser
-    toolCallParser->initializeTask(taskId);
+  // Initialize tool call parser only if tools are provided
+  bool hasTools = request.tools.has_value() && !request.tools->empty();
+  if (hasTools) {
+    // Determine effective tool_choice (default to "auto" if not specified)
+    tt::domain::tool_calls::ToolChoice effectiveToolChoice;
+    if (request.tool_choice.has_value()) {
+      effectiveToolChoice = request.tool_choice.value();
+    } else {
+      effectiveToolChoice.type = "auto";
+    }
+
+    // Store in map so consumer loop and postProcess know tools were provided
+    // (unless tool_choice is "none", which means don't use tools)
+    if (effectiveToolChoice.type != "none") {
+      toolChoiceMap.insert(taskId, effectiveToolChoice);
+    }
+
+    if (effectiveToolChoice.type == "function" ||
+        effectiveToolChoice.type == "required") {
+      // Structured output: use JsonToolCallParser
+      if (jsonToolCallParser) {
+        std::string functionName =
+            effectiveToolChoice.function.value_or("unknown");
+        jsonToolCallParser->initializeTask(taskId, functionName);
+      }
+    } else if (effectiveToolChoice.type == "auto") {
+      // Natural tool calls: use model-specific parser
+      if (toolCallParser) {
+        toolCallParser->initializeTask(taskId);
+      }
+    }
+    // tool_choice="none" means don't use tools, skip parser initialization
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
@@ -549,25 +570,20 @@ void LLMService::processStreamingRequest(
 
 void LLMService::postProcess(LLMResponse& response) const {
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
-  tt::domain::tool_calls::ToolChoice toolChoice;
-  if (toolChoiceOpt.has_value()) {
-    toolChoice = std::move(toolChoiceOpt.value());
-  } else {
-    toolChoice.type = "auto";
-  }
 
-  if (!toolCallParser) {
+  // If no entry in toolChoiceMap, no tools were provided (or tool_choice=none)
+  // Skip tool call processing entirely
+  if (!toolChoiceOpt.has_value()) {
     return;
   }
 
+  tt::domain::tool_calls::ToolChoice toolChoice =
+      std::move(toolChoiceOpt.value());
+
   for (size_t choiceIdx = 0; choiceIdx < response.choices.size(); ++choiceIdx) {
     auto& choice = response.choices[choiceIdx];
-    if (toolChoice.type == "none") {
-      choice.text = toolCallParser->stripMarkers(choice.text);
-      continue;
-    }
 
-    if (toolChoice.type == "function") {
+    if (toolChoice.type == "function" || toolChoice.type == "required") {
       // Generate unique tool call ID in OpenAI format (call_1, call_2, ...)
       std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
 
@@ -578,6 +594,7 @@ void LLMService::postProcess(LLMResponse& response) const {
           choice.text.substr(0, std::min<size_t>(100, choice.text.length())));
 
       std::string argumentsStr = choice.text;
+      std::string functionName = toolChoice.function.value_or("");
 
       // Try to unwrap {"arguments": ...} wrapper if present
       // First, try proper JSON parsing
@@ -591,20 +608,41 @@ void LLMService::postProcess(LLMResponse& response) const {
                                         choice.text.data() + choice.text.size(),
                                         &decodedOutput, &parseErrors);
 
-      if (parsed && decodedOutput.isMember("arguments")) {
-        // Complete JSON - unwrap the "arguments" field
-        Json::StreamWriterBuilder writerBuilder;
-        writerBuilder["indentation"] = "";
-        writerBuilder["emitUTF8"] = true;
-        argumentsStr =
-            Json::writeString(writerBuilder, decodedOutput["arguments"]);
-        TT_LOG_DEBUG(
-            "[LLMService] Unwrapped arguments via JSON parse, length={}",
-            argumentsStr.length());
+      if (parsed) {
+        // Extract function name from output if not specified (required mode)
+        if (functionName.empty() && decodedOutput.isMember("name")) {
+          functionName = decodedOutput["name"].asString();
+        }
+
+        // Unwrap the "arguments" field
+        if (decodedOutput.isMember("arguments")) {
+          Json::StreamWriterBuilder writerBuilder;
+          writerBuilder["indentation"] = "";
+          writerBuilder["emitUTF8"] = true;
+          argumentsStr =
+              Json::writeString(writerBuilder, decodedOutput["arguments"]);
+          TT_LOG_DEBUG(
+              "[LLMService] Unwrapped arguments via JSON parse, length={}",
+              argumentsStr.length());
+        }
       } else {
         // If parsing failed, try heuristic unwrapping for incomplete JSON
-        // Look for pattern: {"name":"...","arguments":{...}} or
-        // {"arguments":{...},...}
+        // Look for pattern: {"name":"...","arguments":{...}}
+        if (functionName.empty()) {
+          // Try to extract function name heuristically
+          size_t namePos = choice.text.find("\"name\":");
+          if (namePos != std::string::npos) {
+            size_t nameStart = choice.text.find('"', namePos + 7);
+            if (nameStart != std::string::npos) {
+              size_t nameEnd = choice.text.find('"', nameStart + 1);
+              if (nameEnd != std::string::npos) {
+                functionName =
+                    choice.text.substr(nameStart + 1, nameEnd - nameStart - 1);
+              }
+            }
+          }
+        }
+
         size_t argsPos = choice.text.find("\"arguments\":");
         if (argsPos != std::string::npos) {
           // Find the opening brace after "arguments":
@@ -625,11 +663,14 @@ void LLMService::postProcess(LLMResponse& response) const {
         }
       }
 
+      if (functionName.empty()) {
+        functionName = "unknown";
+      }
+
       Json::Value toolCallJson;
       toolCallJson["id"] = toolCallId;
       toolCallJson["type"] = "function";
-      toolCallJson["function"]["name"] =
-          toolChoice.function.value_or("unknown");
+      toolCallJson["function"]["name"] = functionName;
       toolCallJson["function"]["arguments"] = argumentsStr;
 
       Json::Value toolCallsArray(Json::arrayValue);
@@ -641,8 +682,13 @@ void LLMService::postProcess(LLMResponse& response) const {
 
       TT_LOG_DEBUG(
           "[LLMService] Created tool_call from structured output "
-          "(tool_choice=function, function={}, id={})",
-          toolChoice.function.value_or("unknown"), toolCallId);
+          "(tool_choice={}, function={}, id={})",
+          toolChoice.type, functionName, toolCallId);
+      continue;
+    }
+
+    // tool_choice=auto: parse for natural tool calls using marker-based parser
+    if (!toolCallParser) {
       continue;
     }
 
