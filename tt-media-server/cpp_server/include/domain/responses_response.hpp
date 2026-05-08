@@ -13,11 +13,13 @@
 
 #include "domain/base_response.hpp"
 #include "domain/json_field.hpp"
+#include "domain/llm/sampling_params.hpp"
 #include "domain/responses_request.hpp"
-#include "domain/sampling_params.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::domain {
+
+using namespace tt::domain::llm;
 
 struct IncompleteDetails {
   std::string reason;
@@ -370,9 +372,9 @@ struct ResponsesResponse : BaseResponse {
 
   static ResponsesResponse fromRequest(
       uint32_t taskId, const ResponsesRequest& request,
-      const tt::domain::SamplingParams& samplingParams, std::string modelName,
-      int64_t createdTime, Json::Value output, std::string status,
-      std::optional<ResponseUsage> usage = std::nullopt,
+      const tt::domain::llm::SamplingParams& samplingParams,
+      std::string modelName, int64_t createdTime, Json::Value output,
+      std::string status, std::optional<ResponseUsage> usage = std::nullopt,
       Json::Value inputMessages = {}, Json::Value outputMessages = {},
       Json::Value kvTransfer = {}) {
     ResponsesResponse r(taskId);

@@ -3,13 +3,15 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include "domain/llm_request.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
+
+using namespace tt::domain::llm;
 
 DisaggregationService::DisaggregationService(
     tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
@@ -45,14 +47,13 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            callback.value()(
-                domain::makeErrorChunk(message.task_id, "prefill error"),
-                /*isFinal=*/true);
+            callback.value()(makeErrorChunk(message.task_id, "prefill error"),
+                             /*isFinal=*/true);
             return;
           }
 
-          auto response = domain::LLMStreamChunk(message.task_id);
-          domain::LLMChoice choice;
+          auto response = LLMStreamChunk(message.task_id);
+          LLMChoice choice;
           choice.text = message.generated_text;
           response.choices.push_back(std::move(choice));
 
@@ -62,7 +63,7 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            auto request = domain::LLMRequest(message.task_id);
+            auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
@@ -71,8 +72,8 @@ void DisaggregationService::setupSocketHandlers() {
             request.slotId = slotId;
             llmService->submitStreamingRequest(request, callback.value());
           } else {
-            auto finalResponse = domain::LLMStreamChunk(message.task_id);
-            domain::LLMChoice finalChoice;
+            auto finalResponse = LLMStreamChunk(message.task_id);
+            LLMChoice finalChoice;
             finalChoice.text = "";
             finalChoice.index = 0;
             finalChoice.finish_reason = "stop";
@@ -84,7 +85,7 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
-            callback(domain::makeErrorChunk(taskId, "connection lost"),
+            callback(makeErrorChunk(taskId, "connection lost"),
                      /*isFinal=*/true);
           });
       streamCallbacks.clear();
@@ -110,7 +111,7 @@ void DisaggregationService::setupSocketHandlers() {
 
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-          auto request = domain::LLMRequest(message.task_id);
+          auto request = LLMRequest(message.task_id);
           request.max_tokens = 1;
           auto maxTokens = message.max_tokens;
           using PromptVariant = std::variant<std::string, std::vector<int>>;
@@ -123,9 +124,8 @@ void DisaggregationService::setupSocketHandlers() {
           auto slotId = message.slot_id;
 
           llmService->submitStreamingRequest(
-              request,
-              [this, message, maxTokens, slotId](
-                  const domain::LLMStreamChunk& response, bool /*isFinal*/) {
+              request, [this, message, maxTokens, slotId](
+                           const LLMStreamChunk& response, bool /*isFinal*/) {
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
@@ -171,7 +171,7 @@ void DisaggregationService::start() {
 void DisaggregationService::stop() { socketService->stop(); }
 
 void DisaggregationService::handleStreamingRequest(
-    domain::LLMRequest& request, const StreamCallback& callback) {
+    LLMRequest& request, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     streamCallbacks.insert(request.task_id, callback);
 

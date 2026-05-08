@@ -9,11 +9,12 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils::tokenizers;
 using namespace tt::domain;
+using namespace tt::domain::llm;
 
 // ---------------------------------------------------------------------------
 // Fixture: creates a tokenizer for the env-selected model (encode/decode tests)

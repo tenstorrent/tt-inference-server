@@ -4,10 +4,8 @@
 #include "services/llm_service.hpp"
 
 #include <chrono>
-#include <condition_variable>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -113,7 +111,7 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
   return workerManager->getWorkerInfo();
 }
 
-void LLMService::preProcess(domain::LLMRequest& request) const {
+void LLMService::preProcess(LLMRequest& request) const {
   BaseService::preProcess(request);
 
   if (request.tool_choice.has_value()) {
@@ -241,16 +239,16 @@ std::string decodeToken(
   return delta;
 }
 
-domain::LLMStreamChunk buildStreamChunk(
+LLMStreamChunk buildStreamChunk(
     const ipc::SharedToken& token, const TokenParseResult& parseResult,
     const std::unordered_set<int64_t>& stopTokenSet) {
-  domain::LLMStreamChunk response{token.task_id};
+  LLMStreamChunk response{token.task_id};
   response.id = std::to_string(token.task_id);
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = token.token_index;
 
   if (parseResult.type == ContentType::REASONING) {
@@ -271,16 +269,16 @@ domain::LLMStreamChunk buildStreamChunk(
 }
 
 // Build streaming chunk for tool call deltas using pre-built tool_calls JSON
-domain::LLMStreamChunk buildToolCallStreamChunk(
-    const ipc::SharedToken& token, const Json::Value& toolCallsDelta,
-    bool isFinal) {
-  domain::LLMStreamChunk response{token.task_id};
+LLMStreamChunk buildToolCallStreamChunk(const ipc::SharedToken& token,
+                                        const Json::Value& toolCallsDelta,
+                                        bool isFinal) {
+  LLMStreamChunk response{token.task_id};
   response.id = std::to_string(token.task_id);
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = 0;
   choice.text = "";
   choice.tool_calls = toolCallsDelta;
@@ -370,8 +368,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
-        auto errorChunk =
-            domain::makeErrorChunk(taskId, "runner reported error");
+        auto errorChunk = makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }
@@ -478,91 +475,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
-  ZoneScopedN("LLMService::processRequest");
-
-  std::mutex mtx;
-  std::condition_variable cv;
-  bool done = false;
-
-  std::string accumulatedAnswer;
-  std::string accumulatedReasoning;
-  std::string accumulatedArguments;  // For tool call arguments
-  int completionTokens = 0;
-  std::string finishReason = "stop";
-
-  const int promptTokens =
-      std::holds_alternative<std::vector<int>>(request.prompt)
-          ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
-          : 0;
-  const uint32_t taskId = request.task_id;
-  const std::string model = request.model.value_or("default");
-
-  processStreamingRequest(
-      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
-        if (!chunk.choices.empty()) {
-          if (chunk.choices[0].reasoning.has_value()) {
-            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
-          }
-          accumulatedAnswer.append(chunk.choices[0].text);
-
-          // Accumulate tool call arguments for structured output
-          if (chunk.choices[0].tool_calls.has_value()) {
-            const auto& toolCalls = chunk.choices[0].tool_calls.value();
-            if (toolCalls.isArray() && !toolCalls.empty()) {
-              const auto& toolCall = toolCalls[0];
-              if (toolCall.isMember("function") &&
-                  toolCall["function"].isMember("arguments")) {
-                accumulatedArguments.append(
-                    toolCall["function"]["arguments"].asString());
-              }
-            }
-          }
-
-          completionTokens++;
-          if (chunk.choices[0].finish_reason.has_value()) {
-            finishReason = chunk.choices[0].finish_reason.value();
-          }
-        }
-        if (isFinal) {
-          std::lock_guard<std::mutex> lock(mtx);
-          done = true;
-          cv.notify_one();
-        }
-      });
-
-  std::unique_lock<std::mutex> lock(mtx);
-  cv.wait(lock, [&] { return done; });
-
-  domain::LLMResponse response{taskId};
-  response.id = std::to_string(taskId);
-  response.model = model;
-  response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-  domain::LLMChoice choice;
-  // For tool calls, use accumulated arguments; otherwise use accumulated answer
-  choice.text = accumulatedArguments.empty() ? std::move(accumulatedAnswer)
-                                             : std::move(accumulatedArguments);
-  choice.reasoning =
-      accumulatedReasoning.empty()
-          ? std::nullopt
-          : std::optional<std::string>(std::move(accumulatedReasoning));
-  choice.index = 0;
-  choice.finish_reason = finishReason;
-  response.choices.push_back(std::move(choice));
-
-  response.usage = {
-      promptTokens, completionTokens, promptTokens + completionTokens,
-      std::nullopt, std::nullopt,     std::nullopt};
-
-  return response;
+LLMResponse LLMService::processRequest(LLMRequest /*request*/) {
+  throw std::runtime_error(
+      "LLMService::processRequest is not supported; use streaming interface");
 }
 
 void LLMService::processStreamingRequest(
-    domain::LLMRequest request,
-    std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
+    LLMRequest request,
+    std::function<void(LLMStreamChunk&, bool isFinal)> callback) {
   if (!callback) {
     throw std::invalid_argument("streaming callback must not be null");
   }
@@ -612,7 +532,7 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-  auto sequence = std::make_unique<tt::domain::Sequence>(
+  auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
@@ -622,22 +542,12 @@ void LLMService::processStreamingRequest(
   }
   sequence->setContinuation(request.continuation);
   sequence->setDisaggregated(request.disaggregated);
-  sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
+  sequence->setSamplingParams(std::make_unique<tt::domain::llm::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));
   taskQueue->push(*std::move(sequence));
 }
 
-void LLMService::postProcess(domain::LLMResponse& response) const {
-  // Parse and strip reasoning blocks from all choices
-  if (reasoningParser) {
-    for (auto& choice : response.choices) {
-      auto result = reasoningParser->parseComplete(choice.text);
-
-      // Replace text with answer only (reasoning stripped)
-      choice.text = std::move(result.answer);
-    }
-  }
-
+void LLMService::postProcess(LLMResponse& response) const {
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
   tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
@@ -762,13 +672,12 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
-  // Invoke the detached callback with isFinal=true so any blocking waiter
-  // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
+  // Invoke the detached callback with isFinal=true. For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {
-    domain::LLMStreamChunk abortResponse{taskId};
-    domain::LLMChoice choice;
+    LLMStreamChunk abortResponse{taskId};
+    LLMChoice choice;
     choice.finish_reason = "abort";
     abortResponse.choices.push_back(std::move(choice));
     entry->callback(abortResponse, /*isFinal=*/true);

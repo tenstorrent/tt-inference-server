@@ -22,15 +22,11 @@ int ResponseWriter::noteToken() {
   return current;
 }
 
-domain::CompletionUsage ResponseWriter::buildUsage() const {
+CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
-  domain::CompletionUsage usage{params.promptTokenCount,
-                                tokens,
-                                totalTokens,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt};
+  CompletionUsage usage{params.promptTokenCount, tokens, totalTokens,
+                        std::nullopt, std::nullopt};
 
   if (firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -50,16 +46,7 @@ domain::CompletionUsage ResponseWriter::buildUsage() const {
     }
   }
 
-  if (params.sessionId.has_value()) {
-    usage.sessionId = params.sessionId;
-  }
   return usage;
-}
-
-void ResponseWriter::releaseInFlight() {
-  if (params.sessionId.has_value() && params.sessionManager) {
-    params.sessionManager->releaseInFlight(params.sessionId.value());
-  }
 }
 
 }  // namespace tt::api

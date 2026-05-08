@@ -25,9 +25,10 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from .._test_common import ReportCheckTypes
+from report_module.schema import Block
 
-from ..context import MediaContext, common_eval_metadata, count_tokens, require_health
+from .._test_common import ReportCheckTypes, block_id, block_targets
+from ..context import MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
@@ -246,7 +247,7 @@ def _run_audio_transcription_benchmark(
     return status_list
 
 
-def run_audio_eval(ctx: MediaContext) -> dict:
+def run_audio_eval(ctx: MediaContext) -> Block:
     """Run evaluations for an audio model (Whisper, etc.)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -268,19 +269,23 @@ def run_audio_eval(ctx: MediaContext) -> dict:
     logger.info(f"Extracted RTR value: {rtr_value}")
     logger.info(f"Extracted T/S/U value: {tsu_value}")
 
-    benchmark_data = common_eval_metadata(ctx, "audio")
-    benchmark_data["device"] = ctx.device.name
-    benchmark_data["published_score"] = ctx.all_params.tasks[0].score.published_score
-    benchmark_data["score"] = ttft_value
-    benchmark_data["published_score_ref"] = ctx.all_params.tasks[
-        0
-    ].score.published_score_ref
-    # TODO: replace hardcoded PASS with a real accuracy evaluation.
-    benchmark_data["accuracy_check"] = ReportCheckTypes.PASS
-    benchmark_data["t/s/u"] = tsu_value
-    benchmark_data["rtr"] = rtr_value
-
-    return benchmark_data
+    task = ctx.all_params.tasks[0]
+    return Block(
+        kind="audio_eval",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="audio"),
+        data={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "score": ttft_value,
+            "published_score_ref": task.score.published_score_ref,
+            # TODO: replace hardcoded PASS with a real accuracy evaluation.
+            "accuracy_check": ReportCheckTypes.PASS,
+            "t/s/u": tsu_value,
+            "rtr": rtr_value,
+        },
+    )
 
 
 __all__ = ["run_audio_eval"]

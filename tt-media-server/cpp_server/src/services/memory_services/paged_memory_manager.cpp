@@ -7,12 +7,14 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 
 namespace tt::services {
 
-using Sequence = tt::domain::Sequence;
+using namespace tt::domain::llm;
+
+using Sequence = tt::domain::llm::Sequence;
 
 using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryStatus;

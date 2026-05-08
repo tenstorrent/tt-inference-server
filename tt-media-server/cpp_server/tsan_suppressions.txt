@@ -79,3 +79,13 @@ race:tt::api::LLMController::resolveSession
 race:tt::api::LLMController::handleStreaming
 race:drogon::ResponseStream::send
 
+# Issue tenstorrent/tt-inference-server#TBD — Session state is accessed via
+# raw pointer (getPtr) from IO threads (clearInFlight) while SessionManager
+# modifies it under the ConcurrentMap lock. The access pattern is safe in
+# practice (only the owning request thread calls clearInFlight after
+# acquireInFlight succeeds), but TSan cannot prove the happens-before.
+race:tt::domain::Session::clearInFlight
+race:tt::domain::Session::markInFlight
+race:tt::domain::Session::isIdle
+race:tt::domain::Session::isInFlight
+

@@ -12,8 +12,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/llm_request.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/queue_manager.hpp"
 #include "ipc/task_queue.hpp"
@@ -27,12 +27,12 @@
 
 namespace tt::services {
 
-class LLMService
-    : public BaseService<domain::LLMRequest, domain::LLMResponse>,
-      public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
+using namespace tt::domain::llm;
+
+class LLMService : public BaseService<LLMRequest, LLMResponse>,
+                   public Streamable<LLMRequest, LLMStreamChunk> {
  public:
-  using StreamCallback =
-      std::function<void(const domain::LLMStreamChunk&, bool)>;
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
   LLMService();
 
@@ -54,14 +54,13 @@ class LLMService
 
   bool isModelReady() const override;
 
-  void preProcess(domain::LLMRequest& request) const override;
+  void preProcess(LLMRequest& request) const override;
 
-  void postProcess(domain::LLMResponse& response) const override;
+  void postProcess(LLMResponse& response) const override;
 
   void processStreamingRequest(
-      domain::LLMRequest request,
-      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
-      override;
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
   void abortRequest(uint32_t taskId);
 
@@ -71,15 +70,15 @@ class LLMService
 
  protected:
   size_t currentQueueSize() const override;
-  domain::LLMResponse processRequest(domain::LLMRequest request) override;
+  LLMResponse processRequest(LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
+  void streamingPostProcess(LLMStreamChunk&) const override {}
 
  private:
   struct StreamCallbackEntry {
-    std::function<void(domain::LLMStreamChunk&, bool)> callback;
+    std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
   };
 

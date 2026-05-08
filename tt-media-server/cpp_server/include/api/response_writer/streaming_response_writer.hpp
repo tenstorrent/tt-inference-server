@@ -30,10 +30,9 @@ namespace tt::api {
 class StreamingResponseWriter : public ResponseWriter {
  public:
   static std::shared_ptr<StreamingResponseWriter> create(
-      trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
-      bool continuousUsage);
+      trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage);
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**
@@ -47,7 +46,7 @@ class StreamingResponseWriter : public ResponseWriter {
 
  private:
   StreamingResponseWriter(trantor::EventLoop* loop, ResponseWriterParams params,
-                          bool includeUsage, bool continuousUsage);
+                          bool includeUsage);
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
@@ -55,7 +54,6 @@ class StreamingResponseWriter : public ResponseWriter {
 
   trantor::EventLoop* loop;
   bool includeUsage;
-  bool continuousUsage;
 
   std::shared_ptr<drogon::ResponseStreamPtr> streamPtr =
       std::make_shared<drogon::ResponseStreamPtr>();

@@ -6,11 +6,13 @@
 #include <utility>
 
 #include "api/error_response.hpp"
-#include "domain/chat_completion_response.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
+
+using namespace tt::domain::llm;
 
 NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
                                                  HttpCallback httpCallback)
@@ -23,8 +25,7 @@ std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
       new NonStreamResponseWriter(std::move(params), std::move(httpCallback)));
 }
 
-void NonStreamResponseWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -58,12 +59,12 @@ void NonStreamResponseWriter::handleTokenChunk(
 void NonStreamResponseWriter::finalize() {
   if (done.exchange(true)) return;
 
-  domain::LLMResponse llmResponse{params.taskId};
+  LLMResponse llmResponse{params.taskId};
   llmResponse.id = params.completionId;
   llmResponse.model = params.model;
   llmResponse.created = params.created;
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = 0;
   std::string argsStr = accumulatedArguments.str();
   choice.text = argsStr.empty() ? accumulatedAnswer.str() : std::move(argsStr);
@@ -84,14 +85,15 @@ void NonStreamResponseWriter::finalize() {
     }
   }
 
-  auto chatResponse =
-      domain::ChatCompletionResponse::fromLLMResponse(llmResponse);
+  auto chatResponse = ChatCompletionResponse::fromLLMResponse(llmResponse);
 
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   resp->setBody(chatResponse.toJsonString());
 
-  releaseInFlight();
+  if (params.session) {
+    params.session->clearInFlight();
+  }
 
   if (httpCallback) {
     auto cb = std::move(httpCallback);
@@ -103,7 +105,9 @@ void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
                                         const std::string& message,
                                         const std::string& type) {
   if (done.exchange(true)) return;
-  releaseInFlight();
+  if (params.session) {
+    params.session->clearInFlight();
+  }
   if (httpCallback) {
     auto cb = std::move(httpCallback);
     cb(errorResponse(status, message, type));

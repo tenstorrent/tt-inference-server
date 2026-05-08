@@ -7,9 +7,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 class Block {
  public:
@@ -31,10 +33,10 @@ class BlockManager {
   static int64_t computeHash(const std::vector<int64_t>& tokenIds,
                              int64_t prefix = -1);
 
-  bool allocate(tt::domain::Sequence& seq);
-  void deallocate(tt::domain::Sequence& seq);
-  bool canAppend(const tt::domain::Sequence& seq) const;
-  void mayAppend(tt::domain::Sequence& seq);
+  bool allocate(tt::domain::llm::Sequence& seq);
+  void deallocate(tt::domain::llm::Sequence& seq);
+  bool canAppend(const tt::domain::llm::Sequence& seq) const;
+  void mayAppend(tt::domain::llm::Sequence& seq);
 
   int getBlockSize() const { return static_cast<int>(blockSize); }
   size_t numFreeBlocks() const;

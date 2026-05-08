@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "domain/llm_request.hpp"
-#include "domain/llm_response.hpp"
-#include "domain/sequence.hpp"
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/llm/sequence.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
@@ -42,13 +42,13 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
 
   auto llmService = makeService(taskQueue);
 
-  tt::domain::LLMRequest request{/*taskId=*/7};
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
   request.prompt = std::vector<int>{10, 20, 30};
   request.skip_special_tokens = true;
   request.enable_reasoning = true;
 
   ASSERT_NO_THROW(llmService->processStreamingRequest(
-      std::move(request), [](tt::domain::LLMStreamChunk&, bool) {}));
+      std::move(request), [](tt::domain::llm::LLMStreamChunk&, bool) {}));
 
   ASSERT_FALSE(taskQueue->empty());
   auto pushed = taskQueue->tryPop();

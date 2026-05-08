@@ -217,6 +217,8 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.BLACKHOLE_GALAXY, 4): DeviceTypes.P150X8,
             (DeviceTypes.BLACKHOLE_GALAXY, 8): DeviceTypes.P150X4,
             (DeviceTypes.BLACKHOLE_GALAXY, 32): DeviceTypes.P150,
+            (DeviceTypes.DUAL_GALAXY, 8): DeviceTypes.T3K,
+            (DeviceTypes.QUAD_GALAXY, 16): DeviceTypes.T3K,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(

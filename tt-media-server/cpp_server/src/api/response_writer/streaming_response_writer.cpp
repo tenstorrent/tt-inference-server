@@ -6,30 +6,29 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "domain/chat_completion_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
 
+using namespace tt::domain::llm;
+
 StreamingResponseWriter::StreamingResponseWriter(trantor::EventLoop* loop,
                                                  ResponseWriterParams params,
-                                                 bool includeUsage,
-                                                 bool continuousUsage)
+                                                 bool includeUsage)
     : ResponseWriter(std::move(params)),
       loop(loop),
-      includeUsage(includeUsage),
-      continuousUsage(continuousUsage) {
+      includeUsage(includeUsage) {
   if (config::enableAccumulatedStreaming()) {
     sseBatchQueue = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
   }
 }
 
 std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
-    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
-    bool continuousUsage) {
-  return std::shared_ptr<StreamingResponseWriter>(new StreamingResponseWriter(
-      loop, std::move(params), includeUsage, continuousUsage));
+    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage) {
+  return std::shared_ptr<StreamingResponseWriter>(
+      new StreamingResponseWriter(loop, std::move(params), includeUsage));
 }
 
 void StreamingResponseWriter::sendSse(const std::string& sse,
@@ -75,8 +74,7 @@ void StreamingResponseWriter::flushAccumulated() {
   }
 }
 
-void StreamingResponseWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -85,30 +83,14 @@ void StreamingResponseWriter::handleTokenChunk(
       choice.tool_calls.has_value()) {
     noteToken();
   }
-  std::optional<domain::CompletionUsage> usage;
-  if (continuousUsage) {
-    const int currentTokens = completionTokens.load();
-    usage = domain::CompletionUsage{params.promptTokenCount,
-                                    currentTokens,
-                                    params.promptTokenCount + currentTokens,
-                                    std::nullopt,
-                                    std::nullopt,
-                                    params.sessionId};
-  }
 
-  auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-      params.completionId, params.model, params.created, choice, usage);
+  auto streamChunk = ChatCompletionStreamChunk::makeContentChunk(
+      params.completionId, params.model, params.created, choice, std::nullopt);
 
   std::string sse;
   if (firstContentChunk.exchange(false)) {
-    std::optional<domain::CompletionUsage> initialUsage;
-    if (continuousUsage) {
-      initialUsage = domain::CompletionUsage{
-          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
-          params.sessionId};
-    }
-    auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-        params.completionId, params.model, params.created, initialUsage);
+    auto initialChunk = ChatCompletionStreamChunk::makeInitialChunk(
+        params.completionId, params.model, params.created, std::nullopt);
     sse = initialChunk.toSSE() + streamChunk.toSSE();
   } else {
     sse = streamChunk.toSSE();
@@ -131,7 +113,7 @@ void StreamingResponseWriter::finalize() {
       if (self->includeUsage) {
         auto usage = self->buildUsage();
         (*self->streamPtr)
-            ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
+            ->send(ChatCompletionStreamChunk::makeUsageChunk(
                        self->params.completionId, self->params.model,
                        self->params.created, usage)
                        .toSSE());
@@ -140,7 +122,9 @@ void StreamingResponseWriter::finalize() {
       (*self->streamPtr)->send("data: [DONE]\n\n");
       (*self->streamPtr)->close();
 
-      self->releaseInFlight();
+      if (self->params.session) {
+        self->params.session->clearInFlight();
+      }
     }
   });
 }
@@ -151,7 +135,9 @@ void StreamingResponseWriter::abort() {
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
-    releaseInFlight();
+    if (params.session) {
+      params.session->clearInFlight();
+    }
   }
 }
 
