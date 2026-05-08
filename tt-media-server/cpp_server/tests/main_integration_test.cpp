@@ -193,5 +193,17 @@ int main(int argc, char** argv) {
   configureEnv();
   tt::utils::ZeroOverheadLogger::initialize();
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  const int result = RUN_ALL_TESTS();
+
+  // Bypass atexit / static destructors to dodge a segfault during OpenSSL's
+  // OPENSSL_cleanup() — Drogon and the embedded Python interpreter both pull
+  // in libssl, and their interleaved teardown corrupts OpenSSL's ex_data hash
+  // table. The crash is unrelated to the tests; it would also turn a clean
+  // exit-0 into exit-139 and fail CI.
+  //
+  // Safe to skip:
+  //   - Drogon listener already quit in TearDownTestSuite.
+  //   - Worker subprocess sets PR_SET_PDEATHSIG=SIGTERM so the kernel reaps it.
+  //   - Boost.Interprocess shm in /dev/shm leaks but is reused on next run.
+  std::_Exit(result);
 }

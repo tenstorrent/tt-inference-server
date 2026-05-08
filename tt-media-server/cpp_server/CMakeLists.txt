@@ -620,7 +620,12 @@ target_include_directories(main_integration_test PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(main_integration_test)
+# main_integration_test boots the whole server stack (services, IPC queues,
+# Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
+# tears it down via TearDownTestSuite. Registering each TEST_F as its own
+# ctest entry would invoke the binary once per test, paying that boot cost six
+# times AND exposing a racy teardown. Run all six tests in a single process.
+add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
