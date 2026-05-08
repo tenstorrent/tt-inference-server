@@ -3,25 +3,19 @@
 
 #pragma once
 
+#include "runners/runner_base.hpp"
+
 namespace tt::runners {
 
 /**
- * Base for in-process media runners — owned by a service and dispatched to
- * synchronously, unlike the IPC-driven IRunner used by LLM/Embedding.
+ * Direct-call runner owned by an in-process service. Differs from `IRunner`
+ * only in `run()` shape: media services synchronously call `run(request)` and
+ * map exceptions to error responses.
  */
 template <typename Request, typename Response>
-class MediaRunner {
+class MediaRunner : public IRunnerBase {
  public:
-  virtual ~MediaRunner() = default;
-
-  virtual bool warmup() = 0;
-
-  /** Throw on failure; the service maps exceptions to error responses. */
   virtual Response run(const Request& request) = 0;
-
-  virtual void stop() {}
-
-  virtual const char* runnerType() const = 0;
 };
 
 }  // namespace tt::runners

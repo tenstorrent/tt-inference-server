@@ -14,8 +14,9 @@ namespace tt::api {
 
 /**
  * OpenAI-compatible image generation controller. Only one image mode is
- * active per runner; routes for the other modes are filtered out by the
- * RouteRegistry allow-list, not by this controller.
+ * active per process: model_service_registration.cpp registers exactly the
+ * route matching the configured runner_type, so the inactive endpoints are
+ * not present in the RouteRegistry and 404 via SyncAdvice in main.cpp.
  */
 class ImageController : public drogon::HttpController<ImageController> {
  public:

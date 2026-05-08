@@ -37,8 +37,6 @@ class ImageService
  protected:
   domain::ImageResponse processRequest(
       domain::ImageGenerateRequest request) override;
-  void postProcess(domain::ImageResponse& /*response*/) const override {}
-  size_t currentQueueSize() const override { return 0; }
 
  private:
   config::ImageConfig config_;

@@ -7,33 +7,21 @@
 #include <stdexcept>
 #include <string>
 
+#include "runners/runner_base.hpp"
+
 namespace tt::runners {
 
 /**
- * Common interface for all runners (LLM, Embedding, etc.).
- * Provides basic lifecycle management for inference runners.
+ * Loop-driven runner used by the IPC worker process (LLM, Embedding, ...).
+ * The worker calls `start()`, which warms the runner up and then enters the
+ * inference loop via the private `run()`.
  */
-class IRunner {
+class IRunner : public IRunnerBase {
  public:
-  virtual ~IRunner() = default;
-
-  /**
-   * Stop the runner gracefully.
-   */
-  virtual void stop() = 0;
-
-  /**
-   * Warm up the runner by preloading models and resources.
-   */
-  virtual bool warmup() { return true; }
-
-  /**
-   * Warm up then run the inference loop. Optional onWarmupDone is invoked
-   * after warmup() and before run() so the worker can signal readiness.
-   */
+  /** Warm up then enter the inference loop; `onWarmupDone` signals readiness
+   * to the worker once warmup() returns true. */
   void start(std::function<void()> onWarmupDone = nullptr) {
-    bool isWarmedUp = warmup();
-    if (!isWarmedUp) {
+    if (!warmup()) {
       throw std::runtime_error(std::string(runnerType()) + " warmup failed");
     }
     if (onWarmupDone) {
@@ -42,16 +30,7 @@ class IRunner {
     run();
   }
 
-  /**
-   * Get the runner type for identification.
-   */
-  virtual const char* runnerType() const = 0;
-
  private:
-  /**
-   * Start the runner and begin processing.
-   * This method should run the main inference loop.
-   */
   virtual void run() = 0;
 };
 

@@ -64,8 +64,12 @@ class BaseService : public IService {
   virtual void preProcess(RequestType& /*request*/) const {
     if (currentQueueSize() >= maxQueueSize) throw QueueFullException{};
   }
-  virtual void postProcess(ResponseType& response) const = 0;
-  virtual size_t currentQueueSize() const = 0;
+  /** Override when a service needs to mutate the response before returning
+   * (token-count fixups, metric stamping, ...). */
+  virtual void postProcess(ResponseType& /*response*/) const {}
+  /** Override when the service has an internal queue subject to maxQueueSize
+   * back-pressure. Synchronous, single-runner services have no queue. */
+  virtual size_t currentQueueSize() const { return 0; }
 
   virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
     return {};

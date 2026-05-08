@@ -488,6 +488,16 @@ target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# Image generate request parsing test
+add_executable(test_image_generate_request tests/test_image_generate_request.cpp)
+target_link_libraries(test_image_generate_request PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(test_image_generate_request PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Reasoning parser test
 add_executable(test_reasoning_parser
     tests/test_reasoning_parser.cpp
@@ -609,6 +619,7 @@ gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
+gtest_discover_tests(test_image_generate_request)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
