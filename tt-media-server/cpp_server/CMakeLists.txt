@@ -574,7 +574,55 @@ target_include_directories(llm_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(api_contract_test
+    tests/api_contract_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/services/memory_services/contiguous_memory_manager.cpp
+    src/domain/session.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+)
+target_link_libraries(api_contract_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(api_contract_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
+gtest_discover_tests(api_contract_test)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
