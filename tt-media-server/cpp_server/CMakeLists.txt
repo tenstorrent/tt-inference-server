@@ -581,7 +581,7 @@ add_executable(llm_service_test
     src/worker/single_process_worker.cpp
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/image_codec.cpp
     src/runners/embedding_runner.cpp
@@ -711,7 +711,7 @@ set(SOURCES
     src/utils/service_factory.cpp
     src/services/service_container.cpp
     src/services/model_service_registration.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp

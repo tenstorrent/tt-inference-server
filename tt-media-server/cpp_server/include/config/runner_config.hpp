@@ -13,16 +13,29 @@
 
 namespace tt::config {
 
-/** Common base for runner configs; carries the runner_type used for factory
- * dispatch. */
+/** Carries the runner_type used for factory dispatch. */
 struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
 
-/**
- * Configuration for LLM inference engine.
- * Includes model runner settings, scheduling policy, and KV cache parameters.
- */
+/** Shared fields for in-process media runners (image today; audio, TTS,
+ *  video next). Mirrors the device/weight knobs that live at the global
+ *  Settings level in tt-media-server's config/settings.py. */
+struct MediaRunnerConfigBase : RunnerConfigBase {
+  size_t max_batch_size = 1;
+
+  // 2-D {rows, cols}. rows > 1 enables tensor parallelism, mirroring
+  // BaseDeviceRunner.is_tensor_parallel.
+  std::vector<size_t> device_mesh_shape{1, 1};
+
+  bool is_galaxy = false;
+
+  // Empty = use the HF Hub default repo for the active runner.
+  std::string model_weights_path;
+
+  unsigned weights_distribution_timeout_seconds = 1800;
+};
+
 struct LLMConfig : RunnerConfigBase {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
   size_t max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
@@ -35,34 +48,16 @@ struct LLMConfig : RunnerConfigBase {
   SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 
-/**
- * Configuration for embedding service. Placeholder; will grow as embedding
- * features are added.
- */
+/** Placeholder; will grow as embedding features are added. */
 struct EmbeddingConfig : RunnerConfigBase {};
 
-/**
- * Configuration for image generation service. Per-model knobs only; per-request
- * fields (prompt, num_inference_steps, guidance, ...) live on the request.
- */
-struct ImageConfig : RunnerConfigBase {
+/** Per-request fields (prompt, num_inference_steps, ...) live on the request,
+ *  not here. */
+struct ImageConfig : MediaRunnerConfigBase {
   ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }
-
-  size_t max_batch_size = 1;
-
-  // 2-D {rows, cols}. rows > 1 enables tensor parallelism, mirroring
-  // BaseDeviceRunner.is_tensor_parallel.
-  std::vector<size_t> device_mesh_shape{1, 1};
 
   size_t image_width = 1024;
   size_t image_height = 1024;
-
-  bool is_galaxy = false;
-
-  // Empty = use the HF Hub default repo for the active runner.
-  std::string model_weights_path;
-
-  unsigned weights_distribution_timeout_seconds = 1800;
 };
 
 /** Variant wrapper for all runner configuration types. */

@@ -65,9 +65,8 @@ class ThreadPool {
   bool stop_;
 };
 
-/** Process-wide callback pool used by HTTP controllers to offload service
- * dispatch off the Drogon I/O loop. Sized via
- * config::defaults::CALLBACK_POOL_THREADS. */
+/** Process-wide pool for HTTP controllers to offload service dispatch off the
+ *  Drogon I/O loop. */
 inline ThreadPool& controllerCallbackPool() {
   static ThreadPool pool(tt::config::defaults::CALLBACK_POOL_THREADS);
   return pool;

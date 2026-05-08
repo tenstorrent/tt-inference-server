@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
@@ -13,14 +14,12 @@
 #include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/media_runner.hpp"
 #include "runners/sdxl/sdxl_runner.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
-#include "utils/media_runner_registry.hpp"
 #include "utils/runner_registry.hpp"
 
 #ifdef ENABLE_BLAZE
@@ -32,6 +31,8 @@ namespace tt::services {
 namespace {
 
 void registerLLM() {
+  if (!config::isLlmService()) return;
+
   ServiceRegistry::instance().registerService(
       config::ModelService::LLM, []() -> std::shared_ptr<IService> {
         return std::make_shared<LLMService>();
@@ -51,13 +52,13 @@ void registerLLM() {
     return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
                                                 cancelQueue);
   };
-  runners.registerRunner(config::ModelService::LLM,
-                         config::ModelRunnerType::MOCK, llmFactory);
-  runners.registerRunner(config::ModelService::LLM,
-                         config::ModelRunnerType::LLAMA, llmFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK, llmFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::LLAMA, llmFactory);
 
   // Disaggregated prefill is independent of ENABLE_BLAZE.
-  runners.registerRunner(
+  runners.registerIpcRunner(
       config::ModelService::LLM, config::ModelRunnerType::PREFILL,
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
@@ -77,11 +78,12 @@ void registerLLM() {
     const auto& llm = std::get<config::LLMConfig>(cfg);
     return std::make_unique<runners::BlazeRunner>(llm, resultQueue, taskQueue);
   };
-  runners.registerRunner(config::ModelService::LLM,
-                         config::ModelRunnerType::PIPELINE_MANAGER,
-                         blazeFactory);
-  runners.registerRunner(config::ModelService::LLM,
-                         config::ModelRunnerType::MOCK_PIPELINE, blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::PIPELINE_MANAGER,
+                            blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK_PIPELINE,
+                            blazeFactory);
 #endif
 
   auto& routes = api::RouteRegistry::instance();
@@ -93,12 +95,14 @@ void registerLLM() {
 }
 
 void registerEmbedding() {
+  if (!config::isEmbeddingService()) return;
+
   ServiceRegistry::instance().registerService(
       config::ModelService::EMBEDDING, []() -> std::shared_ptr<IService> {
         return std::make_shared<EmbeddingService>();
       });
 
-  utils::RunnerRegistry::instance().registerRunner(
+  utils::RunnerRegistry::instance().registerIpcRunner(
       config::ModelService::EMBEDDING, config::ModelRunnerType::MOCK,
       [](const config::RunnerConfig& /*cfg*/,
          ipc::IResultQueue* /*resultQueue*/, ipc::ITaskQueue* /*taskQueue*/,
@@ -114,38 +118,71 @@ void registerEmbedding() {
 }
 
 void registerImage() {
-  ServiceRegistry::instance().registerService(
-      config::ModelService::IMAGE, []() -> std::shared_ptr<IService> {
-        return std::make_shared<ImageService>(config::imageEngineConfig());
+  if (!config::isImageService()) return;
+
+  auto& runners = utils::RunnerRegistry::instance();
+  runners.registerMediaRunner(
+      config::ModelService::IMAGE, config::ModelRunnerType::TT_SDXL_GENERATE,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::sdxl::SDXLGenerateRunner>(
+            std::get<config::ImageConfig>(cfg));
+      });
+  runners.registerMediaRunner(
+      config::ModelService::IMAGE,
+      config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::sdxl::SDXLImageToImageRunner>(
+            std::get<config::ImageConfig>(cfg));
+      });
+  runners.registerMediaRunner(
+      config::ModelService::IMAGE, config::ModelRunnerType::TT_SDXL_EDIT,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::sdxl::SDXLEditRunner>(
+            std::get<config::ImageConfig>(cfg));
       });
 
-  auto& imageRunners = utils::MediaRunnerRegistry<
-      runners::MediaRunner<domain::ImageGenerateRequest,
-                           std::vector<std::string>>,
-      config::ImageConfig>::instance();
-  imageRunners.registerRunner(
-      config::ModelRunnerType::TT_SDXL_GENERATE,
-      [](const config::ImageConfig& cfg) {
-        return std::make_unique<runners::sdxl::SDXLGenerateRunner>(cfg);
-      });
-  imageRunners.registerRunner(
-      config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE,
-      [](const config::ImageConfig& cfg) {
-        return std::make_unique<runners::sdxl::SDXLImageToImageRunner>(cfg);
-      });
-  imageRunners.registerRunner(
-      config::ModelRunnerType::TT_SDXL_EDIT,
-      [](const config::ImageConfig& cfg) {
-        return std::make_unique<runners::sdxl::SDXLEditRunner>(cfg);
+  const auto cfg = config::imageEngineConfig();
+
+  ServiceRegistry::instance().registerService(
+      config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
+        auto runner =
+            utils::RunnerRegistry::instance()
+                .createMedia<ImageService::Runner>(
+                    config::ModelService::IMAGE, cfg.runner_type,
+                    config::RunnerConfig{cfg});
+        if (!runner) {
+          throw std::runtime_error(
+              "[RegisterImage] No image runner registered for runner_type=" +
+              config::toString(cfg.runner_type));
+        }
+        return std::make_shared<ImageService>(cfg, std::move(runner));
       });
 
   auto& routes = api::RouteRegistry::instance();
-  routes.registerRoute(config::ModelService::IMAGE, "POST",
-                       "/v1/images/generations", "Text-to-image generation");
-  routes.registerRoute(config::ModelService::IMAGE, "POST",
-                       "/v1/images/image-to-image", "Image-to-image");
-  routes.registerRoute(config::ModelService::IMAGE, "POST", "/v1/images/edits",
-                       "Image edit / inpaint");
+  switch (cfg.runner_type) {
+    case config::ModelRunnerType::TT_SDXL_GENERATE:
+      routes.registerRoute(config::ModelService::IMAGE, "POST",
+                           "/v1/images/generations",
+                           "Text-to-image generation");
+      break;
+    case config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE:
+      routes.registerRoute(config::ModelService::IMAGE, "POST",
+                           "/v1/images/image-to-image", "Image-to-image");
+      break;
+    case config::ModelRunnerType::TT_SDXL_EDIT:
+      routes.registerRoute(config::ModelService::IMAGE, "POST",
+                           "/v1/images/edits", "Image edit / inpaint");
+      break;
+    default:
+      TT_LOG_WARN(
+          "[RegisterImage] Unknown image runner_type={}; no /v1/images/* "
+          "route registered",
+          config::toString(cfg.runner_type));
+      break;
+  }
 }
 
 void registerAlwaysExemptRoutes() {

@@ -25,20 +25,11 @@
 namespace tt::api {
 
 /**
- * Validation + dispatch helper shared by every synchronous media controller
- * (image today; audio, TTS, and video as they migrate from tt-media-server).
- *
- * Each controller endpoint shares the same shape: validate the JSON body,
- * confirm the service is warmed up, parse the request, then offload
- * `service->submitRequest` to the shared callback pool so Drogon's I/O loop
- * is never blocked. The helper centralises that pipeline plus the OpenAI
- * error mapping (400/429/500/503).
- *
- * Requirements on the templated `Service` / `Request` types:
- *  - `Service` derives from `tt::services::BaseService<Request, Response>`
- *    where `Response` exposes `error` and `toOpenaiJson()`.
- *  - `Request::fromJson(const Json::Value&, uint32_t taskId)` returns the
- *    parsed request and throws `std::invalid_argument` on validation errors.
+ * Validate the JSON body, parse the request, and dispatch
+ * `service->submitRequest` on the shared callback pool. Maps parse errors to
+ * 400, queue full to 429, runner exceptions to 500, model-not-ready to 503.
+ * `Request` must expose `static Request fromJson(const Json::Value&, uint32_t)`
+ * and `Response` must expose `error` plus `toOpenaiJson()`.
  */
 template <typename Service, typename Request>
 void dispatchJsonRequest(

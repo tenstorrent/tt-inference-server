@@ -8,25 +8,14 @@
 #include <utility>
 
 #include "utils/logger.hpp"
-#include "utils/media_runner_registry.hpp"
 
 namespace tt::services {
 
-ImageService::ImageService(config::ImageConfig config)
-    : config_(std::move(config)) {
-  auto& registry = utils::MediaRunnerRegistry<
-      runners::MediaRunner<domain::ImageGenerateRequest,
-                           std::vector<std::string>>,
-      config::ImageConfig>::instance();
-  try {
-    runner_ = registry.create(config_);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[ImageService] Failed to construct image runner: {}",
-                 e.what());
-    throw;
-  }
+ImageService::ImageService(config::ImageConfig config,
+                           std::unique_ptr<Runner> runner)
+    : config_(std::move(config)), runner_(std::move(runner)) {
   if (!runner_) {
-    throw std::runtime_error("[ImageService] Unknown image runner type");
+    throw std::invalid_argument("[ImageService] runner must not be null");
   }
   TT_LOG_INFO("[ImageService] Initialized with runner '{}'",
               runner_->runnerType());

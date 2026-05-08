@@ -16,15 +16,15 @@
 
 namespace tt::services {
 
-/**
- * In-process service for image generation / image-to-image / edit endpoints.
- * Owns one runner and dispatches requests synchronously; the Drogon
- * controller offloads to a thread pool so the I/O loop is never blocked.
- */
+/** In-process image service. Owns one runner and dispatches synchronously;
+ *  the Drogon controller offloads to a thread pool. */
 class ImageService
     : public BaseService<domain::ImageGenerateRequest, domain::ImageResponse> {
  public:
-  explicit ImageService(config::ImageConfig config);
+  using Runner = runners::MediaRunner<domain::ImageGenerateRequest,
+                                      std::vector<std::string>>;
+
+  ImageService(config::ImageConfig config, std::unique_ptr<Runner> runner);
   ~ImageService() override;
 
   ImageService(const ImageService&) = delete;
@@ -40,9 +40,7 @@ class ImageService
 
  private:
   config::ImageConfig config_;
-  std::unique_ptr<runners::MediaRunner<domain::ImageGenerateRequest,
-                                       std::vector<std::string>>>
-      runner_;
+  std::unique_ptr<Runner> runner_;
   std::atomic<bool> ready_{false};
 };
 

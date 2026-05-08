@@ -7,11 +7,8 @@
 
 namespace tt::runners {
 
-/**
- * Direct-call runner owned by an in-process service. Differs from `IRunner`
- * only in `run()` shape: media services synchronously call `run(request)` and
- * map exceptions to error responses.
- */
+/** Direct-call runner owned by an in-process service; the service maps
+ *  exceptions thrown from `run()` to error responses. */
 template <typename Request, typename Response>
 class MediaRunner : public IRunnerBase {
  public:

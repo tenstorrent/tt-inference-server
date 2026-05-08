@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "utils/runner_factory.hpp"
+#include "utils/ipc_runner_factory.hpp"
 
 #include <stdexcept>
 #include <variant>
@@ -10,7 +10,7 @@
 #include "utils/logger.hpp"
 #include "utils/runner_registry.hpp"
 
-namespace tt::utils::runner_factory {
+namespace tt::utils::ipc_runner_factory {
 
 namespace {
 
@@ -22,24 +22,25 @@ config::ModelRunnerType runnerTypeFromConfig(
 
 }  // namespace
 
-std::unique_ptr<runners::IRunner> createRunner(
+std::unique_ptr<runners::IRunner> createIpcRunner(
     config::ModelService service, const config::RunnerConfig& config,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
-  // Required for callers that bypass service_factory (e.g. tests).
+  // Required for callers that bypass service_factory (e.g. tests, exec'd
+  // worker children that don't inherit parent registration state).
   services::registerBuiltinModelServices();
 
   const config::ModelRunnerType runnerType = runnerTypeFromConfig(config);
 
-  auto runner = RunnerRegistry::instance().create(
+  auto runner = RunnerRegistry::instance().createIpc(
       service, runnerType, config, resultQueue, taskQueue, cancelQueue);
   if (!runner) {
     TT_LOG_ERROR(
-        "[RunnerFactory] No runner registered for service+type; refusing to "
-        "create");
+        "[IpcRunnerFactory] No runner registered for service+type; refusing "
+        "to create");
     throw std::runtime_error("No runner registered for the requested service");
   }
   return runner;
 }
 
-}  // namespace tt::utils::runner_factory
+}  // namespace tt::utils::ipc_runner_factory

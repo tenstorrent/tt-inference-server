@@ -319,6 +319,18 @@ bool envBool(const char* name, bool defaultValue) {
   return defaultValue;
 }
 
+/** Populate the device/weight knobs shared by every in-process media runner.
+ *  Called by imageEngineConfig() and the upcoming audio/tts/video readers. */
+void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
+  cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
+  cfg.device_mesh_shape =
+      parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+  cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
+  cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
+      envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
+}
+
 }  // namespace
 
 ImageConfig imageEngineConfig() {
@@ -339,10 +351,7 @@ ImageConfig imageEngineConfig() {
           "tt_sdxl_edit");
     }
 
-    cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
-
-    cfg.device_mesh_shape =
-        parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+    readMediaRunnerConfig(cfg);
 
     const std::string res = envString("SDXL_IMAGE_RESOLUTION", "1024x1024");
     size_t w = 1024, h = 1024;
@@ -350,11 +359,6 @@ ImageConfig imageEngineConfig() {
       cfg.image_width = w;
       cfg.image_height = h;
     }
-
-    cfg.is_galaxy = envBool("IS_GALAXY", false);
-    cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
-    cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
-        envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
     return cfg;
   }();
   return cached;

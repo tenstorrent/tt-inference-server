@@ -6,10 +6,9 @@
 namespace tt::runners {
 
 /**
- * Lifecycle interface shared by every runner (IPC-loop and direct-call alike).
- * Concrete `run()` shapes belong to the derived families: `IRunner` exposes a
- * no-arg loop driven by the worker process, while `MediaRunner<R, S>` exposes
- * a synchronous `S run(const R&)` invoked directly by its service.
+ * Lifecycle base shared by both runner families. `IRunner` adds a no-arg
+ * `run()` loop for IPC workers; `MediaRunner<R, S>` adds a synchronous
+ * `S run(const R&)` for in-process services.
  */
 class IRunnerBase {
  public:
