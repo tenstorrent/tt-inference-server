@@ -1353,7 +1353,23 @@ llm_templates = [
                 max_context=2048,
                 default_impl=True,
                 vllm_args={
-                    "max_model_len": "2048",
+                    # max_model_len is intentionally *larger* than
+                    # max_context=2048: the chat-template wrapping
+                    # (system+user role tokens, BOS/EOS, etc.) adds a few
+                    # dozen tokens to a request, and `vllm bench serve`
+                    # in the benchmark harness emits
+                    # `truncate_prompt_tokens=ISL` (e.g. 2048) which
+                    # vLLM applies *after* template rendering. Combined
+                    # with the requested completion length, an ISL=2048
+                    # row would otherwise overflow the engine cap and
+                    # surface as HTTP 400 ("Bad Request") on the
+                    # initial-test prompt of the (2048, 128) sweep row.
+                    # 2304 absorbs up to 256 tokens of template
+                    # overhead, which is generous for any realistic
+                    # chat template, while leaving the model's logical
+                    # context window at 2048 (max_context unchanged).
+                    "max_model_len": "2304",
+                    "max_num_batched_tokens": "2304",
                     "max_num_seqs": "1",
                     "block_size": "64",
                     "trust-remote-code": True,
@@ -1408,7 +1424,11 @@ llm_templates = [
                 # T3K is the validated default; N300 is opt-in.
                 default_impl=False,
                 vllm_args={
-                    "max_model_len": "2048",
+                    # See T3K spec above for max_model_len rationale
+                    # (chat-template overhead absorbed by 256-token
+                    # buffer over max_context).
+                    "max_model_len": "2304",
+                    "max_num_batched_tokens": "2304",
                     "max_num_seqs": "1",
                     "block_size": "64",
                     "trust-remote-code": True,

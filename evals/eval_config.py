@@ -126,20 +126,27 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Ling-mini-2.0 (BailingMoeV2). published_score is left as None until
-    # the long-ISL generation behaviour documented on this model's spec
-    # entry in workflows/model_spec.py is resolved at the model layer;
-    # adding inclusionAI's published reference scores before that point
-    # would produce misleading acceptance signals because the few-shot
-    # contexts used by both tasks exceed the ISL ceiling at which output
-    # quality is currently reliable. limit_samples_map bounds CI runtime
-    # once these tasks become informative; SMOKE_TEST keeps the release
-    # workflow's dry run cheap.
+    # Ling-mini-2.0 (BailingMoeV2). The model is currently capped at
+    # max_context=2048 on T3K (see workflows/model_spec.py). Tasks below
+    # are split into two groups:
+    #   (a) ifeval, mmlu_pro: published_score=None because the
+    #       few-shot/long-context behaviour documented on the model spec
+    #       is not yet resolved at the model layer, so reporting
+    #       inclusionAI's headline numbers here would be misleading.
+    #   (b) aime25, gpqa_diamond_cot_zeroshot, humaneval_instruct: these
+    #       are zero-shot, single-prompt-fits-in-2048 tasks where the
+    #       inclusionAI / artificialanalysis published numbers are
+    #       directly applicable as acceptance targets.
+    # All tasks fix max_concurrent=1 to honour the model spec's
+    # max_concurrency=1 (the symbiote prefill path currently hard-codes
+    # batch_idx=0 in the attention layer, see
+    # models/experimental/tt_symbiote/models/bailing_moe_v2.py).
     EvalConfig(
         hf_model_repo="inclusionAI/Ling-mini-2.0",
         tasks=[
             EvalTask(
                 task_name="ifeval",
+                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -160,6 +167,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                max_concurrent=1,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -174,6 +182,117 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # AIME 2025 (math competition, exact-match on final answer).
+            # AIME has 30 problems; prompts are short (<500 tokens) so a
+            # 1500-token CoT budget keeps total <=2048. Deterministic
+            # decode (do_sample=false) for reproducible acceptance.
+            EvalTask(
+                task_name="aime25",
+                use_chat_api=True,
+                apply_chat_template=True,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=43.75,  # AIME 2025
+                    published_score_ref="https://artificialanalysis.ai/models/ling-mini-2-0",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                gen_kwargs={
+                    "do_sample": "false",
+                    "temperature": "0.0",
+                    "max_gen_toks": "1500",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1
+                    EvalLimitMode.CI_NIGHTLY: 0.2,   # 30 samples * 0.2 = 6
+                },
+            ),
+            # GPQA Diamond zero-shot CoT. ~198 questions; per-question
+            # prompts can be ~1k tokens, so we cap CoT generation at 768
+            # tokens to keep total within max_context=2048. The
+            # flexible-extract filter pulls the answer letter out of the
+            # CoT response, so a partially truncated answer can still
+            # score correctly.
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                use_chat_api=True,
+                apply_chat_template=True,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=58.74,  # GPQA Diamond
+                    published_score_ref="https://artificialanalysis.ai/models/ling-mini-2-0",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                gen_kwargs={
+                    "do_sample": "false",
+                    "temperature": "0.0",
+                    "max_gen_toks": "768",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.006,  # 198 * 0.006 ~= 1
+                    EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 * 0.035 ~= 6
+                },
+            ),
+            # HumanEval (instruction-tuned variant). 164 Python coding
+            # problems, prompts <300 tokens. Deterministic decode at
+            # max_gen_toks=512 (matches Qwen2.5-Coder / Mistral-Small
+            # patterns; functions rarely exceed that).
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                apply_chat_template=True,
+                max_concurrent=1,
+                score=EvalTaskScore(
+                    published_score=83.54,  # HumanEval pass@1
+                    published_score_ref="https://artificialanalysis.ai/models/ling-mini-2-0",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                gen_kwargs={
+                    "do_sample": "false",
+                    "temperature": "0.0",
+                    "max_gen_toks": "512",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 164 * 0.05 ~= 8
+                    EvalLimitMode.CI_NIGHTLY: 0.5,   # 164 * 0.5 = 82
                 },
             ),
         ],
