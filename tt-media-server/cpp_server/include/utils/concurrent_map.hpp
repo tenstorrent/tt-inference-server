@@ -71,11 +71,6 @@ class ConcurrentMap {
     return map_.find(key) != map_.end();
   }
 
-  void clear() {
-    std::lock_guard lock(mutex);
-    map_.clear();
-  }
-
   size_t size() const {
     std::lock_guard lock(mutex);
     return map_.size();

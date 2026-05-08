@@ -48,20 +48,14 @@ class Sequence {
   size_t numCompletionTokens() const {
     return tokenIds.size() - numPromptTokens;
   }
-  size_t numCachedBlocks() const { return numCachedTokens / blockSize; }
   size_t numBlocks() const {
     return (tokenIds.size() + blockSize - 1) / blockSize;
-  }
-  int lastBlockNumTokens() const {
-    return static_cast<int>(tokenIds.size()) -
-           static_cast<int>(numBlocks() - 1) * blockSize;
   }
 
   void setKVCacheSlot(uint32_t slot) { kvCacheSlot = slot; }
   uint32_t getKVCacheSlot() const { return kvCacheSlot; }
 
   std::vector<int64_t> block(size_t i) const;
-  std::vector<int64_t> completionTokenIds() const;
   void appendToken(int64_t tokenId);
 
   SequenceStatus getStatus() const { return status; }

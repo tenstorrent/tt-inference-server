@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <json/json.h>
-
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -55,7 +53,6 @@ class Session {
    */
   uint32_t getSlotId() const { return slot_id_; }
   void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
-  bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
@@ -81,13 +78,6 @@ class Session {
 
   void updateActivityTime() {
     last_activity_time_ = std::chrono::system_clock::now();
-  }
-
-  Json::Value toJson() const {
-    Json::Value json;
-    json["session_id"] = session_id_;
-    json["slot_id"] = slot_id_;
-    return json;
   }
 
  private:

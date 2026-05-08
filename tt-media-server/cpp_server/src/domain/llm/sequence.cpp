@@ -35,13 +35,6 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   return {tokenIds.begin() + start, tokenIds.begin() + end};
 }
 
-std::vector<int64_t> Sequence::completionTokenIds() const {
-  if (numPromptTokens >= tokenIds.size()) {
-    return {};
-  }
-  return {tokenIds.begin() + numPromptTokens, tokenIds.end()};
-}
-
 void Sequence::appendToken(int64_t tokenId) {
   tokenIds.push_back(tokenId);
   lastToken = tokenId;

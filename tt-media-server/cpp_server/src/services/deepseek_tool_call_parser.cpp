@@ -4,8 +4,6 @@
 #include <json/reader.h>
 #include <json/value.h>
 
-#include <regex>
-
 #include "config/types.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/logger.hpp"
