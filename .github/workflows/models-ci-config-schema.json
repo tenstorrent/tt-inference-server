@@ -66,6 +66,26 @@
     }
   },
   "properties": {
+    "priority": {
+      "type": "object",
+      "description": "Optional priority list per schedule. Priority (model, device) pairs are placed at the head of their device's runner queue, ahead of non-priority entries on the same label.",
+      "properties": {
+        "nightly": {
+          "type": "array",
+          "description": "Priority (model, device) pairs for the nightly schedule. Each (model, device) must already be present in the model's nightly devices list.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "model":  { "type": "string", "minLength": 1 },
+              "device": { "$ref": "#/$defs/device_names" }
+            },
+            "required": ["model", "device"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "models": {
       "type": "object",
       "description": "Dictionary of model configurations",

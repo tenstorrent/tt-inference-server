@@ -1,4 +1,12 @@
 {
+  "priority": {
+    "nightly": [
+      { "model": "gpt-oss-120b",           "device": "GALAXY"  },
+      { "model": "Llama-3.3-70B-Instruct", "device": "P300X2"  },
+      { "model": "Qwen3-32B",              "device": "P300X2"  },
+      { "model": "Qwen3-VL-32B-Instruct",  "device": "T3K"     }
+    ]
+  },
   "models": {
     "DeepSeek-R1-0528": {
       "inference_engine": "vLLM",
