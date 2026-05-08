@@ -27,7 +27,6 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
@@ -359,11 +358,6 @@ void LLMController::handleStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  if (const auto* promptStr = std::get_if<std::string>(&reqPtr->prompt)) {
-    reqPtr->full_prompt_tokens_count = static_cast<int>(
-        tt::utils::tokenizers::activeTokenizer().encode(*promptStr).size());
-  }
-
   auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
   };
@@ -424,11 +418,6 @@ void LLMController::handleNonStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
-
-  if (const auto* promptStr = std::get_if<std::string>(&reqPtr->prompt)) {
-    reqPtr->full_prompt_tokens_count = static_cast<int>(
-        tt::utils::tokenizers::activeTokenizer().encode(*promptStr).size());
-  }
 
   auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
