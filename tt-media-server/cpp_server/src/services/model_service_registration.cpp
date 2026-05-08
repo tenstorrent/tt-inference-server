@@ -85,13 +85,6 @@ void registerLLM() {
                        "OpenAI-compatible chat completions");
   routes.registerRoute(config::ModelService::LLM, "POST", "/v1/responses",
                        "OpenAI-compatible Responses API");
-  routes.registerRoute(config::ModelService::LLM, "POST", "/v1/sessions",
-                       "Create a session");
-  routes.registerRoute(config::ModelService::LLM, "DELETE",
-                       "/v1/sessions/{session_id}", "Close a session");
-  routes.registerRoute(config::ModelService::LLM, "GET",
-                       "/v1/sessions/{session_id}/slot",
-                       "Get the slot id for a session");
   routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
                        "List models");
 }
