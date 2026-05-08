@@ -146,9 +146,9 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Pipeline manager max users from PM_MAX_USERS. Default:
- * defaults::PM_MAX_USERS. */
-size_t pmMaxUsers();
+/** Decode scheduler max users from DS_MAX_USERS. Default:
+ * defaults::DS_MAX_USERS. */
+size_t dsMaxUsers();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */

@@ -1,15 +1,16 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
+#include "blaze_runner/blaze_utils.hpp"
 
-#include "runners/blaze_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
 namespace utils = tt::runners::blaze_utils;
+namespace ds = tt_llm_engine::scheduler::decode;
 
 BlazeMemoryManager::BlazeMemoryManager(
-    tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+    tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler,
     onEvictCb onEvict)
-    : pipelineManager(pipelineManager), onEvict(onEvict) {}
+    : decodeScheduler(decodeScheduler), onEvict(onEvict) {}
 
 std::optional<domain::ManageMemoryTask> BlazeMemoryManager::getRequest() {
   if (pendingRetry.has_value()) {
@@ -25,7 +26,7 @@ void BlazeMemoryManager::handleRequest(
   switch (request.action) {
     case domain::MemoryManagementAction::ALLOCATE: {
       auto requestId = nextRequestID;
-      if (!pipelineManager.push_request(
+      if (!decodeScheduler.push_request(
               utils::makeAllocateRequest(requestId))) {
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] ALLOCATE push_request failed; deferring "
@@ -47,7 +48,7 @@ void BlazeMemoryManager::handleRequest(
            slotIndex++) {
         auto slotId = request.slotIds[slotIndex];
         auto requestId = nextRequestID;
-        if (!pipelineManager.push_request(
+        if (!decodeScheduler.push_request(
                 utils::makeCancelRequest(requestId, slotId))) {
           TT_LOG_DEBUG(
               "[BlazeMemoryManager] DEALLOCATE push_request failed for "
@@ -92,13 +93,13 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
         requestId, taskId, slotId, allocating.size());
     domain::ManageMemoryResult result;
     result.taskId = taskId;
-    if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
+    if (slotId == ds::INVALID_SLOT) {
       TT_LOG_DEBUG(
           "[BlazeMemoryManager] handleResponse[ALLOCATE]: FAILURE "
           "No slot available for taskId={}",
           taskId);
       result.status = domain::ManageMemoryStatus::FAILURE;
-      result.slotIds = {tt_blaze::pipeline_manager::INVALID_SLOT};
+      result.slotIds = {ds::INVALID_SLOT};
       resultQueue->push(result);
       return;
     }

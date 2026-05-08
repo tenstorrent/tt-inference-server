@@ -7,7 +7,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include "pipeline_manager/pipeline_manager.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "services/memory_services/memory_manager.hpp"
 
 namespace tt::services {
@@ -17,7 +17,7 @@ class BlazeMemoryManager : public MemoryManager {
 
  public:
   BlazeMemoryManager(
-      tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+      tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler,
       onEvictCb onEvict);
   ~BlazeMemoryManager() = default;
 
@@ -28,7 +28,7 @@ class BlazeMemoryManager : public MemoryManager {
   void handleResponse(uint32_t requestId, uint32_t slotId) override;
 
  private:
-  tt_blaze::pipeline_manager::PipelineManager& pipelineManager;
+  tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler;
   std::unordered_map<uint32_t, uint32_t> allocating;
   std::unordered_map<uint32_t, uint32_t> cancelling;
   uint32_t nextRequestID{0};

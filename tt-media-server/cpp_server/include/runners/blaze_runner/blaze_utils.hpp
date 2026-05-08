@@ -5,27 +5,27 @@
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
-#include "pipeline_manager/pipeline_manager_types.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::runners::blaze_utils {
 
 using namespace tt::domain::llm;
 
-namespace pm = tt_blaze::pipeline_manager;
+namespace ds = tt_llm_engine::scheduler::decode;
 
-inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
+inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
   return {
-      .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
+      .type = ds::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
-inline pm::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL,
+inline ds::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
+  return {.type = ds::RequestType::CANCEL,
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {}};
 }
 
-inline pm::GenerationParams makeGenerationParams(
+inline ds::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
   return {
       .max_new_tokens =
@@ -39,25 +39,25 @@ inline pm::GenerationParams makeGenerationParams(
       .disaggregated_decode = seq.isDisaggregated()};
 }
 
-inline void fillSequenceFields(pm::ISRequest& req,
+inline void fillSequenceFields(ds::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 
-inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
+inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
                                        const tt::domain::llm::Sequence& seq) {
-  pm::ISRequest req{};
-  req.type = pm::RequestType::SUBMIT;
+  ds::ISRequest req{};
+  req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   return req;
 }
 
-inline pm::ISRequest makeContinueRequest(uint32_t slotId,
+inline ds::ISRequest makeContinueRequest(uint32_t slotId,
                                          const tt::domain::llm::Sequence& seq) {
-  pm::ISRequest req{};
-  req.type = pm::RequestType::CONTINUE;
+  ds::ISRequest req{};
+  req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   return req;
