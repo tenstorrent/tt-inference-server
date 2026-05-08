@@ -27,8 +27,10 @@
 #include "ipc/result_queue.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
+#include "support/http_response.hpp"
 #include "support/test_server.hpp"
 #include "support/test_worker_main.hpp"
+#include "support/worker_response.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -61,18 +63,12 @@ class MainIntegrationTest : public ::testing::Test {
     return asyncRequest(req.toJson());
   }
 
-  // Mock the worker producing one output token + final marker.
+  // Mock the worker producing one output token + a clean final marker.
+  // Tests that need a custom token stream use tt::test::WorkerResponse
+  // directly.
   static void mockWorkerResponse(uint32_t taskId, uint64_t tokenId = 42) {
-    tt::ipc::SharedToken tok{};
-    tok.task_id = taskId;
-    tok.token_id = tokenId;
-    server_->resultQueue().push(tok);
-
-    tt::ipc::SharedToken fin{};
-    fin.task_id = taskId;
-    fin.token_id = 0;
-    fin.flags = tt::ipc::SharedToken::FLAG_FINAL;
-    server_->resultQueue().push(fin);
+    tt::test::WorkerResponse(taskId).token(tokenId).finalize().sendTo(
+        server_->resultQueue());
   }
 
   static std::unique_ptr<tt::test::TestServer> server_;
@@ -96,9 +92,42 @@ TEST_F(MainIntegrationTest, SingleRequest_TaskQueueAndResponse) {
 
   mockWorkerResponse(seq->taskId);
 
-  const auto response = responseFuture.get();
-  EXPECT_NE(response.find("200"), std::string::npos);
-  EXPECT_NE(response.find("choices"), std::string::npos);
+  const auto response = tt::test::HttpResponse::parse(responseFuture.get());
+  EXPECT_EQ(response.statusCode(), 200);
+  EXPECT_NE(response.header("content-type").find("application/json"),
+            std::string::npos);
+  const auto body = response.json();
+  ASSERT_TRUE(body.isMember("choices"));
+  EXPECT_EQ(body["choices"].size(), 1u);
+}
+
+TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
+  // Demonstrate the WorkerResponse builder + HttpResponse parser working
+  // together: ask for up to 3 tokens, push exactly 3 specific token_ids
+  // followed by a clean FINAL terminator, then assert on the parsed JSON.
+  auto responseFuture =
+      asyncRequest(ChatRequest().user("hello").maxTokens(3));
+
+  auto seq = server_->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+
+  tt::test::WorkerResponse(seq->taskId)
+      .tokens({101, 202, 303})
+      .finalize()
+      .sendTo(server_->resultQueue());
+
+  const auto response = tt::test::HttpResponse::parse(responseFuture.get());
+  EXPECT_EQ(response.statusCode(), 200);
+
+  const auto body = response.json();
+  ASSERT_TRUE(body.isMember("choices"));
+  EXPECT_EQ(body["choices"].size(), 1u);
+  ASSERT_TRUE(body.isMember("usage"));
+  // The controller's completion_tokens accounting is implementation-defined
+  // around the FINAL marker — assert positive and bounded by what we pushed.
+  const int completionTokens = body["usage"]["completion_tokens"].asInt();
+  EXPECT_GT(completionTokens, 0);
+  EXPECT_LE(completionTokens, 3);
 }
 
 TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
