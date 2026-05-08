@@ -43,10 +43,18 @@ inline std::string sendAndReceive(
       "Content-Length: " +
       std::to_string(body.size()) +
       "\r\n"
-      "Connection: close\r\n"
       "\r\n" +
       body;
   ::send(sock, req.c_str(), req.size(), 0);
+
+  // Idle-timeout-based read termination: keep recv'ing until we go quiet
+  // for 250ms. Required because we don't send "Connection: close" — Drogon
+  // closes the connection prematurely (after just headers) for async SSE
+  // streams when the request asks for close — so we leave the connection
+  // keep-alive and detect end-of-response by inactivity instead. Total
+  // overhead per test: ~250ms after the last byte arrives.
+  timeval tv{0, 250000};
+  ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
   std::string response;
   char buf[4096];

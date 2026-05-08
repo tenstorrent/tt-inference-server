@@ -82,7 +82,8 @@ using tt::test::ChatRequest;
 // Tests
 // ---------------------------------------------------------------------------
 
-// Canonical happy-path walkthrough of a single /v1/chat/completions request.
+// Canonical happy-path walkthrough of a single /v1/chat/completions request,
+// in streaming mode (the primary use case for this server).
 // Each subsequent test peels off a slice of this lifecycle and asserts on
 // just that slice — start here when reading the suite.
 //
@@ -91,12 +92,13 @@ using tt::test::ChatRequest;
 //   3. We mock the memory manager: push SUCCESS to the result queue
 //   4. Controller pushes a Sequence onto the task queue
 //   5. We mock the worker: push one token + FINAL via WorkerResponse
-//   6. HTTP response completes; assert on the parsed JSON
+//   6. SSE stream terminates; assert on the events delivered
 TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   server_->setMemoryAutoRespond(false);
 
-  // 1. Fire the request.
-  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  // 1. Fire the streaming request.
+  auto responseFuture =
+      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
@@ -117,29 +119,48 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
 
-  // 5. Mock the worker.
+  // 5. Mock the worker: one token, then FINAL.
   tt::test::WorkerResponse(seq->taskId)
       .token(42)
       .finalize()
       .sendTo(server_->resultQueue());
 
-  // 6. Assert on the HTTP response.
+  // 6. Assert on the SSE stream.
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
   EXPECT_EQ(response.statusCode(), 200);
-  EXPECT_NE(response.header("content-type").find("application/json"),
+  EXPECT_NE(response.header("content-type").find("text/event-stream"),
             std::string::npos);
-  const auto body = response.json();
-  ASSERT_TRUE(body.isMember("choices"));
-  EXPECT_EQ(body["choices"].size(), 1u);
+
+  const auto events = response.sseEvents();
+  ASSERT_GE(events.size(), 2u) << "at least one chunk + [DONE]";
+  EXPECT_EQ(events.back(), "[DONE]");
+
+  // First chunk announces the assistant role.
+  Json::Value first;
+  Json::Reader().parse(events.front(), first);
+  EXPECT_EQ(first["choices"][0]["delta"]["role"].asString(), "assistant");
+
+  // Some intermediate chunk carries the decoded token as a content delta.
+  bool sawContent = false;
+  for (size_t i = 1; i + 1 < events.size(); ++i) {
+    Json::Value chunk;
+    if (!Json::Reader().parse(events[i], chunk)) continue;
+    if (chunk["choices"][0]["delta"].isMember("content") &&
+        !chunk["choices"][0]["delta"]["content"].asString().empty()) {
+      sawContent = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(sawContent) << "expected at least one content delta";
 
   server_->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
-  // Demonstrate the WorkerResponse builder + HttpResponse parser working
-  // together: ask for up to 3 tokens, push exactly 3 specific token_ids
-  // followed by a clean FINAL terminator, then assert on the parsed JSON.
-  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(3));
+  // Push 3 specific tokens via WorkerResponse and assert the SSE stream
+  // delivered them as separate content deltas, terminated by [DONE].
+  auto responseFuture =
+      asyncRequest(ChatRequest().user("hello").maxTokens(3).stream());
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -152,15 +173,25 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
   EXPECT_EQ(response.statusCode(), 200);
 
-  const auto body = response.json();
-  ASSERT_TRUE(body.isMember("choices"));
-  EXPECT_EQ(body["choices"].size(), 1u);
-  ASSERT_TRUE(body.isMember("usage"));
-  // The controller's completion_tokens accounting is implementation-defined
-  // around the FINAL marker — assert positive and bounded by what we pushed.
-  const int completionTokens = body["usage"]["completion_tokens"].asInt();
-  EXPECT_GT(completionTokens, 0);
-  EXPECT_LE(completionTokens, 3);
+  const auto events = response.sseEvents();
+  ASSERT_GE(events.size(), 2u);
+  EXPECT_EQ(events.back(), "[DONE]");
+
+  // Count chunks that carry a non-empty content delta. We pushed 3 tokens,
+  // so we expect roughly 3 content deltas (controller's exact accounting
+  // around FINAL is implementation-defined).
+  int contentDeltas = 0;
+  for (const auto& ev : events) {
+    if (ev == "[DONE]") continue;
+    Json::Value chunk;
+    if (!Json::Reader().parse(ev, chunk)) continue;
+    if (chunk["choices"][0]["delta"].isMember("content") &&
+        !chunk["choices"][0]["delta"]["content"].asString().empty()) {
+      ++contentDeltas;
+    }
+  }
+  EXPECT_GT(contentDeltas, 0);
+  EXPECT_LE(contentDeltas, 3);
 }
 
 TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
@@ -176,7 +207,7 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   };
 
   for (size_t i = 0; i < userMessages.size(); ++i) {
-    convo.user(userMessages[i]).maxTokens(1);
+    convo.user(userMessages[i]).maxTokens(1).stream();
     auto future = asyncRequest(convo);
 
     auto seq = server_->taskQueue().receive();
@@ -190,23 +221,30 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   }
 }
 
-TEST_F(MainIntegrationTest, StreamingRequest_AlsoPushesToTaskQueue) {
-  // stream=true goes through a different controller path but must still
-  // push a Sequence to the task queue.
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
+  // Most tests use streaming; this one verifies the non-streaming code path
+  // still returns a single buffered JSON document with the assistant message.
+  auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
-  EXPECT_FALSE(seq->isContinuation());
 
   mockWorkerResponse(seq->taskId);
-  future.get();
+
+  const auto response = tt::test::HttpResponse::parse(responseFuture.get());
+  EXPECT_EQ(response.statusCode(), 200);
+  EXPECT_NE(response.header("content-type").find("application/json"),
+            std::string::npos);
+  const auto body = response.json();
+  ASSERT_EQ(body["choices"].size(), 1u);
+  EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
+  EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
 }
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
-  auto future =
-      asyncRequest(ChatRequest().user("hello").maxTokens(42).temperature(0.7));
+  auto future = asyncRequest(
+      ChatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -221,7 +259,7 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
 
 TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   // LLM_MODE=regular: every request is served locally, never disaggregated.
-  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -239,8 +277,10 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // back to the Sequences pushed onto the task queue.
   server_->setMemoryAutoRespond(false);
 
-  auto future1 = asyncRequest(ChatRequest().user("hello").maxTokens(1));
-  auto future2 = asyncRequest(ChatRequest().user("hello").maxTokens(1));
+  auto future1 =
+      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future2 =
+      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
@@ -288,8 +328,11 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
-  auto future = asyncRequest(
-      ChatRequest().system("you are helpful").user("hello").maxTokens(1));
+  auto future = asyncRequest(ChatRequest()
+                                 .system("you are helpful")
+                                 .user("hello")
+                                 .maxTokens(1)
+                                 .stream());
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
