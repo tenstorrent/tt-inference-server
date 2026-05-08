@@ -53,6 +53,19 @@ unsigned long envUlong(const char* name, unsigned long defaultValue) {
   }
 }
 
+bool envBool(const char* name, bool defaultValue) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return defaultValue;
+  const std::string lower = toLower(v);
+  if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
+    return true;
+  }
+  if (lower == "0" || lower == "false" || lower == "no" || lower == "off") {
+    return false;
+  }
+  return defaultValue;
+}
+
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
  * "4,5,6,7"]. */
 std::vector<std::string> parseDeviceIds(const std::string& raw) {
@@ -285,19 +298,6 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
         s + "'");
   }
   return out;
-}
-
-bool envBool(const char* name, bool defaultValue) {
-  const char* v = std::getenv(name);
-  if (!v || !*v) return defaultValue;
-  const std::string lower = toLower(v);
-  if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
-    return true;
-  }
-  if (lower == "0" || lower == "false" || lower == "no" || lower == "off") {
-    return false;
-  }
-  return defaultValue;
 }
 
 /** Shared by every in-process media runner reader (image; audio, TTS, video
