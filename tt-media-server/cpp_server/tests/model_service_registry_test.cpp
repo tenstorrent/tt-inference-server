@@ -121,9 +121,9 @@ TEST(RunnerRegistryTest, IpcExactMatchPreferredOverFallback) {
       });
 
   tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
-  auto llama = RunnerRegistry::instance().createIpc(
-      ModelService::LLM, ModelRunnerType::LLAMA, cfg, nullptr, nullptr,
-      nullptr);
+  auto llama = RunnerRegistry::instance().createIpc(ModelService::LLM,
+                                                    ModelRunnerType::LLAMA, cfg,
+                                                    nullptr, nullptr, nullptr);
   ASSERT_NE(llama, nullptr);
   EXPECT_STREQ(llama->runnerType(), "llama");
 }
@@ -157,8 +157,7 @@ TEST(RunnerRegistryTest, IpcNoMatchReturnsNullptr) {
 
 namespace {
 
-class FakeMediaRunner
-    : public tt::runners::IMediaRunner<int, std::string> {
+class FakeMediaRunner : public tt::runners::IMediaRunner<int, std::string> {
  public:
   explicit FakeMediaRunner(std::string tag) : tag_(std::move(tag)) {}
   std::string run(const int& request) override {
@@ -182,9 +181,8 @@ TEST(RunnerRegistryTest, MediaExactMatchInstantiatesTypedRunner) {
       });
 
   tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
-  auto runner =
-      RunnerRegistry::instance().createMedia<FakeMediaRunner>(
-          ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
+  auto runner = RunnerRegistry::instance().createMedia<FakeMediaRunner>(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
   ASSERT_NE(runner, nullptr);
   EXPECT_EQ(runner->run(7), "sdxl-generate:7");
 }
@@ -200,18 +198,16 @@ TEST(RunnerRegistryTest, MediaWrongRunnerShapeThrows) {
 
   tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
   using OtherShape = tt::runners::IMediaRunner<std::string, int>;
-  EXPECT_THROW(
-      RunnerRegistry::instance().createMedia<OtherShape>(
-          ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg),
-      std::runtime_error);
+  EXPECT_THROW(RunnerRegistry::instance().createMedia<OtherShape>(
+                   ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg),
+               std::runtime_error);
 }
 
 TEST(RunnerRegistryTest, MediaNoMatchReturnsNullptr) {
   RunnerRegistry::instance().clear();
   tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
-  auto runner =
-      RunnerRegistry::instance().createMedia<FakeMediaRunner>(
-          ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
+  auto runner = RunnerRegistry::instance().createMedia<FakeMediaRunner>(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
   EXPECT_EQ(runner, nullptr);
 }
 

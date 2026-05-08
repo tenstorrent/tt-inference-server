@@ -149,10 +149,9 @@ void registerImage() {
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
         auto runner =
-            utils::RunnerRegistry::instance()
-                .createMedia<ImageService::Runner>(
-                    config::ModelService::IMAGE, cfg.runner_type,
-                    config::RunnerConfig{cfg});
+            utils::RunnerRegistry::instance().createMedia<ImageService::Runner>(
+                config::ModelService::IMAGE, cfg.runner_type,
+                config::RunnerConfig{cfg});
         if (!runner) {
           throw std::runtime_error(
               "[RegisterImage] No image runner registered for runner_type=" +

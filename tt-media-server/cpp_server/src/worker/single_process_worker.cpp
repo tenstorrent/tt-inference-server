@@ -12,8 +12,8 @@
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
-#include "utils/logger.hpp"
 #include "utils/ipc_runner_factory.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::worker {
 

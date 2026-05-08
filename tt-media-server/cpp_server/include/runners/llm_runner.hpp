@@ -8,8 +8,8 @@
 #include "ipc/cancel_queue.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
-#include "runners/llm_runner/model_runner.hpp"
 #include "runners/ipc_runner.hpp"
+#include "runners/llm_runner/model_runner.hpp"
 #include "runners/schedulers/scheduler.hpp"
 
 namespace tt::services {

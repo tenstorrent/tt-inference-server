@@ -29,6 +29,10 @@
       "description": "OpenAI-compatible text embedding endpoints"
     },
     {
+      "name": "Images",
+      "description": "OpenAI-compatible image generation, image-to-image, and edit endpoints. Only the route matching the active runner_type is registered at runtime."
+    },
+    {
       "name": "Sessions",
       "description": "Session management for slot assignments"
     },
@@ -129,6 +133,159 @@
           },
           "400": {
             "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/images/generations": {
+      "post": {
+        "tags": ["Images"],
+        "summary": "Create image (text-to-image)",
+        "description": "Creates one or more images from a text prompt. Only registered when the active image runner_type is a text-to-image variant.",
+        "operationId": "createImageGeneration",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImageGenerateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image(s) generated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImageResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing required field)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/images/image-to-image": {
+      "post": {
+        "tags": ["Images"],
+        "summary": "Image-to-image",
+        "description": "Generates a new image from a prompt and an input image. Only registered when the active image runner_type is an image-to-image variant.",
+        "operationId": "createImageToImage",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImageGenerateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image(s) generated successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImageResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing prompt or image)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/images/edits": {
+      "post": {
+        "tags": ["Images"],
+        "summary": "Edit / inpaint image",
+        "description": "Edits an input image using a prompt and a mask (inpainting). Only registered when the active image runner_type is an edit/inpaint variant.",
+        "operationId": "createImageEdit",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImageGenerateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image(s) edited successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImageResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing prompt, image, or mask)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -721,6 +878,125 @@
               "prompt_tokens": { "type": "integer" },
               "total_tokens": { "type": "integer" }
             }
+          }
+        }
+      },
+      "ImageGenerateRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "description": "Superset of fields for /v1/images/generations, /v1/images/image-to-image, and /v1/images/edits. The active route enforces its own subset (image-to-image requires `image`; edits also requires `mask`).",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Text prompt describing the desired output image"
+          },
+          "prompt_2": {
+            "type": "string",
+            "description": "Optional secondary prompt routed to the second text encoder (SDXL)"
+          },
+          "negative_prompt": {
+            "type": "string",
+            "description": "Negative prompt describing what to avoid"
+          },
+          "negative_prompt_2": {
+            "type": "string",
+            "description": "Optional secondary negative prompt for the second text encoder"
+          },
+          "num_inference_steps": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "description": "Number of denoising steps"
+          },
+          "guidance_scale": {
+            "type": "number",
+            "default": 5.0,
+            "description": "Classifier-free guidance scale"
+          },
+          "guidance_rescale": {
+            "type": "number",
+            "default": 0.0,
+            "description": "Guidance rescale factor (mitigates over-saturation at high guidance)"
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Random seed for reproducible sampling"
+          },
+          "number_of_images": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "description": "Number of images to generate per request"
+          },
+          "crop_coords_top_left": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2,
+            "maxItems": 2,
+            "default": [0, 0],
+            "description": "SDXL crop conditioning [top, left]"
+          },
+          "timesteps": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Optional explicit list of timesteps for the scheduler"
+          },
+          "sigmas": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Optional explicit list of sigmas for the scheduler"
+          },
+          "lora_path": {
+            "type": "string",
+            "description": "Path to a LoRA weights file to load before generation"
+          },
+          "lora_scale": {
+            "type": "number",
+            "default": 0.5,
+            "description": "Scale applied to the LoRA"
+          },
+          "image_return_format": {
+            "type": "string",
+            "enum": ["JPEG", "PNG"],
+            "default": "JPEG",
+            "description": "Encoding format for the returned base64 image bytes"
+          },
+          "image_quality": {
+            "type": "integer",
+            "default": 85,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Quality factor for JPEG encoding (ignored for PNG)"
+          },
+          "image": {
+            "type": "string",
+            "description": "Base64-encoded input image. Required for image-to-image and edits."
+          },
+          "mask": {
+            "type": "string",
+            "description": "Base64-encoded mask image. Required for edits/inpainting."
+          },
+          "strength": {
+            "type": "number",
+            "description": "Image-to-image strength (0..1); higher values diverge further from the input image."
+          }
+        }
+      },
+      "ImageResponse": {
+        "type": "object",
+        "required": ["images"],
+        "properties": {
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Base64-encoded image bytes in the requested image_return_format"
+            },
+            "description": "Generated images, base64-encoded"
+          },
+          "generation_time": {
+            "type": "number",
+            "description": "Wall-clock generation time in seconds (omitted when zero)"
           }
         }
       },

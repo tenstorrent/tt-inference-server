@@ -49,10 +49,9 @@ void dispatchJsonRequest(
   }
   for (const char* field : requiredFields) {
     if (!json->isMember(field)) {
-      callback(errorResponse(
-          drogon::k400BadRequest,
-          std::string("Missing required field: ") + field,
-          "invalid_request_error"));
+      callback(errorResponse(drogon::k400BadRequest,
+                             std::string("Missing required field: ") + field,
+                             "invalid_request_error"));
       return;
     }
   }
@@ -87,10 +86,10 @@ void dispatchJsonRequest(
        reqNum, startTime, logTag, endpointTag]() mutable {
         try {
           auto response = service->submitRequest(std::move(request));
-          const double totalMs = std::chrono::duration<double, std::milli>(
-                                     std::chrono::steady_clock::now() -
-                                     startTime)
-                                     .count();
+          const double totalMs =
+              std::chrono::duration<double, std::milli>(
+                  std::chrono::steady_clock::now() - startTime)
+                  .count();
           if (!response.error.empty()) {
             TT_LOG_ERROR("[{}] {} req={} failed in {}ms: {}", logTag,
                          endpointTag, reqNum, totalMs, response.error);

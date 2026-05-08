@@ -15,8 +15,8 @@
 #include "ipc/cancel_queue.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
-#include "runners/runner_base.hpp"
 #include "runners/ipc_runner.hpp"
+#include "runners/runner_base.hpp"
 
 namespace tt::utils {
 
@@ -50,8 +50,7 @@ class RunnerRegistry {
       const config::RunnerConfig& config, ipc::IResultQueue* resultQueue,
       ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue) const;
 
-  bool hasIpc(config::ModelService service,
-              config::ModelRunnerType type) const;
+  bool hasIpc(config::ModelService service, config::ModelRunnerType type) const;
 
   // Direct-call media runners.
   void registerMediaRunner(config::ModelService service,

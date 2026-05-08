@@ -304,8 +304,7 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
  *  next). */
 void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
-  cfg.device_mesh_shape =
-      parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+  cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
   cfg.is_galaxy = envBool("IS_GALAXY", false);
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(

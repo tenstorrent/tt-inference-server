@@ -65,7 +65,8 @@ class BaseService : public IService {
     if (currentQueueSize() >= maxQueueSize) throw QueueFullException{};
   }
   virtual void postProcess(ResponseType& /*response*/) const {}
-  /** Override when the service has its own queue; default is no back-pressure. */
+  /** Override when the service has its own queue; default is no back-pressure.
+   */
   virtual size_t currentQueueSize() const { return 0; }
 
   virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
