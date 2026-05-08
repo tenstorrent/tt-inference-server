@@ -618,7 +618,7 @@ for model_id, model_spec in MODEL_SPECS.items():
 
         tasks.append(benchmark_task_runs)
 
-    # Structured-output benchmarks: text LLMs only, but can be extended
+    # Structured-output benchmarks: llms and vlms, can be extended
     structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
     if structured_output_eligible:
         tasks.append(
