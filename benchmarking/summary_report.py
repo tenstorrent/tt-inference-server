@@ -209,6 +209,41 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
+    # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
+    # Dataset is non-greedy so names that contain underscores (e.g.
+    # "xgrammar_bench") are captured up to the so-/no-so anchor that follows.
+    # Example: benchmark_structured_id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_2026-04-28_18-01-30_dataset-xgrammar_bench_so-1.0_osl-128_maxcon-4_n-100.json
+    structured_pattern = r"""
+        ^benchmark_structured_
+        (?P<model>.+?)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _dataset-(?P<dataset>.+?)
+        _(?P<so_tag>no-so|so-[\d.]+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+    match = re.search(structured_pattern, filename, re.VERBOSE)
+    if match:
+        logger.info(
+            f"Found structured-output benchmark pattern in filename: {filename}"
+        )
+        so_tag = match.group("so_tag")
+        ratio = None if so_tag == "no-so" else float(so_tag.removeprefix("so-"))
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "dataset": match.group("dataset"),
+            "structured_output_ratio": ratio,
+            "task_type": "structured_output",
+        }
+
     # Fall back to text benchmark pattern
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
@@ -529,6 +564,16 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
+    if params.get("task_type") == "structured_output":
+        logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
+        # Filename omits isl for structured-output runs; derive mean ISL from
+        # the upstream payload so the default path below can use it.
+        total_input_tokens = data.get("total_input_tokens") or 0
+        num_prompts = data.get("num_prompts") or params["num_requests"]
+        params["input_sequence_length"] = (
+            round(total_input_tokens / num_prompts) if num_prompts else 0
+        )
+
     # Calculate statistics for text/image benchmarks
     logger.info(
         f"Default benchmark file processing (task_type={params.get('task_type')})"
@@ -546,8 +591,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         std_tps = None
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-        data.get("mean_ttft_ms") / 1000
+    tps_prefill_throughput = (
+        (params["input_sequence_length"] * actual_max_con)
+        / (data.get("mean_ttft_ms") / 1000)
+        if params["input_sequence_length"] and data.get("mean_ttft_ms")
+        else None
     )
 
     metrics = {
@@ -585,6 +633,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "images_per_prompt": params["images_per_prompt"],
                 "image_height": params["image_height"],
                 "image_width": params["image_width"],
+            }
+        )
+
+    if params["task_type"] == "structured_output":
+        metrics.update(
+            {
+                "dataset": params["dataset"],
+                "structured_output_ratio": params["structured_output_ratio"],
+                "correct_rate_pct": data.get("correct_rate(%)"),
             }
         )
 
@@ -1004,6 +1061,71 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
     return "\n".join([header_row, separator_row] + value_rows) + end_notes + explain_str
 
 
+def render_structured_output_sections(
+    structured_results: List[Dict[str, Any]],
+    model_name: str,
+    device: str,
+    source_label: str = "",
+) -> List[str]:
+    """Render a single combined markdown section for structured-output results.
+
+    Deduplicates per (dataset, ratio) by keeping the latest run by timestamp,
+    then emits one table covering all groups so they can be compared
+    side-by-side. Dataset, SO Ratio, and Correct Rate appear as columns
+    alongside the standard performance metrics.
+    """
+    if not structured_results:
+        return []
+
+    latest_by_key: Dict[Tuple[str, float], Dict[str, Any]] = {}
+    for r in structured_results:
+        key = (r.get("dataset", ""), r.get("structured_output_ratio"))
+        existing = latest_by_key.get(key)
+        if existing is None or str(r.get("timestamp", "")) > str(
+            existing.get("timestamp", "")
+        ):
+            latest_by_key[key] = r
+
+    sorted_keys = sorted(
+        latest_by_key.keys(),
+        key=lambda kv: (kv[0], kv[1] if isinstance(kv[1], (int, float)) else -1.0),
+    )
+
+    display_rows: List[Dict[str, str]] = []
+    for key in sorted_keys:
+        r = latest_by_key[key]
+        ratio = r.get("structured_output_ratio")
+        if isinstance(ratio, (int, float)):
+            ratio_str = f"{ratio:.1f}"
+        elif ratio in (None, NOT_MEASURED_STR):
+            ratio_str = "off"
+        else:
+            ratio_str = str(ratio)
+        cr = r.get("correct_rate_pct")
+        if isinstance(cr, (int, float)):
+            cr_str = f"{cr:g}%"
+        elif cr in (None, NOT_MEASURED_STR):
+            cr_str = NOT_MEASURED_STR
+        else:
+            cr_str = str(cr)
+
+        row = {
+            "Dataset": str(r.get("dataset", "")),
+            "SO Ratio": ratio_str,
+        }
+        row.update(create_display_dict(r))
+        row["Correct Rate"] = cr_str
+        display_rows.append(row)
+
+    table_md = get_markdown_table(display_rows)
+    prefix = f"{source_label} " if source_label else ""
+    title = (
+        f"#### {prefix}Structured Output Performance Benchmark Sweeps "
+        f"for {model_name} on {device}"
+    )
+    return [f"{title}\n\n{table_md}"]
+
+
 def save_markdown_table(
     markdown_str: str, filepath: str, add_title: str = None, add_notes: List[str] = None
 ) -> None:
@@ -1086,6 +1208,9 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]
+    structured_results = [
+        r for r in results if r.get("task_type") == "structured_output"
+    ]
 
     markdown_sections = []
 
@@ -1095,6 +1220,14 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         text_markdown_str = get_markdown_table(text_display_results)
         text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
+
+    # Generate structured-output sections (one per dataset+ratio combination)
+    if structured_results:
+        markdown_sections.extend(
+            render_structured_output_sections(
+                structured_results, model_name, device, source_label=""
+            )
+        )
 
     # Generate VLM benchmarks section if any exist
     if vlm_results:
