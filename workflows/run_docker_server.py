@@ -231,6 +231,8 @@ def generate_docker_run_command(
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
+        if model_spec.env_vars:
+            docker_env_vars.update(model_spec.env_vars)
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
         if api_key:

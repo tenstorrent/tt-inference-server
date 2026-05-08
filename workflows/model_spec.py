@@ -206,6 +206,7 @@ class ImplSpec:
     impl_name: str
     repo_url: str
     code_path: str
+    default_model_runner: Optional[str] = None
 
 
 tt_transformers_impl = ImplSpec(
@@ -255,6 +256,7 @@ forge_vllm_plugin_impl = ImplSpec(
     impl_name="forge-vllm-plugin",
     repo_url="https://github.com/tenstorrent/tt-xla/tree/main",
     code_path="integrations/vllm_plugin",
+    default_model_runner="vllm_forge",
 )
 tt_vllm_plugin_impl = ImplSpec(
     impl_id="tt_vllm_plugin",
@@ -406,9 +408,15 @@ class ModelSpec:
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
         }
-        # order of precedence: default, env_vars, device_model_spec
+        impl_env_vars = (
+            {"MODEL_RUNNER": self.impl.default_model_runner}
+            if self.impl.default_model_runner
+            else {}
+        )
+        # order of precedence: default, impl, env_vars, device_model_spec
         merged_env_vars = {
             **default_env_vars,
+            **impl_env_vars,
             **self.env_vars,
             **self.device_model_spec.env_vars,
         }
