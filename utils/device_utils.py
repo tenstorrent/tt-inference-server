@@ -21,6 +21,9 @@ DEVICE_TO_MESH_STR = {
     "GALAXY_T3K": "T3K",
     "DUAL_GALAXY": "(8,8)",
     "QUAD_GALAXY": "(8,16)",
+    "BLACKHOLE_GALAXY": "BH-Galaxy",
+    "BH_LB_2X": "(2,8)",
+    "BH_LB_4X": "(2,16)",
     "GPU": "GPU",
 }
 
