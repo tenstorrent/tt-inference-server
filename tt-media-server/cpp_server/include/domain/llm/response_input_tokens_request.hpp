@@ -11,7 +11,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
@@ -24,18 +23,23 @@ namespace tt::domain::llm {
  *
  * Mirrors OpenAI "Get input token counts"
  * (https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens/methods/count).
- * The endpoint accepts a strict subset of the Responses Create body. All
- * fields are optional per the spec; downstream tokenization in this server
- * still requires `input` to be present and non-empty.
+ *
+ * Per the OpenAI spec, every field is optional. The server is stateless and
+ * cannot resolve `conversation` or `previous_response_id` to prior items, so
+ * those fields are accepted and validated but do not contribute to the token
+ * count. Token-affecting fields (`input`, `instructions`, `model`, `tools`,
+ * `tool_choice`, `text`, `reasoning`, `truncation`, `parallel_tool_calls`)
+ * are forwarded into a `ResponsesRequest` so the count reflects what
+ * `POST /v1/responses` would send to the model.
  */
 struct ResponseInputTokensRequest : BaseRequest {
   using BaseRequest::BaseRequest;
 
   // string or { id: string }
   Json::Value conversation;
+  std::optional<std::string> instructions;
   // string or array of input items
   Json::Value input;
-  std::optional<std::string> instructions;
   std::optional<std::string> model;
   std::optional<bool> parallel_tool_calls;
   std::optional<std::string> previous_response_id;
@@ -47,7 +51,7 @@ struct ResponseInputTokensRequest : BaseRequest {
 
   static ResponseInputTokensRequest fromJson(const Json::Value& json,
                                              uint32_t taskId) {
-    using namespace json_field;
+    using namespace tt::domain::json_field;
 
     ResponseInputTokensRequest req(taskId);
 
@@ -75,32 +79,47 @@ struct ResponseInputTokensRequest : BaseRequest {
 
     if (json.isMember("instructions") && !json["instructions"].isNull())
       req.instructions = getString(json["instructions"], "instructions");
+
     if (json.isMember("model") && !json["model"].isNull())
       req.model = getString(json["model"], "model");
+
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
       req.parallel_tool_calls =
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
+
     if (json.isMember("previous_response_id") &&
-        !json["previous_response_id"].isNull())
+        !json["previous_response_id"].isNull()) {
       req.previous_response_id =
           getString(json["previous_response_id"], "previous_response_id");
-    if (json.isMember("reasoning") && !json["reasoning"].isNull())
+      if (!req.conversation.isNull())
+        throw std::invalid_argument(
+            "previous_response_id cannot be used together with conversation");
+    }
+
+    if (json.isMember("reasoning") && !json["reasoning"].isNull()) {
+      checkObject(json["reasoning"], "reasoning");
       req.reasoning = json["reasoning"];
-    if (json.isMember("text") && !json["text"].isNull())
+    }
+
+    if (json.isMember("text") && !json["text"].isNull()) {
+      checkObject(json["text"], "text");
       req.text = json["text"];
+    }
+
     if (json.isMember("tool_choice") && !json["tool_choice"].isNull())
       req.tool_choice = json["tool_choice"];
+
     if (json.isMember("tools") && !json["tools"].isNull()) {
-      if (!json["tools"].isArray())
-        throw std::invalid_argument("tools must be an array");
+      checkArray(json["tools"], "tools");
       req.tools = json["tools"];
     }
+
     if (json.isMember("truncation") && !json["truncation"].isNull()) {
-      std::string truncation = getString(json["truncation"], "truncation");
-      if (truncation != "auto" && truncation != "disabled")
+      const std::string t = getString(json["truncation"], "truncation");
+      if (t != "auto" && t != "disabled")
         throw std::invalid_argument("truncation must be 'auto' or 'disabled'");
-      req.truncation = std::move(truncation);
+      req.truncation = t;
     }
 
     return req;
@@ -130,15 +149,14 @@ struct ResponseInputTokensRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id << " model=" << model.value_or("default")
-        << " input_type=" << inputType << " input_size=" << inputSize
-        << " first_input=[" << inputPreview << "]"
-        << " instructions=" << detail::optStr(instructions)
-        << " conversation=" << conv
-        << " previous_response_id=" << detail::optStr(previous_response_id)
-        << " truncation=" << detail::optStr(truncation)
-        << " tools=" << tools.size()
-        << " parallel_tool_calls=" << detail::optStr(parallel_tool_calls);
+    out << "task_id=" << task_id << " input_type=" << inputType
+        << " input_size=" << inputSize << " first_input=[" << inputPreview
+        << "]"
+        << " conversation=" << conv << " model=" << model.value_or("none")
+        << " previous_response_id=" << previous_response_id.value_or("none")
+        << " has_instructions=" << (instructions.has_value() ? "true" : "false")
+        << " tools_count=" << (tools.isArray() ? tools.size() : 0u)
+        << " truncation=" << truncation.value_or("none");
     return out.str();
   }
 
@@ -146,8 +164,8 @@ struct ResponseInputTokensRequest : BaseRequest {
     Json::Value j;
     j["task_id"] = task_id;
     if (!conversation.isNull()) j["conversation"] = conversation;
-    if (!input.isNull()) j["input"] = input;
     if (instructions.has_value()) j["instructions"] = *instructions;
+    if (!input.isNull()) j["input"] = input;
     if (model.has_value()) j["model"] = *model;
     if (parallel_tool_calls.has_value())
       j["parallel_tool_calls"] = *parallel_tool_calls;
@@ -156,15 +174,19 @@ struct ResponseInputTokensRequest : BaseRequest {
     if (!reasoning.isNull()) j["reasoning"] = reasoning;
     if (!text.isNull()) j["text"] = text;
     if (!tool_choice.isNull()) j["tool_choice"] = tool_choice;
-    if (!tools.empty()) j["tools"] = tools;
+    if (tools.isArray() && !tools.empty()) j["tools"] = tools;
     if (truncation.has_value()) j["truncation"] = *truncation;
     return j;
   }
 
   /**
-   * Build a ResponsesRequest mirroring the count endpoint body, so the
+   * Build a ResponsesRequest from the input_tokens request body, so the
    * existing tokenization pipeline (chat-template + LLMRequest) can reuse
    * the same conversion logic as POST /v1/responses.
+   *
+   * Forwards every field that influences the prompt sent to the tokenizer.
+   * The stateful fields `conversation` and `previous_response_id` are not
+   * forwarded since the server cannot resolve them to prior items.
    */
   ResponsesRequest toResponsesRequest() const {
     ResponsesRequest r(task_id);

@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <string>
 
 namespace tt::domain::llm {
@@ -20,7 +21,7 @@ struct ResponseInputTokensResponse {
   static constexpr const char* kObjectType = "response.input_tokens";
 
   std::string object = kObjectType;
-  int input_tokens = 0;
+  uint32_t input_tokens = 0;
 
   Json::Value toJson() const {
     Json::Value j;

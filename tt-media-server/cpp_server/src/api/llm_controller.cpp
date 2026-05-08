@@ -154,8 +154,7 @@ void LLMController::responsesInputTokens(
   std::optional<ResponseInputTokensRequest> parsedOpt;
   try {
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-    parsedOpt =
-        ResponseInputTokensRequest::fromJson(*json, std::move(taskId));
+    parsedOpt = ResponseInputTokensRequest::fromJson(*json, taskId);
   } catch (const std::exception& e) {
     callback(errorResponse(drogon::k400BadRequest,
                            std::string("Failed to parse request: ") + e.what(),
@@ -168,12 +167,22 @@ void LLMController::responsesInputTokens(
   TT_LOG_INFO("[LLMController] /v1/responses/input_tokens {}",
               parsed.toString());
 
-  if (parsed.input.isNull() ||
-      (parsed.input.isArray() && parsed.input.empty()) ||
-      (parsed.input.isString() && parsed.input.asString().empty())) {
-    callback(errorResponse(drogon::k400BadRequest,
-                           "input is required and must not be empty",
-                           "invalid_request_error", Json::Value("input")));
+  // Per OpenAI spec, every body field is optional, but this server is stateless
+  // and cannot resolve `conversation` / `previous_response_id` to prior items.
+  // Require at least one source of tokens we can actually count locally.
+  const bool hasInput =
+      !parsed.input.isNull() &&
+      !((parsed.input.isArray() && parsed.input.empty()) ||
+        (parsed.input.isString() && parsed.input.asString().empty()));
+  const bool hasInstructions =
+      parsed.instructions.has_value() && !parsed.instructions->empty();
+  if (!hasInput && !hasInstructions) {
+    callback(errorResponse(
+        drogon::k400BadRequest,
+        "Request must include non-empty 'input' or 'instructions'; "
+        "stateful 'conversation' / 'previous_response_id' lookups are not "
+        "supported by this server",
+        "invalid_request_error", Json::Value("input")));
     return;
   }
 

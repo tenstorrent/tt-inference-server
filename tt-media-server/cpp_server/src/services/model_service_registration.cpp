@@ -83,9 +83,9 @@ void registerLLM() {
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
-  routes.registerRoute(
-      config::ModelService::LLM, "POST", "/v1/responses/input_tokens",
-      "Return input token count for a Responses API request");
+  routes.registerRoute(config::ModelService::LLM, "POST",
+                       "/v1/responses/input_tokens",
+                       "Return input token count for a Responses API request");
   routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
                        "List models");
 }
