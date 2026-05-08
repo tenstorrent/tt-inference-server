@@ -6,10 +6,10 @@
 uv pip uninstall xformers diffusers torch torchvision torchaudio
 
 # Install CPU-only versions
-uv pip install torch==2.7.1+cpu torchvision==0.22.1+cpu torchaudio==2.7.1+cpu --index-url https://download.pytorch.org/whl/cpu
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Install xformers without its CUDA sub-deps (--no-deps avoids re-pulling
 # the CUDA torch wheels we just replaced with CPU-only ones above).
-uv pip install xformers==0.0.31 --no-deps
+uv pip install xformers --no-deps
 
 uv pip install diffusers
