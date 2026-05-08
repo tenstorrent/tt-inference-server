@@ -187,8 +187,7 @@ void LLMController::chatCompletions(
     const bool includeUsage = !reqPtr->stream_options.has_value() ||
                               reqPtr->stream_options->include_usage;
     handleStreaming(reqPtr, std::make_shared<ChatCompletionEventFormatter>(),
-                    includeUsage, /*continuousUsage=*/false,
-                    std::move(callback));
+                    includeUsage, std::move(callback));
   } else {
     handleNonStreaming(reqPtr, /*builder=*/nullptr, std::move(callback));
   }
@@ -237,8 +236,7 @@ void LLMController::responses(
     auto formatter =
         std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
     handleStreaming(reqPtr, std::move(formatter),
-                    /*includeUsage=*/true,
-                    /*continuousUsage=*/false, std::move(callback));
+                    /*includeUsage=*/true, std::move(callback));
     return;
   }
 
@@ -345,7 +343,6 @@ drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
 void LLMController::handleStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
     std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
-    bool continuousUsage,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -360,8 +357,8 @@ void LLMController::handleStreaming(
 
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb, loop, formatter = std::move(formatter), includeUsage,
-       continuousUsage](SessionInfo sessionInfo) {
+      [this, reqPtr, cb, loop, formatter = std::move(formatter),
+       includeUsage](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
@@ -377,8 +374,7 @@ void LLMController::handleStreaming(
         }
 
         auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage, continuousUsage,
-            formatter);
+            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,

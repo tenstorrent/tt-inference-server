@@ -15,11 +15,10 @@ using namespace tt::domain::llm;
 
 StreamingResponseWriter::StreamingResponseWriter(
     trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
-    bool continuousUsage, std::shared_ptr<StreamEventFormatter> formatter)
+    std::shared_ptr<StreamEventFormatter> formatter)
     : ResponseWriter(std::move(params)),
       loop(loop),
       includeUsage(includeUsage),
-      continuousUsage(continuousUsage),
       formatter(std::move(formatter)) {
   if (config::enableAccumulatedStreaming()) {
     sseBatchQueue = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
@@ -29,19 +28,17 @@ StreamingResponseWriter::StreamingResponseWriter(
 std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
     trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage) {
   return create(loop, std::move(params), includeUsage,
-                /*continuousUsage=*/false,
                 std::make_shared<ChatCompletionEventFormatter>());
 }
 
 std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
     trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
-    bool continuousUsage, std::shared_ptr<StreamEventFormatter> formatter) {
+    std::shared_ptr<StreamEventFormatter> formatter) {
   if (!formatter) {
     formatter = std::make_shared<ChatCompletionEventFormatter>();
   }
-  return std::shared_ptr<StreamingResponseWriter>(
-      new StreamingResponseWriter(loop, std::move(params), includeUsage,
-                                  continuousUsage, std::move(formatter)));
+  return std::shared_ptr<StreamingResponseWriter>(new StreamingResponseWriter(
+      loop, std::move(params), includeUsage, std::move(formatter)));
 }
 
 void StreamingResponseWriter::sendSse(const std::string& sse,
@@ -105,24 +102,12 @@ void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
     lastFinishReason = choice.finish_reason;
   }
 
-  std::optional<CompletionUsage> usage;
-  if (continuousUsage) {
-    usage = CompletionUsage{params.promptTokenCount, currentTokens,
-                            params.promptTokenCount + currentTokens,
-                            std::nullopt, std::nullopt};
-  }
-
   std::string sse;
   if (firstContentChunk.exchange(false)) {
-    std::optional<CompletionUsage> initialUsage;
-    if (continuousUsage) {
-      initialUsage = CompletionUsage{params.promptTokenCount, 0, 0,
-                                     std::nullopt, std::nullopt};
-    }
-    sse += formatter->formatInitialEvents(params, initialUsage);
+    sse += formatter->formatInitialEvents(params, std::nullopt);
   }
-  sse += formatter->formatTokenEvents(params, chunk, usage, currentTokens,
-                                      accumulatedSoFar);
+  sse += formatter->formatTokenEvents(params, chunk, std::nullopt,
+                                      currentTokens, accumulatedSoFar);
 
   if (!sse.empty()) {
     auto self =

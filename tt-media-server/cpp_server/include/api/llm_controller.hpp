@@ -79,7 +79,6 @@ class LLMController : public drogon::HttpController<LLMController> {
   void handleStreaming(
       std::shared_ptr<LLMRequest> reqPtr,
       std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
-      bool continuousUsage,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**

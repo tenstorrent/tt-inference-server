@@ -33,20 +33,19 @@ class StreamingResponseWriter : public ResponseWriter {
  public:
   /**
    * Default factory: chat-completion SSE with optional usage chunk.
-   * Equivalent to passing a `ChatCompletionEventFormatter` and
-   * `continuousUsage=false`.
+   * Equivalent to passing a `ChatCompletionEventFormatter`.
    */
   static std::shared_ptr<StreamingResponseWriter> create(
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage);
 
   /**
-   * Strategy factory: caller supplies the SSE formatter and chooses whether
-   * per-token usage stats should be embedded in each chunk
-   * (`continuousUsage=true`, used by Responses-style protocols).
+   * Strategy factory: caller supplies the SSE formatter (chat-completion vs
+   * Responses API). When `formatter` is null, falls back to
+   * `ChatCompletionEventFormatter`.
    */
   static std::shared_ptr<StreamingResponseWriter> create(
       trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
-      bool continuousUsage, std::shared_ptr<StreamEventFormatter> formatter);
+      std::shared_ptr<StreamEventFormatter> formatter);
 
   void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
@@ -62,7 +61,7 @@ class StreamingResponseWriter : public ResponseWriter {
 
  private:
   StreamingResponseWriter(trantor::EventLoop* loop, ResponseWriterParams params,
-                          bool includeUsage, bool continuousUsage,
+                          bool includeUsage,
                           std::shared_ptr<StreamEventFormatter> formatter);
 
   void sendSse(const std::string& sse,
@@ -71,7 +70,6 @@ class StreamingResponseWriter : public ResponseWriter {
 
   trantor::EventLoop* loop;
   bool includeUsage;
-  bool continuousUsage;
   std::shared_ptr<StreamEventFormatter> formatter;
 
   std::shared_ptr<drogon::ResponseStreamPtr> streamPtr =
