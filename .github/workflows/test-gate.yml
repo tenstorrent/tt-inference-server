@@ -1318,9 +1318,6 @@ jobs:
     permissions:
       contents: read
     env:
-      # The GitHub-hosted runner auto-injects http(s)_proxy but not no_proxy
-      # for loopback. Without this, curl calls to 127.0.0.1 (e.g. the
-      # /tt-liveness liveness probe) are routed through the proxy and fail.
       no_proxy: "localhost,127.0.0.1,::1"
     # Gating: any TSan race report after suppressions fails this job and the
     # whole pipeline. Known issues are listed in tsan_suppressions.txt with
@@ -1336,21 +1333,13 @@ jobs:
         with:
           token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-blaze submodule (without tt-metal)
-        working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
-
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan --blaze
+          ./build.sh --tsan
 
       - name: Run unit tests under TSan
         env:
@@ -1373,12 +1362,9 @@ jobs:
           uv pip install guidellm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
-      - name: Start TSan-instrumented server (mock_pipeline)
+      - name: Start TSan-instrumented server (mock)
         env:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
-          # GitHub-hosted runners don't have the Blaze pipeline-manager
-          # infrastructure that mock_pipeline (BlazeRunner) needs, so use the
-          # simpler in-process mock backend instead.
           LLM_DEVICE_BACKEND: mock
         run: |
           cd cpp_server/build
