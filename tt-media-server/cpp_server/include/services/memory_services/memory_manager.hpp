@@ -27,9 +27,9 @@ class MemoryManager {
   // from an external system. Synchronous managers don't
   // need to override this. Async managers override to
   // complete allocation after receiving a response.
-  virtual void handleResponse(uint32_t requestId, uint32_t slotId) {
+  virtual void handleResponse(uint32_t taskId, uint32_t slotId) {
     // Default implementation does nothing - only async managers need this
-    (void)requestId;
+    (void)taskId;
     (void)slotId;
   }
 

@@ -6,9 +6,6 @@
 #include <cstdint>
 #include <istream>
 #include <ostream>
-#include <vector>
-
-#include "domain/slot_types.hpp"
 
 namespace tt::domain {
 
@@ -19,15 +16,15 @@ enum class MemoryManagementAction : std::uint8_t {
 };
 
 enum class KvMemoryLayout : std::uint8_t {
-  Paged = 0,
-  PerLayer = 1,
+  PAGED = 0,
+  PER_LAYER = 1,
 };
 
 struct ManageMemoryTask {
   uint32_t taskId;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
-  KvMemoryLayout memoryLayout{KvMemoryLayout::Paged};
-  std::vector<std::uint32_t> slotIds;
+  KvMemoryLayout memoryLayout{KvMemoryLayout::PAGED};
+  uint32_t slotId;
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));
@@ -35,11 +32,7 @@ struct ManageMemoryTask {
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
     auto ml = static_cast<std::uint8_t>(memoryLayout);
     os.write(reinterpret_cast<const char*>(&ml), sizeof(ml));
-    std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
-    os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::uint32_t id : slotIds) {
-      os.write(reinterpret_cast<const char*>(&id), sizeof(id));
-    }
+    os.write(reinterpret_cast<const char*>(&slotId), sizeof(slotId));
   }
 
   static ManageMemoryTask deserialize(std::istream& is) {
@@ -51,12 +44,7 @@ struct ManageMemoryTask {
     std::uint8_t ml = 0;
     is.read(reinterpret_cast<char*>(&ml), sizeof(ml));
     task.memoryLayout = static_cast<KvMemoryLayout>(ml);
-    std::uint32_t n = 0;
-    is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    task.slotIds.resize(n, INVALID_SLOT_ID);
-    for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&task.slotIds[i]), sizeof(std::uint32_t));
-    }
+    is.read(reinterpret_cast<char*>(&task.slotId), sizeof(task.slotId));
     return task;
   }
 };
@@ -70,17 +58,13 @@ enum class ManageMemoryStatus : std::uint8_t {
 struct ManageMemoryResult {
   uint32_t taskId;
   ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
-  std::vector<std::uint32_t> slotIds;
+  uint32_t slotId;
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
-    std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
-    os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::uint32_t id : slotIds) {
-      os.write(reinterpret_cast<const char*>(&id), sizeof(id));
-    }
+    os.write(reinterpret_cast<const char*>(&slotId), sizeof(slotId));
   }
 
   static ManageMemoryResult deserialize(std::istream& is) {
@@ -89,13 +73,7 @@ struct ManageMemoryResult {
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);
-    std::uint32_t n = 0;
-    is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    result.slotIds.resize(n, INVALID_SLOT_ID);
-    for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&result.slotIds[i]),
-              sizeof(std::uint32_t));
-    }
+    is.read(reinterpret_cast<char*>(&result.slotId), sizeof(result.slotId));
     return result;
   }
 };
