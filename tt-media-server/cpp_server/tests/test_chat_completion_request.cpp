@@ -253,6 +253,64 @@ void testToolChoiceFunction() {
   std::cout << "✅ Test passed!\n";
 }
 
+void testToolChoiceFunctionMissingNameRejected() {
+  std::cout << "\n=== Testing tool_choice=function Without function.name "
+               "(Should Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+
+  Json::Value toolChoice;
+  toolChoice["type"] = "function";
+  // No "function" field
+  json["tool_choice"] = toolChoice;
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("tool_choice.function.name is required") !=
+           std::string::npos);
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when tool_choice=function has no function.name");
+
+  std::cout << "✓ tool_choice=function without name correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
+void testToolChoiceFunctionUnknownNameRejected() {
+  std::cout << "\n=== Testing tool_choice=function With Unknown function.name "
+               "(Should Reject) ===\n";
+
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+
+  Json::Value toolChoice;
+  toolChoice["type"] = "function";
+  toolChoice["function"]["name"] = "missing_tool";
+  json["tool_choice"] = toolChoice;
+
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument& e) {
+    exceptionThrown = true;
+    std::string errorMsg = e.what();
+    assert(errorMsg.find("not found in tools") != std::string::npos);
+    assert(errorMsg.find("missing_tool") != std::string::npos);
+  }
+
+  assert(exceptionThrown &&
+         "Should throw when tool_choice.function.name not in tools");
+
+  std::cout << "✓ tool_choice=function with unknown name correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
+}
+
 void testToolChoiceRequired() {
   std::cout << "\n=== Testing tool_choice=required ===\n";
 
@@ -729,6 +787,8 @@ int main() {
     testToolChoiceNone();
     testToolChoiceAuto();
     testToolChoiceFunction();
+    testToolChoiceFunctionMissingNameRejected();
+    testToolChoiceFunctionUnknownNameRejected();
     testToolChoiceRequired();
     testToolChoiceNoneWithoutTools();
     testToolChoiceNoneWithEmptyToolsArray();

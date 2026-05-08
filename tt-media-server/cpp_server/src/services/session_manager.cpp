@@ -43,8 +43,8 @@ domain::ManageMemoryTask makeAllocTask() {
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
   domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
                                 domain::MemoryManagementAction::DEALLOCATE);
-  task.memoryLayout = domain::KvMemoryLayout::Paged;
-  task.slotIds = {slotId};
+  task.memoryLayout = domain::KvMemoryLayout::PAGED;
+  task.slotId = slotId;
   return task;
 }
 }  // namespace
@@ -84,9 +84,8 @@ void SessionManager::readerLoop() {
       anyResults = true;
       TT_LOG_DEBUG(
           "[SessionManager] readerLoop popped result: taskId={}, status={}, "
-          "slotIds.size={}",
-          result.taskId, static_cast<int>(result.status),
-          result.slotIds.size());
+          "slotId={}",
+          result.taskId, static_cast<int>(result.status), result.slotId);
       handleMemoryResult(result);
     }
     if (!anyResults) {
@@ -435,11 +434,8 @@ void SessionManager::handleMemoryResult(
     const domain::ManageMemoryResult& result) {
   TT_LOG_DEBUG(
       "[SessionManager] handleMemoryResult: taskId={}, status={}, "
-      "slotIds.size={}{}",
-      result.taskId, static_cast<int>(result.status), result.slotIds.size(),
-      result.slotIds.empty()
-          ? ""
-          : (", slotIds[0]=" + std::to_string(result.slotIds.front())));
+      "slotId={}",
+      result.taskId, static_cast<int>(result.status), result.slotId);
   auto allocation = pendingAllocationsMap.take(result.taskId);
   if (!allocation.has_value()) {
     TT_LOG_WARN("[SessionManager] No pending allocation found for task ID: {}",
@@ -448,9 +444,9 @@ void SessionManager::handleMemoryResult(
   }
   auto& pendingAllocation = allocation.value();
   bool success = result.status == domain::ManageMemoryStatus::SUCCESS &&
-                 !result.slotIds.empty();
+                 result.slotId != domain::INVALID_SLOT_ID;
   if (success) {
-    pendingAllocation.session.setSlotId(result.slotIds.front());
+    pendingAllocation.session.setSlotId(result.slotId);
     pendingAllocation.session.markPrepared();
     sessions.insert(pendingAllocation.session.getSessionId(),
                     pendingAllocation.session);
@@ -462,7 +458,7 @@ void SessionManager::handleMemoryResult(
         "[SessionManager] handleMemoryResult: SUCCESS sessionId={}, hash={}, "
         "assigned slotId={}",
         pendingAllocation.session.getSessionId(),
-        pendingAllocation.session.getHash(), result.slotIds.front());
+        pendingAllocation.session.getHash(), result.slotId);
     updateSessionCountMetric();
     pendingAllocation.eventLoop->queueInLoop(
         [onCompletion = std::move(pendingAllocation.onCompletion),
