@@ -3554,11 +3554,11 @@ embedding_templates = [
 cnn_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-4B"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
@@ -3589,11 +3589,11 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
