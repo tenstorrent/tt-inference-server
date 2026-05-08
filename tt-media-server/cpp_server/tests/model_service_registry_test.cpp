@@ -159,14 +159,14 @@ namespace {
 
 class FakeMediaRunner : public tt::runners::IMediaRunner<int, std::string> {
  public:
-  explicit FakeMediaRunner(std::string tag) : tag_(std::move(tag)) {}
+  explicit FakeMediaRunner(std::string tag) : name(std::move(tag)) {}
   std::string run(const int& request) override {
-    return tag_ + ":" + std::to_string(request);
+    return name + ":" + std::to_string(request);
   }
-  const char* runnerType() const override { return tag_.c_str(); }
+  const char* runnerType() const override { return name.c_str(); }
 
  private:
-  std::string tag_;
+  std::string name;
 };
 
 }  // namespace
