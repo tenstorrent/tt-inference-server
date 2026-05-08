@@ -33,12 +33,19 @@ inline std::string sendAndReceive(
 
   const std::string req =
       "POST /v1/chat/completions HTTP/1.1\r\n"
-      "Host: " + std::string(host) + ":" + std::to_string(port) + "\r\n"
+      "Host: " +
+      std::string(host) + ":" + std::to_string(port) +
+      "\r\n"
       "Content-Type: application/json\r\n"
-      "Authorization: Bearer " + apiKey + "\r\n"
-      "Content-Length: " + std::to_string(body.size()) + "\r\n"
+      "Authorization: Bearer " +
+      apiKey +
+      "\r\n"
+      "Content-Length: " +
+      std::to_string(body.size()) +
+      "\r\n"
       "Connection: close\r\n"
-      "\r\n" + body;
+      "\r\n" +
+      body;
   ::send(sock, req.c_str(), req.size(), 0);
 
   std::string response;

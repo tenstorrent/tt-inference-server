@@ -82,8 +82,7 @@ class TestServer {
     auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
         tt::services::ServiceContainer::instance().getService(
             tt::config::ModelService::LLM));
-    if (!llm)
-      throw std::runtime_error("TestServer: LLMService not registered");
+    if (!llm) throw std::runtime_error("TestServer: LLMService not registered");
 
     const auto deadline = std::chrono::steady_clock::now() + kStartupTimeout;
     while (!llm->isModelReady()) {
@@ -104,9 +103,8 @@ class TestServer {
   // tests can keep issuing requests against the listener. One IO loop is
   // plenty for serial test traffic.
   void startHttpListener() {
-    drogonThread_ = std::thread([] {
-      drogon::app().addListener(kHost, kPort).setThreadNum(1).run();
-    });
+    drogonThread_ = std::thread(
+        [] { drogon::app().addListener(kHost, kPort).setThreadNum(1).run(); });
   }
 
   void waitForListener() {

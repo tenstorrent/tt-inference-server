@@ -130,8 +130,7 @@ TEST_F(ApiContractTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
 TEST_F(ApiContractTest, StreamingRequest_AlsoPushesToTaskQueue) {
   // stream=true goes through a different controller path but must still
   // push a Sequence to the task queue.
-  auto future =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
   auto seq = server_->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
