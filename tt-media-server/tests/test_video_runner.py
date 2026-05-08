@@ -822,7 +822,9 @@ class TestRunAllRanks:
 
         vr._shutdown = False
         # Use spec= to make hasattr return False for export_in_runner.
-        mock_runner = MagicMock(spec=["warmup", "set_device", "close_device", "run"])
+        mock_runner = MagicMock(
+            spec=["warmup", "set_device", "close_device", "run", "load_weights"]
+        )
         mock_runner.warmup = AsyncMock()
         mock_comm = MagicMock()
         mock_comm.Get_rank.return_value = 0
