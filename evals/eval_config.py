@@ -144,7 +144,7 @@ _eval_config_list = [
                 apply_chat_template=True,
                 max_concurrent=1,
                 score=EvalTaskScore(
-                    published_score=43.75,  # AIME 2025
+                    published_score=43.75,  # AIME 2025 pass@1
                     published_score_ref="https://arxiv.org/pdf/2510.22115",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -164,7 +164,7 @@ _eval_config_list = [
                     "do_sample": "false",
                     "temperature": 0.7,
                     "top_p": 0.8,
-                    "repetition_penalty": 1.05,
+                    # "repetition_penalty": 1.05,
                     # "max_gen_toks": "16384",
                     "max_gen_toks": "1500",
                     "stream": "false",
@@ -175,12 +175,12 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="r1_gpqa_diamond",
+                task_name="gpqa_diamond_cot_zeroshot",
                 use_chat_api=True,
                 apply_chat_template=True,
                 max_concurrent=1,
                 score=EvalTaskScore(
-                    published_score=58.74,  # GPQA Diamond
+                    published_score=58.74,  # GPQA Diamond pass@1
                     published_score_ref="https://arxiv.org/pdf/2510.22115",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
@@ -200,7 +200,7 @@ _eval_config_list = [
                     "do_sample": "false",
                     "temperature": 0.7,
                     "top_p": 0.8,
-                    "repetition_penalty": 1.05,
+                    # "repetition_penalty": 1.05,
                     # "max_gen_toks": "16384",
                     "max_gen_toks": "768",
                     "stream": "false",
@@ -237,7 +237,7 @@ _eval_config_list = [
                     "do_sample": "false",
                     "temperature": 0.7,
                     "top_p": 0.8,
-                    "repetition_penalty": 1.05,
+                    # "repetition_penalty": 1.05,
                     # "max_gen_toks": "16384",
                     "max_gen_toks": "512",
                     "stream": "false",
