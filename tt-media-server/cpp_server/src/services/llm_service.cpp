@@ -403,7 +403,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             taskId, static_cast<int64_t>(token.token_id), delta);
         inToolCall = jsonToolCallParser->isInToolCall(taskId);
       }
-      // Handle natural tool calls (tool_choice="auto") via model-specific parser
+      // Handle natural tool calls (tool_choice="auto") via model-specific
+      // parser
       else if (toolChoiceType == "auto" && toolCallParser) {
         toolCallResult = toolCallParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
@@ -685,8 +686,9 @@ void LLMService::postProcess(LLMResponse& response) const {
           "(tool_choice={}, function={}, id={})",
           toolChoice.type, functionName, toolCallId);
     }
-    // tool_choice=auto: streaming parser handles tool call parsing incrementally,
-    // tool_calls are accumulated in the response during streaming
+    // tool_choice=auto: streaming parser handles tool call parsing
+    // incrementally, tool_calls are accumulated in the response during
+    // streaming
   }
 }
 
