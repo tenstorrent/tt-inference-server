@@ -1,5 +1,5 @@
-[submodule "tt-media-server/cpp_server/tt-blaze"]
-	path = tt-media-server/cpp_server/tt-blaze
-	url = https://github.com/tenstorrent/tt-blaze.git
-	branch = asaigal/relaxed_acceptance
+[submodule "tt-media-server/cpp_server/tt-llm-engine"]
+	path = tt-media-server/cpp_server/tt-llm-engine
+	url = git@github.com:tt-asaigal/tt-llm-engine.git
+	branch = main
 	ignore = dirty
