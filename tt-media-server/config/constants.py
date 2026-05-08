@@ -35,6 +35,7 @@ class SupportedModels(Enum):
     QWEN_3_4B = "Qwen/Qwen3-4B"
     QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    QWEN3_TTS = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
@@ -79,6 +80,7 @@ class ModelNames(Enum):
     QWEN_3_4B = "Qwen3-4B"
     QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
+    QWEN3_TTS = "qwen3_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
@@ -122,6 +124,7 @@ class ModelRunners(Enum):
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
+    TT_QWEN3_TTS = "tt-qwen3-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
     TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
 
@@ -190,6 +193,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
+        ModelRunners.TT_QWEN3_TTS,
     },
 }
 
@@ -234,6 +238,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TT_QWEN3_TTS: {ModelNames.QWEN3_TTS},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -904,6 +909,30 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN3_TTS, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN3_TTS, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN3_TTS, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_QWEN3_TTS, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {

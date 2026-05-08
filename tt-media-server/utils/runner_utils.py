@@ -52,6 +52,7 @@ def setup_runner_environment(
     _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {
         ModelRunners.TT_WHISPER.value,
         ModelRunners.TT_SPEECHT5_TTS.value,
+        ModelRunners.TT_QWEN3_TTS.value,
     }
     if settings.model_runner in _RUNNERS_REQUIRING_MESH_DESCRIPTOR:
         if settings.is_galaxy:

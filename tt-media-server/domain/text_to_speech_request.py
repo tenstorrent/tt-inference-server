@@ -39,6 +39,11 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Optional ad-hoc voice cloning (Qwen3-TTS). When BOTH are provided, the
+    # runner ignores speaker_id and clones from the inline audio + transcript.
+    voice_clone_audio: Optional[str] = None  # Base64-encoded WAV/MP3/FLAC of reference clip
+    voice_clone_text: Optional[str] = None   # Verbatim transcript of voice_clone_audio
+
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 

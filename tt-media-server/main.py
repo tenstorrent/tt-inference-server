@@ -2,6 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+# Force "spawn" start method so device-worker subprocesses do NOT inherit the
+# parent's already-imported ttnn state (mesh CQ singleton, trace tracker).
+# Forking after the parent's worker_id="-1" download_weights flow imports ttnn
+# leaks a stale "trace_id=0 active" view into the worker, which trips
+# `Writes are not supported during trace capture` on the first H2D inside any
+# new trace block (qwen3_tts init_server_context captures 18 traces eagerly).
+# Must run before any other multiprocessing.Process is created downstream.
+import multiprocessing as _mp
+
+if _mp.get_start_method(allow_none=True) != "spawn":
+    _mp.set_start_method("spawn", force=True)
+
 # IMPORTANT: telemetry.multiprocess_setup MUST be the very first project
 # import. It sets PROMETHEUS_MULTIPROC_DIR before any other module gets a
 # chance to import prometheus_client and instantiate Counter/Histogram
