@@ -11,7 +11,7 @@
 
 #include "domain/base_response.hpp"
 
-namespace tt::domain {
+namespace tt::domain::image {
 
 /**
  * Response for image generation / image-to-image / edit endpoints.
@@ -37,4 +37,4 @@ struct ImageResponse : BaseResponse {
   }
 };
 
-}  // namespace tt::domain
+}  // namespace tt::domain::image

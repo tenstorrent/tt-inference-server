@@ -8,11 +8,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <future>
-#include <memory>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -28,11 +25,6 @@ using ::tt::utils::image_codec::encodeFloatChwToBase64;
 using ::tt::utils::image_codec::Format;
 using ::tt::utils::image_codec::parseFormat;
 
-constexpr const char* SDXL_BASE_REPO =
-    "stabilityai/stable-diffusion-xl-base-1.0";
-constexpr const char* SDXL_INPAINTING_REPO =
-    "diffusers/stable-diffusion-xl-1.0-inpainting-0.1";
-
 py::module_ importTorch() { return py::module_::import("torch"); }
 py::module_ importTtnn() { return py::module_::import("ttnn"); }
 
@@ -45,10 +37,6 @@ void setupRunnerEnvironment() {
 }
 
 }  // namespace
-
-// ---------------------------------------------------------------------------
-// SDXLBaseRunner
-// ---------------------------------------------------------------------------
 
 SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
     : config_(config),
@@ -106,34 +94,20 @@ void SDXLBaseRunner::stop() {
 void SDXLBaseRunner::runWithTimeout(const std::string& tag,
                                     unsigned timeoutSeconds,
                                     const std::function<void()>& work) {
-  if (timeoutSeconds == 0) {
+  const auto start = std::chrono::steady_clock::now();
+  {
+    py::gil_scoped_acquire acquire;
     work();
+  }
+  if (timeoutSeconds == 0) {
     return;
   }
-  // Detached std::thread (not std::async) so wait_for can return on timeout
-  // without blocking on a future destructor. The worker keeps running until
-  // it finishes; after a timeout the runner is considered unhealthy.
-  auto promise = std::make_shared<std::promise<void>>();
-  auto fut = promise->get_future();
-  std::thread worker([promise, work]() {
-    try {
-      py::gil_scoped_acquire acquire;
-      work();
-      promise->set_value();
-    } catch (...) {
-      try {
-        promise->set_exception(std::current_exception());
-      } catch (...) {
-      }
-    }
-  });
-  worker.detach();
-  if (fut.wait_for(std::chrono::seconds(timeoutSeconds)) ==
-      std::future_status::timeout) {
+  const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::steady_clock::now() - start);
+  if (elapsed > std::chrono::seconds(timeoutSeconds)) {
     throw std::runtime_error("[SDXL] " + tag + " timed out after " +
                              std::to_string(timeoutSeconds) + "s");
   }
-  fut.get();
 }
 
 py::dict SDXLBaseRunner::pipelineDeviceParams() {
@@ -433,310 +407,6 @@ std::vector<std::string> SDXLBaseRunner::run(
     throw std::runtime_error(std::string("[SDXL] inference failed: ") +
                              e.what());
   }
-}
-
-// ---------------------------------------------------------------------------
-// SDXLGenerateRunner
-// ---------------------------------------------------------------------------
-
-SDXLGenerateRunner::SDXLGenerateRunner(const config::ImageConfig& config)
-    : SDXLBaseRunner(config) {}
-
-py::object SDXLGenerateRunner::loadDiffusersPipeline() {
-  py::module_ diffusers = py::module_::import("diffusers");
-  std::string repo = config_.model_weights_path.empty()
-                         ? std::string(SDXL_BASE_REPO)
-                         : config_.model_weights_path;
-  py::dict kwargs;
-  kwargs["torch_dtype"] = torch_module_.attr("float32");
-  kwargs["use_safetensors"] = py::bool_(true);
-  return diffusers.attr("DiffusionPipeline")
-      .attr("from_pretrained")(repo, **kwargs);
-}
-
-void SDXLGenerateRunner::distributeBlock() {
-  py::module_ pipelineMod = py::module_::import(
-      "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline");
-  py::object cfgClass = pipelineMod.attr("TtSDXLPipelineConfig");
-  py::dict cfgKwargs;
-  cfgKwargs["encoders_on_device"] = py::bool_(true);
-  cfgKwargs["is_galaxy"] = py::bool_(config_.is_galaxy);
-  cfgKwargs["num_inference_steps"] = 2;
-  cfgKwargs["guidance_scale"] = 5.0F;
-  cfgKwargs["use_cfg_parallel"] = py::bool_(is_tensor_parallel_);
-  cfgKwargs["image_resolution"] =
-      py::make_tuple(config_.image_width, config_.image_height);
-  py::object cfg = cfgClass(**cfgKwargs);
-
-  py::dict pipelineKwargs;
-  pipelineKwargs["ttnn_device"] = ttnn_device_;
-  pipelineKwargs["torch_pipeline"] = pipeline_;
-  pipelineKwargs["pipeline_config"] = cfg;
-  tt_sdxl_ = pipelineMod.attr("TtSDXLPipeline")(**pipelineKwargs);
-}
-
-void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
-  // (tt_image_latents, tt_prompt_embeds, tt_add_text_embeds)
-  py::list args;
-  args.append(tensors[py::int_(0)]);
-  args.append(tensors[py::int_(1)][py::int_(0)]);
-  args.append(tensors[py::int_(2)][py::int_(0)]);
-  tt_sdxl_.attr("prepare_input_tensors")(args);
-}
-
-py::object SDXLGenerateRunner::generateInputTensors(
-    const domain::ImageGenerateRequest& request, py::object promptEmbeds,
-    py::object addTextEmbeds) {
-  py::dict kwargs;
-  kwargs["all_prompt_embeds_torch"] = promptEmbeds;
-  kwargs["torch_add_text_embeds"] = addTextEmbeds;
-  kwargs["start_latent_seed"] =
-      request.seed.has_value() ? py::cast(*request.seed) : py::none();
-  kwargs["timesteps"] =
-      request.timesteps.has_value() ? py::cast(*request.timesteps) : py::none();
-  kwargs["sigmas"] =
-      request.sigmas.has_value() ? py::cast(*request.sigmas) : py::none();
-  return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
-}
-
-domain::ImageGenerateRequest SDXLGenerateRunner::warmupRequest() const {
-  // Numeric SDXL defaults come from struct member init; only warmup
-  // overrides live here.
-  domain::ImageGenerateRequest r(0);
-  r.prompt = "Sunrise on a beach";
-  r.prompt_2 = "Mountains in the background";
-  r.negative_prompt = "low resolution";
-  r.negative_prompt_2 = "blurry";
-  r.num_inference_steps = 1;
-  r.guidance_rescale = 0.7F;
-  return r;
-}
-
-// ---------------------------------------------------------------------------
-// SDXLImageToImageRunner
-// ---------------------------------------------------------------------------
-
-SDXLImageToImageRunner::SDXLImageToImageRunner(
-    const config::ImageConfig& config)
-    : SDXLBaseRunner(config) {}
-
-py::object SDXLImageToImageRunner::loadDiffusersPipeline() {
-  py::module_ diffusers = py::module_::import("diffusers");
-  std::string repo = config_.model_weights_path.empty()
-                         ? std::string(SDXL_BASE_REPO)
-                         : config_.model_weights_path;
-  py::dict kwargs;
-  kwargs["torch_dtype"] = torch_module_.attr("float32");
-  kwargs["use_safetensors"] = py::bool_(true);
-  return diffusers.attr("StableDiffusionXLImg2ImgPipeline")
-      .attr("from_pretrained")(repo, **kwargs);
-}
-
-void SDXLImageToImageRunner::distributeBlock() {
-  py::module_ pipelineMod = py::module_::import(
-      "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline");
-  py::object cfgClass = pipelineMod.attr("TtSDXLImg2ImgPipelineConfig");
-  py::dict cfgKwargs;
-  cfgKwargs["encoders_on_device"] = py::bool_(true);
-  cfgKwargs["is_galaxy"] = py::bool_(config_.is_galaxy);
-  cfgKwargs["num_inference_steps"] = 2;
-  cfgKwargs["guidance_scale"] = 5.0F;
-  cfgKwargs["use_cfg_parallel"] = py::bool_(is_tensor_parallel_);
-  py::object cfg = cfgClass(**cfgKwargs);
-
-  py::dict pipelineKwargs;
-  pipelineKwargs["ttnn_device"] = ttnn_device_;
-  pipelineKwargs["torch_pipeline"] = pipeline_;
-  pipelineKwargs["pipeline_config"] = cfg;
-  tt_sdxl_ = pipelineMod.attr("TtSDXLImg2ImgPipeline")(**pipelineKwargs);
-}
-
-void SDXLImageToImageRunner::prepareInputTensorsForIteration(
-    py::object tensors) {
-  py::list args;
-  args.append(tensors[py::int_(0)]);
-  args.append(tensors[py::int_(1)][py::int_(0)]);
-  args.append(tensors[py::int_(2)][py::int_(0)]);
-  tt_sdxl_.attr("prepare_input_tensors")(args);
-}
-
-py::object SDXLImageToImageRunner::preprocessImage(
-    const std::string& base64Image) const {
-  py::module_ base64Mod = py::module_::import("base64");
-  py::module_ ioMod = py::module_::import("io");
-  py::module_ pil = py::module_::import("PIL.Image");
-
-  std::string clean = base64Image;
-  if (clean.compare(0, 5, "data:") == 0) {
-    auto comma = clean.find(',');
-    if (comma != std::string::npos) clean = clean.substr(comma + 1);
-  }
-  py::bytes raw = base64Mod.attr("b64decode")(clean).cast<py::bytes>();
-  py::object buf = ioMod.attr("BytesIO")(raw);
-  py::object pilImg = pil.attr("open")(buf);
-  py::object converted = pilImg.attr("convert")("RGB");
-  converted = converted.attr("resize")(
-      py::make_tuple(config_.image_width, config_.image_height),
-      pil.attr("Resampling").attr("LANCZOS"));
-
-  py::object processor =
-      tt_sdxl_.attr("torch_pipeline").attr("image_processor");
-  py::dict kwargs;
-  kwargs["height"] = config_.image_height;
-  kwargs["width"] = config_.image_width;
-  kwargs["crops_coords"] = py::none();
-  kwargs["resize_mode"] = py::str("default");
-  py::object tensor = processor.attr("preprocess")(converted, **kwargs);
-  tensor = tensor.attr("to")(py::arg("dtype") = torch_module_.attr("float32"));
-  return torch_module_.attr("cat")(py::make_tuple(tensor), py::arg("dim") = 0);
-}
-
-py::object SDXLImageToImageRunner::generateInputTensors(
-    const domain::ImageGenerateRequest& request, py::object promptEmbeds,
-    py::object addTextEmbeds) {
-  py::object torchImage = preprocessImage(request.image.value_or(""));
-
-  py::dict kwargs;
-  kwargs["torch_image"] = torchImage;
-  kwargs["all_prompt_embeds_torch"] = promptEmbeds;
-  kwargs["torch_add_text_embeds"] = addTextEmbeds;
-  kwargs["start_latent_seed"] =
-      request.seed.has_value() ? py::cast(*request.seed) : py::none();
-  kwargs["timesteps"] =
-      request.timesteps.has_value() ? py::cast(*request.timesteps) : py::none();
-  kwargs["sigmas"] =
-      request.sigmas.has_value() ? py::cast(*request.sigmas) : py::none();
-  return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
-}
-
-domain::ImageGenerateRequest SDXLImageToImageRunner::warmupRequest() const {
-  domain::ImageGenerateRequest r(0);
-  r.prompt = "Sunrise on a beach";
-  r.negative_prompt = "low resolution";
-  r.num_inference_steps = 2;
-  r.strength = 0.99F;
-  r.image = "R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==";
-  return r;
-}
-
-void SDXLImageToImageRunner::applyModeSpecificSettings(
-    const domain::ImageGenerateRequest& request) {
-  if (request.strength.has_value()) {
-    tt_sdxl_.attr("set_strength")(*request.strength);
-  }
-  // aesthetic_score / negative_aesthetic_score: not wired (tt-metal#31032).
-}
-
-// ---------------------------------------------------------------------------
-// SDXLEditRunner (inpaint)
-// ---------------------------------------------------------------------------
-
-SDXLEditRunner::SDXLEditRunner(const config::ImageConfig& config)
-    : SDXLImageToImageRunner(config) {}
-
-py::object SDXLEditRunner::loadDiffusersPipeline() {
-  py::module_ diffusers = py::module_::import("diffusers");
-  std::string repo = config_.model_weights_path.empty()
-                         ? std::string(SDXL_INPAINTING_REPO)
-                         : config_.model_weights_path;
-  py::dict kwargs;
-  kwargs["torch_dtype"] = torch_module_.attr("float32");
-  kwargs["use_safetensors"] = py::bool_(true);
-  return diffusers.attr("DiffusionPipeline")
-      .attr("from_pretrained")(repo, **kwargs);
-}
-
-void SDXLEditRunner::distributeBlock() {
-  py::module_ pipelineMod = py::module_::import(
-      "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline");
-  py::object cfgClass = pipelineMod.attr("TtSDXLInpaintingPipelineConfig");
-  py::dict cfgKwargs;
-  cfgKwargs["encoders_on_device"] = py::bool_(true);
-  cfgKwargs["is_galaxy"] = py::bool_(config_.is_galaxy);
-  cfgKwargs["num_inference_steps"] = 2;
-  cfgKwargs["guidance_scale"] = 5.0F;
-  cfgKwargs["use_cfg_parallel"] = py::bool_(is_tensor_parallel_);
-  py::object cfg = cfgClass(**cfgKwargs);
-
-  py::dict pipelineKwargs;
-  pipelineKwargs["ttnn_device"] = ttnn_device_;
-  pipelineKwargs["torch_pipeline"] = pipeline_;
-  pipelineKwargs["pipeline_config"] = cfg;
-  tt_sdxl_ = pipelineMod.attr("TtSDXLInpaintingPipeline")(**pipelineKwargs);
-}
-
-py::object SDXLEditRunner::preprocessMask(const std::string& base64Mask) const {
-  py::module_ base64Mod = py::module_::import("base64");
-  py::module_ ioMod = py::module_::import("io");
-  py::module_ pil = py::module_::import("PIL.Image");
-
-  std::string clean = base64Mask;
-  if (clean.compare(0, 5, "data:") == 0) {
-    auto comma = clean.find(',');
-    if (comma != std::string::npos) clean = clean.substr(comma + 1);
-  }
-  py::bytes raw = base64Mod.attr("b64decode")(clean).cast<py::bytes>();
-  py::object buf = ioMod.attr("BytesIO")(raw);
-  py::object pilImg = pil.attr("open")(buf);
-  // Force single-channel "L"; non-grayscale RGB masks would otherwise
-  // silently produce incoherent results. mask_processor.preprocess expands
-  // channels downstream.
-  py::object converted = pilImg.attr("convert")("L");
-  converted = converted.attr("resize")(
-      py::make_tuple(config_.image_width, config_.image_height),
-      pil.attr("Resampling").attr("LANCZOS"));
-
-  py::object maskProcessor =
-      tt_sdxl_.attr("torch_pipeline").attr("mask_processor");
-  py::dict kwargs;
-  kwargs["height"] = config_.image_height;
-  kwargs["width"] = config_.image_width;
-  kwargs["crops_coords"] = py::none();
-  kwargs["resize_mode"] = py::str("default");
-  py::object tensor = maskProcessor.attr("preprocess")(converted, **kwargs);
-  return torch_module_.attr("cat")(py::make_tuple(tensor), py::arg("dim") = 0);
-}
-
-void SDXLEditRunner::prepareInputTensorsForIteration(py::object tensors) {
-  // (tt_image_latents, tt_masked_image_latents, tt_mask, tt_prompt_embeds,
-  //  tt_add_text_embeds)
-  py::list args;
-  args.append(tensors[py::int_(0)]);
-  args.append(tensors[py::int_(1)]);
-  args.append(tensors[py::int_(2)]);
-  args.append(tensors[py::int_(3)][py::int_(0)]);
-  args.append(tensors[py::int_(4)][py::int_(0)]);
-  tt_sdxl_.attr("prepare_input_tensors")(args);
-}
-
-py::object SDXLEditRunner::generateInputTensors(
-    const domain::ImageGenerateRequest& request, py::object promptEmbeds,
-    py::object addTextEmbeds) {
-  py::object image = preprocessImage(request.image.value_or(""));
-  py::object mask = preprocessMask(request.mask.value_or(""));
-  // masked_image = image * (mask < 0.5)
-  py::object cond = mask.attr("__lt__")(0.5F);
-  py::object maskedImage = image.attr("__mul__")(cond);
-
-  py::dict kwargs;
-  kwargs["torch_image"] = image;
-  kwargs["torch_masked_image"] = maskedImage;
-  kwargs["torch_mask"] = mask;
-  kwargs["all_prompt_embeds_torch"] = promptEmbeds;
-  kwargs["torch_add_text_embeds"] = addTextEmbeds;
-  kwargs["start_latent_seed"] =
-      request.seed.has_value() ? py::cast(*request.seed) : py::none();
-  kwargs["timesteps"] =
-      request.timesteps.has_value() ? py::cast(*request.timesteps) : py::none();
-  kwargs["sigmas"] =
-      request.sigmas.has_value() ? py::cast(*request.sigmas) : py::none();
-  return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
-}
-
-domain::ImageGenerateRequest SDXLEditRunner::warmupRequest() const {
-  domain::ImageGenerateRequest r = SDXLImageToImageRunner::warmupRequest();
-  r.mask = "R0lGODdhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==";
-  return r;
 }
 
 }  // namespace tt::runners::sdxl

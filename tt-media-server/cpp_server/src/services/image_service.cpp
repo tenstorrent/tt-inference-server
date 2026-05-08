@@ -51,9 +51,9 @@ std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
   return {info};
 }
 
-domain::ImageResponse ImageService::processRequest(
+domain::image::ImageResponse ImageService::processRequest(
     domain::ImageGenerateRequest request) {
-  domain::ImageResponse response(request.task_id);
+  domain::image::ImageResponse response(request.task_id);
   if (!ready_.load(std::memory_order_acquire)) {
     response.error = "Image service not ready";
     return response;

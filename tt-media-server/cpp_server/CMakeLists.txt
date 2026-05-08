@@ -586,6 +586,9 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/runners/embedding_runner.cpp
     src/runners/sdxl/sdxl_runner.cpp
+    src/runners/sdxl/sdxl_generate_runner.cpp
+    src/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runners/sdxl/sdxl_edit_runner.cpp
     src/runners/sdxl/sdxl_python_helpers.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -718,6 +721,9 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runners/sdxl/sdxl_runner.cpp
+    src/runners/sdxl/sdxl_generate_runner.cpp
+    src/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runners/sdxl/sdxl_edit_runner.cpp
     src/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
     src/utils/image_codec.cpp

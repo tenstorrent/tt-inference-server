@@ -10,7 +10,7 @@
 
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
-#include "domain/image_response.hpp"
+#include "domain/image/image_response.hpp"
 #include "runners/media_runner.hpp"
 #include "services/base_service.hpp"
 
@@ -18,8 +18,8 @@ namespace tt::services {
 
 /** In-process image service. Owns one runner and dispatches synchronously;
  *  the Drogon controller offloads to a thread pool. */
-class ImageService
-    : public BaseService<domain::ImageGenerateRequest, domain::ImageResponse> {
+class ImageService : public BaseService<domain::ImageGenerateRequest,
+                                        domain::image::ImageResponse> {
  public:
   using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
                                        std::vector<std::string>>;
@@ -35,7 +35,7 @@ class ImageService
   bool isModelReady() const override;
 
  protected:
-  domain::ImageResponse processRequest(
+  domain::image::ImageResponse processRequest(
       domain::ImageGenerateRequest request) override;
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
