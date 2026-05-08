@@ -684,26 +684,9 @@ void LLMService::postProcess(LLMResponse& response) const {
           "[LLMService] Created tool_call from structured output "
           "(tool_choice={}, function={}, id={})",
           toolChoice.type, functionName, toolCallId);
-      continue;
     }
-
-    // tool_choice=auto: parse for natural tool calls using marker-based parser
-    if (!toolCallParser) {
-      continue;
-    }
-
-    TT_LOG_DEBUG(
-        "[LLMService] Parsing text for tool calls (length={}): {}",
-        choice.text.length(),
-        choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
-
-    auto toolCalls = toolCallParser->parseComplete(choice.text);
-    if (toolCalls.has_value() && !toolCalls->empty()) {
-      TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
-      choice.tool_calls = std::move(toolCalls);
-      choice.text = toolCallParser->stripMarkers(choice.text);
-      choice.finish_reason = "tool_calls";
-    }
+    // tool_choice=auto: streaming parser handles tool call parsing incrementally,
+    // tool_calls are accumulated in the response during streaming
   }
 }
 
