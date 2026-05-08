@@ -104,10 +104,10 @@ struct ToolCallTaskState {
 class DeepSeekToolCallParser : public IToolCallParser {
  public:
   void initializeTask(uint32_t taskId) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
     // Initialize or reset task state
-    ToolCallTaskState& state = task_states_[taskId];
+    ToolCallTaskState& state = taskStates[taskId];
     state.state = ParsingState::REGULAR;
     state.buffer.clear();
     state.current_function.clear();
@@ -125,10 +125,10 @@ class DeepSeekToolCallParser : public IToolCallParser {
   std::optional<ToolCallTokenResult> processToken(
       uint32_t taskId, int64_t tokenId,
       const std::string& decodedText) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    auto it = task_states_.find(taskId);
-    if (it == task_states_.end()) {
+    auto it = taskStates.find(taskId);
+    if (it == taskStates.end()) {
       TT_LOG_WARN(
           "[ToolCallParser] processToken called for uninitialized task: {}",
           taskId);
@@ -299,10 +299,10 @@ class DeepSeekToolCallParser : public IToolCallParser {
   }
 
   std::optional<Json::Value> finalizeTask(uint32_t taskId) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    auto it = task_states_.find(taskId);
-    if (it == task_states_.end()) {
+    auto it = taskStates.find(taskId);
+    if (it == taskStates.end()) {
       TT_LOG_WARN("[ToolCallParser] finalizeTask called for unknown task: {}",
                   taskId);
       return std::nullopt;
@@ -325,17 +325,17 @@ class DeepSeekToolCallParser : public IToolCallParser {
                    taskId, state.tool_calls.size());
     }
 
-    task_states_.erase(it);
+    taskStates.erase(it);
     TT_LOG_DEBUG("[ToolCallParser] Finalized task: {}", taskId);
 
     return result;
   }
 
   bool isInToolCall(uint32_t taskId) const override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    auto it = task_states_.find(taskId);
-    if (it == task_states_.end()) {
+    auto it = taskStates.find(taskId);
+    if (it == taskStates.end()) {
       return false;
     }
 
@@ -343,13 +343,13 @@ class DeepSeekToolCallParser : public IToolCallParser {
   }
 
   size_t activeTaskCount() const override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return task_states_.size();
+    std::lock_guard<std::mutex> lock(mutex);
+    return taskStates.size();
   }
 
  private:
-  mutable std::mutex mutex_;
-  std::unordered_map<uint32_t, ToolCallTaskState> task_states_;
+  mutable std::mutex mutex;
+  std::unordered_map<uint32_t, ToolCallTaskState> taskStates;
 
   // Helper to finalize a single tool call and add it to the array
   void finalizeSingleToolCall(ToolCallTaskState& state) {
