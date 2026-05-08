@@ -121,10 +121,6 @@ void StreamingResponseWriter::finalize() {
 
       (*self->streamPtr)->send("data: [DONE]\n\n");
       (*self->streamPtr)->close();
-
-      if (self->params.session) {
-        self->params.session->clearInFlight();
-      }
     }
   });
 }
@@ -135,9 +131,7 @@ void StreamingResponseWriter::abort() {
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
-    if (params.session) {
-      params.session->clearInFlight();
-    }
+    if (params.onSessionRelease) params.onSessionRelease();
   }
 }
 
