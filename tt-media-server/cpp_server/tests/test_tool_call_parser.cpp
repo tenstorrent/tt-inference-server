@@ -21,22 +21,22 @@ void testStreamingTokens() {
   std::cout << "✓ Task initialized\n";
 
   // Token IDs (from DeepSeek tokenizer)
-  constexpr int64_t TOOL_CALLS_BEGIN_TOKEN = 128806;
-  constexpr int64_t TOOL_CALLS_END_TOKEN = 128807;
-  constexpr int64_t TOOL_CALL_BEGIN_TOKEN = 128808;
-  constexpr int64_t TOOL_CALL_END_TOKEN = 128809;
-  constexpr int64_t TOOL_SEP_TOKEN = 128814;
+  constexpr int64_t kToolCallsBeginToken = 128806;
+  constexpr int64_t kToolCallsEndToken = 128807;
+  constexpr int64_t kToolCallBeginToken = 128808;
+  constexpr int64_t kToolCallEndToken = 128809;
+  constexpr int64_t kToolSepToken = 128814;
 
   // Simulate: <｜tool▁calls▁begin｜>
   {
-    auto r = parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
+    auto r = parser->processToken(taskId, kToolCallsBeginToken, "");
     assert(!r.has_value());                // No delta to emit
     assert(parser->isInToolCall(taskId));  // But we're in tool call mode
   }
 
   // Simulate: <｜tool▁call▁begin｜>
   {
-    auto r = parser->processToken(taskId, TOOL_CALL_BEGIN_TOKEN, "");
+    auto r = parser->processToken(taskId, kToolCallBeginToken, "");
     assert(!r.has_value());
   }
 
@@ -48,7 +48,7 @@ void testStreamingTokens() {
 
   // Simulate: <｜tool▁sep｜>
   {
-    auto r = parser->processToken(taskId, TOOL_SEP_TOKEN, "");
+    auto r = parser->processToken(taskId, kToolSepToken, "");
     assert(!r.has_value());
   }
 
@@ -82,14 +82,14 @@ void testStreamingTokens() {
 
   // Simulate: <｜tool▁call▁end｜> - emits TOOL_CALL_END
   {
-    auto r = parser->processToken(taskId, TOOL_CALL_END_TOKEN, "");
+    auto r = parser->processToken(taskId, kToolCallEndToken, "");
     assert(r.has_value());
     assert(r->delta_type == ToolCallDeltaType::TOOL_CALL_END);
   }
 
   // Simulate: <｜tool▁calls▁end｜>
   {
-    auto r = parser->processToken(taskId, TOOL_CALLS_END_TOKEN, "");
+    auto r = parser->processToken(taskId, kToolCallsEndToken, "");
     assert(!r.has_value());
     assert(!parser->isInToolCall(taskId));  // Exited tool call mode
   }
@@ -133,11 +133,11 @@ void testMultipleStreamingTasks() {
   assert(parser->activeTaskCount() == 10);
   std::cout << "✓ Initialized 10 tasks\n";
 
-  constexpr int64_t TOOL_CALLS_BEGIN_TOKEN = 128806;
+  constexpr int64_t kToolCallsBeginToken = 128806;
 
   // Process tokens for different tasks in interleaved manner
   for (uint32_t i = 0; i < 10; i += 2) {
-    auto r = parser->processToken(i, TOOL_CALLS_BEGIN_TOKEN, "");
+    auto r = parser->processToken(i, kToolCallsBeginToken, "");
     assert(!r.has_value());           // No delta to emit
     assert(parser->isInToolCall(i));  // But in tool call mode
   }
@@ -167,8 +167,8 @@ void testStreamingEdgeCases() {
 
   auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
 
-  constexpr int64_t TOOL_CALLS_BEGIN_TOKEN = 128806;
-  constexpr int64_t TOOL_CALLS_END_TOKEN = 128807;
+  constexpr int64_t kToolCallsBeginToken = 128806;
+  constexpr int64_t kToolCallsEndToken = 128807;
 
   // Test 1: Uninitialized task - returns nullopt, caller handles as regular
   {
@@ -183,7 +183,7 @@ void testStreamingEdgeCases() {
     uint32_t taskId = 50;
     parser->initializeTask(taskId);
 
-    parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
+    parser->processToken(taskId, kToolCallsBeginToken, "");
     assert(parser->isInToolCall(taskId));
 
     auto result = parser->finalizeTask(taskId);
@@ -205,10 +205,10 @@ void testStreamingEdgeCases() {
     }
 
     // Tool calls block
-    parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
+    parser->processToken(taskId, kToolCallsBeginToken, "");
     assert(parser->isInToolCall(taskId));
 
-    parser->processToken(taskId, TOOL_CALLS_END_TOKEN, "");
+    parser->processToken(taskId, kToolCallsEndToken, "");
     assert(!parser->isInToolCall(taskId));
 
     // Regular text after - returns nullopt, not in tool call
@@ -233,34 +233,34 @@ void testStreamingMultipleToolCalls() {
 
   parser->initializeTask(taskId);
 
-  constexpr int64_t TOOL_CALLS_BEGIN_TOKEN = 128806;
-  constexpr int64_t TOOL_CALLS_END_TOKEN = 128807;
-  constexpr int64_t TOOL_CALL_BEGIN_TOKEN = 128808;
-  constexpr int64_t TOOL_CALL_END_TOKEN = 128809;
-  constexpr int64_t TOOL_SEP_TOKEN = 128814;
+  constexpr int64_t kToolCallsBeginToken = 128806;
+  constexpr int64_t kToolCallsEndToken = 128807;
+  constexpr int64_t kToolCallBeginToken = 128808;
+  constexpr int64_t kToolCallEndToken = 128809;
+  constexpr int64_t kToolSepToken = 128814;
 
   // First tool call: get_weather
-  parser->processToken(taskId, TOOL_CALLS_BEGIN_TOKEN, "");
-  parser->processToken(taskId, TOOL_CALL_BEGIN_TOKEN, "");
+  parser->processToken(taskId, kToolCallsBeginToken, "");
+  parser->processToken(taskId, kToolCallBeginToken, "");
   parser->processToken(taskId, 12345, "function");
-  parser->processToken(taskId, TOOL_SEP_TOKEN, "");
+  parser->processToken(taskId, kToolSepToken, "");
   parser->processToken(taskId, 12346, "get_weather\n");
   parser->processToken(taskId, 12347, "```json\n");
   parser->processToken(taskId, 12348, "{\"location\":\"SF\"}\n");
   parser->processToken(taskId, 12349, "```\n");
-  parser->processToken(taskId, TOOL_CALL_END_TOKEN, "");
+  parser->processToken(taskId, kToolCallEndToken, "");
 
   // Second tool call: get_time
-  parser->processToken(taskId, TOOL_CALL_BEGIN_TOKEN, "");
+  parser->processToken(taskId, kToolCallBeginToken, "");
   parser->processToken(taskId, 12350, "function");
-  parser->processToken(taskId, TOOL_SEP_TOKEN, "");
+  parser->processToken(taskId, kToolSepToken, "");
   parser->processToken(taskId, 12351, "get_time\n");
   parser->processToken(taskId, 12352, "```json\n");
   parser->processToken(taskId, 12353, "{\"timezone\":\"PST\"}\n");
   parser->processToken(taskId, 12354, "```\n");
-  parser->processToken(taskId, TOOL_CALL_END_TOKEN, "");
+  parser->processToken(taskId, kToolCallEndToken, "");
 
-  parser->processToken(taskId, TOOL_CALLS_END_TOKEN, "");
+  parser->processToken(taskId, kToolCallsEndToken, "");
 
   // Finalize and check
   auto toolCalls = parser->finalizeTask(taskId);
