@@ -95,7 +95,7 @@ ModelService modelService() {
 
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
-bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
+bool isLlmService() { return modelService() == ModelService::LLM; }
 
 bool isImageService() { return modelService() == ModelService::IMAGE; }
 

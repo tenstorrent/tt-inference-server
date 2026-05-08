@@ -24,7 +24,7 @@ ModelService modelService();
 bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool isLlmServiceEnabled();
+bool isLlmService();
 
 /** True when model_service() == IMAGE. */
 bool isImageService();

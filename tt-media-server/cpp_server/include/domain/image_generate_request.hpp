@@ -28,9 +28,6 @@ struct ImageGenerateRequest : BaseRequest {
   std::optional<std::string> negative_prompt;
   std::optional<std::string> negative_prompt_2;
 
-  // Defaults must mirror the Python pydantic ImageGenerateRequest; they live
-  // on the member declarations so direct constructions (e.g. warmupRequest)
-  // pick them up automatically.
   std::optional<int> num_inference_steps = 20;
   std::optional<float> guidance_scale = 5.0F;
   std::optional<float> guidance_rescale = 0.0F;

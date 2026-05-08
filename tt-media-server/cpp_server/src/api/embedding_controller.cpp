@@ -7,7 +7,6 @@
 
 #include "api/embedding_controller.hpp"
 #include "api/error_response.hpp"
-#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "services/base_service.hpp"
 #include "services/service_container.hpp"
@@ -15,14 +14,6 @@
 #include "utils/thread_pool.hpp"
 
 namespace tt::api {
-
-namespace {
-tt::utils::ThreadPool& getCallbackPool() {
-  static tt::utils::ThreadPool pool(
-      tt::config::defaults::CALLBACK_POOL_THREADS);
-  return pool;
-}
-}  // namespace
 
 EmbeddingController::EmbeddingController() {
   if (!tt::config::isEmbeddingService()) {
@@ -82,9 +73,10 @@ void EmbeddingController::createEmbedding(
 
   auto submitTime = std::chrono::steady_clock::now();
 
-  getCallbackPool().submit([service = service_, request = std::move(request),
-                            callback = std::move(callback), reqNum, startTime,
-                            submitTime]() {
+  tt::utils::controllerCallbackPool().submit([service = service_,
+                                              request = std::move(request),
+                                              callback = std::move(callback),
+                                              reqNum, startTime, submitTime]() {
     try {
       auto response = service->submitRequest(std::move(request));
       auto gotResponseTime = std::chrono::steady_clock::now();

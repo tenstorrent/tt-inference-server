@@ -20,7 +20,7 @@ enum class ModelService {
   IMAGE,
 };
 
-/** String value for env MODEL_SERVICE (e.g. "llm", "embedding", "image"). */
+/** String value for env MODEL_SERVICE. */
 inline std::string toString(ModelService s) {
   switch (s) {
     case ModelService::EMBEDDING:

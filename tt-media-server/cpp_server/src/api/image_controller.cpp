@@ -7,7 +7,6 @@
 #include <optional>
 
 #include "api/error_response.hpp"
-#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "services/service_container.hpp"
 #include "utils/id_generator.hpp"
@@ -17,12 +16,6 @@
 namespace tt::api {
 
 namespace {
-
-tt::utils::ThreadPool& callbackPool() {
-  static tt::utils::ThreadPool pool(
-      tt::config::defaults::CALLBACK_POOL_THREADS);
-  return pool;
-}
 
 enum class EndpointKind { GENERATE, IMAGE_TO_IMAGE, EDIT };
 
@@ -80,37 +73,37 @@ void handle(const drogon::HttpRequestPtr& req,
   uint64_t reqNum = counter.fetch_add(1);
   TT_LOG_INFO("[ImageController] {} req={} started", endpointTag, reqNum);
 
-  callbackPool().submit([service, request = std::move(request),
-                         callback = std::move(callback), reqNum, startTime,
-                         endpointTag]() {
-    try {
-      auto response = service->submitRequest(std::move(request));
-      double totalMs = std::chrono::duration<double, std::milli>(
-                           std::chrono::steady_clock::now() - startTime)
-                           .count();
-      if (!response.error.empty()) {
-        TT_LOG_ERROR("[ImageController] {} req={} failed in {}ms: {}",
-                     endpointTag, reqNum, totalMs, response.error);
-        callback(errorResponse(drogon::k500InternalServerError, response.error,
-                               "server_error"));
-        return;
-      }
-      Json::Value jsonResponse = response.toOpenaiJson();
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
-      TT_LOG_INFO("[ImageController] {} req={} done in {}ms", endpointTag,
-                  reqNum, totalMs);
-      callback(resp);
-    } catch (const tt::services::QueueFullException& e) {
-      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
-                             "rate_limit_exceeded"));
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[ImageController] {} req={} threw: {}", endpointTag, reqNum,
-                   e.what());
-      callback(errorResponse(drogon::k500InternalServerError,
-                             std::string("Internal error: ") + e.what(),
-                             "server_error"));
-    }
-  });
+  tt::utils::controllerCallbackPool().submit(
+      [service, request = std::move(request), callback = std::move(callback),
+       reqNum, startTime, endpointTag]() {
+        try {
+          auto response = service->submitRequest(std::move(request));
+          double totalMs = std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - startTime)
+                               .count();
+          if (!response.error.empty()) {
+            TT_LOG_ERROR("[ImageController] {} req={} failed in {}ms: {}",
+                         endpointTag, reqNum, totalMs, response.error);
+            callback(errorResponse(drogon::k500InternalServerError,
+                                   response.error, "server_error"));
+            return;
+          }
+          Json::Value jsonResponse = response.toOpenaiJson();
+          auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
+          TT_LOG_INFO("[ImageController] {} req={} done in {}ms", endpointTag,
+                      reqNum, totalMs);
+          callback(resp);
+        } catch (const tt::services::QueueFullException& e) {
+          callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                                 "rate_limit_exceeded"));
+        } catch (const std::exception& e) {
+          TT_LOG_ERROR("[ImageController] {} req={} threw: {}", endpointTag,
+                       reqNum, e.what());
+          callback(errorResponse(drogon::k500InternalServerError,
+                                 std::string("Internal error: ") + e.what(),
+                                 "server_error"));
+        }
+      });
 }
 
 }  // namespace
