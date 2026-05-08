@@ -16,7 +16,7 @@
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "runners/runner_base.hpp"
-#include "runners/runner_interface.hpp"
+#include "runners/ipc_runner.hpp"
 
 namespace tt::utils {
 

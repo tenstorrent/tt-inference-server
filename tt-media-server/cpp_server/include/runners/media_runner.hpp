@@ -10,7 +10,7 @@ namespace tt::runners {
 /** Direct-call runner owned by an in-process service; the service maps
  *  exceptions thrown from `run()` to error responses. */
 template <typename Request, typename Response>
-class MediaRunner : public IRunnerBase {
+class IMediaRunner : public IRunnerBase {
  public:
   virtual Response run(const Request& request) = 0;
 };

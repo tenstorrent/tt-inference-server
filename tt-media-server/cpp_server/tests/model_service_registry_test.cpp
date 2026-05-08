@@ -158,7 +158,7 @@ TEST(RunnerRegistryTest, IpcNoMatchReturnsNullptr) {
 namespace {
 
 class FakeMediaRunner
-    : public tt::runners::MediaRunner<int, std::string> {
+    : public tt::runners::IMediaRunner<int, std::string> {
  public:
   explicit FakeMediaRunner(std::string tag) : tag_(std::move(tag)) {}
   std::string run(const int& request) override {
@@ -199,7 +199,7 @@ TEST(RunnerRegistryTest, MediaWrongRunnerShapeThrows) {
       });
 
   tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
-  using OtherShape = tt::runners::MediaRunner<std::string, int>;
+  using OtherShape = tt::runners::IMediaRunner<std::string, int>;
   EXPECT_THROW(
       RunnerRegistry::instance().createMedia<OtherShape>(
           ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg),

@@ -7,7 +7,7 @@ namespace tt::runners {
 
 /**
  * Lifecycle base shared by both runner families. `IRunner` adds a no-arg
- * `run()` loop for IPC workers; `MediaRunner<R, S>` adds a synchronous
+ * `run()` loop for IPC workers; `IMediaRunner<R, S>` adds a synchronous
  * `S run(const R&)` for in-process services.
  */
 class IRunnerBase {

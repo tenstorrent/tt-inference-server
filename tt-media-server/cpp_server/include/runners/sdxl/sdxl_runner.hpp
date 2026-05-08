@@ -27,8 +27,8 @@ namespace py = pybind11;
  * running between calls; all Python interactions are guarded by
  * `py::gil_scoped_acquire`.
  */
-class SDXLBaseRunner : public MediaRunner<domain::ImageGenerateRequest,
-                                          std::vector<std::string>> {
+class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
+                                           std::vector<std::string>> {
  public:
   ~SDXLBaseRunner() override;
 

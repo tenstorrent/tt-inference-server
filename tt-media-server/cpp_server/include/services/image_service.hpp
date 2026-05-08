@@ -21,8 +21,8 @@ namespace tt::services {
 class ImageService
     : public BaseService<domain::ImageGenerateRequest, domain::ImageResponse> {
  public:
-  using Runner = runners::MediaRunner<domain::ImageGenerateRequest,
-                                      std::vector<std::string>>;
+  using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
+                                       std::vector<std::string>>;
 
   ImageService(config::ImageConfig config, std::unique_ptr<Runner> runner);
   ~ImageService() override;
