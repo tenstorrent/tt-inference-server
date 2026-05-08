@@ -90,9 +90,9 @@ class JsonToolCallParser : public IToolCallParser {
 
   void initializeTask(uint32_t taskId,
                       const std::string& functionName) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    JsonTaskState& state = taskStates_[taskId];
+    JsonTaskState& state = taskStates[taskId];
     state.parseState = StructuredOutputParseState{};
     state.parseState.toolCallId = tt::utils::ToolCallIDGenerator::generate();
     state.functionName = functionName;
@@ -105,10 +105,10 @@ class JsonToolCallParser : public IToolCallParser {
   std::optional<ToolCallTokenResult> processToken(
       uint32_t taskId, [[maybe_unused]] int64_t tokenId,
       const std::string& decodedText) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    auto it = taskStates_.find(taskId);
-    if (it == taskStates_.end()) {
+    auto it = taskStates.find(taskId);
+    if (it == taskStates.end()) {
       TT_LOG_WARN(
           "[JsonToolCallParser] processToken called for uninitialized task: {}",
           taskId);
@@ -196,10 +196,10 @@ class JsonToolCallParser : public IToolCallParser {
   }
 
   std::optional<Json::Value> finalizeTask(uint32_t taskId) override {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex);
 
-    auto it = taskStates_.find(taskId);
-    if (it == taskStates_.end()) {
+    auto it = taskStates.find(taskId);
+    if (it == taskStates.end()) {
       TT_LOG_WARN(
           "[JsonToolCallParser] finalizeTask called for unknown task: {}",
           taskId);
@@ -225,19 +225,19 @@ class JsonToolCallParser : public IToolCallParser {
           taskId, state.functionName);
     }
 
-    taskStates_.erase(it);
+    taskStates.erase(it);
     return result;
   }
 
   bool isInToolCall(uint32_t taskId) const override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = taskStates_.find(taskId);
-    return it != taskStates_.end();
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = taskStates.find(taskId);
+    return it != taskStates.end();
   }
 
   size_t activeTaskCount() const override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return taskStates_.size();
+    std::lock_guard<std::mutex> lock(mutex);
+    return taskStates.size();
   }
 
  private:
@@ -247,8 +247,8 @@ class JsonToolCallParser : public IToolCallParser {
     std::string accumulatedArgs;
   };
 
-  mutable std::mutex mutex_;
-  std::unordered_map<uint32_t, JsonTaskState> taskStates_;
+  mutable std::mutex mutex;
+  std::unordered_map<uint32_t, JsonTaskState> taskStates;
 };
 
 }  // namespace
