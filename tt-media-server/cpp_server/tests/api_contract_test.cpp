@@ -4,10 +4,12 @@
 // API contract tests: gray-box round-trip verification of LLMController.
 //
 // Strategy:
-//   - Server starts exactly as in production (service_factory::initializeServices).
+//   - Server starts exactly as in production
+//   (service_factory::initializeServices).
 //   - Test process acts as the worker: reads from IPC task queue, pushes tokens
 //     to IPC result queue, mocks the model response.
-//   - HTTP request sent from a background thread; response captured and asserted.
+//   - HTTP request sent from a background thread; response captured and
+//   asserted.
 //   - Both directions tested: what went into the task queue AND what came back
 //     over HTTP.
 //
@@ -15,10 +17,9 @@
 //   WorkerManager re-execs this binary with "--worker <id>".
 //   That path signals warmup and waits — the test process is the real worker.
 
+#include <arpa/inet.h>
 #include <drogon/drogon.h>
 #include <gtest/gtest.h>
-
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -64,9 +65,10 @@ static void configureEnv() {
 static constexpr uint16_t kPort = 18082;
 static constexpr const char* kHost = "127.0.0.1";
 
-// Blocking HTTP POST. Returns full response bytes (status line + headers + body).
-static std::string sendAndReceive(const std::string& body,
-                                  const std::string& apiKey = "your-secret-key") {
+// Blocking HTTP POST. Returns full response bytes (status line + headers +
+// body).
+static std::string sendAndReceive(
+    const std::string& body, const std::string& apiKey = "your-secret-key") {
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   struct sockaddr_in addr{};
   addr.sin_family = AF_INET;
@@ -79,12 +81,19 @@ static std::string sendAndReceive(const std::string& body,
 
   std::string req =
       "POST /v1/chat/completions HTTP/1.1\r\n"
-      "Host: " + std::string(kHost) + ":" + std::to_string(kPort) + "\r\n"
+      "Host: " +
+      std::string(kHost) + ":" + std::to_string(kPort) +
+      "\r\n"
       "Content-Type: application/json\r\n"
-      "Authorization: Bearer " + apiKey + "\r\n"
-      "Content-Length: " + std::to_string(body.size()) + "\r\n"
+      "Authorization: Bearer " +
+      apiKey +
+      "\r\n"
+      "Content-Length: " +
+      std::to_string(body.size()) +
+      "\r\n"
       "Connection: close\r\n"
-      "\r\n" + body;
+      "\r\n" +
+      body;
 
   ::send(sock, req.c_str(), req.size(), 0);
 
@@ -123,55 +132,65 @@ class TestServer {
  private:
   TestServer() = default;
 
+  // Bring up the stack in the same order as production main():
+  //   1. start services (forks worker via WorkerManager)
+  //   2. wait for that worker to signal warmup
+  //   3. open the IPC queues — test now plays the worker on those queues
+  //   4. start HTTP listener and wait for it
   void init() {
-    // Start the real server stack — identical to production main().
-    // WorkerManager will fork this binary with "--worker 0"; that path
-    // signals warmup and waits, so the test process is the sole task consumer.
     tt::utils::service_factory::initializeServices();
+    waitForLLMReady(30s);
+    openIpcQueues();
+    startHttpListener();
+    waitForListener(30s);
+  }
 
-    // Wait for the worker subprocess to signal warmup.
+  void waitForLLMReady(std::chrono::seconds timeout) {
     auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
         tt::services::ServiceContainer::instance().getService(
             tt::config::ModelService::LLM));
-    auto deadline = std::chrono::steady_clock::now() + 30s;
-    while (llm && !llm->isModelReady() &&
-           std::chrono::steady_clock::now() < deadline) {
+    if (!llm)
+      throw std::runtime_error("TestServer: LLMService not registered");
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!llm->isModelReady()) {
+      if (std::chrono::steady_clock::now() >= deadline)
+        throw std::runtime_error("TestServer: worker never signaled warmup");
       std::this_thread::sleep_for(100ms);
     }
-    if (!llm || !llm->isModelReady())
-      throw std::runtime_error("TestServer: worker never signaled warmup");
+  }
 
-    // Open the IPC queues the server created. Test is now the sole worker.
+  void openIpcQueues() {
     taskQueue_ = std::make_unique<tt::ipc::BoostIpcTaskQueue>(
         tt::config::ttTaskQueueName());
     resultQueue_ = std::make_unique<tt::ipc::BoostIpcResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
-
-    // Start Drogon.
-    drogonThread_ = std::thread([] {
-      drogon::app()
-          .addListener(kHost, kPort)
-          .setThreadNum(2)
-          .run();
-    });
-
-    waitForPort();
   }
 
-  void waitForPort() {
-    auto deadline = std::chrono::steady_clock::now() + 30s;
+  // drogon::app().run() blocks until quit(); spin it on a dedicated thread so
+  // tests can keep issuing requests against the listener. One IO loop is
+  // plenty for serial test traffic.
+  void startHttpListener() {
+    drogonThread_ = std::thread([] {
+      drogon::app().addListener(kHost, kPort).setThreadNum(1).run();
+    });
+  }
+
+  void waitForListener(std::chrono::seconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
       int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-      struct sockaddr_in addr{};
+      sockaddr_in addr{};
       addr.sin_family = AF_INET;
       addr.sin_port = htons(kPort);
       ::inet_pton(AF_INET, kHost, &addr.sin_addr);
-      bool up = (::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+      bool up = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
+                           sizeof(addr)) == 0);
       ::close(sock);
-      if (up) { std::this_thread::sleep_for(50ms); return; }
+      if (up) return;
       std::this_thread::sleep_for(100ms);
     }
-    throw std::runtime_error("TestServer: timed out waiting for port");
+    throw std::runtime_error("TestServer: HTTP listener never came up");
   }
 
   std::unique_ptr<tt::ipc::BoostIpcTaskQueue> taskQueue_;
@@ -193,9 +212,8 @@ class ApiContractTest : public ::testing::Test {
 
   // Fire request in background. Returns future for the raw HTTP response.
   static std::future<std::string> asyncRequest(const std::string& body) {
-    return std::async(std::launch::async, [body] {
-      return sendAndReceive(body);
-    });
+    return std::async(std::launch::async,
+                      [body] { return sendAndReceive(body); });
   }
 
   // Push a single token then a final token for the given task, mocking the
@@ -253,23 +271,27 @@ TEST_F(ApiContractTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
       R"([{"role":"user","content":"hello"}])",
       // turn 1: prior turn prefix = [{user,hello}]
       R"([{"role":"user","content":"hello"},{"role":"assistant","content":"ok"},{"role":"user","content":"how are you"}])",
-      // turn 2: prior turn prefix = [{user,hello},{assistant,ok},{user,how are you}]
+      // turn 2: prior turn prefix = [{user,hello},{assistant,ok},{user,how are
+      // you}]
       R"([{"role":"user","content":"hello"},{"role":"assistant","content":"ok"},{"role":"user","content":"how are you"},{"role":"assistant","content":"ok"},{"role":"user","content":"tell me a joke"}])",
       // turn 3
       R"([{"role":"user","content":"hello"},{"role":"assistant","content":"ok"},{"role":"user","content":"how are you"},{"role":"assistant","content":"ok"},{"role":"user","content":"tell me a joke"},{"role":"assistant","content":"ok"},{"role":"user","content":"thanks"}])",
   };
 
   for (size_t i = 0; i < turns.size(); ++i) {
-    std::string body = R"({"model":"test","messages":)" + turns[i] + R"(,"max_tokens":1})";
+    std::string body =
+        R"({"model":"test","messages":)" + turns[i] + R"(,"max_tokens":1})";
     auto future = asyncRequest(body);
 
     auto seq = server_->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "turn " << i;
 
     if (i == 0) {
-      EXPECT_FALSE(seq->isContinuation()) << "turn 0 must not be a continuation";
+      EXPECT_FALSE(seq->isContinuation())
+          << "turn 0 must not be a continuation";
     } else {
-      EXPECT_TRUE(seq->isContinuation()) << "turn " << i << " must be a continuation";
+      EXPECT_TRUE(seq->isContinuation())
+          << "turn " << i << " must be a continuation";
     }
 
     mockWorkerResponse(seq->taskId);
@@ -377,7 +399,7 @@ int main(int argc, char** argv) {
 
     static std::atomic<bool> done{false};
     std::signal(SIGTERM, [](int) { done.store(true); });
-    std::signal(SIGINT,  [](int) { done.store(true); });
+    std::signal(SIGINT, [](int) { done.store(true); });
     while (!done.load()) {
       auto req = memMgr.getRequest();
       if (req.has_value()) {

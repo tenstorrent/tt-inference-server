@@ -32,9 +32,8 @@ class RecordingTaskQueue : public ipc::ITaskQueue {
       std::ostringstream os;
       seq.serialize(os);
       std::istringstream is(os.str());
-      recorded_.push_back(
-          std::make_unique<domain::llm::Sequence>(
-              domain::llm::Sequence::deserialize(is)));
+      recorded_.push_back(std::make_unique<domain::llm::Sequence>(
+          domain::llm::Sequence::deserialize(is)));
     }
     cv_.notify_one();
     inner_->push(seq);
