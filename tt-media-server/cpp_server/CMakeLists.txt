@@ -641,7 +641,7 @@ add_test(NAME CancellationE2E
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)

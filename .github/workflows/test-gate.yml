@@ -1317,6 +1317,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # The GitHub-hosted runner auto-injects http(s)_proxy but not no_proxy
+      # for loopback. Without this, curl calls to 127.0.0.1 (e.g. the
+      # /tt-liveness liveness probe) are routed through the proxy and fail.
+      no_proxy: "localhost,127.0.0.1,::1"
     # Gating: any TSan race report after suppressions fails this job and the
     # whole pipeline. Known issues are listed in tsan_suppressions.txt with
     # their tracking issue IDs; remove the corresponding suppression line
@@ -1371,6 +1376,10 @@ jobs:
       - name: Start TSan-instrumented server (mock_pipeline)
         env:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
+          # GitHub-hosted runners don't have the Blaze pipeline-manager
+          # infrastructure that mock_pipeline (BlazeRunner) needs, so use the
+          # simpler in-process mock backend instead.
+          LLM_DEVICE_BACKEND: mock
         run: |
           cd cpp_server/build
           ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
