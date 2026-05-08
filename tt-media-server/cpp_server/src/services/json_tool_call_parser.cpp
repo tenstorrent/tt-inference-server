@@ -77,30 +77,13 @@ ToolCallTokenResult makeArgumentsDelta(int index, const std::string& delta) {
  * JSON Tool Call Parser for structured output.
  *
  * Handles models outputting JSON wrapper format like:
- *   {"arguments":{"location":"SF"}}
  *   {"arguments":{"location":"SF"},"name":"get_weather"}
- *   {"name":"get_weather","arguments":{"location":"SF"}}
  *
  * Strips the wrapper and streams only the inner arguments content.
  * Used when tool_choice is "function" or "required".
  */
 class JsonToolCallParser : public IToolCallParser {
  public:
-  std::optional<Json::Value> parseComplete(
-      const std::string& text,
-      [[maybe_unused]] bool parallelToolCalls = true) const override {
-    // For structured output, the text IS the arguments (after filtering)
-    // Just wrap it in OpenAI format
-    Json::Value toolCallsArray(Json::arrayValue);
-    Json::Value toolCall;
-    toolCall["id"] = "call_0";
-    toolCall["type"] = "function";
-    toolCall["function"]["name"] = "structured_output";
-    toolCall["function"]["arguments"] = text;
-    toolCallsArray.append(toolCall);
-    return toolCallsArray;
-  }
-
   std::string stripMarkers(const std::string& text) const override {
     // No markers to strip for JSON format
     return text;

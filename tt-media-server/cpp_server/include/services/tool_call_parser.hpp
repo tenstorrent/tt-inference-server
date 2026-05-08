@@ -43,26 +43,6 @@ class IToolCallParser {
   virtual ~IToolCallParser() = default;
 
   /**
-   * Parse tool calls from complete generated text.
-   * Returns an array of tool call objects in OpenAI format, or std::nullopt if
-   * no tool calls found.
-   *
-   * Expected output format:
-   * [
-   *   {
-   *     "id": "call_0",
-   *     "type": "function",
-   *     "function": {
-   *       "name": "get_weather",
-   *       "arguments": "{\"location\":\"San Francisco\"}"
-   *     }
-   *   }
-   * ]
-   */
-  virtual std::optional<Json::Value> parseComplete(
-      const std::string& text, bool parallelToolCalls = true) const = 0;
-
-  /**
    * Strip tool call markers from the text, leaving only regular content.
    * Used to clean up the message content after extracting tool calls.
    */
