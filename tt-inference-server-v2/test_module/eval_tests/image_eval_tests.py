@@ -20,6 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from .image_generation_eval_test import ImageGenerationEvalsTest
+from report_module.schema import Block
 from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
@@ -28,7 +29,8 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 )
 from workflows.utils import is_sdxl_num_prompts_enabled
 
-from ..context import MediaContext, common_eval_metadata, require_health
+from .._test_common import block_id, block_targets
+from ..context import MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
 
 logger = logging.getLogger(__name__)
@@ -429,7 +431,7 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
 }
 
 
-def run_image_eval(ctx: MediaContext) -> dict:
+def run_image_eval(ctx: MediaContext) -> Block:
     """Run evaluations for an image model (SDXL, SD3.5, Flux, Motif)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -445,27 +447,27 @@ def run_image_eval(ctx: MediaContext) -> dict:
         raise
 
     logger.info("Generating eval report...")
-    benchmark_data = common_eval_metadata(ctx, "image")
-    benchmark_data["published_score"] = ctx.all_params.tasks[0].score.published_score
-    benchmark_data["published_score_ref"] = ctx.all_params.tasks[
-        0
-    ].score.published_score_ref
+    task = ctx.all_params.tasks[0]
+    data: dict = {
+        "task_name": task.task_name,
+        "tolerance": task.score.tolerance,
+        "published_score": task.score.published_score,
+        "published_score_ref": task.score.published_score_ref,
+    }
 
     if isinstance(eval_result, dict):
         eval_results = eval_result.get("eval_results", {})
-        benchmark_data["fid_score"] = eval_results.get("fid_score")
-        benchmark_data["average_clip"] = eval_results.get("average_clip")
-        benchmark_data["deviation_clip_score"] = eval_results.get(
-            "deviation_clip_score"
-        )
-        benchmark_data["accuracy_check"] = eval_results.get("accuracy_check")
-        benchmark_data["score"] = None
+        data["fid_score"] = eval_results.get("fid_score")
+        data["average_clip"] = eval_results.get("average_clip")
+        data["deviation_clip_score"] = eval_results.get("deviation_clip_score")
+        data["accuracy_check"] = eval_results.get("accuracy_check")
+        data["score"] = None
     else:
         status_list, total_time = eval_result
 
         ttft_value = _image_ttft(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value}")
-        benchmark_data["score"] = ttft_value
+        data["score"] = ttft_value
 
         logger.info("Running and calculating accuracy and metrics")
         fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
@@ -478,15 +480,15 @@ def run_image_eval(ctx: MediaContext) -> dict:
             ctx.model_spec.model_name,
         )
 
-        benchmark_data["fid_score"] = fid_score
-        benchmark_data["average_clip"] = average_clip_score
-        benchmark_data["deviation_clip_score"] = deviation_clip_score
-        benchmark_data["accuracy_check"] = accuracy_check
+        data["fid_score"] = fid_score
+        data["average_clip"] = average_clip_score
+        data["deviation_clip_score"] = deviation_clip_score
+        data["accuracy_check"] = accuracy_check
 
         device_spec = ctx.model_spec.device_model_spec
         if device_spec and hasattr(device_spec, "max_concurrency"):
             tput_user = len(status_list) / (total_time * device_spec.max_concurrency)
-            benchmark_data["tput_user"] = tput_user
+            data["tput_user"] = tput_user
             logger.info(
                 f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, "
                 f"time: {total_time}s, max_concurrency: {device_spec.max_concurrency})"
@@ -494,7 +496,12 @@ def run_image_eval(ctx: MediaContext) -> dict:
         else:
             logger.warning(f"No device spec found for device: {ctx.device}")
 
-    return benchmark_data
+    return Block(
+        kind="image_eval",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="image"),
+        data=data,
+    )
 
 
 __all__ = ["IMAGE_EVAL_DISPATCH", "run_image_eval"]

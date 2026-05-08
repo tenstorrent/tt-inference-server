@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
+from server_tests.test_categorization_system import TestFilter
 from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, run_command
 from workflows.workflow_config import (
@@ -123,6 +124,12 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
     )
 
 
+def has_spec_tests_configured(model_name, device):
+    return bool(
+        TestFilter().filter_by_model(model_name).filter_by_device(device).get_tests()
+    )
+
+
 def run_workflows(model_spec, runtime_config, json_fpath):
     workflow_results = []
     if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
@@ -131,8 +138,14 @@ def run_workflows(model_spec, runtime_config, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
-            WorkflowType.SPEC_TESTS,
         ]
+        if has_spec_tests_configured(model_spec.model_name, runtime_config.device):
+            workflows_to_run.append(WorkflowType.SPEC_TESTS)
+        else:
+            logger.info(
+                f"Skipping spec_tests for {model_spec.model_name} on "
+                f"{runtime_config.device}: no matching spec test suite configured."
+            )
         if model_spec.model_name in TEST_CONFIGS:
             workflows_to_run.append(WorkflowType.TESTS)
         workflows_to_run.append(WorkflowType.REPORTS)

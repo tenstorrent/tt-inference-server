@@ -59,7 +59,7 @@ class TTSQualityTest(BaseTest):
         sample_count = self.targets.get("sample_count", 10)
         dataset_split = self.targets.get("dataset_split", "test")
         wer_threshold = self.targets.get("wer_threshold", 0.20)  # 20% WER
-        batch_size = self.targets.get("num_of_devices", 1)
+        batch_size = self._get_num_concurrent_requests(default=1)
 
         logger.info(
             f"TTS Quality Test: samples={sample_count}, wer_threshold={wer_threshold * 100:.0f}%"

@@ -8,10 +8,13 @@
 
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 
+#include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/response_writer.hpp"
+#include "api/stream_event_formatter.hpp"
+#include "config/settings.hpp"
+#include "domain/models_response.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -23,27 +26,28 @@ class InterServerService;
 namespace tt::api {
 
 /**
- * LLM API Controller - OpenAI-compatible chat completions endpoint.
- * Similar to Python's open_ai_api/llm.py router.
+ * LLM API Controller - OpenAI-compatible chat completions, responses, and
+ * session-management endpoints. Similar to Python's open_ai_api/llm.py router.
  */
 class LLMController : public drogon::HttpController<LLMController> {
  public:
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
-  ADD_METHOD_TO(LLMController::createSession, "/v1/sessions", drogon::Post);
-  ADD_METHOD_TO(LLMController::closeSession, "/v1/sessions/{session_id}",
-                drogon::Delete);
-  ADD_METHOD_TO(LLMController::getSlotId, "/v1/sessions/{session_id}/slot",
-                drogon::Get);
+  ADD_METHOD_TO(LLMController::responses, "/v1/responses", drogon::Post);
   ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
   LLMController();
 
   void models(
-      const drogon::HttpRequestPtr& req,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+      const drogon::HttpRequestPtr&,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+    domain::ModelsResponse response;
+    response.data.push_back({toString(tt::config::model())});
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
+    callback(resp);
+  }
 
   /**
    * POST /v1/chat/completions
@@ -54,29 +58,12 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
-   * POST /v1/sessions
-   * Create a new session with optional slot assignment.
+   * POST /v1/responses
+   * OpenAI-compatible responses endpoint.
    */
-  void createSession(
+  void responses(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
-
-  /**
-   * DELETE /v1/sessions/{session_id}
-   * Close an existing session.
-   */
-  void closeSession(
-      const drogon::HttpRequestPtr& req,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-      const std::string& sessionId) const;
-
-  /**
-   * GET /v1/sessions/{session_id}/slot
-   * Get the slot ID for a session.
-   */
-  void getSlotId(const drogon::HttpRequestPtr& req,
-                 std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-                 const std::string& sessionId) const;
 
  private:
   std::shared_ptr<services::LLMService> service;
@@ -85,20 +72,25 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<sockets::InterServerService> socketService;
 
   /**
-   * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk
-   * objects. Automatically uses accumulated batching when enabled via config.
+   * Handle streaming responses (SSE). The provided `formatter` decides the
+   * SSE wire format (chat.completion.chunk vs Responses API events). When
+   * `formatter` is null, the writer falls back to ChatCompletionEventFormatter.
    */
   void handleStreaming(
-      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::shared_ptr<LLMRequest> reqPtr,
+      std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
-   * Handle non-streaming chat completion. Drives the same Streamable producer
-   * as handleStreaming and accumulates chunks into a single JSON response,
-   * so disaggregated and prefill-on-decode routing is honored identically.
+   * Handle non-streaming responses. Drives the same Streamable producer as
+   * handleStreaming and accumulates chunks into a single JSON body, so
+   * disaggregated and prefill-on-decode routing is honored identically. The
+   * `builder` converts the accumulated LLMResponse into the wire format
+   * (chat-completion JSON by default; Responses API JSON for /v1/responses).
    */
   void handleNonStreaming(
-      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::shared_ptr<LLMRequest> reqPtr,
+      NonStreamResponseWriter::ResponseBuilder builder,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   struct SessionInfo {
@@ -122,8 +114,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * paths pass a cancelFn; when closeSession fires mid-flight the client
    * receives finish_reason="abort" (partial response for non-streaming).
    */
-  void resolveSession(std::shared_ptr<domain::LLMRequest> req,
-                      trantor::EventLoop* loop,
+  void resolveSession(std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
                       std::function<void(const SessionError&)> onError,
                       std::function<void()> cancelFn = nullptr) const;
@@ -131,7 +122,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Determine if disaggregated prefill should be used for this request.
    */
-  bool shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+  bool shouldDoPrefillOnDecode(const LLMRequest& request,
                                bool validSessionFound) const;
 
   /**
@@ -141,14 +132,8 @@ class LLMController : public drogon::HttpController<LLMController> {
    * unsupported mode or queue/dispatch failures.
    */
   void dispatchGeneration(
-      domain::LLMRequest& request, bool validSessionFound,
-      const std::function<void(const domain::LLMStreamChunk&, bool)>& cb) const;
-
-  /**
-   * Release in-flight session slot if a session is present. No-op otherwise.
-   */
-  void releaseSessionInFlight(
-      const std::optional<std::string>& sessionId) const;
+      LLMRequest& request, bool validSessionFound,
+      const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
 
   /**
    * Translate a SessionError into a drogon HTTP error response.
@@ -160,15 +145,14 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Build the ResponseWriterParams shared by both streaming and non-streaming
    * writers.
    */
-  ResponseWriterParams makeWriterParams(
-      const domain::LLMRequest& request) const;
+  ResponseWriterParams makeWriterParams(const LLMRequest& request) const;
 
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
    * ResponseWriter. Common to both streaming and non-streaming code paths.
    */
-  static std::function<void(const domain::LLMStreamChunk&, bool)>
-  makeStreamingCallback(std::shared_ptr<ResponseWriter> writer);
+  static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
+      std::shared_ptr<ResponseWriter> writer, domain::Session* session);
 };
 
 }  // namespace tt::api

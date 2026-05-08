@@ -15,24 +15,36 @@
 namespace tt::api {
 
 /**
- * Response writer that accumulates chunks into a single ChatCompletionResponse.
+ * Response writer that accumulates chunks into a single JSON response body.
  *
  * The non-streaming counterpart to StreamingResponseWriter: the controller
  * drives the same Streamable producer (LLMService::submitStreamingRequest or
  * the disaggregation service) and forwards every chunk here instead of out to
- * SSE. On the final chunk we build the full ChatCompletionResponse, run the
- * service's postProcess (reasoning strip + tool-call parsing — non-streaming
- * only), release the session in-flight slot, and invoke the http callback
- * exactly once.
+ * SSE. On the final chunk the writer hands the assembled `LLMResponse` to a
+ * caller-supplied builder, runs the service's postProcess (reasoning strip +
+ * tool-call parsing -- non-streaming only), releases the session in-flight
+ * slot, and invokes the http callback exactly once.
+ *
+ * The default builder produces an OpenAI chat-completion JSON body. The
+ * Responses API endpoint passes a builder that produces a `ResponsesResponse`
+ * body instead, so both endpoints can reuse the same accumulator.
  */
 class NonStreamResponseWriter : public ResponseWriter {
  public:
   using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
+  /** Build the JSON body to return to the client. */
+  using ResponseBuilder = std::function<std::string(const LLMResponse&)>;
 
+  /** Default factory: builds an OpenAI chat-completion JSON body. */
   static std::shared_ptr<NonStreamResponseWriter> create(
       ResponseWriterParams params, HttpCallback httpCallback);
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  /** Strategy factory: caller supplies the JSON body builder. */
+  static std::shared_ptr<NonStreamResponseWriter> create(
+      ResponseWriterParams params, HttpCallback httpCallback,
+      ResponseBuilder builder);
+
+  void handleTokenChunk(const LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**
@@ -45,9 +57,10 @@ class NonStreamResponseWriter : public ResponseWriter {
 
  private:
   NonStreamResponseWriter(ResponseWriterParams params,
-                          HttpCallback httpCallback);
+                          HttpCallback httpCallback, ResponseBuilder builder);
 
   HttpCallback httpCallback;
+  ResponseBuilder builder;
 
   std::ostringstream accumulatedAnswer;
   std::ostringstream accumulatedReasoning;

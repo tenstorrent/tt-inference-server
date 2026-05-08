@@ -12,7 +12,12 @@ import aiohttp
 import numpy as np
 from PIL import Image
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -106,6 +111,9 @@ def compute_image_ssim(response_a, response_b):
 
 
 class ImageGenerationParamTest(BaseTest):
+    KIND = "image_generation_param"
+    TASK_TYPE = "image"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/images/generations"
         logger.info(f"Targets: {self.targets}")
@@ -242,3 +250,18 @@ class ImageGenerationParamTest(BaseTest):
             result["data"]
             for result in sorted(response_data_list, key=lambda x: x["index"])
         ]
+
+
+def run_image_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`ImageGenerationParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return ImageGenerationParamTest(test_config, targets or {}, ctx=ctx).run_tests()

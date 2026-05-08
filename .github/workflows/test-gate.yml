@@ -13,6 +13,7 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -26,6 +27,11 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+            media_server_deps:
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/uv-overrides.txt'
+              - 'tt-media-server/fix_dependencies.sh'
+              - 'tt-media-server/Dockerfile*'
 
   lint:
     needs: detect-changes
@@ -48,6 +54,119 @@ jobs:
 
       - name: Run ruff format check
         run: ruff format --check .
+
+  verify-media-server-install:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.media-server-deps == 'true' }}
+    name: Verify Media Server Dep Install
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tt-media-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install media-server requirements (strict, no fallback)
+        # Mirrors tt-media-server/Dockerfile, minus its `|| (grep -v pyluwen ...)`
+        # fallback — that fallback masks resolver failures this gate must catch.
+        # The numpy<2 constraint mimics tt-metal's pin so removing uv-overrides.txt's
+        # numpy line fails CI here, before tt-metal's C extensions would crash on
+        # numpy 2 at runtime in docker.
+        run: |
+          uv venv
+          echo 'numpy>=1.24.4,<2' > tt-metal-pins.txt
+          uv pip install \
+            --constraint tt-metal-pins.txt \
+            --index-strategy unsafe-best-match \
+            --overrides uv-overrides.txt \
+            -r requirements.txt
+
+      - name: Run fix_dependencies.sh
+        # Validates the post-install CPU-torch swap-in still resolves.
+        run: |
+          chmod +x fix_dependencies.sh
+          ./fix_dependencies.sh
+
+  manage-docker-build-reminder:
+    needs: detect-changes
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Manage docker build reminder comment
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      # Reminds PR authors to run tt-shield's docker build before merge when
+      # docker-related files change. Posts at most once per PR; removes itself
+      # if all docker changes are later reverted.
+      - name: Create or remove sticky reminder
+        uses: actions/github-script@v7
+        env:
+          SHOULD_HAVE_COMMENT: ${{ needs.detect-changes.outputs.media-server-deps }}
+        with:
+          script: |
+            const shouldHave = process.env.SHOULD_HAVE_COMMENT === 'true';
+            const pr = context.payload.pull_request;
+            const isFromFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            const ref = isFromFork ? pr.head.sha : pr.head.ref;
+            const refLabel = isFromFork ? 'commit SHA' : 'branch name';
+            const marker = '<!-- docker-build-reminder -->';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (shouldHave) {
+              if (existing) {
+                core.info('Reminder already present; leaving it untouched.');
+                return;
+              }
+              const body = [
+                marker,
+                '## Docker build sanity check needed',
+                '',
+                'This PR touches docker-related files (`Dockerfile*`, `requirements.txt`,',
+                '`uv-overrides.txt`, or `fix_dependencies.sh`). The pre-merge',
+                '`Verify Media Server Dep Install` job catches install-resolution',
+                'regressions but does **not** build the actual docker image.',
+                '',
+                "Before merging, please run [tt-shield's Build Inference Server workflow]",
+                '(https://github.com/tenstorrent/tt-shield/actions/workflows/on-dispatch-build-media-server.yml)',
+                'with these inputs:',
+                '',
+                '| Input | Value |',
+                '|---|---|',
+                '| `inference-server-type` | `media-inference-server` |',
+                `| \`inference-server-git-ref\` | \`${ref}\` (${refLabel}) |`,
+                '| `tt-metal-git-ref` | leave default (`main`) |',
+                '',
+                'Confirm the run succeeds and post the run link as a comment for reviewers.',
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Reminder created.');
+            } else if (existing) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+              });
+              core.info('Docker changes reverted; reminder deleted.');
+            } else {
+              core.info('No docker changes and no reminder; nothing to do.');
+            }
 
   unit-tests:
     needs: detect-changes
@@ -585,6 +704,14 @@ jobs:
             --save-result \
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
+
+      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
+      # small smoke test that asserts the response shape (no perf thresholds —
+      # the non-streaming path is gated on correctness, not latency).
+      - name: Smoke test mock backend (non-streaming)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: python cpp_server/tests/test_non_streaming_chat.py
 
       - name: Bench mock backend (structured output - json_object)
         env:
@@ -1267,6 +1394,7 @@ jobs:
 
       - name: Run concurrent multi-turn workload (8 users x 8 turns)
         env:
+          OPENAI_API_KEY: 'your-secret-key'
           # Suppressions are loaded by the server itself — the bench client
           # doesn't need them, but inheriting the env is harmless.
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
@@ -1280,7 +1408,7 @@ jobs:
             --rate 8 \
             --max-requests 64 \
             --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
-            --backend-kwargs '{"api_key": "your-secret-key"}' \
+            --backend-kwargs "{\"api_key\": \"${OPENAI_API_KEY}\"}" \
             --output-path "bench_results/tsan_ci" \
             2>&1 | tee tsan_bench.log
 
@@ -1613,6 +1741,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
+      - verify-media-server-install
       - unit-tests
       - forge-runner-cpu-tests
       - llm-streaming-performance
@@ -1629,6 +1758,7 @@ jobs:
           STATUS=0
           declare -A JOBS=(
             [lint]="${{ needs.lint.result }}"
+            [verify-media-server-install]="${{ needs.verify-media-server-install.result }}"
             [unit-tests]="${{ needs.unit-tests.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
             [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"

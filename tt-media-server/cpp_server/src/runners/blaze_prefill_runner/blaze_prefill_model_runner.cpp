@@ -19,7 +19,7 @@ BlazePrefillModelRunner::BlazePrefillModelRunner()
 
 BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
-std::optional<tt::domain::TokenResult> BlazePrefillModelRunner::forward(
+std::optional<tt::domain::llm::TokenResult> BlazePrefillModelRunner::forward(
     uint32_t taskId, const std::vector<int64_t>& tokenIds) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
   auto startTime = std::chrono::steady_clock::now();
@@ -64,7 +64,7 @@ std::optional<tt::domain::TokenResult> BlazePrefillModelRunner::forward(
       }
 
       // Return error token
-      return tt::domain::TokenResult(taskId, 0, std::nullopt, true);
+      return tt::domain::llm::TokenResult(taskId, 0, std::nullopt, true);
     }
 
     if (deviceOutput.tryRead(readBuf)) {
@@ -74,7 +74,7 @@ std::optional<tt::domain::TokenResult> BlazePrefillModelRunner::forward(
           "token_id={}, token count={}",
           taskId, tokenId, readBuf.tokenIds.size());
 
-      auto result = tt::domain::TokenResult(readBuf.taskId, tokenId);
+      auto result = tt::domain::llm::TokenResult(readBuf.taskId, tokenId);
 
       // Check if it's an error token and handle consecutive errors
       if (result.isError) {

@@ -9,8 +9,8 @@
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
 #include "runners/llm_runner/model_runner.hpp"
-#include "runners/llm_runner/schedulers/scheduler.hpp"
 #include "runners/runner_interface.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 namespace tt::services {
 class MemoryManager;
@@ -39,8 +39,8 @@ class LLMRunner : public IRunner {
   void step();
   void memoryLoop();
   void exit();
-  void applyGuidedDecodingMasks(const std::vector<tt::domain::Sequence*>& seqs,
-                                bool isPrefill);
+  void applyGuidedDecodingMasks(
+      const std::vector<tt::domain::llm::Sequence*>& seqs, bool isPrefill);
 
   config::LLMConfig config;
   ipc::IResultQueue* resultQueue;

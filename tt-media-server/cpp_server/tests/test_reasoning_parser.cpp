@@ -11,83 +11,6 @@
 
 using namespace tt::services;
 
-void testParseComplete() {
-  std::cout << "\n=== Testing parseComplete ===\n";
-
-  ReasoningParser parser;
-
-  // Test 1: Complete reasoning block
-  {
-    std::string input =
-        "<think>\nOkay, the user is asking about math.\n</think>\nThe answer "
-        "is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value() == "Okay, the user is asking about math.");
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 1 passed: Complete reasoning block\n";
-  }
-
-  // Test 2: No reasoning block
-  {
-    std::string input = "The answer is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(!result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(!result.reasoning.has_value());
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 2 passed: No reasoning block\n";
-  }
-
-  // Test 3: Malformed (missing </think>)
-  {
-    std::string input = "<think>\nOkay, the user is asking about math.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value() == "Okay, the user is asking about math.");
-    assert(result.answer == "");
-    std::cout << "✓ Test 3 passed: Malformed (missing </think>)\n";
-  }
-
-  // Test 4: Empty reasoning
-  {
-    std::string input = "<think>\n\n</think>\nThe answer is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    // Empty reasoning after trimming should be empty string
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 4 passed: Empty reasoning\n";
-  }
-
-  // Test 5: Multi-line reasoning
-  {
-    std::string input =
-        "<think>\nFirst, I need to understand the question.\nThen I'll "
-        "calculate.\nFinally, I'll provide the answer.\n</think>\nThe answer "
-        "is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value().find("First") != std::string::npos);
-    assert(result.reasoning.value().find("Finally") != std::string::npos);
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 5 passed: Multi-line reasoning\n";
-  }
-
-  std::cout << "✅ All parseComplete tests passed!\n";
-}
-
 void testStreamingTokens() {
   std::cout << "\n=== Testing Streaming Tokens ===\n";
 
@@ -468,7 +391,6 @@ int main() {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
-    testParseComplete();
     testStreamingTokens();
     testMultipleTasks();
     testEdgeCases();

@@ -6,25 +6,46 @@
 #include <utility>
 
 #include "api/error_response.hpp"
-#include "domain/chat_completion_response.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
 
+using namespace tt::domain::llm;
+
+namespace {
+
+std::string defaultChatCompletionBuilder(const LLMResponse& response) {
+  return ChatCompletionResponse::fromLLMResponse(response).toJsonString();
+}
+
+}  // namespace
+
 NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
-                                                 HttpCallback httpCallback)
+                                                 HttpCallback httpCallback,
+                                                 ResponseBuilder builder)
     : ResponseWriter(std::move(params)),
-      httpCallback(std::move(httpCallback)) {}
+      httpCallback(std::move(httpCallback)),
+      builder(std::move(builder)) {}
 
 std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
     ResponseWriterParams params, HttpCallback httpCallback) {
-  return std::shared_ptr<NonStreamResponseWriter>(
-      new NonStreamResponseWriter(std::move(params), std::move(httpCallback)));
+  return create(std::move(params), std::move(httpCallback),
+                &defaultChatCompletionBuilder);
 }
 
-void NonStreamResponseWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
+    ResponseWriterParams params, HttpCallback httpCallback,
+    ResponseBuilder builder) {
+  if (!builder) {
+    builder = &defaultChatCompletionBuilder;
+  }
+  return std::shared_ptr<NonStreamResponseWriter>(new NonStreamResponseWriter(
+      std::move(params), std::move(httpCallback), std::move(builder)));
+}
+
+void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -46,12 +67,12 @@ void NonStreamResponseWriter::handleTokenChunk(
 void NonStreamResponseWriter::finalize() {
   if (done.exchange(true)) return;
 
-  domain::LLMResponse llmResponse{params.taskId};
+  LLMResponse llmResponse{params.taskId};
   llmResponse.id = params.completionId;
   llmResponse.model = params.model;
   llmResponse.created = params.created;
 
-  domain::LLMChoice choice;
+  LLMChoice choice;
   choice.index = 0;
   choice.text = accumulatedAnswer.str();
   choice.reasoning =
@@ -71,14 +92,9 @@ void NonStreamResponseWriter::finalize() {
     }
   }
 
-  auto chatResponse =
-      domain::ChatCompletionResponse::fromLLMResponse(llmResponse);
-
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  resp->setBody(chatResponse.toJsonString());
-
-  releaseInFlight();
+  resp->setBody(builder(llmResponse));
 
   if (httpCallback) {
     auto cb = std::move(httpCallback);
@@ -90,7 +106,7 @@ void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
                                         const std::string& message,
                                         const std::string& type) {
   if (done.exchange(true)) return;
-  releaseInFlight();
+  if (params.onSessionRelease) params.onSessionRelease();
   if (httpCallback) {
     auto cb = std::move(httpCallback);
     cb(errorResponse(status, message, type));

@@ -16,11 +16,18 @@ LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
-# default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+# WARNING: TT_METAL_COMMIT_SHA_OR_TAG is documentation only — it does NOT pin
+# tt-metal. tt-metal is pulled in as a submodule of tt-blaze (cloned by branch
+# below), so the SHA actually compiled in is whatever the latest tt-blaze
+# branch tip resolves to at build time. Expect this default to drift from
+# reality. /info exposes the real tt-metal SHA from the cloned submodule's
+# .git tree at build time.
+ARG TT_METAL_COMMIT_SHA_OR_TAG=unknown
+ARG TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=unknown
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
+ENV TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=${TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG}
 
 ENV ENVIRONMENT=development
 ENV TT_MM_THROTTLE_PERF=5
@@ -107,6 +114,7 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 # ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${APP_DIR}/server"
+COPY VERSION ${APP_DIR}/VERSION
 
 # Remove any local build artifacts that were copied
 RUN rm -rf ${APP_DIR}/server/cpp_server/build \
@@ -127,7 +135,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/ds_pm_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch asaigal/relaxed_acceptance https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
     && cd ${APP_DIR}/server/cpp_server/tt-blaze \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
     && ./install.sh  \
@@ -175,13 +183,11 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 # Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    ENVIRONMENT=development \
+ENV ENVIRONMENT=development \
     TT_MM_THROTTLE_PERF=5 \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \

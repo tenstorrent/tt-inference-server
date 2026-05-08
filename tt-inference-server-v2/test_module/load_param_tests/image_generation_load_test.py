@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -30,10 +35,13 @@ headers = {
 
 
 class ImageGenerationLoadTest(BaseTest):
+    KIND = "image_generation_load"
+    TASK_TYPE = "image"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/images/generations"
-        print(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        logger.info(self.targets)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         image_generation_target_time = self.targets.get(
             "image_generation_time", 9
         )  # in seconds
@@ -45,7 +53,9 @@ class ImageGenerationLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_image_generation(batch_size=devices)
+        ) = await self.test_concurrent_image_generation(
+            batch_size=num_concurrent_requests
+        )
 
         success = requests_duration <= image_generation_target_time
         logger.info(
@@ -59,7 +69,7 @@ class ImageGenerationLoadTest(BaseTest):
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "image_resolution": image_resolution,
             "success": success,
         }
@@ -108,3 +118,18 @@ class ImageGenerationLoadTest(BaseTest):
                     total_duration = sum(results)
                     avg_duration = total_duration / batch_size
                     return requests_duration, avg_duration
+
+
+def run_image_generation_load(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`ImageGenerationLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return ImageGenerationLoadTest(test_config, targets or {}, ctx=ctx).run_tests()
