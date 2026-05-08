@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "domain/manage_memory.hpp"
+#include "domain/slot_types.hpp"
 
 namespace tt::sockets {
 
