@@ -580,7 +580,6 @@ add_executable(main_integration_test
     src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
     src/services/memory_services/memory_manager.cpp
-    src/services/memory_services/contiguous_memory_manager.cpp
     src/domain/session.cpp
     src/worker/worker_manager.cpp
     src/worker/process_liveness.cpp
@@ -595,6 +594,7 @@ add_executable(main_integration_test
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp

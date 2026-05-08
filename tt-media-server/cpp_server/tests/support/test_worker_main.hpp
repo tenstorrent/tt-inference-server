@@ -14,9 +14,8 @@
 #include <cstdint>
 #include <thread>
 
-#include "config/settings.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
-#include "services/memory_services/contiguous_memory_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 #include "worker/worker_metrics_shm.hpp"
@@ -30,9 +29,10 @@ inline int runWorkerSubprocess(int workerId) {
       workerId, tt::worker::MetricsLayout::SP_PIPELINE_RUNNER);
 
   // Initialize memory manager before signaling warmup — no requests will
-  // arrive before the parent marks the server ready.
-  tt::services::ContiguousMemoryManager memMgr(
-      static_cast<uint32_t>(tt::config::maxSessionsCount()));
+  // arrive before the parent marks the server ready. The base MemoryManager
+  // returns SUCCESS for ALLOCATE with an opaque slotId; that's all the test
+  // needs — it isn't exercising real KV-cache pool sizing.
+  tt::services::MemoryManager memMgr;
 
   // Signal warmup: parent unblocks isModelReady() only after this.
   tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
