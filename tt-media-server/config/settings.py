@@ -8,7 +8,7 @@ from typing import Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
@@ -49,6 +49,7 @@ class Settings(BaseSettings):
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -76,6 +77,9 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
+    # SHM response deadline in SPRunner (server-side proxy to video_runner).
+    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
+    video_request_timeout_seconds: float = 300.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -102,6 +106,15 @@ class Settings(BaseSettings):
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
+
+    # Video generation settings
+    use_async_video: bool = (
+        True  # If False, video is generated synchronously and returned directly
+    )
+
+    # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
+    # Currently only supported in LoraSingleChipRunner
+    lora_adapter: Optional[str] = None
 
     model_config = SettingsConfigDict(env_file=".env")
 
@@ -155,7 +168,9 @@ class Settings(BaseSettings):
             model_runner_enum = ModelRunners(self.model_runner)
 
             # Use dictionary key access
-            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                model_runner_enum
+            )
 
             if model_names_set:
                 # Get first model name from the set
@@ -281,12 +296,23 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # Find the appropriate model runner for this model name
-        model_runner_enum = None
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+        explicit_runner = os.getenv("MODEL_RUNNER")
+        model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
+        if model_runner_enum is None:
+            logger.warning(
+                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
+                f"falling back to default runner."
+            )
+        else:
+            logger.info(
+                f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
+            )
+
+        for runner, model_names in INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
-                model_runner_enum = runner
-                break
+                if not model_runner_enum:
+                    model_runner_enum = runner
+                    break
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)

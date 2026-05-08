@@ -37,6 +37,9 @@ class VideoManager:
         """
         Export frames to MP4 (H.264 via ffmpeg).
 
+        Frames are streamed to ffmpeg one at a time so encoding overlaps with
+        Python-side dtype conversion, avoiding large temporary allocations.
+
         Env (optional):
             TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
             TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default medium.
@@ -51,27 +54,17 @@ class VideoManager:
         crf = max(_MIN_CRF, min(_MAX_CRF, crf))
         preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
 
+        frames = _normalize_shape(frames)
+        frames = _normalize_channels(frames)
+
         try:
-            processed = self._process_frames_for_export(frames)
-            cmd = self._build_encode_cmd(processed, output_path, fps, crf, preset)
-            self._run_ffmpeg(cmd, stdin_data=processed.tobytes())
+            cmd = self._build_encode_cmd(frames, output_path, fps, crf, preset)
+            self._stream_to_ffmpeg(cmd, frames)
             return output_path
 
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
             raise RuntimeError(f"Failed to export video: {e}") from e
-
-    @log_execution_time("Processing frames for export")
-    def _process_frames_for_export(self, frames: NDArray) -> NDArray[np.uint8]:
-        """Normalize to contiguous uint8 (N, H, W, 3) for rawvideo rgb24."""
-        frames = _normalize_shape(frames)
-        frames = _normalize_channels(frames)
-        frames = _normalize_dtype(frames)
-
-        if not frames.flags["C_CONTIGUOUS"]:
-            frames = np.ascontiguousarray(frames)
-
-        return frames
 
     @staticmethod
     def _build_encode_cmd(
@@ -151,6 +144,41 @@ class VideoManager:
             error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
             raise RuntimeError(f"FFmpeg failed: {error_msg}")
 
+    @staticmethod
+    def _stream_to_ffmpeg(
+        cmd: list[str],
+        frames: NDArray,
+        timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
+    ) -> None:
+        """Stream frames one-by-one to ffmpeg, converting dtype per-frame."""
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+
+        try:
+            for frame in frames:
+                if frame.dtype != np.uint8:
+                    frame = _normalize_dtype_single(frame)
+                process.stdin.write(frame.tobytes())
+            process.stdin.close()
+            stderr = process.stderr.read()
+            rc = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise RuntimeError("FFmpeg export timed out") from None
+        except Exception:
+            process.kill()
+            process.wait()
+            raise
+
+        if rc != 0:
+            error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
+            raise RuntimeError(f"FFmpeg failed: {error_msg}")
+
     @classmethod
     def ensure_faststart(cls, input_path: str, output_path: str) -> None:
         """Rewrites the MP4 file with -movflags faststart using ffmpeg."""
@@ -194,15 +222,12 @@ def _normalize_channels(frames: NDArray) -> NDArray:
     return frames
 
 
-def _normalize_dtype(frames: NDArray) -> NDArray[np.uint8]:
-    """Convert to uint8, handling float [0,1] and [0,255] ranges."""
-    if frames.dtype == np.uint8:
-        return frames
-
-    if frames.dtype in (np.float32, np.float64):
-        max_val = float(np.max(frames)) if frames.size else 0.0
+def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:
+    """Convert a single frame (H, W, C) to uint8."""
+    if frame.dtype in (np.float32, np.float64):
+        max_val = float(np.max(frame)) if frame.size else 0.0
         if max_val <= _NORMALIZED_RANGE_MAX:
-            return (frames * _MAX_PIXEL_VALUE).clip(0, 255).astype(np.uint8)
-        return frames.clip(0, 255).astype(np.uint8)
+            return (frame * _MAX_PIXEL_VALUE).clip(0, 255).astype(np.uint8)
+        return frame.clip(0, 255).astype(np.uint8)
 
-    return frames.clip(0, 255).astype(np.uint8)
+    return frame.clip(0, 255).astype(np.uint8)

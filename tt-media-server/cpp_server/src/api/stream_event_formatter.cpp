@@ -6,8 +6,7 @@
 #include <chrono>
 #include <utility>
 
-#include "api/sse_stream_writer.hpp"
-#include "domain/chat_completion_response.hpp"
+#include "domain/llm/chat_completion_response.hpp"
 #include "domain/responses_response.hpp"
 
 namespace tt::api {
@@ -44,30 +43,30 @@ Json::Value buildMessageItem(const std::string& itemId, const std::string& text,
 // -- ChatCompletionEventFormatter --------------------------------------------
 
 std::string ChatCompletionEventFormatter::formatInitialEvents(
-    const StreamParams& params,
-    const std::optional<domain::CompletionUsage>& initialUsage) {
-  auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+    const ResponseWriterParams& params,
+    const std::optional<CompletionUsage>& initialUsage) {
+  auto initialChunk = ChatCompletionStreamChunk::makeInitialChunk(
       params.completionId, params.model, params.created, initialUsage);
   return initialChunk.toSSE();
 }
 
 std::string ChatCompletionEventFormatter::formatTokenEvents(
-    const StreamParams& params, const domain::LLMStreamChunk& chunk,
-    const std::optional<domain::CompletionUsage>& usage, int /*currentTokens*/,
+    const ResponseWriterParams& params, const LLMStreamChunk& chunk,
+    const std::optional<CompletionUsage>& usage, int /*currentTokens*/,
     const std::string& /*accumulatedText*/) {
-  auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+  auto streamChunk = ChatCompletionStreamChunk::makeContentChunk(
       params.completionId, params.model, params.created, chunk.choices[0],
       usage);
   return streamChunk.toSSE();
 }
 
 std::string ChatCompletionEventFormatter::formatFinalEvents(
-    const StreamParams& params, const domain::CompletionUsage& usage,
+    const ResponseWriterParams& params, const CompletionUsage& usage,
     const std::string& /*accumulatedText*/,
     const std::optional<std::string>& /*finishReason*/, bool includeUsage) {
   std::string out;
   if (includeUsage) {
-    out += domain::ChatCompletionStreamChunk::makeUsageChunk(
+    out += ChatCompletionStreamChunk::makeUsageChunk(
                params.completionId, params.model, params.created, usage)
                .toSSE();
   }
@@ -79,7 +78,7 @@ std::string ChatCompletionEventFormatter::formatFinalEvents(
 
 ResponsesEventFormatter::ResponsesEventFormatter(
     std::shared_ptr<domain::ResponsesRequest> request,
-    tt::runners::llm_engine::SamplingParams samplingParams)
+    tt::domain::llm::SamplingParams samplingParams)
     : request_(std::move(request)),
       sampling_params_(std::move(samplingParams)) {}
 
@@ -99,7 +98,7 @@ std::string ResponsesEventFormatter::formatEvent(const std::string& eventName,
 
 std::string ResponsesEventFormatter::buildResponseObjectJson(
     int64_t createdAt, const std::string& status, const Json::Value& output,
-    const std::optional<domain::CompletionUsage>& usage) const {
+    const std::optional<CompletionUsage>& usage) const {
   std::optional<domain::ResponseUsage> respUsage;
   if (usage.has_value()) {
     domain::ResponseUsage u;
@@ -117,8 +116,8 @@ std::string ResponsesEventFormatter::buildResponseObjectJson(
 }
 
 std::string ResponsesEventFormatter::formatInitialEvents(
-    const StreamParams& /*params*/,
-    const std::optional<domain::CompletionUsage>& /*initialUsage*/) {
+    const ResponseWriterParams& /*params*/,
+    const std::optional<CompletionUsage>& /*initialUsage*/) {
   const int64_t createdAt = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
@@ -168,9 +167,9 @@ std::string ResponsesEventFormatter::formatInitialEvents(
 }
 
 std::string ResponsesEventFormatter::formatTokenEvents(
-    const StreamParams& /*params*/, const domain::LLMStreamChunk& chunk,
-    const std::optional<domain::CompletionUsage>& /*usage*/,
-    int /*currentTokens*/, const std::string& /*accumulatedText*/) {
+    const ResponseWriterParams& /*params*/, const LLMStreamChunk& chunk,
+    const std::optional<CompletionUsage>& /*usage*/, int /*currentTokens*/,
+    const std::string& /*accumulatedText*/) {
   if (chunk.choices.empty()) return {};
   const auto& choice = chunk.choices[0];
   if (choice.text.empty()) return {};
@@ -184,7 +183,7 @@ std::string ResponsesEventFormatter::formatTokenEvents(
 }
 
 std::string ResponsesEventFormatter::formatFinalEvents(
-    const StreamParams& /*params*/, const domain::CompletionUsage& usage,
+    const ResponseWriterParams& /*params*/, const CompletionUsage& usage,
     const std::string& accumulatedText,
     const std::optional<std::string>& finishReason, bool /*includeUsage*/) {
   const bool isIncomplete = finishReason.value_or("stop") == "length";

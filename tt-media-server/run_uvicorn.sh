@@ -1,8 +1,8 @@
+#!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
+# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
-#!/bin/bash
 set -eo pipefail
 
 if [ "$1" != "--skip-venv" ]; then

@@ -2,15 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-import enum
-from unittest.mock import patch
-
-import pytest
 from config.constants import (
     DeviceTypes,
     ModelDisplayNames,
     ModelNames,
-    ModelRunners,
     SupportedModels,
 )
 from utils.build_catalog import (
@@ -24,41 +19,32 @@ from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
 class TestBuildModelsCatalog:
     """Tests for _build_models_catalog."""
 
-    def test_invalid_runner_returns_empty(self):
-        assert _build_models_catalog("nonexistent-runner") == []
+    def test_invalid_model_returns_empty(self):
+        assert _build_models_catalog("nonexistent-model") == []
 
-    def test_training_gemma_runner_returns_model(self):
-        models = _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
-        required_keys = {"id", "display_name", "supported", "model_config"}
-        for model in models:
-            assert set(model.keys()) == required_keys
+    def test_empty_model_returns_empty(self):
+        assert _build_models_catalog("") == []
+
+    def test_returns_single_model_entry(self):
+        models = _build_models_catalog(ModelNames.GEMMA_1_1_2B_IT.value)
         assert len(models) == 1
         model = models[0]
+        assert set(model.keys()) == {"id", "display_name", "supported", "model_config"}
         assert model["id"] == ModelNames.GEMMA_1_1_2B_IT.value
         assert model["display_name"] == ModelDisplayNames.GEMMA_1_1_2B_IT.value
         assert model["model_config"] == SupportedModels.GEMMA_1_1_2B_IT.value
         assert model["supported"] is True
 
-    def test_training_llama_runner_returns_model(self):
-        models = _build_models_catalog(ModelRunners.TRAINING_LLAMA_LORA.value)
-        required_keys = {"id", "display_name", "supported", "model_config"}
-        for model in models:
-            assert set(model.keys()) == required_keys
+    def test_lora_runner_returns_configured_model(self):
+        models = _build_models_catalog(ModelNames.LLAMA_3_1_8B.value)
         assert len(models) == 1
-        model = models[0]
-        assert model["id"] == ModelNames.LLAMA_3_1_8B.value
-        assert model["display_name"] == ModelDisplayNames.LLAMA_3_1_8B.value
-        assert model["model_config"] == SupportedModels.LLAMA_3_1_8B.value
-        assert model["supported"] is True
+        assert models[0]["id"] == ModelNames.LLAMA_3_1_8B.value
+        assert models[0]["model_config"] == SupportedModels.LLAMA_3_1_8B.value
 
-    def test_raises_when_model_missing_from_enums(self):
-        fake_model = enum.Enum("FakeModel", {"FAKE_MODEL": "fake-model"}).FAKE_MODEL
-        fake_map = {ModelRunners.TRAINING_GEMMA_LORA: {fake_model}}
-        with patch("utils.build_catalog.MODEL_RUNNER_TO_MODEL_NAMES_MAP", fake_map):
-            with pytest.raises(
-                ValueError, match="SupportedModels and ModelDisplayNames"
-            ):
-                _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
+        models = _build_models_catalog(ModelNames.QWEN_3_8B.value)
+        assert len(models) == 1
+        assert models[0]["id"] == ModelNames.QWEN_3_8B.value
+        assert models[0]["model_config"] == SupportedModels.QWEN_3_8B.value
 
 
 class TestBuildClustersCatalog:
@@ -107,7 +93,10 @@ class TestBuildTrainingCatalog:
 
     def test_returns_all_expected_keys(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P150.value,
+            (1, 1),
+            1,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,
         )
         expected_keys = {
             "supported",
@@ -121,7 +110,10 @@ class TestBuildTrainingCatalog:
 
     def test_datasets_from_available_loaders(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P150.value,
+            (1, 1),
+            1,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,
         )
         dataset_ids = {d["id"] for d in catalog["datasets"]}
         for loader in AVAILABLE_DATASET_LOADERS:
@@ -129,7 +121,10 @@ class TestBuildTrainingCatalog:
 
     def test_trainers_include_lora_and_sft(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P150.value,
+            (1, 1),
+            1,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,
         )
         trainers_by_id = {t["id"]: t for t in catalog["trainers"]}
         assert "lora" in trainers_by_id
@@ -139,50 +134,40 @@ class TestBuildTrainingCatalog:
 
     def test_only_supported_trainers_in_supported_dict(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P150.value,
+            (1, 1),
+            1,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,
         )
         assert "lora" in catalog["supported"]["trainers"]
         assert "sft" not in catalog["supported"]["trainers"]
 
-    def test_optimizers_include_adamw(self):
+    def test_supported_optimizers(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P150.value,
+            (1, 1),
+            1,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,
         )
         opt_ids = {o["id"] for o in catalog["optimizers"]}
         assert "adamw" in opt_ids
-
-    def test_supported_optimizers(self):
-        catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
-        )
         assert "adamw" in catalog["supported"]["optimizers"]
 
-    def test_invalid_runner_has_empty_models_and_clusters(self):
-        catalog = build_training_catalog(
-            "nonexistent-runner", "nonexistent-device", (1, 1), 1
-        )
+    def test_invalid_inputs_produce_empty_models_and_clusters(self):
+        catalog = build_training_catalog("nonexistent-device", (1, 1), 1)
         assert catalog["models"] == []
         assert catalog["clusters"] == []
         assert len(catalog["datasets"]) > 0
         assert len(catalog["trainers"]) > 0
         assert len(catalog["optimizers"]) > 0
 
-    def test_models_populated_for_valid_runner(self):
+    def test_lora_catalog_reflects_active_model(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
+            DeviceTypes.P300.value,
+            (1, 2),
+            1,
+            model=ModelNames.LLAMA_3_1_8B.value,
         )
-        assert len(catalog["models"]) > 0
-
-    def test_clusters_populated_for_valid_device(self):
-        catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, DeviceTypes.P150.value, (1, 1), 1
-        )
-        assert len(catalog["clusters"]) == 1
-        assert catalog["clusters"][0]["id"] == DeviceTypes.P150.value
-
-    def test_llama_catalog_has_correct_model_and_cluster(self):
-        catalog = build_training_catalog(
-            ModelRunners.TRAINING_LLAMA_LORA.value, DeviceTypes.P300.value, (1, 2), 1
-        )
+        assert len(catalog["models"]) == 1
         assert catalog["models"][0]["id"] == ModelNames.LLAMA_3_1_8B.value
         assert catalog["clusters"][0]["id"] == DeviceTypes.P300.value

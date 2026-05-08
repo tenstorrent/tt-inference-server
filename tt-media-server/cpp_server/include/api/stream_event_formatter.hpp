@@ -7,13 +7,14 @@
 #include <optional>
 #include <string>
 
-#include "domain/llm_response.hpp"
+#include "api/response_writer/response_writer.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/llm/sampling_params.hpp"
 #include "domain/responses_request.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
 
 namespace tt::api {
 
-struct StreamParams;
+using namespace tt::domain::llm;
 
 /**
  * Strategy interface that converts LLM stream callbacks into SSE frames for a
@@ -29,18 +30,18 @@ class StreamEventFormatter {
 
   /** SSE emitted once, right before the first content token. */
   virtual std::string formatInitialEvents(
-      const StreamParams& params,
-      const std::optional<domain::CompletionUsage>& initialUsage) = 0;
+      const ResponseWriterParams& params,
+      const std::optional<CompletionUsage>& initialUsage) = 0;
 
   /** SSE emitted for a single streaming chunk from the LLM service. */
   virtual std::string formatTokenEvents(
-      const StreamParams& params, const domain::LLMStreamChunk& chunk,
-      const std::optional<domain::CompletionUsage>& usage, int currentTokens,
+      const ResponseWriterParams& params, const LLMStreamChunk& chunk,
+      const std::optional<CompletionUsage>& usage, int currentTokens,
       const std::string& accumulatedText) = 0;
 
   /** SSE emitted at finalization (usage chunk + done marker / completed). */
   virtual std::string formatFinalEvents(
-      const StreamParams& params, const domain::CompletionUsage& usage,
+      const ResponseWriterParams& params, const CompletionUsage& usage,
       const std::string& accumulatedText,
       const std::optional<std::string>& finishReason, bool includeUsage) = 0;
 };
@@ -50,16 +51,17 @@ class StreamEventFormatter {
 class ChatCompletionEventFormatter final : public StreamEventFormatter {
  public:
   std::string formatInitialEvents(
-      const StreamParams& params,
-      const std::optional<domain::CompletionUsage>& initialUsage) override;
+      const ResponseWriterParams& params,
+      const std::optional<CompletionUsage>& initialUsage) override;
 
-  std::string formatTokenEvents(
-      const StreamParams& params, const domain::LLMStreamChunk& chunk,
-      const std::optional<domain::CompletionUsage>& usage, int currentTokens,
-      const std::string& accumulatedText) override;
+  std::string formatTokenEvents(const ResponseWriterParams& params,
+                                const LLMStreamChunk& chunk,
+                                const std::optional<CompletionUsage>& usage,
+                                int currentTokens,
+                                const std::string& accumulatedText) override;
 
-  std::string formatFinalEvents(const StreamParams& params,
-                                const domain::CompletionUsage& usage,
+  std::string formatFinalEvents(const ResponseWriterParams& params,
+                                const CompletionUsage& usage,
                                 const std::string& accumulatedText,
                                 const std::optional<std::string>& finishReason,
                                 bool includeUsage) override;
@@ -70,28 +72,28 @@ class ChatCompletionEventFormatter final : public StreamEventFormatter {
  */
 class ResponsesEventFormatter final : public StreamEventFormatter {
  public:
-  ResponsesEventFormatter(
-      std::shared_ptr<domain::ResponsesRequest> request,
-      tt::runners::llm_engine::SamplingParams samplingParams);
+  ResponsesEventFormatter(std::shared_ptr<domain::ResponsesRequest> request,
+                          tt::domain::llm::SamplingParams samplingParams);
 
   std::string formatInitialEvents(
-      const StreamParams& params,
-      const std::optional<domain::CompletionUsage>& initialUsage) override;
+      const ResponseWriterParams& params,
+      const std::optional<CompletionUsage>& initialUsage) override;
 
-  std::string formatTokenEvents(
-      const StreamParams& params, const domain::LLMStreamChunk& chunk,
-      const std::optional<domain::CompletionUsage>& usage, int currentTokens,
-      const std::string& accumulatedText) override;
+  std::string formatTokenEvents(const ResponseWriterParams& params,
+                                const LLMStreamChunk& chunk,
+                                const std::optional<CompletionUsage>& usage,
+                                int currentTokens,
+                                const std::string& accumulatedText) override;
 
-  std::string formatFinalEvents(const StreamParams& params,
-                                const domain::CompletionUsage& usage,
+  std::string formatFinalEvents(const ResponseWriterParams& params,
+                                const CompletionUsage& usage,
                                 const std::string& accumulatedText,
                                 const std::optional<std::string>& finishReason,
                                 bool includeUsage) override;
 
  private:
   std::shared_ptr<domain::ResponsesRequest> request_;
-  tt::runners::llm_engine::SamplingParams sampling_params_;
+  tt::domain::llm::SamplingParams sampling_params_;
 
   static constexpr int kOutputIndex = 0;
   static constexpr int kContentIndex = 0;
@@ -103,7 +105,7 @@ class ResponsesEventFormatter final : public StreamEventFormatter {
                           const Json::Value& payload);
   std::string buildResponseObjectJson(
       int64_t createdAt, const std::string& status, const Json::Value& output,
-      const std::optional<domain::CompletionUsage>& usage) const;
+      const std::optional<CompletionUsage>& usage) const;
 };
 
 }  // namespace tt::api

@@ -508,7 +508,7 @@ class MockLogger:
 
 mock_logger = MockLogger()
 mock_logger_module = type("module", (), {})()
-mock_logger_module.TTLogger = lambda: mock_logger
+mock_logger_module.TTLogger = lambda *_args, **_kwargs: mock_logger
 sys.modules["utils.logger"] = mock_logger_module
 
 
@@ -551,6 +551,7 @@ runner_mocks = {
         ),
         "TTMochi1Runner": create_mock_runner_class("TTMochi1Runner"),
         "TTWan22Runner": create_mock_runner_class("TTWan22Runner"),
+        "TTWan22I2VRunner": create_mock_runner_class("TTWan22I2VRunner"),
     },
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
+#include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
 #include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
 
-BlazePrefillRunner::BlazePrefillRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
+                                       ipc::IResultQueue* resultQueue,
+                                       tt::ipc::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = blaze_prefill::makeModelRunner(config);
 }
@@ -27,7 +27,6 @@ void BlazePrefillRunner::run() {
     // Get next sequence from task queue
     auto sequence = taskQueue->tryPop();
     if (!sequence) {
-      TT_LOG_DEBUG("[BlazePrefillRunner] No sequence from task queue");
       std::this_thread::yield();
       continue;
     }
@@ -55,7 +54,7 @@ void BlazePrefillRunner::run() {
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
-      ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
+      ipc::pushToken(*resultQueue, sequence->taskId, result->tokenId, true);
     }
 
     // sequence automatically cleaned up at end of scope

@@ -4,9 +4,12 @@
 
 import os
 import tempfile
+import time as _time
 
 from config.constants import JobTypes
+from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import VideoI2VGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
@@ -19,6 +22,81 @@ from utils.video_manager import VideoManager
 router = APIRouter()
 
 
+async def _submit_video_request(
+    request: VideoGenerateRequest,
+    service: BaseJobService,
+):
+    """Shared submit logic for T2V and I2V generation endpoints.
+
+    Both endpoints behave identically once the request is parsed: the only
+    difference is the request schema (presence of ``image_prompts`` for I2V).
+    Keeping the body in one place avoids drift between the two code paths.
+    """
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
+
+    try:
+        # Synchronous mode: process and return video directly
+        if not settings.use_async_video:
+            _t0 = _time.time()
+            video_file_path = await service.process_request(request)
+            _elapsed = round(_time.time() - _t0, 2)
+
+            # Verify the video file exists and is valid
+            if not video_file_path or not isinstance(video_file_path, str):
+                raise HTTPException(
+                    status_code=500,
+                    detail="Video generation failed: invalid file path returned",
+                )
+
+            if not os.path.exists(video_file_path):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Video generation failed: file not found at {video_file_path}",
+                )
+
+            file_size = os.path.getsize(video_file_path)
+            if file_size == 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Video generation failed: empty file generated",
+                )
+
+            # Create a faststart temp file before serving for better streaming
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                faststart_path = tmp.name
+
+            try:
+                VideoManager.ensure_faststart(video_file_path, faststart_path)
+                serve_path = faststart_path
+            except Exception as e:
+                # If faststart fails, serve the original file
+                service.logger.warning(
+                    f"Failed to create faststart video, serving original: {e}"
+                )
+                serve_path = video_file_path
+
+            return FileResponse(
+                serve_path,
+                media_type="video/mp4",
+                filename=f"video_{request._task_id}.mp4",
+                headers={
+                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4",
+                    "X-Generation-Time": str(_elapsed),
+                },
+            )
+
+        # Async mode: create job and return job metadata
+        job_data = await service.create_job(JobTypes.VIDEO, request)
+        return JSONResponse(content=job_data, status_code=202)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/generations")
 async def submit_generate_video_request(
     request: VideoGenerateRequest,
@@ -26,23 +104,37 @@ async def submit_generate_video_request(
     api_key: str = Security(get_api_key),
 ):
     """
-    Create a new video generation job based on the provided request.
+    Create a new text-to-video generation job.
 
     Returns:
-        JSONResponse: Video job object with job ID and initial metadata.
+        JSONResponse: Video job object with job ID and initial metadata (async mode)
+        FileResponse: Video file directly (sync mode when use_async_video=False)
 
     Raises:
         HTTPException: If video generation job submission fails.
     """
-    try:
-        service.scheduler.check_is_model_ready()
-    except Exception:
-        raise HTTPException(status_code=405, detail="Model is not ready")
-    try:
-        job_data = await service.create_job(JobTypes.VIDEO, request)
-        return JSONResponse(content=job_data, status_code=202)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return await _submit_video_request(request, service)
+
+
+@router.post("/generations/i2v")
+async def submit_generate_video_i2v_request(
+    request: VideoI2VGenerateRequest,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Create a new image-to-video generation job (Wan2.2 I2V).
+
+    The request must carry at least one ``image_prompts`` entry.
+
+    Returns:
+        JSONResponse: Video job object with job ID and initial metadata (async mode)
+        FileResponse: Video file directly (sync mode when use_async_video=False)
+
+    Raises:
+        HTTPException: If video generation job submission fails.
+    """
+    return await _submit_video_request(request, service)
 
 
 @router.get("/generations/{job_id}")

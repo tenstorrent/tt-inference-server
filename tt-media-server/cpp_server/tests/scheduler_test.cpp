@@ -7,21 +7,26 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
+
+using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
+using tt::runners::llm_engine::InMemoryTaskQueue;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -212,7 +217,7 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
   sched.preempt(*batch[0]);
-  EXPECT_EQ(batch[0]->getStatus(), SequenceStatus::WAITING);
+  EXPECT_EQ(batch[0]->getStatus(), tt::domain::llm::SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
   EXPECT_EQ(batch2.size(), 1u);
@@ -522,4 +527,4 @@ TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   EXPECT_EQ(b3.size(), 2u);
 }
 }  // namespace
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

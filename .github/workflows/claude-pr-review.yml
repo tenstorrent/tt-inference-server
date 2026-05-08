@@ -1,0 +1,115 @@
+name: Claude PR Review
+
+# Automatic PR review by Claude Opus 4.7.
+#
+# Uses Anthropic's official `claude-code-action` (v1) with the
+# `ANTHROPIC_API_KEY` repository secret.
+#
+# Trigger: opened / synchronize / reopened / ready_for_review.
+# Drafts and bot-authored PRs are skipped.
+#
+# Security notes:
+# - Uses `pull_request` (NOT `pull_request_target`) so secrets are NOT
+#   exposed to PRs from forks. Internal-branch PRs are reviewed; external
+#   fork PRs are skipped automatically (the runner has no secret access).
+#   See https://github.com/anthropics/claude-code-action/blob/main/docs/security.md
+# - Concurrency cancels in-progress reviews when a PR is updated, to save
+#   tokens.
+# - `--max-turns` caps Claude's iterations to bound cost per review.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    name: Claude Opus 4.7 review
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.draft == false &&
+      !endsWith(github.event.pull_request.user.login, '[bot]') &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'SPDX-Bot'
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Opus 4.7 review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR TITLE: ${{ github.event.pull_request.title }}
+            PR AUTHOR: ${{ github.event.pull_request.user.login }}
+
+            You are reviewing a pull request for `tt-inference-server`, a
+            repository that deploys and serves LLM/VLM/embedding/image/audio
+            inference on Tenstorrent hardware (vLLM, SGLang, custom C++
+            media server, evals, benchmarks, workflow automation).
+
+            The PR branch is already checked out at the working directory.
+
+            ## Review focus
+
+            Prioritize substantive issues over style nits:
+
+            1. Correctness & bugs - logic errors, off-by-one, race
+               conditions, error handling, resource cleanup, async/IPC
+               pitfalls.
+            2. Inference correctness - tokenizer/template handling,
+               batching/scheduling, KV-cache/paged-attention assumptions,
+               streaming (SSE), OpenAI-API compatibility.
+            3. Security - secrets handling, input validation on HTTP/IPC
+               boundaries, command/SQL injection, unsafe deserialization,
+               permission scopes in workflows.
+            4. Performance - hot-path allocations, unnecessary copies,
+               GIL/lock contention, blocking I/O in async paths.
+            5. Test coverage - per the repo's testing rules, new
+               functionality should have meaningful tests with minimal
+               mocking (only of external calls). Flag missing tests for
+               new behavior. If a test was changed to hide a real bug,
+               call out the bug instead of accepting the test change.
+            6. Project conventions:
+               - Python: F-strings (not %-style), `snake_case` for
+                 functions/variables, `PascalCase` for classes,
+                 `UPPER_CASE` for constants, SPDX headers on new files.
+               - C++: follow `.clang-tidy`, prefer `engine{config}` brace
+                 init over `engine(config)`, no preprocessor conditional
+                 guards unless required.
+               - Avoid >8-argument functions; prefer dataclasses/classes.
+               - Comments only for workarounds or non-obvious intent.
+
+            ## How to post the review
+
+            - Use `mcp__github_inline_comment__create_inline_comment`
+              (with `confirmed: true`) for specific code-line issues.
+            - Use `gh pr comment` for an overall summary at the end. The
+              summary should include:
+                * One-line verdict (LGTM / Needs changes / Blocking issues)
+                * Bulleted list of the most important findings
+                * Note any test-coverage gaps
+            - Do NOT post your review as chat output - only as GitHub
+              comments.
+            - Be concise. Skip praise and recap. No emojis.
+            - If the diff is trivial (typo / docs / formatting only),
+              post a single short summary comment and skip inline
+              comments.
+
+          claude_args: |
+            --model claude-opus-4-7
+            --max-turns 40
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*)"

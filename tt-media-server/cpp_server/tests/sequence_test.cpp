@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 #include <gtest/gtest.h>
 
 #include <sstream>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+#include "domain/llm/sampling_params.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
+using SamplingParams = tt::domain::llm::SamplingParams;
+using Sequence = tt::domain::llm::Sequence;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
 namespace {
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {

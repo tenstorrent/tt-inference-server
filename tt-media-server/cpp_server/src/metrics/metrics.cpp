@@ -59,6 +59,37 @@ ServerMetrics::ServerMetrics() {
            .Help("Number of completed requests labelled by finish reason")
            .Register(*registry_);
 
+  http_requests_family_ =
+      &prometheus::BuildCounter()
+           .Name("tt_http_requests_total")
+           .Help(
+               "HTTP requests served by the Drogon app, labelled by method "
+               "and response status code. 2xx/3xx are successes; 4xx/5xx "
+               "are failures.")
+           .Register(*registry_);
+
+  prefix_cache_queries_total_ =
+      &prometheus::BuildCounter()
+           .Name("tt_prefix_cache_queries_total")
+           .Help(
+               "Number of requests that attempted a prefix-cache lookup "
+               "(i.e. had a prior [assistant, user] turn pair). Denominator "
+               "for the prefix cache hit rate: "
+               "rate(tt_prefix_cache_hits_total[5m]) / "
+               "rate(tt_prefix_cache_queries_total[5m]).")
+           .Register(*registry_)
+           .Add(modelLabel);
+
+  prefix_cache_hits_total_ =
+      &prometheus::BuildCounter()
+           .Name("tt_prefix_cache_hits_total")
+           .Help(
+               "Number of prefix-cache lookups that found an existing "
+               "session and reused its KV cache (continuation path, delta "
+               "prompt only).")
+           .Register(*registry_)
+           .Add(modelLabel);
+
   // ----- gauges ----------------------------------------------------------
   queue_depth_ =
       &prometheus::BuildGauge()
@@ -87,6 +118,13 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add({});
 
+  active_sessions_ =
+      &prometheus::BuildGauge()
+           .Name("tt_num_active_sessions")
+           .Help("Number of active sessions currently managed by the server")
+           .Register(*registry_)
+           .Add({});
+
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
       &prometheus::BuildSummary()
@@ -106,6 +144,17 @@ ServerMetrics::ServerMetrics() {
       &prometheus::BuildSummary()
            .Name("tt_inter_token_latency_seconds")
            .Help("Latency between consecutive generated tokens (decode step)")
+           .Register(*registry_)
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
+
+  tpot_seconds_ =
+      &prometheus::BuildSummary()
+           .Name("tt_time_per_output_token_seconds")
+           .Help(
+               "Per-request time per output token, averaged over the decode "
+               "phase: (last_token_time - first_token_time) / "
+               "(generation_tokens - 1). Excludes prefill/TTFT. Only observed "
+               "for requests that produced at least two generation tokens.")
            .Register(*registry_)
            .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
@@ -163,6 +212,24 @@ void ServerMetrics::onRequestCompleted(uint32_t taskId,
 void ServerMetrics::setQueueDepth(double n) {
   // Called twice per request (not per token) — write directly.
   queue_depth_->Set(n);
+}
+
+void ServerMetrics::setActiveSessionsCount(double n) {
+  // Called when sessions are created/removed — write directly.
+  active_sessions_->Set(n);
+}
+
+void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
+  http_requests_family_
+      ->Add({{"model_name", model_name_},
+             {"method", method},
+             {"status_code", std::to_string(statusCode)}})
+      .Increment();
+}
+
+void ServerMetrics::onPrefixCacheLookup(bool hit) {
+  prefix_cache_queries_total_->Increment();
+  if (hit) prefix_cache_hits_total_->Increment();
 }
 
 // -----------------------------------------------------------------------------
@@ -223,6 +290,7 @@ void ServerMetrics::processEvent(const MetricsEvent& event) {
 
 void ServerMetrics::handleRequestSubmitted(const EventRequestSubmitted& e) {
   contexts_.emplace(e.task_id, RequestContext{.start_time = e.time,
+                                              .first_token_time = {},
                                               .prev_token_time = {},
                                               .prompt_tokens = e.prompt_tokens,
                                               .generation_tokens = 0});
@@ -238,6 +306,7 @@ void ServerMetrics::handleToken(const EventToken& e) {
         std::chrono::duration<double>(e.time - ctx.start_time).count();
     ttft_seconds_->Observe(ttft);
     decoding_requests_->Increment();
+    ctx.first_token_time = e.time;
   } else {
     double itl =
         std::chrono::duration<double>(e.time - ctx.prev_token_time).count();
@@ -255,6 +324,14 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
 
   e2e_latency_seconds_->Observe(
       std::chrono::duration<double>(e.time - ctx.start_time).count());
+
+  if (ctx.generation_tokens >= 2) {
+    double tpot = std::chrono::duration<double>(ctx.prev_token_time -
+                                                ctx.first_token_time)
+                      .count() /
+                  static_cast<double>(ctx.generation_tokens - 1);
+    tpot_seconds_->Observe(tpot);
+  }
 
   if (ctx.generation_tokens > 0) decoding_requests_->Decrement();
 

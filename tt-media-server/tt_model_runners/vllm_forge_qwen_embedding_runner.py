@@ -30,7 +30,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         ]
         llm_args = {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
-            "task": "embed",
             "dtype": "bfloat16",
             "disable_sliding_window": True,
             "enable_prefix_caching": False,
