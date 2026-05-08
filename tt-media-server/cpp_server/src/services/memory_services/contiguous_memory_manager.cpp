@@ -49,25 +49,24 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
       ManageMemoryResult result{};
       result.taskId = task.taskId;
       result.status = ManageMemoryStatus::SUCCESS;
-      result.slotIds = {slotId};
+      result.slotId = slotId;
       resultQueue->push(result);
       return;
     }
 
     case MemoryManagementAction::DEALLOCATE: {
-      for (uint32_t slotId : task.slotIds) {
-        if (allocatedSlots.erase(slotId) > 0) {
-          freeSlots.insert(slotId);
-          TT_LOG_DEBUG(
-              "[ContiguousMemoryManager] DEALLOCATE taskId={}: freed slot={}, "
-              "free={}, allocated={}",
-              task.taskId, slotId, freeSlots.size(), allocatedSlots.size());
-        } else {
-          TT_LOG_WARN(
-              "[ContiguousMemoryManager] DEALLOCATE taskId={}: slot={} was "
-              "not allocated",
-              task.taskId, slotId);
-        }
+      auto slotId = task.slotId;
+      if (allocatedSlots.erase(slotId) > 0) {
+        freeSlots.insert(slotId);
+        TT_LOG_DEBUG(
+            "[ContiguousMemoryManager] DEALLOCATE taskId={}: freed slot={}, "
+            "free={}, allocated={}",
+            task.taskId, slotId, freeSlots.size(), allocatedSlots.size());
+      } else {
+        TT_LOG_WARN(
+            "[ContiguousMemoryManager] DEALLOCATE taskId={}: slot={} was "
+            "not allocated",
+            task.taskId, slotId);
       }
       return;
     }

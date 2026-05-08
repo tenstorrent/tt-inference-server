@@ -7,6 +7,7 @@
 #include <istream>
 #include <ostream>
 
+#include "domain/slot_types.hpp"
 namespace tt::domain {
 
 enum class MemoryManagementAction : std::uint8_t {

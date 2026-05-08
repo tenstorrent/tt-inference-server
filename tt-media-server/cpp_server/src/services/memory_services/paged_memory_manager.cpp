@@ -27,7 +27,7 @@ ManageMemoryResult makeResult(const ManageMemoryTask& task,
                               ManageMemoryStatus status,
                               std::vector<std::uint32_t> slotIds = {}) {
   return ManageMemoryResult{
-      .taskId = task.taskId, .status = status, .slotIds = std::move(slotIds)};
+      .taskId = task.taskId, .status = status, .slotId = slotIds.front()};
 }
 
 }  // namespace
@@ -90,7 +90,7 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
       return;
     }
     case MemoryManagementAction::DEALLOCATE: {
-      std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
+      std::vector<int> slotIds(task.slotId);
       deallocateKv(task.taskId, std::move(slotIds));
       return;
     }
