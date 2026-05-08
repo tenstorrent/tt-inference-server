@@ -21,19 +21,11 @@
 namespace tt::utils {
 
 /**
- * Single registry for both runner families, keyed on (ModelService,
- * ModelRunnerType).
- *
- *  - IPC factories build loop-driven runners (LLM, embedding) inside the
- *    worker process; they need queue plumbing.
- *  - Media factories build direct-call runners (image; audio, TTS, video
- *    next) inside the parent process from config alone.
- *
- * Both families share lookup, fallback, and clear() semantics so adding a
- * new runner type or a new modality is one `register*Runner` call.
- *
- * Lookup falls back from `(service, type)` -> `(service, MOCK)` for the IPC
- * path (logging a warning); the media path requires an exact match.
+ * Registry for both runner families keyed on (ModelService, ModelRunnerType).
+ * IPC factories build loop-driven runners (LLM, embedding) and need queue
+ * plumbing; media factories build direct-call runners (image; audio, TTS,
+ * video next) from config alone. IPC lookup falls back to `(service, MOCK)`;
+ * media requires an exact match.
  */
 class RunnerRegistry {
  public:
@@ -49,13 +41,10 @@ class RunnerRegistry {
 
   static RunnerRegistry& instance();
 
-  // ------------------ IPC-loop runners ------------------
-
+  // IPC-loop runners.
   void registerIpcRunner(config::ModelService service,
                          config::ModelRunnerType type, IpcFactory factory);
 
-  /** Returns nullptr if neither an exact match nor a MOCK fallback is
-   *  registered. */
   std::unique_ptr<runners::IRunner> createIpc(
       config::ModelService service, config::ModelRunnerType type,
       const config::RunnerConfig& config, ipc::IResultQueue* resultQueue,
@@ -64,13 +53,12 @@ class RunnerRegistry {
   bool hasIpc(config::ModelService service,
               config::ModelRunnerType type) const;
 
-  // ------------------ Direct-call media runners ------------------
-
+  // Direct-call media runners.
   void registerMediaRunner(config::ModelService service,
                            config::ModelRunnerType type, MediaFactory factory);
 
-  /** Returns nullptr when no factory is registered; throws when the
-   *  registered factory's runner shape doesn't match `Runner`. */
+  /** Returns nullptr if no factory is registered; throws on runner-shape
+   *  mismatch. */
   template <typename Runner>
   std::unique_ptr<Runner> createMedia(
       config::ModelService service, config::ModelRunnerType type,

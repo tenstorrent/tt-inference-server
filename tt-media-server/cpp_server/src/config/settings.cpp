@@ -319,8 +319,8 @@ bool envBool(const char* name, bool defaultValue) {
   return defaultValue;
 }
 
-/** Populate the device/weight knobs shared by every in-process media runner.
- *  Called by imageEngineConfig() and the upcoming audio/tts/video readers. */
+/** Shared by every in-process media runner reader (image; audio, TTS, video
+ *  next). */
 void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape =

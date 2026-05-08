@@ -38,7 +38,6 @@ void EmbeddingController::createEmbedding(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   auto startTime = std::chrono::steady_clock::now();
 
-  // Parse request body
   auto json = req->getJsonObject();
   if (!json) {
     callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
@@ -64,7 +63,6 @@ void EmbeddingController::createEmbedding(
   }
   auto request = std::move(*requestOpt);
 
-  // Default model if not specified
   if (request.model.empty()) {
     request.model = "BAAI/bge-large-en-v1.5";
   }
