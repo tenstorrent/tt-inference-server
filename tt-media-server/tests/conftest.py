@@ -18,6 +18,18 @@ if hasattr(np, "core"):
 if hasattr(np, "_core"):
     sys.modules["numpy._core"] = np._core
 
+# Prefer the real PIL when it's installed. Tests that exercise actual image
+# decoding (e.g. tests/test_image_manager.py, _tiny_png_b64 in
+# tests/test_video_runner.py) would otherwise see a MagicMock for Image.new
+# and silently produce empty payloads that fail downstream validation.
+# The mock_modules loop below preserves the legacy mock fallback for envs
+# without Pillow installed, since `if module not in sys.modules` skips it.
+try:
+    import PIL  # noqa: F401
+    import PIL.Image  # noqa: F401
+except ImportError:
+    pass
+
 # Only then import pytest
 import pytest
 
