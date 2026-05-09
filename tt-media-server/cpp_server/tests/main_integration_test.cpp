@@ -175,14 +175,6 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       .sendTo(server_->resultQueue());
   followUpFuture.get();
 
-  // No race here: the cache-MISS path pushes ALLOCATE *synchronously*
-  // inside SessionManager::createSession and then blocks the controller's
-  // onResolved callback until a response arrives. Auto-respond is off and
-  // we didn't reply, so a MISS would have deadlocked followUpFuture.get()
-  // above — we wouldn't have reached this line. Reaching it implies HIT,
-  // and HIT touches the memory queue zero times. Assert empty as a
-  // belt-and-suspenders pin against any future change that adds an
-  // async push from the HIT path.
   EXPECT_TRUE(server_->memoryRequestQueue().empty())
       << "follow-up should HIT the cache; no new ALLOCATE expected";
 
