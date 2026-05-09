@@ -328,6 +328,55 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
   future.get();
 }
 
+TEST_F(MainIntegrationTest,
+       FollowUp_HitsCacheRegardlessOfClaimedAssistantContent) {
+  // The prefix-cache lookup hash is computed from the prior-turn prefix only:
+  // extractPriorTurnPrefix strips the trailing [assistant, user] pair before
+  // hashing. So the assistant content the client claims for the prior turn is
+  // never considered for routing — only the user message that came before it.
+  //
+  // Consequence: a follow-up whose claimed assistant turn has nothing to do
+  // with what the server actually generated still HITs the seeded session and
+  // gets continuation=true. The KV cache it reuses reflects the server's real
+  // generation, not the client's claim. This test pins that behaviour so a
+  // future change that hashes the trailing assistant content (and would flip
+  // EXPECT_TRUE to EXPECT_FALSE) is a deliberate decision.
+  //
+  // Unique opener so the lookup hash doesn't collide with other tests.
+  const std::string opener = "assistant-mismatch-opener";
+
+  // Seed: single-turn request indexes a session under hash([user: opener]).
+  // The server generates whatever token 42 decodes to — definitely not the
+  // string we'll claim in the next request.
+  {
+    auto future =
+        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+    auto seq = server_->taskQueue().receive();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_FALSE(seq->isContinuation());
+    mockWorkerResponse(seq->taskId);
+    future.get();
+  }
+
+  // Follow-up with a claimed assistant turn the server never produced.
+  // Lookup hash = hash([user: opener]) → HIT despite the mismatch.
+  auto future = asyncRequest(ChatRequest()
+                                 .user(opener)
+                                 .assistant("a turn the server never generated")
+                                 .user("how are you")
+                                 .maxTokens(1)
+                                 .stream());
+  auto seq = server_->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+  EXPECT_TRUE(seq->isContinuation())
+      << "follow-up HITs the seed session even though the claimed assistant "
+         "content has no relation to what the server actually generated — "
+         "the lookup hash strips the trailing [assistant, user] pair";
+
+  mockWorkerResponse(seq->taskId);
+  future.get();
+}
+
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   // A system + user message is a first turn even though there are two messages.
   auto future = asyncRequest(ChatRequest()
