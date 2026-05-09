@@ -329,52 +329,75 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
 }
 
 TEST_F(MainIntegrationTest,
-       FollowUp_HitsCacheRegardlessOfClaimedAssistantContent) {
-  // The prefix-cache lookup hash is computed from the prior-turn prefix only:
-  // extractPriorTurnPrefix strips the trailing [assistant, user] pair before
-  // hashing. So the assistant content the client claims for the prior turn is
-  // never considered for routing — only the user message that came before it.
+       ConcurrentRequests_SameOpenerDifferentRest_AllocateDistinctSlots) {
+  // Two requests fire concurrently with shape [user, assistant, user]. They
+  // share the same opening user message but the assistant and trailing user
+  // content differ. Because extractPriorTurnPrefix strips the trailing
+  // [assistant, user] pair before hashing, both compute the SAME prefix-
+  // cache lookup hash = hash([user: opener]).
   //
-  // Consequence: a follow-up whose claimed assistant turn has nothing to do
-  // with what the server actually generated still HITs the seeded session and
-  // gets continuation=true. The KV cache it reuses reflects the server's real
-  // generation, not the client's claim. This test pins that behaviour so a
-  // future change that hashes the trailing assistant content (and would flip
-  // EXPECT_TRUE to EXPECT_FALSE) is a deliberate decision.
-  //
-  // Unique opener so the lookup hash doesn't collide with other tests.
-  const std::string opener = "assistant-mismatch-opener";
+  // With no seed session registered at that hash, neither acquires anything
+  // existing — both MISS the cache and each ALLOCATEs a fresh session.
+  // This pins the no-shared-slot guarantee for concurrent requests whose
+  // bodies happen to share an opener: identical lookup hash, but each
+  // request still gets its own allocation and slot.
+  server_->setMemoryAutoRespond(false);
 
-  // Seed: single-turn request indexes a session under hash([user: opener]).
-  // The server generates whatever token 42 decodes to — definitely not the
-  // string we'll claim in the next request.
-  {
-    auto future =
-        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
-    auto seq = server_->taskQueue().receive();
-    ASSERT_NE(seq, nullptr);
-    EXPECT_FALSE(seq->isContinuation());
-    mockWorkerResponse(seq->taskId);
-    future.get();
-  }
+  const std::string opener = "concurrent-different-rest-opener";
 
-  // Follow-up with a claimed assistant turn the server never produced.
-  // Lookup hash = hash([user: opener]) → HIT despite the mismatch.
-  auto future = asyncRequest(ChatRequest()
-                                 .user(opener)
-                                 .assistant("a turn the server never generated")
-                                 .user("how are you")
-                                 .maxTokens(1)
-                                 .stream());
-  auto seq = server_->taskQueue().receive();
-  ASSERT_NE(seq, nullptr);
-  EXPECT_TRUE(seq->isContinuation())
-      << "follow-up HITs the seed session even though the claimed assistant "
-         "content has no relation to what the server actually generated — "
-         "the lookup hash strips the trailing [assistant, user] pair";
+  auto future1 = asyncRequest(ChatRequest()
+                                  .user(opener)
+                                  .assistant("thread A's reply")
+                                  .user("thread A's followup")
+                                  .maxTokens(1)
+                                  .stream());
+  auto future2 = asyncRequest(ChatRequest()
+                                  .user(opener)
+                                  .assistant("thread B's reply")
+                                  .user("thread B's followup")
+                                  .maxTokens(1)
+                                  .stream());
 
-  mockWorkerResponse(seq->taskId);
-  future.get();
+  // Drain both ALLOCATEs before responding so we know they ran concurrently
+  // rather than one being serialised behind the other.
+  tt::domain::ManageMemoryTask alloc1{}, alloc2{};
+  server_->memoryRequestQueue().receive(alloc1);
+  server_->memoryRequestQueue().receive(alloc2);
+  EXPECT_EQ(alloc1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_EQ(alloc2.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  EXPECT_NE(alloc1.taskId, alloc2.taskId);
+
+  auto pushSuccess = [&](uint32_t allocTaskId, uint32_t slotId) {
+    tt::domain::ManageMemoryResult res{};
+    res.taskId = allocTaskId;
+    res.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    res.slotId = slotId;
+    server_->memoryResultQueue().push(res);
+  };
+  pushSuccess(alloc1.taskId, 21);
+  pushSuccess(alloc2.taskId, 33);
+
+  auto seq1 = server_->taskQueue().receive();
+  auto seq2 = server_->taskQueue().receive();
+  ASSERT_NE(seq1, nullptr);
+  ASSERT_NE(seq2, nullptr);
+  EXPECT_FALSE(seq1->isContinuation());
+  EXPECT_FALSE(seq2->isContinuation());
+
+  // The two Sequences hold *different* slots — no sharing despite the
+  // identical lookup hash.
+  const uint32_t s1 = seq1->getKVCacheSlot();
+  const uint32_t s2 = seq2->getKVCacheSlot();
+  EXPECT_NE(s1, s2);
+  EXPECT_TRUE((s1 == 21u && s2 == 33u) || (s1 == 33u && s2 == 21u))
+      << "expected slots {21, 33}, got {" << s1 << ", " << s2 << "}";
+
+  mockWorkerResponse(seq1->taskId);
+  mockWorkerResponse(seq2->taskId);
+  future1.get();
+  future2.get();
+
+  server_->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
