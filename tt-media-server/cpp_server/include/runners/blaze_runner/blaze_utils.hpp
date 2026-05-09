@@ -3,11 +3,12 @@
 
 #pragma once
 
+#include <deque>
+#include <unordered_set>
+
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
-#include <deque>
-#include <unordered_set>
 
 namespace tt::runners::blaze_utils {
 
@@ -96,7 +97,7 @@ struct CancelTombstones {
       cancelTombstoneOrder.pop_front();
       cancelTombstoneSet.erase(oldest);
     }
-    }
+  }
 };
 
 }  // namespace tt::runners::blaze_utils

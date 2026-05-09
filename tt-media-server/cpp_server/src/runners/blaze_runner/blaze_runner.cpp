@@ -273,8 +273,8 @@ void BlazeRunner::handleCancelRequest(uint32_t taskId) {
 void BlazeRunner::handleMemoryResponse(const pm::PMResponse& response) {
   if (response.slot_id != tt::domain::INVALID_SLOT_ID &&
       cancelTombstones.consumeCancelTombstone(response.request_id)) {
-    // Allocation completed but the task was cancelled in the meantime. Evict the
-    // the slot we just got and unblock the session with no slot.
+    // Allocation completed but the task was cancelled in the meantime. Evict
+    // the the slot we just got and unblock the session with no slot.
     TT_LOG_DEBUG(
         "[BlazeRunner] handleMemoryResponse: evicting slot {} for cancelled "
         "taskId={}",
