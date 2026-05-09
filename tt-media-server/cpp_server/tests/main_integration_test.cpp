@@ -83,8 +83,9 @@ using tt::test::ChatRequest;
 // Tests
 // ---------------------------------------------------------------------------
 
-// Canonical happy-path walkthrough of a single /v1/chat/completions request,
-// in streaming mode (the primary use case for this server).
+// Canonical happy-path walkthrough of /v1/chat/completions, in streaming mode
+// (the primary use case for this server). Covers a fresh request end-to-end
+// and then a continuation that reuses the same session via prefix-cache.
 // Each subsequent test peels off a slice of this lifecycle and asserts on
 // just that slice — start here when reading the suite.
 //
@@ -94,6 +95,10 @@ using tt::test::ChatRequest;
 //   4. Controller pushes a Sequence onto the task queue
 //   5. We mock the worker: push one token + FINAL via WorkerResponse
 //   6. SSE stream terminates; assert on the events delivered
+//   7. A follow-up request with the same opener HITs the prefix-cache:
+//      no new ALLOCATE, the Sequence is flagged as a continuation, and
+//      only the delta prompt (the new user turn) is sent to the task
+//      queue — not the full prior conversation.
 TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   server_->setMemoryAutoRespond(false);
 
@@ -119,6 +124,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
+  const size_t seedPromptTokens = seq->getNumPromptTokens();
 
   // 5. Mock the worker: one token, then FINAL.
   tt::test::WorkerResponse(seq->taskId)
@@ -137,6 +143,38 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_EQ(stream.initialRole(), "assistant");
   EXPECT_FALSE(stream.contentDeltas().empty())
       << "expected at least one content delta";
+
+  // 7. Follow-up with the same opener but a long claimed assistant turn
+  //    in between. If the controller sent the full conversation to the
+  //    worker (no cache hit), the prompt would include all those tokens.
+  //    With the cache HIT, only the delta — the trailing user turn —
+  //    is sent; the prompt token count stays close to a single-turn one.
+  const std::string longPriorAssistant =
+      "this is intentionally a long assistant turn so that if the controller "
+      "sent the full conversation history to the worker the prompt would "
+      "balloon to many more tokens than the small delta of the last user "
+      "turn alone";
+  auto followUpFuture = asyncRequest(ChatRequest()
+                                         .user("hello")
+                                         .assistant(longPriorAssistant)
+                                         .user("y")
+                                         .maxTokens(1)
+                                         .stream());
+  auto followUpSeq = server_->taskQueue().receive();
+  ASSERT_NE(followUpSeq, nullptr);
+  EXPECT_TRUE(followUpSeq->isContinuation())
+      << "follow-up should HIT the seed session";
+  EXPECT_LE(followUpSeq->getNumPromptTokens(), seedPromptTokens)
+      << "expected delta-only prompt (no prior turns); got "
+      << followUpSeq->getNumPromptTokens() << " tokens, seed was "
+      << seedPromptTokens
+      << " — the long prior assistant turn would have inflated this if the "
+         "full conversation had been sent";
+  tt::test::WorkerResponse(followUpSeq->taskId)
+      .token(43)
+      .finalize()
+      .sendTo(server_->resultQueue());
+  followUpFuture.get();
 
   server_->setMemoryAutoRespond(true);
 }
