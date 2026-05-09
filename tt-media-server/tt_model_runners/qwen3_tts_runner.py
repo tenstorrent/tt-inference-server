@@ -176,7 +176,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
 
         # max_new_tokens=1500 + repetition_penalty=1.15 mirror web_demo.py
         self.config = TTSConfig(max_new_tokens=1500)
-        self.config.repetition_penalty = 1.15
+        self.config.repetition_penalty = float(os.environ.get("TT_QWEN3_REP_PENALTY", "1.15"))
 
         self.logger.info(
             f"Device {self.device_id}: Capturing TTS server context "
@@ -201,6 +201,13 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: Voice prompts ready: "
             f"{self.voice_prompts.list_available()}"
         )
+
+        # Snapshot torch's RNG state at end of warmup. We restore this before
+        # every request so the multinomial-sampled trajectory is identical to
+        # what a fresh demo process sees on its first sample_token call —
+        # i.e. the high-fidelity 0.98 ECAPA path. Without this, the RNG state
+        # advances across requests and lands on lower-fidelity trajectories.
+        self._post_warmup_rng_state = torch.get_rng_state()
 
     @log_execution_time(
         "Qwen3-TTS warmup",
@@ -305,7 +312,14 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             main_weights=self.main_weights,
         )
 
-        # 5. AR generation (uses pre-captured CP traces).
+        # Restore torch's RNG to the snapshot taken at end of warmup. This
+        # is the exact RNG state a fresh demo process sees on its first
+        # sample_token call, so the multinomial trajectory matches the demo's
+        # high-fidelity (0.98 ECAPA) path. Without this restore, RNG state
+        # advances across requests and lands on lower-fidelity trajectories.
+        torch.set_rng_state(self._post_warmup_rng_state)
+
+        # 6. AR generation (uses pre-captured CP traces).
         codes, timings, _perf_text = run_inference(
             ctx=self.ctx,
             model=self.model,
