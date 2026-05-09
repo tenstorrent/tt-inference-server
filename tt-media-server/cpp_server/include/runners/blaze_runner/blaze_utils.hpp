@@ -6,6 +6,8 @@
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
+#include <deque>
+#include <unordered_set>
 
 namespace tt::runners::blaze_utils {
 
@@ -18,7 +20,7 @@ inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
       .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
-inline pm::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
+inline pm::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = pm::RequestType::CANCEL,
           .request_id = requestId,
           .slot_id = slotId,
@@ -69,6 +71,32 @@ struct SlotContext {
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
   uint32_t tokensGenerated = 0;
+};
+
+struct CancelTombstones {
+  std::deque<uint32_t> cancelTombstoneOrder;
+  std::unordered_set<uint32_t> cancelTombstoneSet;
+  static constexpr size_t MAX_CANCEL_TOMBSTONES = 256;
+  bool consumeCancelTombstone(uint32_t taskId) {
+    if (cancelTombstoneSet.erase(taskId) == 0) {
+      return false;
+    }
+    // Lazy removal from the deque: leave a stale entry behind. It will be
+    // skipped when popped during eviction. This keeps the common path O(1).
+    return true;
+  }
+  void rememberCancelTombstone(uint32_t taskId) {
+    if (!cancelTombstoneSet.insert(taskId).second) {
+      return;
+    }
+    cancelTombstoneOrder.push_back(taskId);
+    while (cancelTombstoneSet.size() > MAX_CANCEL_TOMBSTONES &&
+           !cancelTombstoneOrder.empty()) {
+      uint32_t oldest = cancelTombstoneOrder.front();
+      cancelTombstoneOrder.pop_front();
+      cancelTombstoneSet.erase(oldest);
+    }
+    }
 };
 
 }  // namespace tt::runners::blaze_utils
