@@ -175,6 +175,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       .sendTo(server_->resultQueue());
   followUpFuture.get();
 
+  // The cache-HIT path returns from resolveSession without touching the
+  // memory queue. Auto-respond is still off, so if a new ALLOCATE had been
+  // pushed it would still be sitting in the queue right now. Assert empty
+  // to pin "no second ALLOCATE for the second turn".
+  EXPECT_TRUE(server_->memoryRequestQueue().empty())
+      << "follow-up should HIT the cache; no new ALLOCATE expected";
+
   server_->setMemoryAutoRespond(true);
 }
 
