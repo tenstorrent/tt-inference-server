@@ -124,7 +124,6 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
-  const size_t seedPromptTokens = seq->getNumPromptTokens();
 
   // 5. Mock the worker: one token, then FINAL.
   tt::test::WorkerResponse(seq->taskId)
@@ -164,12 +163,12 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(followUpSeq, nullptr);
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
-  EXPECT_LE(followUpSeq->getNumPromptTokens(), seedPromptTokens)
-      << "expected delta-only prompt (no prior turns); got "
-      << followUpSeq->getNumPromptTokens() << " tokens, seed was "
-      << seedPromptTokens
-      << " — the long prior assistant turn would have inflated this if the "
-         "full conversation had been sent";
+  // "y" tokenises to a single token. With the cache hit, the delta prompt
+  // is exactly that token wrapped in the chat-template markers — 4 tokens
+  // for the DeepSeek tokenizer (BOS + user-marker + "y" + assistant-marker).
+  // If the full conversation had been sent, the long prior assistant turn
+  // would have pushed this well into the dozens.
+  EXPECT_EQ(followUpSeq->getNumPromptTokens(), 4u);
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
