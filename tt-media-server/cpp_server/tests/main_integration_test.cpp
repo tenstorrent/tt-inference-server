@@ -329,22 +329,68 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
 }
 
 TEST_F(MainIntegrationTest,
-       ConcurrentRequests_SameOpenerDifferentRest_AllocateDistinctSlots) {
-  // Two requests fire concurrently with shape [user, assistant, user]. They
-  // share the same opening user message but the assistant and trailing user
-  // content differ. Because extractPriorTurnPrefix strips the trailing
-  // [assistant, user] pair before hashing, both compute the SAME prefix-
-  // cache lookup hash = hash([user: opener]).
+       ConcurrentRequests_SameOpenerDifferentRest_DistinctSlots) {
+  // Two phases, both using the same opener:
   //
-  // With no seed session registered at that hash, neither acquires anything
-  // existing — both MISS the cache and each ALLOCATEs a fresh session.
-  // This pins the no-shared-slot guarantee for concurrent requests whose
-  // bodies happen to share an opener: identical lookup hash, but each
-  // request still gets its own allocation and slot.
+  //   Seed phase: two concurrent single-turn requests. They each ALLOCATE
+  //               a session under hash([user: opener]) at a distinct slot,
+  //               so afterwards that hash has two candidates available.
+  //
+  //   Main phase: two concurrent follow-ups with shape
+  //               [user: opener, assistant: ..., user: ...] but with
+  //               different assistant/user content per request. Both
+  //               compute the same prefix-cache lookup hash; each must
+  //               acquire a *distinct* seeded session and reuse its slot
+  //               (continuation=true).
+  //
+  // Pins the no-shared-slot guarantee under concurrent load: even when
+  // multiple requests compute identical lookup hashes — and even when
+  // multiple seeded candidates are available — every request ends up
+  // with its own slot. No two requests ever share a slot.
   server_->setMemoryAutoRespond(false);
-
   const std::string opener = "concurrent-different-rest-opener";
+  constexpr uint32_t kSeedSlotA = 7;
+  constexpr uint32_t kSeedSlotB = 8;
 
+  auto pushAllocSuccess = [&](uint32_t allocTaskId, uint32_t slotId) {
+    tt::domain::ManageMemoryResult res{};
+    res.taskId = allocTaskId;
+    res.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    res.slotId = slotId;
+    server_->memoryResultQueue().push(res);
+  };
+
+  // --- Seed phase ----------------------------------------------------------
+  {
+    auto seedF1 =
+        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+    auto seedF2 =
+        asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+    tt::domain::ManageMemoryTask seedAlloc1{}, seedAlloc2{};
+    server_->memoryRequestQueue().receive(seedAlloc1);
+    server_->memoryRequestQueue().receive(seedAlloc2);
+    EXPECT_EQ(seedAlloc1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    EXPECT_EQ(seedAlloc2.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    EXPECT_NE(seedAlloc1.taskId, seedAlloc2.taskId);
+
+    pushAllocSuccess(seedAlloc1.taskId, kSeedSlotA);
+    pushAllocSuccess(seedAlloc2.taskId, kSeedSlotB);
+
+    auto seedSeq1 = server_->taskQueue().receive();
+    auto seedSeq2 = server_->taskQueue().receive();
+    ASSERT_NE(seedSeq1, nullptr);
+    ASSERT_NE(seedSeq2, nullptr);
+    EXPECT_FALSE(seedSeq1->isContinuation());
+    EXPECT_FALSE(seedSeq2->isContinuation());
+
+    mockWorkerResponse(seedSeq1->taskId);
+    mockWorkerResponse(seedSeq2->taskId);
+    seedF1.get();
+    seedF2.get();
+  }
+
+  // --- Main phase ----------------------------------------------------------
   auto future1 = asyncRequest(ChatRequest()
                                   .user(opener)
                                   .assistant("thread A's reply")
@@ -358,39 +404,23 @@ TEST_F(MainIntegrationTest,
                                   .maxTokens(1)
                                   .stream());
 
-  // Drain both ALLOCATEs before responding so we know they ran concurrently
-  // rather than one being serialised behind the other.
-  tt::domain::ManageMemoryTask alloc1{}, alloc2{};
-  server_->memoryRequestQueue().receive(alloc1);
-  server_->memoryRequestQueue().receive(alloc2);
-  EXPECT_EQ(alloc1.action, tt::domain::MemoryManagementAction::ALLOCATE);
-  EXPECT_EQ(alloc2.action, tt::domain::MemoryManagementAction::ALLOCATE);
-  EXPECT_NE(alloc1.taskId, alloc2.taskId);
-
-  auto pushSuccess = [&](uint32_t allocTaskId, uint32_t slotId) {
-    tt::domain::ManageMemoryResult res{};
-    res.taskId = allocTaskId;
-    res.status = tt::domain::ManageMemoryStatus::SUCCESS;
-    res.slotId = slotId;
-    server_->memoryResultQueue().push(res);
-  };
-  pushSuccess(alloc1.taskId, 21);
-  pushSuccess(alloc2.taskId, 33);
-
   auto seq1 = server_->taskQueue().receive();
   auto seq2 = server_->taskQueue().receive();
   ASSERT_NE(seq1, nullptr);
   ASSERT_NE(seq2, nullptr);
-  EXPECT_FALSE(seq1->isContinuation());
-  EXPECT_FALSE(seq2->isContinuation());
+  EXPECT_TRUE(seq1->isContinuation())
+      << "follow-up should HIT one of the seeded sessions";
+  EXPECT_TRUE(seq2->isContinuation())
+      << "follow-up should HIT one of the seeded sessions";
 
-  // The two Sequences hold *different* slots — no sharing despite the
-  // identical lookup hash.
+  // Each follow-up reuses a distinct seeded slot — no two follow-ups share.
   const uint32_t s1 = seq1->getKVCacheSlot();
   const uint32_t s2 = seq2->getKVCacheSlot();
   EXPECT_NE(s1, s2);
-  EXPECT_TRUE((s1 == 21u && s2 == 33u) || (s1 == 33u && s2 == 21u))
-      << "expected slots {21, 33}, got {" << s1 << ", " << s2 << "}";
+  EXPECT_TRUE((s1 == kSeedSlotA && s2 == kSeedSlotB) ||
+              (s1 == kSeedSlotB && s2 == kSeedSlotA))
+      << "expected the seeded slots {" << kSeedSlotA << ", " << kSeedSlotB
+      << "}, got {" << s1 << ", " << s2 << "}";
 
   mockWorkerResponse(seq1->taskId);
   mockWorkerResponse(seq2->taskId);
