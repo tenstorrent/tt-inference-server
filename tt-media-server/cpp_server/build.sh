@@ -87,6 +87,31 @@ if [ "${SANITIZE_THREAD}" = "ON" ] && [ "${SANITIZE_ADDRESS}" = "ON" ]; then
     exit 1
 fi
 
+# --blaze requires tt-blaze/pipeline_manager (cloned out-of-band; not a submodule
+# with a tracked URL). Fail early with a clear setup hint instead of letting
+# CMake bail out on a missing add_subdirectory().
+if [ "${ENABLE_BLAZE}" = "ON" ] && [ ! -f "${SCRIPT_DIR}/tt-blaze/pipeline_manager/CMakeLists.txt" ]; then
+    echo ""
+    echo "ERROR: --blaze requires tt-blaze/pipeline_manager but ${SCRIPT_DIR}/tt-blaze is missing or empty."
+    echo ""
+    echo "  Clone tt-blaze (private repo — needs a GitHub token with read access):"
+    echo "    rm -rf ${SCRIPT_DIR}/tt-blaze"
+    echo "    git clone --depth 1 --branch asaigal/relaxed_acceptance \\"
+    echo "        https://x-access-token:\${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git \\"
+    echo "        ${SCRIPT_DIR}/tt-blaze"
+    echo "    cd ${SCRIPT_DIR}/tt-blaze && git submodule update --init --recursive --depth 1"
+    echo "    ./install.sh && . ./env.sh"
+    echo "    (cd tt-metal && ./build_metal.sh --disable-profiler)"
+    echo "    ./pipeline_manager/setup.sh --pm-full"
+    echo ""
+    echo "  Then point TT_METAL_HOME at the bundled tt-metal and re-run this script:"
+    echo "    export TT_METAL_HOME=${SCRIPT_DIR}/tt-blaze/tt-metal"
+    echo "    ./build.sh --blaze"
+    echo ""
+    echo "  See Dockerfile.blaze in the repo root for the canonical setup."
+    exit 1
+fi
+
 echo "=============================================="
 echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
@@ -95,9 +120,6 @@ echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
-echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
-echo "  Tracy profiling: ${ENABLE_TRACY}"
-echo "  Clang-tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "=============================================="
 
