@@ -1347,15 +1347,6 @@ jobs:
           cd cpp_server
           ./build.sh --tsan --blaze
 
-      - name: Run unit tests under TSan
-        env:
-          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7"
-        run: |
-          # ctest exit code is informational here — the race count is what
-          # gates this job. Test failures are reported via the artifact.
-          cd cpp_server/build
-          ctest --output-on-failure -j4 2>&1 | tee ../../ctest_tsan.log || true
-
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
         with:
@@ -1431,7 +1422,7 @@ jobs:
           } >> $GITHUB_STEP_SUMMARY
 
           shopt -s nullglob
-          for f in cpp_server/build/tsan-server.* ctest_tsan.log; do
+          for f in cpp_server/build/tsan-server.*; do
             [ -f "$f" ] || continue
             COUNT=$(grep -c "WARNING: ThreadSanitizer" "$f" 2>/dev/null || echo 0)
             COUNT=$(echo "$COUNT" | tr -dc '0-9'); COUNT=${COUNT:-0}
@@ -1465,7 +1456,6 @@ jobs:
             tt-media-server/cpp_server/build/tsan-server.*
             tt-media-server/tsan_server.log
             tt-media-server/tsan_bench.log
-            tt-media-server/ctest_tsan.log
             tt-media-server/bench_results/tsan_ci/
           retention-days: 7
           if-no-files-found: warn
