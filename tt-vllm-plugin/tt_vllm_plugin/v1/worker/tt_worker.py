@@ -49,12 +49,11 @@ class TTWorker(WorkerBase):
             vllm_config, local_rank, rank, distributed_init_method, is_driver_worker
         )
 
-        # Initialized by init_device
+       # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = {}
 
         # Whether to use ttnn tracing for model execution
-        override_tt_config = self.model_config.override_tt_config
+        override_tt_config = getattr(self.model_config, "override_tt_config", {})
         trace_key = "trace_mode"
         self.trace_mode = True
         if override_tt_config and trace_key in override_tt_config:
