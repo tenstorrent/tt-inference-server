@@ -112,7 +112,7 @@ if(NOT xgrammar_POPULATED)
         "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
     )
     add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    target_compile_options(xgrammar PRIVATE -Wno-error=deprecated-declarations -fno-lto)
+    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
 endif()
 
 # Import fmt from tt-metal for spdlog
