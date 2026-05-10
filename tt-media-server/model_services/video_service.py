@@ -16,7 +16,14 @@ def create_video_worker_context():
     return VideoManager()
 
 
-def video_worker_function(video_manager, video_frames, should_discard_file=True):
+def video_worker_function(
+    video_manager,
+    video_frames,
+    should_discard_file=True,
+    seam_indices=None,
+    seam_task_id=None,
+    seam_fmt="webp",
+):
     # str: already-exported video on disk (filesystem path), not raw frame tensors.
     if isinstance(video_frames, str):
         path = video_frames
@@ -32,7 +39,12 @@ def video_worker_function(video_manager, video_frames, should_discard_file=True)
                 )
             return None
         return path
-    output_path = video_manager.export_to_mp4(video_frames)
+    output_path = video_manager.export_to_mp4(
+        video_frames,
+        seam_indices=seam_indices,
+        seam_task_id=seam_task_id,
+        seam_fmt=seam_fmt,
+    )
     if should_discard_file:
         import os
 
@@ -64,8 +76,13 @@ class VideoService(BaseJobService):
         if isinstance(result, str):
             # Worker already exported to MP4 — skip the CPU worker queue entirely
             return result
+        seam_indices = getattr(input_request, "extract_frames", None) or []
+        seam_task_id = input_request._task_id if seam_indices else None
+        seam_fmt = getattr(input_request, "frame_format", "webp") or "webp"
         try:
-            video_file = await self._cpu_workload_handler.execute_task(result, False)
+            video_file = await self._cpu_workload_handler.execute_task(
+                result, False, seam_indices, seam_task_id, seam_fmt
+            )
         except Exception as e:
             self.logger.error(f"Video postprocessing failed: {e}")
             raise

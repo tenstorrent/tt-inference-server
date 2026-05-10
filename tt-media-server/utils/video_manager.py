@@ -18,6 +18,13 @@ from utils.logger import TTLogger
 
 _MIN_CRF = 0
 _MAX_CRF = 51
+
+# PIL save kwargs per format. WebP method=0 is the fastest lossless encoder.
+_SEAM_FMT: dict[str, tuple[str, dict]] = {
+    "webp":  ("WEBP",  {"lossless": True, "method": 0}),
+    "png":   ("PNG",   {}),
+    "jpeg":  ("JPEG",  {"quality": 95}),
+}
 _FFMPEG_ENCODE_TIMEOUT_S = 600
 _FFMPEG_REMUX_TIMEOUT_S = 60
 _VIDEO_OUTPUT_DIR = Path("/tmp/videos")
@@ -35,9 +42,21 @@ class VideoManager:
         self._logger = TTLogger()
 
     @log_execution_time("Exporting video to MP4")
-    def export_to_mp4(self, frames: NDArray, fps: int = 16) -> str:
+    def export_to_mp4(
+        self,
+        frames: NDArray,
+        fps: int = 16,
+        *,
+        seam_indices: list[int] | None = None,
+        seam_task_id: str | None = None,
+        seam_fmt: str = "webp",
+    ) -> str:
         """
         Export frames to MP4 (H.264 via ffmpeg).
+
+        If seam_indices and seam_task_id are provided, the requested frames are
+        saved as lossless sidecars (format controlled by seam_fmt) from the same
+        normalized uint8 array used for MP4 encoding — one normalization pass total.
 
         Env (optional):
             TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
@@ -55,6 +74,8 @@ class VideoManager:
 
         try:
             processed = self._process_frames_for_export(frames)
+            if seam_indices and seam_task_id:
+                _save_seam_from_processed(processed, seam_indices, seam_task_id, seam_fmt)
             cmd = self._build_encode_cmd(processed, output_path, fps, crf, preset)
             self._run_ffmpeg(cmd, stdin_data=memoryview(processed))
             return output_path
@@ -212,3 +233,27 @@ def _normalize_dtype(frames: NDArray) -> NDArray[np.uint8]:
             torch.set_num_threads(prev_threads)
 
     return frames.clip(0, 255).astype(np.uint8)
+
+
+def _save_seam_from_processed(
+    processed: NDArray[np.uint8],
+    indices: list[int],
+    task_id: str,
+    fmt: str,
+) -> None:
+    """Save requested frame indices from an already-normalized (N,H,W,3) uint8 array.
+
+    Called inside export_to_mp4 after _process_frames_for_export so the
+    float32→uint8 conversion happens exactly once per request.
+    """
+    from PIL import Image as PILImage
+
+    from ipc.video_shm import seam_frame_path
+
+    pil_fmt, save_kwargs = _SEAM_FMT.get(fmt, _SEAM_FMT["webp"])
+    n = len(processed)
+    for idx in indices:
+        if 0 <= idx < n:
+            PILImage.fromarray(processed[idx]).save(
+                seam_frame_path(task_id, idx, fmt), pil_fmt, **save_kwargs
+            )

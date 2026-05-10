@@ -19,6 +19,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -142,6 +143,8 @@ class SPRunner(BaseDeviceRunner):
             with open(image_path, "w") as _f:
                 _f.write(raw_image)
 
+        extract_frames = getattr(request, "extract_frames", None)
+        frame_format = getattr(request, "frame_format", "webp") or "webp"
         video_req = VideoRequest(
             task_id=task_id,
             prompt=request.prompt,
@@ -158,6 +161,7 @@ class SPRunner(BaseDeviceRunner):
                 request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
             ),
             image_path=image_path,
+            extract_frames_json=json.dumps({"i": extract_frames, "f": frame_format}) if extract_frames else "",
         )
 
         self._input_shm.write_request(video_req)

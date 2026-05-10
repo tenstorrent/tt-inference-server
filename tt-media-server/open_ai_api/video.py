@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import glob
 import os
 import tempfile
 import time
@@ -12,10 +13,12 @@ from config.constants import JobTypes
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Security, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from ipc.video_shm import VIDEO_FILE_DIR
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -24,6 +27,61 @@ from utils.video_manager import VideoManager
 logger = TTLogger()
 
 router = APIRouter()
+
+_MULTIPART_BOUNDARY = "tt-seam-boundary"
+_FRAME_CONTENT_TYPE = {
+    ".webp": "image/webp",
+    ".png":  "image/png",
+    ".jpg":  "image/jpeg",
+}
+
+
+def _find_seam_files(task_id: str) -> list[tuple[int, str]]:
+    """Return sorted (frame_idx, path) for any extracted-frame sidecars for this task."""
+    result = []
+    for p in glob.glob(os.path.join(VIDEO_FILE_DIR, f"tt_seam_{task_id}_*.*")):
+        base = os.path.basename(p)
+        try:
+            stem, _ = base.rsplit(".", 1)
+            idx = int(stem.rsplit("_", 1)[1])
+            result.append((idx, p))
+        except (ValueError, IndexError):
+            pass
+    return sorted(result)
+
+
+def _stream_multipart(mp4_path: str, seam_files: list[tuple[int, str]]):
+    """Generator yielding a multipart/mixed body: MP4 first, then extracted frames."""
+    mp4_name = os.path.basename(mp4_path)
+    yield (
+        f"--{_MULTIPART_BOUNDARY}\r\n"
+        f"Content-Type: video/mp4\r\n"
+        f'Content-Disposition: attachment; filename="{mp4_name}"\r\n\r\n'
+    ).encode()
+    with open(mp4_path, "rb") as f:
+        while chunk := f.read(65536):
+            yield chunk
+    yield b"\r\n"
+    for idx, path in seam_files:
+        ext = os.path.splitext(path)[1].lower()
+        content_type = _FRAME_CONTENT_TYPE.get(ext, "application/octet-stream")
+        yield (
+            f"--{_MULTIPART_BOUNDARY}\r\n"
+            f"Content-Type: {content_type}\r\n"
+            f'Content-Disposition: inline; name="frame"; frame_index={idx}\r\n\r\n'
+        ).encode()
+        with open(path, "rb") as f:
+            yield f.read()
+        yield b"\r\n"
+    yield f"--{_MULTIPART_BOUNDARY}--\r\n".encode()
+
+
+def _cleanup_seam_files(paths: list[str]) -> None:
+    for p in paths:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
 
 
 _VIDEO_EXAMPLES = {
@@ -48,6 +106,17 @@ _VIDEO_EXAMPLES = {
             ],
             "num_inference_steps": 12,
             "seed": 42,
+        },
+    },
+    "chaining": {
+        "summary": "Image-to-video with last-frame extraction for chaining",
+        "value": {
+            "prompt": "A serene mountain landscape with flowing water",
+            "image": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
+            "num_inference_steps": 12,
+            "seed": 42,
+            "extract_frames": [80],
+            "frame_format": "webp",
         },
     },
 }
@@ -94,6 +163,14 @@ async def submit_generate_video_request(
             logger.info(
                 f"[video] process_request={t1-t0:.3f}s  file_size={file_size/1024:.1f}KB  task={request._task_id}"
             )
+
+            seam_files = _find_seam_files(request._task_id) if request.extract_frames else []
+            if seam_files:
+                return StreamingResponse(
+                    _stream_multipart(video_file_path, seam_files),
+                    media_type=f"multipart/mixed; boundary={_MULTIPART_BOUNDARY}",
+                    background=BackgroundTask(_cleanup_seam_files, [p for _, p in seam_files]),
+                )
 
             return FileResponse(
                 video_file_path,
@@ -293,6 +370,14 @@ def download_video_content(
         serve_path = faststart_path
     except Exception:
         serve_path = file_path
+
+    seam_files = _find_seam_files(job_id)
+    if seam_files:
+        return StreamingResponse(
+            _stream_multipart(serve_path, seam_files),
+            media_type=f"multipart/mixed; boundary={_MULTIPART_BOUNDARY}",
+            background=BackgroundTask(_cleanup_seam_files, [p for _, p in seam_files]),
+        )
 
     return FileResponse(
         serve_path,

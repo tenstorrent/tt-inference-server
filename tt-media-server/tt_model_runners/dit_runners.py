@@ -491,7 +491,12 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
         if self.export_in_runner:
             from utils.video_manager import VideoManager
 
-            return [VideoManager().export_to_mp4(frames)]
+            return [VideoManager().export_to_mp4(
+                frames,
+                seam_indices=request.extract_frames or [],
+                seam_task_id=request._task_id,
+                seam_fmt=request.frame_format,
+            )]
         return frames
 
 

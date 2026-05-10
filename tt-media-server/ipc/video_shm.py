@@ -72,16 +72,25 @@ class VideoRequest:
     guidance_scale: float
     guidance_scale_2: float
     image_path: str = ""
+    extract_frames_json: str = ""  # JSON object, e.g. '{"i":[0,80],"f":"webp"}'
 
 
 VIDEO_FILE_DIR = os.environ.get("TT_VIDEO_FILE_DIR", "/dev/shm")
 VIDEO_FILE_GLOB = "tt_video_*.pkl"
 MAX_FILE_PATH_LEN = 256
+SEAM_FRAME_FILE_GLOB = "tt_seam_*.*"
+_SEAM_FRAME_EXT = {"webp": "webp", "png": "png", "jpeg": "jpg"}
 
 
 def video_result_path(task_id: str) -> str:
     """Return the file path for a video result on the RAM-backed tmpfs."""
     return os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+
+def seam_frame_path(task_id: str, frame_idx: int, fmt: str = "webp") -> str:
+    """Return the file path for an extracted-frame sidecar on the RAM-backed tmpfs."""
+    ext = _SEAM_FRAME_EXT.get(fmt, "webp")
+    return os.path.join(VIDEO_FILE_DIR, f"tt_seam_{task_id}_{frame_idx}.{ext}")
 
 
 def cleanup_orphaned_video_files() -> int:
@@ -121,11 +130,13 @@ class VideoShm:
 
     Layout per slot depends on *mode*:
 
-    Input slot (2 640 B):
+    Input slot (3 032 B):
         state(4) task_id(36) prompt_length(4) prompt(2048)
         neg_prompt_length(4) negative_prompt(512)
         num_inference_steps(4) seed(8) height(4) width(4)
         num_frames(4) guidance_scale(4) guidance_scale_2(4)
+        image_path_len(4) image_path(256)
+        extract_frames_len(4) extract_frames_json(128)
 
     Output slot (564 B):
         state(4) task_id(36) status(4)
@@ -226,7 +237,10 @@ class VideoShm:
     _IN_IMAGE_PATH_LEN = 2640
     _IN_IMAGE_PATH = 2644
     MAX_IMAGE_PATH_LEN = 256
-    INPUT_SLOT_SIZE = 2900  # 2640 + 4 (len) + 256 (path)
+    _IN_EXTRACT_FRAMES_LEN = 2900   # immediately after image_path
+    _IN_EXTRACT_FRAMES = 2904
+    MAX_EXTRACT_FRAMES_JSON_LEN = 128
+    INPUT_SLOT_SIZE = 3032  # 2900 + 4 (len) + 128 (json) — bootstrap down/up required on upgrade
 
     # ── Output slot field offsets ──
     #   state(4) task_id(36) status(4) error_len(4) error(256)
@@ -531,6 +545,13 @@ class VideoShm:
             request.image_path,
             self.MAX_IMAGE_PATH_LEN,
         )
+        self._pack_string(
+            buf,
+            off + self._IN_EXTRACT_FRAMES_LEN,
+            off + self._IN_EXTRACT_FRAMES,
+            request.extract_frames_json,
+            self.MAX_EXTRACT_FRAMES_JSON_LEN,
+        )
 
         struct.pack_into("<i", buf, state_off, self._FILLED)
         self._set_writer_index(widx + 1)
@@ -576,6 +597,9 @@ class VideoShm:
         image_path = self._unpack_string(
             buf, off + self._IN_IMAGE_PATH_LEN, off + self._IN_IMAGE_PATH
         )
+        extract_frames_json = self._unpack_string(
+            buf, off + self._IN_EXTRACT_FRAMES_LEN, off + self._IN_EXTRACT_FRAMES
+        )
 
         struct.pack_into("<i", buf, state_off, self._EMPTY)
         self._set_reader_index(ridx + 1)
@@ -592,6 +616,7 @@ class VideoShm:
             guidance_scale=guidance_scale,
             guidance_scale_2=guidance_scale_2,
             image_path=image_path,
+            extract_frames_json=extract_frames_json,
         )
 
     # ── Output SHM: response read / write (file-path reference) ──

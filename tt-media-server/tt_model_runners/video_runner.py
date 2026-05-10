@@ -41,6 +41,7 @@ Environment variables:
 """
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -220,7 +221,16 @@ def _run_inference_loop(
             if rank == 0:
                 from utils.video_manager import VideoManager
 
-                mp4_path = VideoManager().export_to_mp4(frames)
+                _ef = json.loads(req.extract_frames_json) if req.extract_frames_json else {}
+                seam_indices = _ef.get("i") or []
+                seam_fmt = _ef.get("f", "webp")
+
+                mp4_path = VideoManager().export_to_mp4(
+                    frames,
+                    seam_indices=seam_indices,
+                    seam_task_id=req.task_id if seam_indices else None,
+                    seam_fmt=seam_fmt,
+                )
                 _log.info(f"Rank 0: Encoded mp4 at {mp4_path}")
                 _write_response_to_shm(output_shm, req.task_id, mp4_path)
 
