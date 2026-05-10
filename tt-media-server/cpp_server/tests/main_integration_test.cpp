@@ -49,14 +49,14 @@ class MainIntegrationTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
-    server_ = tt::test::TestServer::start();
+    server = tt::test::TestServer::start();
   }
-  static void TearDownTestSuite() { server_.reset(); }
+  static void TearDownTestSuite() { server.reset(); }
 
   // Fire request in background. Returns future for the raw HTTP response.
   static std::future<std::string> asyncRequest(const std::string& body) {
     return std::async(std::launch::async, [body] {
-      return tt::test::sendAndReceive(server_->host(), server_->port(), body);
+      return tt::test::sendAndReceive(server->host(), server->port(), body);
     });
   }
   static std::future<std::string> asyncRequest(
@@ -69,13 +69,13 @@ class MainIntegrationTest : public ::testing::Test {
   // directly.
   static void mockWorkerResponse(uint32_t taskId, uint64_t tokenId = 42) {
     tt::test::WorkerResponse(taskId).token(tokenId).finalize().sendTo(
-        server_->resultQueue());
+        server->resultQueue());
   }
 
-  static std::unique_ptr<tt::test::TestServer> server_;
+  static std::unique_ptr<tt::test::TestServer> server;
 };
 
-std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server_;
+std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
 
 using tt::test::ChatRequest;
 
@@ -100,7 +100,7 @@ using tt::test::ChatRequest;
 //      only the delta prompt (the new user turn) is sent to the task
 //      queue — not the full prior conversation.
 TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
-  server_->setMemoryAutoRespond(false);
+  server->setMemoryAutoRespond(false);
 
   // 1. Fire the streaming request.
   auto responseFuture =
@@ -108,7 +108,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
-  server_->memoryRequestQueue().receive(memReq);
+  server->memoryRequestQueue().receive(memReq);
   EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
   EXPECT_GT(memReq.taskId, 0u);
 
@@ -117,10 +117,10 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   memRes.taskId = memReq.taskId;
   memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
   memRes.slotId = 0;
-  server_->memoryResultQueue().push(memRes);
+  server->memoryResultQueue().push(memRes);
 
   // 4. Receive and assert on the Sequence.
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
@@ -129,7 +129,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   tt::test::WorkerResponse(seq->taskId)
       .token(42)
       .finalize()
-      .sendTo(server_->resultQueue());
+      .sendTo(server->resultQueue());
 
   // 6. Assert on the SSE stream.
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
@@ -159,7 +159,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
                                          .user("y")
                                          .maxTokens(1)
                                          .stream());
-  auto followUpSeq = server_->taskQueue().receive();
+  auto followUpSeq = server->taskQueue().receive();
   ASSERT_NE(followUpSeq, nullptr);
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
@@ -172,13 +172,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
-      .sendTo(server_->resultQueue());
+      .sendTo(server->resultQueue());
   followUpFuture.get();
 
-  EXPECT_TRUE(server_->memoryRequestQueue().empty())
+  EXPECT_TRUE(server->memoryRequestQueue().empty())
       << "follow-up should HIT the cache; no new ALLOCATE expected";
 
-  server_->setMemoryAutoRespond(true);
+  server->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
@@ -187,13 +187,13 @@ TEST_F(MainIntegrationTest, WorkerResponseBuilder_MultipleTokensThenFinalize) {
   auto responseFuture =
       asyncRequest(ChatRequest().user("hello").maxTokens(3).stream());
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
   tt::test::WorkerResponse(seq->taskId)
       .tokens({101, 202, 303})
       .finalize()
-      .sendTo(server_->resultQueue());
+      .sendTo(server->resultQueue());
 
   const auto response = tt::test::HttpResponse::parse(responseFuture.get());
   EXPECT_EQ(response.statusCode(), 200);
@@ -222,7 +222,7 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     convo.user(userMessages[i]).maxTokens(1).stream();
     auto future = asyncRequest(convo);
 
-    auto seq = server_->taskQueue().receive();
+    auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "turn " << i;
     EXPECT_EQ(seq->isContinuation(), i > 0) << "turn " << i;
 
@@ -238,7 +238,7 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   // still returns a single buffered JSON document with the assistant message.
   auto responseFuture = asyncRequest(ChatRequest().user("hello").maxTokens(1));
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
 
@@ -258,7 +258,7 @@ TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
   auto future = asyncRequest(
       ChatRequest().user("hello").maxTokens(42).temperature(0.7).stream());
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
   const auto& params = seq->getSamplingParams();
@@ -273,7 +273,7 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
   // LLM_MODE=regular: every request is served locally, never disaggregated.
   auto future = asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_FALSE(seq->isDisaggregated());
 
@@ -287,7 +287,7 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // each hits the Layer-2 ALLOCATE path. Verify they're independent: two
   // distinct ALLOCATE requests, two distinct mocked slots, both flowing
   // back to the Sequences pushed onto the task queue.
-  server_->setMemoryAutoRespond(false);
+  server->setMemoryAutoRespond(false);
 
   auto future1 =
       asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
@@ -297,8 +297,8 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
   tt::domain::ManageMemoryTask allocReq1{}, allocReq2{};
-  server_->memoryRequestQueue().receive(allocReq1);
-  server_->memoryRequestQueue().receive(allocReq2);
+  server->memoryRequestQueue().receive(allocReq1);
+  server->memoryRequestQueue().receive(allocReq2);
   EXPECT_EQ(allocReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
   EXPECT_EQ(allocReq2.action, tt::domain::MemoryManagementAction::ALLOCATE);
   EXPECT_NE(allocReq1.taskId, allocReq2.taskId)
@@ -310,14 +310,14 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
     res.taskId = allocTaskId;
     res.status = tt::domain::ManageMemoryStatus::SUCCESS;
     res.slotId = slotId;
-    server_->memoryResultQueue().push(res);
+    server->memoryResultQueue().push(res);
   };
   pushSuccess(allocReq1.taskId, 7);
   pushSuccess(allocReq2.taskId, 11);
 
   // Both sessions now allocate; controller pushes both Sequences.
-  auto seq1 = server_->taskQueue().receive();
-  auto seq2 = server_->taskQueue().receive();
+  auto seq1 = server->taskQueue().receive();
+  auto seq2 = server->taskQueue().receive();
   ASSERT_NE(seq1, nullptr);
   ASSERT_NE(seq2, nullptr);
 
@@ -335,7 +335,7 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   future1.get();
   future2.get();
 
-  server_->setMemoryAutoRespond(true);
+  server->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
@@ -358,7 +358,7 @@ TEST_F(MainIntegrationTest, FirstRequestWithHistory_IsNotAContinuation) {
                                  .maxTokens(1)
                                  .stream());
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_FALSE(seq->isContinuation())
       << "first request to a fresh server is never a continuation, even "
@@ -387,7 +387,7 @@ TEST_F(MainIntegrationTest,
   // multiple requests compute identical lookup hashes — and even when
   // multiple seeded candidates are available — every request ends up
   // with its own slot. No two requests ever share a slot.
-  server_->setMemoryAutoRespond(false);
+  server->setMemoryAutoRespond(false);
   const std::string opener = "concurrent-different-rest-opener";
   constexpr uint32_t kSeedSlotA = 7;
   constexpr uint32_t kSeedSlotB = 8;
@@ -397,7 +397,7 @@ TEST_F(MainIntegrationTest,
     res.taskId = allocTaskId;
     res.status = tt::domain::ManageMemoryStatus::SUCCESS;
     res.slotId = slotId;
-    server_->memoryResultQueue().push(res);
+    server->memoryResultQueue().push(res);
   };
 
   // --- Seed phase ----------------------------------------------------------
@@ -408,8 +408,8 @@ TEST_F(MainIntegrationTest,
         asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
     tt::domain::ManageMemoryTask seedAlloc1{}, seedAlloc2{};
-    server_->memoryRequestQueue().receive(seedAlloc1);
-    server_->memoryRequestQueue().receive(seedAlloc2);
+    server->memoryRequestQueue().receive(seedAlloc1);
+    server->memoryRequestQueue().receive(seedAlloc2);
     EXPECT_EQ(seedAlloc1.action, tt::domain::MemoryManagementAction::ALLOCATE);
     EXPECT_EQ(seedAlloc2.action, tt::domain::MemoryManagementAction::ALLOCATE);
     EXPECT_NE(seedAlloc1.taskId, seedAlloc2.taskId);
@@ -417,8 +417,8 @@ TEST_F(MainIntegrationTest,
     pushAllocSuccess(seedAlloc1.taskId, kSeedSlotA);
     pushAllocSuccess(seedAlloc2.taskId, kSeedSlotB);
 
-    auto seedSeq1 = server_->taskQueue().receive();
-    auto seedSeq2 = server_->taskQueue().receive();
+    auto seedSeq1 = server->taskQueue().receive();
+    auto seedSeq2 = server->taskQueue().receive();
     ASSERT_NE(seedSeq1, nullptr);
     ASSERT_NE(seedSeq2, nullptr);
     EXPECT_FALSE(seedSeq1->isContinuation());
@@ -444,8 +444,8 @@ TEST_F(MainIntegrationTest,
                                   .maxTokens(1)
                                   .stream());
 
-  auto seq1 = server_->taskQueue().receive();
-  auto seq2 = server_->taskQueue().receive();
+  auto seq1 = server->taskQueue().receive();
+  auto seq2 = server->taskQueue().receive();
   ASSERT_NE(seq1, nullptr);
   ASSERT_NE(seq2, nullptr);
   EXPECT_TRUE(seq1->isContinuation())
@@ -467,7 +467,7 @@ TEST_F(MainIntegrationTest,
   future1.get();
   future2.get();
 
-  server_->setMemoryAutoRespond(true);
+  server->setMemoryAutoRespond(true);
 }
 
 TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
@@ -478,7 +478,7 @@ TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
                                  .maxTokens(1)
                                  .stream());
 
-  auto seq = server_->taskQueue().receive();
+  auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_FALSE(seq->isContinuation());
 
