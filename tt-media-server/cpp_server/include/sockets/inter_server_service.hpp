@@ -81,12 +81,11 @@ class InterServerService {
    *                 means "use prefill-side defaults".
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(
-      uint32_t taskId, const std::string& prompt,
-      const std::vector<int64_t>& tokenIds,
-      std::optional<int> maxTokens = std::nullopt,
-      std::optional<uint32_t> slotId = std::nullopt,
-      const tt::domain::llm::SamplingParams& sampling = {});
+  bool sendPrefillRequest(uint32_t taskId, const std::string& prompt,
+                          const std::vector<int64_t>& tokenIds,
+                          std::optional<int> maxTokens = std::nullopt,
+                          std::optional<uint32_t> slotId = std::nullopt,
+                          const tt::domain::llm::SamplingParams& sampling = {});
 
   /**
    * @brief Send prefill result back to the decode server
