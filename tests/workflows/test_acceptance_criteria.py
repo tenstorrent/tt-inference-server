@@ -83,9 +83,13 @@ def test_acceptance_criteria_check_returns_tuple_when_all_checks_pass(report_dat
     assert metadata["failed_enforced_tiers"] == []
     assert metadata["informational_blockers"] == {}
     assert metadata["masked_blockers"] == {}
+    assert metadata["waivers_applied_count"] == 0
+    assert metadata["acceptance_before_masking"] is True
     assert "### Acceptance Criteria" in summary_markdown
     assert "- Acceptance status: `PASS`" in summary_markdown
-    assert "- All acceptance criteria passed." in summary_markdown
+    assert (
+        "- All acceptance criteria passed (no waivers applied)." in summary_markdown
+    )
 
 
 def test_acceptance_criteria_check_allows_failed_higher_benchmark_levels_when_functional_passes(
@@ -346,6 +350,8 @@ def test_final_report_json_shape_contains_bool_and_metadata(report_data, tmp_pat
         "informational_blockers",
         "masked_blockers",
         "known_issues_declared",
+        "waivers_applied_count",
+        "acceptance_before_masking",
     }
     assert expected_metadata_keys.issubset(metadata_payload.keys())
     assert metadata_payload["model_status"] == "FUNCTIONAL"
@@ -354,6 +360,8 @@ def test_final_report_json_shape_contains_bool_and_metadata(report_data, tmp_pat
         "benchmarks.complete.ttft_check" in metadata_payload["informational_blockers"]
     )
     assert metadata_payload["known_issues_declared"][0]["workflow_type"] == "EVALS"
+    assert metadata_payload["waivers_applied_count"] >= 1
+    assert metadata_payload["acceptance_before_masking"] is False
 
 
 def test_format_acceptance_summary_markdown_renders_masked_sections(report_data):
@@ -491,3 +499,125 @@ def test_acceptance_criteria_check_returns_false_for_placeholder_shapes(
     else:
         assert accepted is True
         assert blockers == {}
+
+
+def _make_server_tests_payload(failed_test_name="DeviceLivenessTest", error="OOM"):
+    return [
+        {
+            "summary": {
+                "total_tests": 2,
+                "passed": 1,
+                "failed": 1,
+            },
+            "tests": [
+                {
+                    "test_name": "ImageGenerationLoadTest",
+                    "success": True,
+                    "error": None,
+                },
+                {
+                    "test_name": failed_test_name,
+                    "success": False,
+                    "error": error,
+                },
+            ],
+        }
+    ]
+
+
+def test_server_tests_blocker_added_for_failed_test(report_data):
+    failed_report_data = copy.deepcopy(report_data)
+    failed_report_data["server_tests"] = _make_server_tests_payload(
+        failed_test_name="DeviceLivenessTest", error="device unreachable"
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(failed_report_data)
+
+    assert accepted is False
+    assert "server_tests.DeviceLivenessTest.0" in blockers
+    assert "device unreachable" in blockers["server_tests.DeviceLivenessTest.0"]
+
+
+def test_known_issue_masks_server_tests_blocker(report_data):
+    failed_report_data = copy.deepcopy(report_data)
+    failed_report_data["server_tests"] = _make_server_tests_payload(
+        failed_test_name="DeviceLivenessTest", error="device unreachable"
+    )
+
+    known_issues = [
+        KnownIssue(
+            workflow_type=WorkflowType.SPEC_TESTS,
+            reason="GH#5500 - liveness test flaky on T3K",
+            task_name="DeviceLivenessTest",
+        ),
+    ]
+
+    accepted, blockers, metadata = acceptance_criteria_check(
+        failed_report_data, ModelStatusTypes.TOP_PERF, known_issues
+    )
+
+    assert accepted is True
+    assert blockers == {}
+    masked = metadata["masked_blockers"]
+    assert "server_tests.DeviceLivenessTest.0" in masked
+    assert masked["server_tests.DeviceLivenessTest.0"]["workflow_type"] == "SPEC_TESTS"
+    assert (
+        masked["server_tests.DeviceLivenessTest.0"]["reason"]
+        == "GH#5500 - liveness test flaky on T3K"
+    )
+
+
+def test_known_issue_workflow_level_mask_covers_all_server_tests(report_data):
+    failed_report_data = copy.deepcopy(report_data)
+    failed_report_data["server_tests"] = [
+        {
+            "tests": [
+                {"test_name": "TestA", "success": False, "error": "boom"},
+                {"test_name": "TestB", "success": False, "error": "kaboom"},
+            ]
+        }
+    ]
+
+    known_issues = [
+        KnownIssue(
+            workflow_type=WorkflowType.SPEC_TESTS,
+            reason="GH#9999 - whole spec_tests workflow flaky",
+        ),
+    ]
+
+    accepted, blockers, metadata = acceptance_criteria_check(
+        failed_report_data, ModelStatusTypes.TOP_PERF, known_issues
+    )
+
+    assert accepted is True
+    assert blockers == {}
+    assert "server_tests.TestA.0" in metadata["masked_blockers"]
+    assert "server_tests.TestB.0" in metadata["masked_blockers"]
+
+
+def test_acceptance_summary_announces_waivers_in_header(report_data):
+    failed_report_data = copy.deepcopy(report_data)
+    failed_report_data["evals"][0]["accuracy_check"] = 3
+
+    known_issues = [
+        KnownIssue(
+            workflow_type=WorkflowType.EVALS,
+            reason="GH#321 - hellaswag flaky",
+            task_name="hellaswag",
+        ),
+    ]
+
+    accepted, blockers, metadata = acceptance_criteria_check(
+        failed_report_data, ModelStatusTypes.TOP_PERF, known_issues
+    )
+    markdown = format_acceptance_summary_markdown(accepted, blockers, metadata)
+
+    assert accepted is True
+    assert metadata["waivers_applied_count"] == 1
+    assert metadata["acceptance_before_masking"] is False
+    assert (
+        "- Acceptance status: `PASS` (with 1 waiver(s) applied; "
+        "would have FAILED without masking)"
+    ) in markdown
+    assert "- All acceptance criteria passed (no waivers applied)." not in markdown
+    assert "Acceptance criteria passed after applying 1 waiver(s)" in markdown

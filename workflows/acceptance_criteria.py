@@ -35,6 +35,7 @@ def acceptance_criteria_check(
     raw_blockers.update(
         _parameter_support_acceptance(report_data.get("parameter_support_tests"))
     )
+    raw_blockers.update(_server_tests_acceptance(report_data.get("server_tests")))
 
     target_checks = _extract_first_target_checks(report_data.get("benchmarks_summary"))
     if model_status is None:
@@ -77,6 +78,8 @@ def acceptance_criteria_check(
         failed_enforced_tiers = _failed_tiers(target_checks, enforced_tiers)
 
     accepted = len(raw_blockers) == 0
+    waivers_applied_count = len(masked_blockers) + len(informational_blockers)
+    acceptance_before_masking = accepted and waivers_applied_count == 0
 
     enforcement_metadata: Dict[str, Any] = {
         "enforcement_result": "PASS" if accepted else "FAIL",
@@ -87,6 +90,8 @@ def acceptance_criteria_check(
         "informational_blockers": informational_blockers,
         "masked_blockers": masked_blockers,
         "known_issues_declared": known_issue_records,
+        "waivers_applied_count": waivers_applied_count,
+        "acceptance_before_masking": acceptance_before_masking,
     }
 
     return accepted, raw_blockers, enforcement_metadata
@@ -97,10 +102,29 @@ def format_acceptance_summary_markdown(
     acceptance_blockers: Dict[str, str],
     enforcement_metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
+    informational_blockers = (
+        enforcement_metadata.get("informational_blockers")
+        if enforcement_metadata
+        else None
+    ) or {}
+    masked_blockers = (
+        enforcement_metadata.get("masked_blockers") if enforcement_metadata else None
+    ) or {}
+    waivers_applied_count = len(masked_blockers) + len(informational_blockers)
+
+    status_label = "PASS" if accepted else "FAIL"
+    status_line = f"- Acceptance status: `{status_label}`"
+    if accepted and waivers_applied_count > 0:
+        status_line = (
+            f"- Acceptance status: `PASS` "
+            f"(with {waivers_applied_count} waiver(s) applied; "
+            f"would have FAILED without masking)"
+        )
+
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Acceptance status: `{'PASS' if accepted else 'FAIL'}`",
+        status_line,
     ]
 
     if enforcement_metadata is not None:
@@ -114,25 +138,23 @@ def format_acceptance_summary_markdown(
         )
 
     if accepted and not acceptance_blockers:
-        lines.append("- All acceptance criteria passed.")
+        if waivers_applied_count == 0:
+            lines.append("- All acceptance criteria passed (no waivers applied).")
+        else:
+            lines.append(
+                f"- Acceptance criteria passed after applying "
+                f"{waivers_applied_count} waiver(s); see sections below."
+            )
     else:
         for blocker_key, blocker_message in acceptance_blockers.items():
             lines.append(f"- `{blocker_key}`: {blocker_message}")
 
-    informational_blockers = (
-        enforcement_metadata.get("informational_blockers")
-        if enforcement_metadata
-        else None
-    )
     if informational_blockers:
         lines.append("")
         lines.append("#### Informational (tier above model status)")
         for blocker_key, blocker_message in informational_blockers.items():
             lines.append(f"- `{blocker_key}`: {blocker_message}")
 
-    masked_blockers = (
-        enforcement_metadata.get("masked_blockers") if enforcement_metadata else None
-    )
     if masked_blockers:
         lines.append("")
         lines.append("#### Masked (known issues)")
@@ -268,6 +290,39 @@ def _parameter_support_acceptance(parameter_support_tests: Any) -> Dict[str, str
     return acceptance_blockers
 
 
+def _server_tests_acceptance(server_tests: Any) -> Dict[str, str]:
+    """Collect blockers from the server_tests / spec_tests workflow output.
+
+    `output_data["server_tests"]` is a list of per-file report dicts produced
+    by `server_tests/run_spec_tests.py` (registered as WorkflowType.SPEC_TESTS).
+    Each dict carries `tests: [{test_name, success: bool, error, ...}]`. A
+    test with `success` falsy (or non-bool) is considered failing.
+    """
+    acceptance_blockers: Dict[str, str] = {}
+    if not isinstance(server_tests, list) or not server_tests:
+        return acceptance_blockers
+
+    counters_by_name: Dict[str, int] = {}
+    for report in server_tests:
+        if not isinstance(report, dict):
+            continue
+        tests = report.get("tests")
+        if not isinstance(tests, list):
+            continue
+        for test_entry in tests:
+            if not isinstance(test_entry, dict):
+                continue
+            if test_entry.get("success") is True:
+                continue
+            test_name = test_entry.get("test_name") or "unknown_test"
+            index = counters_by_name.get(test_name, 0)
+            counters_by_name[test_name] = index + 1
+            blocker_key = f"server_tests.{test_name}.{index}"
+            acceptance_blockers[blocker_key] = _format_server_test_failure(test_entry)
+
+    return acceptance_blockers
+
+
 def _passes_report_check(check_value: Any) -> bool:
     if check_value is None:
         return False
@@ -341,6 +396,10 @@ def _classify_blocker(
         if len(parts) >= 2:
             return WorkflowType.TESTS, parts[1]
         return WorkflowType.TESTS, None
+    if head == "server_tests":
+        if len(parts) >= 2:
+            return WorkflowType.SPEC_TESTS, parts[1]
+        return WorkflowType.SPEC_TESTS, None
     return None, None
 
 
@@ -444,6 +503,16 @@ def _format_parameter_support_failure(test_result: dict) -> str:
     message = test_result.get("message")
     if message:
         detail_parts.append(f"message={message}")
+    return "; ".join(detail_parts) + "."
+
+
+def _format_server_test_failure(test_entry: dict) -> str:
+    detail_parts = [
+        f"success={_format_value(test_entry.get('success'))} vs expected True"
+    ]
+    error = test_entry.get("error")
+    if error:
+        detail_parts.append(f"error={error}")
     return "; ".join(detail_parts) + "."
 
 
