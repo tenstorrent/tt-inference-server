@@ -85,14 +85,22 @@ class SPRunner(BaseDeviceRunner):
         return {}
 
     def _drain_stale_responses(self) -> None:
-        depth = self._output_shm.queue_depth()
+        # Use slot-state scan instead of queue_depth() so we catch crash-survivor
+        # slots: runner crashed after flipping slot→FILLED but before bumping widx,
+        # leaving widx==ridx while a FILLED slot exists. queue_depth() returns 0 in
+        # that state, so the old depth-based loop never ran and the stale slot
+        # survived into the live session, causing ridx > widx desync and 300s
+        # timeouts on every subsequent request.
         drained = 0
-        for _ in range(depth):
-            resp = self._output_shm.read_response(timeout_s=1.0)
+        for _ in range(self._output_shm.OUTPUT_SLOTS):
+            resp = self._output_shm.read_response(timeout_s=0.0)
             if resp is None:
                 break
             self._try_unlink(resp.file_path)
             drained += 1
+        # If we consumed a crash-survivor slot, ridx was bumped past widx.
+        # Advance widx to match so the ring is consistent for the next writer.
+        self._output_shm.repair_writer_index()
         if drained:
             self.logger.warning(
                 f"SPRunner {self.device_id}: drained {drained} stale "

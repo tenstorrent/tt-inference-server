@@ -392,6 +392,27 @@ class VideoShm:
         """Number of FILLED slots currently in the ring (writer - reader)."""
         return self._get_writer_index() - self._get_reader_index()
 
+    def repair_writer_index(self) -> bool:
+        """Advance writer_index to reader_index when ridx > widx.
+
+        This condition arises after a crash-survivor slot is consumed: the runner
+        crashed between flipping slot→FILLED (step 1) and bumping widx (step 2),
+        leaving widx==ridx with a FILLED slot present.  When the server later
+        reads that slot via read_response() it bumps ridx past the stale widx.
+        Calling this method re-syncs widx so the ring is empty and consistent
+        for the next writer.
+
+        Only safe to call from the reader side when no live writer is active
+        (i.e. the external runner is down or restarting).  Returns True if a
+        repair was made.
+        """
+        widx = self._get_writer_index()
+        ridx = self._get_reader_index()
+        if ridx > widx:
+            self._set_writer_index(ridx)
+            return True
+        return False
+
     # ── Crash recovery ──
     #
     # Commit/consume are two-store non-atomic sequences:
