@@ -289,6 +289,7 @@ class DeviceModelSpec:
     device: DeviceTypes
     max_concurrency: int
     max_context: int
+    max_num_batched_tokens: Optional[int] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
@@ -308,23 +309,23 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
-        max_tokens_all_users = self.max_context
+        effective_max_num_batched_tokens = (
+            self.max_num_batched_tokens
+            if self.max_num_batched_tokens is not None
+            else self.max_context
+        )
+        max_tokens_all_users = effective_max_num_batched_tokens
         max_concurrency = self.max_concurrency
         if data_parallel_size := self.vllm_args.get("data_parallel_size"):
             assert isinstance(data_parallel_size, int)
-            # vllm args need to be set per engine instance, the number of which is
-            # the data_parallel_size (# of DP ranks). The variables must be computed
-            # and passed to client consumers however that will make requests to the
-            # DP engines without needing to know about DP rank.
             max_concurrency = max_concurrency // data_parallel_size
             max_tokens_all_users = max_tokens_all_users * data_parallel_size
         object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
-        # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
             "max_num_seqs": str(max_concurrency),
-            "max_num_batched_tokens": str(self.max_context),
+            "max_num_batched_tokens": str(effective_max_num_batched_tokens),
             "max-log-len": "32",
             "seed": "9472",
             "override_tt_config": json.dumps(self.override_tt_config),
