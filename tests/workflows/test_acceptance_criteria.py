@@ -87,9 +87,7 @@ def test_acceptance_criteria_check_returns_tuple_when_all_checks_pass(report_dat
     assert metadata["acceptance_before_masking"] is True
     assert "### Acceptance Criteria" in summary_markdown
     assert "- Acceptance status: `PASS`" in summary_markdown
-    assert (
-        "- All acceptance criteria passed (no waivers applied)." in summary_markdown
-    )
+    assert "- All acceptance criteria passed (no waivers applied)." in summary_markdown
 
 
 def test_acceptance_criteria_check_allows_failed_higher_benchmark_levels_when_functional_passes(
