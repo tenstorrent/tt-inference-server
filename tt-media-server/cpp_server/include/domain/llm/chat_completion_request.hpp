@@ -228,7 +228,8 @@ struct ChatCompletionRequest : BaseRequest {
           getBool(json["skip_apply_chat_template"], "skip_apply_chat_template");
 
     if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
-      req.disaggregation_override = getBool(json["disaggregation"], "disaggregation");
+      req.disaggregation_override =
+          getBool(json["disaggregation"], "disaggregation");
 
     validateToolFields(req);
     validateToolMessages(req);
@@ -258,7 +259,8 @@ struct ChatCompletionRequest : BaseRequest {
         << " stop_count=" << stop.size()
         << " enable_reasoning=" << enable_reasoning
         << " skip_apply_chat_template=" << skip_apply_chat_template
-        << " disaggregation_override=" << detail::optStr(disaggregation_override);
+        << " disaggregation_override="
+        << detail::optStr(disaggregation_override);
     return out.str();
   }
 

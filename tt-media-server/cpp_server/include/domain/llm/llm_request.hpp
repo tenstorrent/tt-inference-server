@@ -167,8 +167,8 @@ struct LLMRequest : BaseRequest {
         << " frequency_penalty=" << frequency_penalty << " n=" << n
         << " stop_count=" << stop.size()
         << " sessionId=" << detail::optStr(sessionId)
-        << " slotId=" << detail::optStr(slotId)
-        << " disaggregation_override=" << detail::optStr(disaggregation_override);
+        << " slotId=" << detail::optStr(slotId) << " disaggregation_override="
+        << detail::optStr(disaggregation_override);
     return out.str();
   }
 };
