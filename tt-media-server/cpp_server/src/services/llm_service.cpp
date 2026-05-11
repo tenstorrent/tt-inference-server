@@ -372,7 +372,9 @@ void LLMService::processStreamingRequest(
     reasoningSuppressedMap.insert(taskId, true);
   }
 
-  if (reasoningParser) {
+  if (reasoningParser &&
+      !request.disaggregated) {  // If request is disaggregated, dissagregation
+                                 // service will initialize
     reasoningParser->initializeTask(taskId);
   }
 

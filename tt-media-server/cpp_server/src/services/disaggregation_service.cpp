@@ -64,6 +64,12 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
+            if (auto* reasoningParser = llmService->getReasoningParser()) {
+              reasoningParser->initializeTask(message.task_id);
+              reasoningParser->processToken(message.task_id,
+                                            message.token_ids.back(),
+                                            /*decodedText=*/"");
+            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
