@@ -785,9 +785,7 @@ class ModelSpec:
             # model_spec.version) sees the actual image being run, not the
             # stale template default. Unparseable override tags (`:dev`,
             # `:latest`) leave version untouched.
-            parsed_version = parse_image_version(
-                runtime_config.override_docker_image
-            )
+            parsed_version = parse_image_version(runtime_config.override_docker_image)
             if parsed_version is not None:
                 object.__setattr__(
                     self, "version", ".".join(str(p) for p in parsed_version)

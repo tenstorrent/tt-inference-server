@@ -615,8 +615,6 @@ class TestApplyOverridesVersion:
     """
 
     def _runtime_config(self, **overrides):
-        import dataclasses
-
         from workflows.runtime_config import RuntimeConfig
 
         defaults = dict(
@@ -639,8 +637,6 @@ class TestApplyOverridesVersion:
         return RuntimeConfig(**defaults)
 
     def _model_spec(self, version: str = "0.13.0") -> ModelSpec:
-        import dataclasses
-
         impl = ImplSpec(
             impl_id="tt-transformers",
             impl_name="tt-transformers",
@@ -673,9 +669,7 @@ class TestApplyOverridesVersion:
         # Template declares 0.13.0, override points at a 0.10.0 image —
         # version should be re-parsed to "0.10.0".
         ms = self._model_spec(version="0.13.0")
-        rc = self._runtime_config(
-            override_docker_image="ghcr.io/foo/bar:0.10.0-abc"
-        )
+        rc = self._runtime_config(override_docker_image="ghcr.io/foo/bar:0.10.0-abc")
         ms.apply_overrides(rc)
 
         assert ms.docker_image == "ghcr.io/foo/bar:0.10.0-abc"
@@ -685,9 +679,7 @@ class TestApplyOverridesVersion:
         # :dev tag is unparseable — leave the template's declared version
         # alone. There's no information to update from.
         ms = self._model_spec(version="0.13.0")
-        rc = self._runtime_config(
-            override_docker_image="ghcr.io/foo/bar:dev"
-        )
+        rc = self._runtime_config(override_docker_image="ghcr.io/foo/bar:dev")
         ms.apply_overrides(rc)
 
         assert ms.docker_image == "ghcr.io/foo/bar:dev"
@@ -695,9 +687,7 @@ class TestApplyOverridesVersion:
 
     def test_override_with_latest_tag_keeps_template_version(self):
         ms = self._model_spec(version="0.11.1")
-        rc = self._runtime_config(
-            override_docker_image="ghcr.io/foo/bar:latest"
-        )
+        rc = self._runtime_config(override_docker_image="ghcr.io/foo/bar:latest")
         ms.apply_overrides(rc)
 
         assert ms.version == "0.11.1"

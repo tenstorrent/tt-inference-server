@@ -254,9 +254,7 @@ class TestEraAwareDockerCommand:
     def test_unparseable_version_defaults_to_modern(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
-        ms = dataclasses.replace(
-            tiny_model_spec, docker_image="img:dev", version="dev"
-        )
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:dev", version="dev")
         cmd, _ = _generate(ms, runtime_config, _make_json_fpath(temp_dir))
 
         assert "--ipc" in cmd
@@ -341,9 +339,7 @@ class TestEraAwareDockerCommand:
         ms = dataclasses.replace(
             tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
         )
-        config = SetupConfig(
-            model_spec=ms, host_weights_dir=str(weights_dir)
-        )
+        config = SetupConfig(model_spec=ms, host_weights_dir=str(weights_dir))
         json_fpath = _make_json_fpath(temp_dir)
 
         with patch(
@@ -352,9 +348,7 @@ class TestEraAwareDockerCommand:
         ), patch(
             "workflows.run_docker_server.DeviceTypes",
         ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
-            cmd, _ = generate_docker_run_command(
-                ms, runtime_config, config, json_fpath
-            )
+            cmd, _ = generate_docker_run_command(ms, runtime_config, config, json_fpath)
 
         assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is not None
         assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None

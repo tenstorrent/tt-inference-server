@@ -28,7 +28,6 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
-    parse_image_version,  # re-exported for callers that only have an image tag
     parse_version_tuple,
     run_command,
 )
@@ -85,8 +84,8 @@ class DockerInterface(Enum):
       3. Add the corresponding branch in `generate_docker_run_command`.
     """
 
-    V1_LEGACY = "v1-legacy"   # pre-0.11.0: docker-entrypoint.sh + gosu; env-var-driven; --shm-size 32G
-    V2_MODERN = "v2-modern"   # >= 0.11.0:  bash-c ENTRYPOINT; CLI args; --ipc host
+    V1_LEGACY = "v1-legacy"  # pre-0.11.0: docker-entrypoint.sh + gosu; env-var-driven; --shm-size 32G
+    V2_MODERN = "v2-modern"  # >= 0.11.0:  bash-c ENTRYPOINT; CLI args; --ipc host
 
 
 # Source of truth for which image version maps to which docker-interface era.
@@ -97,7 +96,7 @@ class DockerInterface(Enum):
 # newest era — see get_docker_interface().
 _DOCKER_INTERFACE_ERAS: List[Tuple[Tuple[int, int, int], DockerInterface]] = [
     ((0, 11, 0), DockerInterface.V2_MODERN),
-    ((0, 0, 0),  DockerInterface.V1_LEGACY),
+    ((0, 0, 0), DockerInterface.V1_LEGACY),
 ]
 
 
@@ -322,9 +321,7 @@ def generate_docker_run_command(
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars[weights_env_var] = (
-                setup_config.container_model_weights_path
-            )
+            docker_env_vars[weights_env_var] = setup_config.container_model_weights_path
         if (
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
@@ -364,7 +361,9 @@ def generate_docker_run_command(
     # the spec JSON whenever it's provided, regardless of --dev-mode. Post-0.11
     # only needs RUNTIME_MODEL_SPEC_JSON_PATH in --dev-mode (otherwise the image
     # uses its baked-in catalog path).
-    mount_spec_json = (is_v1_legacy or runtime_config.dev_mode) and json_fpath is not None
+    mount_spec_json = (
+        is_v1_legacy or runtime_config.dev_mode
+    ) and json_fpath is not None
     if mount_spec_json:
         container_model_spec_dir = Path(f"{user_home_path}/model_specs")
         runtime_json_fpath = container_model_spec_dir / json_fpath.name
@@ -383,7 +382,6 @@ def generate_docker_run_command(
         )
 
     if runtime_config.dev_mode:
-
         # fmt: off
         docker_command += [
             "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
