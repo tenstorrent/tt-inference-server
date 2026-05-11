@@ -25,18 +25,35 @@ ImageService::ImageService(config::ImageConfig config,
 ImageService::~ImageService() { stop(); }
 
 void ImageService::start() {
+  std::lock_guard<std::mutex> lock(warmup_mutex_);
+  if (warmup_thread_.joinable()) return;
   TT_LOG_INFO("[ImageService] Starting (runner={})", runner_->runnerType());
-  if (!runner_->warmup()) {
-    throw std::runtime_error("[ImageService] Runner warmup failed");
-  }
-  ready_.store(true, std::memory_order_release);
-  TT_LOG_INFO("[ImageService] Started");
+  warmup_thread_ = std::thread([this] {
+    try {
+      if (!runner_->warmup()) {
+        TT_LOG_ERROR("[ImageService] Runner warmup failed");
+        return;
+      }
+      ready_.store(true, std::memory_order_release);
+      TT_LOG_INFO("[ImageService] Started");
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[ImageService] Warmup threw: {}", e.what());
+    } catch (...) {
+      TT_LOG_ERROR("[ImageService] Warmup threw unknown exception");
+    }
+  });
 }
 
 void ImageService::stop() {
-  if (!ready_.exchange(false, std::memory_order_acq_rel)) return;
-  if (runner_) runner_->stop();
-  TT_LOG_INFO("[ImageService] Stopped");
+  std::thread t;
+  {
+    std::lock_guard<std::mutex> lock(warmup_mutex_);
+    t = std::move(warmup_thread_);
+  }
+  if (t.joinable()) t.join();
+  const bool wasReady = ready_.exchange(false, std::memory_order_acq_rel);
+  if (wasReady && runner_) runner_->stop();
+  if (wasReady) TT_LOG_INFO("[ImageService] Stopped");
 }
 
 bool ImageService::isModelReady() const {

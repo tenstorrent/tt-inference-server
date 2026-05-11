@@ -154,16 +154,17 @@ int main(int argc, char* argv[]) {
 
   tt::utils::service_factory::initializeServices();
 
-  // Run warmup on a background thread so the listener can bind immediately;
-  // /tt-liveness reports model_ready=false until the service flips its flag.
-  std::thread warmupThread([] {
-    try {
-      tt::utils::service_factory::startConfiguredService();
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[Main] Background warmup failed: {}", e.what());
-      drogon::app().quit();
-    }
-  });
+  // Start the configured service on the main thread. Services whose start()
+  // is slow (e.g. image warmup) own their own background thread internally;
+  // services that fork worker processes (LLM, embedding) MUST start on the
+  // main thread, because PR_SET_PDEATHSIG sends SIGTERM to the worker as
+  // soon as the *thread* that called fork() exits.
+  try {
+    tt::utils::service_factory::startConfiguredService();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
+    return 1;
+  }
 
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
@@ -299,10 +300,6 @@ int main(int argc, char* argv[]) {
 
   // Run the server
   drogon::app().run();
-
-  // Drain the warmup thread before destructing services that own the Python
-  // interpreter / tt-metal devices it depends on.
-  if (warmupThread.joinable()) warmupThread.join();
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
