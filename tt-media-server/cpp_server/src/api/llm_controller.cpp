@@ -29,6 +29,7 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
@@ -97,6 +98,10 @@ void LLMController::resolveSession(
         req->session = sessionManager->getSession(acquired->sessionId);
         req->continuation = true;
         req->prompt = routingInfo.deltaPrompt;
+        req->prompt_tokens_count =
+            static_cast<int>(tt::utils::tokenizers::activeTokenizer()
+                                 .encode(routingInfo.deltaPrompt)
+                                 .size());
         sessionManager->registerPrefixHash(acquired->sessionId,
                                            routingInfo.registrationHash);
         info.validSessionFound = true;
@@ -186,7 +191,7 @@ void LLMController::chatCompletions(
   auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
   const size_t maxContextLength = tt::config::maxContextLength();
   const size_t promptTokens =
-      static_cast<size_t>(std::max(0, reqPtr->prompt_tokens_count));
+      static_cast<size_t>(std::max(0, reqPtr->full_prompt_tokens_count));
 
   const size_t requested =
       promptTokens +
@@ -197,7 +202,7 @@ void LLMController::chatCompletions(
 
   if (exceedsContext) {
     std::string detail =
-        "prompt_tokens=" + std::to_string(reqPtr->prompt_tokens_count);
+        "prompt_tokens=" + std::to_string(reqPtr->full_prompt_tokens_count);
     if (reqPtr->max_tokens.has_value()) {
       detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
     }
@@ -331,7 +336,14 @@ ResponseWriterParams LLMController::makeWriterParams(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  params.promptTokenCount = request.prompt_tokens_count;
+  params.promptTokenCount = request.full_prompt_tokens_count > 0
+                                ? request.full_prompt_tokens_count
+                                : request.prompt_tokens_count;
+  params.cachedTokenCount =
+      request.continuation
+          ? request.full_prompt_tokens_count - request.prompt_tokens_count
+          : 0;
+  params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
   if (request.session) {
