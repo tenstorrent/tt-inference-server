@@ -18,6 +18,7 @@ orchestration) stays inside llm_module.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -81,7 +82,14 @@ def run_llm_performance(
             len(result.return_codes),
         )
 
-    accept_blocks(result.blocks)
+    accept_blocks(
+        result.blocks,
+        envelope={
+            "model_name": server.model,
+            "device": device_label,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        },
+    )
     return result.blocks
 
 
