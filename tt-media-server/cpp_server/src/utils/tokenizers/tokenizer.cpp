@@ -217,7 +217,10 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
 }
 
 const Tokenizer& activeTokenizer() {
-  static auto tok =
+  // Per-thread instance: tokenizers-cpp's encode/decode mutate hidden state
+  // inside the wrapper, so a single instance is not safe to share across
+  // threads. See tenstorrent/tt-inference-server#3179.
+  thread_local auto tok =
       createTokenizer(config::modelType(), config::tokenizerPath());
   return *tok;
 }

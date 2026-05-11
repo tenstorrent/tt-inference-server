@@ -5,10 +5,12 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "api/error_response.hpp"
@@ -182,6 +184,30 @@ void LLMController::chatCompletions(
   }
 
   auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
+  const size_t maxContextLength = tt::config::maxContextLength();
+  const size_t promptTokens =
+      static_cast<size_t>(std::max(0, reqPtr->prompt_tokens_count));
+
+  const size_t requested =
+      promptTokens +
+      (reqPtr->max_tokens.has_value()
+           ? static_cast<size_t>(std::max(0, *reqPtr->max_tokens))
+           : 1);
+  const bool exceedsContext = requested > maxContextLength;
+
+  if (exceedsContext) {
+    std::string detail =
+        "prompt_tokens=" + std::to_string(reqPtr->prompt_tokens_count);
+    if (reqPtr->max_tokens.has_value()) {
+      detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
+    }
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Request exceeds maximum context length (" +
+                               std::to_string(maxContextLength) +
+                               " tokens): " + detail,
+                           "invalid_request_error"));
+    return;
+  }
 
   if (reqPtr->stream) {
     const bool includeUsage = !reqPtr->stream_options.has_value() ||
