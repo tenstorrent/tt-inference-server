@@ -8,6 +8,7 @@ Tests the full run.py code path: setup_host() -> SetupConfig -> generate_docker_
 Each test verifies SetupConfig fields, setup_host() completion, and docker command output.
 """
 
+import dataclasses
 import json
 import os
 import tempfile
@@ -662,6 +663,206 @@ class TestSetupHostDockerCommand:
         assert "readonly_weights_mount" in model_weights_dir
         # Docker named volume used for cache_root (not host volume)
         assert "--volume" in docker_command
+
+
+class TestImageEraRouting:
+    """generate_docker_run_command must produce a different command shape for
+    pre-0.11 images (docker-entrypoint.sh + gosu; no CLI args) vs post-0.11
+    images (bash -c ENTRYPOINT; CLI args after <image>).
+
+    Test method: vary `model_spec.docker_image` to a pre/post-0.11 tag and
+    assert that the resulting command has the right shape. Image tags with no
+    parseable version (`:dev`, `:latest`) default to post-0.11.
+    """
+
+    def _make_json_fpath(self, temp_dir):
+        json_fpath = temp_dir / "model_spec.json"
+        json_fpath.write_text("{}")
+        return json_fpath
+
+    def _generate_cmd(self, model_spec, runtime_config, config, json_fpath):
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path",
+            return_value=Path("/tmp"),
+        ), patch(
+            "workflows.run_docker_server.DeviceTypes",
+        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
+            return generate_docker_run_command(
+                model_spec, runtime_config, config, json_fpath
+            )
+
+    # ------------------------------------------------------------------
+    # Helper sanity
+    # ------------------------------------------------------------------
+    def test_parse_image_version(self):
+        from workflows.run_docker_server import parse_image_version
+
+        assert parse_image_version("ghcr.io/foo/bar:0.10.0-abc") == (0, 10, 0)
+        assert parse_image_version("ghcr.io/foo/bar:0.11.0") == (0, 11, 0)
+        assert parse_image_version("ghcr.io/foo/bar:0.9-abc") == (0, 9, 0)
+        assert parse_image_version("ghcr.io/foo/bar:dev") is None
+        assert parse_image_version("ghcr.io/foo/bar:latest") is None
+        assert parse_image_version("ghcr.io/foo/bar") is None
+
+    def test_is_pre_0_11_image(self):
+        from workflows.run_docker_server import _is_pre_0_11_image
+
+        assert _is_pre_0_11_image("foo:0.10.0-abc") is True
+        assert _is_pre_0_11_image("foo:0.10.1-abc") is True
+        assert _is_pre_0_11_image("foo:0.11.0") is False
+        assert _is_pre_0_11_image("foo:0.13.0-abc") is False
+        # Unparseable tags default to post-0.11.
+        assert _is_pre_0_11_image("foo:dev") is False
+        assert _is_pre_0_11_image("foo:latest") is False
+        assert _is_pre_0_11_image("foo") is False
+
+    # ------------------------------------------------------------------
+    # Post-0.11 (the default — image tag with version >= 0.11.0 or unparseable)
+    # ------------------------------------------------------------------
+    def test_post_0_11_uses_ipc_host_and_cli_args(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.12.0-abc")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+        cmd_str = _join_docker_cmd(docker_command)
+
+        # post-0.11: --ipc host, NOT --shm-size
+        assert "--ipc" in docker_command
+        ipc_idx = docker_command.index("--ipc")
+        assert docker_command[ipc_idx + 1] == "host"
+        assert "--shm-size" not in docker_command
+
+        # post-0.11: CLI args appear after <image>
+        img_idx = docker_command.index(ms.docker_image)
+        post_image = docker_command[img_idx + 1 :]
+        assert "--model" in post_image
+        assert "--tt-device" in post_image
+
+        # post-0.11: MODEL_WEIGHTS_DIR (not MODEL_WEIGHTS_PATH) when weights mounted
+        # — here no weights are mounted so neither should appear; just verify
+        # the legacy var is absent.
+        assert _find_env_var(docker_command, "MODEL_WEIGHTS_PATH") is None
+
+        # post-0.11: env vars CACHE_ROOT / TT_CACHE_PATH are NOT injected by
+        # the host (image has CACHE_ROOT as ENV; TT_CACHE_PATH is derived).
+        assert _find_env_var(docker_command, "CACHE_ROOT") is None
+
+        # post-0.11: spec JSON mount only in dev_mode. mock_cli_args has dev_mode=True
+        # so it should be present, tagged as RUNTIME_MODEL_SPEC_JSON_PATH.
+        if mock_cli_args.dev_mode:
+            assert _find_env_var(docker_command, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
+            assert _find_env_var(docker_command, "TT_MODEL_SPEC_JSON_PATH") is None
+
+    def test_unparseable_tag_defaults_to_post_0_11(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:dev")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+
+        assert "--ipc" in docker_command
+        assert "--shm-size" not in docker_command
+        img_idx = docker_command.index(ms.docker_image)
+        assert "--model" in docker_command[img_idx + 1 :]
+
+    # ------------------------------------------------------------------
+    # Pre-0.11 (image tag with version < 0.11.0)
+    # ------------------------------------------------------------------
+    def test_pre_0_11_uses_shm_size_not_ipc_host(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+
+        assert "--shm-size" in docker_command
+        shm_idx = docker_command.index("--shm-size")
+        assert docker_command[shm_idx + 1] == "32G"
+        assert "--ipc" not in docker_command
+
+    def test_pre_0_11_does_not_pass_cli_args_after_image(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+
+        img_idx = docker_command.index(ms.docker_image)
+        post_image = docker_command[img_idx + 1 :]
+        # Pre-0.11 image's ENTRYPOINT is docker-entrypoint.sh + gosu, which
+        # exec's CMD verbatim. Passing --model / --tt-device here would be
+        # forwarded to gosu as the command name and would crash. The script
+        # took no CLI args anyway.
+        assert "--model" not in post_image
+        assert "--tt-device" not in post_image
+        assert "--no-auth" not in post_image
+        assert "--disable-trace-capture" not in post_image
+
+    def test_pre_0_11_sets_required_env_vars(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+
+        # Pre-0.11 script asserts these unconditionally; if any is unset the
+        # container crashes at import.
+        assert _find_env_var(docker_command, "CACHE_ROOT") is not None
+        assert _find_env_var(docker_command, "TT_CACHE_PATH") is not None
+        assert _find_env_var(docker_command, "TT_MODEL_SPEC_JSON_PATH") is not None
+
+    def test_pre_0_11_mounts_spec_json_even_without_dev_mode(
+        self, tiny_model_spec, temp_dir, mock_cli_args
+    ):
+        """TT_MODEL_SPEC_JSON_PATH is required by the in-image script, so the
+        spec JSON must be mounted any time it's provided — not just in dev_mode
+        like the post-0.11 path."""
+        # Force dev_mode off — simulate a `release` workflow invocation.
+        runtime_config = dataclasses.replace(mock_cli_args, dev_mode=False)
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        config = SetupConfig(model_spec=ms)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, runtime_config, config, json_fpath)
+
+        cmd_str = _join_docker_cmd(docker_command)
+        assert "model_spec.json" in cmd_str
+        assert _find_env_var(docker_command, "TT_MODEL_SPEC_JSON_PATH") is not None
+        # Should NOT use the post-0.11 env var name.
+        assert _find_env_var(docker_command, "RUNTIME_MODEL_SPEC_JSON_PATH") is None
+
+    def test_pre_0_11_renames_weights_env_to_model_weights_path(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        """When weights ARE bind-mounted, pre-0.11 needs MODEL_WEIGHTS_PATH
+        instead of MODEL_WEIGHTS_DIR (renamed in 0.11.0)."""
+        weights_dir = temp_dir / "my_weights"
+        weights_dir.mkdir()
+        (weights_dir / "config.json").write_text("{}")
+
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        config = SetupConfig(
+            model_spec=ms,
+            host_weights_dir=str(weights_dir),
+        )
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(ms, mock_cli_args, config, json_fpath)
+
+        # Pre-0.11 name present, post-0.11 name absent.
+        assert _find_env_var(docker_command, "MODEL_WEIGHTS_PATH") is not None
+        assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
 
 
 class TestSetupHostValidation:

@@ -5,6 +5,7 @@
 import atexit
 import logging
 import os
+import re
 import shlex
 import subprocess
 import threading
@@ -12,7 +13,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
@@ -41,6 +42,75 @@ logger = logging.getLogger("run_log")
 
 def short_uuid():
     return str(uuid.uuid4())[:8]
+
+
+# Image-interface eras. Commit 50db8ac7 ("Simplify and improve vLLM Docker
+# image interface", merged before v0.11.0) flipped the dev image from
+# docker-entrypoint.sh + gosu to a self-contained bash-c ENTRYPOINT that
+# runs `python run_vllm_api_server.py $@`. Side effects on `docker run`:
+#
+#   field               pre-0.11                       post-0.11 (current)
+#   ------------------  -----------------------------  -----------------------------
+#   ENTRYPOINT          docker-entrypoint.sh (gosu)    bash -c source venv && python
+#   CLI args after img  none (script took none)        --model X --tt-device Y ...
+#   shared memory       --shm-size 32G                 --ipc host
+#   weights env var     MODEL_WEIGHTS_PATH (required)  MODEL_WEIGHTS_DIR (optional)
+#   model selection     TT_MODEL_SPEC_JSON_PATH env    --model / --tt-device CLI
+#                       (required) + JSON mount        (CLI args + optional
+#                                                      RUNTIME_MODEL_SPEC_JSON_PATH)
+#   TT_CACHE_PATH       required, must be set          optional, derived from CACHE_ROOT
+#   CACHE_ROOT          required, must be set          ENV in image, optional override
+#
+# `parse_image_version` extracts a (major, minor, patch) tuple from the
+# image tag. Returns None for unparseable tags (`:dev`, `:latest`, missing
+# tag, or non-numeric leading characters), in which case the caller defaults
+# to the post-0.11 behaviour — that matches every freshly-built image since
+# 0.11 and matches what main has always assumed.
+
+_IMAGE_VERSION_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
+
+
+def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
+    """Parse a (major, minor, patch) tuple from a Docker image tag.
+
+    Returns None if there is no tag, or if the tag's leading characters do
+    not form a parseable version (e.g. `:dev`, `:latest`). The build suffix
+    after the version (e.g. `-fae3df`) is ignored. Short forms are padded
+    to three components: `0.9` -> (0, 9, 0).
+
+    Stdlib-only (no `packaging` dependency) so it works on every runner's
+    system Python.
+
+    Examples:
+        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc")
+        (0, 11, 0)
+        >>> parse_image_version("ghcr.io/foo/bar:dev") is None
+        True
+    """
+    if ":" not in image:
+        return None
+    tag = image.rsplit(":", 1)[1]
+    match = _IMAGE_VERSION_RE.match(tag)
+    if not match:
+        return None
+    parts = [int(p) for p in match.group(1).split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
+
+
+_PRE_0_11 = (0, 11, 0)
+
+
+def _is_pre_0_11_image(image: str) -> bool:
+    """Return True if the image tag parses as a version strictly < 0.11.0.
+
+    Returns False for any image whose tag does not parse as a version,
+    so unparseable tags (`:dev`, `:latest`, missing) default to the
+    post-0.11 / current behaviour.
+    """
+    version = parse_image_version(image)
+    return version is not None and version < _PRE_0_11
 
 
 def get_media_server_docker_env_vars(model_spec):
@@ -143,6 +213,14 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
+    # Detect image-interface era from the tag (see parse_image_version
+    # docstring and the comment block above it). When False -> the modern
+    # bash-c ENTRYPOINT shape introduced in 0.11.0; CLI args after <image>,
+    # --ipc host, MODEL_WEIGHTS_DIR. When True -> docker-entrypoint.sh +
+    # gosu, no CLI args after <image>, --shm-size 32G, env-var driven
+    # (MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
+    is_pre_0_11 = _is_pre_0_11_image(model_spec.docker_image)
+
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
         DeviceTypes.to_mesh_device_str(model_spec.subdevice_type)
@@ -159,6 +237,11 @@ def generate_docker_run_command(
         for d in runtime_config.device_id:
             device_map_strs.extend(["--device", f"{device_path}/{d}:{device_path}/{d}"])
 
+    # Pre-0.11 used --shm-size 32G; post-0.11 switched to --ipc host (see
+    # commit 50db8ac7). They are not equivalent — --ipc host shares the
+    # host's IPC namespace; --shm-size 32G allocates an isolated tmpfs.
+    shm_args = ["--shm-size", "32G"] if is_pre_0_11 else ["--ipc", "host"]
+
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
     docker_command = [
@@ -168,7 +251,7 @@ def generate_docker_run_command(
         "--name", container_name,
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--ipc", "host",
+        *shm_args,
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -211,12 +294,14 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    # weights env var: post-0.11 renamed MODEL_WEIGHTS_PATH -> MODEL_WEIGHTS_DIR.
+    weights_env_var = "MODEL_WEIGHTS_PATH" if is_pre_0_11 else "MODEL_WEIGHTS_DIR"
     if setup_config:
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
+            docker_env_vars[weights_env_var] = (
                 setup_config.container_model_weights_path
             )
         if (
@@ -226,6 +311,22 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+
+    # Pre-0.11 invariants: the in-image run_vllm_api_server.py asserts CACHE_ROOT
+    # and TT_CACHE_PATH unconditionally and crashes if either is unset (post-0.11
+    # has CACHE_ROOT baked in as an image ENV and derives TT_CACHE_PATH internally).
+    # Also the weights env var is REQUIRED pre-0.11, OPTIONAL post-0.11. Fill in
+    # safe defaults from setup_config or a baked container path.
+    if is_pre_0_11:
+        cache_root = (
+            setup_config.cache_root
+            if setup_config and setup_config.cache_root
+            else Path("/home/container_app_user/cache_root")
+        )
+        docker_env_vars.setdefault("CACHE_ROOT", cache_root)
+        docker_env_vars.setdefault(
+            "TT_CACHE_PATH", cache_root / "tt_metal_cache" / str(device_cache_dir)
+        )
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
@@ -237,19 +338,30 @@ def generate_docker_run_command(
             docker_env_vars["API_KEY"] = api_key
 
     user_home_path = "/home/container_app_user"
-    if runtime_config.dev_mode:
-        if json_fpath:
-            container_model_spec_dir = Path(f"{user_home_path}/model_specs")
-            runtime_json_fpath = container_model_spec_dir / json_fpath.name
-            docker_command += [
-                "--mount",
-                f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
-            ]
-            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+    # Pre-0.11 invariant: TT_MODEL_SPEC_JSON_PATH is REQUIRED — the in-image
+    # script reads it at startup and crashes if unset. So pre-0.11 must mount
+    # the spec JSON whenever it's provided, regardless of --dev-mode. Post-0.11
+    # only needs RUNTIME_MODEL_SPEC_JSON_PATH in --dev-mode (otherwise the image
+    # uses its baked-in catalog path).
+    mount_spec_json = (is_pre_0_11 or runtime_config.dev_mode) and json_fpath is not None
+    if mount_spec_json:
+        container_model_spec_dir = Path(f"{user_home_path}/model_specs")
+        runtime_json_fpath = container_model_spec_dir / json_fpath.name
+        docker_command += [
+            "--mount",
+            f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
+        ]
+        # Env-var name differs by era; both point at the same mounted file.
+        if is_pre_0_11:
+            docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
         else:
-            logger.warning(
-                "No runtime model spec JSON path provided while in dev mode, using default model spec."
-            )
+            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+    elif runtime_config.dev_mode:
+        logger.warning(
+            "No runtime model spec JSON path provided while in dev mode, using default model spec."
+        )
+
+    if runtime_config.dev_mode:
 
         # fmt: off
         docker_command += [
@@ -288,7 +400,13 @@ def generate_docker_run_command(
 
     docker_command.append(model_spec.docker_image)
     # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
-    if model_spec.inference_engine == InferenceEngine.VLLM.value:
+    #
+    # Pre-0.11 images: run_vllm_api_server.py took no CLI args at all. Their
+    # ENTRYPOINT was docker-entrypoint.sh -> gosu, which exec'd CMD verbatim;
+    # CMD ran the script with no args, reading TT_MODEL_SPEC_JSON_PATH /
+    # MODEL_WEIGHTS_PATH from the env. Passing --model / --tt-device here would
+    # be forwarded to gosu as the command and would fail.
+    if model_spec.inference_engine == InferenceEngine.VLLM.value and not is_pre_0_11:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
         if runtime_config.no_auth:
