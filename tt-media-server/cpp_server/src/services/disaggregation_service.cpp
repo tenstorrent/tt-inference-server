@@ -132,6 +132,7 @@ void DisaggregationService::setupSocketHandlers() {
                   : PromptVariant(std::vector<int>(message.token_ids.begin(),
                                                    message.token_ids.end()));
           auto slotId = message.slot_id;
+          request.slotId = slotId;
 
           llmService->submitStreamingRequest(
               request, [this, message, maxTokens, slotId](
