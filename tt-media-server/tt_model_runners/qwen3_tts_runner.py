@@ -263,6 +263,8 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         return prompt.ref_codes, prompt.ref_text, prompt.audio_data, voice_id
 
     async def _generate(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
+        import time as _time
+
         from models.demos.qwen3_tts.demo.demo_full_ttnn_tts import (
             create_icl_embedding_ttnn,
             decode_audio,
@@ -275,8 +277,12 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         if self.model is None or self.ctx is None:
             raise RuntimeError("Model not warmed up; warmup() must run first")
 
+        _t_total_start = _time.perf_counter()
+
         # 1. Resolve voice prompt (ref_codes + ref_text + raw audio for ECAPA).
+        _t0 = _time.perf_counter()
         ref_codes, ref_text, audio_data, voice_id = self._resolve_voice(request)
+        _t_voice_resolve_ms = (_time.perf_counter() - _t0) * 1000
 
         # 2. Trim ref_codes / audio_data so target text fits ICL window. The
         # extracted speaker_embedding must match the trimmed reference codes —
@@ -294,12 +300,16 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             if (self.voice_prompts and voice_id != "<adhoc>")
             else None
         )
+        _t0 = _time.perf_counter()
         if cached_prompt is not None and cached_prompt.speaker_embedding is not None:
             speaker_embedding = cached_prompt.speaker_embedding
+            _t_ecapa_ms = 0.0
         else:
             speaker_embedding = self.model.extract_speaker_embedding(audio_data)
+            _t_ecapa_ms = (_time.perf_counter() - _t0) * 1000
 
         # 4. ICL embedding build (TTNN).
+        _t0 = _time.perf_counter()
         inputs_embeds_tt, trailing_text_hidden, tts_pad_embed, _ = create_icl_embedding_ttnn(
             target_text=request.text,
             ref_text=ref_text,
@@ -311,6 +321,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             config=self.config,
             main_weights=self.main_weights,
         )
+        _t_icl_ms = (_time.perf_counter() - _t0) * 1000
 
         # Restore torch's RNG to the snapshot taken at end of warmup. This
         # is the exact RNG state a fresh demo process sees on its first
@@ -320,6 +331,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         torch.set_rng_state(self._post_warmup_rng_state)
 
         # 6. AR generation (uses pre-captured CP traces).
+        _t0 = _time.perf_counter()
         codes, timings, _perf_text = run_inference(
             ctx=self.ctx,
             model=self.model,
@@ -330,6 +342,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             config=self.config,
             use_2cq=self._use_2cq,
         )
+        _t_ar_ms = (_time.perf_counter() - _t0) * 1000
         if codes is None:
             raise RuntimeError("Generation produced no codes (EOS at prefill?)")
 
@@ -338,8 +351,10 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             codes = codes[self.config.trim_codec_frames :]
 
         # 7. Decode codes → 24 kHz audio (CPU Mimi).
+        _t0 = _time.perf_counter()
         audio = decode_audio(codes, self.decoder_weights)
         audio_np = audio.squeeze().detach().cpu().float().numpy()
+        _t_mimi_ms = (_time.perf_counter() - _t0) * 1000
         duration_s = float(len(audio_np)) / SAMPLE_RATE_HZ
 
         # 8. Pack as base64 WAV (service handles MP3 / OGG re-encoding).
@@ -347,10 +362,13 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         sf.write(buf, audio_np, SAMPLE_RATE_HZ, format="WAV")
         b64_audio = base64.b64encode(buf.getvalue()).decode("ascii")
 
+        _total_ms = (_time.perf_counter() - _t_total_start) * 1000
+        rtf = (_total_ms / 1000.0) / duration_s if duration_s > 0 else float("inf")
         self.logger.info(
             f"Device {self.device_id}: voice={voice_id} frames={len(codes)} "
-            f"audio={duration_s:.2f}s prefill={timings.get('prefill', 0):.0f}ms "
-            f"decode_loop={timings.get('decode_loop', 0):.0f}ms"
+            f"audio={duration_s:.2f}s | total={_total_ms:.0f}ms RTF={rtf:.3f} | "
+            f"voice_resolve={_t_voice_resolve_ms:.0f}ms ecapa={_t_ecapa_ms:.0f}ms "
+            f"icl={_t_icl_ms:.0f}ms ar={_t_ar_ms:.0f}ms mimi={_t_mimi_ms:.0f}ms"
         )
 
         return TextToSpeechResponse(
