@@ -24,6 +24,49 @@ SDXL_LOWER_BOUND_NUM_PROMPTS = 2
 SDXL_UPPER_BOUND_NUM_PROMPTS = 5000
 
 
+_VERSION_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
+
+
+def parse_version_tuple(s: str) -> Optional[Tuple[int, int, int]]:
+    """Parse a leading semver-style version into a (major, minor, patch) tuple.
+
+    Short forms are padded to three components ("0.9" -> (0, 9, 0)).
+    Returns None if the input is empty, not a string, or doesn't start with
+    a parseable version (e.g. "dev", "latest", "").
+
+    Stdlib-only — no `packaging` dependency — so it works on every runner's
+    system Python.
+    """
+    if not isinstance(s, str) or not s:
+        return None
+    match = _VERSION_PREFIX_RE.match(s)
+    if not match:
+        return None
+    parts = [int(p) for p in match.group(1).split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
+
+
+def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
+    """Parse a (major, minor, patch) tuple from a Docker image tag.
+
+    Returns None if there is no tag, or if the tag's leading characters do
+    not form a parseable version. The build suffix after the version
+    (e.g. "-fae3df") is ignored.
+
+    Examples:
+        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc")
+        (0, 11, 0)
+        >>> parse_image_version("ghcr.io/foo/bar:dev") is None
+        True
+    """
+    if ":" not in image:
+        return None
+    tag = image.rsplit(":", 1)[1]
+    return parse_version_tuple(tag)
+
+
 def get_repo_root_path(marker: str = ".git") -> Path:
     """Return the root directory of the repository by searching for a marker file or directory."""
     current_path = Path(__file__).resolve().parent  # Start from the script's directory

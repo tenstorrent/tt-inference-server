@@ -5,7 +5,6 @@
 import atexit
 import logging
 import os
-import re
 import shlex
 import subprocess
 import threading
@@ -14,7 +13,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
@@ -29,6 +28,8 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    parse_image_version,  # re-exported for callers that only have an image tag
+    parse_version_tuple,
     run_command,
 )
 from workflows.workflow_types import (
@@ -63,11 +64,12 @@ def short_uuid():
 #   TT_CACHE_PATH       required, must be set          optional, derived from CACHE_ROOT
 #   CACHE_ROOT          required, must be set          ENV in image, optional override
 #
-# `parse_image_version` extracts a (major, minor, patch) tuple from the
-# image tag. Returns None for unparseable tags (`:dev`, `:latest`, missing
-# tag, or non-numeric leading characters), in which case the caller defaults
-# to the newest era — that matches every freshly-built image since 0.11
-# and matches what main has always assumed.
+# `get_docker_interface` maps a version string (from `model_spec.version`)
+# to an era. `model_spec.version` is the authoritative source: every
+# template pins it, and the --override-docker-image path also re-parses
+# it from the override tag (see model_spec.ModelSpec.__post_init__).
+# Unparseable versions fall back to the newest era — that matches every
+# freshly-built image since 0.11 and matches what main has always assumed.
 
 
 class DockerInterface(Enum):
@@ -99,60 +101,27 @@ _DOCKER_INTERFACE_ERAS: List[Tuple[Tuple[int, int, int], DockerInterface]] = [
 ]
 
 
-_IMAGE_VERSION_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
+def get_docker_interface(version: str) -> DockerInterface:
+    """Return the docker-interface era for a semver-ish version string.
 
-
-def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
-    """Parse a (major, minor, patch) tuple from a Docker image tag.
-
-    Returns None if there is no tag, or if the tag's leading characters do
-    not form a parseable version (e.g. `:dev`, `:latest`). The build suffix
-    after the version (e.g. `-fae3df`) is ignored. Short forms are padded
-    to three components: `0.9` -> (0, 9, 0).
-
-    Stdlib-only (no `packaging` dependency) so it works on every runner's
-    system Python.
+    Designed to be called with ``model_spec.version`` — the authoritative
+    per-template release version. Unparseable versions fall back to the
+    newest era so today's behaviour on main (which assumes the V2_MODERN
+    contract for every image) is preserved.
 
     Examples:
-        >>> parse_image_version("ghcr.io/foo/bar:0.11.0-abc")
-        (0, 11, 0)
-        >>> parse_image_version("ghcr.io/foo/bar:dev") is None
-        True
-    """
-    if ":" not in image:
-        return None
-    tag = image.rsplit(":", 1)[1]
-    match = _IMAGE_VERSION_RE.match(tag)
-    if not match:
-        return None
-    parts = [int(p) for p in match.group(1).split(".")]
-    while len(parts) < 3:
-        parts.append(0)
-    return (parts[0], parts[1], parts[2])
-
-
-def get_docker_interface(image: str) -> DockerInterface:
-    """Return the docker-interface era for the given Docker image tag.
-
-    Inspects only the version embedded in the tag; the image is not pulled
-    or inspected. Unparseable tags fall back to the newest era so today's
-    behaviour on main (which assumes the V2_MODERN contract for every
-    image) is preserved when run against `:dev` / `:latest` / un-tagged
-    images.
-
-    Examples:
-        >>> get_docker_interface("ghcr.io/foo/bar:0.10.4-abc")
+        >>> get_docker_interface("0.10.4")
         <DockerInterface.V1_LEGACY: 'v1-legacy'>
-        >>> get_docker_interface("ghcr.io/foo/bar:0.13.0")
+        >>> get_docker_interface("0.13.0")
         <DockerInterface.V2_MODERN: 'v2-modern'>
-        >>> get_docker_interface("ghcr.io/foo/bar:dev")
+        >>> get_docker_interface("")
         <DockerInterface.V2_MODERN: 'v2-modern'>
     """
-    version = parse_image_version(image)
-    if version is None:
+    parsed = parse_version_tuple(version) if version else None
+    if parsed is None:
         return _DOCKER_INTERFACE_ERAS[0][1]
     for min_v, era in _DOCKER_INTERFACE_ERAS:
-        if version >= min_v:
+        if parsed >= min_v:
             return era
     # Below the lowest entry — fall back to the oldest era. Unreachable
     # in practice (the table includes (0,0,0)), but kept for safety.
@@ -259,13 +228,18 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # Detect image-interface era from the tag (see DockerInterface enum and
-    # the comment block above _DOCKER_INTERFACE_ERAS). V2_MODERN is the
-    # bash-c ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>,
-    # --ipc host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh +
-    # gosu (no CLI args after <image>, --shm-size 32G, env-var driven —
+    # Detect image-interface era from model_spec.version (the authoritative
+    # per-template release version — see DockerInterface enum and the
+    # comment block above _DOCKER_INTERFACE_ERAS). V2_MODERN is the bash-c
+    # ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>, --ipc
+    # host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh + gosu
+    # (no CLI args after <image>, --shm-size 32G, env-var driven —
     # MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
-    docker_interface = get_docker_interface(model_spec.docker_image)
+    #
+    # When --override-docker-image is used, model_spec.version is also
+    # re-parsed from the override tag (see ModelSpec.__post_init__), so
+    # this reads correctly for overrides too.
+    docker_interface = get_docker_interface(model_spec.version)
     is_v1_legacy = docker_interface is DockerInterface.V1_LEGACY
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed

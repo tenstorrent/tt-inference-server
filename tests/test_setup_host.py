@@ -695,7 +695,7 @@ class TestImageEraRouting:
     # Helper sanity
     # ------------------------------------------------------------------
     def test_parse_image_version(self):
-        from workflows.run_docker_server import parse_image_version
+        from workflows.utils import parse_image_version
 
         assert parse_image_version("ghcr.io/foo/bar:0.10.0-abc") == (0, 10, 0)
         assert parse_image_version("ghcr.io/foo/bar:0.11.0") == (0, 11, 0)
@@ -704,6 +704,16 @@ class TestImageEraRouting:
         assert parse_image_version("ghcr.io/foo/bar:latest") is None
         assert parse_image_version("ghcr.io/foo/bar") is None
 
+    def test_parse_version_tuple(self):
+        from workflows.utils import parse_version_tuple
+
+        assert parse_version_tuple("0.10.0") == (0, 10, 0)
+        assert parse_version_tuple("0.11.0") == (0, 11, 0)
+        assert parse_version_tuple("0.9") == (0, 9, 0)
+        assert parse_version_tuple("0.13.0-suffix") == (0, 13, 0)
+        assert parse_version_tuple("dev") is None
+        assert parse_version_tuple("") is None
+
     def test_get_docker_interface(self):
         from workflows.run_docker_server import (
             DockerInterface,
@@ -711,17 +721,16 @@ class TestImageEraRouting:
         )
 
         # < 0.11.0 routes to the legacy era.
-        assert get_docker_interface("foo:0.10.0-abc") is DockerInterface.V1_LEGACY
-        assert get_docker_interface("foo:0.10.1-abc") is DockerInterface.V1_LEGACY
-        assert get_docker_interface("foo:0.10.9-xyz") is DockerInterface.V1_LEGACY
+        assert get_docker_interface("0.10.0") is DockerInterface.V1_LEGACY
+        assert get_docker_interface("0.10.1") is DockerInterface.V1_LEGACY
+        assert get_docker_interface("0.10.9") is DockerInterface.V1_LEGACY
         # >= 0.11.0 routes to the modern era.
-        assert get_docker_interface("foo:0.11.0") is DockerInterface.V2_MODERN
-        assert get_docker_interface("foo:0.13.0-abc") is DockerInterface.V2_MODERN
-        # Unparseable tags fall back to the newest era (matches today's
-        # behaviour on main for :dev / :latest / no-tag).
-        assert get_docker_interface("foo:dev") is DockerInterface.V2_MODERN
-        assert get_docker_interface("foo:latest") is DockerInterface.V2_MODERN
-        assert get_docker_interface("foo") is DockerInterface.V2_MODERN
+        assert get_docker_interface("0.11.0") is DockerInterface.V2_MODERN
+        assert get_docker_interface("0.13.0") is DockerInterface.V2_MODERN
+        # Unparseable versions fall back to the newest era (matches today's
+        # behaviour on main).
+        assert get_docker_interface("") is DockerInterface.V2_MODERN
+        assert get_docker_interface("dev") is DockerInterface.V2_MODERN
 
     def test_docker_interface_eras_table_ordered_newest_first(self):
         """Selection rule depends on newest-first ordering of the table."""
@@ -739,7 +748,7 @@ class TestImageEraRouting:
     def test_post_0_11_uses_ipc_host_and_cli_args(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.12.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.12.0-abc", version="0.12.0")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -773,10 +782,13 @@ class TestImageEraRouting:
             assert _find_env_var(docker_command, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
             assert _find_env_var(docker_command, "TT_MODEL_SPEC_JSON_PATH") is None
 
-    def test_unparseable_tag_defaults_to_post_0_11(
+    def test_unparseable_version_defaults_to_modern(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:dev")
+        # Model spec with a non-parseable version (e.g. someone hand-edits
+        # a template to "dev"). Should fall through to V2_MODERN, matching
+        # main's pre-this-change behaviour for unknown / unparseable inputs.
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:dev", version="dev")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -793,7 +805,7 @@ class TestImageEraRouting:
     def test_pre_0_11_uses_shm_size_not_ipc_host(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -807,7 +819,7 @@ class TestImageEraRouting:
     def test_pre_0_11_does_not_pass_cli_args_after_image(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -827,7 +839,7 @@ class TestImageEraRouting:
     def test_pre_0_11_sets_required_env_vars(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -847,7 +859,7 @@ class TestImageEraRouting:
         like the post-0.11 path."""
         # Force dev_mode off — simulate a `release` workflow invocation.
         runtime_config = dataclasses.replace(mock_cli_args, dev_mode=False)
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0")
         config = SetupConfig(model_spec=ms)
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -868,7 +880,7 @@ class TestImageEraRouting:
         weights_dir.mkdir()
         (weights_dir / "config.json").write_text("{}")
 
-        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc")
+        ms = dataclasses.replace(tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0")
         config = SetupConfig(
             model_spec=ms,
             host_weights_dir=str(weights_dir),
@@ -880,6 +892,64 @@ class TestImageEraRouting:
         # Pre-0.11 name present, post-0.11 name absent.
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_PATH") is not None
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
+
+
+class TestOverrideDockerImageVersion:
+    """Verify --override-docker-image re-parses model_spec.version from the
+    override tag, so era detection (which reads model_spec.version) tracks
+    the actual image being run, not the template's declared version.
+
+    See workflows/model_spec.py::ModelSpec.__post_init__ override branch.
+    """
+
+    def _make_runtime_config(self, **overrides):
+        from workflows.runtime_config import RuntimeConfig
+
+        defaults = dict(
+            model="m",
+            device="n150",
+            workflow="server",
+            service_port="8000",
+            interactive=False,
+            dev_mode=False,
+            device_id=None,
+            image_user="1000",
+            docker_server=True,
+            local_server=False,
+            no_auth=False,
+            host_volume=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+        )
+        defaults.update(overrides)
+        return RuntimeConfig(**defaults)
+
+    def test_override_with_parseable_tag_updates_version(self, tiny_model_spec):
+        # Template declares 0.13.0, override points at a 0.10.0 image.
+        # After apply_overrides, model_spec.version should reflect 0.10.0
+        # so era detection picks V1_LEGACY (matching the actual image).
+        ms = dataclasses.replace(tiny_model_spec, version="0.13.0")
+        runtime_config = self._make_runtime_config(
+            override_docker_image="ghcr.io/foo/bar:0.10.0-abc",
+        )
+        ms.apply_overrides(runtime_config)
+
+        assert ms.docker_image == "ghcr.io/foo/bar:0.10.0-abc"
+        assert ms.version == "0.10.0"
+
+    def test_override_with_unparseable_tag_keeps_template_version(
+        self, tiny_model_spec
+    ):
+        # Override tag is :dev / :latest / unparseable — leave the template's
+        # declared version alone (no information to update from).
+        ms = dataclasses.replace(tiny_model_spec, version="0.13.0")
+        runtime_config = self._make_runtime_config(
+            override_docker_image="ghcr.io/foo/bar:dev",
+        )
+        ms.apply_overrides(runtime_config)
+
+        assert ms.docker_image == "ghcr.io/foo/bar:dev"
+        assert ms.version == "0.13.0"  # untouched
 
 
 class TestSetupHostValidation:
