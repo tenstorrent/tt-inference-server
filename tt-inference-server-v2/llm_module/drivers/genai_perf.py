@@ -68,7 +68,7 @@ class GenAIPerfDriver(LLMDriver):
         uid = os.getuid()
         gid = os.getgid()
 
-        url = f"localhost:{server.service_port}"
+        url = f"{_host_from_base_url(server.base_url)}:{server.service_port}"
 
         # fmt: off
         cmd = [
@@ -77,10 +77,13 @@ class GenAIPerfDriver(LLMDriver):
             "--user", f"{uid}:{gid}",
             "-v", f"{run_artifact_dir}:/workspace/artifacts",
             "-v", f"{self.hf_cache}:/workspace/.cache/huggingface",
-            "-e", f"AUTH_TOKEN={server.auth_token}",
             "-e", "PYTHONUNBUFFERED=1",
             "-e", "HF_HOME=/workspace/.cache/huggingface",
             "-e", "TRANSFORMERS_CACHE=/workspace/.cache/huggingface",
+        ]
+        if server.auth_token:
+            cmd.extend(["-e", f"AUTH_TOKEN={server.auth_token}"])
+        cmd.extend([
             self.docker_image,
             "genai-perf", "profile",
             "--model", server.model,
@@ -96,11 +99,11 @@ class GenAIPerfDriver(LLMDriver):
             "--output-tokens-mean", str(config.osl),
             "--output-tokens-stddev", "0",
             "--artifact-dir", "/workspace/artifacts",
-        ]
+        ])
         # fmt: on
 
         env = dict(context.extra_env)
-        rc = run_command(cmd, env=env)
+        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         if rc != 0:
             return DriverResult(return_code=rc, raw=None, raw_path=None)
 
@@ -108,3 +111,17 @@ class GenAIPerfDriver(LLMDriver):
         raw_path = find_first(candidates)
         raw = load_json(raw_path) if raw_path else None
         return DriverResult(return_code=rc, raw=raw, raw_path=raw_path)
+
+
+def _host_from_base_url(base_url: str) -> str:
+    """Extract the bare host from ``ServerConnection.base_url``.
+
+    genai-perf's ``--url`` takes scheme-less ``host:port``, so we strip
+    any ``http(s)://`` prefix and trailing slash. Falls back to
+    ``localhost`` for empty input — the container runs with ``--net
+    host``, so an unset base_url still works against a local server.
+    """
+    host = (base_url or "").strip().rstrip("/")
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    return host or "localhost"

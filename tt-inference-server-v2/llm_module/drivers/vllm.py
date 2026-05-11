@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
-from ._subprocess import load_json, run_command
+from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class VLLMBenchDriver(LLMDriver):
         context.output_dir.mkdir(parents=True, exist_ok=True)
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         result_filename = context.output_dir / (
-            f"benchmark_{_safe(server.model)}_{run_ts}"
+            f"benchmark_{safe_filename_part(server.model)}_{run_ts}"
             f"_isl-{config.isl}_osl-{config.osl}"
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
@@ -77,15 +77,10 @@ class VLLMBenchDriver(LLMDriver):
             str(result_filename),
         ]
 
-        env = {}
+        env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
-        env.update(context.extra_env)
 
-        rc = run_command(cmd, env=env)
+        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
-
-
-def _safe(text: str) -> str:
-    return text.replace("/", "__").replace(" ", "_")

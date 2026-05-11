@@ -78,25 +78,17 @@ class AIPerfDriver(LLMDriver):
             "--artifact-dir",
             str(artifact_dir),
         ]
+        env = dict(context.extra_env)
         if server.auth_token:
-            cmd.extend(["--api-key", server.auth_token])
+            env["OPENAI_API_KEY"] = server.auth_token
 
-        rc = run_command(cmd, env=context.extra_env)
+        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         if rc != 0:
             return DriverResult(return_code=rc, raw=None, raw_path=None)
 
-        candidates = [
-            artifact_dir / "profile_export_aiperf.json",
-            artifact_dir / "profile_export.json",
-        ]
-        for sub in artifact_dir.iterdir() if artifact_dir.exists() else []:
-            if sub.is_dir():
-                candidates.extend(
-                    [
-                        sub / "profile_export_aiperf.json",
-                        sub / "profile_export.json",
-                    ]
-                )
+        candidates = list(artifact_dir.rglob("*profile_export_aiperf.json")) + list(
+            artifact_dir.rglob("*profile_export.json")
+        )
         raw_path = find_first(candidates)
         raw = load_json(raw_path) if raw_path else None
         return DriverResult(return_code=rc, raw=raw, raw_path=raw_path)

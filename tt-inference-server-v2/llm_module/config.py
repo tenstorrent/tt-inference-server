@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -65,3 +66,4 @@ class DriverContext:
     output_dir: Path
     device: str = ""
     extra_env: dict = field(default_factory=dict)
+    per_run_timeout_s: Optional[float] = 7200.0

@@ -38,10 +38,15 @@ logger = logging.getLogger(__name__)
 class RunnerResult:
     blocks: List[Block] = field(default_factory=list)
     return_codes: List[int] = field(default_factory=list)
+    parse_failures: List[int] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return bool(self.return_codes) and all(rc == 0 for rc in self.return_codes)
+        return (
+            bool(self.return_codes)
+            and all(rc == 0 for rc in self.return_codes)
+            and not self.parse_failures
+        )
 
 
 class LLMPerformanceRunner:
@@ -143,6 +148,7 @@ class LLMPerformanceRunner:
                     i,
                     total,
                 )
+                result.parse_failures.append(i)
                 continue
 
             block = self.parser.parse(outcome.raw, device=context.device)

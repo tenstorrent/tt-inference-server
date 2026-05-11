@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
-from ._subprocess import load_json, run_command
+from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class GuideLLMDriver(LLMDriver):
         context.output_dir.mkdir(parents=True, exist_ok=True)
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         out_path = context.output_dir / (
-            f"guidellm_{_safe(server.model)}_{run_ts}"
+            f"guidellm_{safe_filename_part(server.model)}_{run_ts}"
             f"_isl-{config.isl}_osl-{config.osl}"
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
@@ -81,10 +81,6 @@ class GuideLLMDriver(LLMDriver):
         if server.auth_token:
             env["GUIDELLM__OPENAI__API_KEY"] = server.auth_token
 
-        rc = run_command(cmd, env=env)
+        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(out_path) if rc == 0 else None
         return DriverResult(return_code=rc, raw=raw, raw_path=out_path)
-
-
-def _safe(text: str) -> str:
-    return text.replace("/", "__").replace(" ", "_")

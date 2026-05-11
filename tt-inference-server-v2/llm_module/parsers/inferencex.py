@@ -19,7 +19,7 @@ from .base import LLMResultParser
 
 LATENCY_METRICS: Tuple[str, ...] = ("ttft", "tpot", "itl", "e2el")
 LATENCY_STATS: Tuple[str, ...] = ("mean", "median", "std", "p90", "p95", "p99")
-GOODPUT_KEY = "request_goodput:"
+GOODPUT_KEY = "request_goodput"
 
 
 class InferenceMaxParser(LLMResultParser):

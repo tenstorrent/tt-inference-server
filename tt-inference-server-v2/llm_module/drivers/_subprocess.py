@@ -26,18 +26,33 @@ def run_command(
     *,
     env: Optional[Mapping[str, str]] = None,
     cwd: Optional[Path] = None,
+    timeout_s: Optional[float] = None,
 ) -> int:
-    """Run ``cmd`` streaming output to logger; return exit code."""
+    """Run ``cmd`` streaming output to logger; return exit code.
+
+    If ``timeout_s`` is set and elapses before the process exits, the
+    child is killed and 124 is returned (matching ``/usr/bin/timeout``)
+    so callers can treat it as a normal nonzero exit and move on.
+    """
     logger.info("Executing: %s", " ".join(str(c) for c in cmd))
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
-    proc = subprocess.run(
-        list(cmd),
-        env=full_env,
-        cwd=str(cwd) if cwd else None,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            list(cmd),
+            env=full_env,
+            cwd=str(cwd) if cwd else None,
+            check=False,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "Command exceeded timeout of %.0fs and was killed: %s",
+            timeout_s,
+            " ".join(str(c) for c in cmd),
+        )
+        return 124
     return proc.returncode
 
 
@@ -58,3 +73,12 @@ def find_first(paths: List[Path]) -> Optional[Path]:
         if p.exists():
             return p
     return None
+
+
+def safe_filename_part(text: str) -> str:
+    """Sanitize ``text`` for embedding in a filename.
+
+    Replaces ``/`` (path separator on the host) with ``__`` and spaces
+    with ``_``
+    """
+    return text.replace("/", "__").replace(" ", "_")

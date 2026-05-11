@@ -2,6 +2,6 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-from .blocks_sink import accept_blocks
+from .blocks_sink import BlockAccumulator, accept_blocks, get_default_accumulator
 
-__all__ = ["accept_blocks"]
+__all__ = ["BlockAccumulator", "accept_blocks", "get_default_accumulator"]
