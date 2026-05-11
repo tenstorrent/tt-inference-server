@@ -1133,7 +1133,7 @@ llm_templates = [
                 max_context=40960,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 63000000,
+                    "trace_region_size": 65000000,
                 },
             ),
             DeviceModelSpec(
@@ -1827,7 +1827,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 143000000,
+                    "trace_region_size": 160000000,
                 },
                 system_requirements=SystemRequirements(
                     firmware=VersionRequirement(
@@ -1888,7 +1888,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 58000000,
+                    "trace_region_size": 102400000,
                 },
             ),
         ],
