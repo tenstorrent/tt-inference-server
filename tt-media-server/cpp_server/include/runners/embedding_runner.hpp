@@ -50,7 +50,7 @@ class EmbeddingRunner : public IRunner {
   // IRunner interface implementation
   void run() override;
   void stop() override;
-  const char* runnerType() const { return "EmbeddingRunner"; }
+  const char* runnerType() const override { return "EmbeddingRunner"; }
 
   /**
    * Get the device ID.
