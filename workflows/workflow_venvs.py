@@ -244,6 +244,57 @@ def setup_evals_meta(
     return setup_succeeded
 
 
+# Pinned vLLM tag used both by `requirements/benchmarks-vllm.txt` (where
+# vllm==<VLLM_PIN_VERSION>) and as the source for the structured-output
+# benchmark scripts fetched at venv setup time. Keep these in sync.
+VLLM_PIN_VERSION = "0.13.0"
+VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/v{VLLM_PIN_VERSION}/benchmarks"
+
+# (relative_path_in_vllm_repo, relative_path_in_work_dir)
+STRUCTURED_OUTPUT_FETCH_FILES = (
+    (
+        "benchmark_serving_structured_output.py",
+        "benchmark_serving_structured_output.py",
+    ),
+    ("backend_request_func.py", "backend_request_func.py"),
+    (
+        "structured_schemas/structured_schema_1.json",
+        "structured_schemas/structured_schema_1.json",
+    ),
+)
+
+# Filename of the structured-output benchmark script downloaded into the
+# BENCHMARKS_VLLM venv work_dir by fetch_structured_output_scripts().
+# Imported by benchmarking/run_benchmarks.py to locate the script at run time.
+STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
+
+
+def fetch_structured_output_scripts(
+    venv_config: "VenvConfig",
+    model_spec: "ModelSpec",
+) -> bool:
+    """Hook for BENCHMARKS_VLLM: download structured-output benchmark scripts.
+
+    Pip-installable deps (vllm/torch/datasets/pandas/xgrammar) come from
+    requirements/benchmarks-vllm.txt. The benchmark driver scripts are not
+    published on PyPI, so they're fetched at venv setup time from the pinned
+    vLLM source tag rather than vendored into this repo.
+    """
+    logger.info("running fetch_structured_output_scripts() ...")
+    work_dir = venv_config.venv_path / "work_dir"
+    for src_rel, dst_rel in STRUCTURED_OUTPUT_FETCH_FILES:
+        dst = work_dir / dst_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
+        return_code = run_command(
+            f"curl -fSL --retry 3 --retry-delay 5 --retry-all-errors {url} -o {dst}",
+            logger=logger,
+        )
+        if return_code != 0:
+            return False
+    return True
+
+
 _venv_config_list = [
     # Pure pip install
     VenvConfig(
@@ -314,6 +365,7 @@ _venv_config_list = [
         requirements_file="benchmarks-vllm.txt",
         extra_dirs=("work_dir",),
         python_version="3.11",
+        setup_function=fetch_structured_output_scripts,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,

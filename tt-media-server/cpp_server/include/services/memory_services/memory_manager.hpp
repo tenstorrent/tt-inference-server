@@ -21,15 +21,21 @@ class MemoryManager {
   MemoryManager& operator=(MemoryManager&&) = delete;
 
   virtual std::optional<domain::ManageMemoryTask> getRequest();
-  virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
+
+  // Default implementation: ALLOCATE returns SUCCESS with an opaque slotId,
+  // DEALLOCATE is a no-op. The slotId value is not interpreted by the legacy
+  // LLM scheduler (it manages its own block table), so the default acts as a
+  // pure session-creation gate. Async managers (e.g. BlazeMemoryManager)
+  // override to talk to an external scheduler.
+  virtual void handleRequest(const domain::ManageMemoryTask& request);
 
   // Optional method for asynchronous memory managers that receive responses
   // from an external system. Synchronous managers don't
   // need to override this. Async managers override to
   // complete allocation after receiving a response.
-  virtual void handleResponse(uint32_t requestId, uint32_t slotId) {
+  virtual void handleResponse(uint32_t taskId, uint32_t slotId) {
     // Default implementation does nothing - only async managers need this
-    (void)requestId;
+    (void)taskId;
     (void)slotId;
   }
 

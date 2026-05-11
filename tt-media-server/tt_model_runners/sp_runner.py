@@ -19,14 +19,19 @@ Environment variables:
 
 from __future__ import annotations
 
+import json
 import os
+import tempfile
 import time
 
 from ipc.video_shm import (
+    MAX_IMAGE_PATH_LEN,
     VideoRequest,
     VideoShm,
     VideoStatus,
+    cleanup_orphaned_image_files,
     cleanup_orphaned_video_files,
+    image_prompts_path,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -78,6 +83,13 @@ class SPRunner(BaseDeviceRunner):
         # them in place would desync ridx by N and every future request would
         # silently receive the previous task's file_path. Drain + unlink now.
         self._drain_stale_responses()
+        # Sweep any I2V side-files left behind by a prior crashed session.
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
+                f"orphaned image side-file(s)"
+            )
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
@@ -111,6 +123,12 @@ class SPRunner(BaseDeviceRunner):
             self.logger.info(
                 f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
             )
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
+                f"orphaned image side-file(s)"
+            )
         self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
         return True
 
@@ -130,63 +148,93 @@ class SPRunner(BaseDeviceRunner):
         request = requests[0]
         task_id = request._task_id
 
-        video_req = VideoRequest(
-            task_id=task_id,
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt or "",
-            num_inference_steps=request.num_inference_steps or 20,
-            seed=int(request.seed or 0),
-            height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
-            width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
-            num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
-            guidance_scale=getattr(
-                request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
-            ),
-            guidance_scale_2=getattr(
-                request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
-            ),
-        )
-
-        self._input_shm.write_request(video_req)
-        self.logger.info(f"[SP] Request {task_id} sent to SHM input")
-
-        timeout_s = self.settings.video_request_timeout_seconds
-        resp = self._read_response_for(task_id, timeout_s)
-        if resp.status == VideoStatus.ERROR:
-            self._try_unlink(resp.file_path)
-            raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
-
-        mp4_path = resp.file_path
-
-        # Validate file exists and has size before returning
-        if not os.path.exists(mp4_path):
-            raise RuntimeError(
-                f"Video file does not exist for task {task_id}: {mp4_path}"
-            )
-
-        # Get actual file size from disk
+        image_path = self._write_image_side_file(request, task_id)
         try:
-            actual_size_bytes = os.path.getsize(mp4_path)
-        except OSError as e:
-            raise RuntimeError(
-                f"Cannot get file size for task {task_id}: {mp4_path}. Error: {e}"
+            video_req = VideoRequest(
+                task_id=task_id,
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt or "",
+                num_inference_steps=request.num_inference_steps or 20,
+                seed=int(request.seed or 0),
+                height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
+                width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
+                num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
+                guidance_scale=getattr(
+                    request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
+                ),
+                guidance_scale_2=getattr(
+                    request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
+                ),
+                image_path=image_path,
             )
 
-        MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
-        if actual_size_bytes < MIN_VIDEO_SIZE_BYTES:
-            self._try_unlink(mp4_path)
+            self._input_shm.write_request(video_req)
+            self.logger.info(f"[SP] Request {task_id} sent to SHM input")
+
+            timeout_s = self.settings.video_request_timeout_seconds
+            resp = self._read_response_for(task_id, timeout_s)
+            if resp.status == VideoStatus.ERROR:
+                self._try_unlink(resp.file_path)
+                raise RuntimeError(
+                    f"Runner error for task {task_id}: {resp.error_message}"
+                )
+
+            mp4_path = resp.file_path
+            exists = os.path.exists(mp4_path)
+            size_bytes = os.path.getsize(mp4_path) if exists else None
+            size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
+            self.logger.info(
+                f"[SP] Received mp4 path from SHM: {mp4_path} "
+                f"(exists={exists}, size={size_part})"
+            )
+            # List so device_worker's responses[i] matches one path per request.
+            return [mp4_path]
+        finally:
+            if image_path:
+                self._try_unlink(image_path)
+
+    @staticmethod
+    def _write_image_side_file(request, task_id: str) -> str:
+        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs.
+
+        Atomic publish: write to a temp file in the same directory and then
+        ``os.rename`` to the final path. The runner peer never observes a
+        partially-written file at the final name — it sees either no file or
+        the fully-written JSON.
+        """
+        image_prompts = getattr(request, "image_prompts", None)
+        if not image_prompts:
+            return ""
+
+        final_path = image_prompts_path(task_id)
+        path_bytes = len(final_path.encode("utf-8"))
+        if path_bytes > MAX_IMAGE_PATH_LEN:
             raise RuntimeError(
-                f"Video file too small for task {task_id}: {actual_size_bytes:,} bytes "
-                f"(minimum {MIN_VIDEO_SIZE_BYTES:,} bytes). File: {mp4_path}"
+                f"image_prompts side-file path exceeds SHM cap "
+                f"({path_bytes} > {MAX_IMAGE_PATH_LEN} bytes); "
+                f"reduce TT_VIDEO_FILE_DIR length"
             )
 
-        self.logger.info(
-            f"[SP] Validated video file for task {task_id}: {mp4_path} "
-            f"({actual_size_bytes:,} bytes)"
+        payload = [
+            {"image": entry.image, "frame_pos": entry.frame_pos}
+            for entry in image_prompts
+        ]
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f"tt_img_{task_id}.",
+            suffix=".json.tmp",
+            dir=os.path.dirname(final_path),
         )
-
-        # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
-        return [mp4_path]
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f)
+            os.rename(tmp_path, final_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return final_path
 
     def _read_response_for(self, task_id: str, timeout_s: float):
         """Read the next output slot that matches ``task_id``.

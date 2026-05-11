@@ -9,7 +9,7 @@
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/guided_decoder_manager.hpp"
-#include "services/memory_services/paged_memory_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
@@ -27,8 +27,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
   if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
-    memoryManager = std::make_unique<services::PagedMemoryManager>(
-        scheduler->getBlockManager());
+    memoryManager = std::make_unique<services::MemoryManager>();
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 

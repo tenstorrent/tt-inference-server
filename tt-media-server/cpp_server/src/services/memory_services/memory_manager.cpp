@@ -37,4 +37,28 @@ std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
   return std::nullopt;
 }
 
+void MemoryManager::handleRequest(const domain::ManageMemoryTask& request) {
+  switch (request.action) {
+    case domain::MemoryManagementAction::ALLOCATE: {
+      domain::ManageMemoryResult result{};
+      result.taskId = request.taskId;
+      result.status = domain::ManageMemoryStatus::SUCCESS;
+      result.slotId = 0;
+      resultQueue->push(result);
+      return;
+    }
+    case domain::MemoryManagementAction::DEALLOCATE: {
+      return;
+    }
+    default: {
+      domain::ManageMemoryResult result{};
+      result.taskId = request.taskId;
+      result.status = domain::ManageMemoryStatus::FAILURE;
+      resultQueue->push(result);
+      TT_LOG_WARN("[MemoryManager] Unsupported action {} for taskId={}",
+                  static_cast<int>(request.action), request.taskId);
+    }
+  }
+}
+
 }  // namespace tt::services

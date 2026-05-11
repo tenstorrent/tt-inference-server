@@ -71,16 +71,44 @@ class VideoRequest:
     num_frames: int
     guidance_scale: float
     guidance_scale_2: float
+    # Optional path to a JSON side-file on tmpfs holding I2V image_prompts.
+    image_path: str = ""
 
 
 VIDEO_FILE_DIR = os.environ.get("TT_VIDEO_FILE_DIR", "/dev/shm")
 VIDEO_FILE_GLOB = "tt_video_*.pkl"
+IMAGE_FILE_GLOB = "tt_img_*"
 MAX_FILE_PATH_LEN = 256
+MAX_IMAGE_PATH_LEN = 256
 
 
 def video_result_path(task_id: str) -> str:
     """Return the file path for a video result on the RAM-backed tmpfs."""
     return os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+
+def image_prompts_path(task_id: str) -> str:
+    """Return the side-file path holding the JSON-serialised image_prompts.
+
+    A worst-case I2V request can carry ``WAN22_NUM_FRAMES * MAX_BASE64_IMAGE_LEN``
+    bytes of conditioning images (~810 MB). Embedding that inline in the SHM
+    slot is impractical, so :class:`SPRunner` writes the list to this path and
+    the runner side reads it back after the SHM hand-off.
+    """
+    return os.path.join(VIDEO_FILE_DIR, f"tt_img_{task_id}.json")
+
+
+def _cleanup_glob(pattern: str) -> int:
+    import glob
+
+    removed = 0
+    for path in glob.glob(os.path.join(VIDEO_FILE_DIR, pattern)):
+        try:
+            os.unlink(path)
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def cleanup_orphaned_video_files() -> int:
@@ -89,16 +117,19 @@ def cleanup_orphaned_video_files() -> int:
     Returns the number of files removed.  Safe to call at any point –
     individual unlink failures are silently ignored.
     """
-    import glob
+    return _cleanup_glob(VIDEO_FILE_GLOB)
 
-    removed = 0
-    for path in glob.glob(os.path.join(VIDEO_FILE_DIR, VIDEO_FILE_GLOB)):
-        try:
-            os.unlink(path)
-            removed += 1
-        except OSError:
-            pass
-    return removed
+
+def cleanup_orphaned_image_files() -> int:
+    """Remove any leftover ``tt_img_*`` side-files from :data:`VIDEO_FILE_DIR`.
+
+    Mirrors :func:`cleanup_orphaned_video_files`. Called by the server proxy
+    (``SPRunner.set_device`` / ``SPRunner.close_device``) and by the operator
+    bootstrap CLI on tear-down so a crashed I2V request does not leak hundreds
+    of megabytes of base64 conditioning data on tmpfs. The runner side does
+    not write side-files and therefore does not need to sweep them.
+    """
+    return _cleanup_glob(IMAGE_FILE_GLOB)
 
 
 @dataclass(frozen=True)
@@ -120,11 +151,12 @@ class VideoShm:
 
     Layout per slot depends on *mode*:
 
-    Input slot (2 640 B):
+    Input slot (2 900 B):
         state(4) task_id(36) prompt_length(4) prompt(2048)
         neg_prompt_length(4) negative_prompt(512)
         num_inference_steps(4) seed(8) height(4) width(4)
         num_frames(4) guidance_scale(4) guidance_scale_2(4)
+        image_path_len(4) image_path(256)
 
     Output slot (564 B):
         state(4) task_id(36) status(4)
@@ -222,7 +254,9 @@ class VideoShm:
     _IN_NUM_FRAMES = 2628
     _IN_GUIDANCE_SCALE = 2632
     _IN_GUIDANCE_SCALE_2 = 2636
-    INPUT_SLOT_SIZE = 2640
+    _IN_IMAGE_PATH_LEN = 2640
+    _IN_IMAGE_PATH = 2644
+    INPUT_SLOT_SIZE = 2644 + MAX_IMAGE_PATH_LEN  # 2900
 
     # ── Output slot field offsets ──
     #   state(4) task_id(36) status(4) error_len(4) error(256)
@@ -520,6 +554,13 @@ class VideoShm:
         struct.pack_into(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2, request.guidance_scale_2
         )
+        self._pack_string(
+            buf,
+            off + self._IN_IMAGE_PATH_LEN,
+            off + self._IN_IMAGE_PATH,
+            request.image_path,
+            MAX_IMAGE_PATH_LEN,
+        )
 
         struct.pack_into("<i", buf, state_off, self._FILLED)
         self._set_writer_index(widx + 1)
@@ -562,6 +603,9 @@ class VideoShm:
         guidance_scale_2 = struct.unpack_from(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2
         )[0]
+        image_path = self._unpack_string(
+            buf, off + self._IN_IMAGE_PATH_LEN, off + self._IN_IMAGE_PATH
+        )
 
         struct.pack_into("<i", buf, state_off, self._EMPTY)
         self._set_reader_index(ridx + 1)
@@ -577,6 +621,7 @@ class VideoShm:
             num_frames=num_frames,
             guidance_scale=guidance_scale,
             guidance_scale_2=guidance_scale_2,
+            image_path=image_path,
         )
 
     # ── Output SHM: response read / write (file-path reference) ──

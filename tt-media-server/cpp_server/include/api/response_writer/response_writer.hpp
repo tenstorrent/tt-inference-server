@@ -5,13 +5,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
 #include "services/llm_service.hpp"
-#include "services/session_manager.hpp"
 
 namespace tt::api {
 
@@ -26,10 +26,9 @@ struct ResponseWriterParams {
   std::string model;
   int64_t created;
   int promptTokenCount;
-  std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<services::SessionManager> sessionManager;
+  std::function<void()> onSessionRelease;
 };
 
 /**
@@ -75,9 +74,6 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
 
   /** Compute usage from the current accumulator state. */
   CompletionUsage buildUsage() const;
-
-  /** Release the session in-flight slot if a session is associated. */
-  void releaseInFlight();
 
   ResponseWriterParams params;
   std::chrono::high_resolution_clock::time_point startTime =
