@@ -78,7 +78,8 @@ uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix) {
   return XXH64(rendered.data(), rendered.size(), 0);
 }
 
-std::string renderLastUserTurn(const std::vector<ChatMessage>& messages) {
+std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
+                               bool hasPriorTurn) {
   auto it =
       std::find_if(messages.rbegin(), messages.rend(),
                    [](const ChatMessage& msg) { return msg.role == "user"; });
@@ -86,7 +87,20 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages) {
     return "";
   }
   const auto& tokenizer = tokenizers::activeTokenizer();
-  return tokenizer.applyChatTemplate({*it}, true);
+  std::string rendered = tokenizer.applyChatTemplate({*it}, true);
+
+  // applyChatTemplate prepends BOS based on the tokenizer config. For
+  // continuations BOS is already in the slot's KV cache and must not be
+  // duplicated in the delta; for fresh conversations keep it so the model
+  // sees the start-of-sequence marker. The BOS string is fixed for the
+  // process lifetime, so cache it to avoid copying TokenizerConfig on every
+  // call.
+  static const std::string bosToken = tokenizers::getTokenizerConfig().bos_token;
+  if (hasPriorTurn && !bosToken.empty() &&
+      rendered.compare(0, bosToken.size(), bosToken) == 0) {
+    rendered.erase(0, bosToken.size());
+  }
+  return rendered;
 }
 
 PrefixCachingInfo computePrefixCachingInfo(
@@ -97,20 +111,16 @@ PrefixCachingInfo computePrefixCachingInfo(
   // as part of the stable prefix identity.
   auto turns = stripToolMessages(messages);
 
-  // deltaPrompt is the last user turn
-  info.deltaPrompt = renderLastUserTurn(turns);
-
-  // registrationHash = always hash of full current conversation
-  info.registrationHash = hashConversationPrefix(turns);
-
-  // Try to extract prior turn prefix (excluding last [assistant, user] pair)
+  // Determine prior-turn status first; the renderer needs it to decide
+  // whether to keep the BOS token in the delta prompt.
   auto priorPrefix = extractPriorTurnPrefix(messages);
-  if (priorPrefix.has_value()) {
-    info.hasPriorTurn = true;
+  info.hasPriorTurn = priorPrefix.has_value();
+  if (info.hasPriorTurn) {
     info.lookupHash = hashConversationPrefix(*priorPrefix);
-  } else {
-    info.hasPriorTurn = false;
   }
+
+  info.deltaPrompt = renderLastUserTurn(turns, info.hasPriorTurn);
+  info.registrationHash = hashConversationPrefix(turns);
 
   return info;
 }
