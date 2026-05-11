@@ -1018,7 +1018,15 @@ jobs:
       - name: Start Decode server (receives HTTP, listens for prefill)
         run: |
           cd cpp_server/build
+          NS=r1_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./tt_media_server_cpp -p 8001 -t 4 > ../../decode_server.log 2>&1 &
           echo $! > ../../decode_server.pid
           cd ../..
@@ -1039,7 +1047,15 @@ jobs:
       - name: Start Prefill server (connects to decode server)
         run: |
           cd cpp_server/build
+          NS=r1_prefill
           LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill_server.log 2>&1 &
           echo $! > ../../prefill_server.pid
           cd ../..
@@ -1108,10 +1124,18 @@ jobs:
       - name: Start Prefill server (mock_prefill_runner round)
         run: |
           cd cpp_server
+          NS=r2_prefill
           TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
           TT_LOG_LEVEL=debug \
           LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8001 -t 4 \
             > ../prefill_server_runner.log 2>&1 &
           echo $! > ../prefill_server_runner.pid
@@ -1134,8 +1158,16 @@ jobs:
       - name: Start Decode server (mock_prefill_runner round)
         run: |
           cd cpp_server
+          NS=r2_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8000 -t 4 \
             > ../decode_server_runner.log 2>&1 &
           echo $! > ../decode_server_runner.pid
