@@ -34,7 +34,8 @@ class EmbeddingService
   size_t currentQueueSize() const override;
   void postProcess(domain::EmbeddingResponse& response) const override;
 
-  domain::EmbeddingResponse processRequest(domain::EmbeddingRequest request) override;
+  domain::EmbeddingResponse processRequest(
+      domain::EmbeddingRequest request) override;
 
  private:
   struct Impl;

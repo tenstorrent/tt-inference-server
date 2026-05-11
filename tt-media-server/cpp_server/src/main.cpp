@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <drogon/drogon.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 #include <atomic>
@@ -16,9 +18,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 #include "api/error_response.hpp"
 #include "api/route_registry.hpp"
@@ -56,7 +55,8 @@ bool probePort(const std::string& host, uint16_t port) {
   addr.sin_port = htons(port);
   if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0)
     addr.sin_addr.s_addr = INADDR_ANY;
-  bool available = (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+  bool available =
+      (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
   ::close(sock);
   return available;
 }
@@ -172,8 +172,10 @@ int main(int argc, char* argv[]) {
   // If we skip this and Drogon fails to bind later, workers are already running
   // and the warmup signal queue gets removed mid-lifecycle — causing a crash.
   if (!probePort(host, port)) {
-    TT_LOG_CRITICAL("[Main] Port {} is already in use. "
-                    "Stop the existing server before starting a new one.", port);
+    TT_LOG_CRITICAL(
+        "[Main] Port {} is already in use. "
+        "Stop the existing server before starting a new one.",
+        port);
     return 1;
   }
   TT_LOG_INFO("[Main] Port {} is available", port);
