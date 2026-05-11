@@ -331,7 +331,14 @@ ResponseWriterParams LLMController::makeWriterParams(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  params.promptTokenCount = request.prompt_tokens_count;
+  params.promptTokenCount = request.full_prompt_tokens_count > 0
+                                ? request.full_prompt_tokens_count
+                                : request.prompt_tokens_count;
+  params.cachedTokenCount =
+      request.continuation
+          ? request.full_prompt_tokens_count - request.prompt_tokens_count
+          : 0;
+  params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
   if (request.session) {
