@@ -6,6 +6,7 @@
 #include <pybind11/embed.h>
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -111,6 +112,14 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
 
   std::optional<std::string> current_lora_path_;
   std::optional<float> current_lora_scale_;
+
+  // Serializes inference: the tt-metal SDXL pipeline owns mutable scheduler
+  // state (timesteps, sigmas, step_index, input_tensors, captured trace) and
+  // is not thread-safe. The GIL alone does not protect it, because it is
+  // released during device ops, letting another request mutate that state
+  // mid-flight. Held in run() before py::gil_scoped_acquire so we never wait
+  // on the mutex while holding the GIL.
+  std::mutex run_mutex_;
 };
 
 class SDXLGenerateRunner : public SDXLBaseRunner {

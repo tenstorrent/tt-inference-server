@@ -374,6 +374,9 @@ std::vector<std::string> SDXLBaseRunner::run(
     throw std::runtime_error("[SDXL] Runner not initialized");
   }
 
+  // Acquire the C++ mutex BEFORE the GIL: the pipeline carries scheduler /
+  // input-tensor / trace state that is not safe under concurrent calls.
+  std::lock_guard<std::mutex> serialize(run_mutex_);
   py::gil_scoped_acquire acquire;
   try {
     auto prompts = processPrompts({request});
