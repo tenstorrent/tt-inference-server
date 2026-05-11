@@ -18,9 +18,10 @@ namespace tt::test {
 
 // Blocking HTTP POST to /v1/chat/completions. Returns the full response bytes
 // (status line + headers + body). Throws on connect failure.
-inline std::string sendAndReceive(
-    const char* host, uint16_t port, const std::string& body,
-    const std::string& apiKey = "your-secret-key") {
+inline std::string sendAndReceive(const char* host, uint16_t port,
+                                  const std::string& body,
+                                  const std::string& apiKey = "your-secret-key",
+                                  int idleTimeoutMs = 250) {
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
@@ -48,12 +49,13 @@ inline std::string sendAndReceive(
   ::send(sock, req.c_str(), req.size(), 0);
 
   // Idle-timeout-based read termination: keep recv'ing until we go quiet
-  // for 250ms. Required because we don't send "Connection: close" — Drogon
-  // closes the connection prematurely (after just headers) for async SSE
-  // streams when the request asks for close — so we leave the connection
-  // keep-alive and detect end-of-response by inactivity instead. Total
-  // overhead per test: ~250ms after the last byte arrives.
-  timeval tv{0, 250000};
+  // for idleTimeoutMs. Required because we don't send "Connection: close"
+  // — Drogon closes the connection prematurely (after just headers) for
+  // async SSE streams when the request asks for close — so we leave the
+  // connection keep-alive and detect end-of-response by inactivity
+  // instead. Default 250ms; warmup uses a larger value to cover the
+  // one-time thread_local tokenizer init on the IO + consumer threads.
+  timeval tv{idleTimeoutMs / 1000, (idleTimeoutMs % 1000) * 1000};
   ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
   std::string response;
