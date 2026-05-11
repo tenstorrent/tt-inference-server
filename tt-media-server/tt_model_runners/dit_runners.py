@@ -388,8 +388,8 @@ class TTWan22Runner(TTDiTRunner):
         try:
             return WanPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=self.resolution.height,
-                target_width=self.resolution.width,
+                height=self.resolution.height,
+                width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
             )
         except Exception as e:
@@ -552,8 +552,8 @@ class TTWan22I2VRunner(TTDiTRunner):
         try:
             return WanPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=self.resolution.height,
-                target_width=self.resolution.width,
+                height=self.resolution.height,
+                width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
             )
         except Exception as e:
