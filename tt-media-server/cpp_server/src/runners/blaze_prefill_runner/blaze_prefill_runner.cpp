@@ -33,8 +33,8 @@ void BlazePrefillRunner::run() {
     TT_LOG_DEBUG("[BlazePrefillRunner] Starting prefill for task {}",
                  sequence->taskId);
 
-    auto result =
-        modelRunner->forward(sequence->taskId, sequence->getTokenIds());
+    auto result = modelRunner->forward(
+        sequence->taskId, sequence->getTokenIds(), sequence->getKVCacheSlot());
 
     if (!result) {
       TT_LOG_DEBUG(
@@ -67,7 +67,8 @@ bool BlazePrefillRunner::warmup() {
 
   TT_LOG_DEBUG("[BlazePrefillRunner] warmup forward task_id={} token_count={}",
                warmupTaskId, warmupTokens.size());
-  auto result = modelRunner->forward(warmupTaskId, warmupTokens);
+  auto result = modelRunner->forward(warmupTaskId, warmupTokens,
+                                     tt::domain::INVALID_SLOT_ID);
   if (!result || result->isError) {
     TT_LOG_ERROR("[BlazePrefillRunner] Warmup failed");
     return false;
