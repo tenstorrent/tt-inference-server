@@ -636,6 +636,9 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
+# fails with ctest's captured stdout instead of hanging the job indefinitely.
+set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
