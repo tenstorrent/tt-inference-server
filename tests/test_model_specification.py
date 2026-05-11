@@ -603,5 +603,114 @@ class TestModelSpecsStructure:
             assert not hasattr(spec, "weights")
 
 
+class TestApplyOverridesVersion:
+    """ModelSpec.apply_overrides should re-parse `version` from the override
+    docker_image tag whenever --override-docker-image is set, so the spec's
+    declared version stays in sync with what's actually being run.
+
+    Downstream code (e.g. get_docker_interface in run_docker_server) reads
+    model_spec.version to decide the docker-interface era — if it stayed at
+    the template's declared value after an override, an old image overridden
+    onto a new-template model would crash with the wrong command shape.
+    """
+
+    def _runtime_config(self, **overrides):
+        import dataclasses
+
+        from workflows.runtime_config import RuntimeConfig
+
+        defaults = dict(
+            model="m",
+            device="n150",
+            workflow="server",
+            service_port="8000",
+            interactive=False,
+            dev_mode=False,
+            device_id=None,
+            image_user="1000",
+            docker_server=True,
+            local_server=False,
+            no_auth=False,
+            host_volume=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+        )
+        defaults.update(overrides)
+        return RuntimeConfig(**defaults)
+
+    def _model_spec(self, version: str = "0.13.0") -> ModelSpec:
+        import dataclasses
+
+        impl = ImplSpec(
+            impl_id="tt-transformers",
+            impl_name="tt-transformers",
+            repo_url="https://github.com/test/repo",
+            code_path="models/test",
+        )
+        device_model_spec = DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=4096,
+            default_impl=True,
+        )
+        return ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=impl,
+            hf_model_repo="hf-internal-testing/tiny-random-gpt2",
+            model_id="id_tt-transformers_tiny_n150",
+            model_name="tiny",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=device_model_spec,
+            docker_image="ghcr.io/foo/bar:0.13.0-abc",
+            version=version,
+            min_disk_gb=1,
+            min_ram_gb=1,
+        )
+
+    def test_override_with_parseable_tag_updates_version(self):
+        # Template declares 0.13.0, override points at a 0.10.0 image —
+        # version should be re-parsed to "0.10.0".
+        ms = self._model_spec(version="0.13.0")
+        rc = self._runtime_config(
+            override_docker_image="ghcr.io/foo/bar:0.10.0-abc"
+        )
+        ms.apply_overrides(rc)
+
+        assert ms.docker_image == "ghcr.io/foo/bar:0.10.0-abc"
+        assert ms.version == "0.10.0"
+
+    def test_override_with_dev_tag_keeps_template_version(self):
+        # :dev tag is unparseable — leave the template's declared version
+        # alone. There's no information to update from.
+        ms = self._model_spec(version="0.13.0")
+        rc = self._runtime_config(
+            override_docker_image="ghcr.io/foo/bar:dev"
+        )
+        ms.apply_overrides(rc)
+
+        assert ms.docker_image == "ghcr.io/foo/bar:dev"
+        assert ms.version == "0.13.0"
+
+    def test_override_with_latest_tag_keeps_template_version(self):
+        ms = self._model_spec(version="0.11.1")
+        rc = self._runtime_config(
+            override_docker_image="ghcr.io/foo/bar:latest"
+        )
+        ms.apply_overrides(rc)
+
+        assert ms.version == "0.11.1"
+
+    def test_no_override_leaves_version_untouched(self):
+        # Sanity: when --override-docker-image is unset, the override branch
+        # in apply_overrides is skipped entirely; version is unchanged.
+        ms = self._model_spec(version="0.13.0")
+        rc = self._runtime_config(override_docker_image=None)
+        ms.apply_overrides(rc)
+
+        assert ms.version == "0.13.0"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
