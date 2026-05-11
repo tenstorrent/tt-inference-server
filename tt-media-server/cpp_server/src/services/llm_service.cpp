@@ -195,6 +195,8 @@ LLMStreamChunk buildStreamChunk(
   }
 
   choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.spec_accepts = token.spec_accepts;
+  choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
     bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
@@ -325,7 +327,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-LLMResponse LLMService::processRequest(LLMRequest /*request*/) {
+tt::domain::llm::LLMResponse LLMService::processRequest(
+    tt::domain::llm::LLMRequest /*request*/) {
   throw std::runtime_error(
       "LLMService::processRequest is not supported; use streaming interface");
 }

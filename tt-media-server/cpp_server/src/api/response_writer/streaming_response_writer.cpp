@@ -89,12 +89,7 @@ void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
   if (chunk.choices.empty()) return;
 
   const auto& choice = chunk.choices[0];
-  int currentTokens = 0;
-  if (!choice.text.empty() || choice.reasoning.has_value()) {
-    currentTokens = noteToken();
-  } else {
-    currentTokens = completionTokens.load();
-  }
+  const int currentTokens = noteToken(choice);
 
   const std::string accumulatedSoFar = accumulatedText;
   accumulatedText += choice.text;
