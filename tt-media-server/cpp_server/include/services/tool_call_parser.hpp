@@ -47,6 +47,16 @@ class IToolCallParser {
    * Used to clean up the message content after extracting tool calls.
    */
   virtual std::string stripMarkers(const std::string& text) const = 0;
+
+  /**
+   * Build a forced tool call (tool_choice="function") from model output text.
+   * Parses the text as JSON to extract arguments if possible, then wraps the
+   * result in OpenAI tool_calls format.
+   *
+   * Returns a Json::Value array with a single tool call entry.
+   */
+  virtual Json::Value buildForcedToolCall(
+      const std::string& text, const std::string& functionName) const;
 };
 
 /**
