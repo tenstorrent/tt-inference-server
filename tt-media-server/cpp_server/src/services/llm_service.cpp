@@ -61,6 +61,9 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
   if (!workerManager) {
     throw std::invalid_argument("LLMService: workerManager must not be null");
   }
+  if (!queueManager) {
+    throw std::invalid_argument("LLMService: queueManager must not be null");
+  }
 
   this->taskQueue = std::move(taskQueue);
   this->workerManager = std::move(workerManager);
@@ -135,10 +138,8 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  if (queueManager) {
-    for (auto& q : queueManager->resultQueues) {
-      q->shutdown();
-    }
+  for (auto& q : queueManager->resultQueues) {
+    q->shutdown();
   }
 
   for (auto& thread : consumerThreads) {
@@ -151,9 +152,7 @@ void LLMService::stop() {
   workerManager->stop();
 
   TT_LOG_INFO("[LLMService] Stopped");
-  if (queueManager) {
-    queueManager->clear();
-  }
+  queueManager->clear();
 }
 
 namespace {
@@ -374,29 +373,24 @@ void LLMService::processStreamingRequest(
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds));
-  sequence->setNumPromptTokens(prompt.size());
-  if (request.slotId.has_value()) {
-    sequence->setKVCacheSlot(request.slotId.value());
-  }
-  sequence->setContinuation(request.continuation);
-  sequence->setDisaggregated(request.disaggregated);
-  sequence->setSamplingParams(std::make_unique<tt::domain::llm::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request)));
+      std::move(tokenIds), prompt.size(), request.slotId, request.continuation,
+      request.disaggregated,
+      std::make_unique<tt::domain::llm::SamplingParams>(
+          tt::utils::mapper::mapSamplingParams(request)));
   taskQueue->push(*std::move(sequence));
 }
 
 void LLMService::postProcess(LLMResponse& response) const {
+  if (!toolCallParser) {
+    return;
+  }
+
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
   tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
     toolChoice = std::move(toolChoiceOpt.value());
   } else {
     toolChoice.type = "auto";
-  }
-
-  if (!toolCallParser) {
-    return;
   }
 
   for (size_t choiceIdx = 0; choiceIdx < response.choices.size(); ++choiceIdx) {
@@ -407,41 +401,16 @@ void LLMService::postProcess(LLMResponse& response) const {
     }
 
     if (toolChoice.type == "function") {
-      // Generate unique tool call ID in OpenAI format (call_1, call_2, ...)
-      std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
-
-      Json::Value decodedOutput;
-      static const Json::CharReaderBuilder kReaderBuilder;
-      thread_local const std::unique_ptr<Json::CharReader> reader(
-          kReaderBuilder.newCharReader());
-      std::string argumentsStr = choice.text;
-      std::string parseErrors;
-
-      const bool parsed = reader->parse(choice.text.data(),
-                                        choice.text.data() + choice.text.size(),
-                                        &decodedOutput, &parseErrors);
-      if (parsed && decodedOutput.isMember("arguments")) {
-        argumentsStr = decodedOutput["arguments"].toStyledString();
-      }
-
-      Json::Value toolCallJson;
-      toolCallJson["id"] = toolCallId;
-      toolCallJson["type"] = "function";
-      toolCallJson["function"]["name"] =
-          toolChoice.function.value_or("unknown");
-      toolCallJson["function"]["arguments"] = argumentsStr;
-
-      Json::Value toolCallsArray(Json::arrayValue);
-      toolCallsArray.append(toolCallJson);
-
-      choice.tool_calls = toolCallsArray;
+      auto functionName = toolChoice.function.value_or("unknown");
+      choice.tool_calls =
+          toolCallParser->buildForcedToolCall(choice.text, functionName);
       choice.text = "";
       choice.finish_reason = "tool_calls";
 
       TT_LOG_DEBUG(
           "[LLMService] Created tool_call from structured output "
-          "(tool_choice=function, function={}, id={})",
-          toolChoice.function.value_or("unknown"), toolCallId);
+          "(tool_choice=function, function={})",
+          functionName);
       continue;
     }
 
@@ -489,10 +458,8 @@ void LLMService::abortRequest(uint32_t taskId) {
     reasoningParser->finalizeTask(taskId);
   }
 
-  if (queueManager) {
-    for (auto& cq : queueManager->cancelQueues) {
-      cq->push(taskId);
-    }
+  for (auto& cq : queueManager->cancelQueues) {
+    cq->push(taskId);
   }
 
   TT_LOG_INFO("[LLMService] Aborted request {}", taskId);
