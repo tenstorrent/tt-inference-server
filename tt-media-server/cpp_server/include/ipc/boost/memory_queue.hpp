@@ -71,8 +71,8 @@ class MemoryQueue {
     try {
       return std::unique_ptr<MemoryQueue>(new MemoryQueue(name));
     } catch (const bi_ipc::interprocess_exception& e) {
-      TT_LOG_ERROR("[ipc::boost::MemoryQueue] Failed to open existing queue: {}",
-                   name);
+      TT_LOG_ERROR(
+          "[ipc::boost::MemoryQueue] Failed to open existing queue: {}", name);
       throw std::runtime_error("Failed to open existing queue: " + name + " " +
                                std::to_string(errno) + " " + e.what());
     }

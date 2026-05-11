@@ -236,8 +236,8 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   InMemoryCancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
-  tt::ipc::boost::ResultQueue resultQueue(rbName,
-                                          tt::ipc::boost::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(
+      rbName, tt::ipc::boost::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -294,8 +294,8 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   InMemoryCancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
-  tt::ipc::boost::ResultQueue resultQueue(rbName,
-                                          tt::ipc::boost::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(
+      rbName, tt::ipc::boost::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
