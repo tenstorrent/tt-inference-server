@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import Any
 
 MISSING_VALUE = "N/A"
@@ -17,6 +18,8 @@ def format_value(value: Any) -> str:
         return MISSING_VALUE
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, Enum):
+        return value.name
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):

@@ -112,6 +112,10 @@ class Settings(BaseSettings):
         True  # If False, video is generated synchronously and returned directly
     )
 
+    # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
+    # Currently only supported in LoraSingleChipRunner
+    lora_adapter: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
@@ -266,6 +270,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
+            ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
         ]:
             self.default_throttle_level = None
 

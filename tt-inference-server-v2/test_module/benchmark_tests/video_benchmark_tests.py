@@ -18,7 +18,16 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from workflows.utils import get_num_calls
 
-from ..context import MediaContext, common_report_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    block_targets,
+    run_tiered_check,
+)
+from ..context import MediaContext, require_health
 from ..test_status import VideoGenerationTestStatus
 
 logger = logging.getLogger(__name__)
@@ -188,7 +197,30 @@ def _video_ttft(status_list: list[VideoGenerationTestStatus]) -> float:
     return sum(s.elapsed for s in status_list) / len(status_list) if status_list else 0
 
 
-def run_video_benchmark(ctx: MediaContext) -> dict:
+def _video_target_checks(
+    ctx: MediaContext, ttft_seconds: float, tput_user: float
+) -> tuple[dict, ReportCheckTypes]:
+    # ttft is captured in seconds (time.time() deltas); targets.ttft_ms is ms.
+    ttft_ms = ttft_seconds * 1000 if ttft_seconds else None
+    logger.info("Computing 3-tier target checks for TTFT, tput_user")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
+            ),
+            MetricSpec(
+                "tput_user",
+                tput_user,
+                "tput_user",
+                lower_is_better=False,
+                field_name="tput_user",
+            ),
+        ],
+    )
+
+
+def run_video_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for a video model (Mochi, WAN, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -204,19 +236,33 @@ def run_video_benchmark(ctx: MediaContext) -> dict:
 
     logger.info("Generating benchmark report...")
     ttft_value = _video_ttft(status_list)
-    report_data = common_report_metadata(ctx, "video")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "num_inference_steps": status_list[0].num_inference_steps if status_list else 0,
-        "ttft": ttft_value,
-        "inference_steps_per_second": (
-            sum(s.inference_steps_per_second for s in status_list) / len(status_list)
-            if status_list
-            else 0
-        ),
-    }
-
-    return report_data
+    inference_steps_per_second = (
+        sum(s.inference_steps_per_second for s in status_list) / len(status_list)
+        if status_list
+        else 0
+    )
+    # Sequential single-user benchmark, so tput_user = total throughput.
+    target_checks, accuracy_check = _video_target_checks(
+        ctx, ttft_value, inference_steps_per_second
+    )
+    return Block(
+        kind="video_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="video"),
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "num_inference_steps": (
+                    status_list[0].num_inference_steps if status_list else 0
+                ),
+                "ttft": ttft_value,
+                "inference_steps_per_second": inference_steps_per_second,
+                "tput_user": inference_steps_per_second,
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_video_benchmark"]

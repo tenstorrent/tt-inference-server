@@ -33,7 +33,9 @@ struct LLMConfig {
  * Configuration for embedding service.
  * Currently a placeholder - will be expanded as embedding features are added.
  */
-struct EmbeddingConfig {};
+struct EmbeddingConfig {
+  ModelRunnerType runner_type = ModelRunnerType::MOCK;
+};
 
 /**
  * Variant wrapper for all runner configuration types.

@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +30,13 @@ headers = {
 
 
 class EmbeddingLoadTest(BaseTest):
+    KIND = "embedding_load"
+    TASK_TYPE = "embedding"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/embeddings"
         logger.info(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
         model = self.config.get("model", "test-model")
@@ -41,13 +49,13 @@ class EmbeddingLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_embedding(batch_size=devices)
+        ) = await self.test_concurrent_embedding(batch_size=num_concurrent_requests)
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": embedding_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": requests_duration <= embedding_target_time,
         }
 
@@ -99,3 +107,16 @@ class EmbeddingLoadTest(BaseTest):
         logger.info(
             f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
+
+
+def run_embedding_load(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`EmbeddingLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return EmbeddingLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

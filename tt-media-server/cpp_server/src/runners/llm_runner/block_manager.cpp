@@ -9,7 +9,7 @@
 #include "utils/logger.hpp"
 
 namespace tt::runners::llm_engine {
-using Sequence = tt::domain::Sequence;
+using Sequence = tt::domain::llm::Sequence;
 
 Block::Block(int blockId) : blockId(blockId) {}
 

@@ -169,10 +169,25 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
-        "--publish", f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
+
+    if model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+    ):
+        # media/forge containers' run_uvicorn.sh defaults to listening on 8000
+        docker_command += [
+            "--publish",
+            f"{runtime_config.bind_host}:{runtime_config.service_port}:8000",
+        ]
+    else:
+        # vLLM listens on service_port (set via vllm_args.port in apply_overrides)
+        docker_command += [
+            "--publish",
+            f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
+        ]
 
     # setup_config-dependent mounts (cache_root volume)
     if setup_config:
