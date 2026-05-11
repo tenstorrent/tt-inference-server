@@ -59,7 +59,11 @@ import os
 import sys
 from multiprocessing import shared_memory as _shm
 
-from ipc.video_shm import VideoShm, cleanup_orphaned_video_files
+from ipc.video_shm import (
+    VideoShm,
+    cleanup_orphaned_image_files,
+    cleanup_orphaned_video_files,
+)
 
 DEFAULT_INPUT_NAME = "tt_video_in"
 DEFAULT_OUTPUT_NAME = "tt_video_out"
@@ -103,9 +107,13 @@ def down(in_name: str, out_name: str) -> int:
     files_removed = cleanup_orphaned_video_files()
     if files_removed:
         print(f"[bootstrap] removed {files_removed} orphaned video file(s)")
+    image_files_removed = cleanup_orphaned_image_files()
+    if image_files_removed:
+        print(f"[bootstrap] removed {image_files_removed} orphaned image side-file(s)")
     print(
         f"[bootstrap] done — {segments_removed} SHM segment(s), "
-        f"{files_removed} video file(s) cleaned up"
+        f"{files_removed} video file(s), "
+        f"{image_files_removed} image side-file(s) cleaned up"
     )
     return 0
 

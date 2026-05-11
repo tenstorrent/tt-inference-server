@@ -18,8 +18,7 @@ name: Claude PR Review
 # - `--max-turns` caps Claude's iterations to bound cost per review.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}

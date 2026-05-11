@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-#include "config/runner_config.hpp"
+#include "config/defaults.hpp"
 #include "ipc/boost_ipc_queue.hpp"
 #include "ipc/task_queue.hpp"
 
@@ -19,10 +19,10 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
  public:
   static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
   static constexpr size_t MAX_MSG_SIZE =
-      tt::config::LLMConfig::MAX_INPUT_TOKENS * sizeof(int64_t) +
+      tt::config::defaults::MAX_CONTEXT_LENGTH * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
-  using Queue = BoostIpcMemoryQueue<tt::domain::Sequence, MAX_MSG_SIZE>;
+  using Queue = BoostIpcMemoryQueue<tt::domain::llm::Sequence, MAX_MSG_SIZE>;
 
   /** Create a new queue (main process). */
   BoostIpcTaskQueue(const std::string& name, int capacity)
@@ -32,18 +32,20 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
   explicit BoostIpcTaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  void push(const tt::domain::Sequence& seq) override { queue_->push(seq); }
-
-  std::unique_ptr<tt::domain::Sequence> tryPop() override {
-    tt::domain::Sequence seq(0, 1, {});
-    if (!queue_->tryPop(seq)) return nullptr;
-    return std::make_unique<tt::domain::Sequence>(std::move(seq));
+  void push(const tt::domain::llm::Sequence& seq) override {
+    queue_->push(seq);
   }
 
-  std::unique_ptr<tt::domain::Sequence> receive() override {
-    tt::domain::Sequence seq(0, 1, {});
+  std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
+    tt::domain::llm::Sequence seq(0, 1, {});
+    if (!queue_->tryPop(seq)) return nullptr;
+    return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
+  }
+
+  std::unique_ptr<tt::domain::llm::Sequence> receive() override {
+    tt::domain::llm::Sequence seq(0, 1, {});
     queue_->receive(seq);
-    return std::make_unique<tt::domain::Sequence>(std::move(seq));
+    return std::make_unique<tt::domain::llm::Sequence>(std::move(seq));
   }
 
   bool empty() const override { return queue_->empty(); }

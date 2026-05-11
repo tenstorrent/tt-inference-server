@@ -8,13 +8,14 @@
 #include <string>
 #include <vector>
 
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "utils/tokenizers/deepseek_tokenizer.hpp"
 #include "utils/tokenizers/llama_tokenizer.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::domain;
+using namespace tt::domain::llm;
 using namespace tt::domain::tool_calls;
 using namespace tt::utils::tokenizers;
 

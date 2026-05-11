@@ -103,6 +103,63 @@
         }
       }
     },
+    "/v1/responses": {
+      "post": {
+        "tags": ["Responses"],
+        "summary": "Create responses",
+        "description": "Creates a model response using the Responses API. Input can be a plain string or an array of input items. Returns a response object with output items and usage statistics. Supports streaming via SSE.",
+        "operationId": "createResponses",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResponsesRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful responses (JSON) or streaming (text/event-stream)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResponsesResponse" }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream; object \"responses.chunk\", choices[].delta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing or empty messages)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/embeddings": {
       "post": {
         "tags": ["Embeddings"],
@@ -137,142 +194,6 @@
           },
           "503": {
             "description": "Model not ready",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions": {
-      "post": {
-        "tags": ["Sessions"],
-        "summary": "Create a new session",
-        "description": "Create a new session with optional slot assignment",
-        "operationId": "createSession",
-        "security": [{ "BearerAuth": [] }],
-        "requestBody": {
-          "description": "Optional slot ID to assign",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "slot_id": {
-                    "type": "integer",
-                    "description": "Slot ID to assign (-1 means unassigned)"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Session created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "session_id": { "type": "string", "format": "uuid" },
-                    "slot_id": { "type": "integer" }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions/{session_id}": {
-      "delete": {
-        "tags": ["Sessions"],
-        "summary": "Close a session",
-        "description": "Close an existing session by ID",
-        "operationId": "closeSession",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "description": "The session ID to close",
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session closed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean" },
-                    "message": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sessions/{session_id}/slot": {
-      "get": {
-        "tags": ["Sessions"],
-        "summary": "Get slot ID for a session",
-        "description": "Retrieve the slot ID assigned to a session (-1 if unassigned)",
-        "operationId": "getSlotId",
-        "security": [{ "BearerAuth": [] }],
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "description": "The session ID",
-            "schema": { "type": "string", "format": "uuid" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Slot ID retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "session_id": { "type": "string", "format": "uuid" },
-                    "slot_id": {
-                      "type": "integer",
-                      "description": "Slot ID (-1 if unassigned)"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -452,6 +373,25 @@
                   "type": "string",
                   "example": "# HELP tt_generation_tokens_total Total number of generation tokens produced\n# TYPE tt_generation_tokens_total counter\ntt_generation_tokens_total{model_name=\"llm\"} 42\n"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/info": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Build identity",
+        "description": "Returns the build identity of the running server: tt-inference-server version and commit, tt-blaze commit, and tt-metal commit. Missing values appear as the literal string \"unknown\". No authentication required.",
+        "operationId": "getInfo",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Build identity",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InfoResponse" }
               }
             }
           }
@@ -705,6 +645,47 @@
           }
         }
       },
+      "InfoResponse": {
+        "type": "object",
+        "required": ["tt_inference_server", "tt_blaze", "tt_metal"],
+        "properties": {
+          "tt_inference_server": { "$ref": "#/components/schemas/ServerVersionInfo" },
+          "tt_blaze": { "$ref": "#/components/schemas/CommitInfo" },
+          "tt_metal": { "$ref": "#/components/schemas/CommitInfo" }
+        },
+        "example": {
+          "tt_inference_server": { "version": "0.13.0", "commit": "b0f8adfc1234567890abcdef1234567890abcdef" },
+          "tt_blaze": { "commit": "abc123def456abc123def456abc123def4567890" },
+          "tt_metal": { "commit": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3" }
+        }
+      },
+      "ServerVersionInfo": {
+        "type": "object",
+        "required": ["version", "commit"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Release version from the top-level VERSION file. \"unknown\" if the file was not found at build time.",
+            "example": "0.13.0"
+          },
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the inference-server tree at build time. \"unknown\" if .git was not available.",
+            "example": "b0f8adfc1234567890abcdef1234567890abcdef"
+          }
+        }
+      },
+      "CommitInfo": {
+        "type": "object",
+        "required": ["commit"],
+        "properties": {
+          "commit": {
+            "type": "string",
+            "description": "Full git SHA of the dependency at build time. \"unknown\" if the dependency's working tree was not present.",
+            "example": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3"
+          }
+        }
+      },
       "MaxSessionCountResponse": {
         "type": "object",
         "required": ["max_session_count"],
@@ -797,6 +778,216 @@
               "prompt_tokens": { "type": "integer" },
               "total_tokens": { "type": "integer" }
             }
+          }
+        }
+      },
+      "ResponsesRequest": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "input": {
+            "description": "Text or array of input items to generate a response for",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "object" } }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "Model identifier",
+            "nullable": true
+          },
+          "instructions": {
+            "type": "string",
+            "description": "System instructions prepended as a system message",
+            "nullable": true
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "description": "Maximum number of output tokens",
+            "nullable": true
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature",
+            "nullable": true
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Nucleus sampling probability",
+            "nullable": true
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Top-k sampling",
+            "nullable": true
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Whether to stream the response via SSE",
+            "default": false
+          },
+          "stop": {
+            "description": "Stop sequence(s)",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "nullable": true
+          },
+          "presence_penalty": {
+            "type": "number",
+            "minimum": -2.0,
+            "maximum": 2.0,
+            "nullable": true
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "minimum": -2.0,
+            "maximum": 2.0,
+            "nullable": true
+          },
+          "repetition_penalty": {
+            "type": "number",
+            "nullable": true
+          },
+          "seed": {
+            "type": "integer",
+            "nullable": true
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "object" },
+            "default": []
+          },
+          "tool_choice": {
+            "description": "Tool choice strategy",
+            "nullable": true
+          },
+          "truncation": {
+            "type": "string",
+            "enum": ["auto", "disabled"],
+            "default": "disabled"
+          },
+          "service_tier": {
+            "type": "string",
+            "enum": ["auto", "default", "flex", "scale", "priority"],
+            "default": "auto"
+          },
+          "user": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true
+          },
+          "reasoning": {
+            "type": "object",
+            "nullable": true
+          },
+          "text": {
+            "type": "object",
+            "nullable": true
+          },
+          "previous_response_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "background": {
+            "type": "boolean",
+            "default": false
+          },
+          "store": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "ResponsesResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique response identifier"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["response"]
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Unix timestamp of creation"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for the response"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "incomplete", "failed", "in_progress"],
+            "description": "Response status"
+          },
+          "output": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Output items produced by the model"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ResponseUsage"
+          },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "max_output_tokens": { "type": "integer" },
+          "truncation": { "type": "string" },
+          "service_tier": { "type": "string" },
+          "background": { "type": "boolean" },
+          "parallel_tool_calls": { "type": "boolean" },
+          "tool_choice": {},
+          "tools": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "incomplete_details": {
+            "type": "object",
+            "properties": {
+              "reason": { "type": "string" }
+            },
+            "nullable": true
+          },
+          "instructions": { "type": "string", "nullable": true },
+          "metadata": { "type": "object", "nullable": true },
+          "user": { "type": "string", "nullable": true },
+          "presence_penalty": { "type": "number", "nullable": true },
+          "frequency_penalty": { "type": "number", "nullable": true }
+        }
+      },
+      "ResponseUsage": {
+        "type": "object",
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "description": "Number of input tokens"
+          },
+          "input_tokens_details": {
+            "type": "object",
+            "properties": {
+              "cached_tokens": { "type": "integer" }
+            }
+          },
+          "output_tokens": {
+            "type": "integer",
+            "description": "Number of output tokens"
+          },
+          "output_tokens_details": {
+            "type": "object",
+            "properties": {
+              "reasoning_tokens": { "type": "integer" }
+            }
+          },
+          "total_tokens": {
+            "type": "integer",
+            "description": "Total tokens used"
           }
         }
       },

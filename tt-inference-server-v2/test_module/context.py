@@ -16,8 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
-from server_tests.test_classes import TestConfig
+from .health_tests import run_device_liveness
 
 logger = logging.getLogger(__name__)
 
@@ -51,48 +50,25 @@ def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     num_devices = ctx.model_spec.device_model_spec.max_concurrency
     logger.info(f"Detected device: {device_name} with {num_devices} expected worker(s)")
 
-    test_config = TestConfig(
-        {
-            "test_timeout": 1200,
-            "retry_attempts": 229,
-            "retry_delay": 10,
-            "break_on_failure": False,
-        }
-    )
-    logger.info(f"TestConfig: {test_config}")
-
-    targets = {
-        "num_of_devices": num_devices if num_devices and num_devices > 0 else None
-    }
-    logger.info(f"Test targets: {targets}")
-
-    liveness_test = DeviceLivenessTest(test_config, targets)
-    liveness_test.service_port = ctx.service_port
-
     try:
-        logger.info("Running DeviceLivenessTest...")
-        test_result = liveness_test.run_tests()
-
-        if isinstance(test_result, dict) and test_result.get("success"):
-            result_data = test_result.get("result", {})
-            runner_in_use = result_data.get("full_response", {}).get(
-                "runner_in_use", None
-            )
-
-            logger.info(
-                f"✅ Health check passed after {test_result.get('attempts', 1)} attempt(s)"
-            )
-            return (True, runner_in_use)
-
-        logger.error("Health check failed after all retry attempts")
-        return (False, None)
-
+        block = run_device_liveness(ctx)
     except SystemExit as e:
         logger.error(f"Health check failed with SystemExit: {e}")
         return (False, None)
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return (False, None)
+
+    data = block.data
+    if data.get("success"):
+        runner_in_use = data.get("runner_in_use")
+        logger.info(
+            f"✅ Health check passed after {data.get('attempts', 1)} attempt(s)"
+        )
+        return (True, runner_in_use)
+
+    logger.error("Health check failed after all retry attempts")
+    return (False, None)
 
 
 @lru_cache(maxsize=None)

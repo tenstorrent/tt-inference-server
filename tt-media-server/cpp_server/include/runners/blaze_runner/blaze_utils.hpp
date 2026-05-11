@@ -3,11 +3,13 @@
 
 #pragma once
 
-#include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
+#include "config/settings.hpp"
+#include "domain/llm/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
 
 namespace tt::runners::blaze_utils {
+
+using namespace tt::domain::llm;
 
 namespace pm = tt_blaze::pipeline_manager;
 
@@ -16,16 +18,19 @@ inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
       .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
-inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL, .slot_id = slotId, .tokens = {}};
+inline pm::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
+  return {.type = pm::RequestType::CANCEL,
+          .request_id = requestId,
+          .slot_id = slotId,
+          .tokens = {}};
 }
 
 inline pm::GenerationParams makeGenerationParams(
-    const tt::domain::Sequence& seq) {
+    const tt::domain::llm::Sequence& seq) {
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
-              static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
+              static_cast<int>(tt::config::maxContextLength()))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .temperature = seq.getSamplingParams().temperature,
@@ -35,13 +40,13 @@ inline pm::GenerationParams makeGenerationParams(
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,
-                               const tt::domain::Sequence& seq) {
+                               const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 
 inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const tt::domain::Sequence& seq) {
+                                       const tt::domain::llm::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::SUBMIT;
   req.slot_id = slotId;
@@ -50,7 +55,7 @@ inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline pm::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::Sequence& seq) {
+                                         const tt::domain::llm::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::CONTINUE;
   req.slot_id = slotId;
@@ -63,6 +68,7 @@ struct SlotContext {
   bool ignoreEos;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
+  uint32_t tokensGenerated = 0;
 };
 
 }  // namespace tt::runners::blaze_utils

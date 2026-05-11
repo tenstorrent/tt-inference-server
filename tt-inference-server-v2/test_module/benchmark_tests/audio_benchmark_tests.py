@@ -25,20 +25,24 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.utils_report import get_performance_targets
-from workflows.workflow_types import ReportCheckTypes
+from report_module.schema import Block
 
-from ..context import MediaContext, common_report_metadata, count_tokens, require_health
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    block_targets,
+    run_tiered_check,
+)
+from ..context import MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
 
 
-def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> float:
-    if not status_list:
-        return 0.0
+def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]:
     valid = [getattr(s, attr) for s in status_list if getattr(s, attr) is not None]
-    return sum(valid) / len(valid) if valid else 0.0
+    return sum(valid) / len(valid) if valid else None
 
 
 def _transcribe_audio_streaming_off(
@@ -238,82 +242,34 @@ def _run_audio_transcription_benchmark(
     return status_list
 
 
-def _audio_accuracy_check(
+def _audio_target_checks(
     ctx: MediaContext,
-    ttft_value: float,
-    tsu_value: float,
-    rtr_value: float,
-) -> ReportCheckTypes:
-    logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
-
-    device_str = ctx.model_spec.cli_args.get("device")
-    targets = get_performance_targets(
-        ctx.model_spec.model_name,
-        device_str,
-        model_type=ctx.model_spec.model_type.name,
-    )
-    logger.info(f"Performance targets: {targets}")
-
-    if not targets.ttft_ms:
-        logger.warning("⚠️ No TTFT target found, skipping accuracy check")
-        return ReportCheckTypes.NA
-
-    available_metrics = [
-        "TTFT" if targets.ttft_ms else None,
-        "T/S/U" if targets.tput_user and tsu_value else None,
-        "RTR" if targets.rtr and rtr_value else None,
-    ]
-    logger.info(
-        f"Available metrics for validation: {[m for m in available_metrics if m]}"
+    ttft_value: Optional[float],
+    tsu_value: Optional[float],
+    rtr_value: Optional[float],
+) -> tuple[dict, ReportCheckTypes]:
+    logger.info("Computing 3-tier target checks for TTFT, T/S/U (tput_user), RTR")
+    return run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                "TTFT", ttft_value, "ttft_ms", lower_is_better=True, field_name="ttft"
+            ),
+            MetricSpec(
+                "T/S/U",
+                tsu_value,
+                "tput_user",
+                lower_is_better=False,
+                field_name="tput_user",
+            ),
+            MetricSpec(
+                "RTR", rtr_value, "rtr", lower_is_better=False, field_name="rtr"
+            ),
+        ],
     )
 
-    tolerance = targets.tolerance if targets.tolerance else 0.05
-    logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
 
-    checks_passed = 0
-    checks_total = 0
-
-    if targets.ttft_ms is not None:  # pragma: no branch
-        checks_total += 1
-        ttft_threshold = targets.ttft_ms * (1 + tolerance)
-        if ttft_value <= ttft_threshold:
-            logger.info(f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms")
-            checks_passed += 1
-        else:
-            logger.warning(
-                f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
-            )
-
-    if targets.tput_user is not None and tsu_value is not None:
-        checks_total += 1
-        tsu_threshold = targets.tput_user * (1 - tolerance)
-        if tsu_value >= tsu_threshold:
-            logger.info(f"✅ T/S/U PASSED: {tsu_value:.2f} >= {tsu_threshold:.2f}")
-            checks_passed += 1
-        else:
-            logger.warning(f"❌ T/S/U FAILED: {tsu_value:.2f} < {tsu_threshold:.2f}")
-
-    if targets.rtr is not None and rtr_value is not None:
-        checks_total += 1
-        rtr_threshold = targets.rtr * (1 - tolerance)
-        if rtr_value >= rtr_threshold:
-            logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-            checks_passed += 1
-        else:
-            logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-    if checks_total == 0:  # pragma: no cover
-        logger.warning("No targets available for accuracy check")
-        return ReportCheckTypes.NA
-    if checks_passed == checks_total:
-        logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-        return ReportCheckTypes.PASS
-
-    logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-    return ReportCheckTypes.FAIL
-
-
-def run_audio_benchmark(ctx: MediaContext) -> dict:
+def run_audio_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for an audio model (Whisper, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -331,22 +287,29 @@ def run_audio_benchmark(ctx: MediaContext) -> dict:
     ttft_value = _audio_avg(status_list, "ttft")
     rtr_value = _audio_avg(status_list, "rtr")
     tsu_value = _audio_avg(status_list, "tsu")
-    accuracy_check = _audio_accuracy_check(ctx, ttft_value, tsu_value, rtr_value)
+    target_checks, accuracy_check = _audio_target_checks(
+        ctx, ttft_value, tsu_value, rtr_value
+    )
 
-    report_data = common_report_metadata(ctx, "audio")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "num_inference_steps": 0,
-        "ttft": ttft_value,
-        "inference_steps_per_second": 0,
-        "t/s/u": tsu_value,
-        "rtr": rtr_value,
-        "accuracy_check": accuracy_check,
-    }
-    report_data["streaming_enabled"] = is_streaming_enabled_for_whisper(ctx)
-    report_data["preprocessing_enabled"] = is_preprocessing_enabled_for_whisper(ctx)
-
-    return report_data
+    return Block(
+        kind="audio_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="audio"),
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "num_inference_steps": 0,
+                "ttft": ttft_value,
+                "inference_steps_per_second": 0,
+                "t/s/u": tsu_value,
+                "rtr": rtr_value,
+                "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+                "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_audio_benchmark"]

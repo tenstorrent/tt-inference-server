@@ -5,16 +5,18 @@
 
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
-#include "domain/llm_request.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/queue_manager.hpp"
+#include "ipc/task_queue.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
@@ -25,14 +27,22 @@
 
 namespace tt::services {
 
-class LLMService
-    : public BaseService<domain::LLMRequest, domain::LLMResponse>,
-      public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
+using namespace tt::domain::llm;
+
+class LLMService : public BaseService<LLMRequest, LLMResponse>,
+                   public Streamable<LLMRequest, LLMStreamChunk> {
  public:
-  using StreamCallback =
-      std::function<void(const domain::LLMStreamChunk&, bool)>;
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
   LLMService();
+
+  LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+             std::unique_ptr<tt::worker::WorkerManager> workerManager,
+             std::unique_ptr<ReasoningParser> reasoningParser,
+             std::unique_ptr<IToolCallParser> toolCallParser,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
+             size_t maxQueueSize = std::numeric_limits<size_t>::max());
+
   ~LLMService() override;
 
   LLMService(const LLMService&) = delete;
@@ -43,38 +53,33 @@ class LLMService
 
   bool isModelReady() const override;
 
-  void preProcess(domain::LLMRequest& request) const override;
+  void preProcess(LLMRequest& request) const override;
 
-  /**
-   * Abort an in-flight request. Removes the streaming callback, decrements
-   * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
-   * synchronous waiters, and broadcasts cancel to all worker queues.
-   * Idempotent and thread-safe.
-   */
+  void postProcess(LLMResponse& response) const override;
+
+  void processStreamingRequest(
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
+
   void abortRequest(uint32_t taskId);
 
-  /** Borrowed pointer to the worker manager, used by main to wire the
-   * worker metrics aggregator. Lifetime tied to this LLMService. */
+  ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
+
   tt::worker::WorkerManager* getWorkerManager() const {
     return workerManager.get();
   }
 
  protected:
-  void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
-  domain::LLMResponse processRequest(domain::LLMRequest request) override;
+  LLMResponse processRequest(LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
-  void processStreamingRequest(
-      domain::LLMRequest request,
-      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
-      override;
+  void streamingPostProcess(LLMStreamChunk&) const override {}
 
  private:
   struct StreamCallbackEntry {
-    std::function<void(domain::LLMStreamChunk&, bool)> callback;
+    std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
   };
 
@@ -83,6 +88,13 @@ class LLMService
 
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
                                                      bool isFinal);
+
+  void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+            std::unique_ptr<tt::worker::WorkerManager> workerManager,
+            std::unique_ptr<ReasoningParser> reasoningParser,
+            std::unique_ptr<IToolCallParser> toolCallParser,
+            std::unique_ptr<tt::ipc::QueueManager> queueManager,
+            size_t maxQueueSize);
 
   std::vector<std::thread> consumerThreads;
 
@@ -94,9 +106,9 @@ class LLMService
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
 
-  std::unique_ptr<tt::ipc::QueueManager> queueManager;
+  std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
-  const tt::utils::tokenizers::Tokenizer* tokenizer;
+  std::unique_ptr<tt::ipc::QueueManager> queueManager;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;

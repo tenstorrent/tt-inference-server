@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -28,10 +33,13 @@ headers = {
 
 
 class VideoGenerationLoadTest(BaseTest):
+    KIND = "video_generation_load"
+    TASK_TYPE = "video"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
         logger.info(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         video_generation_target_time = self.targets.get(
             "video_generation_target_time", 480
         )
@@ -43,13 +51,15 @@ class VideoGenerationLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_video_generation(batch_size=devices)
+        ) = await self.test_concurrent_video_generation(
+            batch_size=num_concurrent_requests
+        )
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": video_generation_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": requests_duration <= video_generation_target_time,
         }
 
@@ -158,3 +168,18 @@ class VideoGenerationLoadTest(BaseTest):
         )
 
         return requests_duration, avg_duration
+
+
+def run_video_generation_load(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`VideoGenerationLoadTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return VideoGenerationLoadTest(test_config, targets or {}, ctx=ctx).run_tests()

@@ -15,11 +15,11 @@ class LlamaTokenizer final : public Tokenizer {
   std::vector<int64_t> stopTokenIds() const { return {128001, 128008, 128009}; }
 
   std::string applyChatTemplate(
-      const std::vector<tt::domain::ChatMessage>& messages,
+      const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt,
       const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
           std::nullopt,
-      bool enableReasoning = true) const;
+      bool enableReasoning = true, bool skipApplyChatTemplate = false) const;
 };
 
 }  // namespace tt::utils::tokenizers

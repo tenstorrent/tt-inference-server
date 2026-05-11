@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_COMMON workflow venv.
+# Used by: setup_evals_common() in workflows/workflow_venvs.py
+#
+# Uses a TT-maintained fork of lm-evaluation-harness with extras enabled
+# for our common eval suites (api, ifeval, math, sentencepiece, r1_evals,
+# ruler, longbench, hf).
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
+protobuf
+pyjwt
+pillow
+datasets==3.1.0

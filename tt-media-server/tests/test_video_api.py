@@ -499,7 +499,7 @@ class TestVideoI2VGenerateRequestValidation:
             ImagePromptEntry(image="", frame_pos=0)
 
     def test_frame_pos_out_of_range_rejected(self):
-        """frame_pos must be < WAN22_DEFAULT_NUM_FRAMES (81); upstream
+        """frame_pos must be < WAN22_NUM_FRAMES (81); upstream
         would otherwise raise IndexError writing into a 81-slot tensor."""
         from pydantic import ValidationError
 
@@ -512,7 +512,7 @@ class TestVideoI2VGenerateRequestValidation:
         from pydantic import ValidationError
 
         b64 = _tiny_png_base64()
-        # 82 entries exceeds WAN22_DEFAULT_NUM_FRAMES, and the only valid
+        # 82 entries exceeds WAN22_NUM_FRAMES, and the only valid
         # frame_pos values are [0, 80] so this list is invalid on two axes.
         with pytest.raises(ValidationError):
             VideoI2VGenerateRequest(
