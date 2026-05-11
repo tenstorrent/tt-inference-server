@@ -12,8 +12,8 @@
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/cancel_queue.hpp"
+#include "ipc/boost/result_queue.hpp"
+#include "ipc/interface/cancel_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/schedulers/prefill_first_scheduler.hpp"
@@ -53,7 +53,7 @@ uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 // ---------- In-memory cancel queue for testing ----------
 //
-// Production uses BoostIpcCancelQueue, which is thread-safe via Boost's
+// Production uses tt::ipc::boost::CancelQueue, which is thread-safe via Boost's
 // IPC message queue. The tests exercise concurrent access (scheduler
 // thread pushing/draining while the main test thread pushes/inspects),
 // so this stub must mirror that thread-safety contract — otherwise the
@@ -236,8 +236,8 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   InMemoryCancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
-  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(rbName,
+                                          tt::ipc::boost::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -294,8 +294,8 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   InMemoryCancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
-  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(rbName,
+                                          tt::ipc::boost::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};

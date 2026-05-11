@@ -30,7 +30,7 @@ std::optional<tt::domain::llm::TokenResult> BlazePrefillModelRunner::forward(
       taskId, tokenIds.size());
   deviceInput.write(taskId, tokenIds, 1);
 
-  tt::ipc::ReadResult readBuf;
+  tt::ipc::posix::ReadResult readBuf;
   TT_LOG_DEBUG(
       "BlazePrefillModelRunner: Reading from shared memory output task_id={}",
       taskId);

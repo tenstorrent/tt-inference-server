@@ -7,29 +7,29 @@
 #include <string>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_queue.hpp"
-#include "ipc/task_queue.hpp"
+#include "ipc/boost/memory_queue.hpp"
+#include "ipc/interface/task_queue.hpp"
 
-namespace tt::ipc {
+namespace tt::ipc::boost {
 
 /**
- * ITaskQueue implementation backed by the generic BoostIpcMemoryQueue.
+ * ITaskQueue implementation backed by the generic boost MemoryQueue.
  */
-class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
+class TaskQueue : public tt::ipc::ITaskQueue {
  public:
   static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
   static constexpr size_t MAX_MSG_SIZE =
       tt::config::LLMConfig::MAX_INPUT_TOKENS * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
-  using Queue = BoostIpcMemoryQueue<tt::domain::llm::Sequence, MAX_MSG_SIZE>;
+  using Queue = MemoryQueue<tt::domain::llm::Sequence, MAX_MSG_SIZE>;
 
   /** Create a new queue (main process). */
-  BoostIpcTaskQueue(const std::string& name, int capacity)
+  TaskQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
   /** Open an existing queue (worker process). */
-  explicit BoostIpcTaskQueue(const std::string& name)
+  explicit TaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
   void push(const tt::domain::llm::Sequence& seq) override {
@@ -56,4 +56,4 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::boost

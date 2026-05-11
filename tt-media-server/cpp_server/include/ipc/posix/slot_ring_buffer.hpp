@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-namespace tt::ipc {
+namespace tt::ipc::posix {
 
 constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS =
@@ -206,4 +206,4 @@ class SlotRingBuffer {
 using PrefillSlotBuffer = SlotRingBuffer<PREFILL_MAX_TOKEN_IDS>;
 using DecodeSlotBuffer = SlotRingBuffer<DECODE_MAX_TOKEN_IDS>;
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::posix

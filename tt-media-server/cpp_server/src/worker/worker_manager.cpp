@@ -17,10 +17,10 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_cancel_queue.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
+#include "ipc/boost/cancel_queue.hpp"
+#include "ipc/boost/result_queue.hpp"
+#include "ipc/boost/task_queue.hpp"
+#include "ipc/boost/warmup_signal_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -168,11 +168,11 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(
+  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
       tt::config::ttTaskQueueName());
-  cfg.result_queue = std::make_shared<tt::ipc::BoostIpcResultQueue>(
+  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
       std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
-  cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
       std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
@@ -204,8 +204,8 @@ void WorkerManager::startWorkers() {
 }
 
 void WorkerManager::startWarmupListener() {
-  warmupQueue = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
-      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
+  warmupQueue = std::make_unique<tt::ipc::boost::WarmupSignalQueue>(
+      tt::ipc::boost::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
   warmupReceived = false;
   warmupListenerThread = std::thread([this]() {
     try {
@@ -270,11 +270,11 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(
+  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
       tt::config::ttTaskQueueName());
-  cfg.result_queue = std::make_shared<tt::ipc::BoostIpcResultQueue>(
+  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
       std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
-  cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
       std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();

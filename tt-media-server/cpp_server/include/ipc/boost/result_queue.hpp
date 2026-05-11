@@ -6,35 +6,37 @@
 #include <memory>
 #include <string>
 
-#include "ipc/boost_ipc_queue.hpp"
-#include "ipc/result_queue.hpp"
+#include "ipc/boost/memory_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
 
-namespace tt::ipc {
+namespace tt::ipc::boost {
 
 constexpr int RESULT_QUEUE_CAPACITY = 65536;
 
 /**
- * IResultQueue implementation backed by BoostIpcMemoryQueue.
+ * IResultQueue implementation backed by the generic boost MemoryQueue.
  * Replaces the custom POSIX-shm / futex TokenRingBuffer with the same
  * Boost.Interprocess transport used by the task and cancel queues.
  */
-class BoostIpcResultQueue : public IResultQueue {
+class ResultQueue : public tt::ipc::IResultQueue {
  public:
-  using Queue = BoostIpcMemoryQueue<SharedToken, sizeof(SharedToken)>;
+  using Queue = MemoryQueue<tt::ipc::SharedToken, sizeof(tt::ipc::SharedToken)>;
 
   /** Create a new queue (main process). */
-  BoostIpcResultQueue(const std::string& name, int capacity)
+  ResultQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
   /** Open an existing queue (worker process). */
-  explicit BoostIpcResultQueue(const std::string& name)
+  explicit ResultQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  bool push(const SharedToken& token) override {
+  bool push(const tt::ipc::SharedToken& token) override {
     return queue_->tryPush(token);
   }
 
-  bool tryPop(SharedToken& out) override { return queue_->tryPop(out); }
+  bool tryPop(tt::ipc::SharedToken& out) override {
+    return queue_->tryPop(out);
+  }
 
   /**
    * Block until a token is available or shutdown is signaled.
@@ -42,15 +44,15 @@ class BoostIpcResultQueue : public IResultQueue {
    * on data.  Shutdown is signalled by pushing a poison-pill token
    * (FLAG_DONE) which causes this method to return false.
    */
-  bool blockingPop(SharedToken& out) override {
+  bool blockingPop(tt::ipc::SharedToken& out) override {
     queue_->receive(out);
     return !out.isDone();
   }
 
   /** Push a poison-pill token so any thread blocked in blockingPop wakes. */
   void shutdown() override {
-    SharedToken pill{};
-    pill.flags = SharedToken::FLAG_DONE;
+    tt::ipc::SharedToken pill{};
+    pill.flags = tt::ipc::SharedToken::FLAG_DONE;
     queue_->push(pill);
   }
 
@@ -60,4 +62,4 @@ class BoostIpcResultQueue : public IResultQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::boost

@@ -16,9 +16,11 @@
 #include "domain/manage_memory.hpp"
 #include "utils/logger.hpp"
 
-namespace tt::ipc {
+namespace tt::ipc::boost {
 
-namespace bi_ipc = boost::interprocess;
+// Force lookup into the global ::boost namespace; the surrounding
+// tt::ipc::boost namespace would otherwise shadow it.
+namespace bi_ipc = ::boost::interprocess;
 
 template <typename T>
 concept Serializable =
@@ -40,7 +42,7 @@ concept IpcSerializable = Serializable<T> || (std::is_trivially_copyable_v<T> &&
  *     stream overhead.
  */
 template <IpcSerializable MsgType, size_t MaxMsgSize>
-class BoostIpcMemoryQueue {
+class MemoryQueue {
  public:
   static constexpr size_t MAX_MSG_SIZE = MaxMsgSize;
 
@@ -48,14 +50,14 @@ class BoostIpcMemoryQueue {
    *  previous process that crashed without cleanup. Falls back to
    *  open_only + drain if removal is not possible (e.g. race with
    *  another process, container permission issues). */
-  BoostIpcMemoryQueue(const std::string& name, int capacity) : name_(name) {
+  MemoryQueue(const std::string& name, int capacity) : name_(name) {
     bi_ipc::message_queue::remove(name.c_str());
     try {
       queue_ = std::make_unique<bi_ipc::message_queue>(
           bi_ipc::create_only, name.c_str(), capacity, MAX_MSG_SIZE);
     } catch (const bi_ipc::interprocess_exception&) {
       TT_LOG_WARN(
-          "[BoostIpcQueue] '{}' still exists after remove, "
+          "[ipc::boost::MemoryQueue] '{}' still exists after remove, "
           "opening existing queue and draining",
           name);
       queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
@@ -65,27 +67,26 @@ class BoostIpcMemoryQueue {
   }
 
   /** Open an existing queue (worker process). */
-  static std::unique_ptr<BoostIpcMemoryQueue> openExisting(
-      const std::string& name) {
+  static std::unique_ptr<MemoryQueue> openExisting(const std::string& name) {
     try {
-      return std::unique_ptr<BoostIpcMemoryQueue>(
-          new BoostIpcMemoryQueue(name));
+      return std::unique_ptr<MemoryQueue>(new MemoryQueue(name));
     } catch (const bi_ipc::interprocess_exception& e) {
-      TT_LOG_ERROR("[BoostIpcQueue] Failed to open existing queue: {}", name);
+      TT_LOG_ERROR("[ipc::boost::MemoryQueue] Failed to open existing queue: {}",
+                   name);
       throw std::runtime_error("Failed to open existing queue: " + name + " " +
                                std::to_string(errno) + " " + e.what());
     }
   }
 
-  ~BoostIpcMemoryQueue() {
+  ~MemoryQueue() {
     try {
       queue_.reset();
     } catch (const bi_ipc::interprocess_exception&) {
     }
   }
 
-  BoostIpcMemoryQueue(const BoostIpcMemoryQueue&) = delete;
-  BoostIpcMemoryQueue& operator=(const BoostIpcMemoryQueue&) = delete;
+  MemoryQueue(const MemoryQueue&) = delete;
+  MemoryQueue& operator=(const MemoryQueue&) = delete;
 
   // -- push (non-blocking, may block if queue is full) ----------------------
 
@@ -188,7 +189,7 @@ class BoostIpcMemoryQueue {
     }
   }
 
-  explicit BoostIpcMemoryQueue(const std::string& name) : name_(name) {
+  explicit MemoryQueue(const std::string& name) : name_(name) {
     queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
                                                      name.c_str());
   }
@@ -202,8 +203,8 @@ constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 constexpr int MEMORY_QUEUE_CAPACITY = 128;
 
 using MemoryRequestQueue =
-    BoostIpcMemoryQueue<domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;
+    MemoryQueue<tt::domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;
 using MemoryResultQueue =
-    BoostIpcMemoryQueue<domain::ManageMemoryResult, MEMORY_RESULT_MAX_MSG_SIZE>;
+    MemoryQueue<tt::domain::ManageMemoryResult, MEMORY_RESULT_MAX_MSG_SIZE>;
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::boost

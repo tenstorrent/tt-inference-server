@@ -10,7 +10,7 @@
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
+#include "ipc/boost/warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/runner_factory.hpp"
@@ -104,8 +104,8 @@ void SingleProcessWorker::start() {
   try {
     runner_->start([this]() {
       try {
-        tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
-            tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+        tt::ipc::boost::WarmupSignalQueue warmupQueue(
+            tt::ipc::boost::WARMUP_SIGNALS_QUEUE_NAME);
         warmupQueue.sendReady(worker_id);
         TT_LOG_INFO("[SingleProcessWorker] Worker {} signaled warmup complete",
                     worker_id);

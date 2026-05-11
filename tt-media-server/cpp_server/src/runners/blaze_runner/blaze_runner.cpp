@@ -10,7 +10,7 @@
 #include <services/memory_services/blaze_memory_manager.hpp>
 
 #include "config/settings.hpp"
-#include "ipc/token_push.hpp"
+#include "ipc/helpers/token_push.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 
@@ -255,7 +255,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
-  ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, finished);
   context.tokensGenerated++;
   if (finished) {
     uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -

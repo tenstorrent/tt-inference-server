@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "ipc/token_push.hpp"
+#include "ipc/helpers/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/guided_decoder_manager.hpp"
 #include "services/memory_services/paged_memory_manager.hpp"
@@ -62,7 +62,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     if (result.isError) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
       scheduler->removeSequence(result.taskId);
-      ipc::pushErrorToken(*this->resultQueue, result.taskId);
+      ipc::helpers::pushErrorToken(*this->resultQueue, result.taskId);
       return;
     }
 
@@ -77,7 +77,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
             result.tokenId, result.taskId);
         guidedDecoder->removeRequest(result.taskId);
         seq->setStatus(SequenceStatus::ABORTED);
-        ipc::pushErrorToken(*this->resultQueue, result.taskId);
+        ipc::helpers::pushErrorToken(*this->resultQueue, result.taskId);
         scheduler->removeSequence(result.taskId);
         return;
       }
@@ -94,7 +94,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
       seq->setStatus(SequenceStatus::FINISHED);
     }
 
-    ipc::pushToken(*this->resultQueue, result.taskId, result.tokenId, finished);
+    ipc::helpers::pushToken(*this->resultQueue, result.taskId, result.tokenId,
+                            finished);
 
     if (finished) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);

@@ -6,26 +6,26 @@
 #include <memory>
 #include <string>
 
-#include "ipc/boost_ipc_queue.hpp"
-#include "ipc/warmup_signal_queue.hpp"
+#include "ipc/boost/memory_queue.hpp"
+#include "ipc/interface/warmup_signal_queue.hpp"
 
-namespace tt::ipc {
+namespace tt::ipc::boost {
 
 constexpr const char* WARMUP_SIGNALS_QUEUE_NAME = "tt_warmup_signals";
 
 /**
- * IWarmupSignalQueue implementation backed by the generic BoostIpcMemoryQueue.
+ * IWarmupSignalQueue implementation backed by the generic boost MemoryQueue.
  */
-class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
+class WarmupSignalQueue : public tt::ipc::IWarmupSignalQueue {
  public:
-  using Queue = BoostIpcMemoryQueue<int64_t, sizeof(int64_t)>;
+  using Queue = MemoryQueue<int64_t, sizeof(int64_t)>;
 
   /** Create queue (main process side). */
-  BoostIpcWarmupSignalQueue(const std::string& name, size_t capacity)
+  WarmupSignalQueue(const std::string& name, size_t capacity)
       : queue_(std::make_unique<Queue>(name, static_cast<int>(capacity))) {}
 
   /** Open existing queue (worker side). */
-  explicit BoostIpcWarmupSignalQueue(const std::string& name)
+  explicit WarmupSignalQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
   void sendReady(int workerId) override {
@@ -44,4 +44,4 @@ class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::boost

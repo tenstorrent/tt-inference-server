@@ -51,10 +51,12 @@ domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
 
 SessionManager::SessionManager() {
   try {
-    memoryRequestQueue = std::make_unique<ipc::MemoryRequestQueue>(
-        tt::config::ttMemoryRequestQueueName(), ipc::MEMORY_QUEUE_CAPACITY);
-    memoryResultQueue = std::make_unique<ipc::MemoryResultQueue>(
-        tt::config::ttMemoryResultQueueName(), ipc::MEMORY_QUEUE_CAPACITY);
+    memoryRequestQueue = std::make_unique<ipc::boost::MemoryRequestQueue>(
+        tt::config::ttMemoryRequestQueueName(),
+        ipc::boost::MEMORY_QUEUE_CAPACITY);
+    memoryResultQueue = std::make_unique<ipc::boost::MemoryResultQueue>(
+        tt::config::ttMemoryResultQueueName(),
+        ipc::boost::MEMORY_QUEUE_CAPACITY);
     TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
     drainThread = std::thread([this] { readerLoop(); });
   } catch (const std::exception& e) {
