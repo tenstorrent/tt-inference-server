@@ -515,7 +515,7 @@ def main():
                         logger.error(
                             "⛔️ Structured-output benchmark script not found at "
                             f"{structured_output_script}. Re-run with --reset-venvs "
-                            "or rerun setup_benchmarks_vllm to fetch it."
+                            "or rerun fetch_structured_output_scripts to fetch it."
                         )
                         return_codes.append(1)
                         continue
