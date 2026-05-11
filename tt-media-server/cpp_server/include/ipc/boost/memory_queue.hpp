@@ -18,8 +18,6 @@
 
 namespace tt::ipc::boost {
 
-// Force lookup into the global ::boost namespace; the surrounding
-// tt::ipc::boost namespace would otherwise shadow it.
 namespace bi_ipc = ::boost::interprocess;
 
 template <typename T>
