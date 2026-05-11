@@ -276,6 +276,7 @@ struct ChatCompletionRequest : BaseRequest {
         messages, true, tools, enable_reasoning, skip_apply_chat_template);
     out.full_prompt_tokens_count =
         static_cast<int>(tokenizer.encode(promptStr).size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
     TT_LOG_INFO("Prompt: {}",
                 detail::truncate(promptStr, detail::MAX_PROMPT_LOG_LENGTH));
     out.prompt = std::move(promptStr);

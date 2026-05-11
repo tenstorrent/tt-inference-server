@@ -384,6 +384,7 @@ struct ResponsesRequest : BaseRequest {
                                                  std::nullopt, true, false);
     out.full_prompt_tokens_count =
         static_cast<int>(tokenizer.encode(promptStr).size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
     out.prompt = std::move(promptStr);
 
     out.max_tokens = max_output_tokens;
