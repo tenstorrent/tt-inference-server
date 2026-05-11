@@ -5,12 +5,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
-#include "domain/session.hpp"
 #include "services/llm_service.hpp"
 
 namespace tt::api {
@@ -26,9 +26,11 @@ struct ResponseWriterParams {
   std::string model;
   int64_t created;
   int promptTokenCount;
+  int cachedTokenCount = 0;
+  std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  tt::domain::Session* session = nullptr;
+  std::function<void()> onSessionRelease;
 };
 
 /**
@@ -68,9 +70,11 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   /**
    * Increment the completion-token counter and stamp first/second-token
    * times. Subclasses must call this from handleTokenChunk on every token
-   * that contributes to the final response. Returns the new token count.
+   * that contributes to the final response. Automatically tracks reasoning
+   * tokens if the choice contains reasoning content. Returns the new token
+   * count.
    */
-  int noteToken();
+  int noteToken(const LLMChoice& choice);
 
   /** Compute usage from the current accumulator state. */
   CompletionUsage buildUsage() const;
@@ -81,6 +85,9 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   std::optional<std::chrono::high_resolution_clock::time_point> firstTokenTime;
   std::optional<std::chrono::high_resolution_clock::time_point> secondTokenTime;
   std::atomic<int> completionTokens{0};
+  std::atomic<int> reasoningTokens{0};
+  std::atomic<uint32_t> specAccepts{0};
+  std::atomic<uint32_t> specRejects{0};
   std::atomic<bool> done{false};
 };
 

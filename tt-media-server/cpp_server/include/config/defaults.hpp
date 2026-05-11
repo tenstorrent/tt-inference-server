@@ -32,6 +32,7 @@ constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
+constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
@@ -58,7 +59,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
  * process. Self-terminating lets the infrastructure monitoring stack notice
  * the crash and restart the server instead of hanging silently.
  */
-constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 10000;
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 

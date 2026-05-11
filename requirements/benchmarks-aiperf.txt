@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_AIPERF workflow venv (Python 3.11).
+# Used by: setup_benchmarks_aiperf() in workflows/workflow_venvs.py
+#
+# AIPerf is a comprehensive benchmarking tool for generative AI models.
+# Repository: https://github.com/ai-dynamo/aiperf
+#
+# torch is needed by transitive deps (e.g. prompt_client) and is pinned to a
+# CPU build.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.4.0+cpu
+aiperf
+transformers
+pyjwt
+requests
+datasets

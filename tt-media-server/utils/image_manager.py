@@ -107,6 +107,8 @@ class ImageManager:
         """
         if base64_string.startswith("data:"):
             base64_string = base64_string.split(",")[1]
+        # Restore stripped padding so HTTP/JSON-trimmed strings decode cleanly.
+        base64_string += "=" * (-len(base64_string) % 4)
         image_bytes = base64.b64decode(base64_string)
         image = Image.open(BytesIO(image_bytes))
 

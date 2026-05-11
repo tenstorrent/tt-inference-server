@@ -16,7 +16,6 @@
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace {
@@ -28,8 +27,7 @@ void configureEnvForTest() {
 std::shared_ptr<tt::services::LLMService> makeService(
     std::shared_ptr<tt::ipc::ITaskQueue> taskQueue) {
   return std::make_shared<tt::services::LLMService>(
-      &tt::utils::tokenizers::activeTokenizer(), std::move(taskQueue),
-      std::make_unique<tt::worker::WorkerManager>(1),
+      std::move(taskQueue), std::make_unique<tt::worker::WorkerManager>(1),
       std::make_unique<tt::services::ReasoningParser>(),
       tt::services::createToolCallParser(tt::config::modelType()));
 }

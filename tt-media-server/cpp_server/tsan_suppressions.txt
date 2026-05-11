@@ -64,11 +64,6 @@ race:trantor::EventLoop::doRunInLoopFuncs
 # only with an issue link; prefer the most specific symbol that uniquely
 # identifies the buggy code path.
 
-# Issue tenstorrent/tt-inference-server#3179 — tokenizers-cpp Tokenizer is
-# not thread-safe. LLMService shares one tokenizer instance across all
-# concurrent requests; all races chain through LLMService::preProcess.
-race:tt::services::LLMService::preProcess
-
 # Issue tenstorrent/tt-inference-server#3180 — SseStreamWriter shared_ptr
 # fields are read across threads non-atomically. Races emanate from the
 # completion-chain (LLMController::resolveSession ↔ handleStreaming) into
