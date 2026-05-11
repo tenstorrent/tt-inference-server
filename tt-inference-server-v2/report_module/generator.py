@@ -59,7 +59,13 @@ class ReportGenerator:
         json_path = out_dir / f"report_{normalized.report_id}.json"
 
         self._file_saver.write_markdown(release_md, md_path, strict=True)
-        self._file_saver.write_json(normalized.to_dict(), json_path, strict=True)
+        json_payload = normalized.to_dict()
+        json_payload["metadata"] = {
+            k: v
+            for k, v in json_payload["metadata"].items()
+            if k not in _METADATA_RENDERING_KEYS
+        }
+        self._file_saver.write_json(json_payload, json_path, strict=True)
         logger.info("Generated report: md=%s, json=%s", md_path, json_path)
 
         return GenerateResult(
@@ -97,11 +103,19 @@ def _coerce_schema(schema: SchemaLike) -> ReportSchema:
     )
 
 
+_METADATA_RENDERING_KEYS = frozenset(
+    {"acceptance_summary_markdown", "acceptance_criteria"}
+)
+
+
 def _assemble_release_markdown(schema: ReportSchema, sections: list[str]) -> str:
     header = (
         f"## Tenstorrent Model Release Summary: {schema.model_name} on {schema.device}"
     )
-    metadata_json = json.dumps(schema.metadata, indent=4, default=str)
+    visible_metadata = {
+        k: v for k, v in schema.metadata.items() if k not in _METADATA_RENDERING_KEYS
+    }
+    metadata_json = json.dumps(visible_metadata, indent=4, default=str)
     metadata_block = (
         f"### Metadata: {schema.model_name} on {schema.device}\n"
         f"```json\n{metadata_json}\n```"
