@@ -101,8 +101,17 @@ class ImageGenContext:
 class ImageGenerationEvalsTest(BaseTest):
     """Eval test for image generation models."""
 
-    def __init__(self, config: TestConfig, targets: dict):
-        super().__init__(config, targets)
+    KIND = "image_generation_evals"
+    TASK_TYPE = "image"
+
+    def __init__(
+        self,
+        config: TestConfig,
+        targets: dict,
+        description: str = "",
+        ctx=None,
+    ):
+        super().__init__(config, targets, description=description, ctx=ctx)
         self.eval_results: dict = {}
 
     async def _run_specific_test_async(self) -> dict:

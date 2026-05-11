@@ -16,6 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from ._test_common import sweep_envelope
 from .health_tests import run_device_liveness
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,13 @@ def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return (False, None)
+
+    try:
+        from workflow_module import accept_blocks
+
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+    except Exception as e:
+        logger.warning(f"Could not forward device-liveness block to accumulator: {e}")
 
     data = block.data
     if data.get("success"):

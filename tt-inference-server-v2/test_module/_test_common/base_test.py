@@ -120,7 +120,8 @@ class BaseTest(ABC):
         else:
             bid = None
             targets = {"task_type": self.TASK_TYPE}
-        return Block(kind=self.KIND, id=bid, targets=targets, data=data)
+        title = self.description or None
+        return Block(kind=self.KIND, id=bid, title=title, targets=targets, data=data)
 
     def run_tests(self) -> Block:
         """Run the test with retry/log accounting and return a Block.
