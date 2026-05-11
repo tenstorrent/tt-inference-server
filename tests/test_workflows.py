@@ -370,8 +370,12 @@ class TestHostSetupIntegration:
             yield mock_file
 
     def test_setup_config_default_mode(self):
-        """Test SetupConfig in default Docker volume mode (no host_volume, no host_hf_cache)."""
-        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        """Test SetupConfig in default Docker volume mode (no host_volume, no host_hf_cache).
+
+        Uses a post-0.11 model spec; pre-0.11 models auto-fall-back to host
+        volume mode (see SetupConfig._infer_data) which is covered elsewhere.
+        """
+        model_id = "id_tt-transformers_Llama-3.2-1B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(
@@ -430,8 +434,12 @@ class TestHostSetupIntegration:
     def test_setup_host_default_mode_skips_download(
         self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
     ):
-        """Test default Docker volume mode: check_setup returns True, no host download."""
-        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        """Test default Docker volume mode: check_setup returns True, no host download.
+
+        Uses a post-0.11 model spec; pre-0.11 specs auto-fall-back to host
+        volume mode and would need host-side weight staging.
+        """
+        model_id = "id_tt-transformers_Llama-3.2-1B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
         manager = HostSetupManager(

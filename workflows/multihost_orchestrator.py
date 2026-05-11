@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from workflows.docker_interface import DockerInterface, get_docker_interface
 from workflows.multihost_config import (
     CONTAINER_USER,
     MultiHostConfig,
@@ -327,6 +328,18 @@ class MultiHostOrchestrator:
             setup_config: SetupConfig from setup_host()
             tt_smi_path: Path to tt-smi binary on hosts (used for validation)
         """
+        # generate_controller_docker_command and generate_worker_docker_command
+        # below hardcode the V2_MODERN contract (--ipc host, MODEL_WEIGHTS_DIR,
+        # RUNTIME_MODEL_SPEC_JSON_PATH). For pre-0.11 images the multihost path
+        # would emit a broken docker run; fail loudly instead.
+        if get_docker_interface(model_spec.version) is DockerInterface.V1_LEGACY:
+            raise NotImplementedError(
+                f"Multi-host orchestration is not supported for pre-0.11 "
+                f"images (model_spec.version={model_spec.version!r}). The "
+                f"controller/worker docker commands assume the V2_MODERN "
+                f"interface. See workflows/docker_interface.py."
+            )
+
         self.hosts = hosts
         self.mpi_interface = mpi_interface
         self.shared_storage_root = shared_storage_root

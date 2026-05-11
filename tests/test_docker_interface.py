@@ -8,7 +8,7 @@
 Covers:
   * parse_version_tuple / parse_image_version (workflows.utils)
   * DockerInterface enum + _DOCKER_INTERFACE_ERAS table + get_docker_interface
-    (workflows.run_docker_server)
+    (workflows.docker_interface)
   * The pre-0.11 vs post-0.11 branches of generate_docker_run_command —
     verifying the right docker run shape (--ipc host vs --shm-size 32G,
     CLI args after <image>, MODEL_WEIGHTS_DIR vs MODEL_WEIGHTS_PATH, etc.)
@@ -78,6 +78,17 @@ def tiny_model_spec(tiny_impl, tiny_device_model_spec):
 def temp_dir():
     with tempfile.TemporaryDirectory() as tmp:
         yield Path(tmp)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_volume_root(monkeypatch, tmp_path):
+    """Pin get_default_persistent_volume_root so SetupConfig's legacy
+    auto-fallback path doesn't touch the real repo's persistent_volume/
+    directory during tests."""
+    monkeypatch.setattr(
+        "workflows.setup_host.get_default_persistent_volume_root",
+        lambda repo_root: tmp_path / "persistent_volume",
+    )
 
 
 @pytest.fixture
@@ -169,7 +180,7 @@ class TestDockerInterfaceEnum:
     """DockerInterface enum + _DOCKER_INTERFACE_ERAS table + get_docker_interface."""
 
     def test_get_docker_interface_legacy_era(self):
-        from workflows.run_docker_server import DockerInterface, get_docker_interface
+        from workflows.docker_interface import DockerInterface, get_docker_interface
 
         # Anything < 0.11.0 routes to V1_LEGACY.
         assert get_docker_interface("0.10.0") is DockerInterface.V1_LEGACY
@@ -178,7 +189,7 @@ class TestDockerInterfaceEnum:
         assert get_docker_interface("0.0.1") is DockerInterface.V1_LEGACY
 
     def test_get_docker_interface_modern_era(self):
-        from workflows.run_docker_server import DockerInterface, get_docker_interface
+        from workflows.docker_interface import DockerInterface, get_docker_interface
 
         # 0.11.0 and above route to V2_MODERN.
         assert get_docker_interface("0.11.0") is DockerInterface.V2_MODERN
@@ -186,7 +197,7 @@ class TestDockerInterfaceEnum:
         assert get_docker_interface("1.0.0") is DockerInterface.V2_MODERN
 
     def test_get_docker_interface_unparseable_defaults_to_modern(self):
-        from workflows.run_docker_server import DockerInterface, get_docker_interface
+        from workflows.docker_interface import DockerInterface, get_docker_interface
 
         # Unparseable / empty version strings fall back to the newest era so
         # behaviour on `:dev` / `:latest` / handwritten "dev" is preserved.
@@ -197,7 +208,7 @@ class TestDockerInterfaceEnum:
     def test_eras_table_ordered_newest_first(self):
         """Selection rule walks the table top-to-bottom and returns on the
         first match, so newest era must come first."""
-        from workflows.run_docker_server import _DOCKER_INTERFACE_ERAS
+        from workflows.docker_interface import _DOCKER_INTERFACE_ERAS
 
         cut_versions = [entry[0] for entry in _DOCKER_INTERFACE_ERAS]
         assert cut_versions == sorted(cut_versions, reverse=True), (
@@ -208,7 +219,7 @@ class TestDockerInterfaceEnum:
         """The lowest entry must be (0, 0, 0) so every parseable version
         finds a match — otherwise get_docker_interface would silently fall
         through to the safety-net newest-era return at the bottom."""
-        from workflows.run_docker_server import _DOCKER_INTERFACE_ERAS
+        from workflows.docker_interface import _DOCKER_INTERFACE_ERAS
 
         assert _DOCKER_INTERFACE_ERAS[-1][0] == (0, 0, 0), (
             "Last era must anchor at (0, 0, 0) to catch every version."
@@ -250,6 +261,11 @@ class TestEraAwareDockerCommand:
         # image has these baked in / derives them.
         assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is None
         assert _find_env_var(cmd, "CACHE_ROOT") is None
+
+        # run.py forwards json_fpath unconditionally now, but V2_MODERN +
+        # dev_mode=False must NOT mount it — the image uses its own catalog.
+        assert _find_env_var(cmd, "RUNTIME_MODEL_SPEC_JSON_PATH") is None
+        assert not any("model_spec.json" in str(a) for a in cmd)
 
     def test_unparseable_version_defaults_to_modern(
         self, tiny_model_spec, runtime_config, temp_dir
@@ -354,20 +370,19 @@ class TestEraAwareDockerCommand:
         assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None
 
 
-class TestEndToEndLegacyCallerPath:
-    """Cover the gaps Codex flagged: run.py's docker-server caller must produce
-    a command that satisfies pre-0.11 invariants (TT_MODEL_SPEC_JSON_PATH,
-    MODEL_WEIGHTS_PATH) under realistic flag combinations — not just the
-    contrived "everything wired up" path used elsewhere in this file.
+class TestLegacyRealisticFlagCombinations:
+    """Pre-0.11 invariants (TT_MODEL_SPEC_JSON_PATH, MODEL_WEIGHTS_PATH) must
+    hold under the flag combinations a user actually runs with — not only
+    the contrived "host_weights_dir is set" path. Each test exercises one
+    realistic combination of run.py / SetupConfig inputs.
     """
 
-    def test_legacy_mounts_spec_json_without_dev_mode_via_caller_path(
+    def test_legacy_mounts_spec_json_without_dev_mode(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
-        """Mirrors run.py:644-694 with --docker-server, no --dev-mode. The
-        legacy in-image script reads TT_MODEL_SPEC_JSON_PATH at import time —
-        if run.py drops json_fpath outside --dev-mode (the pre-fix behavior),
-        the container crashes. Verify the JSON env+mount survive."""
+        """The legacy in-image script reads TT_MODEL_SPEC_JSON_PATH at import
+        time and crashes if it's unset. Verify the env var and JSON bind-mount
+        both appear for --docker-server without --dev-mode."""
         from workflows.setup_host import SetupConfig
 
         ms = dataclasses.replace(
@@ -452,6 +467,38 @@ class TestEndToEndLegacyCallerPath:
         # host_model_volume_root must be populated as a result so the cache_root
         # bind mount lands on the host (not on an anonymous docker volume).
         assert config.host_model_volume_root is not None
+
+        # And the resulting docker command must satisfy the pre-0.11 invariants
+        # (MODEL_WEIGHTS_PATH + CACHE_ROOT required), proving the auto-fallback
+        # actually unblocks the legacy entrypoint end-to-end.
+        rc = RuntimeConfig(
+            model=TINY_MODEL_NAME,
+            device="n150",
+            workflow="server",
+            service_port="8000",
+            interactive=False,
+            dev_mode=False,
+            device_id=None,
+            image_user="1000",
+            docker_server=True,
+            local_server=False,
+            no_auth=False,
+            host_volume=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+        )
+        json_fpath = _make_json_fpath(tmp_path)
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path",
+            return_value=Path("/tmp"),
+        ), patch(
+            "workflows.run_docker_server.DeviceTypes",
+        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
+            cmd, _ = generate_docker_run_command(ms, rc, config, json_fpath)
+
+        assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is not None
+        assert _find_env_var(cmd, "CACHE_ROOT") is not None
+        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
 
     def test_modern_default_no_flags_keeps_docker_named_volume(self, tiny_model_spec):
         """Post-0.11 images can download weights themselves; the auto-fallback

@@ -11,10 +11,10 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import List, Tuple
 
+from workflows.docker_interface import DockerInterface, get_docker_interface
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -28,7 +28,6 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
-    parse_version_tuple,
     run_command,
 )
 from workflows.workflow_types import (
@@ -43,88 +42,6 @@ logger = logging.getLogger("run_log")
 
 def short_uuid():
     return str(uuid.uuid4())[:8]
-
-
-# Image-interface eras. Commit 50db8ac7 ("Simplify and improve vLLM Docker
-# image interface", merged before v0.11.0) flipped the dev image from
-# docker-entrypoint.sh + gosu (V1_LEGACY) to a self-contained bash-c
-# ENTRYPOINT (V2_MODERN) that runs `python run_vllm_api_server.py $@`.
-# Side effects on `docker run`:
-#
-#   field               V1_LEGACY (< 0.11.0)           V2_MODERN (>= 0.11.0)
-#   ------------------  -----------------------------  -----------------------------
-#   ENTRYPOINT          docker-entrypoint.sh (gosu)    bash -c source venv && python
-#   CLI args after img  none (script took none)        --model X --tt-device Y ...
-#   shared memory       --shm-size 32G                 --ipc host
-#   weights env var     MODEL_WEIGHTS_PATH (required)  MODEL_WEIGHTS_DIR (optional)
-#   model selection     TT_MODEL_SPEC_JSON_PATH env    --model / --tt-device CLI
-#                       (required) + JSON mount        (CLI args + optional
-#                                                      RUNTIME_MODEL_SPEC_JSON_PATH)
-#   TT_CACHE_PATH       required, must be set          optional, derived from CACHE_ROOT
-#   CACHE_ROOT          required, must be set          ENV in image, optional override
-#
-# `get_docker_interface` maps a version string (from `model_spec.version`)
-# to an era. `model_spec.version` is the authoritative source: every
-# template pins it, and the --override-docker-image path also re-parses
-# it from the override tag (see model_spec.ModelSpec.__post_init__).
-# Unparseable versions fall back to the newest era — that matches every
-# freshly-built image since 0.11 and matches what main has always assumed.
-
-
-class DockerInterface(Enum):
-    """Era of the inference-server image's docker-run contract.
-
-    See _DOCKER_INTERFACE_ERAS below for the cut-points and the table at
-    the top of this module for per-era field differences.
-
-    To add a new era (e.g. when the interface breaks again at 0.20.0):
-      1. Add a new enum value, e.g. ``V3_NEXT = "v3-next"``.
-      2. Prepend the cut tuple to _DOCKER_INTERFACE_ERAS:
-            ((0, 20, 0), DockerInterface.V3_NEXT)
-      3. Add the corresponding branch in `generate_docker_run_command`.
-    """
-
-    V1_LEGACY = "v1-legacy"  # pre-0.11.0: docker-entrypoint.sh + gosu; env-var-driven; --shm-size 32G
-    V2_MODERN = "v2-modern"  # >= 0.11.0:  bash-c ENTRYPOINT; CLI args; --ipc host
-
-
-# Source of truth for which image version maps to which docker-interface era.
-# Each entry is (min_version_inclusive, era). Newest era FIRST; the first
-# entry whose min_version <= image_version wins.
-#
-# Unparseable image tags (`:dev`, `:latest`, missing) default to the
-# newest era — see get_docker_interface().
-_DOCKER_INTERFACE_ERAS: List[Tuple[Tuple[int, int, int], DockerInterface]] = [
-    ((0, 11, 0), DockerInterface.V2_MODERN),
-    ((0, 0, 0), DockerInterface.V1_LEGACY),
-]
-
-
-def get_docker_interface(version: str) -> DockerInterface:
-    """Return the docker-interface era for a semver-ish version string.
-
-    Designed to be called with ``model_spec.version`` — the authoritative
-    per-template release version. Unparseable versions fall back to the
-    newest era so today's behaviour on main (which assumes the V2_MODERN
-    contract for every image) is preserved.
-
-    Examples:
-        >>> get_docker_interface("0.10.4")
-        <DockerInterface.V1_LEGACY: 'v1-legacy'>
-        >>> get_docker_interface("0.13.0")
-        <DockerInterface.V2_MODERN: 'v2-modern'>
-        >>> get_docker_interface("")
-        <DockerInterface.V2_MODERN: 'v2-modern'>
-    """
-    parsed = parse_version_tuple(version) if version else None
-    if parsed is None:
-        return _DOCKER_INTERFACE_ERAS[0][1]
-    for min_v, era in _DOCKER_INTERFACE_ERAS:
-        if parsed >= min_v:
-            return era
-    # Below the lowest entry — fall back to the oldest era. Unreachable
-    # in practice (the table includes (0,0,0)), but kept for safety.
-    return _DOCKER_INTERFACE_ERAS[-1][1]
 
 
 def get_media_server_docker_env_vars(model_spec):
@@ -229,14 +146,14 @@ def generate_docker_run_command(
 
     # Detect image-interface era from model_spec.version (the authoritative
     # per-template release version — see DockerInterface enum and the
-    # comment block above _DOCKER_INTERFACE_ERAS). V2_MODERN is the bash-c
-    # ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>, --ipc
-    # host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh + gosu
-    # (no CLI args after <image>, --shm-size 32G, env-var driven —
+    # comment block in workflows/docker_interface.py). V2_MODERN is the
+    # bash-c ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>,
+    # --ipc host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh +
+    # gosu (no CLI args after <image>, --shm-size 32G, env-var driven —
     # MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
     #
     # When --override-docker-image is used, model_spec.version is also
-    # re-parsed from the override tag (see ModelSpec.__post_init__), so
+    # re-parsed from the override tag (see ModelSpec.apply_overrides), so
     # this reads correctly for overrides too.
     docker_interface = get_docker_interface(model_spec.version)
     is_v1_legacy = docker_interface is DockerInterface.V1_LEGACY

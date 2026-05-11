@@ -23,8 +23,8 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from workflows.docker_interface import DockerInterface, get_docker_interface
 from workflows.model_spec import ModelSpec
-from workflows.run_docker_server import DockerInterface, get_docker_interface
 from workflows.utils import (
     get_default_persistent_volume_root,
     resolve_hf_snapshot_dir,
