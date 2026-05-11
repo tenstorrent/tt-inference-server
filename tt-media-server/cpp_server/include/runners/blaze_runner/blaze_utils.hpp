@@ -77,7 +77,7 @@ struct SlotContext {
 struct CancelTombstones {
   std::deque<uint32_t> cancelTombstoneOrder;
   std::unordered_set<uint32_t> cancelTombstoneSet;
-  static constexpr size_t MAX_CANCEL_TOMBSTONES = 256;
+  size_t MAX_CANCEL_TOMBSTONES = tt::config::pmMaxUsers() * 2 ;
   bool consumeCancelTombstone(uint32_t taskId) {
     if (cancelTombstoneSet.erase(taskId) == 0) {
       return false;

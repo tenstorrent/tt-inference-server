@@ -12,7 +12,7 @@ namespace tt::domain {
 
 enum class MemoryManagementAction : std::uint8_t {
   ALLOCATE = 0,
-  DEALLOCATE = 1,
+  EVICT = 1,
   MOVE = 2,
 };
 

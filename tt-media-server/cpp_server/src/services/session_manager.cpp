@@ -42,7 +42,7 @@ domain::ManageMemoryTask makeAllocTask() {
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
   domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
-                                domain::MemoryManagementAction::DEALLOCATE);
+                                domain::MemoryManagementAction::EVICT);
   task.memoryLayout = domain::KvMemoryLayout::PAGED;
   task.slotId = slotId;
   return task;

@@ -47,7 +47,7 @@ void MemoryManager::handleRequest(const domain::ManageMemoryTask& request) {
       resultQueue->push(result);
       return;
     }
-    case domain::MemoryManagementAction::DEALLOCATE: {
+    case domain::MemoryManagementAction::EVICT: {
       return;
     }
     default: {
