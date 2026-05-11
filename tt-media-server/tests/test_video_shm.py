@@ -362,6 +362,53 @@ class TestRequestRoundtrip:
         assert got.seed == 0
         assert got.num_inference_steps == 0
 
+    def test_image_path_default_empty(self, input_pair):
+        """Default ``VideoRequest`` has ``image_path=""`` for backward T2V compat."""
+        writer, reader = input_pair
+        req = _make_request()
+        assert req.image_path == ""
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == ""
+
+    def test_image_path_populated_roundtrip(self, input_pair):
+        """A non-empty ``image_path`` survives the SHM round-trip unchanged."""
+        from ipc.video_shm import image_prompts_path
+
+        writer, reader = input_pair
+        path = image_prompts_path("abcdef12-3456-7890-abcd-ef1234567890")
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == path
+
+    def test_image_path_max_length(self, input_pair):
+        """``image_path`` exactly at ``MAX_IMAGE_PATH_LEN`` survives unchanged."""
+        from ipc.video_shm import MAX_IMAGE_PATH_LEN
+
+        writer, reader = input_pair
+        path = "/dev/shm/" + "a" * (MAX_IMAGE_PATH_LEN - len("/dev/shm/"))
+        assert len(path) == MAX_IMAGE_PATH_LEN
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == path
+        assert len(got.image_path) == MAX_IMAGE_PATH_LEN
+
+    def test_image_path_truncated_when_too_long(self, input_pair):
+        """Paths longer than ``MAX_IMAGE_PATH_LEN`` are truncated, matching
+        the existing behaviour of other string fields. T2V backward-compat
+        is preserved because oversized paths can never be produced by the
+        ``image_prompts_path`` helper."""
+        from ipc.video_shm import MAX_IMAGE_PATH_LEN
+
+        writer, reader = input_pair
+        path = "/dev/shm/" + "z" * (MAX_IMAGE_PATH_LEN + 50)
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert len(got.image_path) == MAX_IMAGE_PATH_LEN
+
 
 # ── Response roundtrip ──
 

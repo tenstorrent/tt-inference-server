@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "domain/llm/sampling_params.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 
@@ -73,12 +74,18 @@ class InterServerService {
    * @param token_ids Pre-tokenized prompt token IDs
    * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
    * @param slot_id KV cache slot allocated by decode server's memory manager
+   * @param sampling Sampling parameters; only the subset carried on the wire
+   *                 (temperature, top_p, top_k, fast_mode) is used. Pass the
+   *                 result of mapSamplingParams() so global overrides like
+   *                 USE_FAST_MODE are honoured. Defaulted SamplingParams{}
+   *                 means "use prefill-side defaults".
    * @return true if sent successfully
    */
   bool sendPrefillRequest(uint32_t taskId, const std::string& prompt,
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
-                          std::optional<uint32_t> slotId = std::nullopt);
+                          std::optional<uint32_t> slotId = std::nullopt,
+                          const tt::domain::llm::SamplingParams& sampling = {});
 
   /**
    * @brief Send prefill result back to the decode server

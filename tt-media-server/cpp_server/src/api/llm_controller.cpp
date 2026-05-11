@@ -5,10 +5,12 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "api/error_response.hpp"
@@ -182,6 +184,30 @@ void LLMController::chatCompletions(
   }
 
   auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
+  const size_t maxContextLength = tt::config::maxContextLength();
+  const size_t promptTokens =
+      static_cast<size_t>(std::max(0, reqPtr->prompt_tokens_count));
+
+  const size_t requested =
+      promptTokens +
+      (reqPtr->max_tokens.has_value()
+           ? static_cast<size_t>(std::max(0, *reqPtr->max_tokens))
+           : 1);
+  const bool exceedsContext = requested > maxContextLength;
+
+  if (exceedsContext) {
+    std::string detail =
+        "prompt_tokens=" + std::to_string(reqPtr->prompt_tokens_count);
+    if (reqPtr->max_tokens.has_value()) {
+      detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
+    }
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Request exceeds maximum context length (" +
+                               std::to_string(maxContextLength) +
+                               " tokens): " + detail,
+                           "invalid_request_error"));
+    return;
+  }
 
   if (reqPtr->stream) {
     const bool includeUsage = !reqPtr->stream_options.has_value() ||
@@ -497,18 +523,24 @@ void LLMController::dispatchGeneration(
 
 bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
                                             bool validSessionFound) const {
-  if (validSessionFound) {
-    return true;
-  }
-
-  // In disaggregated decode mode, fall back to running prefill locally if the
-  // prefill server socket is unavailable — otherwise the request would be sent
-  // to a peer that cannot service it.
-  if (!socketService || !socketService->isConnected()) {
+  const bool socketReady = socketService && socketService->isConnected();
+  if (!socketReady) {
     TT_LOG_WARN(
         "[LLMController] Prefill server not connected; falling back to "
         "prefill on decode for taskId={}",
         request.task_id);
+    return true;
+  }
+
+  if (request.disaggregation_override.has_value()) {
+    const bool forceDisagg = *request.disaggregation_override;
+    TT_LOG_INFO(
+        "[LLMController] Honoring disaggregation override={} for taskId={}",
+        forceDisagg, request.task_id);
+    return !forceDisagg;
+  }
+
+  if (validSessionFound) {
     return true;
   }
 

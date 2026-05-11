@@ -96,6 +96,8 @@ struct ChatCompletionRequest : BaseRequest {
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
+  std::optional<bool> disaggregation_override;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
@@ -225,6 +227,10 @@ struct ChatCompletionRequest : BaseRequest {
       req.skip_apply_chat_template =
           getBool(json["skip_apply_chat_template"], "skip_apply_chat_template");
 
+    if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
+      req.disaggregation_override =
+          getBool(json["disaggregation"], "disaggregation");
+
     validateToolFields(req);
     validateToolMessages(req);
     return req;
@@ -252,7 +258,9 @@ struct ChatCompletionRequest : BaseRequest {
         << " frequency_penalty=" << frequency_penalty << " n=" << n
         << " stop_count=" << stop.size()
         << " enable_reasoning=" << enable_reasoning
-        << " skip_apply_chat_template=" << skip_apply_chat_template;
+        << " skip_apply_chat_template=" << skip_apply_chat_template
+        << " disaggregation_override="
+        << detail::optStr(disaggregation_override);
     return out.str();
   }
 
@@ -306,6 +314,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.enable_reasoning = enable_reasoning;
     out.sessionId = sessionId;
+    out.disaggregation_override = disaggregation_override;
     return out;
   }
 
@@ -320,6 +329,26 @@ struct ChatCompletionRequest : BaseRequest {
     if (type != "none" && toolsMissing) {
       throw std::invalid_argument("tool_choice='" + type +
                                   "' requires non-empty 'tools'");
+    }
+
+    if (type == "function") {
+      if (!toolChoice.function.has_value()) {
+        throw std::invalid_argument(
+            "tool_choice.function.name is required when type is 'function'. "
+            "Expected format: {\"type\": \"function\", \"function\": "
+            "{\"name\": \"function_name\"}}");
+      }
+
+      const auto& functionName = toolChoice.function.value();
+      const auto& tools = req.tools.value();
+      const bool found = std::any_of(
+          tools.begin(), tools.end(), [&](const tool_calls::Tool& tool) {
+            return tool.functionDefinition.name == functionName;
+          });
+      if (!found) {
+        throw std::invalid_argument("tool_choice.function.name '" +
+                                    functionName + "' not found in tools");
+      }
     }
   }
 

@@ -176,7 +176,7 @@ void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
-  drainAndHandleResponses();
+  drainAndHandleMemoryResponses();
   drainAndHandleOutputs();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
@@ -197,12 +197,12 @@ void BlazeRunner::step() {
   checkOutputHang();
 }
 
-void BlazeRunner::drainAndHandleResponses() {
+void BlazeRunner::drainAndHandleMemoryResponses() {
   pm::PMResponse response;
   size_t drained = 0;
   while (drained < tt::config::pmMaxUsers() &&
          pipelineManager->try_pop_response(response)) {
-    handleResponse(response);
+    handleMemoryResponse(response);
     drained++;
   }
 }
@@ -231,7 +231,7 @@ inline void BlazeRunner::handleMemoryRequest(
   memoryManager->handleRequest(request);
 }
 
-inline void BlazeRunner::handleResponse(const pm::PMResponse& response) {
+inline void BlazeRunner::handleMemoryResponse(const pm::PMResponse& response) {
   memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
