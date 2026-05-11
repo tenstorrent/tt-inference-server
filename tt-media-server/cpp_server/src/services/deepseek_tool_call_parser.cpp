@@ -9,8 +9,37 @@
 #include "config/types.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/logger.hpp"
+#include "utils/tool_call_id_generator.hpp"
 
 namespace tt::services {
+
+Json::Value IToolCallParser::buildForcedToolCall(
+    const std::string& text, const std::string& functionName) const {
+  std::string argumentsStr = text;
+
+  Json::Value decodedOutput;
+  static const Json::CharReaderBuilder kReaderBuilder;
+  thread_local const std::unique_ptr<Json::CharReader> reader(
+      kReaderBuilder.newCharReader());
+  std::string parseErrors;
+  const bool parsed = reader->parse(text.data(), text.data() + text.size(),
+                                    &decodedOutput, &parseErrors);
+  if (parsed && decodedOutput.isMember("arguments")) {
+    argumentsStr = decodedOutput["arguments"].toStyledString();
+  }
+
+  std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
+
+  Json::Value toolCallJson;
+  toolCallJson["id"] = toolCallId;
+  toolCallJson["type"] = "function";
+  toolCallJson["function"]["name"] = functionName;
+  toolCallJson["function"]["arguments"] = argumentsStr;
+
+  Json::Value toolCallsArray(Json::arrayValue);
+  toolCallsArray.append(toolCallJson);
+  return toolCallsArray;
+}
 
 namespace {
 

@@ -25,6 +25,25 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
   }
 }
 
+Sequence::Sequence(uint32_t taskId, int blockSize,
+                   std::vector<int64_t> inputTokenIds, size_t numPromptTokens,
+                   std::optional<uint32_t> slotId, bool continuation,
+                   bool disaggregated,
+                   std::unique_ptr<SamplingParams> inputSamplingParams)
+    : taskId(taskId),
+      status(SequenceStatus::WAITING),
+      tokenIds(std::move(inputTokenIds)),
+      numPromptTokens(numPromptTokens),
+      samplingParams(std::move(inputSamplingParams)),
+      blockSize(blockSize),
+      kvCacheSlot(slotId.value_or(tt::domain::INVALID_SLOT_ID)),
+      continuation(continuation),
+      disaggregated(disaggregated) {
+  if (!tokenIds.empty()) {
+    lastToken = tokenIds.back();
+  }
+}
+
 std::vector<int64_t> Sequence::block(size_t i) const {
   size_t n = numBlocks();
   if (i >= n) {

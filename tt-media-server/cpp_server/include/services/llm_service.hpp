@@ -40,7 +40,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
              std::unique_ptr<ReasoningParser> reasoningParser,
              std::unique_ptr<IToolCallParser> toolCallParser,
-             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
   ~LLMService() override;
