@@ -13,6 +13,7 @@
 #include <csignal>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
@@ -28,7 +29,7 @@ inline int runWorkerSubprocess(int workerId) {
 
   // Signal warmup: parent unblocks isModelReady() only after this.
   tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
-      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+      tt::config::ttWarmupSignalsQueueName());
   warmupQueue.sendReady(workerId);
 
   static std::atomic<bool> done{false};
