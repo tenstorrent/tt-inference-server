@@ -24,6 +24,7 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.model_spec import ModelSpec
+from workflows.run_docker_server import DockerInterface, get_docker_interface
 from workflows.utils import (
     get_default_persistent_volume_root,
     resolve_hf_snapshot_dir,
@@ -80,6 +81,25 @@ class SetupConfig:
             self.host_volume = str(
                 get_default_persistent_volume_root(Path(self.repo_root))
             )
+
+        # Pre-0.11 images cannot download weights inside the container — the
+        # legacy entrypoint expects them already on-disk at MODEL_WEIGHTS_PATH.
+        # When the user passes none of --host-volume/--host-hf-cache/
+        # --host-weights-dir, fall back to the default host volume so weights
+        # can be staged once and reused across runs (preserves v0.10 behavior).
+        is_v1_legacy = (
+            get_docker_interface(self.model_spec.version) is DockerInterface.V1_LEGACY
+        )
+        if (
+            is_v1_legacy
+            and not self.host_volume
+            and not self.host_hf_cache
+            and not self.host_weights_dir
+        ):
+            self.host_volume = str(
+                get_default_persistent_volume_root(Path(self.repo_root))
+            )
+
         if self.host_volume:
             self.host_volume = str(Path(self.host_volume).expanduser().resolve())
             self.persistent_volume_root = Path(self.host_volume)

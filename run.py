@@ -643,9 +643,10 @@ def main():
 
     # step 4: optionally run inference server
     if runtime_config.docker_server:
-        docker_json_fpath = None
-        if runtime_config.dev_mode:
-            docker_json_fpath = json_fpath
+        # Always forward json_fpath: pre-0.11 images require TT_MODEL_SPEC_JSON_PATH
+        # at startup; post-0.11 images mount it only in --dev-mode (handled inside
+        # generate_docker_run_command via the era check).
+        docker_json_fpath = json_fpath
         if runtime_config.print_docker_cmd:
             if is_multihost_deployment(runtime_config):
                 # Print multi-host docker commands

@@ -352,3 +352,116 @@ class TestEraAwareDockerCommand:
 
         assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is not None
         assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None
+
+
+class TestEndToEndLegacyCallerPath:
+    """Cover the gaps Codex flagged: run.py's docker-server caller must produce
+    a command that satisfies pre-0.11 invariants (TT_MODEL_SPEC_JSON_PATH,
+    MODEL_WEIGHTS_PATH) under realistic flag combinations — not just the
+    contrived "everything wired up" path used elsewhere in this file.
+    """
+
+    def test_legacy_mounts_spec_json_without_dev_mode_via_caller_path(
+        self, tiny_model_spec, runtime_config, temp_dir
+    ):
+        """Mirrors run.py:644-694 with --docker-server, no --dev-mode. The
+        legacy in-image script reads TT_MODEL_SPEC_JSON_PATH at import time —
+        if run.py drops json_fpath outside --dev-mode (the pre-fix behavior),
+        the container crashes. Verify the JSON env+mount survive."""
+        from workflows.setup_host import SetupConfig
+
+        ms = dataclasses.replace(
+            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
+        )
+        rc = dataclasses.replace(runtime_config, dev_mode=False, docker_server=True)
+        config = SetupConfig(model_spec=ms)
+        json_fpath = _make_json_fpath(temp_dir)
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path",
+            return_value=Path("/tmp"),
+        ), patch(
+            "workflows.run_docker_server.DeviceTypes",
+        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
+            cmd, _ = generate_docker_run_command(ms, rc, config, json_fpath)
+
+        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
+        # And the file is actually bind-mounted into the container.
+        assert any("model_spec.json" in str(a) for a in cmd)
+
+    def test_legacy_host_volume_sets_model_weights_path(
+        self, tiny_model_spec, runtime_config, temp_dir
+    ):
+        """--host-volume does NOT populate host_model_weights_mount_dir, but
+        pre-0.11 still requires MODEL_WEIGHTS_PATH. Verify it's derived from
+        cache_root/weights/<model> in this case."""
+        from workflows.setup_host import SetupConfig
+
+        volume_root = temp_dir / "persistent_volumes"
+        volume_root.mkdir()
+
+        ms = dataclasses.replace(
+            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
+        )
+        config = SetupConfig(model_spec=ms, host_volume=str(volume_root))
+        json_fpath = _make_json_fpath(temp_dir)
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path",
+            return_value=Path("/tmp"),
+        ), patch(
+            "workflows.run_docker_server.DeviceTypes",
+        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
+            cmd, _ = generate_docker_run_command(ms, runtime_config, config, json_fpath)
+
+        weights_path = _find_env_var(cmd, "MODEL_WEIGHTS_PATH")
+        assert weights_path is not None
+        # Path is cache_root / weights / <model_name>; default cache_root is
+        # /home/container_app_user/cache_root.
+        assert weights_path.endswith(f"weights/{TINY_MODEL_NAME}")
+        assert "cache_root" in weights_path
+        # And NOT the modern var name.
+        assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None
+
+    def test_legacy_default_no_flags_auto_creates_host_volume(
+        self, tiny_model_spec, monkeypatch, tmp_path
+    ):
+        """Pre-0.11 images can't download weights inside the container. When
+        the user passes no --host-volume / --host-hf-cache / --host-weights-dir,
+        SetupConfig must auto-fall-back to the default host volume so weights
+        can be staged once and reused."""
+        from workflows.setup_host import SetupConfig
+
+        ms = dataclasses.replace(
+            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
+        )
+
+        # Pin the default volume root so we can assert against it without
+        # touching the real user home.
+        fake_default = tmp_path / "persistent_volume"
+        monkeypatch.setattr(
+            "workflows.setup_host.get_default_persistent_volume_root",
+            lambda repo_root: fake_default,
+        )
+
+        config = SetupConfig(model_spec=ms)
+
+        # Legacy path: host_volume now points at the default location.
+        assert config.host_volume is not None
+        assert str(fake_default) in config.host_volume
+        # host_model_volume_root must be populated as a result so the cache_root
+        # bind mount lands on the host (not on an anonymous docker volume).
+        assert config.host_model_volume_root is not None
+
+    def test_modern_default_no_flags_keeps_docker_named_volume(self, tiny_model_spec):
+        """Post-0.11 images can download weights themselves; the auto-fallback
+        must not fire and the path stays on an anonymous docker named volume."""
+        from workflows.setup_host import SetupConfig
+
+        ms = dataclasses.replace(
+            tiny_model_spec, docker_image="img:0.13.0-abc", version="0.13.0"
+        )
+        config = SetupConfig(model_spec=ms)
+
+        assert config.host_volume is None
+        assert config.host_model_volume_root is None

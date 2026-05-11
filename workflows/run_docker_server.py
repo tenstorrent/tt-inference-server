@@ -322,6 +322,12 @@ def generate_docker_run_command(
             and setup_config.host_model_weights_mount_dir
         ):
             docker_env_vars[weights_env_var] = setup_config.container_model_weights_path
+        elif is_v1_legacy and setup_config.container_model_weights_path:
+            # Pre-0.11 invariant: MODEL_WEIGHTS_PATH is REQUIRED. Even without a
+            # readonly mount (e.g. --host-volume), the legacy entrypoint expects
+            # weights at cache_root/weights/<model>. Post-0.11 leaves
+            # MODEL_WEIGHTS_DIR unset, letting the container download/discover.
+            docker_env_vars[weights_env_var] = setup_config.container_model_weights_path
         if (
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
