@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -46,10 +47,11 @@ def short_uuid():
 
 # Image-interface eras. Commit 50db8ac7 ("Simplify and improve vLLM Docker
 # image interface", merged before v0.11.0) flipped the dev image from
-# docker-entrypoint.sh + gosu to a self-contained bash-c ENTRYPOINT that
-# runs `python run_vllm_api_server.py $@`. Side effects on `docker run`:
+# docker-entrypoint.sh + gosu (V1_LEGACY) to a self-contained bash-c
+# ENTRYPOINT (V2_MODERN) that runs `python run_vllm_api_server.py $@`.
+# Side effects on `docker run`:
 #
-#   field               pre-0.11                       post-0.11 (current)
+#   field               V1_LEGACY (< 0.11.0)           V2_MODERN (>= 0.11.0)
 #   ------------------  -----------------------------  -----------------------------
 #   ENTRYPOINT          docker-entrypoint.sh (gosu)    bash -c source venv && python
 #   CLI args after img  none (script took none)        --model X --tt-device Y ...
@@ -64,8 +66,38 @@ def short_uuid():
 # `parse_image_version` extracts a (major, minor, patch) tuple from the
 # image tag. Returns None for unparseable tags (`:dev`, `:latest`, missing
 # tag, or non-numeric leading characters), in which case the caller defaults
-# to the post-0.11 behaviour — that matches every freshly-built image since
-# 0.11 and matches what main has always assumed.
+# to the newest era — that matches every freshly-built image since 0.11
+# and matches what main has always assumed.
+
+
+class DockerInterface(Enum):
+    """Era of the inference-server image's docker-run contract.
+
+    See _DOCKER_INTERFACE_ERAS below for the cut-points and the table at
+    the top of this module for per-era field differences.
+
+    To add a new era (e.g. when the interface breaks again at 0.20.0):
+      1. Add a new enum value, e.g. ``V3_NEXT = "v3-next"``.
+      2. Prepend the cut tuple to _DOCKER_INTERFACE_ERAS:
+            ((0, 20, 0), DockerInterface.V3_NEXT)
+      3. Add the corresponding branch in `generate_docker_run_command`.
+    """
+
+    V1_LEGACY = "v1-legacy"   # pre-0.11.0: docker-entrypoint.sh + gosu; env-var-driven; --shm-size 32G
+    V2_MODERN = "v2-modern"   # >= 0.11.0:  bash-c ENTRYPOINT; CLI args; --ipc host
+
+
+# Source of truth for which image version maps to which docker-interface era.
+# Each entry is (min_version_inclusive, era). Newest era FIRST; the first
+# entry whose min_version <= image_version wins.
+#
+# Unparseable image tags (`:dev`, `:latest`, missing) default to the
+# newest era — see get_docker_interface().
+_DOCKER_INTERFACE_ERAS: List[Tuple[Tuple[int, int, int], DockerInterface]] = [
+    ((0, 11, 0), DockerInterface.V2_MODERN),
+    ((0, 0, 0),  DockerInterface.V1_LEGACY),
+]
+
 
 _IMAGE_VERSION_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
 
@@ -99,18 +131,32 @@ def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
     return (parts[0], parts[1], parts[2])
 
 
-_PRE_0_11 = (0, 11, 0)
+def get_docker_interface(image: str) -> DockerInterface:
+    """Return the docker-interface era for the given Docker image tag.
 
+    Inspects only the version embedded in the tag; the image is not pulled
+    or inspected. Unparseable tags fall back to the newest era so today's
+    behaviour on main (which assumes the V2_MODERN contract for every
+    image) is preserved when run against `:dev` / `:latest` / un-tagged
+    images.
 
-def _is_pre_0_11_image(image: str) -> bool:
-    """Return True if the image tag parses as a version strictly < 0.11.0.
-
-    Returns False for any image whose tag does not parse as a version,
-    so unparseable tags (`:dev`, `:latest`, missing) default to the
-    post-0.11 / current behaviour.
+    Examples:
+        >>> get_docker_interface("ghcr.io/foo/bar:0.10.4-abc")
+        <DockerInterface.V1_LEGACY: 'v1-legacy'>
+        >>> get_docker_interface("ghcr.io/foo/bar:0.13.0")
+        <DockerInterface.V2_MODERN: 'v2-modern'>
+        >>> get_docker_interface("ghcr.io/foo/bar:dev")
+        <DockerInterface.V2_MODERN: 'v2-modern'>
     """
     version = parse_image_version(image)
-    return version is not None and version < _PRE_0_11
+    if version is None:
+        return _DOCKER_INTERFACE_ERAS[0][1]
+    for min_v, era in _DOCKER_INTERFACE_ERAS:
+        if version >= min_v:
+            return era
+    # Below the lowest entry — fall back to the oldest era. Unreachable
+    # in practice (the table includes (0,0,0)), but kept for safety.
+    return _DOCKER_INTERFACE_ERAS[-1][1]
 
 
 def get_media_server_docker_env_vars(model_spec):
@@ -213,13 +259,14 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # Detect image-interface era from the tag (see parse_image_version
-    # docstring and the comment block above it). When False -> the modern
-    # bash-c ENTRYPOINT shape introduced in 0.11.0; CLI args after <image>,
-    # --ipc host, MODEL_WEIGHTS_DIR. When True -> docker-entrypoint.sh +
-    # gosu, no CLI args after <image>, --shm-size 32G, env-var driven
-    # (MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
-    is_pre_0_11 = _is_pre_0_11_image(model_spec.docker_image)
+    # Detect image-interface era from the tag (see DockerInterface enum and
+    # the comment block above _DOCKER_INTERFACE_ERAS). V2_MODERN is the
+    # bash-c ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>,
+    # --ipc host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh +
+    # gosu (no CLI args after <image>, --shm-size 32G, env-var driven —
+    # MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
+    docker_interface = get_docker_interface(model_spec.docker_image)
+    is_v1_legacy = docker_interface is DockerInterface.V1_LEGACY
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -240,7 +287,7 @@ def generate_docker_run_command(
     # Pre-0.11 used --shm-size 32G; post-0.11 switched to --ipc host (see
     # commit 50db8ac7). They are not equivalent — --ipc host shares the
     # host's IPC namespace; --shm-size 32G allocates an isolated tmpfs.
-    shm_args = ["--shm-size", "32G"] if is_pre_0_11 else ["--ipc", "host"]
+    shm_args = ["--shm-size", "32G"] if is_v1_legacy else ["--ipc", "host"]
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
@@ -295,7 +342,7 @@ def generate_docker_run_command(
 
     docker_env_vars = {}
     # weights env var: post-0.11 renamed MODEL_WEIGHTS_PATH -> MODEL_WEIGHTS_DIR.
-    weights_env_var = "MODEL_WEIGHTS_PATH" if is_pre_0_11 else "MODEL_WEIGHTS_DIR"
+    weights_env_var = "MODEL_WEIGHTS_PATH" if is_v1_legacy else "MODEL_WEIGHTS_DIR"
     if setup_config:
         if (
             setup_config.container_model_weights_path
@@ -317,7 +364,7 @@ def generate_docker_run_command(
     # has CACHE_ROOT baked in as an image ENV and derives TT_CACHE_PATH internally).
     # Also the weights env var is REQUIRED pre-0.11, OPTIONAL post-0.11. Fill in
     # safe defaults from setup_config or a baked container path.
-    if is_pre_0_11:
+    if is_v1_legacy:
         cache_root = (
             setup_config.cache_root
             if setup_config and setup_config.cache_root
@@ -343,7 +390,7 @@ def generate_docker_run_command(
     # the spec JSON whenever it's provided, regardless of --dev-mode. Post-0.11
     # only needs RUNTIME_MODEL_SPEC_JSON_PATH in --dev-mode (otherwise the image
     # uses its baked-in catalog path).
-    mount_spec_json = (is_pre_0_11 or runtime_config.dev_mode) and json_fpath is not None
+    mount_spec_json = (is_v1_legacy or runtime_config.dev_mode) and json_fpath is not None
     if mount_spec_json:
         container_model_spec_dir = Path(f"{user_home_path}/model_specs")
         runtime_json_fpath = container_model_spec_dir / json_fpath.name
@@ -352,7 +399,7 @@ def generate_docker_run_command(
             f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
         ]
         # Env-var name differs by era; both point at the same mounted file.
-        if is_pre_0_11:
+        if is_v1_legacy:
             docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
         else:
             docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
@@ -406,7 +453,7 @@ def generate_docker_run_command(
     # CMD ran the script with no args, reading TT_MODEL_SPEC_JSON_PATH /
     # MODEL_WEIGHTS_PATH from the env. Passing --model / --tt-device here would
     # be forwarded to gosu as the command and would fail.
-    if model_spec.inference_engine == InferenceEngine.VLLM.value and not is_pre_0_11:
+    if model_spec.inference_engine == InferenceEngine.VLLM.value and not is_v1_legacy:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
         if runtime_config.no_auth:

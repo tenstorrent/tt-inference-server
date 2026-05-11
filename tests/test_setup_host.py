@@ -704,17 +704,34 @@ class TestImageEraRouting:
         assert parse_image_version("ghcr.io/foo/bar:latest") is None
         assert parse_image_version("ghcr.io/foo/bar") is None
 
-    def test_is_pre_0_11_image(self):
-        from workflows.run_docker_server import _is_pre_0_11_image
+    def test_get_docker_interface(self):
+        from workflows.run_docker_server import (
+            DockerInterface,
+            get_docker_interface,
+        )
 
-        assert _is_pre_0_11_image("foo:0.10.0-abc") is True
-        assert _is_pre_0_11_image("foo:0.10.1-abc") is True
-        assert _is_pre_0_11_image("foo:0.11.0") is False
-        assert _is_pre_0_11_image("foo:0.13.0-abc") is False
-        # Unparseable tags default to post-0.11.
-        assert _is_pre_0_11_image("foo:dev") is False
-        assert _is_pre_0_11_image("foo:latest") is False
-        assert _is_pre_0_11_image("foo") is False
+        # < 0.11.0 routes to the legacy era.
+        assert get_docker_interface("foo:0.10.0-abc") is DockerInterface.V1_LEGACY
+        assert get_docker_interface("foo:0.10.1-abc") is DockerInterface.V1_LEGACY
+        assert get_docker_interface("foo:0.10.9-xyz") is DockerInterface.V1_LEGACY
+        # >= 0.11.0 routes to the modern era.
+        assert get_docker_interface("foo:0.11.0") is DockerInterface.V2_MODERN
+        assert get_docker_interface("foo:0.13.0-abc") is DockerInterface.V2_MODERN
+        # Unparseable tags fall back to the newest era (matches today's
+        # behaviour on main for :dev / :latest / no-tag).
+        assert get_docker_interface("foo:dev") is DockerInterface.V2_MODERN
+        assert get_docker_interface("foo:latest") is DockerInterface.V2_MODERN
+        assert get_docker_interface("foo") is DockerInterface.V2_MODERN
+
+    def test_docker_interface_eras_table_ordered_newest_first(self):
+        """Selection rule depends on newest-first ordering of the table."""
+        from workflows.run_docker_server import _DOCKER_INTERFACE_ERAS
+
+        cut_versions = [entry[0] for entry in _DOCKER_INTERFACE_ERAS]
+        assert cut_versions == sorted(cut_versions, reverse=True), (
+            "Newest era must come first in _DOCKER_INTERFACE_ERAS; "
+            "get_docker_interface walks the table top-to-bottom."
+        )
 
     # ------------------------------------------------------------------
     # Post-0.11 (the default — image tag with version >= 0.11.0 or unparseable)
