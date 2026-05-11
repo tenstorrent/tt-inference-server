@@ -15,6 +15,7 @@
 #include "domain/json_field.hpp"
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
+#include "domain/session.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 
@@ -46,16 +47,12 @@ std::string optStr(const std::optional<T>& opt) {
  */
 struct StreamOptions {
   bool include_usage = true;
-  bool continuous_usage_stats = false;
 
   static StreamOptions fromJson(const Json::Value& json) {
     StreamOptions opts;
     if (json.isMember("include_usage"))
       opts.include_usage =
           json_field::getBool(json["include_usage"], "include_usage");
-    if (json.isMember("continuous_usage_stats"))
-      opts.continuous_usage_stats = json_field::getBool(
-          json["continuous_usage_stats"], "continuous_usage_stats");
     return opts;
   }
 };
@@ -142,6 +139,8 @@ struct LLMRequest : BaseRequest {
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  tt::domain::Session* session =
+      nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
 

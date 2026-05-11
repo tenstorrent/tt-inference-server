@@ -25,8 +25,16 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
-from ..context import MediaContext, common_report_metadata, count_tokens, require_health
+from report_module.schema import Block
+
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    block_targets,
+    run_tiered_check,
+)
+from ..context import MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
@@ -261,7 +269,7 @@ def _audio_target_checks(
     )
 
 
-def run_audio_benchmark(ctx: MediaContext) -> dict:
+def run_audio_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for an audio model (Whisper, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -283,21 +291,25 @@ def run_audio_benchmark(ctx: MediaContext) -> dict:
         ctx, ttft_value, tsu_value, rtr_value
     )
 
-    report_data = common_report_metadata(ctx, "audio")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "num_inference_steps": 0,
-        "ttft": ttft_value,
-        "inference_steps_per_second": 0,
-        "t/s/u": tsu_value,
-        "rtr": rtr_value,
-        "accuracy_check": accuracy_check,
-        "target_checks": target_checks,
-    }
-    report_data["streaming_enabled"] = is_streaming_enabled_for_whisper(ctx)
-    report_data["preprocessing_enabled"] = is_preprocessing_enabled_for_whisper(ctx)
-
-    return report_data
+    return Block(
+        kind="audio_benchmark",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="audio"),
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "num_inference_steps": 0,
+                "ttft": ttft_value,
+                "inference_steps_per_second": 0,
+                "t/s/u": tsu_value,
+                "rtr": rtr_value,
+                "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+                "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_audio_benchmark"]

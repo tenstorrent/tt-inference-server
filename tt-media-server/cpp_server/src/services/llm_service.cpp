@@ -5,10 +5,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <condition_variable>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
@@ -107,57 +105,6 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 
 void LLMService::preProcess(LLMRequest& request) const {
   BaseService::preProcess(request);
-
-  if (request.tool_choice.has_value()) {
-    const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function" &&
-        type != "required") {
-      throw std::invalid_argument("tool_choice='" + type +
-                                  "' is not yet supported by this server; only "
-                                  "'auto', 'none', 'required', and "
-                                  "'function' are currently implemented");
-    }
-
-    // Validate named function call
-    if (type == "function") {
-      if (!request.tool_choice->function.has_value() ||
-          request.tool_choice->function.value().empty()) {
-        throw std::invalid_argument(
-            "tool_choice.function.name is required when type is 'function'. "
-            "Expected format: {\"type\": \"function\", \"function\": "
-            "{\"name\": \"function_name\"}}");
-      }
-
-      if (!request.tools.has_value()) {
-        throw std::invalid_argument(
-            "tools array is required when tool_choice type is 'function'");
-      }
-
-      // Validate function name exists in tools
-      const auto& functionName = request.tool_choice->function.value();
-      bool found = false;
-      for (const auto& tool : request.tools.value()) {
-        if (tool.functionDefinition.name == functionName) {
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw std::invalid_argument("tool_choice.function.name '" +
-                                    functionName + "' not found in tools");
-      }
-    }
-
-    // Validate required tool choice
-    if (type == "required") {
-      if (!request.tools.has_value() || request.tools->empty()) {
-        throw std::invalid_argument(
-            "tools array is required and must not be empty when tool_choice "
-            "type is 'required'");
-      }
-    }
-  }
 
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
@@ -378,69 +325,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-LLMResponse LLMService::processRequest(LLMRequest request) {
-  ZoneScopedN("LLMService::processRequest");
-
-  std::mutex mtx;
-  std::condition_variable cv;
-  bool done = false;
-
-  std::string accumulatedAnswer;
-  std::string accumulatedReasoning;
-  int completionTokens = 0;
-  std::string finishReason = "stop";
-
-  const int promptTokens =
-      std::holds_alternative<std::vector<int>>(request.prompt)
-          ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
-          : 0;
-  const uint32_t taskId = request.task_id;
-  const std::string model = request.model.value_or("default");
-
-  processStreamingRequest(
-      std::move(request), [&](LLMStreamChunk& chunk, bool isFinal) {
-        if (!chunk.choices.empty()) {
-          if (chunk.choices[0].reasoning.has_value()) {
-            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
-          }
-          accumulatedAnswer.append(chunk.choices[0].text);
-          completionTokens++;
-          if (chunk.choices[0].finish_reason.has_value()) {
-            finishReason = chunk.choices[0].finish_reason.value();
-          }
-        }
-        if (isFinal) {
-          std::lock_guard<std::mutex> lock(mtx);
-          done = true;
-          cv.notify_one();
-        }
-      });
-
-  std::unique_lock<std::mutex> lock(mtx);
-  cv.wait(lock, [&] { return done; });
-
-  LLMResponse response{taskId};
-  response.id = std::to_string(taskId);
-  response.model = model;
-  response.created = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
-
-  LLMChoice choice;
-  choice.text = std::move(accumulatedAnswer);
-  choice.reasoning =
-      accumulatedReasoning.empty()
-          ? std::nullopt
-          : std::optional<std::string>(std::move(accumulatedReasoning));
-  choice.index = 0;
-  choice.finish_reason = finishReason;
-  response.choices.push_back(std::move(choice));
-
-  response.usage = {
-      promptTokens, completionTokens, promptTokens + completionTokens,
-      std::nullopt, std::nullopt,     std::nullopt};
-
-  return response;
+LLMResponse LLMService::processRequest(LLMRequest /*request*/) {
+  throw std::runtime_error(
+      "LLMService::processRequest is not supported; use streaming interface");
 }
 
 void LLMService::processStreamingRequest(
@@ -498,16 +385,6 @@ void LLMService::processStreamingRequest(
 }
 
 void LLMService::postProcess(LLMResponse& response) const {
-  // Parse and strip reasoning blocks from all choices
-  if (reasoningParser) {
-    for (auto& choice : response.choices) {
-      auto result = reasoningParser->parseComplete(choice.text);
-
-      // Replace text with answer only (reasoning stripped)
-      choice.text = std::move(result.answer);
-    }
-  }
-
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
   tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
@@ -592,8 +469,7 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
-  // Invoke the detached callback with isFinal=true so any blocking waiter
-  // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
+  // Invoke the detached callback with isFinal=true. For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {

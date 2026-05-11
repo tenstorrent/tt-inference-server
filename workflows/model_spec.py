@@ -2797,6 +2797,58 @@ video_templates = [
         ],
         status=ModelStatusTypes.COMPLETE,
     ),
+    ModelSpecTemplate(
+        weights=["Wan-AI/Wan2.2-I2V-A14B-Diffusers"],
+        version="0.10.0",
+        tt_metal_commit="555f240",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.VIDEO,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
 ]
 
 # =============================================================================

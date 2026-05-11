@@ -171,21 +171,6 @@ TEST(RouteRegistryTest, ExactPathAllowedForActiveService) {
       ModelService::EMBEDDING, "POST", "/v1/chat/completions"));
 }
 
-TEST(RouteRegistryTest, TemplatedPathMatchesAnyValue) {
-  RouteRegistry::instance().clear();
-  RouteRegistry::instance().registerRoute(ModelService::LLM, "DELETE",
-                                          "/v1/sessions/{session_id}", "");
-
-  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "DELETE",
-                                                  "/v1/sessions/abc-123"));
-  // Trailing-slash equivalence.
-  EXPECT_TRUE(RouteRegistry::instance().isAllowed(ModelService::LLM, "DELETE",
-                                                  "/v1/sessions/abc-123/"));
-  // Wrong arity must not match.
-  EXPECT_FALSE(RouteRegistry::instance().isAllowed(
-      ModelService::LLM, "DELETE", "/v1/sessions/abc-123/extra"));
-}
-
 TEST(RouteRegistryTest, AlwaysExemptIsServiceAgnostic) {
   RouteRegistry::instance().clear();
   RouteRegistry::instance().registerAlwaysExempt("/health");

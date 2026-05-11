@@ -2,18 +2,29 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
 class DeviceStabilityTest(BaseTest):
+    KIND = "device_stability"
+    TASK_TYPE = "stability"
+
     async def _run_specific_test_async(self):
         url = f"http://localhost:{self.service_port}/tt-liveness"
 
@@ -145,7 +156,6 @@ class DeviceStabilityTest(BaseTest):
                         "workers_with_restarts": workers_with_restarts,
                         "workers_with_errors": workers_with_errors,
                         "success": success,
-                        "full_response": data,
                     }
 
         except (
@@ -165,3 +175,23 @@ class DeviceStabilityTest(BaseTest):
             # Log unexpected errors but don't exit - let retry logic handle it
             logger.warning(f"⚠️  Unexpected error during device stability check: {e}")
             raise
+
+
+def run_device_stability(ctx: MediaContext) -> Block:
+    """Run DeviceStabilityTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 300,
+            "retry_attempts": 3,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    num_devices = ctx.model_spec.device_model_spec.max_concurrency
+    targets = {
+        "num_of_devices": num_devices if num_devices and num_devices > 0 else None
+    }
+    return DeviceStabilityTest(test_config, targets, ctx=ctx).run_tests()
+
+
+__all__ = ["DeviceStabilityTest", "run_device_stability"]

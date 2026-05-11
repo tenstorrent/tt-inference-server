@@ -13,8 +13,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from .._test_common import ReportCheckTypes
-from ..context import MediaContext, common_eval_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import ReportCheckTypes, block_id, block_targets
+from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ def _run_video_generation_eval(ctx: MediaContext) -> dict:
     logger.info("Starting VideoGenerationEvalsTest")
     result = test.run_tests()
 
-    eval_results = result.get("result", {}).get("eval_results", {})
+    eval_results = result.data.get("eval_results", {})
     logger.info(f"VideoGenerationEvalsTest eval_results: {eval_results}")
     return eval_results
 
@@ -85,9 +87,9 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     download_test = VideoFVDTest(config, {"request": download_request})
     download_result = download_test.run_tests()
-    if not download_result.get("success") or not download_result.get("result", {}).get(
-        "success"
-    ):
+    if not download_result.data.get("success") or not download_result.data.get(
+        "result", {}
+    ).get("success"):
         logger.warning(
             "Reference video download failed: %s. "
             "FVD/FVMD may fail if reference dir is empty.",
@@ -103,9 +105,9 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     fvd_test = VideoFVDTest(config, {"request": fvd_request})
     fvd_result = fvd_test.run_tests()
-    fvd_ok = fvd_result.get("success") and fvd_result.get("result", {}).get("success")
+    fvd_ok = fvd_result.data.get("success")
     if fvd_ok:
-        combined_results["fvd"] = fvd_result["result"].get("fvd_score")
+        combined_results["fvd"] = fvd_result.data.get("fvd_score")
         logger.info("FVD score: %s", combined_results["fvd"])
     else:
         combined_results["fvd"] = None
@@ -118,11 +120,9 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     )
     fvmd_test = VideoFVMDTest(config, {"request": fvmd_request})
     fvmd_result = fvmd_test.run_tests()
-    fvmd_ok = fvmd_result.get("success") and fvmd_result.get("result", {}).get(
-        "success"
-    )
+    fvmd_ok = fvmd_result.data.get("success")
     if fvmd_ok:
-        combined_results["fvmd"] = fvmd_result["result"].get("fvmd_score")
+        combined_results["fvmd"] = fvmd_result.data.get("fvmd_score")
         logger.info("FVMD score: %s", combined_results["fvmd"])
     else:
         combined_results["fvmd"] = None
@@ -131,7 +131,7 @@ def _run_video_fvd_and_fvmd_eval() -> dict:
     return combined_results
 
 
-def run_video_eval(ctx: MediaContext) -> dict:
+def run_video_eval(ctx: MediaContext) -> Block:
     """Run evaluations for a video model (Mochi, WAN, etc.)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -145,44 +145,46 @@ def run_video_eval(ctx: MediaContext) -> dict:
         raise
 
     logger.info("Generating eval report...")
-    benchmark_data = common_eval_metadata(ctx, "video")
+    task = ctx.all_params.tasks[0]
+    data: dict = {
+        "task_name": task.task_name,
+        "tolerance": task.score.tolerance,
+        "published_score": task.score.published_score,
+        "published_score_ref": task.score.published_score_ref,
+    }
 
     if eval_result:
         logger.info("Adding eval results from video generation test to benchmark data")
-        benchmark_data["num_prompts"] = eval_result.get("num_prompts", 0)
-        benchmark_data["num_inference_steps"] = eval_result.get(
-            "num_inference_steps", 0
-        )
+        data["num_prompts"] = eval_result.get("num_prompts", 0)
+        data["num_inference_steps"] = eval_result.get("num_inference_steps", 0)
 
         clip_results = eval_result.get("clip_results", {})
-        benchmark_data["average_clip"] = clip_results.get("average_clip", 0.0)
-        benchmark_data["min_clip"] = clip_results.get("min_clip", 0.0)
-        benchmark_data["max_clip"] = clip_results.get("max_clip", 0.0)
-        benchmark_data["clip_standard_deviation"] = clip_results.get(
+        data["average_clip"] = clip_results.get("average_clip", 0.0)
+        data["min_clip"] = clip_results.get("min_clip", 0.0)
+        data["max_clip"] = clip_results.get("max_clip", 0.0)
+        data["clip_standard_deviation"] = clip_results.get(
             "clip_standard_deviation", 0.0
         )
-        benchmark_data["accuracy_check"] = eval_result.get(
-            "accuracy_check", ReportCheckTypes.NA
-        )
+        data["accuracy_check"] = eval_result.get("accuracy_check", ReportCheckTypes.NA)
     else:
         logger.warning("No eval results from video generation test")
 
-    benchmark_data["fvd"] = None
-    benchmark_data["fvmd"] = None
+    data["fvd"] = None
+    data["fvmd"] = None
     try:
         fvd_and_fvmd_result = _run_video_fvd_and_fvmd_eval()
         if fvd_and_fvmd_result:
-            benchmark_data["fvd"] = fvd_and_fvmd_result.get("fvd", 0)
-            benchmark_data["fvmd"] = fvd_and_fvmd_result.get("fvmd", 0)
+            data["fvd"] = fvd_and_fvmd_result.get("fvd", 0)
+            data["fvmd"] = fvd_and_fvmd_result.get("fvmd", 0)
     except Exception as e:
         logger.error(f"Error running video FVD and FVMD eval: {e}")
 
-    benchmark_data["published_score"] = ctx.all_params.tasks[0].score.published_score
-    benchmark_data["published_score_ref"] = ctx.all_params.tasks[
-        0
-    ].score.published_score_ref
-
-    return benchmark_data
+    return Block(
+        kind="video_eval",
+        id=block_id(ctx) or None,
+        targets=block_targets(ctx, task_type="video"),
+        data=data,
+    )
 
 
 __all__ = ["run_video_eval"]

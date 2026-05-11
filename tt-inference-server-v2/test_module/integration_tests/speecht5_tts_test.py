@@ -2,15 +2,26 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import base64
+from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+
+from .._test_common import BaseTest, TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 
 class SpeechT5TTSTest(BaseTest):
     """Test SpeechT5 Text-to-Speech functionality"""
+
+    KIND = "speecht5_tts"
+    TASK_TYPE = "integration"
 
     async def _run_specific_test_async(self):
         """Run SpeechT5 TTS tests"""
@@ -74,3 +85,19 @@ class SpeechT5TTSTest(BaseTest):
                     "format": result["format"],
                     "audio_size_bytes": len(audio_bytes),
                 }
+
+
+def run_speecht5_tts(ctx: MediaContext) -> Block:
+    """Run SpeechT5TTSTest under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 180,
+            "retry_attempts": 2,
+            "retry_delay": 5,
+            "break_on_failure": False,
+        }
+    )
+    return SpeechT5TTSTest(test_config, targets={}, ctx=ctx).run_tests()
+
+
+__all__ = ["SpeechT5TTSTest", "run_speecht5_tts"]
