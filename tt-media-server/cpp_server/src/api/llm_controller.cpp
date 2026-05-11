@@ -516,18 +516,24 @@ void LLMController::dispatchGeneration(
 
 bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
                                             bool validSessionFound) const {
-  if (validSessionFound) {
-    return true;
-  }
-
-  // In disaggregated decode mode, fall back to running prefill locally if the
-  // prefill server socket is unavailable — otherwise the request would be sent
-  // to a peer that cannot service it.
-  if (!socketService || !socketService->isConnected()) {
+  const bool socketReady = socketService && socketService->isConnected();
+  if (!socketReady) {
     TT_LOG_WARN(
         "[LLMController] Prefill server not connected; falling back to "
         "prefill on decode for taskId={}",
         request.task_id);
+    return true;
+  }
+
+  if (request.disaggregation_override.has_value()) {
+    const bool forceDisagg = *request.disaggregation_override;
+    TT_LOG_INFO(
+        "[LLMController] Honoring disaggregation override={} for taskId={}",
+        forceDisagg, request.task_id);
+    return !forceDisagg;
+  }
+
+  if (validSessionFound) {
     return true;
   }
 

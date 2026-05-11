@@ -46,11 +46,16 @@ void fatalSignalHandler(int sig) {
   const char* sigName = strsignal(sig);
   if (!sigName) sigName = "unknown";
 
-  write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
-  write(STDERR_FILENO, idBuf, len);
-  write(STDERR_FILENO, mid, sizeof(mid) - 1);
-  write(STDERR_FILENO, sigName, strlen(sigName));
-  write(STDERR_FILENO, suffix, sizeof(suffix) - 1);
+  if (write(STDERR_FILENO, prefix, sizeof(prefix) - 1) < 0) {
+  }
+  if (write(STDERR_FILENO, idBuf, len) < 0) {
+  }
+  if (write(STDERR_FILENO, mid, sizeof(mid) - 1) < 0) {
+  }
+  if (write(STDERR_FILENO, sigName, strlen(sigName)) < 0) {
+  }
+  if (write(STDERR_FILENO, suffix, sizeof(suffix) - 1) < 0) {
+  }
 
   signal(sig, SIG_DFL);
   raise(sig);

@@ -63,6 +63,8 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void abortRequest(uint32_t taskId);
 
+  ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
+
   tt::worker::WorkerManager* getWorkerManager() const {
     return workerManager.get();
   }
