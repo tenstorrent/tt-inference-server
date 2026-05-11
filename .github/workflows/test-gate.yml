@@ -198,6 +198,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install -r tt-media-server/requirements.txt
+          pip install pytest-cov
 
       - name: Run tt-inference-server tests
         run: |
@@ -211,11 +212,17 @@ jobs:
           HF_TOKEN: ""
           MODEL: ""
           JWT_SECRET: ""
-        working-directory: tt-media-server
         run: |
           echo "Running tests from tt-media-server/tests/"
-          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || true
-          cat ../media_test_output.txt
+          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
+          # This makes paths match git diff output for diff-cover
+          pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
+            --cov=tt-media-server \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v --tb=short --continue-on-collection-errors > media_test_output.txt 2>&1 || true
+          cat media_test_output.txt
 
       - name: Test Results Summary
         if: always()
@@ -348,6 +355,15 @@ jobs:
             echo "💥 Failing workflow due to test failures"
             exit 1
           fi
+
+      - name: Upload coverage artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: coverage.xml
+          retention-days: 1
+          if-no-files-found: warn
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
@@ -688,6 +704,26 @@ jobs:
             exit 1
           fi
 
+      # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
+      # tokenizer init cost (#3179) before the measured bench starts. Without
+      # this, mean_ttft_ms on the first bench is dominated by the cold-start
+      # P99 tail. Concurrency of 16 across 4 IO threads reliably touches every
+      # thread.
+      - name: Warm up mock backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
+
       - name: Bench mock backend
         env:
           OPENAI_API_KEY: 'your-secret-key'
@@ -775,6 +811,21 @@ jobs:
             echo "ERROR: Server did not become ready within 30 seconds"
             exit 1
           fi
+
+      - name: Warm up mock_pipeline backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 32 \
+            --random-output-len 32 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
 
       - name: Bench mock_pipeline backend
         env:
@@ -967,7 +1018,15 @@ jobs:
       - name: Start Decode server (receives HTTP, listens for prefill)
         run: |
           cd cpp_server/build
+          NS=r1_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./tt_media_server_cpp -p 8001 -t 4 > ../../decode_server.log 2>&1 &
           echo $! > ../../decode_server.pid
           cd ../..
@@ -988,7 +1047,15 @@ jobs:
       - name: Start Prefill server (connects to decode server)
         run: |
           cd cpp_server/build
+          NS=r1_prefill
           LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill_server.log 2>&1 &
           echo $! > ../../prefill_server.pid
           cd ../..
@@ -1057,10 +1124,18 @@ jobs:
       - name: Start Prefill server (mock_prefill_runner round)
         run: |
           cd cpp_server
+          NS=r2_prefill
           TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
           TT_LOG_LEVEL=debug \
           LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8001 -t 4 \
             > ../prefill_server_runner.log 2>&1 &
           echo $! > ../prefill_server_runner.pid
@@ -1083,8 +1158,16 @@ jobs:
       - name: Start Decode server (mock_prefill_runner round)
         run: |
           cd cpp_server
+          NS=r2_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
             ./build/tt_media_server_cpp -p 8000 -t 4 \
             > ../decode_server_runner.log 2>&1 &
           echo $! > ../decode_server_runner.pid
@@ -1535,15 +1618,13 @@ jobs:
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
   test-coverage:
-    needs: detect-changes
+    needs: [detect-changes, unit-tests]
     if: ${{ needs.detect-changes.outputs.should-test == 'true' && github.event_name == 'pull_request' }}
     name: Test Coverage Check
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
-    env:
-      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
 
     steps:
       - name: Checkout repository
@@ -1555,30 +1636,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: 'pip'
-          cache-dependency-path: 'requirements-dev.txt'
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -r tt-media-server/requirements.txt
-          pip install pytest-cov diff-cover
+      - name: Install diff-cover
+        run: pip install diff-cover
 
-      - name: Run tt-media-server tests with coverage
-        env:
-          HF_TOKEN: ""
-          MODEL: ""
-          JWT_SECRET: ""
-        run: |
-          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
-          # This makes paths match git diff output
-          pytest tt-media-server/tests/ \
-            --ignore=tt-media-server/performance_tests/ \
-            --cov=tt-media-server \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
-            -v --tb=short --continue-on-collection-errors || true
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-data
+          path: .
 
       - name: Check coverage of changed lines
         id: diff-cover

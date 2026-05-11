@@ -70,6 +70,7 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> model;
 
   // Prompt can be a string or a list of token ids
+  // Can be either the original prompt or delta
   std::variant<std::string, std::vector<int>> prompt;
 
   // Original chat messages used to derive `prompt`. Kept here so downstream
@@ -121,6 +122,8 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  std::optional<bool> disaggregation_override;
+
   bool parallel_tool_calls = true;
 
   std::optional<std::vector<tool_calls::Tool>> tools;
@@ -165,7 +168,8 @@ struct LLMRequest : BaseRequest {
         << " frequency_penalty=" << frequency_penalty << " n=" << n
         << " stop_count=" << stop.size()
         << " sessionId=" << detail::optStr(sessionId)
-        << " slotId=" << detail::optStr(slotId);
+        << " slotId=" << detail::optStr(slotId) << " disaggregation_override="
+        << detail::optStr(disaggregation_override);
     return out.str();
   }
 };

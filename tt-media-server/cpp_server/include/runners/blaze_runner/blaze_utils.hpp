@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
 
@@ -30,7 +30,7 @@ inline pm::GenerationParams makeGenerationParams(
   return {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
-              static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
+              static_cast<int>(tt::config::maxContextLength()))),
       .spec_decode = seq.getSamplingParams().fast_mode,
       .ignore_eos = seq.getSamplingParams().ignore_eos,
       .temperature = seq.getSamplingParams().temperature,
