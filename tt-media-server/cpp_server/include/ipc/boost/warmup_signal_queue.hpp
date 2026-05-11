@@ -11,8 +11,6 @@
 
 namespace tt::ipc::boost {
 
-constexpr const char* WARMUP_SIGNALS_QUEUE_NAME = "tt_warmup_signals";
-
 /**
  * IWarmupSignalQueue implementation backed by the generic boost MemoryQueue.
  */

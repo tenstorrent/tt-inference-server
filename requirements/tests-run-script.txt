@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the TESTS_RUN_SCRIPT workflow venv.
+# Used by: setup_tests_run_script() in workflows/workflow_venvs.py
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch
+torchvision
+datasets
+transformers==4.57.1
+pyyaml==6.0.3
+pytest==8.3.5
+pytest-asyncio==1.3.0
+requests==2.32.5
+pyjwt

@@ -21,7 +21,7 @@ namespace tt::ipc::posix {
 
 constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS =
-    131072;  // matches Config::MAX_INPUT_TOKENS (128k)
+    131072;  // upper bound for prefill prompt size
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
 enum SlotState { EMPTY, FILLED };
@@ -38,6 +38,7 @@ struct alignas(8) Message {
   uint32_t numTokenIds;
   uint32_t taskId;
   uint32_t fastMode;
+  uint32_t slotId;
   uint64_t tokenIds[MaxTokenIds];
 
   static constexpr size_t K_TOTAL_SIZE = SHM_SLOTS * sizeof(Message);
@@ -110,7 +111,7 @@ class SlotRingBuffer {
   }
 
   void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
-             uint32_t maxTokens, bool fastMode = false) {
+             uint32_t maxTokens, uint32_t slotId, bool fastMode = false) {
     if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SlotRingBuffer::write: token count " +
                                std::to_string(tokenIds.size()) +
@@ -127,6 +128,7 @@ class SlotRingBuffer {
     slot.taskId = taskId;
     slot.maxTokens = maxTokens;
     slot.fastMode = fastMode ? 1u : 0u;
+    slot.slotId = slotId;
     slot.numTokenIds = tokenIds.size();
     std::memcpy(slot.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));

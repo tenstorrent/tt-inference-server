@@ -1,60 +1,27 @@
-# SPDX-License-Identifier: Apache-2.0
-#
-# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-#
-# Direct dependencies are pinned to exact versions to keep Docker builds
-# reproducible. The vast majority of these only declare lower bounds upstream,
-# so without `==` pins the pip resolver picks newer versions on every fresh
-# build and silently shifts ABI / behaviour (this is what broke us with
-# whisperx-pulled transformers/ctranslate2 drift).
-#
-# Strategy mirrors NVIDIA Dynamo's vLLM container requirements:
-#   https://github.com/ai-dynamo/dynamo/blob/main/container/deps/requirements.vllm.txt
-# i.e. exact-pin every direct dep, plus manually pin transitive deps that
-# have a history of drift-induced breakage. No lock file is used.
-#
-# Updating a package: bump the version below, rebuild the Docker image,
-# run the test suite. Do NOT bump multiple unrelated packages in one change.
-#
-# Additional constraints for `uv pip install` are in uv-overrides.txt
-# (numpy<2 to match tt-metal's pin, and a workaround for the upstream
-# `lightning` PyPI quarantine).
+aiohttp
+asyncio
+colorama
+fastapi
+faster_fifo
+httpx
+huggingface_hub
+imageio-ffmpeg
+loguru
+prometheus-client
+prometheus-fastapi-instrumentator
+psutil
+pydantic-settings
+pytest
+pytest-asyncio
+python-multipart
+silero_vad
+tqdm
+uvicorn
+whisperx==3.4.3
+torch==2.7.1+cpu
+torchaudio==2.7.1+cpu
+requests
+num2words
+
 
 --extra-index-url https://download.pytorch.org/whl/cpu
-
-# Web framework / HTTP
-aiohttp==3.13.5
-fastapi==0.136.1
-httpx==0.28.1
-prometheus-client==0.25.0
-prometheus-fastapi-instrumentator==7.1.0
-pydantic-settings==2.14.0
-python-multipart==0.0.27
-uvicorn==0.46.0
-
-# IPC / utilities
-colorama==0.4.6
-faster-fifo==1.5.2
-loguru==0.7.3
-psutil==7.2.2
-requests==2.33.1
-tqdm==4.67.3
-
-# ML / audio
-huggingface-hub==1.13.0
-imageio-ffmpeg==0.6.0
-num2words==0.5.14
-silero-vad==6.2.1
-whisperx==3.4.3
-
-# Transitive pins for whisperx's dependency graph. Pinning the
-# versions that are known to work with whisperx==3.4.3 keeps the install
-# deterministic without requiring a full lock file.
-ctranslate2==4.4.0
-onnxruntime==1.23.2
-pyannote-audio==3.4.0
-transformers==5.7.0
-
-# Test suite dependencies.
-pytest==9.0.3
-pytest-asyncio==1.3.0

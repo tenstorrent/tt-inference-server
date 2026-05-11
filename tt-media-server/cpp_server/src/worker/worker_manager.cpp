@@ -205,7 +205,7 @@ void WorkerManager::startWorkers() {
 
 void WorkerManager::startWarmupListener() {
   warmupQueue = std::make_unique<tt::ipc::boost::WarmupSignalQueue>(
-      tt::ipc::boost::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
+      tt::config::ttWarmupSignalsQueueName(), workerCount);
   warmupReceived = false;
   warmupListenerThread = std::thread([this]() {
     try {

@@ -72,6 +72,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# GCC 12's libstdc++ still uses the C++17-deprecated std::get_temporary_buffer
+# inside std::stable_sort, which gtest.cc triggers when sorting TestInfo*.
+# Silence on the googletest targets only — keep -Wdeprecated-declarations active
+# for our own code.
+foreach(_gt_target gtest gtest_main gmock gmock_main)
+    if(TARGET ${_gt_target})
+        target_compile_options(${_gt_target} PRIVATE -Wno-deprecated-declarations)
+    endif()
+endforeach()
+
 # xxHash for stable, cross-platform hashing (conversation prefix caching)
 FetchContent_Declare(
     xxhash
@@ -102,7 +112,7 @@ if(NOT xgrammar_POPULATED)
         "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
     )
     add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    target_compile_options(xgrammar PRIVATE -Wno-error=deprecated-declarations -fno-lto)
+    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
 endif()
 
 # Import fmt from tt-metal for spdlog
@@ -284,8 +294,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
-    src/services/memory_services/paged_memory_manager.cpp
-    src/services/memory_services/contiguous_memory_manager.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
@@ -665,6 +673,7 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp

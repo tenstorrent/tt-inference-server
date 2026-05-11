@@ -143,6 +143,13 @@ class BaseService(ABC):
             result = await asyncio.wait_for(
                 queue.get(), timeout=settings.request_processing_timeout_seconds
             )
+            # Mirror process_streaming: scheduler.error_listener pushes
+            # Exception(error) onto the result queue when the worker fails.
+            # Without unwrapping here the exception flows into post_process
+            # and crashes downstream workers with confusing AttributeError
+            # chains that hide the real failure cause.
+            if isinstance(result, Exception):
+                raise result
             return result
         except asyncio.TimeoutError:
             self.logger.error(
