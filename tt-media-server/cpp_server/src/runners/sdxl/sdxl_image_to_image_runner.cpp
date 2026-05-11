@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sdxl/sdxl_runner.hpp"
-
 #include <pybind11/stl.h>
 
 #include <string>
+
+#include "runners/sdxl/sdxl_runner.hpp"
 
 namespace tt::runners::sdxl {
 
@@ -16,7 +16,8 @@ constexpr const char* SDXL_BASE_REPO =
 
 }  // namespace
 
-SDXLImageToImageRunner::SDXLImageToImageRunner(const config::ImageConfig& config)
+SDXLImageToImageRunner::SDXLImageToImageRunner(
+    const config::ImageConfig& config)
     : SDXLBaseRunner(config) {}
 
 py::object SDXLImageToImageRunner::loadDiffusersPipeline() {
@@ -50,7 +51,8 @@ void SDXLImageToImageRunner::distributeBlock() {
   tt_sdxl_ = pipelineMod.attr("TtSDXLImg2ImgPipeline")(**pipelineKwargs);
 }
 
-void SDXLImageToImageRunner::prepareInputTensorsForIteration(py::object tensors) {
+void SDXLImageToImageRunner::prepareInputTensorsForIteration(
+    py::object tensors) {
   py::list args;
   args.append(tensors[py::int_(0)]);
   args.append(tensors[py::int_(1)][py::int_(0)]);
