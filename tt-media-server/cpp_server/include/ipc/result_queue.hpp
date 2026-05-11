@@ -55,9 +55,7 @@ class IResultQueue {
   virtual bool push(const SharedToken& token) = 0;
   virtual bool tryPop(SharedToken& out) = 0;
   virtual bool blockingPop(SharedToken& out) = 0;
-  virtual bool empty() const = 0;
   virtual void shutdown() = 0;
-  virtual bool isShutdown() const = 0;
   virtual void remove() {}
 };
 

@@ -40,8 +40,6 @@ class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
 
   void remove() override { queue_->remove(); }
 
-  static void remove(const std::string& name) { Queue::remove(name); }
-
  private:
   std::unique_ptr<Queue> queue_;
 };

@@ -13,7 +13,6 @@
 #include "ipc/boost_ipc_task_queue.hpp"
 namespace tt::ipc {
 
-constexpr size_t RING_BUFFER_CAPACITY = 65536;
 constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
 
 /**
