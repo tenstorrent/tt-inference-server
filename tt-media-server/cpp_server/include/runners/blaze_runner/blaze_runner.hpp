@@ -40,11 +40,11 @@ class BlazeRunner : public IRunner {
  private:
   void step();
 
-  void drainAndHandleResponses();
+  void drainAndHandleMemoryResponses();
   void drainAndHandleOutputs();
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleResponse(const pm::PMResponse& response);
+  inline void handleMemoryResponse(const pm::PMResponse& response);
   void handleOutput(const pm::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
   void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);

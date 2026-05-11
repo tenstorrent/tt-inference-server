@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_RUN_SCRIPT workflow venv.
+# Used by: setup_evals_run_script() in workflows/workflow_venvs.py
+#
+# Note: the previous implementation issued four separate `pip install` calls
+# (numpy/scipy, torch from CPU index, runtime deps, mteb extras). We can do
+# all of this in one resolve because `--extra-index-url` lets pip/uv fall back
+# to PyPI for non-torch packages. This is faster and more reliably resolved.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy
+scipy
+torch
+torchvision
+requests
+transformers
+protobuf
+sentencepiece
+datasets
+open-clip-torch
+pyjwt
+pillow
+imageio
+imageio-ffmpeg
+mteb[openai]>=2.6.6
+tiktoken
+openai
