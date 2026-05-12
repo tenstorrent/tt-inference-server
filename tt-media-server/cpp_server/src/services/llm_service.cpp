@@ -582,11 +582,18 @@ void LLMService::abortRequest(uint32_t taskId) {
     entry->callback(abortResponse, /*isFinal=*/true);
   }
 
-  // Clean up any reasoning-parser state so task_states_ does not leak.
+  // Clean up parser state so task_states_ maps do not leak.
   reasoningSuppressedMap.take(taskId);
+  toolChoiceMap.take(taskId);
 
   if (reasoningParser) {
     reasoningParser->finalizeTask(taskId);
+  }
+  if (jsonToolCallParser) {
+    jsonToolCallParser->finalizeTask(taskId);
+  }
+  if (toolCallParser) {
+    toolCallParser->finalizeTask(taskId);
   }
 
   for (auto& cq : queueManager->cancelQueues) {
