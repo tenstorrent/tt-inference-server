@@ -13,6 +13,7 @@
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
 #include "domain/llm/sequence.hpp"
+#include "ipc/queue_manager.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
@@ -29,7 +30,8 @@ std::shared_ptr<tt::services::LLMService> makeService(
   return std::make_shared<tt::services::LLMService>(
       std::move(taskQueue), std::make_unique<tt::worker::WorkerManager>(1),
       std::make_unique<tt::services::ReasoningParser>(),
-      tt::services::createToolCallParser(tt::config::modelType()));
+      tt::services::createToolCallParser(tt::config::modelType()),
+      std::make_unique<tt::ipc::QueueManager>(1));
 }
 
 }  // namespace
