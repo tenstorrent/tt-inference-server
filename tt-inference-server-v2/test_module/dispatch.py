@@ -167,12 +167,21 @@ def _maybe_cap_num_prompts(case: dict, cap: Optional[int]) -> dict:
 
 
 def _instantiate_spec_test(case: dict, ctx: MediaContext):
-    """Import + construct a spec test class from a (filtered) test case dict."""
+    """Import + construct a spec test class from a (filtered) test case dict.
+
+    BaseTest accepts ``(config, targets, description="", ctx=None)`` but a
+    handful of test classes (e.g. ImageGenerationEvalsTest) override
+    ``__init__`` with just ``(config, targets)`` — so we try the rich form
+    first and fall back to the minimal one rather than introspecting.
+    """
     config = TestConfig(case.get("test_config") or {})
     targets = case.get("targets") or {}
     module = importlib.import_module(case["module"])
     cls = getattr(module, case["name"])
-    return cls(config, targets, ctx=ctx)
+    try:
+        return cls(config, targets, ctx=ctx)
+    except TypeError:
+        return cls(config, targets)
 
 
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:

@@ -55,8 +55,8 @@ class VisionEvalsTestRequest:
 
 
 class VisionEvalsTest(BaseTest):
-    def __init__(self, config: TestConfig, targets: dict, ctx=None):
-        super().__init__(config, targets, ctx=ctx)
+    def __init__(self, config: TestConfig, targets: dict):
+        super().__init__(config, targets)
         self.eval_results: dict = {}
 
     async def _run_specific_test_async(self):
