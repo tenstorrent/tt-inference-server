@@ -9,6 +9,7 @@
 set -euo pipefail
 
 usage() {
+    local status="${1:-64}"
     cat <<'EOF' >&2
 usage: helper_external_lm_eval.sh --task TASK [options]
 
@@ -53,7 +54,7 @@ Environment:
   LM_EVAL_VENV
   LM_EVAL_BIN
 EOF
-    exit 64
+    exit "${status}"
 }
 
 TASK=""
@@ -158,7 +159,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            usage
+            usage 0
             ;;
         *)
             echo "unknown argument: $1" >&2
@@ -292,17 +293,18 @@ EOF
         "${uv_venv}/bin/pip" install uv
     fi
 
+    local requirements_file="${REPO_ROOT}/requirements/evals-common.txt"
+    if [[ ! -f "${requirements_file}" ]]; then
+        echo "Requirements file not found: ${requirements_file}" >&2
+        exit 1
+    fi
+
     "${uv_exec}" venv --managed-python --python=3.10 "${LM_EVAL_VENV}" --allow-existing
     "${uv_exec}" pip install \
         --managed-python \
         --python "${LM_EVAL_VENV}/bin/python" \
         --index-strategy unsafe-best-match \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        "git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]" \
-        protobuf \
-        pillow==11.1 \
-        pyjwt==2.7.0 \
-        datasets==3.1.0
+        -r "${requirements_file}"
 
     if [[ ! -x "${LM_EVAL_BIN}" ]]; then
         echo "Bootstrap completed, but lm_eval is still missing at ${LM_EVAL_BIN}." >&2
