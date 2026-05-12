@@ -2,6 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+"""Per-call result objects emitted by the media client benchmark loops.
+
+Field naming is deliberately conservative: every class only exposes
+fields that some client actually populates. Fields that were
+historically declared but never set (``tpups`` on image, ``ttft`` on
+embedding/video, etc.) have been removed so downstream consumers can no
+longer accidentally read zero-filled metrics. See issue #3243.
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -20,7 +29,13 @@ class BaseTestStatus(ABC):
 
 
 class ImageGenerationTestStatus(BaseTestStatus):
-    """Test status for image generation models (SDXL, SD3.5, etc.)."""
+    """Test status for image generation models (SDXL, SD3.5, Flux, etc.).
+
+    ``elapsed`` is end-to-end request latency in seconds and is the
+    canonical per-request timing for image clients (the endpoint is a
+    single non-streaming POST so there is no separate first-token
+    timestamp to record).
+    """
 
     def __init__(
         self,
@@ -28,16 +43,12 @@ class ImageGenerationTestStatus(BaseTestStatus):
         elapsed: float,
         num_inference_steps: int = 0,
         inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
-        tpups: Optional[float] = None,
         base64image: Optional[str] = None,
         prompt: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
-        self.tpups = tpups
         self.base64image = base64image
         self.prompt = prompt
 
@@ -47,15 +58,20 @@ class ImageGenerationTestStatus(BaseTestStatus):
             "elapsed": self.elapsed,
             "num_inference_steps": self.num_inference_steps,
             "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
-            "tpups": self.tpups,
             "base64image": self.base64image,
             "prompt": self.prompt,
         }
 
 
 class AudioTestStatus(BaseTestStatus):
-    """Test status for audio transcription models."""
+    """Test status for audio transcription models.
+
+    ``ttft`` is only meaningful when streaming is enabled (it is the
+    time to the first non-speaker-marker content chunk). For
+    non-streaming requests the client populates ``ttft`` with the same
+    value as ``elapsed`` to keep the JSON shape stable, but consumers
+    should treat that as request latency, not true TTFT.
+    """
 
     def __init__(
         self,
@@ -81,66 +97,58 @@ class AudioTestStatus(BaseTestStatus):
 
 
 class CnnGenerationTestStatus(BaseTestStatus):
-    """Test status for CNN models (RESNET, etc.)."""
+    """Test status for CNN models (ResNet, MobileNetV2, etc.).
 
-    def __init__(
-        self,
-        status: bool,
-        elapsed: float,
-        num_inference_steps: int = 0,
-        inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
-        tpups: Optional[float] = None,
-        base64image: Optional[str] = None,
-        prompt: Optional[str] = None,
-    ):
+    CNN inference is a single non-streaming POST returning a label;
+    only ``elapsed`` (request latency in seconds) is populated.
+    """
+
+    def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
-        self.num_inference_steps = num_inference_steps
-        self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
-        self.tpups = tpups
-        self.base64image = base64image
-        self.prompt = prompt
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "status": self.status,
-            "elapsed": self.elapsed,
-            "num_inference_steps": self.num_inference_steps,
-            "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
-            "tpups": self.tpups,
-            "base64image": self.base64image,
-            "prompt": self.prompt,
-        }
+        return {"status": self.status, "elapsed": self.elapsed}
 
 
 class EmbeddingTestStatus(BaseTestStatus):
-    """Test status for embedding models."""
+    """Test status for embedding models.
 
-    def __init__(self, status: bool, elapsed: float, ttft: Optional[float] = None):
+    Embedding benchmarks are driven through ``vllm bench serve``;
+    per-call status currently only carries the wall-clock latency.
+    """
+
+    def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
-        self.ttft = ttft
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}
+        return {"status": self.status, "elapsed": self.elapsed}
 
 
 class TtsTestStatus(BaseTestStatus):
-    """Test status for text-to-speech models."""
+    """Test status for text-to-speech models.
+
+    ``ttft`` is the time (in SECONDS) until the JSON response starts
+    arriving. Audio is fully synthesized server-side by then so this is
+    closer to request latency than to a true first-audio-sample TTFT,
+    but the field name and unit (seconds) intentionally match every
+    other media client - issue #3243 called out that the prior
+    ``ttft_ms`` field was the only place in the codebase that used
+    milliseconds for TTFT, which made TTS reports impossible to compare
+    numerically against the other clients.
+    """
 
     def __init__(
         self,
         status: bool,
         elapsed: float,
-        ttft_ms: Optional[float] = None,
+        ttft: Optional[float] = None,
         rtr: Optional[float] = None,
         text: Optional[str] = None,
         audio_duration: Optional[float] = None,
         reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
-        self.ttft_ms = ttft_ms
+        self.ttft = ttft
         self.rtr = rtr
         self.text = text
         self.audio_duration = audio_duration
@@ -150,7 +158,7 @@ class TtsTestStatus(BaseTestStatus):
         return {
             "status": self.status,
             "elapsed": self.elapsed,
-            "ttft_ms": self.ttft_ms,
+            "ttft": self.ttft,
             "rtr": self.rtr,
             "text": self.text,
             "audio_duration": self.audio_duration,
@@ -159,7 +167,12 @@ class TtsTestStatus(BaseTestStatus):
 
 
 class VideoGenerationTestStatus(BaseTestStatus):
-    """Test status for video generation models (Mochi, WAN, etc.)."""
+    """Test status for video generation models (Mochi, WAN, etc.).
+
+    ``elapsed`` covers the full request lifecycle (submit + poll loop
+    + download); it is the only timing the current API exposes to the
+    client.
+    """
 
     def __init__(
         self,
@@ -167,7 +180,6 @@ class VideoGenerationTestStatus(BaseTestStatus):
         elapsed: float,
         num_inference_steps: int = 0,
         inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
         job_id: Optional[str] = None,
         video_path: Optional[str] = None,
         prompt: Optional[str] = None,
@@ -175,7 +187,6 @@ class VideoGenerationTestStatus(BaseTestStatus):
         super().__init__(status, elapsed)
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
         self.job_id = job_id
         self.video_path = video_path
         self.prompt = prompt
@@ -186,7 +197,6 @@ class VideoGenerationTestStatus(BaseTestStatus):
             "elapsed": self.elapsed,
             "num_inference_steps": self.num_inference_steps,
             "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
             "job_id": self.job_id,
             "video_path": self.video_path,
             "prompt": self.prompt,
