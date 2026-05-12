@@ -53,69 +53,44 @@ class TtsClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the TTS model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
+            self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=True)
-
             status_list = self._run_tts_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
-        benchmark_data = {}
-
         ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value:.2f}ms")
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-        logger.info(f"Extracted RTR value: {rtr_value:.2f}")
-
-        # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
-        logger.info(f"Extracted P90 TTFT: {p90_ttft:.2f}ms, P95 TTFT: {p95_ttft:.2f}ms")
-
-        # Metadata fields (excluded from numeric metrics in process_list_format_eval_files)
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
+        logger.info(
+            f"TTFT={ttft_value:.4f}s, RTR={rtr_value:.2f}, "
+            f"P90={p90_ttft:.4f}s, P95={p95_ttft:.4f}s"
         )
-        benchmark_data["task_type"] = "text_to_speech"
-        # all_params is always an object with tasks attribute
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        benchmark_data["rtr"] = rtr_value
-        benchmark_data["p90_ttft"] = p90_ttft
-        benchmark_data["p95_ttft"] = p95_ttft
 
-        performance_check = self._calculate_performance_check(
-            ttft_value=ttft_value, rtr_value=rtr_value
-        )
-        benchmark_data["performance_check"] = performance_check
-
-        benchmark_data["accuracy_check"] = self._calculate_accuracy_check()
+        benchmark_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name.lower(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "text_to_speech",
+            "task_name": self.all_params.tasks[0].task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": ttft_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "rtr": rtr_value,
+            "ttft_p90": p90_ttft,
+            "ttft_p95": p95_ttft,
+            "performance_check": self._calculate_performance_check(
+                ttft_value=ttft_value, rtr_value=rtr_value
+            ),
+            "accuracy_check": self._calculate_accuracy_check(),
+        }
 
         benchmark_data = [benchmark_data]
         eval_filename = (
@@ -137,19 +112,9 @@ class TtsClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
+            self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=False)
-
             status_list = self._run_tts_benchmark(num_calls)
-
             self._generate_report(status_list)
             return status_list
         except Exception as e:
@@ -197,23 +162,25 @@ class TtsClientStrategy(BaseMediaStrategy):
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
         ttft_value = self._calculate_ttft_value(status_list)
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-
-        # Calculate tail latency (P90, P95)
         p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
 
+        # All numeric metrics are in SECONDS (#3243 §2). We deliberately
+        # do NOT emit accuracy_check / performance_check on the
+        # benchmark JSON: workflows/run_reports.py recomputes
+        # target_checks downstream from the raw metrics
+        # (add_target_checks_tts), so duplicating them here would just
+        # hide where the source of truth lives.
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "ttft": ttft_value / 1000,
+                "ttft": ttft_value,
                 "rtr": rtr_value,
-                "ttft_p90": p90_ttft / 1000,  # ms to seconds; 0.0 when no data
-                "ttft_p95": p95_ttft / 1000,  # ms to seconds; 0.0 when no data
+                "ttft_p90": p90_ttft,  # 0.0 when no data
+                "ttft_p95": p95_ttft,  # 0.0 when no data
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "text_to_speech",
         }
@@ -242,7 +209,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            status, elapsed, ttft_ms, rtr, audio_duration = asyncio.run(
+            status, elapsed, ttft, rtr, audio_duration = asyncio.run(
                 self._generate_speech()
             )
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
@@ -251,7 +218,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 TtsTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    ttft_ms=ttft_ms,
+                    ttft=ttft,
                     rtr=rtr,
                     text=test_text,
                     audio_duration=audio_duration,
@@ -266,10 +233,11 @@ class TtsClientStrategy(BaseMediaStrategy):
         """Generate speech from text.
 
         Returns:
-            tuple: (success, latency_sec, ttft_ms, rtr, audio_duration)
+            tuple: (success, latency_sec, ttft_sec, rtr, audio_duration)
                 - success: True if speech generation completed successfully
                 - latency_sec: Total end-to-end latency in seconds
-                - ttft_ms: Time to first token/sound in milliseconds
+                - ttft_sec: Time to first response byte, in SECONDS
+                  (matches every other media client's TTFT unit - #3243)
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
                 - audio_duration: Duration of generated audio in seconds
         """
@@ -297,7 +265,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         url = f"{self.base_url}/v1/audio/speech"
         start_time = time.monotonic()
-        ttft_ms = None
+        ttft = None
         audio_duration = None
 
         try:
@@ -332,7 +300,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                     response_start = time.monotonic()
                     response_data = await response.json()
 
-                    ttft_ms = (response_start - start_time) * 1000
+                    ttft = response_start - start_time
 
                     audio_duration = response_data.get("duration")
                     if audio_duration is None:
@@ -366,23 +334,23 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             rtr_str = f"{rtr:.2f}" if rtr is not None else "N/A"
             logger.info(
-                f"✅ Done in {total_duration:.2f}s | TTFT={ttft_ms:.2f}ms | RTR={rtr_str}"
+                f"✅ Done in {total_duration:.2f}s | TTFT={ttft:.4f}s | RTR={rtr_str}"
             )
 
-            return True, total_duration, ttft_ms, rtr, audio_duration
+            return True, total_duration, ttft, rtr, audio_duration
 
         except Exception as e:
             logger.error(f"TTS generation failed: {type(e).__name__}: {e}")
             return False, 0.0, None, None, None
 
     def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average TTFT value in milliseconds."""
+        """Calculate average TTFT value in SECONDS (#3243)."""
         logger.info("Calculating TTFT value")
 
         ttft_value = 0
         if status_list:
             valid_ttft_values = [
-                status.ttft_ms for status in status_list if status.ttft_ms is not None
+                status.ttft for status in status_list if status.ttft is not None
             ]
             ttft_value = (
                 sum(valid_ttft_values) / len(valid_ttft_values)
@@ -410,14 +378,14 @@ class TtsClientStrategy(BaseMediaStrategy):
     def _calculate_tail_latency(
         self, status_list: list[TtsTestStatus]
     ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency for TTFT."""
+        """Calculate P90 and P95 tail latency for TTFT, in SECONDS (#3243)."""
         logger.info("Calculating tail latency (P90, P95)")
 
         if not status_list:
             return 0.0, 0.0
 
         valid_ttft_values = [
-            status.ttft_ms for status in status_list if status.ttft_ms is not None
+            status.ttft for status in status_list if status.ttft is not None
         ]
 
         if not valid_ttft_values:
@@ -442,7 +410,8 @@ class TtsClientStrategy(BaseMediaStrategy):
         Uses get_performance_targets from model_performance_reference.json.
 
         Args:
-            ttft_value: Time to first token in milliseconds
+            ttft_value: Time to first token in SECONDS (matches the unit
+                used by every TTS metric since #3243).
             rtr_value: Real-time ratio (audio_duration / generation_time)
 
         Returns:
@@ -472,15 +441,19 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         if targets.ttft_ms is not None:
             checks_total += 1
-            ttft_threshold = targets.ttft_ms * (1 + tolerance)
-            if ttft_value <= ttft_threshold:
+            # PerformanceTargets stores ttft in milliseconds for
+            # historical reasons (shared across all clients); ttft_value
+            # is in seconds, so convert the target to seconds for the
+            # comparison.
+            ttft_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
+            if ttft_value <= ttft_threshold_s:
                 logger.info(
-                    f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms"
+                    f"✅ TTFT PASSED: {ttft_value:.4f}s <= {ttft_threshold_s:.4f}s"
                 )
                 checks_passed += 1
             else:
                 logger.warning(
-                    f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
+                    f"❌ TTFT FAILED: {ttft_value:.4f}s > {ttft_threshold_s:.4f}s"
                 )
 
         if targets.rtr is not None:
