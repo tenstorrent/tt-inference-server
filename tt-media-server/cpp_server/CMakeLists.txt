@@ -582,7 +582,63 @@ target_include_directories(llm_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(main_integration_test
+    tests/main_integration_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/domain/session.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+)
+target_link_libraries(main_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(main_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
+# main_integration_test boots the whole server stack (services, IPC queues,
+# Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
+# tears it down via TearDownTestSuite. Registering each TEST_F as its own
+# ctest entry would invoke the binary once per test, paying that boot cost six
+# times AND exposing a racy teardown. Run all six tests in a single process.
+add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
+# fails with ctest's captured stdout instead of hanging the job indefinitely.
+set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
