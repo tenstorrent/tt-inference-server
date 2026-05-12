@@ -16,7 +16,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from report_module import renderers
 from report_module.report_file_saver import ReportFileSaver
@@ -52,9 +52,10 @@ class ReportGenerator:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        render_sections = _collapse_same_heading_blocks(normalized.sections)
         section_markdowns = [
             self._render_block(block, normalized.metadata)
-            for block in normalized.sections
+            for block in render_sections
         ]
         rendered = [md for md in section_markdowns if md]
 
@@ -136,3 +137,50 @@ def generate_report(
 ) -> GenerateResult:
     """Convenience functional wrapper around :class:`ReportGenerator`."""
     return ReportGenerator(file_saver=file_saver).generate(schema, output_dir)
+
+
+def _collapse_same_heading_blocks(sections: List[Block]) -> List[Block]:
+    """Merge consecutive blocks that would render under the same heading.
+    """
+    merged: List[Block] = []
+    for block in sections:
+        if merged and _has_same_heading(merged[-1], block):
+            merged[-1] = _merge_blocks(merged[-1], block)
+        else:
+            merged.append(block)
+    return merged
+
+
+def _has_same_heading(a: Block, b: Block) -> bool:
+    return (
+        a.kind == b.kind
+        and (a.title or "") == (b.title or "")
+        and (a.id or "") == (b.id or "")
+    )
+
+
+def _merge_blocks(a: Block, b: Block) -> Block:
+    records = _records_for_merge(a) + _records_for_merge(b)
+    return Block(
+        kind=a.kind,
+        title=a.title,
+        id=a.id,
+        targets=dict(a.targets),
+        checks=dict(a.checks),
+        data={"records": records},
+    )
+
+
+def _records_for_merge(block: Block) -> List[Dict[str, Any]]:
+    return [_flatten_one_level(record) for record in renderers._extract_records(block)]
+
+
+def _flatten_one_level(record: Mapping[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in record.items():
+        if isinstance(value, Mapping):
+            for sub_key, sub_value in value.items():
+                out.setdefault(sub_key, sub_value)
+        else:
+            out[key] = value
+    return out
