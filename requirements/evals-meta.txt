@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_META workflow venv.
+# Used by: setup_evals_meta() in workflows/workflow_venvs.py
+#
+# Note: setup_evals_meta() does additional non-pip work (clones llama-cookbook,
+# editable-installs it, prepares meta eval datasets). That stays in Python.
+# This file covers only the pip dependencies that aren't the cookbook editable.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+antlr4_python3_runtime==4.11
+lm-eval[math,ifeval,sentencepiece,vllm]==0.4.3
+pyjwt
+pillow
+datasets==3.1.0

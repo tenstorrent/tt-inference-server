@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 
 import ttnn
@@ -73,7 +73,6 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
 
     def _mesh_device(self):
         try:
-            # Get available devices
             device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise RuntimeError("No TTNN devices available")
@@ -91,12 +90,12 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             )
 
             self.logger.info(
-                f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
+                f"Device {self.device_id}: Created mesh device with {mesh_device.get_num_devices()} devices"
             )
             return mesh_device
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+                f"Device {self.device_id}: Device initialization failed: {e}"
             )
             raise RuntimeError(
                 f"Unexpected device initialization error: {str(e)}"

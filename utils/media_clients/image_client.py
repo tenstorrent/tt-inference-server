@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import json
@@ -21,10 +21,10 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from tests.server_tests.test_cases.image_generation_eval_test import (
+from server_tests.test_cases.image_generation_eval_test import (
     ImageGenerationEvalsTest,
 )
-from tests.server_tests.test_classes import TestConfig as ServerTestConfig
+from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
+SDXL_BENCHMARK_NUM_PROMPTS = 100
 SDXL_SD35_INFERENCE_STEPS = 20
 IMAGE_FORMAT_FOR_EVALS = "PNG"
 IMAGE_QUALITY_FOR_EVALS = 100
@@ -197,6 +198,16 @@ class ImageClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
+        # If the eval produced metrics but the accuracy check failed, we still
+        # want to persist the report above. Only now do we surface the failure
+        # so upstream callers can treat it as an error.
+        if isinstance(eval_result, dict) and not eval_result.get("success", True):
+            error = eval_result.get(
+                "error", "ImageGenerationEvalsTest ACCURACY_CHECK failed"
+            )
+            logger.error(f"Eval report written despite failure; raising: {error}")
+            raise RuntimeError(error)
+
     def run_benchmark(self, attempt=0) -> list[ImageGenerationTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
@@ -215,6 +226,17 @@ class ImageClientStrategy(BaseMediaStrategy):
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
+
+            # Override num_calls for SDXL models to 100 prompts
+            if runner_in_use in [
+                "tt-sdxl-trace",
+                "tt-sdxl-image-to-image",
+                "tt-sdxl-edit",
+            ]:
+                logger.info(
+                    f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                )
+                num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
@@ -675,7 +697,16 @@ class ImageClientStrategy(BaseMediaStrategy):
         result = await eval_test._run_specific_test_async()
 
         if not result.get("success"):
+            # If eval_results were computed (i.e. accuracy check failed with real
+            # FID/CLIP numbers), return the result so the caller can persist a
+            # report before signaling failure. Only raise when there are no
+            # metrics to report (a genuine execution error).
+            if result.get("eval_results"):
+                logger.error("ImageGenerationEvalsTest ACCURACY_CHECK failed.")
+                return result
+
             error = result.get("error", "ImageGenerationEvalsTest failed")
+            logger.error(f"ImageGenerationEvalsTest failed: error={error}")
             raise RuntimeError(error)
 
         logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")

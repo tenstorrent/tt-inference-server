@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import sys
@@ -10,9 +10,9 @@ import pytest
 
 # Mock all external dependencies before importing
 sys.modules["ttnn"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
 
 # Mock config settings - must be done before any imports that use settings
 mock_settings = Mock()
@@ -29,6 +29,7 @@ mock_settings_module.settings = mock_settings
 mock_settings_module.Settings = Mock(return_value=mock_settings)
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
+
 
 sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
@@ -47,6 +48,8 @@ class MockImageGenerateRequest:
         self.stream = False  # Default to non-streaming
 
 
+_orig_image_generate_request = sys.modules.get("domain.image_generate_request")
+
 sys.modules["domain.image_generate_request"] = Mock()
 sys.modules[
     "domain.image_generate_request"
@@ -58,6 +61,8 @@ mock_device_runner.warmup = Mock(return_value=asyncio.Future())
 mock_device_runner.warmup.return_value.set_result(None)
 mock_device_runner.run.return_value = [Mock(), Mock()]
 
+_orig_image_manager = sys.modules.get("utils.image_manager")
+
 mock_image_manager = Mock()
 mock_image_manager.convert_image_to_bytes.return_value = b"fake_image_bytes"
 sys.modules["utils.image_manager"] = Mock()
@@ -68,6 +73,28 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger.return_value = mock_logger
 
 from device_workers.device_worker import device_worker
+
+if _orig_image_generate_request is not None:
+    sys.modules["domain.image_generate_request"] = _orig_image_generate_request
+else:
+    sys.modules.pop("domain.image_generate_request", None)
+
+# Restore real utils.image_manager so that downstream tests collected after
+# this file (e.g. tests/test_image_manager.py) re-import the actual module
+# instead of inheriting our Mock. Popping sys.modules is necessary but not
+# sufficient — Python's import system also caches the submodule as an
+# attribute on the parent package, so we delete that and force a real reload.
+if _orig_image_manager is not None:
+    sys.modules["utils.image_manager"] = _orig_image_manager
+else:
+    sys.modules.pop("utils.image_manager", None)
+    import importlib
+
+    import utils
+
+    if hasattr(utils, "image_manager"):
+        delattr(utils, "image_manager")
+    importlib.import_module("utils.image_manager")
 
 
 class WorkerExitException(Exception):

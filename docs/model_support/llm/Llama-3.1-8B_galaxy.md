@@ -15,7 +15,6 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 `Llama-3.1-8B` is also supported on hardware:
 
-- [BH QuietBox GE (2xP300)](Llama-3.1-8B_p300x2.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [P100/P150](Llama-3.1-8B_p100.md)
@@ -26,7 +25,22 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
-This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
+This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal/README.md) inference engine.
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a \
+  --model Llama-3.1-8B \
+  --tt-device galaxy
+```
 
 **via run.py command**
 
@@ -43,16 +57,31 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 128 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
-| tt-metal Commit | `65718bb` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-65718bb-409b1cd` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/tt_transformers) |
+| tt-metal Commit | `bac8b34` |
+| vLLM Commit | `7c6685a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a` |
 
 ---
 
 ## GALAXY_T3K Configuration
 
 ### Quickstart - Deploy on WH Galaxy
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a \
+  --model Llama-3.1-8B \
+  --tt-device galaxy_t3k
+```
 
 **via run.py command**
 
@@ -68,7 +97,7 @@ python3 run.py --model Llama-3.1-8B --device galaxy_t3k --workflow server --dock
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
-| tt-metal Commit | `65718bb` |
-| vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-65718bb-409b1cd` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/tt_transformers) |
+| tt-metal Commit | `bac8b34` |
+| vLLM Commit | `7c6685a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a` |

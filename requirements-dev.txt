@@ -6,3 +6,4 @@ pyjwt==2.7.0
 requests
 imageio
 imageio-ffmpeg
+jsonschema

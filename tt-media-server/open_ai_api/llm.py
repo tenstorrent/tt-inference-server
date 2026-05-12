@@ -1,18 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
 import time
 import uuid
 
+from config.settings import settings
 from domain.completion_request import CompletionRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from utils.logger import TTLogger
 
+from open_ai_api.chat import _count_tokens
+
+logger = TTLogger()
 router = APIRouter()
 
 
@@ -34,6 +39,28 @@ async def complete_text(
     completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
     model = completion_request.model or "default"
+
+    # Reject prompts that exceed the model's context window
+    try:
+        if isinstance(completion_request.prompt, str):
+            prompt_tokens = _count_tokens(completion_request.prompt)
+        elif isinstance(completion_request.prompt, list):
+            prompt_tokens = len(completion_request.prompt)
+        else:
+            prompt_tokens = 0
+        max_model_len = settings.vllm.max_model_length
+        if prompt_tokens > max_model_len:
+            logger.warning(
+                f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Skip validation if tokenizer unavailable (e.g., test/mock runners)
 
     try:
         if not completion_request.stream:

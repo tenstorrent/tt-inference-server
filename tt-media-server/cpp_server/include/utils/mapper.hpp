@@ -1,8 +1,11 @@
-#include "domain/completion_request.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+#pragma once
+
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/sampling_params.hpp"
 
 namespace tt::utils::mapper {
 
-llm_engine::SamplingParams map_sampling_params(const domain::CompletionRequest&);
+using namespace tt::domain::llm;
 
-}
+SamplingParams mapSamplingParams(const LLMRequest&);
+}  // namespace tt::utils::mapper

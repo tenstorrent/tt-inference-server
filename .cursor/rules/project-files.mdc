@@ -1,376 +1,580 @@
 .
-├── .cursor
-│   └── rules
-│       ├── coding-standards.mdc
-│       ├── documentation.mdc
-│       ├── naming-conventions.mdc
-│       ├── project-files.mdc
-│       └── testing.mdc
-├── .cursorignore
-├── .github
-│   ├── CODEOWNERS
-│   ├── ISSUE_TEMPLATE
-│   │   └── model-readiness.yml
-│   └── workflows
-│       ├── on-community-issue.yml
-│       ├── spdx-checker.yml
-│       └── test-gate.yml
-├── .gitignore
-├── .pre-commit-config.yaml
 ├── benchmarking
-│   ├── benchmark_config.py
-│   ├── benchmark_targets
-│   │   ├── model_performance_reference.json
-│   │   └── test_benchmarks_override.json
-│   ├── genai_benchmark.py
-│   ├── README.md
-│   ├── run_aiperf_benchmarks.py
-│   ├── run_benchmarks.py
-│   ├── run_genai_benchmarks.py
-│   └── summary_report.py
+│   ├── benchmark_config.py
+│   ├── benchmark_targets
+│   │   ├── model_performance_reference.json
+│   │   └── test_benchmarks_override.json
+│   ├── genai_benchmark.py
+│   ├── README.md
+│   ├── run_aiperf_benchmarks.py
+│   ├── run_benchmarks.py
+│   ├── run_genai_benchmarks.py
+│   └── summary_report.py
+├── model_spec.json
 ├── docker-entrypoint.sh
 ├── docs
-│   ├── add_support_for_new_model.md
-│   ├── benchmarking_tools.md
-│   ├── development.md
-│   ├── run_model_on_commit.md
-│   ├── run_vllm_param_tests.md
-│   ├── running_tt_triage.md
-│   ├── ttis-git-workflows-2025-08-14-1106.png
-│   └── workflows_user_guide.md
+│   ├── add_support_for_new_model.md
+│   ├── benchmarking_tools.md
+│   ├── development.md
+│   ├── prerequisites.md
+│   ├── README.md
+│   ├── run_model_on_commit.md
+│   ├── running_tt_triage.md
+│   ├── run_vllm_param_tests.md
+│   ├── ttis-git-workflows-2026-02-10.png
+│   └── workflows_user_guide.md
 ├── evals
-│   ├── eval_config.py
-│   ├── eval_targets
-│   │   └── model_accuracy_reference.json
-│   ├── eval_utils.py
-│   ├── README.md
-│   └── run_evals.py
+│   ├── eval_config.py
+│   ├── eval_targets
+│   │   └── model_accuracy_reference.json
+│   ├── eval_utils.py
+│   ├── README.md
+│   └── run_evals.py
 ├── LICENSE
-├── model_specs_output.json
 ├── pyproject.toml
 ├── README.md
 ├── requirements-dev.txt
 ├── run.py
 ├── scripts
-│   ├── add_spdx_header.py
-│   ├── build_docker_images.py
-│   ├── build_single_docker.sh
-│   ├── examples
-│   │   ├── example_audio_request.py
-│   │   ├── example_audio_transcription.md
-│   │   ├── run_tts_server.sh
-│   │   ├── tts_basic_example.py
-│   │   └── tts_streaming_example.py
-│   ├── release
-│   │   ├── make_release_image_artifacts.py
-│   │   ├── models_ci_reader.py
-│   │   ├── parse_workflow_logs.py
-│   │   ├── README.md
-│   │   ├── release-summary-2025-08-14-1106.png
-│   │   ├── run_all_release_models.py
-│   │   ├── update_model_spec.py
-│   │   └── workflow_logs_parser.py
-│   └── run_tt_triage.py
+│   ├── add_spdx_header.py
+│   ├── build_docker_images.py
+│   ├── build_single_docker.sh
+│   ├── examples
+│   │   ├── example_audio_request.py
+│   │   ├── example_audio_transcription.md
+│   │   ├── run_tts_server.sh
+│   │   └── tts_basic_example.py
+│   ├── hooks
+│   │   └── pre-commit
+│   ├── release
+│   │   ├── generate_model_support_docs.py
+│   │   ├── make_release_image_artifacts.py
+│   │   ├── models_ci_reader.py
+│   │   ├── parse_workflow_logs.py
+│   │   ├── README.md
+│   │   ├── release-summary-2025-08-14-1106.png
+│   │   ├── run_all_release_models.py
+│   │   ├── update_model_spec.py
+│   │   └── workflow_logs_parser.py
+│   ├── run_tt_triage.py
+│   └── setup-hooks.sh
 ├── stress_tests
-│   ├── __init__.py
-│   ├── README.md
-│   ├── run_stress_tests.py
-│   ├── stress_tests_args.py
-│   ├── stress_tests_benchmarking_script.py
-│   ├── stress_tests_config.py
-│   ├── stress_tests_core.py
-│   └── stress_tests_summary_report.py
+│   ├── __init__.py
+│   ├── README.md
+│   ├── run_stress_tests.py
+│   ├── stress_tests_args.py
+│   ├── stress_tests_benchmarking_script.py
+│   ├── stress_tests_config.py
+│   ├── stress_tests_core.py
+│   └── stress_tests_summary_report.py
 ├── tests
-│   ├── __init__.py
-│   ├── README.md
-│   ├── run_tests.py
-│   ├── server_tests
-│   │   ├── __init__.py
-│   │   ├── base_test.py
-│   │   ├── conftest.py
-│   │   ├── run.py
-│   │   ├── server_tests_config.json
-│   │   ├── test_cases
-│   │   │   ├── audio_transcription_load_test.py
-│   │   │   ├── audio_transcription_param_test.py
-│   │   │   ├── device_liveness_test.py
-│   │   │   ├── device_stability_test.py
-│   │   │   ├── image_generation_load_test.py
-│   │   │   ├── image_generation_param_test.py
-│   │   │   ├── img2img_generation_param_test.py
-│   │   │   ├── inpainting_generation_param_test.py
-│   │   │   ├── media_server_liveness_test.py
-│   │   │   ├── server_helper.py
-│   │   │   ├── speecht5_tts_test.py
-│   │   │   ├── test_vllm_server_parameters.py
-│   │   │   ├── tts_integration_test.py
-│   │   │   ├── vision_evals_test.py
-│   │   │   └── whisper_eval_test.py
-│   │   ├── test_classes.py
-│   │   ├── test_config.json
-│   │   └── tests_runner.py
-│   ├── test_config.py
-│   ├── test_model_specification.py
-│   ├── test_run_arguments.py
-│   ├── test_workflows.py
-│   ├── utils
-│   │   ├── media_client
-│   │   │   ├── test_audio_client.py
-│   │   │   ├── test_cnn_client.py
-│   │   │   ├── test_image_client.py
-│   │   │   ├── test_media_client_factory.py
-│   │   │   └── test_test_status.py
-│   │   └── vllm_parameter_json_to_md.py
-│   └── workflows
-│       └── test_utils_report.py
+│   ├── __init__.py
+│   ├── README.md
+│   ├── run_tests.py
+│   ├── server_tests
+│   │   ├── base_test.py
+│   │   ├── conftest.py
+│   │   ├── __init__.py
+│   │   ├── run.py
+│   │   ├── server_tests_config.json
+│   │   ├── test_cases
+│   │   │   ├── audio_transcription_load_dp2_chunk30_test.py
+│   │   │   ├── audio_transcription_load_dp2_chunk5_test.py
+│   │   │   ├── audio_transcription_load_test.py
+│   │   │   ├── audio_transcription_param_test.py
+│   │   │   ├── cnn_load_test.py
+│   │   │   ├── cnn_param_test.py
+│   │   │   ├── device_liveness_test.py
+│   │   │   ├── device_stability_test.py
+│   │   │   ├── embedding_load_test.py
+│   │   │   ├── embedding_param_test.py
+│   │   │   ├── image_generation_eval_test.py
+│   │   │   ├── image_generation_load_test.py
+│   │   │   ├── image_generation_param_test.py
+│   │   │   ├── img2img_generation_param_test.py
+│   │   │   ├── inpainting_generation_param_test.py
+│   │   │   ├── media_server_liveness_test.py
+│   │   │   ├── server_helper.py
+│   │   │   ├── speecht5_tts_test.py
+│   │   │   ├── test_vllm_server_parameters.py
+│   │   │   ├── tts_integration_test.py
+│   │   │   ├── tts_load_test.py
+│   │   │   ├── tts_param_test.py
+│   │   │   ├── tts_quality_test.py
+│   │   │   ├── video_fvd_eval_test.py
+│   │   │   ├── video_fvmd_eval_test.py
+│   │   │   ├── video_generation_eval_test.py
+│   │   │   ├── video_generation_load_test.py
+│   │   │   ├── video_generation_param_test.py
+│   │   │   ├── vision_evals_test.py
+│   │   │   └── whisper_eval_test.py
+│   │   ├── test_classes.py
+│   │   ├── test_config.json
+│   │   └── tests_runner.py
+│   ├── test_benchmark_concurrency_sweeps.py
+│   ├── test_benchmark_config.py
+│   ├── test_config.py
+│   ├── test_dit_runners_validation.py
+│   ├── test_logging_utils.py
+│   ├── test_model_specification.py
+│   ├── test_run_arguments.py
+│   ├── test_run_command.py
+│   ├── test_setup_host.py
+│   ├── test_validate_setup.py
+│   ├── test_workflows.py
+│   ├── utils
+│   │   ├── media_client
+│   │   │   ├── test_audio_client.py
+│   │   │   ├── test_cnn_client.py
+│   │   │   ├── test_embedding_client.py
+│   │   │   ├── test_image_client.py
+│   │   │   ├── test_media_client_factory.py
+│   │   │   ├── test_test_status.py
+│   │   │   ├── test_tts_client.py
+│   │   │   └── test_video_client.py
+│   │   └── vllm_parameter_json_to_md.py
+│   └── workflows
+│       └── test_utils_report.py
 ├── tt-media-server
-│   ├── config
-│   │   ├── constants.py
-│   │   ├── settings.py
-│   │   └── vllm_settings.py
-│   ├── device_workers
-│   │   ├── device_worker_dynamic_batch.py
-│   │   ├── device_worker.py
-│   │   └── worker_utils.py
-│   ├── Dockerfile
-│   ├── Dockerfile.forge
-│   ├── Dockerfile.sfpi-minimal
-│   ├── docs
-│   │   └── profiling-example.svg
-│   ├── domain
-│   │   ├── audio_processing_request.py
-│   │   ├── audio_text_response.py
-│   │   ├── base_request.py
-│   │   ├── completion_request.py
-│   │   ├── completion_response.py
-│   │   ├── embedding_response.py
-│   │   ├── image_edit_request.py
-│   │   ├── image_generate_request.py
-│   │   ├── image_search_request.py
-│   │   ├── image_search_response.py
-│   │   ├── image_to_image_request.py
-│   │   ├── text_embedding_request.py
-│   │   ├── text_to_speech_request.py
-│   │   ├── text_to_speech_response.py
-│   │   ├── training_request.py
-│   │   └── video_generate_request.py
-│   ├── load_tester.py
-│   ├── main.py
-│   ├── model_services
-│   │   ├── audio_service.py
-│   │   ├── base_service.py
-│   │   ├── cnn_service.py
-│   │   ├── cpu_workload_handler.py
-│   │   ├── image_service.py
-│   │   ├── llm_service.py
-│   │   ├── scheduler.py
-│   │   ├── training_service.py
-│   │   ├── tt_queue.py
-│   │   ├── tts_service.py
-│   │   └── video_service.py
-│   ├── open_ai_api
-│   │   ├── __init__.py
-│   │   ├── audio.py
-│   │   ├── cnn.py
-│   │   ├── fine_tuning.py
-│   │   ├── image.py
-│   │   ├── llm.py
-│   │   ├── tt_maintenance_api.py
-│   │   ├── tts.py
-│   │   └── video.py
-│   ├── performance_tests
-│   │   ├── __init__.py
-│   │   ├── conftest.py
-│   │   ├── llm_streaming_client.py
-│   │   ├── README.md
-│   │   ├── streaming_metrics.py
-│   │   ├── test_audio_transcription.py
-│   │   ├── test_image_generation.py
-│   │   └── test_llm_streaming.py
-│   ├── pyproject.toml
-│   ├── README.md
-│   ├── requirements.txt
-│   ├── resolver
-│   │   ├── __init__.py
-│   │   ├── scheduler_resolver.py
-│   │   ├── service_resolver_test.py
-│   │   └── service_resolver.py
-│   ├── run_uvicorn.sh
-│   ├── scripts
-│   │   └── download_sdxl_weights.py
-│   ├── security
-│   │   └── api_key_checker.py
-│   ├── static
-│   │   ├── data
-│   │   │   ├── audio_test.json
-│   │   │   └── audio.py
-│   │   ├── demos
-│   │   │   ├── images.json
-│   │   │   ├── resnet.css
-│   │   │   ├── resnet.html
-│   │   │   └── resnet.js
-│   │   └── llm
-│   │       └── index.html
-│   ├── telemetry
-│   │   ├── prometheus_metrics.py
-│   │   └── telemetry_client.py
-│   ├── tests
-│   │   ├── __init__.py
-│   │   ├── api_test.py
-│   │   ├── conftest.py
-│   │   ├── test_base_device_runner.py
-│   │   ├── test_cnn_api.py
-│   │   ├── test_device_manager.py
-│   │   ├── test_device_worker_dynamic_batch.py
-│   │   ├── test_device_worker.py
-│   │   ├── test_forge_runner.py
-│   │   ├── test_hugging_face_utils.py
-│   │   ├── test_job_manager.py
-│   │   ├── test_main.py
-│   │   ├── test_runner_fabric.py
-│   │   ├── test_scheduler.py
-│   │   ├── test_sd35_device_runner.py
-│   │   ├── test_speaker_embeddings.py
-│   │   ├── test_tts_api.py
-│   │   ├── test_vllm_forge_runner.py
-│   │   └── test_worker_utils.py
-│   ├── tt_model_runners
-│   │   ├── base_device_runner.py
-│   │   ├── base_metal_device_runner.py
-│   │   ├── base_sdxl_runner.py
-│   │   ├── conftest.py
-│   │   ├── dit_runners.py
-│   │   ├── forge_runners
-│   │   │   ├── __init__.py
-│   │   │   ├── fetch_models.sh
-│   │   │   ├── forge_runner.py
-│   │   │   ├── README.md
-│   │   │   ├── requirements.txt
-│   │   │   ├── run_clean_env.py
-│   │   │   ├── runners.py
-│   │   │   ├── setup_env.sh
-│   │   │   └── test_forge_models.py
-│   │   ├── lora_trainer_runner.py
-│   │   ├── mock_runner.py
-│   │   ├── resources
-│   │   │   └── coco.names
-│   │   ├── runner_fabric.py
-│   │   ├── sdxl_edit_runner_trace.py
-│   │   ├── sdxl_generate_runner_trace.py
-│   │   ├── sdxl_image_to_image_runner_trace.py
-│   │   ├── speecht5_runner.py
-│   │   ├── test_runner.py
-│   │   ├── vllm_bge_large_en_runner.py
-│   │   ├── vllm_forge_qwen_embedding_runner.py
-│   │   ├── vllm_forge_runner.py
-│   │   └── whisper_runner.py
-│   └── utils
-│       ├── __init__.py
-│       ├── audio_manager.py
-│       ├── decorators.py
-│       ├── device_manager.py
-│       ├── hugging_face_utils.py
-│       ├── image_manager.py
-│       ├── job_database.py
-│       ├── job_manager.py
-│       ├── logger.py
-│       ├── speaker_embeddings.py
-│       ├── text_utils.py
-│       ├── torch_utils.py
-│       └── video_manager.py
+│   ├── config
+│   │   ├── constants.py
+│   │   ├── settings.py
+│   │   └── vllm_settings.py
+│   ├── cpp_server
+│   │   ├── adr
+│   │   │   └── 001-tcp-nodelay-for-sse-streaming.md
+│   │   ├── benchmarks
+│   │   │   └── tokenizer_benchmark.cpp
+│   │   ├── build.sh
+│   │   ├── CLAUDE.md
+│   │   ├── CMakeLists.txt
+│   │   ├── include
+│   │   │   ├── api
+│   │   │   │   ├── embedding_controller.hpp
+│   │   │   │   ├── health_controller.hpp
+│   │   │   │   └── llm_controller.hpp
+│   │   │   ├── config
+│   │   │   │   ├── constants.hpp
+│   │   │   │   └── settings.hpp
+│   │   │   ├── domain
+│   │   │   │   ├── base_request.hpp
+│   │   │   │   ├── base_response.hpp
+│   │   │   │   ├── chat_completion_request.hpp
+│   │   │   │   ├── chat_completion_response.hpp
+│   │   │   │   ├── chat_message.hpp
+│   │   │   │   ├── completion_request.hpp
+│   │   │   │   ├── completion_response.hpp
+│   │   │   │   ├── embedding_request.hpp
+│   │   │   │   └── embedding_response.hpp
+│   │   │   ├── filters
+│   │   │   │   └── security_filter.hpp
+│   │   │   ├── ipc
+│   │   │   │   ├── boost_ipc_task_queue.hpp
+│   │   │   │   ├── queue_manager.hpp
+│   │   │   │   └── shared_memory.hpp
+│   │   │   ├── profiling
+│   │   │   │   └── tracy.hpp
+│   │   │   ├── runners
+│   │   │   │   ├── embedding_config.hpp
+│   │   │   │   ├── embedding_runner.hpp
+│   │   │   │   ├── llm_runner
+│   │   │   │   │   ├── block_manager.hpp
+│   │   │   │   │   ├── config.hpp
+│   │   │   │   │   ├── debug.hpp
+│   │   │   │   │   ├── device_backend.hpp
+│   │   │   │   │   ├── hash.hpp
+│   │   │   │   │   ├── in_memory_task_queue.hpp
+│   │   │   │   │   ├── model_runner.hpp
+│   │   │   │   │   ├── sampling_params.hpp
+│   │   │   │   │   ├── scheduler.hpp
+│   │   │   │   │   ├── sequence.hpp
+│   │   │   │   │   └── task_queue.hpp
+│   │   │   │   ├── llm_runner.hpp
+│   │   │   │   ├── runner_config.hpp
+│   │   │   │   └── runner_interface.hpp
+│   │   │   ├── services
+│   │   │   │   ├── base_service.hpp
+│   │   │   │   ├── embedding_service.hpp
+│   │   │   │   ├── llm_service.hpp
+│   │   │   │   └── streamable.hpp
+│   │   │   ├── sockets
+│   │   │   │   ├── inter_server_service.hpp
+│   │   │   │   ├── socket_manager.hpp
+│   │   │   │   └── socket_messages.hpp
+│   │   │   ├── utils
+│   │   │   │   ├── concurrent_map.hpp
+│   │   │   │   ├── json_escape.hpp
+│   │   │   │   ├── mapper.hpp
+│   │   │   │   ├── runner_factory.hpp
+│   │   │   │   ├── service_factory.hpp
+│   │   │   │   └── tokenizer.hpp
+│   │   │   └── worker
+│   │   │       └── single_process_worker.hpp
+│   │   ├── install_dependencies.sh
+│   │   ├── README.md
+│   │   ├── src
+│   │   │   ├── api
+│   │   │   │   ├── embedding_controller.cpp
+│   │   │   │   ├── health_controller.cpp
+│   │   │   │   ├── llm_controller.cpp
+│   │   │   │   └── openapi.cpp
+│   │   │   ├── config
+│   │   │   │   └── settings.cpp
+│   │   │   ├── filters
+│   │   │   │   └── security_filter.cpp
+│   │   │   ├── ipc
+│   │   │   │   └── boost_ipc_task_queue.cpp
+│   │   │   ├── main.cpp
+│   │   │   ├── profiling
+│   │   │   │   ├── tracy_alloc.cpp
+│   │   │   │   └── tracy.cpp
+│   │   │   ├── runners
+│   │   │   │   ├── embedding_runner.cpp
+│   │   │   │   ├── llm_runner
+│   │   │   │   │   ├── block_manager.cpp
+│   │   │   │   │   ├── device_backend.cpp
+│   │   │   │   │   ├── hash.cpp
+│   │   │   │   │   ├── mock_device_backend.cpp
+│   │   │   │   │   ├── model_runner.cpp
+│   │   │   │   │   ├── sampling_params.cpp
+│   │   │   │   │   ├── scheduler.cpp
+│   │   │   │   │   ├── sequence.cpp
+│   │   │   │   │   └── sockets_device_backend.cpp
+│   │   │   │   └── llm_runner.cpp
+│   │   │   ├── services
+│   │   │   │   ├── embedding_service.cpp
+│   │   │   │   └── llm_service.cpp
+│   │   │   ├── sockets
+│   │   │   │   ├── inter_server_service.cpp
+│   │   │   │   └── socket_manager.cpp
+│   │   │   ├── utils
+│   │   │   │   ├── mapper.cpp
+│   │   │   │   ├── runner_factory.cpp
+│   │   │   │   ├── service_factory.cpp
+│   │   │   │   ├── tokenizer_config_loader.cpp
+│   │   │   │   └── tokenizer.cpp
+│   │   │   └── worker
+│   │   │       └── single_process_worker.cpp
+│   │   ├── tests
+│   │   │   ├── ipc_scheduler_smoke_test.cpp
+│   │   │   ├── llm_runner_test.cpp
+│   │   │   ├── scheduler_test.cpp
+│   │   │   ├── sequence_test.cpp
+│   │   │   ├── test_embedding.py
+│   │   │   └── test_tokenizer.cpp
+│   │   └── TRACY.md
+│   ├── device_workers
+│   │   ├── device_worker_dynamic_batch.py
+│   │   ├── device_worker.py
+│   │   └── worker_utils.py
+│   ├── Dockerfile
+│   ├── Dockerfile.forge
+│   ├── Dockerfile.sfpi-minimal
+│   ├── docs
+│   │   └── profiling-example.svg
+│   ├── domain
+│   │   ├── audio_processing_request.py
+│   │   ├── audio_text_response.py
+│   │   ├── base_request.py
+│   │   ├── completion_request.py
+│   │   ├── completion_response.py
+│   │   ├── detokenize_request.py
+│   │   ├── detokenize_response.py
+│   │   ├── embedding_response.py
+│   │   ├── image_edit_request.py
+│   │   ├── image_generate_request.py
+│   │   ├── image_search_request.py
+│   │   ├── image_search_response.py
+│   │   ├── image_to_image_request.py
+│   │   ├── text_embedding_request.py
+│   │   ├── text_to_speech_request.py
+│   │   ├── text_to_speech_response.py
+│   │   ├── tokenize_request.py
+│   │   ├── tokenize_response.py
+│   │   ├── training_request.py
+│   │   └── video_generate_request.py
+│   ├── load_tester.py
+│   ├── main.py
+│   ├── model_services
+│   │   ├── audio_service.py
+│   │   ├── base_job_service.py
+│   │   ├── base_service.py
+│   │   ├── cnn_service.py
+│   │   ├── cpu_workload_handler.py
+│   │   ├── embedding_service.py
+│   │   ├── image_service.py
+│   │   ├── llm_service.py
+│   │   ├── queues
+│   │   │   ├── __init__.py
+│   │   │   ├── memory_queue.py
+│   │   │   ├── tt_batch_fifo_queue.py
+│   │   │   ├── tt_faster_fifo_queue.py
+│   │   │   ├── tt_queue_interface.py
+│   │   │   └── tt_queue.py
+│   │   ├── scheduler.py
+│   │   ├── text_to_speech_service.py
+│   │   ├── training_service.py
+│   │   └── video_service.py
+│   ├── open_ai_api
+│   │   ├── audio.py
+│   │   ├── cnn.py
+│   │   ├── deprecation.py
+│   │   ├── embedding.py
+│   │   ├── fine_tuning.py
+│   │   ├── image.py
+│   │   ├── __init__.py
+│   │   ├── llm.py
+│   │   ├── text_to_speech.py
+│   │   ├── tokenizer.py
+│   │   ├── tt_maintenance_api.py
+│   │   └── video.py
+│   ├── performance_tests
+│   │   ├── conftest.py
+│   │   ├── __init__.py
+│   │   ├── llm_streaming_client.py
+│   │   ├── README.md
+│   │   ├── streaming_metrics.py
+│   │   ├── test_audio_transcription.py
+│   │   ├── test_image_generation.py
+│   │   ├── test_llm_multiprocess_streaming.py
+│   │   └── test_llm_streaming.py
+│   ├── pyproject.toml
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── resolver
+│   │   ├── __init__.py
+│   │   ├── scheduler_resolver.py
+│   │   ├── service_resolver.py
+│   │   └── service_resolver_test.py
+│   ├── run_cpp.sh
+│   ├── run_uvicorn.sh
+│   ├── scripts
+│   │   └── download_sdxl_weights.py
+│   ├── security
+│   │   └── api_key_checker.py
+│   ├── static
+│   │   ├── data
+│   │   │   ├── audio.py
+│   │   │   └── audio_test.json
+│   │   ├── demos
+│   │   │   ├── images.json
+│   │   │   ├── resnet.css
+│   │   │   ├── resnet.html
+│   │   │   └── resnet.js
+│   │   └── llm
+│   │       └── index.html
+│   ├── telemetry
+│   │   ├── prometheus_metrics.py
+│   │   └── telemetry_client.py
+│   ├── tests
+│   │   ├── api_test.py
+│   │   ├── conftest_memory_queue.py
+│   │   ├── conftest.py
+│   │   ├── __init__.py
+│   │   ├── test_audio_manager.py
+│   │   ├── test_base_device_runner.py
+│   │   ├── test_base_service.py
+│   │   ├── test_cnn_api.py
+│   │   ├── test_deprecation_middleware.py
+│   │   ├── test_device_manager.py
+│   │   ├── test_device_worker_dynamic_batch.py
+│   │   ├── test_device_worker.py
+│   │   ├── test_embedding_tokenizer.py
+│   │   ├── test_forge_runner.py
+│   │   ├── test_hugging_face_utils.py
+│   │   ├── test_job_manager.py
+│   │   ├── test_memory_queue.py
+│   │   ├── test_runner_fabric.py
+│   │   ├── test_sampling_params_builder.py
+│   │   ├── test_scheduler.py
+│   │   ├── test_simple_queue_factory.py
+│   │   ├── test_speaker_embeddings.py
+│   │   ├── test_text_to_speech_api.py
+│   │   ├── test_tokenizer.py
+│   │   ├── test_training_workflow.py
+│   │   ├── test_tt_batch_fifo_queue.py
+│   │   ├── test_tt_faster_fifo_queue.py
+│   │   ├── test_tt_maintenance_api.py
+│   │   ├── test_tt_queue.py
+│   │   ├── test_video_api.py
+│   │   ├── test_vllm_runner.py
+│   │   └── test_worker_utils.py
+│   ├── tt_model_runners
+│   │   ├── base_device_runner.py
+│   │   ├── base_metal_device_runner.py
+│   │   ├── base_sdxl_runner.py
+│   │   ├── conftest.py
+│   │   ├── dit_runners.py
+│   │   ├── embedding_runner.py
+│   │   ├── forge_runners
+│   │   │   ├── fetch_models.sh
+│   │   │   ├── forge_runner.py
+│   │   │   ├── __init__.py
+│   │   │   ├── README.md
+│   │   │   ├── requirements.txt
+│   │   │   ├── run_clean_env.py
+│   │   │   ├── runners.py
+│   │   │   ├── setup_env.sh
+│   │   │   └── test_forge_models.py
+│   │   ├── forge_training_runners
+│   │   │   └── training_gemma_lora_runner.py
+│   │   ├── llm_test_runner.py
+│   │   ├── mock_runner.py
+│   │   ├── resources
+│   │   │   └── coco.names
+│   │   ├── runner_fabric.py
+│   │   ├── sdxl_edit_runner_trace.py
+│   │   ├── sdxl_generate_runner_trace.py
+│   │   ├── sdxl_image_to_image_runner_trace.py
+│   │   ├── speecht5_runner.py
+│   │   ├── vllm_forge_llama_70b.py
+│   │   ├── vllm_forge_qwen_embedding_runner.py
+│   │   ├── vllm_runner.py
+│   │   └── whisper_runner.py
+│   └── utils
+│       ├── audio_manager.py
+│       ├── dataset_loaders
+│       │   ├── base_dataset.py
+│       │   ├── dataset_resolver.py
+│       │   ├── dataset_utils.py
+│       │   └── sst2
+│       │       ├── sst2_dataset.py
+│       │       └── sst2_utils.py
+│       ├── decorators.py
+│       ├── device_manager.py
+│       ├── embedding_tokenizer.py
+│       ├── ffmpeg_utils.py
+│       ├── hugging_face_utils.py
+│       ├── image_manager.py
+│       ├── __init__.py
+│       ├── job_database.py
+│       ├── job_manager.py
+│       ├── logger.py
+│       ├── runner_utils.py
+│       ├── sampling_params_builder.py
+│       ├── simple_queue_factory.py
+│       ├── speaker_embeddings.py
+│       ├── text_utils.py
+│       ├── torch_utils.py
+│       └── video_manager.py
+├── tt-sglang-plugin
+│   ├── README.md
+│   ├── setup.py
+│   ├── setup_sglang_tt.sh
+│   ├── sglang_tt_plugin
+│   │   ├── __init__.py
+│   │   ├── models
+│   │   │   └── tt_llm.py
+│   │   ├── patching
+│   │   │   └── patching_model_registry.py
+│   │   ├── scripts
+│   │   │   └── launch_tt_server.py
+│   │   ├── utils
+│   │   │   └── tt_utils.py
+│   │   └── worker_setup
+│   │       └── worker_setup.py
+│   └── sglang_tt_plugin.pth
 ├── tt-vllm-plugin
-│   ├── CHANGELOG.md
-│   ├── examples
-│   │   ├── bge_large_en_v1_5.py
-│   │   ├── llama_3_1_8b_instruct.py
-│   │   └── ttnn_test.py
-│   ├── online_benchmark.sh
-│   ├── pyproject.toml
-│   ├── README.md
-│   ├── serve.sh
-│   ├── setup.py
-│   └── tt_vllm_plugin
-│       ├── __init__.py
-│       ├── model_loader
-│       │   ├── __init__.py
-│       │   └── tt_loader.py
-│       ├── platform.py
-│       ├── v1
-│       │   ├── __init__.py
-│       │   ├── ascend_scheduler.py
-│       │   └── worker
-│       │       ├── __init__.py
-│       │       ├── tt_input_batch.py
-│       │       ├── tt_model_runner_pooling.py
-│       │       ├── tt_model_runner.py
-│       │       └── tt_worker.py
-│       └── worker
-│           ├── __init__.py
-│           ├── tt_model_runner.py
-│           └── tt_worker.py
+│   ├── CHANGELOG.md
+│   ├── examples
+│   │   ├── bge_large_en_v1_5.py
+│   │   ├── llama_3_1_8b_instruct.py
+│   │   ├── qwen3_embedding_8b.py
+│   │   └── ttnn_test.py
+│   ├── online_benchmark.sh
+│   ├── pyproject.toml
+│   ├── README.md
+│   ├── serve.sh
+│   ├── setup.py
+│   └── tt_vllm_plugin
+│       ├── __init__.py
+│       ├── model_loader
+│       │   ├── __init__.py
+│       │   └── tt_loader.py
+│       ├── platform.py
+│       ├── v1
+│       │   ├── ascend_scheduler.py
+│       │   ├── __init__.py
+│       │   └── worker
+│       │       ├── __init__.py
+│       │       ├── tt_input_batch.py
+│       │       ├── tt_model_runner_pooling.py
+│       │       ├── tt_model_runner.py
+│       │       └── tt_worker.py
+│       └── worker
+│           ├── __init__.py
+│           ├── tt_model_runner.py
+│           └── tt_worker.py
 ├── utils
-│   ├── __init__.py
-│   ├── batch_processor.py
-│   ├── cache_monitor.py
-│   ├── capture_traces.py
-│   ├── cleaned_prompt_generation.py
-│   ├── logging_utils.py
-│   ├── media_clients
-│   │   ├── audio_client.py
-│   │   ├── base_strategy_interface.py
-│   │   ├── cnn_client.py
-│   │   ├── embedding_client.py
-│   │   ├── image_client.py
-│   │   ├── media_client_factory.py
-│   │   └── test_status.py
-│   ├── prompt_client_cli.py
-│   ├── prompt_client.py
-│   ├── prompt_configs.py
-│   ├── prompt_generation.py
-│   ├── prompt_templates
-│   │   └── llama_instruct_example.jinja
-│   ├── README.md
-│   ├── sdxl_accuracy_utils
-│   │   ├── clip_encoder.py
-│   │   ├── fid_score.py
-│   │   ├── inception.py
-│   │   └── sdxl_accuracy_utils.py
-│   ├── test_payloads
-│   │   ├── audio_payload_30s.py
-│   │   ├── audio_payload_60s.py
-│   │   ├── image_client_audio_payload
-│   │   ├── image_client_audio_streaming_payload
-│   │   ├── image_client_image_payload
-│   │   ├── image_client_img2img_payload
-│   │   └── image_client_inpainting_payload
-│   └── vllm_run_utils.py
+│   ├── batch_processor.py
+│   ├── cache_monitor.py
+│   ├── capture_traces.py
+│   ├── cleaned_prompt_generation.py
+│   ├── __init__.py
+│   ├── logging_utils.py
+│   ├── media_clients
+│   │   ├── audio_client.py
+│   │   ├── base_strategy_interface.py
+│   │   ├── cnn_client.py
+│   │   ├── embedding_client.py
+│   │   ├── image_client.py
+│   │   ├── media_client_factory.py
+│   │   ├── test_status.py
+│   │   ├── tts_client.py
+│   │   └── video_client.py
+│   ├── prompt_client_cli.py
+│   ├── prompt_client.py
+│   ├── prompt_configs.py
+│   ├── prompt_generation.py
+│   ├── prompt_templates
+│   │   └── llama_instruct_example.jinja
+│   ├── README.md
+│   ├── sdxl_accuracy_utils
+│   │   ├── clip_encoder.py
+│   │   ├── fid_score.py
+│   │   ├── inception.py
+│   │   └── sdxl_accuracy_utils.py
+│   ├── test_payloads
+│   │   ├── audio_payload_30s.py
+│   │   ├── audio_payload_60s.py
+│   │   ├── image_client_audio_payload
+│   │   ├── image_client_audio_streaming_payload
+│   │   ├── image_client_image_payload
+│   │   ├── image_client_img2img_payload
+│   │   └── image_client_inpainting_payload
+│   └── vllm_run_utils.py
 ├── VERSION
-├── vllm-tt-metal-llama3
-│   ├── docs
-│   │   ├── development.md
-│   │   └── manual_setup.md
-│   ├── README.md
-│   ├── requirements.txt
-│   ├── src
-│   │   ├── __init__.py
-│   │   ├── example_requests_client_vision.py
-│   │   ├── example_requests_client.py
-│   │   └── run_vllm_api_server.py
-│   ├── vllm.tt-metal.src.cloud.Dockerfile
-│   └── vllm.tt-metal.src.dev.Dockerfile
+├── vllm-tt-metal
+│   ├── docs
+│   │   ├── development.md
+│   │   └── manual_setup.md
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── src
+│   │   ├── example_requests_client.py
+│   │   ├── example_requests_client_vision.py
+│   │   ├── __init__.py
+│   │   └── utils
+│   └── vllm.tt-metal.src.dev.Dockerfile
 └── workflows
-    ├── __init__.py
+    ├── bootstrap_uv.py
+    ├── device_utils.py
     ├── inference-server-workflow-diagram-2025-08-14-1106.png
+    ├── __init__.py
     ├── log_setup.py
     ├── model_spec.py
     ├── README.md
     ├── run_docker_server.py
-    ├── run_local_setup_validation.py
     ├── run_reports.py
+    ├── run_system_software_validation.py
+    ├── runtime_config.py
     ├── run_workflows.py
     ├── setup_host.py
-    ├── utils_report.py
     ├── utils.py
+    ├── utils_report.py
+    ├── validate_setup.py
     ├── workflow_config.py
     ├── workflow_types.py
     └── workflow_venvs.py
+
+163 directories, 1925 files

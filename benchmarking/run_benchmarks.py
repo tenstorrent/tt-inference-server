@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 import argparse
 import json
@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import jwt
+import requests
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -27,20 +28,31 @@ if project_root not in sys.path:
 
 from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
+    BenchmarkConfig,
     expand_concurrency_sweep_params,
     powers_of_two_up_to,
+    select_smoke_test_benchmark_config,
 )
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflows.workflow_types import (
+    BenchmarkTaskType,
+    DeviceTypes,
+    EvalLimitMode,
+    InferenceEngine,
+    ModelType,
+)
+
+from workflows.workflow_venvs import VENV_CONFIGS, STRUCTURED_OUTPUT_SCRIPT_NAME
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +75,24 @@ BENCHMARKS_TASK_TYPES = [
 ]
 
 
+def _is_smoke_test_mode(runtime_config: RuntimeConfig) -> bool:
+    if not runtime_config.limit_samples_mode:
+        return False
+    return (
+        EvalLimitMode.from_string(runtime_config.limit_samples_mode)
+        == EvalLimitMode.SMOKE_TEST
+    )
+
+
 def parse_args():
     """
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser(description="Run vLLM benchmarks")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -153,7 +174,6 @@ def build_benchmark_command(
         "serve",
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
-        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
@@ -163,8 +183,16 @@ def build_benchmark_command(
         "--random-output-len", str(osl),
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
+        "--save-detailed",
         "--result-filename", str(result_filename),
     ]
+
+    # only truncate prompts for text-only tasks; VLMs interleave vision tokens
+    # in the prompt and truncation can drop them, causing 400s at the preprocessor
+    if params.task_type == "text":
+        cmd.extend([
+            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+        ])
 
     if params.task_type == "vlm":
         if params.image_height and params.image_width:
@@ -177,6 +205,70 @@ def build_benchmark_command(
     return cmd
 
 
+def build_structured_output_command(
+    venv_python,
+    structured_output_script,
+    params,
+    output_path,
+    service_port,
+    model_spec,
+):
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    ratio_tag = (
+        "no-so"
+        if params.structured_output_ratio is None
+        else f"so-{params.structured_output_ratio}"
+    )
+    result_filepath = (
+        Path(output_path)
+        / f"benchmark_structured_{model_spec.model_id}_{run_timestamp}"
+        f"_dataset-{params.structured_dataset}_{ratio_tag}"
+        f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
+    )
+
+    # fmt: off
+    cmd = [
+        str(venv_python),
+        str(structured_output_script),
+        "--backend", "vllm",
+        "--host", "localhost",
+        "--port", str(service_port),
+        "--model", model_spec.hf_model_repo,
+        "--dataset", params.structured_dataset,
+        "--max-concurrency", str(params.max_concurrency),
+        "--num-prompts", str(params.num_prompts),
+        "--output-len", str(params.osl),
+        "--request-rate", "inf",
+        "--percentile-metrics", "ttft,tpot,itl,e2el",
+        "--save-results",
+        "--result-dir", str(output_path),
+        "--result-filename", result_filepath.name,
+    ]
+    if params.structured_output_ratio is None:
+        cmd.append("--no-structured-output")
+    else:
+        cmd.extend(["--structured-output-ratio", str(params.structured_output_ratio)])
+    # fmt: on
+    return cmd, result_filepath
+
+
+def annotate_structured_output_result(result_filepath):
+    """Tag a structured-output result JSON in place so downstream readers can
+    distinguish it from regular `vllm bench serve` outputs."""
+    if not result_filepath.exists():
+        logger.warning("Structured-output result JSON not found: %s", result_filepath)
+        return
+    try:
+        with open(result_filepath, "r+") as f:
+            data = json.load(f)
+            data["benchmark_kind"] = "structured_output"
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, indent=2)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not annotate %s: %s", result_filepath, exc)
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -184,13 +276,13 @@ def main():
 
     args = parse_args()
     jwt_secret = args.jwt_secret
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
-    disable_trace_capture = cli_args.get("disable_trace_capture", False)
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    service_port = runtime_config.service_port
+    disable_trace_capture = runtime_config.disable_trace_capture
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -206,7 +298,7 @@ def main():
     device = DeviceTypes.from_string(device_str)
     workflow_config = WORKFLOW_BENCHMARKS_CONFIG
     # Check for tools selection (genai vs vllm)
-    tools = cli_args.get("tools", "vllm")
+    tools = runtime_config.tools if runtime_config.tools is not None else "vllm"
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
@@ -219,11 +311,9 @@ def main():
         logger.info("Using genai-perf (Triton SDK) for benchmarking")
 
         # Determine debug mode from limit_samples_mode
-        limit_samples_mode_str = cli_args.get("limit_samples_mode")
+        limit_samples_mode_str = runtime_config.limit_samples_mode
         debug_mode = False
         if limit_samples_mode_str:
-            from workflows.workflow_types import EvalLimitMode
-
             limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
             # Enable debug mode for quick test modes
             if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
@@ -232,13 +322,14 @@ def main():
                     f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
                 )
 
-        return run_genai_benchmarks(
+        return_code = run_genai_benchmarks(
             model_spec=model_spec,
             output_path=args.output_path,
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
         )
+        return return_code
 
     # set environment vars
     if jwt_secret:
@@ -263,15 +354,32 @@ def main():
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_id not in BENCHMARK_CONFIGS:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name}"
+        raise ValueError(message)
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
+    smoke_test_mode = _is_smoke_test_mode(runtime_config)
+    if smoke_test_mode:
+        benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
+        logger.info("Smoke-test mode enabled; selected smoke-test benchmark config.")
 
-    # CLI arg takes precedence, fallback to model spec cli_args
-    concurrency_sweeps = args.concurrency_sweeps or cli_args.get(
-        "concurrency_sweeps", False
-    )
+    if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
+        benchmark_config = BenchmarkConfig(
+            model_id=benchmark_config.model_id,
+            tasks=[
+                t
+                for t in benchmark_config.tasks
+                if t.task_type
+                == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+            ],
+        )
+        logger.info(
+            "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; running structured-output tasks only."
+        )
+
+    concurrency_sweeps = args.concurrency_sweeps or runtime_config.concurrency_sweeps
+    if smoke_test_mode and concurrency_sweeps:
+        logger.info("Ignoring concurrency sweeps in smoke-test mode.")
+        concurrency_sweeps = False
     if concurrency_sweeps:
         max_context = model_spec.device_model_spec.max_context
         max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
@@ -299,9 +407,10 @@ def main():
     ]
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
-        return run_benchmarks(
+        return_code = run_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
+        return return_code
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
@@ -320,9 +429,9 @@ def main():
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, (
-        f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
-    )
+    if not all_params:
+        message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+        raise AssertionError(message)
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -331,8 +440,15 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
+    logger.info(
+        "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+        prompt_client.cache_monitor.get_tensor_cache_timeout(),
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
@@ -344,16 +460,24 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
+        is_structured_output_task = (
+            task.task_type == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+        )
         benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
-            context_lens = [(params.isl, params.osl) for params in params_list]
-            # de-dupe
-            context_lens_set = set(context_lens)
+            # Structured-output params have no isl, so they don't participate in
+            # trace capture. The structured-output script generates its own
+            # prompt shapes from the chosen dataset.
+            context_lens_set = {
+                (params.isl, params.osl)
+                for params in params_list
+                if params.isl is not None and params.osl is not None
+            }
             context_lens_set.difference_update(captured_traces)
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
-            if not disable_trace_capture:
+            if not disable_trace_capture and sorted_context_lens_set:
                 if "image" in model_spec.supported_modalities:
                     prompt_client.capture_traces(
                         context_lens=list(sorted_context_lens_set),
@@ -366,7 +490,11 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
-                health_check = prompt_client.get_health()
+                try:
+                    health_check = prompt_client.get_health()
+                except requests.exceptions.RequestException as error:
+                    logger.error("Health check request failed: %s", error)
+                    return 1
                 if health_check.status_code != 200:
                     logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
                     return 1
@@ -376,17 +504,45 @@ def main():
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
-                cmd = build_benchmark_command(
-                    task,
-                    benchmark_script,
-                    params=params,
-                    output_path=args.output_path,
-                    service_port=service_port,
-                    benchmark_config=benchmark_config,
-                    model_spec=model_spec,
-                )
+                structured_output_result_filepath = None
+                if is_structured_output_task:
+                    structured_output_script = (
+                        venv_config.venv_path
+                        / "work_dir"
+                        / STRUCTURED_OUTPUT_SCRIPT_NAME
+                    )
+                    if not structured_output_script.exists():
+                        logger.error(
+                            "⛔️ Structured-output benchmark script not found at "
+                            f"{structured_output_script}. Re-run with --reset-venvs "
+                            "or rerun fetch_structured_output_scripts to fetch it."
+                        )
+                        return_codes.append(1)
+                        continue
+                    cmd, structured_output_result_filepath = (
+                        build_structured_output_command(
+                            venv_python=venv_config.venv_python,
+                            structured_output_script=structured_output_script,
+                            params=params,
+                            output_path=args.output_path,
+                            service_port=service_port,
+                            model_spec=model_spec,
+                        )
+                    )
+                else:
+                    cmd = build_benchmark_command(
+                        task,
+                        benchmark_script,
+                        params=params,
+                        output_path=args.output_path,
+                        service_port=service_port,
+                        benchmark_config=benchmark_config,
+                        model_spec=model_spec,
+                    )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
+                if return_code == 0 and structured_output_result_filepath is not None:
+                    annotate_structured_output_result(structured_output_result_filepath)
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed benchmarks")

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+# IMPORTANT: telemetry.multiprocess_setup MUST be the very first project
+# import. It sets PROMETHEUS_MULTIPROC_DIR before any other module gets a
+# chance to import prometheus_client and instantiate Counter/Histogram
+# objects. If this import is moved or removed, multiprocess metrics from
+# device/cpu workers will silently stop being collected.
+import telemetry.multiprocess_setup  # noqa: F401  (import for side effect)
 
 import os
 from contextlib import asynccontextmanager
@@ -23,8 +30,8 @@ env = "development"
 async def lifespan(app: FastAPI):
     service_resolver().start_workers()
     yield
-    service_resolver().stop_workers()
     await get_job_manager().shutdown()
+    service_resolver().stop_workers()
 
 
 app = FastAPI(

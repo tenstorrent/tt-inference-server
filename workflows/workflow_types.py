@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
 
@@ -53,6 +53,7 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
     HTTP_CLIENT_VIDEO_API = auto()
+    HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
@@ -71,6 +72,7 @@ class DeviceTypes(IntEnum):
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
     P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
+    BLACKHOLE_GALAXY = auto()  # BH Galaxy - 32x P150 chips
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -83,6 +85,9 @@ class DeviceTypes(IntEnum):
         except KeyError:
             raise ValueError(f"Invalid DeviceType: {name}")
 
+    def to_string(self) -> str:
+        return self.name.upper()
+
     def to_mesh_device_str(self) -> str:
         mapping = {
             DeviceTypes.CPU: "CPU",
@@ -94,13 +99,14 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X8: "P150x8",
             DeviceTypes.P300: "P300",
             DeviceTypes.P300X2: "P300x2",
+            DeviceTypes.BLACKHOLE_GALAXY: "BH-Galaxy",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
-            DeviceTypes.DUAL_GALAXY: "DUAL",
-            DeviceTypes.QUAD_GALAXY: "QUAD",
+            DeviceTypes.DUAL_GALAXY: "(8,8)",
+            DeviceTypes.QUAD_GALAXY: "(8,16)",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -117,6 +123,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "BH P300",
             DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
+            DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -161,8 +168,33 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X8,
             DeviceTypes.P300,
             DeviceTypes.P300X2,
+            DeviceTypes.BLACKHOLE_GALAXY,
         )
         return self in blackhole_devices
+
+    def is_multihost(self) -> bool:
+        """Check if this device type requires multi-host deployment."""
+        return self in {DeviceTypes.DUAL_GALAXY, DeviceTypes.QUAD_GALAXY}
+
+    def get_multihost_num_hosts(self) -> int:
+        """Get expected number of hosts for multi-host device types.
+
+        Returns:
+            Number of hosts required for this device type.
+
+        Raises:
+            ValueError: If device type is not a multi-host type.
+        """
+        host_counts = {
+            DeviceTypes.DUAL_GALAXY: 2,
+            DeviceTypes.QUAD_GALAXY: 4,
+        }
+        if self not in host_counts:
+            raise ValueError(
+                f"Device type {self.name} is not a multi-host device type. "
+                f"Supported: {[d.name for d in host_counts.keys()]}"
+            )
+        return host_counts[self]
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {
@@ -182,6 +214,12 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
             (DeviceTypes.P150X8, 8): DeviceTypes.P150,
+            (DeviceTypes.BLACKHOLE_GALAXY, 1): DeviceTypes.BLACKHOLE_GALAXY,
+            (DeviceTypes.BLACKHOLE_GALAXY, 4): DeviceTypes.P150X8,
+            (DeviceTypes.BLACKHOLE_GALAXY, 8): DeviceTypes.P150X4,
+            (DeviceTypes.BLACKHOLE_GALAXY, 32): DeviceTypes.P150,
+            (DeviceTypes.DUAL_GALAXY, 8): DeviceTypes.T3K,
+            (DeviceTypes.QUAD_GALAXY, 16): DeviceTypes.T3K,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
@@ -298,6 +336,9 @@ class InferenceEngine(Enum):
     def from_string(cls, name: str):
         return cls[name.upper()]
 
+    def to_string(self) -> str:
+        return self.name.lower()
+
 
 class ModelSource(Enum):
     HUGGINGFACE = "huggingface"
@@ -342,3 +383,17 @@ class ModelType(IntEnum):
             ModelType.VIDEO: "Video",
         }
         return short_names[self]
+
+    @property
+    def task_type(self) -> str:
+        task_types = {
+            ModelType.LLM: "text",
+            ModelType.VLM: "vlm",
+            ModelType.AUDIO: "audio",
+            ModelType.IMAGE: "image",
+            ModelType.CNN: "cnn",
+            ModelType.EMBEDDING: "embedding",
+            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.VIDEO: "video",
+        }
+        return task_types[self]

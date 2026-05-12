@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
+#include <cstdint>
 
 namespace tt::domain {
 
 struct BaseRequest {
-        // Internal task tracking
-        std::string task_id;
-    };
+  uint32_t task_id;
 
-} // namespace tt::domain
+  explicit BaseRequest(uint32_t taskId) : task_id(taskId) {}
+};
+
+}  // namespace tt::domain

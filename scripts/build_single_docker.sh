@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
@@ -25,6 +25,29 @@ check_image_not_exists_local() {
         echo "The image does NOT exist locally: ${image_tag}"
         return 1
     fi
+}
+
+resolve_commit_to_full_sha() {
+    local commit_ref="$1"
+    local resolved
+
+    # Try git ls-remote (works for tags and branch tips)
+    resolved=$(git ls-remote https://github.com/tenstorrent/tt-metal.git 2>/dev/null | grep "${commit_ref}" | head -1 | awk '{print $1}')
+    if [ -n "$resolved" ]; then
+        echo "$resolved"
+        return 0
+    fi
+
+    # Fallback: GitHub API (resolves short SHAs to full SHAs)
+    resolved=$(curl -sf "https://api.github.com/repos/tenstorrent/tt-metal/commits/${commit_ref}" | python3 -c "import sys, json; print(json.load(sys.stdin)['sha'])" 2>/dev/null)
+    if [ -n "$resolved" ]; then
+        echo "$resolved"
+        return 0
+    fi
+
+    # Could not resolve, return original
+    echo "$commit_ref"
+    return 1
 }
 
 # ==============================================================================
@@ -163,27 +186,22 @@ IMAGE_VERSION=$(cat VERSION)
 TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 
 
-cloud_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-cloud-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 dev_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 
 # Initialize flags for whether to build each image locally.
-build_cloud_image=true
 build_dev_image=true
 build_release_image=true
 
 if [ "$force_build" = true ]; then
-    echo "Force build option provided (--force-build). Skipping remote image checks; both all images will be built locally."
+    echo "Force build option provided (--force-build). Skipping remote image checks; all images will be built locally."
 else
     # Check for the images independently, negating check_image_exists return
-    if check_image_not_exists_remote "${cloud_image_tag}" || check_image_not_exists_local "${cloud_image_tag}"; then
-        build_cloud_image=false
-    fi
     if check_image_not_exists_remote "${dev_image_tag}" || check_image_not_exists_local "${dev_image_tag}"; then
         build_dev_image=false
     fi
     if check_image_not_exists_remote "${release_image_tag}" || check_image_not_exists_local "${release_image_tag}"; then
-        build_dev_image=false
+        build_release_image=false
     fi
 fi
 
@@ -193,23 +211,35 @@ if [ "$build" = true ]; then
 
     if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
+
+        # Resolve short SHA / tag to full commit SHA
+        echo "Resolving ${TT_METAL_COMMIT_SHA_OR_TAG} to full SHA ..."
+        RESOLVED_TT_METAL_COMMIT=$(resolve_commit_to_full_sha "${TT_METAL_COMMIT_SHA_OR_TAG}")
+        echo "Resolved commit: ${RESOLVED_TT_METAL_COMMIT}"
+
         # build tt-metal base-image
         tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
         mkdir -p "${tt_metal_build_dir}"
         cd "${tt_metal_build_dir}"
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
-        if git fetch --depth 1 origin tag "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+        if git fetch --depth 1 origin tag "${RESOLVED_TT_METAL_COMMIT}" 2>/dev/null; then
             echo "Fetched as tag."
-        elif git fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}" 2>/dev/null; then
+        elif git fetch --depth 1 origin "${RESOLVED_TT_METAL_COMMIT}" 2>/dev/null; then
             echo "Fetched as commit SHA."
+        elif git fetch --unshallow 2>/dev/null; then
+            echo "Fetched full history via --unshallow."
         else
-            echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} as either a tag or commit SHA."
-            cd "$repo_root"
-            rm -rf "${tt_metal_build_dir}"
-            exit 1
+            echo "Trying full fetch ..."
+            if ! git fetch origin 2>/dev/null; then
+                echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} (resolved: ${RESOLVED_TT_METAL_COMMIT}) from tt-metal."
+                cd "$repo_root"
+                rm -rf "${tt_metal_build_dir}"
+                exit 1
+            fi
+            echo "Fetched full repository history."
         fi
-        git checkout ${TT_METAL_COMMIT_SHA_OR_TAG}
+        git checkout ${RESOLVED_TT_METAL_COMMIT}
         # note: this will break if commit is before the new tt-metal Dockerfile was introduced
         # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
         # then re run this script with the image built locally
@@ -222,45 +252,46 @@ if [ "$build" = true ]; then
         rm -rf "${tt_metal_build_dir}"
     fi
     
-    # build cloud deploy image
-    if [ "$build_cloud_image" = true ]; then
-        echo "building: ${cloud_image_tag}"
+    # build dev image
+    if [ "$build_dev_image" = true ]; then
+        echo "building: ${dev_image_tag}"
         cd "$repo_root"
+
+        # Generate model_spec.json before building (COPY'd into image)
+        echo "Generating model_spec.json ..."
+        python3 -c "
+import sys
+from pathlib import Path
+project_root = Path('${repo_root}')
+if project_root not in sys.path:
+    sys.path.insert(0, str(project_root))
+from scripts.build_docker_images import generate_model_specs_json
+generate_model_specs_json()
+"
+        if [ $? -ne 0 ]; then
+            echo "⛔ Error: Failed to generate model_spec.json"
+            exit 1
+        fi
+        echo "✅ Generated model_spec.json"
+
         docker build \
-        -t ${cloud_image_tag} \
+        -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile
-    else
-        echo "skipping, build_cloud_image=${build_cloud_image}"
-    fi
+        . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
-    # build dev image
-    if [ "$build_dev_image" = true ]; then
-        echo "building: ${dev_image_tag}"
-        docker build \
-        -t "${dev_image_tag}" \
-        --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
-
-        echo "✅ built images:"
-        echo "${cloud_image_tag}"
-        echo "${dev_image_tag}"
+        echo "✅ built image: ${dev_image_tag}"
     else
         echo "skipping, build_dev_image=${build_dev_image}"
     fi
 
-    # build release image
-    # NOTE: release image is the same as dev image but is built only during release flow
-    # after the release candidate branch merges to main
+    # tag release image (identical to dev image, just different tag)
+    # NOTE: release image is only tagged during release flow
     if [ "$release" = true ] && [ "$build_release_image" = true ]; then
-        echo "building: ${release_image_tag}"
-        docker build \
-        -t "${release_image_tag}" \
-        --build-arg CLOUD_DOCKERFILE_URL="${cloud_image_tag}" \
-        . -f vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile
+        echo "tagging: ${dev_image_tag} -> ${release_image_tag}"
+        docker tag "${dev_image_tag}" "${release_image_tag}"
     else
         echo "skipping, build_release_image=${build_release_image} or release=${release}"
     fi
@@ -293,7 +324,7 @@ should_push_image() {
 if [ "${push_images}" = true ]; then
     echo "Pushing images to Docker Hub..."
 
-    for tag_var in cloud_image_tag dev_image_tag release_image_tag; do
+    for tag_var in dev_image_tag release_image_tag; do
         image_tag="${!tag_var}"
 
         # Skip release image unless explicitly marked as a release

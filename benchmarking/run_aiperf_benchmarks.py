@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 """
 AIPerf Benchmark Runner for tt-inference-server.
@@ -37,6 +37,7 @@ from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -511,9 +512,9 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run AIPerf benchmarks")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -554,12 +555,12 @@ def main():
 
     args = parse_args()
     jwt_secret = args.jwt_secret
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    service_port = runtime_config.service_port
 
     device = DeviceTypes.from_string(device_str)
     logger.info(f"model_spec=: {model_spec}")
@@ -587,9 +588,8 @@ def main():
 
     # Look up the benchmark configuration for the model
     if model_spec.model_id not in BENCHMARK_CONFIGS:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name}"
+        raise ValueError(message)
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
     # Get all benchmark params for this device
@@ -601,12 +601,11 @@ def main():
     ]
 
     if not all_params:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+        raise ValueError(message)
 
     # Check for limit_samples_mode (smoke-test, ci-commit) to enable debug mode
-    limit_samples_mode_str = cli_args.get("limit_samples_mode")
+    limit_samples_mode_str = runtime_config.limit_samples_mode
     if limit_samples_mode_str:
         from workflows.workflow_types import EvalLimitMode
 
@@ -642,7 +641,11 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("vLLM server is not healthy. Aborting benchmarks.")
         return 1
@@ -669,7 +672,11 @@ def main():
 
     for i, params in enumerate(all_params, 1):
         # Health check
-        health_check = prompt_client.get_health()
+        try:
+            health_check = prompt_client.get_health()
+        except requests.exceptions.RequestException as error:
+            logger.error("Health check request failed: %s", error)
+            return 1
         if health_check.status_code != 200:
             logger.error("vLLM server is not healthy. Aborting benchmarks.")
             return 1

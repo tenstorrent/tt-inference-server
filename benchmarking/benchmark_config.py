@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
 from workflows.model_spec import MODEL_SPECS
@@ -51,8 +51,17 @@ class BenchmarkTaskTTS(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
     workflow_venv_type: WorkflowVenvType = (
-        WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API
+        None  # no workflow venv needed for TTS benchmarks
     )
+
+
+@dataclass(frozen=True)
+class BenchmarkTaskStructuredOutput(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = (
+        BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+    )
+    workflow_venv_type: WorkflowVenvType = WorkflowVenvType.BENCHMARKS_VLLM
 
 
 @dataclass(frozen=True)
@@ -72,6 +81,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (32768, 128),
     (65536, 128),
 ]
+SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -82,6 +92,25 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
     (128, 128, 1024, 512, 1),
     (128, 128, 512, 1024, 1),
 ]
+
+
+# format: (dataset, structured_output_ratio)
+# vllm implements the following datasets: json, json-unique, grammar, regex, choice, xgrammar_bench, so they are all listed
+# to see structured outputs charactization overhead, only json, json-unique and xgrammar_bench is needed, so other datasets are commented out
+STRUCTURED_OUTPUT_PAIRS = [
+    ("json", 1.0),
+    ("json", 0.0),
+    ("json-unique", 1.0),
+    ("json-unique", 0.0),
+    # ("grammar", 1.0),
+    # ("regex", 1.0),
+    # ("choice", 1.0),
+    ("xgrammar_bench", 1.0),
+    ("xgrammar_bench", 0.0),
+]
+STRUCTURED_OUTPUT_NUM_PROMPTS = 100
+STRUCTURED_OUTPUT_OSL = 128
+STRUCTURED_OUTPUT_MAX_CONCURRENCY = 4
 
 
 def _expand_text_sweep_params(
@@ -292,6 +321,49 @@ def _benchmark_param_dedupe_key(params: BenchmarkTaskParams) -> Tuple:
     )
 
 
+def select_smoke_test_benchmark_config(
+    benchmark_config: BenchmarkConfig, device: DeviceTypes
+) -> BenchmarkConfig:
+    if benchmark_config.tasks:
+        benchmark_target_task = benchmark_config.tasks[0]
+        benchmark_targets = benchmark_target_task.param_map.get(device)
+        if benchmark_targets:
+            benchmark_target_param_map = dict(benchmark_target_task.param_map)
+            benchmark_target_param_map[device] = list(benchmark_targets)
+            return BenchmarkConfig(
+                model_id=benchmark_config.model_id,
+                tasks=[
+                    replace(benchmark_target_task, param_map=benchmark_target_param_map)
+                ],
+            )
+
+    smoke_isl, smoke_osl = SMOKE_TEST_BENCHMARK_PAIR
+    smoke_num_prompts = get_num_prompts(smoke_isl, smoke_osl, 1)
+    for task in benchmark_config.tasks[1:]:
+        for params in task.param_map.get(device, []):
+            if params.isl is None or params.osl is None:
+                continue
+            if getattr(params, "task_type", "text") != "text":
+                continue
+
+            smoke_param_map = dict(task.param_map)
+            smoke_param_map[device] = [
+                replace(
+                    params,
+                    isl=smoke_isl,
+                    osl=smoke_osl,
+                    max_concurrency=1,
+                    num_prompts=smoke_num_prompts,
+                )
+            ]
+            return BenchmarkConfig(
+                model_id=benchmark_config.model_id,
+                tasks=[replace(task, param_map=smoke_param_map)],
+            )
+
+    return BenchmarkConfig(model_id=benchmark_config.model_id, tasks=[])
+
+
 def expand_concurrency_sweep_params(
     params_list: Iterable[BenchmarkTaskParams],
     *,
@@ -469,6 +541,8 @@ for model_id, model_spec in MODEL_SPECS.items():
         )
     elif model_spec.model_type == ModelType.VIDEO:
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
     else:
         perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
 
@@ -491,6 +565,18 @@ for model_id, model_spec in MODEL_SPECS.items():
         elif model_spec.model_type == ModelType.VIDEO:
             benchmark_task_runs = BenchmarkTaskVideo(
                 param_map={device: [BenchmarkTaskParams()]}
+            )
+        elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+            benchmark_task_runs = BenchmarkTaskTTS(
+                param_map={
+                    device: [
+                        BenchmarkTaskParams(
+                            max_concurrency=model_max_concurrency,
+                            num_prompts=8,
+                            task_type="text_to_speech",
+                        )
+                    ]
+                }
             )
         else:
             benchmark_task_runs = BenchmarkTask(
@@ -531,5 +617,26 @@ for model_id, model_spec in MODEL_SPECS.items():
             )
 
         tasks.append(benchmark_task_runs)
+
+    # Structured-output benchmarks: llms and vlms, can be extended
+    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    if structured_output_eligible:
+        tasks.append(
+            BenchmarkTaskStructuredOutput(
+                param_map={
+                    device: [
+                        BenchmarkTaskParams(
+                            osl=STRUCTURED_OUTPUT_OSL,
+                            max_concurrency=STRUCTURED_OUTPUT_MAX_CONCURRENCY,
+                            num_prompts=STRUCTURED_OUTPUT_NUM_PROMPTS,
+                            task_type="structured_output",
+                            structured_dataset=dataset,
+                            structured_output_ratio=ratio,
+                        )
+                        for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
+                    ]
+                }
+            )
+        )
 
     BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)

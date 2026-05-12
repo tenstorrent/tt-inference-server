@@ -13,7 +13,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.12"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Tenstorrent AI ULC"}
+    {name = "Tenstorrent USA, Inc."}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

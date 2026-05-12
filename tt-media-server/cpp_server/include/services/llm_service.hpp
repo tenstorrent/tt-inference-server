@@ -1,87 +1,117 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
-#include "services/base_service.hpp"
-#include "ipc/queue_manager.hpp"
-#include "worker/single_process_worker.hpp"
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
-#include "services/streamable.hpp"
-#include "sockets/inter_server_service.hpp"
-
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
-#include <string>
+#include <optional>
 #include <thread>
-#include "utils/concurrent_map.hpp"
-#include "utils/tokenizer.hpp"
+#include <unordered_set>
 #include <vector>
+
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/tool_calls/tool_choice.hpp"
+#include "ipc/queue_manager.hpp"
+#include "ipc/task_queue.hpp"
+#include "services/base_service.hpp"
+#include "services/reasoning_parser.hpp"
+#include "services/streamable.hpp"
+#include "services/tool_call_parser.hpp"
+#include "utils/concurrent_map.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
+#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
-worker::WorkerConfig make_worker_config_for_process(int worker_id);
+using namespace tt::domain::llm;
 
-class LLMService
-    : public BaseService<domain::CompletionRequest, domain::CompletionResponse>
-    , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
-public:
+class LLMService : public BaseService<LLMRequest, LLMResponse>,
+                   public Streamable<LLMRequest, LLMStreamChunk> {
+ public:
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
-    LLMService();
-    ~LLMService() override;
+  LLMService();
 
-    LLMService(const LLMService&) = delete;
-    LLMService& operator=(const LLMService&) = delete;
+  LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+             std::unique_ptr<tt::worker::WorkerManager> workerManager,
+             std::unique_ptr<ReasoningParser> reasoningParser,
+             std::unique_ptr<IToolCallParser> toolCallParser,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager,
+             size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
-    void start() override;
-    void stop() override;
+  ~LLMService() override;
 
-    bool is_model_ready() const override;
-    SystemStatus get_system_status() const override;
+  LLMService(const LLMService&) = delete;
+  LLMService& operator=(const LLMService&) = delete;
 
-protected:
-    void pre_process(domain::CompletionRequest& request) const override;
-    void post_process(domain::CompletionResponse& response) const override;
-    domain::CompletionResponse process_request(
-        domain::CompletionRequest request) override;
+  void start() override;
+  void stop() override;
 
-    void streaming_pre_process(domain::CompletionRequest& request) const override { pre_process(request); }
-    void streaming_post_process(domain::StreamingChunkResponse&) const override {}
-    void process_streaming_request(
-        domain::CompletionRequest request,
-        std::function<void(domain::StreamingChunkResponse&, bool is_final)> callback
-    ) override;
+  bool isModelReady() const override;
 
-private:
-    void start_workers();
-    void start_consumers();
+  void preProcess(LLMRequest& request) const override;
 
-    void consumer_loop_for_worker(size_t worker_idx);
+  void postProcess(LLMResponse& response) const override;
 
-    bool check_worker_alive(size_t worker_idx);
+  void processStreamingRequest(
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
-    std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
-    size_t num_workers_;
+  void abortRequest(uint32_t taskId);
 
-    std::vector<std::thread> consumer_threads_;
+  ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
 
-    ConcurrentMap<std::string, std::function<void(domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
+  tt::worker::WorkerManager* getWorkerManager() const {
+    return workerManager.get();
+  }
 
-    std::atomic<uint64_t> next_worker_{0};
+ protected:
+  size_t currentQueueSize() const override;
+  LLMResponse processRequest(LLMRequest request) override;
 
-    std::atomic<size_t> pending_tasks_{0};
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-    std::atomic<bool> is_ready_{false};
-    std::atomic<bool> running_{false};
+  void streamingPostProcess(LLMStreamChunk&) const override {}
 
-    size_t max_queue_size_ = 10000;
-    std::string device_ = "cpu";
+ private:
+  struct StreamCallbackEntry {
+    std::function<void(LLMStreamChunk&, bool)> callback;
+    bool skip_special_tokens = true;
+  };
 
-    std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
-    std::unique_ptr<tt::sockets::InterServerService> socket_service_;
+  void startConsumers();
+  void consumerLoopForWorker(size_t workerIdx);
+
+  std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
+                                                     bool isFinal);
+
+  void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+            std::unique_ptr<tt::worker::WorkerManager> workerManager,
+            std::unique_ptr<ReasoningParser> reasoningParser,
+            std::unique_ptr<IToolCallParser> toolCallParser,
+            std::unique_ptr<tt::ipc::QueueManager> queueManager,
+            size_t maxQueueSize);
+
+  std::vector<std::thread> consumerThreads;
+
+  utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
+  mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
+      toolChoiceMap;
+  utils::ConcurrentMap<uint32_t, bool> reasoningSuppressedMap;
+
+  std::atomic<size_t> pendingTasks{0};
+  std::atomic<bool> running{false};
+
+  std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
+  std::unique_ptr<tt::worker::WorkerManager> workerManager;
+  std::unique_ptr<tt::ipc::QueueManager> queueManager;
+  std::unordered_set<int64_t> stopTokenSet;
+  std::unique_ptr<ReasoningParser> reasoningParser;
+  std::unique_ptr<IToolCallParser> toolCallParser;
 };
 
-}
+}  // namespace tt::services

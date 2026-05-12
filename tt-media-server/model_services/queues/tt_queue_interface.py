@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 
 class TTQueueInterface(ABC):

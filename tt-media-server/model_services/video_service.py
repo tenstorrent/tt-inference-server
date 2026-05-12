@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import numpy as np
 from domain.video_generate_request import VideoGenerateRequest
 from model_services.base_job_service import BaseJobService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
+from telemetry.telemetry_client import TelemetryEvent
+from utils.decorators import log_execution_time
 
 
 def create_video_worker_context():
@@ -15,6 +17,21 @@ def create_video_worker_context():
 
 
 def video_worker_function(video_manager, video_frames, should_discard_file=True):
+    # str: already-exported video on disk (filesystem path), not raw frame tensors.
+    if isinstance(video_frames, str):
+        path = video_frames
+        if should_discard_file:
+            import os
+
+            try:
+                os.remove(path)
+                video_manager._logger.info(f"Deleted warmup video file: {path}")
+            except Exception as e:
+                video_manager._logger.warning(
+                    f"Failed to delete warmup video file: {e}"
+                )
+            return None
+        return path
     output_path = video_manager.export_to_mp4(video_frames)
     if should_discard_file:
         import os
@@ -41,8 +58,11 @@ class VideoService(BaseJobService):
             warmup_task_data=warmup_task_data,
         )
 
+    @log_execution_time("Video postprocessing", TelemetryEvent.POST_PROCESSING, None)
     async def post_process(self, result, input_request: VideoGenerateRequest):
-        """Asynchronous postprocessing using queue-based workers"""
+        """Asynchronous postprocessing using queue-based workers."""
+        if isinstance(result, str):
+            return result
         try:
             video_file = await self._cpu_workload_handler.execute_task(result, False)
         except Exception as e:

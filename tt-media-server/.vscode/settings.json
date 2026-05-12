@@ -8,6 +8,14 @@
             "source.organizeImports": "explicit"
         }
     },
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.formatOnSave": true
+    },
+    "[c]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.formatOnSave": true
+    },
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
     "python.testing.pytestEnabled": true,
@@ -40,7 +48,7 @@
         "/usr/include/jsoncpp"
     ],
     "C_Cpp.errorSquiggles": "enabled",
-    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.intelliSenseEngine": "disabled",
     "C_Cpp.enhanced_hover": true,
     "C_Cpp.autocomplete": "default",
     "C_Cpp.suggestSnippets": true,

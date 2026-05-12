@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import logging
 from abc import ABC, abstractmethod
 
-from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
-from tests.server_tests.test_classes import TestConfig
+from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
+from server_tests.test_classes import TestConfig
 
 # Import test framework components
 from .test_status import BaseTestStatus

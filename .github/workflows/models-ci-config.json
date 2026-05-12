@@ -1,5 +1,15 @@
 {
   "models": {
+    "DeepSeek-R1-0528": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "QUAD_GALAXY"
+          ]
+        }
+      }
+    },
     "Llama-3.1-8B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
@@ -18,6 +28,13 @@
         "weekly": {
           "devices": [
             "GALAXY"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
           ]
         }
       }
@@ -46,16 +63,31 @@
       }
     },
     "Llama-3.2-3B-Instruct": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Llama-3.2-90B-Vision-Instruct": {
       "inference_engine": "vLLM",
@@ -84,6 +116,13 @@
           "devices": [
             "GALAXY"
           ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
+          ]
         }
       }
     },
@@ -94,6 +133,16 @@
           "devices": [
             "N150",
             "N300"
+          ]
+        }
+      }
+    },
+    "Mistral-Small-3.1-24B-Instruct-2503": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "T3K"
           ]
         }
       }
@@ -136,6 +185,16 @@
         "nightly": {
           "devices": [
             "N300"
+          ]
+        }
+      }
+    },
+    "Qwen3-VL-32B-Instruct": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "T3K"
           ]
         }
       }
@@ -198,6 +257,13 @@
           "devices": [
             "GALAXY"
           ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
+          ]
         }
       }
     },
@@ -215,6 +281,16 @@
         "weekly": {
           "devices": [
             "GALAXY"
+          ]
+        }
+      }
+    },
+    "Qwen3-4B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150"
           ]
         }
       }
@@ -237,6 +313,24 @@
             "GALAXY",
             "N150"
           ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
+          ]
+        }
+      }
+    },
+    "bge-m3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "N150",
+            "N300",
+            "T3K"
+          ]
         }
       }
     },
@@ -252,6 +346,35 @@
             "P300X2",
             "T3K"
           ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
+          ]
+        }
+      }
+    },
+    "Wan2.2-I2V-A14B-Diffusers": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "GALAXY_BH",
+            "P150X4",
+            "P150X8",
+            "P300X2",
+            "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY",
+            "P150X8",
+            "P300X2"
+          ]
         }
       }
     },
@@ -262,6 +385,11 @@
           "devices": [
             "GALAXY",
             "N150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         }
       }
@@ -284,7 +412,14 @@
             "GALAXY",
             "P150X8",
             "P300X2",
+            "P150X4",
             "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P150X8",
+            "P300X2"
           ]
         }
       }
@@ -297,6 +432,7 @@
             "GALAXY",
             "P150X8",
             "P300X2",
+            "P150X4",
             "T3K"
           ]
         }
@@ -345,7 +481,8 @@
       "ci": {
         "nightly": {
           "devices": [
-            "N300"
+            "N300",
+            "N150"
           ]
         }
       }
@@ -357,6 +494,11 @@
           "devices": [
             "GALAXY",
             "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         }
       }
@@ -393,6 +535,11 @@
             "P150X8",
             "P300X2",
             "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         }
       }
@@ -462,12 +609,24 @@
             "GALAXY",
             "GALAXY_BH",
             "N150",
-            "P150X4",
+            "N300",
             "P150X8",
             "P300X2"
           ]
         },
         "weekly": {
+          "devices": [
+            "GALAXY",
+            "T3K"
+          ],
+          "device-args": {
+            "T3K": {
+              "additional-args": "--sdxl_num_prompts 5000",
+              "throttle-perf": "5"
+            }
+          }
+        },
+        "release": {
           "devices": [
             "GALAXY"
           ]
@@ -512,6 +671,11 @@
             "GALAXY",
             "GALAXY_BH",
             "N150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
           ]
         }
       }

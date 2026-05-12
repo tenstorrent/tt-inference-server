@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from typing import Any, Optional
 
@@ -18,23 +18,44 @@ class BaseJobService(BaseService):
         super().__init__()
         self._job_manager = get_job_manager()
 
-    async def create_job(self, job_type: JobTypes, request: BaseRequest) -> dict:
+    async def create_job(
+        self,
+        job_type: JobTypes,
+        request: BaseRequest,
+        org_id: Optional[str] = None,
+    ) -> dict:
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
             model=settings.model_weights_path,
             request=request,
             task_function=self.process_request,
+            org_id=org_id,
         )
 
-    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
-        return self._job_manager.get_all_jobs_metadata(job_type)
+    def get_all_jobs_metadata(
+        self, job_type: JobTypes = None, org_id: Optional[str] = None
+    ) -> list[dict]:
+        return self._job_manager.get_all_jobs_metadata(job_type, org_id=org_id)
 
-    def get_job_metadata(self, job_id: str) -> Optional[dict]:
-        return self._job_manager.get_job_metadata(job_id)
+    def get_job_metadata(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[dict]:
+        return self._job_manager.get_job_metadata(job_id, org_id=org_id)
 
-    def get_job_result_path(self, job_id: str) -> Optional[Any]:
-        return self._job_manager.get_job_result_path(job_id)
+    def get_job_result_path(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[Any]:
+        return self._job_manager.get_job_result_path(job_id, org_id=org_id)
 
-    def cancel_job(self, job_id: str) -> bool:
-        return self._job_manager.cancel_job(job_id)
+    def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
+        return self._job_manager.cancel_job(job_id, org_id=org_id)
+
+    def get_job_metrics(self, job_id: str, org_id: Optional[str] = None) -> list:
+        return self._job_manager.get_job_metrics(job_id, org_id=org_id)
+
+    def get_job_logs(self, job_id: str, org_id: Optional[str] = None) -> list:
+        return self._job_manager.get_job_logs(job_id, org_id=org_id)
+
+    def get_job_checkpoints(self, job_id: str, org_id: Optional[str] = None) -> list:
+        return self._job_manager.get_job_checkpoints(job_id, org_id=org_id)

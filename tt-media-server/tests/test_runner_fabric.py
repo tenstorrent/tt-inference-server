@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +13,7 @@ from tt_model_runners.runner_fabric import get_device_runner
 @pytest.mark.parametrize(
     "runner_name_param, expected_class_name",
     [
-        ("vllm", "VLLMRunner"),
+        ("vllm_forge", "VLLMForgeRunner"),
     ],
 )
 def test_runner_creation_unique(

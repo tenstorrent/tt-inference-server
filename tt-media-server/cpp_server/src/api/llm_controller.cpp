@@ -1,343 +1,558 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include "api/llm_controller.hpp"
-#include "config/settings.hpp"
-#include "domain/chat_completion_request.hpp"
-#include "domain/chat_completion_response.hpp"
-#include "domain/completion_response.hpp"
-#include "profiling/tracy.hpp"
 
-#include <memory>
-#include <random>
-#include <sstream>
-#include <chrono>
-#include <iostream>
-#include <cmath>
-#include <mutex>
-
-#include "utils/service_factory.hpp"
 #include <json/json.h>
-#include <trantor/net/EventLoop.h>
+
+#include <algorithm>
+#include <chrono>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "api/error_response.hpp"
+#include "api/response_writer/non_stream_response_writer.hpp"
+#include "api/response_writer/streaming_response_writer.hpp"
+#include "api/stream_event_formatter.hpp"
+#include "domain/llm/chat_completion_request.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/responses_request.hpp"
+#include "domain/responses_response.hpp"
+#include "metrics/metrics.hpp"
+#include "profiling/tracy.hpp"
+#include "services/service_container.hpp"
+#include "sockets/inter_server_service.hpp"
+#include "utils/conversation_hasher.hpp"
+#include "utils/id_generator.hpp"
+#include "utils/logger.hpp"
+#include "utils/mapper.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
 LLMController::LLMController() {
-    if (!tt::config::is_llm_service_enabled()) {
-        std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
+  if (!tt::config::isLlmServiceEnabled()) {
+    TT_LOG_INFO(
+        "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
+    return;
+  }
+
+  tt::config::model();
+
+  const auto& c = tt::services::ServiceContainer::instance();
+  service = std::dynamic_pointer_cast<tt::services::LLMService>(
+      c.getService(tt::config::ModelService::LLM));
+  disaggregationService = c.disaggregation();
+  sessionManager = c.sessionManager();
+  socketService = c.socket();
+
+  if (!service) {
+    throw std::runtime_error(
+        "[LLMController] LLM service not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
+  }
+  TT_LOG_INFO("[LLMController] Initialized (service already started)");
+}
+
+void LLMController::resolveSession(
+    std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
+    std::function<void(SessionInfo)> onResolved,
+    std::function<void(const SessionError&)> onError,
+    std::function<void()> cancelFn) const {
+  SessionInfo info;
+
+  if (!sessionManager) {
+    TT_LOG_WARN("[LLMController] SessionManager not available");
+    onResolved(info);
+    return;
+  }
+
+  // Routing information derived once from the request's chat messages.
+  auto routingInfo = tt::utils::computePrefixCachingInfo(req->messages);
+  TT_LOG_DEBUG(
+      "[LLMController] Routing: hasPriorTurn={}, lookupHash={}, "
+      "registrationHash={}",
+      routingInfo.hasPriorTurn,
+      routingInfo.lookupHash.has_value()
+          ? std::to_string(*routingInfo.lookupHash)
+          : "none",
+      routingInfo.registrationHash);
+
+  // Layer 1: Prefix-cache routing. Requires a prior [assistant, user] pair
+  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
+    try {
+      auto acquired = sessionManager->tryAcquireByPrefixHash(
+          *routingInfo.lookupHash, cancelFn);
+
+      if (acquired.has_value()) {
+        // HIT: found matching session, send delta only
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+        TT_LOG_DEBUG(
+            "[LLMController] Prefix cache HIT: hash={}, sessionId={}, "
+            "slotId={}",
+            *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
+        req->slotId = acquired->slotId;
+        req->session = sessionManager->getSession(acquired->sessionId);
+        req->continuation = true;
+        req->prompt = routingInfo.deltaPrompt;
+        req->prompt_tokens_count =
+            static_cast<int>(tt::utils::tokenizers::activeTokenizer()
+                                 .encode(routingInfo.deltaPrompt)
+                                 .size());
+        sessionManager->registerPrefixHash(acquired->sessionId,
+                                           routingInfo.registrationHash);
+        info.validSessionFound = true;
+        onResolved(info);
         return;
-    }
+      }
 
-    service_ = tt::utils::service_factory::get_service_by_type<services::LLMService>();
-    if (!service_) {
-        throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
-                                 "Ensure register_services() is called before Drogon starts.");
+      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
+      TT_LOG_DEBUG(
+          "[LLMController] Prefix cache MISS: hash={}, allocating new session",
+          *routingInfo.lookupHash);
+    } catch (const services::SessionInFlightException& e) {
+      TT_LOG_WARN("[LLMController] All sessions busy for hash={}: {}",
+                  *routingInfo.lookupHash, e.what());
+      onError({SessionErrorType::RATE_LIMIT, e.what()});
+      return;
     }
-    std::cout << "[LLMController] Initialized (service already started)" << std::endl;
+  }
+
+  // Layer 2: Allocate a new session. Async — onCompletion runs on loop.
+  sessionManager->createSession(
+      [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
+       mgr = sessionManager](const domain::Session& session) mutable {
+        req->sessionId = session.getSessionId();
+        req->slotId =
+            mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
+        req->session = mgr->getSession(session.getSessionId());
+        req->continuation = false;
+        mgr->registerPrefixHash(session.getSessionId(),
+                                routingInfo.registrationHash);
+        TT_LOG_INFO(
+            "[LLMController] New session: sessionId={}, slotId={}, "
+            "registered under hash={}",
+            session.getSessionId(),
+            req->slotId.has_value() ? std::to_string(*req->slotId) : "none",
+            routingInfo.registrationHash);
+
+        SessionInfo info;
+        onResolved(info);
+      },
+      [onError](std::string_view err) {
+        onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});
+      },
+      loop, routingInfo.registrationHash);
 }
 
-std::string LLMController::generate_completion_id() {
-    static std::mutex gen_mutex;
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(0, 15);
-    static const char* hex_chars = "0123456789abcdef";
-
-    std::lock_guard<std::mutex> lock(gen_mutex);
-    std::ostringstream ss;
-    for (int i = 0; i < 24; ++i) {
-        ss << hex_chars[dis(gen)];
-    }
-    return ss.str();
-}
-
-Json::Value LLMController::error_json(const std::string& message, const std::string& type,
-    const Json::Value& param, const Json::Value& code) {
-    Json::Value error;
-    error["object"] = "error";
-    error["message"] = message;
-    error["type"] = type;
-    error["param"] = param;
-    error["code"] = code;
-    return error;
-}
-
-void LLMController::completions(
+void LLMController::chatCompletions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::chat_completions");
 
-    ZoneScopedN("API::completions");
+  auto json = req->getJsonObject();
+  if (!json) {
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
+    return;
+  }
 
-    auto json = req->getJsonObject();
-    if (!json) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Invalid JSON body", "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
+  std::optional<ChatCompletionRequest> chatReqOpt;
+  try {
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+    chatReqOpt = ChatCompletionRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+
+  ChatCompletionRequest& chatReq = *chatReqOpt;
+
+  TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
+
+  if (chatReq.messages.empty()) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           "messages is required and must be a non-empty array",
+                           "invalid_request_error", Json::Value("messages")));
+    return;
+  }
+
+  if (!service->isModelReady()) {
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
+    return;
+  }
+
+  auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
+  const size_t maxContextLength = tt::config::maxContextLength();
+  const size_t promptTokens =
+      static_cast<size_t>(std::max(0, reqPtr->full_prompt_tokens_count));
+
+  const size_t requested =
+      promptTokens +
+      (reqPtr->max_tokens.has_value()
+           ? static_cast<size_t>(std::max(0, *reqPtr->max_tokens))
+           : 1);
+  const bool exceedsContext = requested > maxContextLength;
+
+  if (exceedsContext) {
+    std::string detail =
+        "prompt_tokens=" + std::to_string(reqPtr->full_prompt_tokens_count);
+    if (reqPtr->max_tokens.has_value()) {
+      detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
     }
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Request exceeds maximum context length (" +
+                               std::to_string(maxContextLength) +
+                               " tokens): " + detail,
+                           "invalid_request_error"));
+    return;
+  }
 
-    domain::CompletionRequest request;
-    try {
-        request = domain::CompletionRequest::fromJson(*json);
-        request.task_id = generate_completion_id();
-    } catch (const std::exception& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
-    if (!service_->is_model_ready()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Model is not ready", "service_unavailable"));
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-        callback(resp);
-        return;
-    }
-
-    if (request.stream) {
-        handle_streaming(std::move(request), std::move(callback), false);
-    } else {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto response = service_->submit_request(std::move(request));
-        auto end_time = std::chrono::high_resolution_clock::now();
-
-        response.id = "cmpl-" + response.id;
-
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
-            response.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (response.usage.completion_tokens > 1) {
-                response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
-
-        callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
-    }
+  if (reqPtr->stream) {
+    const bool includeUsage = !reqPtr->stream_options.has_value() ||
+                              reqPtr->stream_options->include_usage;
+    handleStreaming(reqPtr, std::make_shared<ChatCompletionEventFormatter>(),
+                    includeUsage, std::move(callback));
+  } else {
+    handleNonStreaming(reqPtr, /*builder=*/nullptr, std::move(callback));
+  }
 }
 
-void LLMController::chat_completions(
+void LLMController::responses(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-    ZoneScopedN("API::chat_completions");
+  ZoneScopedN("API::responses");
 
-    auto json = req->getJsonObject();
-    if (!json) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Invalid JSON body", "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
+  auto json = req->getJsonObject();
+  if (!json) {
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
+    return;
+  }
 
-    domain::ChatCompletionRequest chat_req;
-    try {
-        chat_req = domain::ChatCompletionRequest::fromJson(*json);
-        chat_req.task_id = generate_completion_id();
-    } catch (const std::exception& e) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
+  std::optional<domain::ResponsesRequest> respReqOpt;
+  try {
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
+    return;
+  }
 
-    if (chat_req.messages.empty()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("messages is required and must be a non-empty array",
-                "invalid_request_error", Json::Value("messages")));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
+  auto respReqPtr =
+      std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
+  const domain::ResponsesRequest& respReq = *respReqPtr;
 
-    if (!service_->is_model_ready()) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("Model is not ready", "service_unavailable"));
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-        callback(resp);
-        return;
-    }
+  TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
+              respReq.task_id, respReq.model.value_or("default"));
 
-    domain::CompletionRequest request = chat_req.to_completion_request();
+  if (!service->isModelReady()) {
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
+    return;
+  }
 
-    if (request.stream) {
-        handle_streaming(std::move(request), std::move(callback), true);
-    } else {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto completion = service_->submit_request(std::move(request));
-        auto end_time = std::chrono::high_resolution_clock::now();
+  auto reqPtr = std::make_shared<LLMRequest>(respReq.toLLMRequest());
+  auto samplingParams = tt::utils::mapper::mapSamplingParams(*reqPtr);
 
-        completion.id = "chatcmpl-" + completion.id;
+  if (reqPtr->stream) {
+    auto formatter =
+        std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
+    handleStreaming(reqPtr, std::move(formatter),
+                    /*includeUsage=*/true, std::move(callback));
+    return;
+  }
 
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
-            completion.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (completion.usage.completion_tokens > 1) {
-                completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
-
-        auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
-        callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
-    }
-}
-
-void LLMController::handle_streaming(
-    domain::CompletionRequest request,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    bool is_chat) const {
-
-    ZoneScopedN("API::handle_streaming");
-
-    const std::string completion_id =
-        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
-    const std::string model = request.model.value_or("default");
-    const int64_t created = static_cast<int64_t>(
+  auto builder = [respReqPtr, samplingParams](
+                     const LLMResponse& completion) -> std::string {
+    int64_t createdAt = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
 
-    const bool include_usage = !request.stream_options.has_value()
-        || request.stream_options->include_usage;  // Default to true if not specified
-    const bool continuous_usage = request.stream_options.has_value()
-        && request.stream_options->continuous_usage_stats;
+    Json::Value output(Json::arrayValue);
+    for (const auto& choice : completion.choices) {
+      Json::Value item;
+      item["type"] = "message";
+      item["id"] = "msg_" + std::to_string(choice.index);
+      item["status"] = "completed";
+      item["role"] = "assistant";
 
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created,
-         is_chat, include_usage, continuous_usage](
-            drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-            auto completion_tokens = std::make_shared<std::atomic<int>>(0);
+      Json::Value content(Json::arrayValue);
+      Json::Value textPart;
+      textPart["type"] = "output_text";
+      textPart["text"] = choice.text;
+      content.append(std::move(textPart));
 
-            // Timing metrics for TTFT and TPS calculation
-            auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
-                std::chrono::high_resolution_clock::now());
-            auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
+      if (choice.reasoning.has_value()) {
+        Json::Value reasoningPart;
+        reasoningPart["type"] = "reasoning";
+        reasoningPart["text"] = *choice.reasoning;
+        content.append(std::move(reasoningPart));
+      }
 
-            if (is_chat) {
-                std::optional<domain::CompletionUsage> initial_usage;
-                if (continuous_usage) {
-                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
-                }
-                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                    completion_id, model, created, initial_usage);
-                if (*stream_ptr) (*stream_ptr)->send(initial_chunk.toSSE());
-            }
+      item["content"] = std::move(content);
+      output.append(std::move(item));
+    }
 
-            service_->submit_streaming_request(
-                std::move(req),
-                [loop, stream_ptr, done, completion_id, model, created,
-                 is_chat, include_usage, continuous_usage, completion_tokens,
-                 start_time, first_token_time, second_token_time](
-                    const domain::StreamingChunkResponse& chunk, bool is_final) {
-                    if (done->load() || !*stream_ptr) {
-                        return;
-                    }
-                    if (!chunk.choices.empty()) {
-                        const int current_tokens = completion_tokens->fetch_add(1) + 1;
+    domain::ResponseUsage usage;
+    usage.input_tokens = completion.usage.prompt_tokens;
+    usage.output_tokens = completion.usage.completion_tokens;
+    usage.total_tokens = completion.usage.total_tokens;
 
-                        // Record timing for TTFT and TPS calculation
-                        auto now = std::chrono::high_resolution_clock::now();
-                        if (!first_token_time->has_value()) {
-                            *first_token_time = now;
-                        } else if (current_tokens == 2 && !second_token_time->has_value()) {
-                            *second_token_time = now;
-                        }
+    std::string status =
+        (!completion.choices.empty() &&
+         completion.choices[0].finish_reason.value_or("stop") == "length")
+            ? "incomplete"
+            : "completed";
 
-                        std::string sse;
-                        if (is_chat) {
-                            std::optional<domain::CompletionUsage> usage;
-                            if (continuous_usage) {
-                                // Only send token counts during streaming, timing metrics come with final chunk
-                                usage = domain::CompletionUsage{0, current_tokens, current_tokens, std::nullopt, std::nullopt};
-                            }
-                            sse = domain::ChatCompletionStreamChunk::makeContentChunk(
-                                completion_id, model, created, chunk.choices[0], usage).toSSE();
-                        } else if (!chunk.choices[0].text.empty() ||
-                                   !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out;
-                            out.id = completion_id;
-                            out.object = "text_completion";
-                            out.model = model;
-                            out.created = created;
-                            out.choices = chunk.choices;
-                            sse = out.toSSE();
-                        }
+    auto resp = domain::ResponsesResponse::fromRequest(
+        completion.task_id, *respReqPtr, samplingParams, completion.model,
+        createdAt, std::move(output), std::move(status), std::move(usage));
 
-                        if (!sse.empty()) {
-                            loop->queueInLoop([stream_ptr, sse = std::move(sse)]() {
-                                if (*stream_ptr) (*stream_ptr)->send(sse);
-                            });
-                        }
-                    }
-                    if (is_final) {
-                        loop->queueInLoop(
-                            [stream_ptr, done, is_chat, include_usage,
-                             completion_id, model, created, completion_tokens,
-                             start_time, first_token_time, second_token_time]() {
-                                if (!done->exchange(true) && *stream_ptr) {
-                                    if (include_usage) {
-                                        const int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{0, tokens, tokens, std::nullopt, std::nullopt};
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "";
+    writer["emitUTF8"] = true;
+    return Json::writeString(writer, resp.toOpenaiJson());
+  };
 
-                                        // Calculate final timing metrics
-                                        if (first_token_time->has_value()) {
-                                            auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                first_token_time->value() - *start_time);
-                                            usage.ttft_ms = std::round(static_cast<double>(ttft_duration.count()) / 10.0) / 100.0;
-                                        }
-
-                                        if (tokens > 1) {
-                                            auto final_time = std::chrono::high_resolution_clock::now();
-                                            auto base_time = second_token_time->has_value() ?
-                                                second_token_time->value() : first_token_time->value();
-                                            auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                final_time - base_time);
-                                            if (total_duration.count() > 0) {
-                                                auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
-                                                usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
-                                                std::cout << "[DEBUG] Final TPS: " << usage.tps.value() << " tokens/sec" << std::endl;
-                                            }
-                                        }
-
-                                        if (is_chat) {
-                                            (*stream_ptr)->send(
-                                                domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                                    completion_id, model, created, usage).toSSE());
-                                        } else {
-                                            // For text completions, we need to send a usage chunk
-                                            // The format should be similar but for text_completion object
-                                            domain::StreamingChunkResponse usage_chunk;
-                                            usage_chunk.id = completion_id;
-                                            usage_chunk.object = "text_completion";
-                                            usage_chunk.model = model;
-                                            usage_chunk.created = created;
-                                            usage_chunk.usage = usage;
-                                            (*stream_ptr)->send(usage_chunk.toSSE());
-                                        }
-                                    }
-                                    (*stream_ptr)->send("data: [DONE]\n\n");
-                                    (*stream_ptr)->close();
-                                }
-                            });
-                    }
-                });
-        });
-
-    resp->setContentTypeString("text/event-stream");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "keep-alive");
-    resp->addHeader("X-Accel-Buffering", "no");
-
-    callback(resp);
+  handleNonStreaming(reqPtr, std::move(builder), std::move(callback));
 }
 
-} // namespace tt::api
+ResponseWriterParams LLMController::makeWriterParams(
+    const LLMRequest& request) const {
+  ResponseWriterParams params;
+  params.completionId = "chatcmpl-" + std::to_string(request.task_id);
+  params.model = request.model.value_or("default");
+  params.created = static_cast<int64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count());
+  params.promptTokenCount = request.full_prompt_tokens_count > 0
+                                ? request.full_prompt_tokens_count
+                                : request.prompt_tokens_count;
+  params.cachedTokenCount =
+      request.continuation
+          ? request.full_prompt_tokens_count - request.prompt_tokens_count
+          : 0;
+  params.sessionId = request.sessionId;
+  params.taskId = request.task_id;
+  params.service = service;
+  if (request.session) {
+    params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
+  }
+  return params;
+}
+
+std::function<void(const LLMStreamChunk&, bool)>
+LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
+                                     domain::Session* session) {
+  return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
+                                               bool isFinal) {
+    if (writer->isDone()) return;
+    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+    if (isFinal) {
+      if (session) session->clearInFlight();
+      writer->finalize();
+    }
+  };
+}
+
+drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
+    const SessionError& err) {
+  if (err.type == SessionErrorType::RATE_LIMIT) {
+    return errorResponse(drogon::k429TooManyRequests, err.message,
+                         "rate_limit_exceeded");
+  }
+  return errorResponse(
+      drogon::k503ServiceUnavailable,
+      std::string("Failed to allocate memory resources: ") + err.message,
+      "service_unavailable");
+}
+
+void LLMController::handleStreaming(
+    std::shared_ptr<LLMRequest> reqPtr,
+    std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::handleStreaming");
+
+  auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  auto cb =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
+
+  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+    svc->abortRequest(taskId);
+  };
+
+  resolveSession(
+      reqPtr, loop,
+      [this, reqPtr, cb, loop, formatter = std::move(formatter),
+       includeUsage](SessionInfo sessionInfo) {
+        try {
+          service->preProcess(*reqPtr);
+        } catch (const services::QueueFullException& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+          return;
+        } catch (const std::exception& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                              "invalid_request_error"));
+          return;
+        }
+
+        auto writer = StreamingResponseWriter::create(
+            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
+
+        try {
+          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+                             makeStreamingCallback(writer, reqPtr->session));
+        } catch (const services::QueueFullException& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+          return;
+        } catch (const std::exception& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
+                              "internal_error"));
+          return;
+        }
+
+        (*cb)(writer->buildResponse());
+      },
+      [cb](const SessionError& err) {
+        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
+                     err.message);
+        (*cb)(makeSessionErrorResponse(err));
+      },
+      std::move(cancelFn));
+}
+
+void LLMController::handleNonStreaming(
+    std::shared_ptr<LLMRequest> reqPtr,
+    NonStreamResponseWriter::ResponseBuilder builder,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::handleNonStreaming");
+
+  auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  auto cb =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
+
+  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+    svc->abortRequest(taskId);
+  };
+
+  resolveSession(
+      reqPtr, loop,
+      [this, reqPtr, cb,
+       builder = std::move(builder)](SessionInfo sessionInfo) mutable {
+        try {
+          service->preProcess(*reqPtr);
+        } catch (const services::QueueFullException& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+          return;
+        } catch (const std::exception& e) {
+          if (reqPtr->session) reqPtr->session->clearInFlight();
+          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                              "invalid_request_error"));
+          return;
+        }
+
+        // Move the http callback into the writer; from here on out every
+        // success/error path goes through writer->finalize / sendError so
+        // the response is delivered exactly once and the session in-flight
+        // slot is always released.
+        auto writer = NonStreamResponseWriter::create(
+            makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
+
+        try {
+          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+                             makeStreamingCallback(writer, reqPtr->session));
+        } catch (const services::QueueFullException& e) {
+          writer->sendError(drogon::k429TooManyRequests, e.what(),
+                            "rate_limit_exceeded");
+        } catch (const std::exception& e) {
+          writer->sendError(drogon::k500InternalServerError, e.what(),
+                            "internal_error");
+        }
+      },
+      [cb](const SessionError& err) {
+        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
+                     err.message);
+        (*cb)(makeSessionErrorResponse(err));
+      },
+      std::move(cancelFn));
+}
+
+void LLMController::dispatchGeneration(
+    LLMRequest& request, bool validSessionFound,
+    const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
+  const auto mode = tt::config::llmMode();
+  if (mode == tt::config::LLMMode::REGULAR) {
+    service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
+    return;
+  }
+
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    if (shouldDoPrefillOnDecode(request, validSessionFound)) {
+      TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
+                   request.sessionId.value_or("none"));
+      service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
+    } else {
+      TT_LOG_DEBUG(
+          "[LLMController] Using disaggregated prefill for request with "
+          "sessionId: {}",
+          request.sessionId.value_or("none"));
+      disaggregationService->handleStreamingRequest(request, cb);
+    }
+    return;
+  }
+
+  throw std::runtime_error(
+      "LLM Mode must be regular or decode only for chat completions");
+}
+
+bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
+                                            bool validSessionFound) const {
+  const bool socketReady = socketService && socketService->isConnected();
+  if (!socketReady) {
+    TT_LOG_WARN(
+        "[LLMController] Prefill server not connected; falling back to "
+        "prefill on decode for taskId={}",
+        request.task_id);
+    return true;
+  }
+
+  if (request.disaggregation_override.has_value()) {
+    const bool forceDisagg = *request.disaggregation_override;
+    TT_LOG_INFO(
+        "[LLMController] Honoring disaggregation override={} for taskId={}",
+        forceDisagg, request.task_id);
+    return !forceDisagg;
+  }
+
+  if (validSessionFound) {
+    return true;
+  }
+
+  const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
+  const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
+
+  return promptTokens < maxTokens;
+}
+
+}  // namespace tt::api

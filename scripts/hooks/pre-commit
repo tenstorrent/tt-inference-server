@@ -3,13 +3,24 @@
 # Pre-commit hook: auto-format and lint staged Python files with ruff.
 # Install by running: scripts/setup-hooks.sh
 
-# Find ruff - check PATH first, then user's tt-metal python env
+# Common virtualenv bin directories used by this repo.
+TOOL_ENV_BINS="./.pre-commit/bin ./.venv/bin /localdev/$USER/tt-metal/python_env/bin"
+
+find_tool_in_env_bins() {
+    tool_name="$1"
+    for env_bin in $TOOL_ENV_BINS; do
+        candidate="$env_bin/$tool_name"
+        if [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 RUFF=$(command -v ruff 2>/dev/null)
 if [ -z "$RUFF" ]; then
-    candidate="/localdev/$USER/tt-metal/python_env/bin/ruff"
-    if [ -x "$candidate" ]; then
-        RUFF="$candidate"
-    fi
+    RUFF=$(find_tool_in_env_bins ruff)
 fi
 
 if [ -z "$RUFF" ]; then
@@ -23,9 +34,41 @@ if [ -z "$RUFF" ]; then
     echo "✅ ruff installed successfully"
 fi
 
+PYTEST_PYTHON=""
+PYTEST_PYTHON=$(find_tool_in_env_bins python3)
+if [ -z "$PYTEST_PYTHON" ]; then
+    PYTEST_PYTHON=$(find_tool_in_env_bins python)
+fi
+
+if [ -z "$PYTEST_PYTHON" ]; then
+    echo "⚠️  No candidate virtualenv python found, skipping schema validation and pytest"
+else
+    "$PYTEST_PYTHON" - <<'EOF'
+import json
+import jsonschema
+import sys
+with open(".github/workflows/models-ci-config-schema.json") as f:
+    schema = json.load(f)
+with open(".github/workflows/models-ci-config.json") as f:
+    config = json.load(f)
+try:
+    jsonschema.validate(instance=config, schema=schema)
+    print("✅ models-ci-config.json is valid")
+except jsonschema.ValidationError as e:
+    print(f"❌ Validation failed: {e.message}")
+    print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path)}")
+    sys.exit(1)
+EOF
+    if [ $? -ne 0 ]; then
+        echo "❌ models-ci-config schema validation failed"
+        exit 1
+    fi
+fi
+
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 
 if [ -z "$STAGED_FILES" ]; then
+    echo "✅ No staged Python files, skipping Ruff checks and pytest"
     exit 0
 fi
 
@@ -48,3 +91,16 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✅ Ruff checks passed!"
+
+if [ -z "$PYTEST_PYTHON" ]; then
+    echo "⚠️  No candidate virtualenv python found, skipping pytest"
+else
+    "$PYTEST_PYTHON" -m pytest -p no:warnings
+    if [ $? -ne 0 ]; then
+        echo "❌ pytest failed - fix errors above before committing"
+        exit 1
+    fi
+    echo "✅ pytest passed!"
+fi
+
+echo "✅ All pre-commit checks passed!"

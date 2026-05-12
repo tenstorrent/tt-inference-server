@@ -1,15 +1,20 @@
-# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent USA, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
+from inspect import cleandoc
 from string import Template
 
+PROMPT_TEMPLATE = Template(
+    cleandoc("""
+    Review: $input
+    Output:
+""")
+)
 
-PROMPT_TEMPLATE = Template("""Review: $input\nOutput:""")
+RESPONSE_TEMPLATE = Template("Deduced sentiment: $label")
 
-RESPONSE_TEMPLATE = Template('{"label": "$label"}')
-
-LBL2VALUE = {0: "negative", 1: "positive"}
-VALUE2LBL = {"negative": 0, "positive": 1}
+LBL2VALUE = {0: "Negative", 1: "Positive"}
+VALUE2LBL = {"Negative": 0, "Positive": 1}
 
 DATASET_BENCHMARK = "glue"
 DATASET_NAME = "sst2"

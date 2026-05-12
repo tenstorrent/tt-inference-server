@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
 import logging
@@ -11,6 +11,7 @@ import requests
 
 from utils.media_clients.test_status import VideoGenerationTestStatus
 from workflows.utils import get_num_calls
+from workflows.workflow_types import ReportCheckTypes
 
 from .base_strategy_interface import BaseMediaStrategy
 
@@ -19,7 +20,11 @@ logger = logging.getLogger(__name__)
 # Constants
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-INFERENCE_STEPS = {"mochi-1-preview": 50, "Wan2.2-T2V-A14B-Diffusers": 40}
+INFERENCE_STEPS = {
+    "mochi-1-preview": 50,
+    "Wan2.2-T2V-A14B-Diffusers": 40,
+    "Wan2.2-I2V-A14B-Diffusers": 40,
+}
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -78,7 +83,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             benchmark_data["clip_standard_deviation"] = clip_results.get(
                 "clip_standard_deviation", 0.0
             )
-            benchmark_data["accuracy_check"] = eval_result.get("accuracy_check", 0)
+            benchmark_data["accuracy_check"] = eval_result.get(
+                "accuracy_check", ReportCheckTypes.NA
+            )
         else:
             logger.warning("No eval results from video generation test")
 
@@ -182,26 +189,54 @@ class VideoClientStrategy(BaseMediaStrategy):
     def _generate_video(
         self, prompt: str, num_inference_steps: int = 20
     ) -> tuple[bool, float, str, str]:
-        """Generate video using video API."""
+        """Generate video (T2V) using the video API."""
         logger.info(f"🎬 Generating video with prompt: {prompt}")
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+        }
+        return self._submit_and_wait_for_video("/v1/videos/generations", payload)
 
+    def _generate_video_i2v(
+        self,
+        prompt: str,
+        image_b64: str,
+        frame_pos: int = 0,
+        num_inference_steps: int = 40,
+    ) -> tuple[bool, float, str, str]:
+        """Generate video (I2V) using the image-to-video API.
+
+        The image must be base64-encoded (PNG or JPEG, no data URI prefix).
+        ``frame_pos=0`` anchors the image as the first frame; supply a
+        higher ``frame_pos`` to insert it mid-video. For multi-keyframe
+        conditioning use :meth:`_generate_video_i2v_multi`.
+        """
+        logger.info(f"🎬 Generating I2V video with prompt: {prompt}")
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+            "image_prompts": [{"image": image_b64, "frame_pos": frame_pos}],
+        }
+        return self._submit_and_wait_for_video("/v1/videos/generations/i2v", payload)
+
+    def _submit_and_wait_for_video(
+        self, endpoint: str, payload: dict
+    ) -> tuple[bool, float, str, str]:
+        """Submit a video-generation job and poll until completion.
+
+        Returns ``(success, elapsed_seconds, job_id, video_path)``.
+        """
         headers = {
             "accept": "application/json",
             "Authorization": "Bearer your-secret-key",
             "Content-Type": "application/json",
         }
+        logger.info(f"POST {endpoint} payload keys: {list(payload.keys())}")
 
-        payload = {
-            "prompt": prompt,
-            "num_inference_steps": num_inference_steps,
-        }
-        logger.info(f"Payload: {payload}")
-
-        # Submit video generation job
         start_time = time.time()
         try:
             response = requests.post(
-                f"{self.base_url}/v1/videos/generations",
+                f"{self.base_url}{endpoint}",
                 json=payload,
                 headers=headers,
                 timeout=90,
@@ -209,7 +244,8 @@ class VideoClientStrategy(BaseMediaStrategy):
 
             if response.status_code != 202:
                 logger.error(
-                    f"Failed to submit video generation job: {response.status_code}"
+                    f"Failed to submit video generation job: "
+                    f"{response.status_code} {response.text[:500]}"
                 )
                 return False, time.time() - start_time, "", ""
 
@@ -217,7 +253,6 @@ class VideoClientStrategy(BaseMediaStrategy):
             job_id = job_data.get("id")
             logger.info(f"Video generation job submitted: {job_id}")
 
-            # Poll for completion
             video_path = self._poll_video_completion(job_id, headers)
             elapsed = time.time() - start_time
 
@@ -383,11 +418,11 @@ class VideoClientStrategy(BaseMediaStrategy):
                 }
         """
         # Lazy import to avoid loading dependencies at module import time
-        from tests.server_tests.test_cases.video_generation_eval_test import (
+        from server_tests.test_cases.video_generation_eval_test import (
             VideoGenerationEvalsTest,
             VideoGenerationEvalsTestRequest,
         )
-        from tests.server_tests.test_classes import TestConfig
+        from server_tests.test_classes import TestConfig
 
         logger.info("Running video generation eval.")
 
@@ -430,8 +465,8 @@ class VideoClientStrategy(BaseMediaStrategy):
         3. Run FVMD test (compute_fvmd) with same paths.
         4. Combine FVD and FVMD scores into a single dict.
 
-        Reference videos: tests/server_tests/datasets/video_fvd_subset/videos
-        Generated videos: tests/server_tests/datasets/videos (same as
+        Reference videos: server_tests/datasets/video_fvd_subset/videos
+        Generated videos: server_tests/datasets/videos (same as
         video_generation_eval_test) or /tmp/videos (video_client downloads).
 
         Returns:
@@ -445,26 +480,24 @@ class VideoClientStrategy(BaseMediaStrategy):
         """
         from pathlib import Path
 
-        from tests.server_tests.test_cases.video_fvd_eval_test import (
+        from server_tests.test_cases.video_fvd_eval_test import (
             DATASET_DIR as FVD_DATASET_DIR,
         )
-        from tests.server_tests.test_cases.video_fvd_eval_test import (
+        from server_tests.test_cases.video_fvd_eval_test import (
             VideoFVDTest,
             VideoFVDTestRequest,
         )
-        from tests.server_tests.test_cases.video_fvmd_eval_test import (
+        from server_tests.test_cases.video_fvmd_eval_test import (
             VideoFVMDTest,
             VideoFVMDTestRequest,
         )
-        from tests.server_tests.test_classes import TestConfig
+        from server_tests.test_classes import TestConfig
 
         logger.info("Running video FVD and FVMD eval.")
 
         reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
         # Generated videos: same dir as video_generation_eval_test, or /tmp/videos
-        generated_videos_path = str(
-            Path("tests/server_tests/datasets/videos").resolve()
-        )
+        generated_videos_path = str(Path("server_tests/datasets/videos").resolve())
         if not Path(generated_videos_path).exists():
             generated_videos_path = "/tmp/videos"
         logger.info(
