@@ -340,14 +340,13 @@ class VideoClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
 
-        # ``latency_s`` (seconds, end-to-end including submit + poll
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "latency_s": latency_value,
+                "latency": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )
@@ -367,7 +366,7 @@ class VideoClientStrategy(BaseMediaStrategy):
 
     def _calculate_latency(self, status_list: list[VideoGenerationTestStatus]) -> float:
         """Mean end-to-end request latency in seconds."""
-        logger.info("Calculating latency_s")
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)

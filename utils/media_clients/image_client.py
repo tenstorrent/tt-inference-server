@@ -250,7 +250,6 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
 
-        # ``latency`` (seconds, end-to-end) replaces the prior misleading
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),

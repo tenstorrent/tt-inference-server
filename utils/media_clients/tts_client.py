@@ -165,14 +165,13 @@ class TtsClientStrategy(BaseMediaStrategy):
         rtr_value = self._calculate_rtr_value(status_list)
         p90_latency, p95_latency = self._calculate_tail_latency(status_list)
 
-        # ``latency`` (end-to-end request latency)
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "latency": latency_value,
                 "rtr": rtr_value,
-                "latency_p90": p90_latency,  # 0.0 when no data
-                "latency_p95": p95_latency,  # 0.0 when no data
+                "latency_p90": p90_latency,
+                "latency_p95": p95_latency,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
