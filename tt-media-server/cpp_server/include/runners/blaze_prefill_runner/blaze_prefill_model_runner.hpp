@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "ipc/slot_ring_buffer.hpp"
+#include "ipc/posix/slot_ring_buffer.hpp"
 #include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
 namespace blaze_prefill {
@@ -44,8 +44,8 @@ class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
   };
 
   ShmNames shmNames;
-  tt::ipc::PrefillSlotBuffer deviceInput;
-  tt::ipc::DecodeSlotBuffer deviceOutput;
+  tt::ipc::posix::PrefillSlotBuffer deviceInput;
+  tt::ipc::posix::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
   std::atomic<size_t> consecutiveErrors{0};
 

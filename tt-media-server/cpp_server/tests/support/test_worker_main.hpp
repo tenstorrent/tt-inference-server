@@ -14,7 +14,7 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
+#include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 #include "worker/worker_metrics_shm.hpp"
@@ -28,7 +28,7 @@ inline int runWorkerSubprocess(int workerId) {
       workerId, tt::worker::MetricsLayout::SP_PIPELINE_RUNNER);
 
   // Signal warmup: parent unblocks isModelReady() only after this.
-  tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
+  tt::ipc::boost::WarmupSignalQueue warmupQueue(
       tt::config::ttWarmupSignalsQueueName());
   warmupQueue.sendReady(workerId);
 
