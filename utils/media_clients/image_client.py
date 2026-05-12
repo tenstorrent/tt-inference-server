@@ -132,15 +132,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 "deviation_clip_score"
             )
             benchmark_data["accuracy_check"] = eval_results.get("accuracy_check")
-            benchmark_data["score"] = None  # no TTFT for ImageGenerationEvalsTest
+            benchmark_data["score"] = None
         else:
             # Legacy eval methods returning (status_list, total_time)
             status_list, total_time = eval_result
 
-            # Calculate TTFT
-            ttft_value = self._calculate_ttft_value(status_list)
-            logger.info(f"Extracted TTFT value: {ttft_value}")
-            benchmark_data["score"] = ttft_value
+            latency_value = self._calculate_latency(status_list)
+            logger.info(f"Extracted latency_s value: {latency_value}")
+            benchmark_data["score"] = latency_value
 
             logger.info("Running and calculating accuracy and metrics")
             fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
@@ -226,11 +225,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _calculate_ttft_value(
-        self, status_list: list[ImageGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on model type and status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[ImageGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency_s")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
@@ -251,17 +248,16 @@ class ImageClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
 
-        # Convert ImageGenerationTestStatus objects to dictionaries for JSON serialization
+        # ``latency_s`` (seconds, end-to-end) replaces the prior
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "ttft": ttft_value,
+                "latency_s": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )
