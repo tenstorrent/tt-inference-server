@@ -203,7 +203,7 @@ void BlazeRunner::drainAndHandleMemoryResponses() {
   size_t drained = 0;
   while (drained < tt::config::dsMaxUsers() &&
          decodeScheduler->try_pop_response(response)) {
-    handleResponse(response);
+    handleMemoryResponse(response);
     drained++;
   }
 }
