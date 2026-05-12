@@ -129,8 +129,6 @@ def run_media_task(
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
     """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
-    # Lazy import: TestFilter loads suite JSON at construction time, and we
-    # don't want that cost on plain eval/benchmark runs.
     from .test_categorization_system import TestFilter
 
     return (
