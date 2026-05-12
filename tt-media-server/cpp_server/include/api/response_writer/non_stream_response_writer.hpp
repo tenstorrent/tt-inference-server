@@ -9,6 +9,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "api/response_writer/response_writer.hpp"
 
@@ -20,10 +21,10 @@ namespace tt::api {
  * The non-streaming counterpart to StreamingResponseWriter: the controller
  * drives the same Streamable producer (LLMService::submitStreamingRequest or
  * the disaggregation service) and forwards every chunk here instead of out to
- * SSE. On the final chunk the writer hands the assembled `LLMResponse` to a
- * caller-supplied builder, runs the service's postProcess (reasoning strip +
- * tool-call parsing -- non-streaming only), releases the session in-flight
- * slot, and invokes the http callback exactly once.
+ * SSE. Tool-call streaming deltas are accumulated into a single `tool_calls`
+ * array. On the final chunk the writer builds the assembled `LLMResponse`,
+ * hands it to a caller-supplied builder for JSON encoding, releases the
+ * session in-flight slot, and invokes the http callback exactly once.
  *
  * The default builder produces an OpenAI chat-completion JSON body. The
  * Responses API endpoint passes a builder that produces a `ResponsesResponse`
@@ -59,11 +60,19 @@ class NonStreamResponseWriter : public ResponseWriter {
   NonStreamResponseWriter(ResponseWriterParams params,
                           HttpCallback httpCallback, ResponseBuilder builder);
 
+  // Accumulated tool call data from streaming deltas
+  struct AccumulatedToolCall {
+    std::string id;
+    std::string name;
+    std::ostringstream arguments;
+  };
+
   HttpCallback httpCallback;
   ResponseBuilder builder;
 
   std::ostringstream accumulatedAnswer;
   std::ostringstream accumulatedReasoning;
+  std::vector<AccumulatedToolCall> accumulatedToolCalls;
   std::string finishReason = "stop";
 };
 

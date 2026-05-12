@@ -76,14 +76,6 @@ BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
 }
 
 
-# Optional module-level cap consulted by ``run_spec_tests`` to clamp
-# ``targets["request"]["num_prompts"]`` on heavy eval test cases (e.g.
-# ImageGenerationEvalsTest defaults to 100 prompts × ~9s on SDXL/N150).
-# ``run.py`` sets this when ``--num-prompts`` is passed so a smoke
-# release run doesn't take half an hour. ``None`` = no cap.
-SPEC_TESTS_NUM_PROMPTS_CAP: Optional[int] = None
-
-
 def run_media_task(
     ctx: MediaContext, task_type: MediaTaskType
 ) -> Tuple[int, Optional[Block]]:
@@ -105,8 +97,11 @@ def run_media_task(
 
     model_type_name = ctx.model_spec.model_type.name
     logger.info(
-        f"Running {task_type.value} for model_type={model_type_name}, "
-        f"model={ctx.model_spec.model_name}, device={ctx.device.name}"
+        "Running %s for model_type=%s, model=%s, device=%s",
+        task_type.value,
+        model_type_name,
+        ctx.model_spec.model_name,
+        ctx.device.name,
     )
 
     dispatch = (
@@ -115,15 +110,17 @@ def run_media_task(
     runner = dispatch.get(model_type_name)
     if runner is None:
         logger.error(
-            f"No {task_type.value} runner registered for model_type={model_type_name!r}. "
-            f"Known types: {sorted(dispatch)}"
+            "No %s runner registered for model_type=%r. Known types: %s",
+            task_type.value,
+            model_type_name,
+            sorted(dispatch),
         )
         return 1, None
 
     try:
         block = runner(ctx)
     except Exception as e:
-        logger.exception(f"{task_type.value} runner raised: {e}")
+        logger.exception("%s runner raised: %s", task_type.value, e)
         return 1, None
 
     accept_blocks([block], envelope=sweep_envelope(ctx))
@@ -132,8 +129,6 @@ def run_media_task(
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
     """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
-    # Lazy import: TestFilter loads suite JSON at construction time, and we
-    # don't want that cost on plain eval/benchmark runs.
     from .test_categorization_system import TestFilter
 
     return (
@@ -144,13 +139,12 @@ def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
     )
 
 
-def _maybe_cap_num_prompts(case: dict) -> dict:
-    """Clamp ``targets.request.num_prompts`` to ``SPEC_TESTS_NUM_PROMPTS_CAP`` if set.
+def _maybe_cap_num_prompts(case: dict, cap: Optional[int]) -> dict:
+    """Clamp ``targets.request.num_prompts`` to ``cap`` if set.
 
     Returns a new test case dict so we don't mutate the suite definition
     in TestFilter's cache.
     """
-    cap = SPEC_TESTS_NUM_PROMPTS_CAP
     if cap is None:
         return case
     targets = case.get("targets") or {}
@@ -163,7 +157,7 @@ def _maybe_cap_num_prompts(case: dict) -> dict:
     new_case["targets"]["request"]["num_prompts"] = cap
     logger.info(
         "Capping %s targets.request.num_prompts: %s -> %s",
-        case.get("name", "?"),
+        case["name"],
         request["num_prompts"],
         cap,
     )
@@ -174,24 +168,18 @@ def _instantiate_spec_test(case: dict, ctx: MediaContext):
     """Import + construct a spec test class from a (filtered) test case dict.
 
     BaseTest accepts ``(config, targets, description="", ctx=None)`` but a
-    handful of test classes override ``__init__`` with a narrower signature —
-    so we try the rich form first and fall back rather than introspecting.
-    The suite's ``description`` is forwarded so per-case Block titles render
-    with the suite-author's label (e.g. "LoRA eval: pixel-art-xl") instead
-    of the generic kind-derived heading.
+    handful of test classes (e.g. ImageGenerationEvalsTest) override
+    ``__init__`` with just ``(config, targets)`` — so we try the rich form
+    first and fall back to the minimal one rather than introspecting.
     """
     config = TestConfig(case.get("test_config") or {})
     targets = case.get("targets") or {}
-    description = case.get("description") or ""
     module = importlib.import_module(case["module"])
     cls = getattr(module, case["name"])
     try:
-        return cls(config, targets, description=description, ctx=ctx)
+        return cls(config, targets, ctx=ctx)
     except TypeError:
-        try:
-            return cls(config, targets, ctx=ctx)
-        except TypeError:
-            return cls(config, targets)
+        return cls(config, targets)
 
 
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
@@ -200,12 +188,14 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     Each test case produces one Block via ``BaseTest.run_tests()``; all are
     handed to the accumulator so the eventual ReportSchema includes one
     section per test. Returns ``(exit_code, last_block)`` where exit_code
-    is non-zero if any test class raised or any Block reported
-    ``success=False``.
+    is non-zero if any test class raised or any Block did not explicitly
+    report ``success=True`` (missing key, non-dict data, or any non-True
+    value all count as failures).
     """
     logger.info(
-        f"Running spec_tests for model={ctx.model_spec.model_name}, "
-        f"device={ctx.device.name}"
+        "Running spec_tests for model=%s, device=%s",
+        ctx.model_spec.model_name,
+        ctx.device.name,
     )
     suites = _resolve_spec_test_suites(ctx)
     if not suites:
@@ -216,6 +206,7 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
         )
         return 1, None
 
+    cap = ctx.spec_tests_num_prompts_cap
     blocks: List[Block] = []
     failures = 0
     for suite in suites:
@@ -223,13 +214,18 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
         cases = suite.get("test_cases", [])
         logger.info("[%s] %d test case(s)", suite_id, len(cases))
         for case in cases:
-            if not case.get("enabled", True):
-                logger.info("  - skip disabled %s", case.get("name", "?"))
+            if "name" not in case or "module" not in case:
+                logger.warning(
+                    "  - skip malformed case (missing name/module): %r", case
+                )
                 continue
-            class_name = case.get("name", "?")
-            module_name = case.get("module", "?")
+            if not case.get("enabled", True):
+                logger.info("  - skip disabled %s", case["name"])
+                continue
+            class_name = case["name"]
+            module_name = case["module"]
             logger.info("  -> %s (%s)", class_name, module_name)
-            patched = _maybe_cap_num_prompts(case)
+            patched = _maybe_cap_num_prompts(case, cap)
             try:
                 test = _instantiate_spec_test(patched, ctx)
                 block = test.run_tests()
@@ -238,7 +234,15 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 failures += 1
                 continue
             blocks.append(block)
-            if isinstance(block.data, dict) and block.data.get("success") is False:
+            if (
+                not isinstance(block.data, dict)
+                or block.data.get("success") is not True
+            ):
+                logger.error(
+                    "  ✘ %s did not report success=True (data=%r)",
+                    class_name,
+                    block.data,
+                )
                 failures += 1
 
     if not blocks:
@@ -259,7 +263,6 @@ __all__ = [
     "MediaTaskType",
     "EVAL_DISPATCH",
     "BENCHMARK_DISPATCH",
-    "SPEC_TESTS_NUM_PROMPTS_CAP",
     "run_media_task",
     "run_spec_tests",
 ]
