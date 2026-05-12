@@ -177,7 +177,7 @@ void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
-  drainAndHandleResponses();
+  drainAndHandleMemoryResponses();
   drainAndHandleOutputs();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
@@ -232,7 +232,7 @@ inline void BlazeRunner::handleMemoryRequest(
   memoryManager->handleRequest(request);
 }
 
-inline void BlazeRunner::handleResponse(const ds::SchedulerResponse& response) {
+inline void BlazeRunner::handleMemoryResponse(const ds::SchedulerResponse& response) {
   memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
@@ -256,7 +256,10 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
-  ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+
+  uint32_t specAccepts = 0;
+  uint32_t specRejects = 0;
+
   context.tokensGenerated++;
   if (finished) {
     uint32_t specAccepts = decodeScheduler->get_spec_accepts(output.slot_id) -
@@ -275,6 +278,9 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
+
+  ipc::pushToken(*resultQueue, taskId, output.token_id, finished, specAccepts,
+                 specRejects);
 }
 
 void BlazeRunner::checkOutputHang() {

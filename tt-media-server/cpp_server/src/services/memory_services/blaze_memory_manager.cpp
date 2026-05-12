@@ -25,9 +25,8 @@ void BlazeMemoryManager::handleRequest(
     const domain::ManageMemoryTask& request) {
   switch (request.action) {
     case domain::MemoryManagementAction::ALLOCATE: {
-      auto requestId = nextRequestID;
       if (!decodeScheduler.push_request(
-              utils::makeAllocateRequest(requestId))) {
+              utils::makeAllocateRequest(request.taskId))) {
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] ALLOCATE push_request failed; deferring "
             "retry for taskId={}",
@@ -35,43 +34,29 @@ void BlazeMemoryManager::handleRequest(
         pendingRetry = request;
         return;
       }
-      nextRequestID++;
-      allocating[requestId] = request.taskId;
+      allocating.insert(request.taskId);
       TT_LOG_DEBUG(
-          "[BlazeMemoryManager] ALLOCATE: taskId={}, assigned "
-          "requestId={}, pending allocations={}",
-          request.taskId, requestId, allocating.size());
+          "[BlazeMemoryManager] ALLOCATE: taskId={},"
+          "pending allocations={}",
+          request.taskId, allocating.size());
       break;
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
-      for (size_t slotIndex = 0; slotIndex < request.slotIds.size();
-           slotIndex++) {
-        auto slotId = request.slotIds[slotIndex];
-        auto requestId = nextRequestID;
-        if (!decodeScheduler.push_request(
-                utils::makeCancelRequest(requestId, slotId))) {
-          TT_LOG_DEBUG(
-              "[BlazeMemoryManager] DEALLOCATE push_request failed for "
-              "slotId={}; deferring retry for {} remaining slot(s) of "
-              "taskId={}",
-              slotId, request.slotIds.size() - slotIndex, request.taskId);
-          domain::ManageMemoryTask retry;
-          retry.taskId = request.taskId;
-          retry.action = request.action;
-          // earlier slots are already in cancelling; retry only covers the
-          // remaining slots.
-          retry.slotIds.assign(request.slotIds.begin() + slotIndex,
-                               request.slotIds.end());
-          pendingRetry = std::move(retry);
-          break;
-        }
-        nextRequestID++;
-        cancelling[requestId] = slotId;
+      auto slotId = request.slotId;
+      if (!decodeScheduler.push_request(
+              utils::makeCancelRequest(request.taskId, slotId))) {
         TT_LOG_DEBUG(
-            "[BlazeMemoryManager] DEALLOCATE: taskId={}, slotId={}, "
-            "cancel requestId={}, pending cancellations={}",
-            request.taskId, slotId, requestId, cancelling.size());
+            "[BlazeMemoryManager] DEALLOCATE push_request failed for "
+            "slotId={}; deferring retry for taskId={}",
+            slotId, request.taskId);
+        pendingRetry = request;
+        return;
       }
+      cancelling.insert({request.taskId, slotId});
+      TT_LOG_DEBUG(
+          "[BlazeMemoryManager] DEALLOCATE: taskId={}, slotId={}, "
+          "pending cancellations={}",
+          request.taskId, slotId, cancelling.size());
       break;
     }
     case domain::MemoryManagementAction::MOVE: {
@@ -83,14 +68,12 @@ void BlazeMemoryManager::handleRequest(
   }
 }
 
-void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
-  if (auto it = allocating.find(requestId); it != allocating.end()) {
-    auto taskId = it->second;
-    allocating.erase(it);
+void BlazeMemoryManager::handleResponse(uint32_t taskId, uint32_t slotId) {
+  if (allocating.erase(taskId)) {
     TT_LOG_DEBUG(
-        "[BlazeMemoryManager] handleResponse[ALLOCATE]: requestId={}, "
-        "taskId={}, slotId={}, remaining pending={}",
-        requestId, taskId, slotId, allocating.size());
+        "[BlazeMemoryManager] handleResponse[ALLOCATE]: taskId={}, "
+        "slotId={}, remaining pending={}",
+        taskId, slotId, allocating.size());
     domain::ManageMemoryResult result;
     result.taskId = taskId;
     if (slotId == ds::INVALID_SLOT) {
@@ -99,7 +82,7 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
           "No slot available for taskId={}",
           taskId);
       result.status = domain::ManageMemoryStatus::FAILURE;
-      result.slotIds = {ds::INVALID_SLOT};
+      result.slotId = ds::INVALID_SLOT;
       resultQueue->push(result);
       return;
     }
@@ -108,30 +91,30 @@ void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
         "slotId={}",
         taskId, slotId);
     result.status = domain::ManageMemoryStatus::SUCCESS;
-    result.slotIds = {slotId};
+    result.slotId = slotId;
     resultQueue->push(result);
     return;
   }
-  if (auto it = cancelling.find(requestId); it != cancelling.end()) {
+  if (auto it = cancelling.find(taskId); it != cancelling.end()) {
     auto recordedSlotId = it->second;
     cancelling.erase(it);
     if (slotId != recordedSlotId) {
       TT_LOG_ERROR(
-          "[BlazeMemoryManager] handleResponse[CANCEL]: requestId={} "
+          "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={} "
           "ack slotId={} does not match recorded slotId={}; evicting "
           "the recorded slot",
-          requestId, slotId, recordedSlotId);
+          taskId, slotId, recordedSlotId);
     }
     TT_LOG_DEBUG(
-        "[BlazeMemoryManager] handleResponse[CANCEL]: requestId={}, "
+        "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={}, "
         "slotId={}, remaining pending cancellations={}",
-        requestId, recordedSlotId, cancelling.size());
+        taskId, recordedSlotId, cancelling.size());
     onEvict(recordedSlotId);
     return;
   }
   TT_LOG_WARN(
-      "[BlazeMemoryManager] handleResponse: unknown requestId={}, slotId={}",
-      requestId, slotId);
+      "[BlazeMemoryManager] handleResponse: unknown taskId={}, slotId={}",
+      taskId, slotId);
 }
 
 }  // namespace tt::services

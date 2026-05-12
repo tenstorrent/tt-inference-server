@@ -158,6 +158,7 @@ def run_rank0_coordinator() -> None:
 
                 print(
                     f"Rank 0: Received prefill request task_id={task_id}, "
+                    f"slot_id={msg.slot_id}, "
                     f"num_tokens={len(msg.token_ids)}, "
                     f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
                     file=sys.stderr,
@@ -217,10 +218,9 @@ def run_worker_rank(rank: int) -> None:
             if msg is None:
                 break
 
-            task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
-
             print(
-                f"Rank {rank}: Received prefill request task_id={task_id_str}, "
+                f"Rank {rank}: Received prefill request task_id={msg.task_id}, "
+                f"slot_id={msg.slot_id}, "
                 f"num_tokens={len(msg.token_ids)}, "
                 f"tokens={msg.token_ids[:10]}{'...' if len(msg.token_ids) > 10 else ''}",
                 file=sys.stderr,
