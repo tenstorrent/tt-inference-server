@@ -1341,7 +1341,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="dc60698",
-        vllm_commit="bb6980c",
+        vllm_commit="9202cb1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1859,7 +1859,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="dc60698",
-        vllm_commit="bb6980c",
+        vllm_commit="9202cb1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2255,7 +2255,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="dc60698",
-        vllm_commit="bb6980c",
+        vllm_commit="9202cb1",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
