@@ -25,6 +25,11 @@ from report_module.schema import Block, ReportSchema, SchemaLike
 logger = logging.getLogger(__name__)
 
 
+_METADATA_RENDERING_KEYS = frozenset(
+    {"acceptance_summary_markdown", "acceptance_criteria"}
+)
+
+
 @dataclass(frozen=True)
 class GenerateResult:
     markdown_path: Path
@@ -62,7 +67,7 @@ class ReportGenerator:
         json_payload = normalized.to_dict()
         json_payload["metadata"] = {
             k: v
-            for k, v in json_payload["metadata"].items()
+            for k, v in json_payload.get("metadata", {}).items()
             if k not in _METADATA_RENDERING_KEYS
         }
         self._file_saver.write_json(json_payload, json_path, strict=True)
@@ -101,11 +106,6 @@ def _coerce_schema(schema: SchemaLike) -> ReportSchema:
     raise TypeError(
         f"schema must be ReportSchema, Mapping or Sequence, got {type(schema).__name__}"
     )
-
-
-_METADATA_RENDERING_KEYS = frozenset(
-    {"acceptance_summary_markdown", "acceptance_criteria"}
-)
 
 
 def _assemble_release_markdown(schema: ReportSchema, sections: list[str]) -> str:

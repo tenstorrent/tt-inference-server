@@ -56,9 +56,9 @@ class WhisperEvalTest(BaseTest):
     # Mock mode - set to True to simulate lmms-eval calls without actual execution
     mock_mode: bool = False
 
-    def __init__(self, config=None, targets=None, **kwargs):
+    def __init__(self, config, targets, ctx=None):
         """Initialize with lmms-eval executable from config or discovery."""
-        super().__init__(config, targets)
+        super().__init__(config, targets, ctx=ctx)
 
         # Set mock_mode based on config if provided
         if config:

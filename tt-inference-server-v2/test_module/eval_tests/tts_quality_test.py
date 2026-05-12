@@ -46,8 +46,8 @@ class TTSQualityTest(BaseTest):
     - WER > 20%: Poor
     """
 
-    def __init__(self, config, targets=None, **kwargs):
-        super().__init__(config, targets)
+    def __init__(self, config, targets, ctx=None):
+        super().__init__(config, targets, ctx=ctx)
         self._whisper_model = None
         self._whisper_processor = None
 

@@ -64,8 +64,8 @@ class VideoFVDTest(BaseTest):
     Lower scores indicate better quality (0 = identical distributions).
     """
 
-    def __init__(self, config: TestConfig, targets: dict):
-        super().__init__(config, targets)
+    def __init__(self, config: TestConfig, targets: dict, ctx=None):
+        super().__init__(config, targets, ctx=ctx)
         self.eval_results: dict = {}
 
     async def _run_specific_test_async(self):
