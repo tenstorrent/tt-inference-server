@@ -95,6 +95,7 @@ class LLMController : public drogon::HttpController<LLMController> {
 
   struct SessionInfo {
     bool validSessionFound = false;
+    std::optional<size_t> registrationHash;
   };
 
   enum class SessionErrorType {
@@ -132,7 +133,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * unsupported mode or queue/dispatch failures.
    */
   void dispatchGeneration(
-      LLMRequest& request, bool validSessionFound,
+      LLMRequest& request, SessionInfo sessionInfo,
       const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
 
   /**
