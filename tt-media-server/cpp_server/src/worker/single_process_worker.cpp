@@ -10,7 +10,7 @@
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "ipc/boost/warmup_signal_queue.hpp"
+#include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/runner_factory.hpp"

@@ -24,7 +24,7 @@
 #include "config/runner_config.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
-#include "ipc/boost/task_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
 #include "runners/schedulers/prefill_first_scheduler.hpp"
 #include "runners/schedulers/scheduler.hpp"
 

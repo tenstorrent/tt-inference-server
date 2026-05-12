@@ -7,7 +7,7 @@
 #include <string>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost/memory_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 
 namespace tt::ipc::boost {

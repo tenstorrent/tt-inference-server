@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-#include "ipc/boost/memory_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 
 namespace tt::ipc::boost {

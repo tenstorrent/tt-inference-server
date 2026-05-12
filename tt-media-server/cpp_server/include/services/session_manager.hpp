@@ -17,7 +17,7 @@
 #include <thread>
 
 #include "domain/session.hpp"
-#include "ipc/boost/memory_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 

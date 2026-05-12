@@ -12,7 +12,7 @@
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
-#include "ipc/boost/result_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/interface/cancel_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"

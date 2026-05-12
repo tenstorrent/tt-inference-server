@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "ipc/boost/cancel_queue.hpp"
-#include "ipc/boost/result_queue.hpp"
-#include "ipc/boost/task_queue.hpp"
+#include "ipc/boost/boost_cancel_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
 
 namespace tt::ipc {
 

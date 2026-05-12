@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "ipc/boost/cancel_queue.hpp"
+#include "ipc/boost/boost_cancel_queue.hpp"
 
 #include <gtest/gtest.h>
 #include <unistd.h>

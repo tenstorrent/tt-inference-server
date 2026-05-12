@@ -15,7 +15,7 @@
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
-#include "ipc/boost/result_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
