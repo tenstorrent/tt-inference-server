@@ -331,7 +331,7 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
 
-    runner_in_use = require_health(ctx)
+    runner_in_use = require_health(ctx, task_type="benchmark")
 
     try:
         num_calls = get_num_calls(ctx)

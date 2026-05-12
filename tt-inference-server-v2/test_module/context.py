@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -16,6 +16,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from workflow_module import accept_blocks
+
+from ._test_common import sweep_envelope
 from .health_tests import run_device_liveness
 
 logger = logging.getLogger(__name__)
@@ -44,8 +47,18 @@ class MediaContext:
         return TEST_PAYLOADS_PATH
 
 
-def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
-    """Check server health via DeviceLivenessTest and return (ok, runner_in_use)."""
+def get_health(
+    ctx: MediaContext, task_type: Optional[str] = None
+) -> tuple[bool, Optional[str]]:
+    """Check server health via DeviceLivenessTest and return (ok, runner_in_use).
+
+    The resulting ``device_liveness`` Block is pushed to the sweep
+    accumulator so the rendered report includes a liveness section
+    immediately before the runner's eval/benchmark section. When
+    ``task_type`` is supplied (e.g. ``"evaluation"`` / ``"benchmark"``)
+    the Block's ``id`` and ``title`` are tagged with it so workflows
+    that run both don't collide on a single id.
+    """
     logger.info("Checking server health using DeviceLivenessTest...")
     device_name = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     num_devices = ctx.model_spec.device_model_spec.max_concurrency
@@ -59,6 +72,18 @@ def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return (False, None)
+
+    if task_type:
+        base_id = block.id or ""
+        tagged_id = (
+            f"{base_id}__before_{task_type}" if base_id else f"before_{task_type}"
+        )
+        block = replace(
+            block,
+            id=tagged_id,
+            title=f"Device Liveness Check (before {task_type})",
+        )
+    accept_blocks([block], envelope=sweep_envelope(ctx))
 
     data = block.data
     if data.get("success"):
@@ -107,9 +132,14 @@ def count_tokens(hf_model_repo: str, text: str) -> int:
     return len(text.split())
 
 
-def require_health(ctx: MediaContext) -> str:
-    """Run the liveness check and raise on failure; return ``runner_in_use``."""
-    health_status, runner_in_use = get_health(ctx)
+def require_health(ctx: MediaContext, task_type: Optional[str] = None) -> str:
+    """Run the liveness check and raise on failure; return ``runner_in_use``.
+
+    ``task_type`` ("evaluation" / "benchmark") tags the emitted
+    ``device_liveness`` Block so workflows that run both task types end
+    up with two distinguishable liveness sections in the report.
+    """
+    health_status, runner_in_use = get_health(ctx, task_type=task_type)
     if not health_status:
         logger.error("Health check failed.")
         raise RuntimeError("Health check failed")

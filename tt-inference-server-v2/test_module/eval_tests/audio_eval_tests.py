@@ -252,7 +252,7 @@ def run_audio_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, task_type="evaluation")
 
     try:
         num_calls = get_num_calls(ctx)

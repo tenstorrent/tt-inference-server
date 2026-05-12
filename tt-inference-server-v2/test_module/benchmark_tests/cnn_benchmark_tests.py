@@ -196,7 +196,7 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, task_type="benchmark")
 
     try:
         status_list = _run_image_analysis_benchmark(ctx)

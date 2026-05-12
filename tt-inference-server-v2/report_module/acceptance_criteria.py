@@ -46,6 +46,7 @@ def acceptance_criteria_check(
 ) -> Tuple[bool, Dict[str, str]]:
     blockers: Dict[str, str] = {}
 
+    _check_device_liveness(schema, blockers)
     _check_benchmarks(schema, blockers)
     _check_evals(schema, blockers)
     _check_spec_tests(schema, blockers)
@@ -123,6 +124,35 @@ def _check_evals(schema: ReportSchema, blockers: Dict[str, str]) -> None:
             continue
         if not _passes_check(check_value):
             blockers[block_key] = f"Accuracy check failed (value={check_value!r})"
+
+
+def _check_device_liveness(schema: ReportSchema, blockers: Dict[str, str]) -> None:
+    """Flag any device_liveness Block that did not report success=True.
+
+    The orchestrator records a liveness Block before each eval/benchmark
+    task and skips the runner on failure. The missing eval/benchmark
+    Block would otherwise read as silently-absent data; this surfaces
+    the underlying liveness failure as the actual blocker.
+    """
+    for block in schema.sections:
+        if block.kind != "device_liveness":
+            continue
+        if not isinstance(block.data, Mapping):
+            blockers[f"liveness.{_block_key(block)}"] = (
+                "device_liveness block has non-dict data."
+            )
+            continue
+        if block.data.get("success") is True:
+            continue
+        attempts = block.data.get("attempts", "?")
+        ready = block.data.get("ready_count")
+        expected = block.data.get("expected_devices")
+        detail_bits = [f"attempts={attempts}"]
+        if ready is not None and expected is not None:
+            detail_bits.append(f"ready={ready}/{expected}")
+        blockers[f"liveness.{_block_key(block)}"] = (
+            f"Device liveness check failed ({', '.join(detail_bits)})."
+        )
 
 
 def _check_spec_tests(schema: ReportSchema, blockers: Dict[str, str]) -> None:

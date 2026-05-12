@@ -437,7 +437,7 @@ def run_image_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
 
-    runner_in_use = require_health(ctx)
+    runner_in_use = require_health(ctx, task_type="evaluation")
 
     eval_method = IMAGE_EVAL_DISPATCH.get(runner_in_use, _run_image_generation_eval)
     try:

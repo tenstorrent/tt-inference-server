@@ -144,7 +144,7 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, task_type="benchmark")
 
     try:
         metrics = _run_embedding_transcription_benchmark(ctx)

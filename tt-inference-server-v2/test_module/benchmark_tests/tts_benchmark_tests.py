@@ -221,7 +221,7 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, task_type="benchmark")
 
     try:
         num_calls = _tts_num_calls(ctx, is_eval=False)

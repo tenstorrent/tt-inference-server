@@ -187,7 +187,7 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
 
-    runner_in_use = require_health(ctx)
+    runner_in_use = require_health(ctx, task_type="evaluation")
 
     try:
         eval_result = None

@@ -136,7 +136,7 @@ def run_video_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, task_type="evaluation")
 
     try:
         eval_result = _run_video_generation_eval(ctx)
