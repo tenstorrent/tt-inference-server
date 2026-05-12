@@ -299,6 +299,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
+    src/services/json_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/utils/runner_registry.cpp
     src/api/route_registry.cpp
@@ -739,6 +740,7 @@ set(SOURCES
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
     src/services/deepseek_tool_call_parser.cpp
+    src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp

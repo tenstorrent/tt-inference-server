@@ -2,6 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from report_module.acceptance_criteria import (
+    acceptance_criteria_check,
+    format_acceptance_summary_markdown,
+)
 from report_module.generator import (
     GenerateResult,
     ReportGenerator,
@@ -17,5 +21,7 @@ __all__ = [
     "ReportGenerator",
     "ReportSchema",
     "SchemaLike",
+    "acceptance_criteria_check",
+    "format_acceptance_summary_markdown",
     "generate_report",
 ]

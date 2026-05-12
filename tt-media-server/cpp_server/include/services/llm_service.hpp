@@ -112,6 +112,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;
+  std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
 }  // namespace tt::services

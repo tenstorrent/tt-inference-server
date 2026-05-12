@@ -25,7 +25,9 @@ def format_value(value: Any) -> str:
     if isinstance(value, float):
         return _format_float(value)
     if isinstance(value, (list, tuple)):
-        return ", ".join(format_value(v) for v in value)
+        if not value:
+            return "[]"
+        return "[" + ", ".join(format_value(v) for v in value) + "]"
     if isinstance(value, dict):
         if all(not isinstance(v, (dict, list, tuple)) for v in value.values()):
             return ", ".join(f"{k}={format_value(v)}" for k, v in value.items())
