@@ -341,6 +341,9 @@ def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
     plain 1D linear fabric and the framework defaults.
     """
     device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D}
+    if is_blackhole():
+        device_params["reliability_mode"] = ttnn.FabricReliabilityMode.RELAXED_INIT
+
     if not is_large_mesh(mesh_shape):
         return device_params
 
