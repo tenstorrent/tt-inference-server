@@ -632,6 +632,13 @@ add_executable(main_integration_test
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runners/embedding_runner.cpp
+    src/runners/sdxl/sdxl_runner.cpp
+    src/runners/sdxl/sdxl_generate_runner.cpp
+    src/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runners/sdxl/sdxl_edit_runner.cpp
+    src/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
@@ -652,6 +659,7 @@ target_link_libraries(main_integration_test PRIVATE
     cereal::cereal
     prometheus-cpp::core
     pybind11::embed
+    stb_image_write
     GTest::gtest_main)
 target_include_directories(main_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
