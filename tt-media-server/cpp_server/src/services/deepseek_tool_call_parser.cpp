@@ -127,6 +127,8 @@ class DeepSeekToolCallParser : public IToolCallParser {
       const std::string& decodedText) override {
     std::lock_guard<std::mutex> lock(mutex);
 
+
+    TT_LOG_DEBUG("[ToolCallParser] processToken called for task: {}, tokenId: {}, decodedText: {}", taskId, tokenId, decodedText);
     auto it = taskStates.find(taskId);
     if (it == taskStates.end()) {
       TT_LOG_WARN(
