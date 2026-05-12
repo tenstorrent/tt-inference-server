@@ -25,6 +25,8 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 LOCAL_PREFIX="/data/${USER}/.local"
 RUSTUP_DIR="/data/${USER}/.rustup"
 CARGO_DIR="/data/${USER}/.cargo"
+# Rust: rustup channel name; resolves to latest rustc 1.79.x for this host triple.
+RUST_TOOLCHAIN_VERSION="1.79"
 
 # Avoid /tmp-full build failures on shared login nodes: if /tmp has < 2 GB
 # free, redirect compiler temp files to /data.
@@ -193,19 +195,32 @@ install_drogon() {
 }
 
 install_rust() {
-    local cargo_bin="${CARGO_DIR}/bin/cargo"
-    local rustup_cargo="${RUSTUP_DIR}/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo"
+    local rustup_exe="${CARGO_DIR}/bin/rustup"
 
-    if [ -x "${cargo_bin}" ] || [ -x "${rustup_cargo}" ]; then
-        echo "Rust already installed under /data/${USER}"
+    if [ -x "${rustup_exe}" ]; then
+        if RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
+            "${rustup_exe}" run "${RUST_TOOLCHAIN_VERSION}" rustc --version >/dev/null 2>&1; then
+            echo "Rust ${RUST_TOOLCHAIN_VERSION} already available under /data/${USER}"
+            RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
+                "${rustup_exe}" default "${RUST_TOOLCHAIN_VERSION}" 2>/dev/null || true
+            return 0
+        fi
+
+        echo ""
+        echo "Installing Rust toolchain ${RUST_TOOLCHAIN_VERSION} → ${RUSTUP_DIR} ..."
+        RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
+            "${rustup_exe}" toolchain install "${RUST_TOOLCHAIN_VERSION}"
+        RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
+            "${rustup_exe}" default "${RUST_TOOLCHAIN_VERSION}"
+        echo "Rust ${RUST_TOOLCHAIN_VERSION} installed (rustup=${RUSTUP_DIR}, cargo=${CARGO_DIR})"
         return 0
     fi
 
     echo ""
-    echo "Installing Rust → ${RUSTUP_DIR} ..."
+    echo "Installing Rust (rustup, default ${RUST_TOOLCHAIN_VERSION}) → ${RUSTUP_DIR} ..."
     RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- --default-toolchain stable --no-modify-path -y
+        | sh -s -- --default-toolchain "${RUST_TOOLCHAIN_VERSION}" --no-modify-path -y
     echo "Rust installed (rustup=${RUSTUP_DIR}, cargo=${CARGO_DIR})"
 }
 
@@ -248,14 +263,31 @@ export PATH="${CLEAN_PATH}"
 
 RESOLVED_CARGO=""
 find_rust() {
-    # 1. Direct toolchain binary (bypasses all rustup proxies)
-    local tc_bin="${RUSTUP_DIR}/toolchains/stable-x86_64-unknown-linux-gnu/bin"
-    if [ -x "${tc_bin}/cargo" ]; then
-        export PATH="${tc_bin}:${PATH}"
-        RESOLVED_CARGO="${tc_bin}/cargo"
-        return 0
+    local rustup_exe="${CARGO_DIR}/bin/rustup"
+    # 1. Direct toolchain binary via rustup (bypasses broken .cargo/bin proxies; any 1.79.x path)
+    if [ -x "${rustup_exe}" ]; then
+        local cargo_from_run
+        cargo_from_run=$(RUSTUP_HOME="${RUSTUP_DIR}" CARGO_HOME="${CARGO_DIR}" \
+            "${rustup_exe}" run "${RUST_TOOLCHAIN_VERSION}" which cargo 2>/dev/null) || true
+        if [ -n "${cargo_from_run}" ] && [ -x "${cargo_from_run}" ]; then
+            export PATH="$(dirname "${cargo_from_run}"):${PATH}"
+            RESOLVED_CARGO="${cargo_from_run}"
+            return 0
+        fi
     fi
-    # 2. System cargo (if it works)
+    # 2. Toolchain dir glob (rustup uses e.g. 1.79.9-x86_64-unknown-linux-gnu)
+    local arch tc_cargo
+    arch=$(uname -m)
+    shopt -s nullglob 2>/dev/null || true
+    for tc_cargo in "${RUSTUP_DIR}/toolchains/1.79."*"-${arch}-unknown-linux-gnu/bin/cargo"; do
+        if [ -x "${tc_cargo}" ]; then
+            export PATH="$(dirname "${tc_cargo}"):${PATH}"
+            RESOLVED_CARGO="${tc_cargo}"
+            return 0
+        fi
+    done
+    shopt -u nullglob 2>/dev/null || true
+    # 3. System cargo (if it works)
     if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
         RESOLVED_CARGO="$(command -v cargo)"
         return 0
