@@ -18,11 +18,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import shlex
 import sys
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _V2_ROOT = Path(__file__).resolve().parent
@@ -31,6 +33,7 @@ for _p in (_REPO_ROOT, _V2_ROOT):
         sys.path.insert(0, str(_p))
 
 from workflows.model_spec import MODEL_SPECS, get_runtime_model_spec  # noqa: E402
+from workflows.runtime_config import RuntimeConfig  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
 from report_module import (  # noqa: E402
@@ -97,6 +100,20 @@ def parse_args() -> argparse.Namespace:
         help="Where to write the rendered report (markdown + json).",
     )
     parser.add_argument(
+        "--docker-server",
+        action="store_true",
+        help=(
+            "Record server_mode=docker in the report metadata. Fallback "
+            "when --runtime-model-spec-json is not supplied."
+        ),
+    )
+    parser.add_argument(
+        "--runtime-model-spec-json",
+        type=str,
+        default=None,
+        help="Path to the runtime model spec JSON written by the server launcher.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -145,7 +162,50 @@ def build_context(args: argparse.Namespace) -> MediaContext:
         device=device,
         output_path=str(output_path),
         service_port=args.service_port,
+        spec_tests_num_prompts_cap=args.num_prompts,
     )
+
+
+def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:
+    """Best-effort load; returns ``None`` on missing/malformed input."""
+    if not path:
+        return None
+    try:
+        return RuntimeConfig.from_json(path)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+        logger.warning(
+            "Could not load runtime_model_spec_json=%r (%s); "
+            "falling back to CLI flags for server_mode.",
+            path,
+            e,
+        )
+        return None
+
+
+def _resolve_server_mode(
+    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
+) -> str:
+    """Spec JSON wins over ``--docker-server`` when present."""
+    if runtime_config is not None:
+        return "docker" if runtime_config.docker_server else "API"
+    return "docker" if args.docker_server else "API"
+
+
+def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
+    """Paste-runnable reproduction of the orchestrator invocation."""
+    parts = list(sys.argv if argv is None else argv)
+    return "python " + shlex.join(parts)
+
+
+def _inject_orchestrator_metadata(
+    meta: dict, ctx: MediaContext, args: argparse.Namespace
+) -> None:
+    """Populate metadata fields the per-task runners can't see."""
+    del ctx  # reserved for future per-run fields derivable from context
+    runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    meta["server_mode"] = _resolve_server_mode(args, runtime_config)
+    meta["run_command"] = _capture_run_command()
+    meta["runtime_model_spec_json"] = args.runtime_model_spec_json
 
 
 def main() -> int:
@@ -163,7 +223,6 @@ def main() -> int:
 
         _ibt.SDXL_BENCHMARK_NUM_PROMPTS = args.num_prompts
         _ibt.SDXL_SD35_BENCHMARK_NUM_PROMPTS = args.num_prompts
-        ctx.spec_tests_num_prompts_cap = args.num_prompts
         logger.info(
             "Overriding image benchmark + spec_tests prompt count to %d",
             args.num_prompts,
@@ -203,6 +262,7 @@ def main() -> int:
         return 1
 
     schema = accumulator.build_schema()
+    _inject_orchestrator_metadata(schema.metadata, ctx, args)
     accepted, blockers = acceptance_criteria_check(schema)
     schema.metadata["acceptance_summary_markdown"] = format_acceptance_summary_markdown(
         accepted, blockers
