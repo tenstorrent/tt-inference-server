@@ -64,14 +64,7 @@ class ImageGenerationTestStatus(BaseTestStatus):
 
 
 class AudioTestStatus(BaseTestStatus):
-    """Test status for audio transcription models.
-
-    ``ttft`` is only meaningful when streaming is enabled (it is the
-    time to the first non-speaker-marker content chunk). For
-    non-streaming requests the client populates ``ttft`` with the same
-    value as ``elapsed`` to keep the JSON shape stable, but consumers
-    should treat that as request latency, not true TTFT.
-    """
+    """Test status for audio transcription models."""
 
     def __init__(
         self,
@@ -125,30 +118,20 @@ class EmbeddingTestStatus(BaseTestStatus):
 
 
 class TtsTestStatus(BaseTestStatus):
-    """Test status for text-to-speech models.
-
-    ``ttft`` is the time (in SECONDS) until the JSON response starts
-    arriving. Audio is fully synthesized server-side by then so this is
-    closer to request latency than to a true first-audio-sample TTFT,
-    but the field name and unit (seconds) intentionally match every
-    other media client - issue #3243 called out that the prior
-    ``ttft_ms`` field was the only place in the codebase that used
-    milliseconds for TTFT, which made TTS reports impossible to compare
-    numerically against the other clients.
-    """
+    """Test status for text-to-speech models."""
 
     def __init__(
         self,
         status: bool,
         elapsed: float,
-        ttft: Optional[float] = None,
+        latency_s: Optional[float] = None,
         rtr: Optional[float] = None,
         text: Optional[str] = None,
         audio_duration: Optional[float] = None,
         reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
-        self.ttft = ttft
+        self.latency_s = latency_s
         self.rtr = rtr
         self.text = text
         self.audio_duration = audio_duration
@@ -158,7 +141,7 @@ class TtsTestStatus(BaseTestStatus):
         return {
             "status": self.status,
             "elapsed": self.elapsed,
-            "ttft": self.ttft,
+            "latency_s": self.latency_s,
             "rtr": self.rtr,
             "text": self.text,
             "audio_duration": self.audio_duration,
