@@ -43,6 +43,13 @@ from workflow_module import get_default_accumulator  # noqa: E402
 
 logger = logging.getLogger("tt_v2_run")
 
+_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
+
 
 WORKFLOW_TO_TASKS: dict[str, list[MediaTaskType]] = {
     "benchmarks": [MediaTaskType.BENCHMARK],
@@ -144,7 +151,7 @@ def build_context(args: argparse.Namespace) -> MediaContext:
 def main() -> int:
     args = parse_args()
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
+        level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
