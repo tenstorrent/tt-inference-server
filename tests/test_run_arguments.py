@@ -189,6 +189,30 @@ class TestArgumentParsing:
                     or "error" in stderr_output.lower()
                 )
 
+    @pytest.mark.parametrize(
+        "invalid_value",
+        [
+            "not-a-real-tool",
+            "VLLM",  # case-sensitive: uppercase variant should be rejected
+            "guidellm ",  # trailing whitespace should be rejected
+            "",  # empty string
+        ],
+    )
+    def test_invalid_tools_choice(self, base_args, invalid_value):
+        """--tools must be restricted to the documented choice set."""
+        full_args = base_args + ["--tools", invalid_value]
+        with patch("sys.argv", ["run.py"] + full_args):
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_arguments()
+
+                assert exc_info.value.code == 2
+
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls).lower()
+                assert "--tools" in stderr_output
+                assert "invalid choice" in stderr_output
+
 
 class TestModelSpecCliArgsCompatibility:
     def test_populate_model_spec_cli_args_uses_runtime_config_values(self):
