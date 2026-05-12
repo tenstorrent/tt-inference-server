@@ -2669,7 +2669,10 @@ vlm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         version="1.0.0",
-        tt_metal_commit="735b65d",
+        # 454c9bf7002 = parent of b06ba37bfb5 ("L1 decode path") which introduced
+        # the WIDTH_SHARDED L1 layernorm-sharded multicast hang on Galaxy hardware.
+        # Pinning here so docker server picks up a known-good state.
+        tt_metal_commit="454c9bf7002",
         vllm_commit="7a07a97",
         device_model_specs=[
             DeviceModelSpec(
@@ -2682,6 +2685,63 @@ vlm_templates = [
                     "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
                     # Use Molmo2VideoBackend which implements the same uniform_last_frame
                     # sampling as the HF Molmo2VideoProcessor (matches demo exactly).
+                    "media_io_kwargs": json.dumps({"video": {
+                        "video_backend": "molmo2",
+                        "frame_sample_mode": "uniform_last_frame",
+                        "max_fps": 2,
+                        "num_frames": 384,
+                    }}),
+                },
+            ),
+            # Galaxy_T3K (DP=1): open an 8-chip slice of the Galaxy as a logical T3K
+            # mesh using the T3K mesh-graph descriptor. Avoids the submesh path
+            # entirely — the generator sees a real (1,8) mesh from the start, same
+            # code path as the T3K spec above. Use when the submesh decode regression
+            # in the latest tt-metal blocks the Galaxy DP=4 entry below.
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=1,
+                max_context=36864,
+                default_impl=True,
+                env_vars={
+                    # Absolute path — the relative path used by other specs only
+                    # resolves correctly from the docker working dir.
+                    "TT_MESH_GRAPH_DESC_PATH": "/home/cust-team/ssinghal/tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                    # T3K mesh descriptor is a MESH topology; the default
+                    # FABRIC_1D_RING (cluster default on Galaxy chassis) wants
+                    # a torus and won't initialize. Force FABRIC_1D via the env
+                    # var the plugin reads — override_tt_config["fabric_config"]
+                    # is unusable because the spec serializes it to a CLI flag
+                    # vLLM doesn't recognise, and the v1 worker clobbers
+                    # model_config.override_tt_config={} at init anyway.
+                    "TT_FABRIC_CONFIG_OVERRIDE": "FABRIC_1D",
+                },
+                vllm_args={
+                    "trust_remote_code": True,
+                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
+                    "media_io_kwargs": json.dumps({"video": {
+                        "video_backend": "molmo2",
+                        "frame_sample_mode": "uniform_last_frame",
+                        "max_fps": 2,
+                        "num_frames": 384,
+                    }}),
+                },
+            ),
+            # Galaxy DP=4: 4 T3K-equivalent (1,8) submeshes; 1 user/rank, 4 concurrent.
+            # max_concurrency=4 so the spec's per-rank division (max_concurrency /
+            # data_parallel_size) yields max_num_seqs=1 per rank. We do NOT set
+            # vllm_args["data_parallel_size"] because that spawns 4 EngineCore
+            # processes and each opens the PCIe driver, exhausting Galaxy TLB
+            # windows. Our generator detects the (8,4) Galaxy mesh and splits
+            # into 4 submeshes internally inside a single EngineCore.
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=4,
+                max_context=36864,
+                default_impl=True,
+                vllm_args={
+                    "trust_remote_code": True,
+                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
                     "media_io_kwargs": json.dumps({"video": {
                         "video_backend": "molmo2",
                         "frame_sample_mode": "uniform_last_frame",

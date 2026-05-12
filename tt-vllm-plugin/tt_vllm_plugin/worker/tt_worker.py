@@ -172,6 +172,14 @@ def get_dispatch_core_config(override_tt_config):
 
 
 def get_fabric_config(override_tt_config, num_devices):
+    fabric_config_map = {
+        "DISABLED": ttnn.FabricConfig.DISABLED,
+        "FABRIC_1D": ttnn.FabricConfig.FABRIC_1D,
+        "FABRIC_1D_RING": ttnn.FabricConfig.FABRIC_1D_RING,
+        "FABRIC_2D": ttnn.FabricConfig.FABRIC_2D,
+        "CUSTOM": ttnn.FabricConfig.CUSTOM,
+    }
+
     if num_devices == 1:
         # No fabric config for single device
         fabric_config = None
@@ -182,16 +190,18 @@ def get_fabric_config(override_tt_config, num_devices):
             ttnn.FabricConfig.FABRIC_1D_RING if is_6u else ttnn.FabricConfig.FABRIC_1D
         )
 
+    # Env-var override (bypasses model_config.override_tt_config, which the v1
+    # worker wipes to {} at init). Use when slicing 8 chips of a Galaxy into a
+    # logical T3K (MESH_DEVICE=T3K) — needs FABRIC_1D (MESH), not the
+    # cluster-default FABRIC_1D_RING (TORUS), so the t3k_mesh_graph_descriptor
+    # can be honoured.
+    env_fabric = os.environ.get("TT_FABRIC_CONFIG_OVERRIDE")
+    if env_fabric and env_fabric in fabric_config_map:
+        return fabric_config_map[env_fabric]
+
     # Override fabric_config if specified in override_tt_config
     if override_tt_config is not None and "fabric_config" in override_tt_config:
         fabric_config_str = override_tt_config["fabric_config"]
-        fabric_config_map = {
-            "DISABLED": ttnn.FabricConfig.DISABLED,
-            "FABRIC_1D": ttnn.FabricConfig.FABRIC_1D,
-            "FABRIC_1D_RING": ttnn.FabricConfig.FABRIC_1D_RING,
-            "FABRIC_2D": ttnn.FabricConfig.FABRIC_2D,
-            "CUSTOM": ttnn.FabricConfig.CUSTOM,
-        }
         fabric_config = fabric_config_map.get(fabric_config_str)
         assert fabric_config is not None, (
             f"Invalid fabric_config: {fabric_config_str}. "
