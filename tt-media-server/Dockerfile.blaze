@@ -35,8 +35,13 @@ ENV TT_MM_THROTTLE_PERF=5
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-# tt-metal build vars
-ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
+ARG APP_DIR="${HOME_DIR}/app"
+ENV APP_DIR=${APP_DIR}
+# tt-metal build vars — tt-metal is a submodule of tt-llm-engine (cloned
+# further below). Its python_env is created by `./create_venv.sh` in that
+# same RUN step, so paths referenced here only have to exist before they
+# are actually used (cpp_server build, runtime).
+ENV TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
@@ -109,8 +114,6 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 WORKDIR ${HOME_DIR}
 
 # install inference server requirements
-ARG APP_DIR="${HOME_DIR}/app"
-ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 # ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${APP_DIR}/server"
@@ -138,7 +141,7 @@ RUN --mount=type=secret,id=github_token \
     && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && (cd tt-metal && ./build_metal.sh --disable-profiler) \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
     && ./setup.sh --ds-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
@@ -196,7 +199,7 @@ ENV ENVIRONMENT=development \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
     PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
+    PYTHON_ENV_DIR=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/python_env \
     LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/build/lib \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
