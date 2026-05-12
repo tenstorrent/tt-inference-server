@@ -104,18 +104,47 @@ def _heading(kind: str, model: str, device: str, title_override: str = "") -> st
 
 
 def _ordered_display_columns(records: Sequence[Mapping[str, Any]]) -> List[str]:
-    """First-seen column order, with hidden columns excluded."""
     seen: Dict[str, None] = {}
     for record in records:
         for key in record.keys():
             if key in HIDDEN_COLUMNS or key in seen:
                 continue
             seen[key] = None
-    return list(seen.keys())
+    columns = list(seen.keys())
+    return [col for col in columns if not _column_is_empty(col, records)]
+
+
+def _column_is_empty(column: str, records: Sequence[Mapping[str, Any]]) -> bool:
+    for record in records:
+        if column not in record:
+            continue
+        value = record[column]
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, dict, set)) and not value:
+            continue
+        if isinstance(value, str) and not value:
+            continue
+        return False
+    return True
 
 
 PIVOT_FIELD_HEADER = "**field**"
 PIVOT_VALUE_HEADER = "**value**"
+
+_CHECK_COLUMN_SUFFIX = "_check"
+_CHECK_INT_TO_LABEL: Dict[int, str] = {1: "NA", 2: "PASS", 3: "FAIL"}
+
+
+def _format_cell(column: str, value: Any) -> str:
+    if (
+        column.endswith(_CHECK_COLUMN_SUFFIX)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value in _CHECK_INT_TO_LABEL
+    ):
+        return _CHECK_INT_TO_LABEL[value]
+    return format_value(value)
 
 
 def _pivot_single_record(
@@ -136,21 +165,13 @@ def _pivot_single_record(
 
 
 def _build_table(records: Sequence[Mapping[str, Any]]) -> str:
-    """Render a list of records to a markdown table (no heading).
-
-    Single-record inputs pivot into a two-column field/value table;
-    multi-record inputs render as one row per record.
-    """
     columns = _ordered_display_columns(records)
     if not columns:
         return ""
-    if len(records) == 1:
-        display_rows = _pivot_single_record(records[0], columns)
-    else:
-        display_rows = [
-            {col: format_value(record.get(col)) for col in columns}
-            for record in records
-        ]
+    display_rows = [
+        {col: _format_cell(col, record.get(col)) for col in columns}
+        for record in records
+    ]
     return build_markdown_table(display_rows)
 
 
