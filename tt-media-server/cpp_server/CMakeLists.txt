@@ -627,7 +627,7 @@ add_executable(main_integration_test
     src/worker/single_process_worker.cpp
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
