@@ -418,8 +418,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
+                "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+                * 1000,
                 "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                     "inference_steps_per_second", 0
                 ),
@@ -443,8 +443,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
+                "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+                * 1000,
                 "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                     "inference_steps_per_second", 0
                 ),
@@ -455,7 +455,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "text_to_speech":
         logger.info(f"Processing TTS benchmark file: {filename}")
-        # For TTS benchmarks, extract data from JSON content
+        # Producer emits latency in seconds; convert to ms for display.
         benchmarks_data = data.get("benchmarks", {})
         metrics = {
             "timestamp": params["timestamp"],
@@ -465,16 +465,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "text_to_speech",
             "device": params["device"],
             "num_requests": benchmarks_data.get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("ttft", 0)
-            * 1000,  # ttft is in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("latency", 0) * 1000,
             "filename": filename,
             "task_type": "text_to_speech",
             "rtr": benchmarks_data.get("rtr", 0),
-            "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
-            if benchmarks_data.get("ttft_p90")
+            "p90_latency_ms": benchmarks_data.get("latency_p90", 0) * 1000
+            if benchmarks_data.get("latency_p90")
             else None,
-            "p95_ttft": benchmarks_data.get("ttft_p95", 0) * 1000
-            if benchmarks_data.get("ttft_p95")
+            "p95_latency_ms": benchmarks_data.get("latency_p95", 0) * 1000
+            if benchmarks_data.get("latency_p95")
             else None,
             "wer": benchmarks_data.get("wer", None),
         }
@@ -482,7 +481,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "audio":
         logger.info(f"Processing AUDIO benchmark file: {filename}")
-        # For audio benchmarks, extract data from JSON content
+        # Audio keeps ``ttft`` because it is real first-token timing
+        # for streaming-on (0 for streaming-off).
         benchmarks_data = data.get("benchmarks: ", data)
         metrics = {
             "timestamp": params["timestamp"],
@@ -492,8 +492,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "audio",
             "device": params["device"],
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+            * 1000,
+            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
             "filename": filename,
             "task_type": "audio",
             "accuracy_check": benchmarks_data.get("benchmarks").get(
@@ -553,8 +554,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "filename": filename,
             "task_type": "video",
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+            * 1000,
             "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                 "inference_steps_per_second", 0
             ),
@@ -772,6 +773,7 @@ def create_audio_display_dict(
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
@@ -815,10 +817,10 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("rtr", "RTR"),
-        ("p90_ttft", "P90 TTFT (ms)"),
-        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
         # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
         # Similar to how image and audio pipelines work
     ]
@@ -867,7 +869,7 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("inference_steps_per_second", "Steps/Sec"),
     ]
 
@@ -883,12 +885,12 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
 
 
 def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for cnn benchmarks
+    """Create display dictionary for CNN benchmarks."""
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("task_type", "Task Type"),
     ]
 
@@ -901,13 +903,13 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
 
 def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for video benchmarks
+    """Create display dictionary for video benchmarks."""
     logger.info(f"Video result: {json.dumps(result, indent=2)}")
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
     ]
 
     display_dict = {}
