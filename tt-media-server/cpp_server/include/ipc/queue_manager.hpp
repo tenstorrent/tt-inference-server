@@ -7,14 +7,13 @@
 #include <string>
 #include <vector>
 
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "ipc/boost/boost_cancel_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
 
 namespace tt::ipc {
-
-constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
 
 /**
  * Manages task queue, result queues, and cancel queues for LLM workers.
@@ -35,12 +34,12 @@ class QueueManager {
       std::string resultName =
           std::string(tt::config::ttResultQueueName()) + std::to_string(i);
       resultQueues.emplace_back(std::make_shared<tt::ipc::boost::ResultQueue>(
-          resultName, tt::ipc::boost::RESULT_QUEUE_CAPACITY));
+          resultName, tt::config::defaults::RESULT_QUEUE_CAPACITY));
 
       std::string cancelName =
           tt::config::ttCancelQueueName() + std::to_string(i);
       cancelQueues.emplace_back(std::make_shared<tt::ipc::boost::CancelQueue>(
-          cancelName, CANCEL_QUEUE_CAPACITY));
+          cancelName, tt::config::defaults::CANCEL_QUEUE_CAPACITY));
     }
   }
 

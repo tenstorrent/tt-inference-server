@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
@@ -17,12 +18,8 @@ namespace tt::ipc::boost {
  */
 class TaskQueue : public tt::ipc::ITaskQueue {
  public:
-  static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
-  static constexpr size_t MAX_MSG_SIZE =
-      tt::config::defaults::MAX_CONTEXT_LENGTH * sizeof(int64_t) +
-      MAX_SEQUENCE_NON_TOKEN_BYTES;
-
-  using Queue = MemoryQueue<tt::domain::llm::Sequence, MAX_MSG_SIZE>;
+  using Queue = MemoryQueue<tt::domain::llm::Sequence,
+                            tt::config::defaults::TASK_QUEUE_MAX_MSG_SIZE>;
 
   /** Create a new queue (main process). */
   TaskQueue(const std::string& name, int capacity)

@@ -6,12 +6,11 @@
 #include <memory>
 #include <string>
 
+#include "config/defaults.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 
 namespace tt::ipc::boost {
-
-constexpr int RESULT_QUEUE_CAPACITY = 65536;
 
 /**
  * IResultQueue implementation backed by the generic boost MemoryQueue.

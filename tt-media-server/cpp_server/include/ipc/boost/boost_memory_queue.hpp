@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "config/defaults.hpp"
 #include "domain/manage_memory.hpp"
 #include "utils/logger.hpp"
 
@@ -196,13 +197,11 @@ class MemoryQueue {
   std::unique_ptr<bi_ipc::message_queue> queue_;
 };
 
-constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
-constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
-constexpr int MEMORY_QUEUE_CAPACITY = 128;
-
 using MemoryRequestQueue =
-    MemoryQueue<tt::domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;
+    MemoryQueue<tt::domain::ManageMemoryTask,
+                tt::config::defaults::MEMORY_REQUEST_MAX_MSG_SIZE>;
 using MemoryResultQueue =
-    MemoryQueue<tt::domain::ManageMemoryResult, MEMORY_RESULT_MAX_MSG_SIZE>;
+    MemoryQueue<tt::domain::ManageMemoryResult,
+                tt::config::defaults::MEMORY_RESULT_MAX_MSG_SIZE>;
 
 }  // namespace tt::ipc::boost
