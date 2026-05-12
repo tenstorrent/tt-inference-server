@@ -69,15 +69,7 @@ class TestAudioTestStatus(unittest.TestCase):
 
 
 class TestCnnGenerationTestStatus(unittest.TestCase):
-    """Tests for CnnGenerationTestStatus class.
-
-    Issue #3243: CNN responses are a single non-streaming POST, so the
-    only timing the client can record is wall-clock ``elapsed``.
-    Previously declared step-based fields (``num_inference_steps``,
-    ``inference_steps_per_second``, ``ttft``, ``tpups``,
-    ``base64image``, ``prompt``) were never populated and have been
-    removed.
-    """
+    """Tests for CnnGenerationTestStatus class."""
 
     def test_to_dict(self):
         status = CnnGenerationTestStatus(status=True, elapsed=0.5)
@@ -88,12 +80,7 @@ class TestCnnGenerationTestStatus(unittest.TestCase):
 
 
 class TestEmbeddingTestStatus(unittest.TestCase):
-    """Tests for EmbeddingTestStatus class.
-
-    The previous ``ttft`` field was never populated (embedding
-    benchmarks are driven by ``vllm bench serve`` and parsed from
-    stdout, not the per-call status objects).
-    """
+    """Tests for EmbeddingTestStatus class."""
 
     def test_to_dict(self):
         status = EmbeddingTestStatus(status=True, elapsed=0.42)
@@ -107,12 +94,10 @@ class TestTtsTestStatus(unittest.TestCase):
     """Tests for TtsTestStatus class."""
 
     def test_to_dict(self):
-        # `ttft` is now stored in SECONDS (#3243) instead of `ttft_ms`,
-        # to match every other media client.
         status = TtsTestStatus(
             status=True,
             elapsed=3.0,
-            ttft=0.120,
+            latency=0.120,
             rtr=1.5,
             text="hello",
             audio_duration=4.5,
@@ -126,7 +111,7 @@ class TestTtsTestStatus(unittest.TestCase):
             {
                 "status": True,
                 "elapsed": 3.0,
-                "ttft": 0.120,
+                "latency": 0.120,
                 "rtr": 1.5,
                 "text": "hello",
                 "audio_duration": 4.5,

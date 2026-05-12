@@ -127,8 +127,8 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
         assert result == 10  # Respects configured value
 
 
-class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method."""
+class TestTtsClientStrategyCalculateLatency(unittest.TestCase):
+    """Tests for _calculate_latency method."""
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -138,40 +138,40 @@ class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    def test_calculate_ttft_with_valid_values(self):
+    def test_calculate_latency_with_valid_values(self):
         strategy = self._create_strategy()
-        # TTFT is now stored in SECONDS on TtsTestStatus (#3243), to
-        # match every other media client.
+        # ``latency`` is the new field name (was ``ttft``) on
+        # TtsTestStatus, in SECONDS.
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.2),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.3),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.2),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == pytest.approx(0.2)  # Average: (0.1 + 0.2 + 0.3) / 3
 
-    def test_calculate_ttft_empty_list(self):
+    def test_calculate_latency_empty_list(self):
         strategy = self._create_strategy()
-        result = strategy._calculate_ttft_value([])
+        result = strategy._calculate_latency([])
         assert result == 0
 
-    def test_calculate_ttft_with_none_values(self):
+    def test_calculate_latency_with_none_values(self):
         strategy = self._create_strategy()
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=None),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.3),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
+            TtsTestStatus(status=True, elapsed=1.0, latency=None),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == pytest.approx(0.2)  # Average of valid values
 
-    def test_calculate_ttft_all_none_values(self):
+    def test_calculate_latency_all_none_values(self):
         strategy = self._create_strategy()
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=None),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=None),
+            TtsTestStatus(status=True, elapsed=1.0, latency=None),
+            TtsTestStatus(status=True, elapsed=1.0, latency=None),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == 0
 
 
@@ -229,18 +229,17 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
 
     def test_calculate_tail_latency_with_valid_values(self):
         strategy = self._create_strategy()
-        # TTFT in SECONDS (#3243).
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.2),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.3),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.4),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.5),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.6),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.7),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.8),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.9),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=1.0),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.2),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.4),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.5),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.6),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.7),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.8),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.9),
+            TtsTestStatus(status=True, elapsed=1.0, latency=1.0),
         ]
         p90, p95 = strategy._calculate_tail_latency(status_list)
         # P90 = 9th value (index 8) = 0.9 s; P95 = 10th value (index 9) = 1.0 s.
@@ -256,19 +255,19 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
     def test_calculate_tail_latency_with_none_values(self):
         strategy = self._create_strategy()
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=None),
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.3),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
+            TtsTestStatus(status=True, elapsed=1.0, latency=None),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
         ]
         p90, p95 = strategy._calculate_tail_latency(status_list)
         # Only 2 valid values, P90 and P95 should be the same (0.3 s)
         assert p90 == 0.3
         assert p95 == 0.3
 
-    def test_calculate_tail_latency_single_value(self):
+    def test_calculate_tail_latencyingle_value(self):
         strategy = self._create_strategy()
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.1),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
         ]
         p90, p95 = strategy._calculate_tail_latency(status_list)
         assert p90 == 0.1
@@ -276,7 +275,7 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
 
 
 class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
-    """Tests for _calculate_performance_check method (TTFT, RTR)."""
+    """Tests for _calculate_performance_check method (latency, RTR)."""
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -293,7 +292,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
     # NOTE: PerformanceTargets.ttft_ms is still in milliseconds (the
     # schema is shared across all clients and the migration to a
     # `_s`-suffixed schema is out of scope for this PR). The TTS client
-    # now passes ttft_value in SECONDS though, so the threshold inside
+    # now passes latency_value in SECONDS, so the threshold inside
     # `_calculate_performance_check` is computed as
     # ``targets.ttft_ms / 1000 * (1 + tolerance)``.
 
@@ -303,17 +302,21 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
 
         # 0.090 s < 0.100 s * 1.05 → PASS
-        result = strategy._calculate_performance_check(ttft_value=0.090, rtr_value=2.5)
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, rtr_value=2.5
+        )
 
         assert result == 2  # PASS
 
     @patch("utils.media_clients.tts_client.get_performance_targets")
-    def test_performance_check_ttft_fail(self, mock_targets):
+    def test_performance_check_latency_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=0.05)
 
         # 0.200 s > 0.100 s * 1.05 → FAIL
-        result = strategy._calculate_performance_check(ttft_value=0.200, rtr_value=None)
+        result = strategy._calculate_performance_check(
+            latency_value=0.200, rtr_value=None
+        )
 
         assert result == 3  # FAIL
 
@@ -322,7 +325,9 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=5.0, tolerance=0.05)
 
-        result = strategy._calculate_performance_check(ttft_value=0.090, rtr_value=1.0)
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, rtr_value=1.0
+        )
 
         assert result == 3  # FAIL
 
@@ -331,7 +336,9 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=None, rtr=None, tolerance=None)
 
-        result = strategy._calculate_performance_check(ttft_value=0.100, rtr_value=2.0)
+        result = strategy._calculate_performance_check(
+            latency_value=0.100, rtr_value=2.0
+        )
 
         assert result == ReportCheckTypes.NA
 
@@ -340,7 +347,9 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=None)
 
-        result = strategy._calculate_performance_check(ttft_value=0.090, rtr_value=None)
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, rtr_value=None
+        )
 
         assert result == 2  # PASS with default 5% tolerance
 
@@ -394,7 +403,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
 
         assert result[0] is True  # success
         assert result[1] > 0  # elapsed time
-        assert result[2] is not None  # ttft (seconds)
+        assert result[2] is not None  # latency (seconds)
         assert result[3] is not None  # rtr
         assert result[4] == 0.32  # audio_duration
 
@@ -442,7 +451,7 @@ class TestTtsClientStrategyRunTtsBenchmark(unittest.TestCase):
     def test_run_tts_benchmark(self):
         strategy = self._create_strategy()
 
-        # Return tuple: (success, elapsed, ttft (s), rtr, audio_duration)
+        # Return tuple: (success, elapsed, latency, rtr, audio_duration)
         with patch("asyncio.run", return_value=(True, 1.5, 0.100, 2.0, 0.32)):
             result = strategy._run_tts_benchmark(3)
 
@@ -481,14 +490,11 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         self, mock_mkdir, mock_file, mock_targets, mock_num_calls
     ):
         strategy = self._create_strategy()
-        # PerformanceTargets.ttft_ms is still in milliseconds (shared
-        # schema across all clients); the TTS client converts it
-        # internally so it stays comparable to the in-seconds metrics.
+        # PerformanceTargets.ttft_ms is in ms; latency is in seconds.
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
-        # Status objects now carry `ttft` in SECONDS (#3243).
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.100, rtr=2.0),
-            TtsTestStatus(status=True, elapsed=1.5, ttft=0.200, rtr=3.0),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.100, rtr=2.0),
+            TtsTestStatus(status=True, elapsed=1.5, latency=0.200, rtr=3.0),
         ]
 
         with patch.object(
@@ -515,26 +521,17 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_data = report_data[0]
 
-        # Verify required fields
         assert "score" in eval_data
         assert "rtr" in eval_data
-        # Field names now match the benchmark JSON (`ttft_p90` /
-        # `ttft_p95` in seconds) - issue #3243.
-        assert "ttft_p90" in eval_data
-        assert "ttft_p95" in eval_data
-        assert "performance_check" in eval_data  # TTFT/RTR check
+        assert "latency_p90" in eval_data
+        assert "latency_p95" in eval_data
+        assert "performance_check" in eval_data
         assert "accuracy_check" in eval_data
 
-        # Verify calculated averages.
-        # `score` is now in SECONDS to match the unit of the
-        # ``ttft`` field in the benchmark JSON: the prior behaviour wrote
-        # 150 ms as the score while the benchmark JSON wrote 0.150 s, so
-        # the two reports were not numerically comparable.
-        assert eval_data["score"] == pytest.approx(0.15)  # (0.1 + 0.2) / 2 s
-        assert eval_data["rtr"] == pytest.approx(2.5)  # (2.0 + 3.0) / 2
-        # P90/P95 are also expressed in seconds for the same reason.
-        assert eval_data["ttft_p90"] == pytest.approx(0.2)  # max → 0.2 s
-        assert eval_data["ttft_p95"] == pytest.approx(0.2)
+        assert eval_data["score"] == pytest.approx(0.15)
+        assert eval_data["rtr"] == pytest.approx(2.5)
+        assert eval_data["latency_p90"] == pytest.approx(0.2)
+        assert eval_data["latency_p95"] == pytest.approx(0.2)
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -575,10 +572,9 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Status `ttft` is in SECONDS (#3243).
         status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, ttft=0.100, rtr=2.0),
-            TtsTestStatus(status=True, elapsed=1.5, ttft=0.200, rtr=3.0),
+            TtsTestStatus(status=True, elapsed=1.0, latency=0.100, rtr=2.0),
+            TtsTestStatus(status=True, elapsed=1.5, latency=0.200, rtr=3.0),
         ]
 
         with patch.object(
@@ -608,20 +604,18 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         assert "timestamp" in report_data
         assert "task_type" in report_data
 
-        # Verify benchmarks structure (all values in SECONDS).
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 2
-        assert benchmarks["ttft"] == pytest.approx(0.15)  # (0.1 + 0.2) / 2 s
-        assert benchmarks["rtr"] == pytest.approx(2.5)  # (2.0 + 3.0) / 2
-        assert "ttft_p90" in benchmarks
-        assert "ttft_p95" in benchmarks
+        assert benchmarks["latency"] == pytest.approx(0.15)
+        assert benchmarks["rtr"] == pytest.approx(2.5)
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
         assert report_data["task_type"] == "text_to_speech"
-        # accuracy_check / performance_check are intentionally NOT
-        # emitted on the benchmark JSON: workflows/run_reports.py
-        # recomputes them downstream from the raw metrics.
+        # accuracy_check / performance_check live on the eval report,
+        # not the benchmark JSON.
         assert "accuracy_check" not in report_data
         assert "performance_check" not in report_data
 
@@ -662,8 +656,7 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
     def test_generate_report(self, mock_mkdir, mock_file):
         strategy = self._create_strategy()
 
-        # Status `ttft` is in SECONDS (#3243).
-        status_list = [TtsTestStatus(status=True, elapsed=1.0, ttft=0.100, rtr=2.0)]
+        status_list = [TtsTestStatus(status=True, elapsed=1.0, latency=0.100, rtr=2.0)]
 
         strategy._generate_report(status_list)
 
@@ -685,10 +678,10 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
 
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 1
-        assert benchmarks["ttft"] == 0.1  # 100ms / 1000
+        assert benchmarks["latency"] == 0.1  # in seconds
         assert benchmarks["rtr"] == 2.0
-        assert "ttft_p90" in benchmarks
-        assert "ttft_p95" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"

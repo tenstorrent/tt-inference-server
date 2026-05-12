@@ -202,10 +202,9 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
         for key, value in expected_metadata.items():
             assert report_data[key] == value
 
-        # Compare benchmarks structure
         assert report_data["benchmarks"]["num_requests"] == 2
         assert report_data["benchmarks"]["num_inference_steps"] == 20
-        assert report_data["benchmarks"]["ttft"] == pytest.approx(70.0)
+        assert report_data["benchmarks"]["latency"] == pytest.approx(70.0)
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
             0.29
         )
@@ -621,7 +620,7 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
         assert report_data["model"] == "test_model"
         assert report_data["task_type"] == "video"
         assert report_data["benchmarks"]["num_requests"] == 2
-        assert report_data["benchmarks"]["ttft"] == pytest.approx(70.0)
+        assert report_data["benchmarks"]["latency"] == pytest.approx(70.0)
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
             0.29
         )
@@ -640,22 +639,22 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
 
         expected_benchmarks = {
             "num_requests": 0,
-            "ttft": 0,
+            "latency": 0,
             "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
 
 
-class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method."""
+class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
+    """Tests for _calculate_latency method."""
 
     def _create_strategy(self):
         model_spec = MagicMock()
         device = MagicMock()
         return VideoClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    def test_calculate_ttft_with_status_list(self):
+    def test_calculate_latency_with_status_list(self):
         strategy = self._create_strategy()
         status_list = [
             VideoGenerationTestStatus(
@@ -686,15 +685,15 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
                 prompt="Test 3",
             ),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == 70.0  # (60 + 80 + 70) / 3
 
-    def test_calculate_ttft_empty_list(self):
+    def test_calculate_latency_empty_list(self):
         strategy = self._create_strategy()
-        result = strategy._calculate_ttft_value([])
+        result = strategy._calculate_latency([])
         assert result == 0
 
-    def test_calculate_ttft_single_item(self):
+    def test_calculate_latencyingle_item(self):
         strategy = self._create_strategy()
         status_list = [
             VideoGenerationTestStatus(
@@ -707,7 +706,7 @@ class TestVideoClientStrategyCalculateTtft(unittest.TestCase):
                 prompt="Test",
             )
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == 90.0
 
 
