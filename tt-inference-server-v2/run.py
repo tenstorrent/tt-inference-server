@@ -162,6 +162,7 @@ def build_context(args: argparse.Namespace) -> MediaContext:
         device=device,
         output_path=str(output_path),
         service_port=args.service_port,
+        spec_tests_num_prompts_cap=args.num_prompts,
     )
 
 
@@ -222,7 +223,6 @@ def main() -> int:
 
         _ibt.SDXL_BENCHMARK_NUM_PROMPTS = args.num_prompts
         _ibt.SDXL_SD35_BENCHMARK_NUM_PROMPTS = args.num_prompts
-        ctx.spec_tests_num_prompts_cap = args.num_prompts
         logger.info(
             "Overriding image benchmark + spec_tests prompt count to %d",
             args.num_prompts,
