@@ -72,14 +72,13 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
         else:
             logger.info("No eval results from eval spec test to add to benchmark data")
-            # Calculate TTFT
-            ttft_value = self._calculate_ttft_value(status_list)
-            logger.info(f"Extracted TTFT value: {ttft_value}")
+            latency_value = self._calculate_latency(status_list)
+            logger.info(f"Extracted latency_s value: {latency_value}")
 
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
             ].score.published_score
-            benchmark_data["score"] = ttft_value
+            benchmark_data["score"] = latency_value
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
@@ -251,23 +250,14 @@ class CnnClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
 
-        # Convert ImageGenerationTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": status_list[0].num_inference_steps
-                if status_list
-                else 0,
-                "ttft": ttft_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "num_inference_steps": 0,
+                "latency_s": latency_value,
+                "inference_steps_per_second": 0,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name,
@@ -279,11 +269,9 @@ class CnnClientStrategy(BaseMediaStrategy):
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
 
-    def _calculate_ttft_value(
-        self, status_list: list[CnnGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[CnnGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency_s")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)

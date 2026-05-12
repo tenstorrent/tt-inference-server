@@ -338,17 +338,16 @@ class VideoClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
 
-        # Convert VideoGenerationTestStatus objects to dictionaries for JSON serialization
+        # ``latency_s`` (seconds, end-to-end including submit + poll
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "ttft": ttft_value,
+                "latency_s": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )
@@ -366,11 +365,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
 
-    def _calculate_ttft_value(
-        self, status_list: list[VideoGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[VideoGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency_s")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
