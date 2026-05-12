@@ -73,7 +73,7 @@ class CnnClientStrategy(BaseMediaStrategy):
         else:
             logger.info("No eval results from eval spec test to add to benchmark data")
             latency_value = self._calculate_latency(status_list)
-            logger.info(f"Extracted latency_s value: {latency_value}")
+            logger.info(f"Extracted latency value (s): {latency_value}")
 
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
@@ -252,11 +252,12 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
 
+        # CNN inference is not iterative, so step-based fields are 0.
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": 0,
-                "latency_s": latency_value,
+                "latency": latency_value,
                 "inference_steps_per_second": 0,
             },
             "model": self.model_spec.model_name,
@@ -271,7 +272,7 @@ class CnnClientStrategy(BaseMediaStrategy):
 
     def _calculate_latency(self, status_list: list[CnnGenerationTestStatus]) -> float:
         """Mean end-to-end request latency in seconds."""
-        logger.info("Calculating latency_s")
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)

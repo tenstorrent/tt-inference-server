@@ -138,7 +138,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             status_list, total_time = eval_result
 
             latency_value = self._calculate_latency(status_list)
-            logger.info(f"Extracted latency_s value: {latency_value}")
+            logger.info(f"Extracted latency value (s): {latency_value}")
             benchmark_data["score"] = latency_value
 
             logger.info("Running and calculating accuracy and metrics")
@@ -227,7 +227,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
     def _calculate_latency(self, status_list: list[ImageGenerationTestStatus]) -> float:
         """Mean end-to-end request latency in seconds."""
-        logger.info("Calculating latency_s")
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
@@ -250,14 +250,14 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
 
-        # ``latency_s`` (seconds, end-to-end) replaces the prior
+        # ``latency`` (seconds, end-to-end) replaces the prior misleading
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "latency_s": latency_value,
+                "latency": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )

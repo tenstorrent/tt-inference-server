@@ -65,12 +65,12 @@ class TtsClientStrategy(BaseMediaStrategy):
             raise
 
         logger.info("Generating eval report...")
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
+        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
         logger.info(
-            f"TTFT={ttft_value:.4f}s, RTR={rtr_value:.2f}, "
-            f"P90={p90_ttft:.4f}s, P95={p95_ttft:.4f}s"
+            f"latency={latency_value:.4f}s, RTR={rtr_value:.2f}, "
+            f"P90={p90_latency:.4f}s, P95={p95_latency:.4f}s"
         )
 
         benchmark_data = {
@@ -81,13 +81,13 @@ class TtsClientStrategy(BaseMediaStrategy):
             "task_name": self.all_params.tasks[0].task_name,
             "tolerance": self.all_params.tasks[0].score.tolerance,
             "published_score": self.all_params.tasks[0].score.published_score,
-            "score": ttft_value,
+            "score": latency_value,
             "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
             "rtr": rtr_value,
-            "ttft_p90": p90_ttft,
-            "ttft_p95": p95_ttft,
+            "latency_p90": p90_latency,
+            "latency_p95": p95_latency,
             "performance_check": self._calculate_performance_check(
-                ttft_value=ttft_value, rtr_value=rtr_value
+                latency_value=latency_value, rtr_value=rtr_value
             ),
             "accuracy_check": self._calculate_accuracy_check(),
         }
@@ -161,23 +161,18 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_ttft, p95_ttft = self._calculate_tail_latency(status_list)
+        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
 
-        # All numeric metrics are in SECONDS (#3243 §2). We deliberately
-        # do NOT emit accuracy_check / performance_check on the
-        # benchmark JSON: workflows/run_reports.py recomputes
-        # target_checks downstream from the raw metrics
-        # (add_target_checks_tts), so duplicating them here would just
-        # hide where the source of truth lives.
+        # ``latency`` (end-to-end request latency)
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "ttft": ttft_value,
+                "latency": latency_value,
                 "rtr": rtr_value,
-                "ttft_p90": p90_ttft,  # 0.0 when no data
-                "ttft_p95": p95_ttft,  # 0.0 when no data
+                "latency_p90": p90_latency,  # 0.0 when no data
+                "latency_p95": p95_latency,  # 0.0 when no data
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
@@ -209,7 +204,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            status, elapsed, ttft, rtr, audio_duration = asyncio.run(
+            status, elapsed, latency, rtr, audio_duration = asyncio.run(
                 self._generate_speech()
             )
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
@@ -218,7 +213,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                 TtsTestStatus(
                     status=status,
                     elapsed=elapsed,
-                    ttft=ttft,
+                    latency=latency,
                     rtr=rtr,
                     text=test_text,
                     audio_duration=audio_duration,
@@ -233,11 +228,12 @@ class TtsClientStrategy(BaseMediaStrategy):
         """Generate speech from text.
 
         Returns:
-            tuple: (success, latency_sec, ttft_sec, rtr, audio_duration)
+            tuple: (success, elapsed_s, latency, rtr, audio_duration)
                 - success: True if speech generation completed successfully
-                - latency_sec: Total end-to-end latency in seconds
-                - ttft_sec: Time to first response byte, in SECONDS
-                  (matches every other media client's TTFT unit - #3243)
+                - elapsed_s: Total wall-clock time in seconds (POST send
+                  through full response read)
+                - latency: Request latency in seconds (time until the
+                  JSON response starts arriving).
                 - rtr: Real-Time Ratio (audio_duration / processing_time)
                 - audio_duration: Duration of generated audio in seconds
         """
@@ -265,7 +261,7 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         url = f"{self.base_url}/v1/audio/speech"
         start_time = time.monotonic()
-        ttft = None
+        latency = None
         audio_duration = None
 
         try:
@@ -300,7 +296,7 @@ class TtsClientStrategy(BaseMediaStrategy):
                     response_start = time.monotonic()
                     response_data = await response.json()
 
-                    ttft = response_start - start_time
+                    latency = response_start - start_time
 
                     audio_duration = response_data.get("duration")
                     if audio_duration is None:
@@ -334,31 +330,31 @@ class TtsClientStrategy(BaseMediaStrategy):
 
             rtr_str = f"{rtr:.2f}" if rtr is not None else "N/A"
             logger.info(
-                f"✅ Done in {total_duration:.2f}s | TTFT={ttft:.4f}s | RTR={rtr_str}"
+                f"✅ Done in {total_duration:.2f}s | latency={latency:.4f}s | RTR={rtr_str}"
             )
 
-            return True, total_duration, ttft, rtr, audio_duration
+            return True, total_duration, latency, rtr, audio_duration
 
         except Exception as e:
             logger.error(f"TTS generation failed: {type(e).__name__}: {e}")
             return False, 0.0, None, None, None
 
-    def _calculate_ttft_value(self, status_list: list[TtsTestStatus]) -> float:
-        """Calculate average TTFT value in SECONDS (#3243)."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[TtsTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
 
-        ttft_value = 0
+        latency_value = 0
         if status_list:
-            valid_ttft_values = [
-                status.ttft for status in status_list if status.ttft is not None
+            valid_latency_values = [
+                status.latency for status in status_list if status.latency is not None
             ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
+            latency_value = (
+                sum(valid_latency_values) / len(valid_latency_values)
+                if valid_latency_values
                 else 0
             )
 
-        return ttft_value
+        return latency_value
 
     def _calculate_rtr_value(self, status_list: list[TtsTestStatus]) -> float:
         """Calculate average RTR value."""
@@ -378,47 +374,46 @@ class TtsClientStrategy(BaseMediaStrategy):
     def _calculate_tail_latency(
         self, status_list: list[TtsTestStatus]
     ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency for TTFT, in SECONDS (#3243)."""
+        """Calculate P90 and P95 tail latency in seconds."""
         logger.info("Calculating tail latency (P90, P95)")
 
         if not status_list:
             return 0.0, 0.0
 
-        valid_ttft_values = [
-            status.ttft for status in status_list if status.ttft is not None
+        valid_values = [
+            status.latency for status in status_list if status.latency is not None
         ]
 
-        if not valid_ttft_values:
+        if not valid_values:
             return 0.0, 0.0
 
-        sorted_ttft = sorted(valid_ttft_values)
-        n = len(sorted_ttft)
+        sorted_values = sorted(valid_values)
+        n = len(sorted_values)
         p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
         p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-        p90_ttft = sorted_ttft[p90_index]
-        p95_ttft = sorted_ttft[p95_index]
+        p90_latency = sorted_values[p90_index]
+        p95_latency = sorted_values[p95_index]
 
-        return p90_ttft, p95_ttft
+        return p90_latency, p95_latency
 
     def _calculate_performance_check(
         self,
-        ttft_value: Optional[float] = None,
+        latency_value: Optional[float] = None,
         rtr_value: Optional[float] = None,
     ) -> ReportCheckTypes:
-        """Calculate performance check based on TTFT and RTR targets.
+        """Calculate performance check based on latency and RTR targets.
 
         Uses get_performance_targets from model_performance_reference.json.
 
         Args:
-            ttft_value: Time to first token in SECONDS (matches the unit
-                used by every TTS metric since #3243).
+            latency_value: End-to-end request latency in seconds.
             rtr_value: Real-time ratio (audio_duration / generation_time)
 
         Returns:
             ``ReportCheckTypes`` member. ``IntEnum`` serialises to JSON as its
             integer value, so downstream consumers still see 1/2/3 (NA/PASS/FAIL).
         """
-        logger.info("Calculating performance check based on TTFT, RTR targets")
+        logger.info("Calculating performance check based on latency, RTR targets")
 
         device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
@@ -428,9 +423,12 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         logger.info(f"Performance targets: {targets}")
 
-        # TTFT is the primary metric for TTS performance - required for validation
+        # PerformanceTargets stores the latency threshold under ``ttft_ms``.
         if not targets.ttft_ms:
-            logger.warning("⚠️ No TTFT target found, skipping performance check")
+            logger.warning(
+                "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
+                "skipping performance check"
+            )
             return ReportCheckTypes.NA
 
         tolerance = targets.tolerance if targets.tolerance else 0.05
@@ -441,19 +439,15 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         if targets.ttft_ms is not None:
             checks_total += 1
-            # PerformanceTargets stores ttft in milliseconds for
-            # historical reasons (shared across all clients); ttft_value
-            # is in seconds, so convert the target to seconds for the
-            # comparison.
-            ttft_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
-            if ttft_value <= ttft_threshold_s:
+            latency_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
+            if latency_value <= latency_threshold_s:
                 logger.info(
-                    f"✅ TTFT PASSED: {ttft_value:.4f}s <= {ttft_threshold_s:.4f}s"
+                    f"✅ latency PASSED: {latency_value:.4f}s <= {latency_threshold_s:.4f}s"
                 )
                 checks_passed += 1
             else:
                 logger.warning(
-                    f"❌ TTFT FAILED: {ttft_value:.4f}s > {ttft_threshold_s:.4f}s"
+                    f"❌ latency FAILED: {latency_value:.4f}s > {latency_threshold_s:.4f}s"
                 )
 
         if targets.rtr is not None:

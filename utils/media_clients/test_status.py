@@ -2,14 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-"""Per-call result objects emitted by the media client benchmark loops.
-
-Field naming is deliberately conservative: every class only exposes
-fields that some client actually populates. Fields that were
-historically declared but never set (``tpups`` on image, ``ttft`` on
-embedding/video, etc.) have been removed so downstream consumers can no
-longer accidentally read zero-filled metrics. See issue #3243.
-"""
+"""Per-call result objects emitted by the media client benchmark loops."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
@@ -29,13 +22,7 @@ class BaseTestStatus(ABC):
 
 
 class ImageGenerationTestStatus(BaseTestStatus):
-    """Test status for image generation models (SDXL, SD3.5, Flux, etc.).
-
-    ``elapsed`` is end-to-end request latency in seconds and is the
-    canonical per-request timing for image clients (the endpoint is a
-    single non-streaming POST so there is no separate first-token
-    timestamp to record).
-    """
+    """Test status for image generation models (SDXL, SD3.5, Flux, etc.)."""
 
     def __init__(
         self,
@@ -90,11 +77,7 @@ class AudioTestStatus(BaseTestStatus):
 
 
 class CnnGenerationTestStatus(BaseTestStatus):
-    """Test status for CNN models (ResNet, MobileNetV2, etc.).
-
-    CNN inference is a single non-streaming POST returning a label;
-    only ``elapsed`` (request latency in seconds) is populated.
-    """
+    """Test status for CNN models (ResNet, MobileNetV2, etc.)."""
 
     def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
@@ -104,11 +87,7 @@ class CnnGenerationTestStatus(BaseTestStatus):
 
 
 class EmbeddingTestStatus(BaseTestStatus):
-    """Test status for embedding models.
-
-    Embedding benchmarks are driven through ``vllm bench serve``;
-    per-call status currently only carries the wall-clock latency.
-    """
+    """Test status for embedding models."""
 
     def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
@@ -124,14 +103,14 @@ class TtsTestStatus(BaseTestStatus):
         self,
         status: bool,
         elapsed: float,
-        latency_s: Optional[float] = None,
+        latency: Optional[float] = None,
         rtr: Optional[float] = None,
         text: Optional[str] = None,
         audio_duration: Optional[float] = None,
         reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
-        self.latency_s = latency_s
+        self.latency = latency
         self.rtr = rtr
         self.text = text
         self.audio_duration = audio_duration
@@ -141,7 +120,7 @@ class TtsTestStatus(BaseTestStatus):
         return {
             "status": self.status,
             "elapsed": self.elapsed,
-            "latency_s": self.latency_s,
+            "latency": self.latency,
             "rtr": self.rtr,
             "text": self.text,
             "audio_duration": self.audio_duration,
@@ -150,12 +129,7 @@ class TtsTestStatus(BaseTestStatus):
 
 
 class VideoGenerationTestStatus(BaseTestStatus):
-    """Test status for video generation models (Mochi, WAN, etc.).
-
-    ``elapsed`` covers the full request lifecycle (submit + poll loop
-    + download); it is the only timing the current API exposes to the
-    client.
-    """
+    """Test status for video generation models (Mochi, WAN, etc.)."""
 
     def __init__(
         self,
