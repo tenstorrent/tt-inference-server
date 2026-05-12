@@ -237,8 +237,7 @@ void testMalformedSequences() {
   // Test 1: <tool_calls_begin> <tool_call_end> <tool_call_begin> ...
   // Missing tool_call_begin before first tool_call_end
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 200;
     parser->initializeTask(taskId);
 
@@ -268,15 +267,15 @@ void testMalformedSequences() {
     assert(toolCalls->size() == 1);
     assert((*toolCalls)[0]["function"]["name"].asString() == "get_weather");
 
-    std::cout << "✓ Test 1 passed: Spurious tool_call_end before tool_call_begin "
-                 "handled\n";
+    std::cout
+        << "✓ Test 1 passed: Spurious tool_call_end before tool_call_begin "
+           "handled\n";
   }
 
   // Test 2: <tool_calls_end> text <tool_calls_begin> ...
   // End token before begin - should treat text as regular content
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 201;
     parser->initializeTask(taskId);
 
@@ -306,8 +305,7 @@ void testMalformedSequences() {
 
   // Test 3: Double tool_calls_begin
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 202;
     parser->initializeTask(taskId);
 
@@ -327,8 +325,7 @@ void testMalformedSequences() {
 
   // Test 4: tool_call_begin without tool_calls_begin (outer wrapper)
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 203;
     parser->initializeTask(taskId);
 
@@ -355,8 +352,7 @@ void testMalformedSequences() {
 
   // Test 5: Incomplete tool call - missing tool_call_end
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 204;
     parser->initializeTask(taskId);
 
@@ -378,8 +374,7 @@ void testMalformedSequences() {
 
   // Test 6: Garbage text between markers
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 205;
     parser->initializeTask(taskId);
 
@@ -408,8 +403,7 @@ void testMalformedSequences() {
 
   // Test 7: Multiple consecutive tool_sep tokens
   {
-    auto parser =
-        createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
     uint32_t taskId = 206;
     parser->initializeTask(taskId);
 
