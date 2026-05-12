@@ -375,7 +375,7 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
         assert eval_result["tolerance"] == 0.1
         assert eval_result["published_score"] == 0.9
         assert eval_result["published_score_ref"] == "ref"
-        assert eval_result["accuracy_check"] == 2
+        assert eval_result["accuracy_check"] == 1
 
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):

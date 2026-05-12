@@ -55,63 +55,37 @@ class AudioClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
             status_list = self._run_audio_transcription_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
-        benchmark_data = {}
-
-        # Calculate TTFT
         ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-        logger.info(f"Extracted RTR value: {rtr_value}")
-
-        # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
-        logger.info(f"Extracted T/S/U value: {tsu_value}")
+        logger.info(f"Extracted TTFT={ttft_value}, RTR={rtr_value}, T/S/U={tsu_value}")
 
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
-        )
-        benchmark_data["task_type"] = "audio"
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        # TODO: replace hardcoded PASS with a real accuracy evaluation.
-        benchmark_data["accuracy_check"] = ReportCheckTypes.PASS
-        benchmark_data["t/s/u"] = tsu_value
-        benchmark_data["rtr"] = rtr_value
+        benchmark_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name.lower(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "audio",
+            "task_name": self.all_params.tasks[0].task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": ttft_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.NA,
+            "t/s/u": tsu_value,
+            "rtr": rtr_value,
+        }
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -136,21 +110,9 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
-            status_list = []
             status_list = self._run_audio_transcription_benchmark(num_calls)
-
             return self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -179,19 +141,20 @@ class AudioClientStrategy(BaseMediaStrategy):
             ttft_value, tsu_value, rtr_value
         )
 
-        # Convert AudioTestStatus objects to dictionaries for JSON serialization
+        # Audio is not step-based, so num_inference_steps /
+        # inference_steps_per_second are intentionally omitted (they used
+        # to be emitted as zeros, which downstream report tooling rendered
+        # as "0 steps").
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": 0,
                 "ttft": ttft_value,
-                "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
                 "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "audio",
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
