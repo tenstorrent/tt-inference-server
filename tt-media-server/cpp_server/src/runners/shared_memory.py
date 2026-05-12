@@ -36,7 +36,7 @@ def _detach_from_resource_tracker(shm: _shm.SharedMemory) -> None:
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
 
-# Matches C++ ipc::SlotRingBufferState (slot_ring_buffer.hpp):
+# Matches C++ tt::ipc::posix::SlotRingBufferState (ipc/posix/slot_ring_buffer.hpp):
 #   uint64_t writerIndex (offset 0) + uint64_t readerIndex (offset 8)
 _STATE_SHM_SIZE = 16
 _WRITER_INDEX_OFF = 0

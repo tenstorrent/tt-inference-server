@@ -9,8 +9,7 @@
 #include <services/memory_services/blaze_memory_manager.hpp>
 
 #include "config/settings.hpp"
-#include "ipc/token_push.hpp"
-#include "tt_llm_engine/pipeline/pipeline_types.hpp"
+#include "ipc/helpers/token_push.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 
@@ -280,8 +279,8 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
         .decrementActiveRequests();
   }
 
-  ipc::pushToken(*resultQueue, taskId, output.token_id, finished, specAccepts,
-                 specRejects);
+  ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, finished,
+                          specAccepts, specRejects);
 }
 
 void BlazeRunner::checkOutputHang() {
