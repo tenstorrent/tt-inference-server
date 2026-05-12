@@ -292,6 +292,19 @@ class TestEraAwareDockerCommand:
         assert cmd[cmd.index("--shm-size") + 1] == "32G"
         assert "--ipc" not in cmd
 
+    def test_legacy_sets_cache_root_env(
+        self, tiny_model_spec, runtime_config, temp_dir
+    ):
+        # docker-entrypoint.sh stats $CACHE_ROOT before forwarding CMD to gosu;
+        # leaving it empty makes `stat ''` fail before the script ever runs.
+        ms = dataclasses.replace(
+            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
+        )
+        cmd, _ = _generate(ms, runtime_config, _make_json_fpath(temp_dir))
+
+        cache_root = _find_env_var(cmd, "CACHE_ROOT")
+        assert cache_root is not None and cache_root != ""
+
     def test_legacy_wraps_cli_args_in_bash_c_cmd_override(
         self, tiny_model_spec, runtime_config, temp_dir
     ):

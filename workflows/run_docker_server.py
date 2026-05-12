@@ -251,6 +251,17 @@ def generate_docker_run_command(
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
 
+    # Pre-0.11 docker-entrypoint.sh stats $CACHE_ROOT before forwarding CMD to
+    # gosu, and fails on empty/unset. Post-0.11 images bake CACHE_ROOT as a
+    # Dockerfile ENV so it's always present without us setting it.
+    if is_v1_legacy:
+        cache_root = (
+            setup_config.cache_root
+            if setup_config and setup_config.cache_root
+            else Path("/home/container_app_user/cache_root")
+        )
+        docker_env_vars.setdefault("CACHE_ROOT", cache_root)
+
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
