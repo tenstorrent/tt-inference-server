@@ -10,8 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "config/defaults.hpp"
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/interface/cancel_queue.hpp"
@@ -238,7 +238,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
   tt::ipc::boost::ResultQueue resultQueue(
-      rbName, tt::config::defaults::RESULT_QUEUE_CAPACITY);
+      rbName, tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -296,7 +296,7 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
   tt::ipc::boost::ResultQueue resultQueue(
-      rbName, tt::config::defaults::RESULT_QUEUE_CAPACITY);
+      rbName, tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};

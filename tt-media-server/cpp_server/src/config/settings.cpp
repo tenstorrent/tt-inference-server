@@ -216,6 +216,32 @@ std::string workerMetricsShmName() {
   return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
 }
 
+size_t resultQueueCapacity() {
+  return envUlong("RESULT_QUEUE_CAPACITY", defaults::RESULT_QUEUE_CAPACITY);
+}
+
+size_t cancelQueueCapacity() {
+  return envUlong("CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY);
+}
+
+size_t memoryQueueCapacity() {
+  return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+int shmSlots() {
+  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
+}
+
+int prefillMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
+}
+
+int decodeMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;

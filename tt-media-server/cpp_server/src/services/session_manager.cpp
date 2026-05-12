@@ -7,7 +7,6 @@
 #include <chrono>
 #include <thread>
 
-#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "metrics/metrics.hpp"
@@ -54,10 +53,10 @@ SessionManager::SessionManager() {
   try {
     memoryRequestQueue = std::make_unique<ipc::boost::MemoryRequestQueue>(
         tt::config::ttMemoryRequestQueueName(),
-        tt::config::defaults::MEMORY_QUEUE_CAPACITY);
+        tt::config::memoryQueueCapacity());
     memoryResultQueue = std::make_unique<ipc::boost::MemoryResultQueue>(
         tt::config::ttMemoryResultQueueName(),
-        tt::config::defaults::MEMORY_QUEUE_CAPACITY);
+        tt::config::memoryQueueCapacity());
     TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
     drainThread = std::thread([this] { readerLoop(); });
   } catch (const std::exception& e) {

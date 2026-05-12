@@ -11,8 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "config/defaults.hpp"
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
@@ -58,7 +58,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   auto taskQueue = makeQueue();
 
   tt::ipc::boost::ResultQueue resultQueue(
-      "test_llm_runner_tokens", tt::config::defaults::RESULT_QUEUE_CAPACITY);
+      "test_llm_runner_tokens", tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
@@ -131,7 +131,7 @@ TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
   }
   auto taskQueue = makeQueue();
   tt::ipc::boost::ResultQueue resultQueue(
-      "test_structured_output", tt::config::defaults::RESULT_QUEUE_CAPACITY);
+      "test_structured_output", tt::config::resultQueueCapacity());
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
   tt::domain::llm::SamplingParams sp;
