@@ -12,9 +12,9 @@ BlazeMemoryManager::BlazeMemoryManager(
     : pipelineManager(pipelineManager), onEvict(onEvict) {}
 
 std::optional<domain::ManageMemoryTask> BlazeMemoryManager::getRequest() {
-  if (pendingRetry.has_value()) {
-    auto task = std::move(*pendingRetry);
-    pendingRetry.reset();
+  if (!pendingRetries.empty()) {
+    auto task = std::move(pendingRetries.front());
+    pendingRetries.pop_front();
     return task;
   }
   return MemoryManager::getRequest();
@@ -30,7 +30,7 @@ void BlazeMemoryManager::handleRequest(
             "[BlazeMemoryManager] ALLOCATE push_request failed; deferring "
             "retry for taskId={}",
             request.taskId);
-        pendingRetry = request;
+        pendingRetries.push_back(request);
         return;
       }
       allocating.insert(request.taskId);
@@ -45,16 +45,16 @@ void BlazeMemoryManager::handleRequest(
       if (!pipelineManager.push_request(
               utils::makeEvictRequest(request.taskId, slotId))) {
         TT_LOG_DEBUG(
-            "[BlazeMemoryManager] DEALLOCATE push_request failed for "
+            "[BlazeMemoryManager] EVICT push_request failed for "
             "slotId={}; deferring retry for taskId={}",
             slotId, request.taskId);
-        pendingRetry = request;
+        pendingRetries.push_back(request);
         return;
       }
       evicting.insert({request.taskId, slotId});
       TT_LOG_DEBUG(
-          "[BlazeMemoryManager] DEALLOCATE: taskId={}, slotId={}, "
-          "pending cancellations={}",
+          "[BlazeMemoryManager] EVICT: taskId={}, slotId={}, "
+          "pending evictions={}",
           request.taskId, slotId, evicting.size());
       break;
     }
@@ -99,14 +99,14 @@ void BlazeMemoryManager::handleResponse(uint32_t taskId, uint32_t slotId) {
     evicting.erase(it);
     if (slotId != recordedSlotId) {
       TT_LOG_ERROR(
-          "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={} "
+          "[BlazeMemoryManager] handleResponse[EVICT]: taskId={} "
           "ack slotId={} does not match recorded slotId={}; evicting "
           "the recorded slot",
           taskId, slotId, recordedSlotId);
     }
     TT_LOG_DEBUG(
-        "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={}, "
-        "slotId={}, remaining pending cancellations={}",
+        "[BlazeMemoryManager] handleResponse[EVICT]: taskId={}, "
+        "slotId={}, remaining pending evictions={}",
         taskId, recordedSlotId, evicting.size());
     onEvict(recordedSlotId);
     return;
@@ -114,6 +114,24 @@ void BlazeMemoryManager::handleResponse(uint32_t taskId, uint32_t slotId) {
   TT_LOG_WARN(
       "[BlazeMemoryManager] handleResponse: unknown taskId={}, slotId={}",
       taskId, slotId);
+}
+
+void BlazeMemoryManager::notifyAllocateCancelled(uint32_t taskId) {
+  allocating.erase(taskId);
+  domain::ManageMemoryResult result;
+  result.taskId = taskId;
+  result.status = domain::ManageMemoryStatus::FAILURE;
+  result.slotId = tt_blaze::pipeline_manager::INVALID_SLOT;
+  resultQueue->push(result);
+}
+
+void BlazeMemoryManager::requestEvict(uint32_t taskId, uint32_t slotId) {
+  domain::ManageMemoryTask task;
+  task.taskId = taskId;
+  task.action = domain::MemoryManagementAction::EVICT;
+  task.memoryLayout = domain::KvMemoryLayout::PAGED;
+  task.slotId = slotId;
+  handleRequest(task);
 }
 
 }  // namespace tt::services

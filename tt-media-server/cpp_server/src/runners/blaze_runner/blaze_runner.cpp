@@ -224,6 +224,13 @@ void BlazeRunner::drainAndHandleOutputs() {
 }
 
 void BlazeRunner::drainAndHandleCancelRequests() {
+  auto failedCancelRequestsSize = failedCancelRequests.size();
+  while (failedCancelRequestsSize > 0) {
+    auto taskId = failedCancelRequests.front();
+    failedCancelRequests.pop_front();
+    handleCancelRequest(taskId);
+    failedCancelRequestsSize--;
+  }
   std::vector<uint32_t> out;
   this->cancelQueue->tryPopAll(out);
   for (auto taskId : out) {
@@ -247,7 +254,7 @@ void BlazeRunner::handleMemoryRequest(
         "[BlazeRunner] handleMemoryRequest: dropping cancelled taskId={}",
         request.taskId);
     // we ignore the allocation request and unblock the session
-    memoryManager->handleResponse(request.taskId, tt::domain::INVALID_SLOT_ID);
+    memoryManager->notifyAllocateCancelled(request.taskId);
     return;
   }
   memoryManager->handleRequest(request);
@@ -258,14 +265,18 @@ void BlazeRunner::handleCancelRequest(uint32_t taskId) {
     TT_LOG_DEBUG(
         "[BlazeRunner] handleCancelRequest: dropping retry for taskId={}",
         taskId);
+    if (!requestToRetry->isContinuation() &&
+        !requestToRetry->isDisaggregated()) {
+      memoryManager->requestEvict(taskId, requestToRetry->getKVCacheSlot());
+    }
     requestToRetry = nullptr;
     return;
   }
   if (isTaskRunning(taskId)) {
-    TT_LOG_WARN(
-        "[BlazeRunner] true cancel for RUNNING taskId={} not yet implemented; "
-        "request will run to completion",
-        taskId);
+    if (!pipelineManager->push_request(
+            utils::makeCancelRequest(taskId, slotIndex.slotIdByTask(taskId)))) {
+      failedCancelRequests.push_back(taskId);
+    };
   }
   cancelTombstones.rememberCancelTombstone(taskId);
 }
@@ -274,15 +285,13 @@ void BlazeRunner::handleMemoryResponse(const pm::PMResponse& response) {
   if (response.slot_id != tt::domain::INVALID_SLOT_ID &&
       cancelTombstones.consumeCancelTombstone(response.request_id)) {
     // Allocation completed but the task was cancelled in the meantime. Evict
-    // the the slot we just got and unblock the session with no slot.
+    // the slot we just got and unblock the session with no slot.
     TT_LOG_DEBUG(
         "[BlazeRunner] handleMemoryResponse: evicting slot {} for cancelled "
         "taskId={}",
         response.slot_id, response.request_id);
-    pipelineManager->push_request(
-        utils::makeEvictRequest(response.request_id, response.slot_id));
-    memoryManager->handleResponse(response.request_id,
-                                  tt::domain::INVALID_SLOT_ID);
+    memoryManager->requestEvict(response.request_id, response.slot_id);
+    memoryManager->notifyAllocateCancelled(response.request_id);
     return;
   }
   memoryManager->handleResponse(response.request_id, response.slot_id);
@@ -293,48 +302,46 @@ std::optional<tt::domain::ManageMemoryTask> BlazeRunner::getMemoryRequest() {
 }
 
 bool BlazeRunner::isTaskRunning(uint32_t taskId) const {
-  return taskIdToSlotId.find(taskId) != taskIdToSlotId.end();
+  return slotIndex.isTaskRunning(taskId);
 }
 
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
-  auto it = slotContexts.find(output.slot_id);
-  if (it == slotContexts.end()) {
+  auto* context = slotIndex.contextBySlot(output.slot_id);
+  if (context == nullptr) {
     TT_LOG_ERROR(
         "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
         "token_id={}, is_complete={}",
         output.slot_id, output.token_id, output.is_complete);
     return;
   }
-  auto& context = it->second;
-  bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
+  bool hitStop = !context->ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
-  auto taskId = context.taskId;
+  auto taskId = context->taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
-  context.tokensGenerated++;
+  context->tokensGenerated++;
   if (finished) {
     uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
-                           context.specAcceptsAtStart;
+                           context->specAcceptsAtStart;
     uint32_t specRejects = pipelineManager->get_spec_rejects(output.slot_id) -
-                           context.specRejectsAtStart;
+                           context->specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
     TT_LOG_INFO(
         "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
         "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
         output.slot_id, specAccepts, specTotal, acceptRate, taskId,
-        output.token_id, output.is_complete, context.ignoreEos, hitStop,
-        context.tokensGenerated);
-    taskIdToSlotId.erase(taskId);
-    slotContexts.erase(output.slot_id);
+        output.token_id, output.is_complete, context->ignoreEos, hitStop,
+        context->tokensGenerated);
+    slotIndex.eraseBySlot(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
 }
 
 void BlazeRunner::checkOutputHang() {
-  if (slotContexts.empty()) {
+  if (slotIndex.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
     return;
   }
@@ -347,7 +354,7 @@ void BlazeRunner::checkOutputHang() {
       "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
       "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
       "infrastructure can restart the server.",
-      elapsed.count(), slotContexts.size(), outputHangTimeout.count());
+      elapsed.count(), slotIndex.size(), outputHangTimeout.count());
   // Use abort() so the existing fatalSignalHandler prints a visible
   // "killed by signal SIGABRT" line and the WorkerManager parent logs the
   // worker crash. Skipping destructors is acceptable here: the model/device
@@ -356,12 +363,10 @@ void BlazeRunner::checkOutputHang() {
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
-  auto it = slotContexts.find(slotId);
-  if (it != slotContexts.end()) {
+  auto erasedTaskId = slotIndex.eraseBySlot(slotId);
+  if (erasedTaskId.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, had taskId={}", slotId,
-                 it->second.taskId);
-    taskIdToSlotId.erase(it->second.taskId);
-    slotContexts.erase(it);
+                 *erasedTaskId);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
     return;
@@ -374,19 +379,25 @@ void BlazeRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::pmMaxUsers());
+  bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (cancelTombstones.consumeCancelTombstone(request->taskId)) {
     // Cancel arrived between memory allocation and submit observation.
-    // The slot is already allocated by PM, so we evict it + ignore it
-    TT_LOG_DEBUG(
-        "[BlazeRunner] handleRequest: dropping cancelled taskId={}, evicting "
-        "slot {}",
-        request->taskId, slotId);
-    pipelineManager->push_request(
-        utils::makeEvictRequest(request->taskId, slotId));
+    // The slot is already allocated by PM, so we ignore it and evict it if it
+    // is new.
+    if (isNew) {
+      TT_LOG_DEBUG(
+          "[BlazeRunner] handleRequest: dropping cancelled taskId={}, evicting "
+          "slot {} because it is new",
+          request->taskId, slotId);
+      memoryManager->requestEvict(request->taskId, slotId);
+    } else {
+      TT_LOG_DEBUG(
+          "[BlazeRunner] handleRequest: cancelled taskId={}, slotId={}",
+          request->taskId, slotId);
+    }
     return;
   }
 
-  bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {
     TT_LOG_WARN(
         "[BlazeRunner] task_id={} has response_format constraint but "
@@ -400,7 +411,7 @@ void BlazeRunner::handleRequest(
       "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
-      slotContexts.size());
+      slotIndex.size());
   tt_blaze::pipeline_manager::ISRequest req =
       isNew ? utils::makeSubmitRequest(slotId, *request)
             : utils::makeContinueRequest(slotId, *request);
@@ -412,22 +423,14 @@ void BlazeRunner::handleRequest(
     requestToRetry = std::move(request);
     return;
   }
-  if (slotContexts.empty()) {
+  if (slotIndex.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
-  auto existingSlot = slotContexts.find(slotId);
-  if (existingSlot != slotContexts.end() &&
-      existingSlot->second.taskId != request->taskId) {
-    // Slot is being repurposed for a different taskId (shouldn't normally
-    // happen, but keep the reverse map consistent).
-    taskIdToSlotId.erase(existingSlot->second.taskId);
-  }
-  taskIdToSlotId.insert_or_assign(request->taskId, slotId);
-  slotContexts.insert_or_assign(
-      slotId, blaze_utils::SlotContext{
-                  request->taskId, request->getSamplingParams().ignore_eos,
-                  pipelineManager->get_spec_accepts(slotId),
-                  pipelineManager->get_spec_rejects(slotId)});
+  slotIndex.assign(slotId,
+                   blaze_utils::SlotContext{
+                       request->taskId, request->getSamplingParams().ignore_eos,
+                       pipelineManager->get_spec_accepts(slotId),
+                       pipelineManager->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 

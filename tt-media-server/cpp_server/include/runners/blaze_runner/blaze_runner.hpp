@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
@@ -19,7 +18,7 @@
 #include "pipeline_manager/pipeline_manager.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/runner_interface.hpp"
-#include "services/memory_services/memory_manager.hpp"
+#include "services/memory_services/blaze_memory_manager.hpp"
 
 namespace tt::runners {
 
@@ -64,14 +63,12 @@ class BlazeRunner : public IRunner {
   tt::ipc::ICancelQueue* cancelQueue;
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
-  std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
-  // Reverse index of slotContexts: taskId -> slotId. Kept in sync with
-  // slotContexts on every insert/erase so isTaskRunning is O(1).
+  blaze_utils::SlotIndex slotIndex;
   blaze_utils::CancelTombstones cancelTombstones;
-  std::unordered_map<uint32_t, uint32_t> taskIdToSlotId;
   std::atomic<bool> stopped{false};
-  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::unique_ptr<tt::services::BlazeMemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
+  std::deque</*taskId*/ uint32_t> failedCancelRequests;
 };
 }  // namespace tt::runners

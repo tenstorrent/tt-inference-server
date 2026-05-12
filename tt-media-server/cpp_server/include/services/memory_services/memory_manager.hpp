@@ -23,7 +23,7 @@ class MemoryManager {
   virtual std::optional<domain::ManageMemoryTask> getRequest();
 
   // Default implementation: ALLOCATE returns SUCCESS with an opaque slotId,
-  // DEALLOCATE is a no-op. The slotId value is not interpreted by the legacy
+  // EVICT is a no-op. The slotId value is not interpreted by the legacy
   // LLM scheduler (it manages its own block table), so the default acts as a
   // pure session-creation gate. Async managers (e.g. BlazeMemoryManager)
   // override to talk to an external scheduler.
