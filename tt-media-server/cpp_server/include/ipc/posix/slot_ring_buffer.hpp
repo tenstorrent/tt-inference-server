@@ -38,7 +38,8 @@ struct alignas(8) Message {
   uint32_t slotId;
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr size_t K_TOTAL_SIZE = tt::config::defaults::SHM_SLOTS * sizeof(Message);
+  static constexpr size_t K_TOTAL_SIZE =
+      tt::config::defaults::SHM_SLOTS * sizeof(Message);
 
   bool stateMatches(SlotState state) {
     return this->state.load(std::memory_order_acquire) == state;
@@ -86,7 +87,8 @@ class SlotRingBuffer {
       throw std::runtime_error("SlotRingBuffer: mmap failed: " + name + ": " +
                                std::strerror(savedErrno));
     }
-    messages = std::span<Msg>(static_cast<Msg*>(memPointer), tt::config::defaults::SHM_SLOTS);
+    messages = std::span<Msg>(static_cast<Msg*>(memPointer),
+                              tt::config::defaults::SHM_SLOTS);
     openState();
     this->writerIndex = state->writerIndex;
     this->readerIndex = state->readerIndex;
@@ -202,7 +204,9 @@ class SlotRingBuffer {
   SlotRingBufferState* state = nullptr;
 };
 
-using PrefillSlotBuffer = SlotRingBuffer<tt::config::defaults::PREFILL_MAX_TOKEN_IDS>;
-using DecodeSlotBuffer = SlotRingBuffer<tt::config::defaults::DECODE_MAX_TOKEN_IDS>;
+using PrefillSlotBuffer =
+    SlotRingBuffer<tt::config::defaults::PREFILL_MAX_TOKEN_IDS>;
+using DecodeSlotBuffer =
+    SlotRingBuffer<tt::config::defaults::DECODE_MAX_TOKEN_IDS>;
 
 }  // namespace tt::ipc::posix
