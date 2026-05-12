@@ -333,26 +333,42 @@ class TTMochi1Runner(TTDiTRunner):
         return {}
 
 
-def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
-    """Fabric / trace-region defaults shared by Wan2.2 T2V and I2V runners.
+WAN22_BH_RING_MESH_SHAPES = frozenset({(1, 4)})
 
-    Galaxy-class meshes need ring topology and (on Blackhole) a larger
-    trace region plus an explicit FabricRouterConfig. Smaller meshes use
-    plain 1D linear fabric and the framework defaults.
-    """
-    device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D}
+WAN22_GALAXY_BH_TRACE_REGION_BYTES = 120_000_000
+WAN22_GALAXY_ROUTER_MAX_PAYLOAD_BYTES = 8192
+
+
+def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
+    """Return True when Wan2.2 must advertise FABRIC_1D_RING for ``mesh_shape``."""
+    if is_large_mesh(mesh_shape):
+        return True
+    return is_blackhole() and tuple(mesh_shape) in WAN22_BH_RING_MESH_SHAPES
+
+
+def _wan22_galaxy_router_config():
+    """Build the FabricRouterConfig used by Galaxy-class BH meshes."""
+    config = ttnn.FabricRouterConfig()
+    config.max_packet_payload_size_bytes = WAN22_GALAXY_ROUTER_MAX_PAYLOAD_BYTES
+    return config
+
+
+def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
+    """Resolve fabric / trace-region defaults shared by Wan2.2 T2V and I2V runners."""
+    fabric_config = (
+        ttnn.FabricConfig.FABRIC_1D_RING
+        if _wan22_needs_ring_fabric(mesh_shape)
+        else ttnn.FabricConfig.FABRIC_1D
+    )
+    device_params: dict = {"fabric_config": fabric_config}
+
     if is_blackhole():
         device_params["reliability_mode"] = ttnn.FabricReliabilityMode.RELAXED_INIT
 
-    if not is_large_mesh(mesh_shape):
-        return device_params
+    if is_large_mesh(mesh_shape) and is_blackhole():
+        device_params["trace_region_size"] = WAN22_GALAXY_BH_TRACE_REGION_BYTES
+        device_params["fabric_router_config"] = _wan22_galaxy_router_config()
 
-    device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
-    if is_blackhole():
-        device_params["trace_region_size"] = 120000000
-        router_config = ttnn.FabricRouterConfig()
-        router_config.max_packet_payload_size_bytes = 8192
-        device_params["fabric_router_config"] = router_config
     return device_params
 
 
