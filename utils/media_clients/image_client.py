@@ -97,17 +97,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            self.runner_in_use = runner_in_use
-
-            # Route to appropriate eval method using dispatch map
+            self.runner_in_use = self.require_health()
             eval_method = self.eval_methods.get(
                 self.runner_in_use, self._run_image_generation_eval
             )
@@ -214,36 +204,23 @@ class ImageClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            self.runner_in_use = runner_in_use
-
-            # Get num_calls from benchmark parameters
+            self.runner_in_use = self.require_health()
             num_calls = get_num_calls(self)
 
-            # Override num_calls for SDXL models to 100 prompts
-            if runner_in_use in [
+            if self.runner_in_use in [
                 "tt-sdxl-trace",
                 "tt-sdxl-image-to-image",
                 "tt-sdxl-edit",
             ]:
                 logger.info(
-                    f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                    f"Overriding num_calls for SDXL {self.runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
                 )
                 num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
-            # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
                 self.runner_in_use, self._run_image_generation_benchmark
             )
             status_list = benchmark_method(num_calls)
-
             self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -293,7 +270,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 else 0,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "image",
         }
