@@ -734,6 +734,21 @@
                 "break_on_failure": false,
                 "mock_mode": false
             }
+        },
+        "VideoGenerationI2VParamTest": {
+            "module": "server_tests.test_cases.video_generation_i2v_param_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
         }
     },
     "_comment": "test_suites are loaded from test_suites/*.json files",
