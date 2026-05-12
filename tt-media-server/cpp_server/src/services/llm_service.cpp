@@ -3,6 +3,7 @@
 
 #include "services/llm_service.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -32,43 +33,39 @@ LLMService::LLMService() {
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
   auto tq = qm->taskQueue;
 
-  init(&tt::utils::tokenizers::activeTokenizer(), std::move(tq),
-       std::make_unique<tt::worker::WorkerManager>(numWorkers),
+  init(std::move(tq), std::make_unique<tt::worker::WorkerManager>(numWorkers),
        std::make_unique<ReasoningParser>(),
        createToolCallParser(tt::config::modelType()), std::move(qm),
        tt::config::maxQueueSize());
 }
 
-LLMService::LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
-                       std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+LLMService::LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
                        std::unique_ptr<ReasoningParser> reasoningParser,
                        std::unique_ptr<IToolCallParser> toolCallParser,
                        std::unique_ptr<tt::ipc::QueueManager> queueManager,
                        size_t maxQueueSize) {
-  init(tokenizer, std::move(taskQueue), std::move(workerManager),
+  init(std::move(taskQueue), std::move(workerManager),
        std::move(reasoningParser), std::move(toolCallParser),
        std::move(queueManager), maxQueueSize);
 }
 
-void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
-                      std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
                       std::unique_ptr<tt::worker::WorkerManager> workerManager,
                       std::unique_ptr<ReasoningParser> reasoningParser,
                       std::unique_ptr<IToolCallParser> toolCallParser,
                       std::unique_ptr<tt::ipc::QueueManager> queueManager,
                       size_t maxQueueSize) {
-  if (tokenizer == nullptr) {
-    throw std::invalid_argument("LLMService: tokenizer must not be null");
-  }
   if (!taskQueue) {
     throw std::invalid_argument("LLMService: taskQueue must not be null");
   }
   if (!workerManager) {
     throw std::invalid_argument("LLMService: workerManager must not be null");
   }
+  if (!queueManager) {
+    throw std::invalid_argument("LLMService: queueManager must not be null");
+  }
 
-  this->tokenizer = tokenizer;
   this->taskQueue = std::move(taskQueue);
   this->workerManager = std::move(workerManager);
   this->reasoningParser = std::move(reasoningParser);
@@ -77,7 +74,7 @@ void LLMService::init(const tt::utils::tokenizers::Tokenizer* tokenizer,
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
-  const auto stopIds = this->tokenizer->stopTokenIds();
+  const auto stopIds = tt::utils::tokenizers::activeTokenizer().stopTokenIds();
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
@@ -173,16 +170,8 @@ void LLMService::preProcess(LLMRequest& request) const {
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
-    request.prompt = tokenizer->encode(text);
+    request.prompt = tt::utils::tokenizers::activeTokenizer().encode(text);
   }
-  const auto& tokens = std::get<std::vector<int>>(request.prompt);
-  if (tokens.size() > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
-    throw std::invalid_argument(
-        "Input too long: " + std::to_string(tokens.size()) +
-        " tokens exceeds maximum of " +
-        std::to_string(tt::config::LLMConfig::MAX_INPUT_TOKENS));
-  }
-  request.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
 void LLMService::startConsumers() {
@@ -202,10 +191,8 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  if (queueManager) {
-    for (auto& q : queueManager->resultQueues) {
-      q->shutdown();
-    }
+  for (auto& q : queueManager->resultQueues) {
+    q->shutdown();
   }
 
   for (auto& thread : consumerThreads) {
@@ -218,9 +205,7 @@ void LLMService::stop() {
   workerManager->stop();
 
   TT_LOG_INFO("[LLMService] Stopped");
-  if (queueManager) {
-    queueManager->clear();
-  }
+  queueManager->clear();
 }
 
 namespace {
@@ -230,10 +215,12 @@ std::string decodeToken(
         uint32_t,
         std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>&
         decoders,
-    const tt::utils::tokenizers::Tokenizer* tokenizer, uint32_t taskId,
-    uint32_t tokenId, bool isFinal, bool skipSpecial) {
+    uint32_t taskId, uint32_t tokenId, bool isFinal, bool skipSpecial) {
   auto& decoder = decoders[taskId];
-  if (!decoder) decoder = tokenizer->createStreamDecoder(skipSpecial);
+  if (!decoder) {
+    decoder = tt::utils::tokenizers::activeTokenizer().createStreamDecoder(
+        skipSpecial);
+  }
   std::string delta = decoder->step(static_cast<int>(tokenId));
   if (isFinal) delta += decoder->flush();
   return delta;
@@ -260,6 +247,8 @@ LLMStreamChunk buildStreamChunk(
   }
 
   choice.token_id = static_cast<int64_t>(token.token_id);
+  choice.spec_accepts = token.spec_accepts;
+  choice.spec_rejects = token.spec_rejects;
   if (token.isFinal()) {
     bool isStop = stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
@@ -374,9 +363,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      std::string delta =
-          decodeToken(streamDecoders, tokenizer, taskId, token.token_id,
-                      isFinal, entry->skip_special_tokens);
+      std::string delta = decodeToken(streamDecoders, taskId, token.token_id,
+                                      isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
@@ -480,7 +468,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-LLMResponse LLMService::processRequest(LLMRequest /*request*/) {
+tt::domain::llm::LLMResponse LLMService::processRequest(
+    tt::domain::llm::LLMRequest /*request*/) {
   throw std::runtime_error(
       "LLMService::processRequest is not supported; use streaming interface");
 }
@@ -510,7 +499,9 @@ void LLMService::processStreamingRequest(
     reasoningSuppressedMap.insert(taskId, true);
   }
 
-  if (reasoningParser) {
+  if (reasoningParser &&
+      !request.disaggregated) {  // If request is disaggregated, dissagregation
+                                 // service will initialize
     reasoningParser->initializeTask(taskId);
   }
 
@@ -557,15 +548,10 @@ void LLMService::processStreamingRequest(
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds));
-  sequence->setNumPromptTokens(prompt.size());
-  if (request.slotId.has_value()) {
-    sequence->setKVCacheSlot(request.slotId.value());
-  }
-  sequence->setContinuation(request.continuation);
-  sequence->setDisaggregated(request.disaggregated);
-  sequence->setSamplingParams(std::make_unique<tt::domain::llm::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request)));
+      std::move(tokenIds), prompt.size(), request.slotId, request.continuation,
+      request.disaggregated,
+      std::make_unique<tt::domain::llm::SamplingParams>(
+          tt::utils::mapper::mapSamplingParams(request)));
   taskQueue->push(*std::move(sequence));
 }
 
@@ -603,10 +589,8 @@ void LLMService::abortRequest(uint32_t taskId) {
     reasoningParser->finalizeTask(taskId);
   }
 
-  if (queueManager) {
-    for (auto& cq : queueManager->cancelQueues) {
-      cq->push(taskId);
-    }
+  for (auto& cq : queueManager->cancelQueues) {
+    cq->push(taskId);
   }
 
   TT_LOG_INFO("[LLMService] Aborted request {}", taskId);

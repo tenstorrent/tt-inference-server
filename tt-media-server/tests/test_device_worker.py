@@ -61,6 +61,8 @@ mock_device_runner.warmup = Mock(return_value=asyncio.Future())
 mock_device_runner.warmup.return_value.set_result(None)
 mock_device_runner.run.return_value = [Mock(), Mock()]
 
+_orig_image_manager = sys.modules.get("utils.image_manager")
+
 mock_image_manager = Mock()
 mock_image_manager.convert_image_to_bytes.return_value = b"fake_image_bytes"
 sys.modules["utils.image_manager"] = Mock()
@@ -76,6 +78,23 @@ if _orig_image_generate_request is not None:
     sys.modules["domain.image_generate_request"] = _orig_image_generate_request
 else:
     sys.modules.pop("domain.image_generate_request", None)
+
+# Restore real utils.image_manager so that downstream tests collected after
+# this file (e.g. tests/test_image_manager.py) re-import the actual module
+# instead of inheriting our Mock. Popping sys.modules is necessary but not
+# sufficient — Python's import system also caches the submodule as an
+# attribute on the parent package, so we delete that and force a real reload.
+if _orig_image_manager is not None:
+    sys.modules["utils.image_manager"] = _orig_image_manager
+else:
+    sys.modules.pop("utils.image_manager", None)
+    import importlib
+
+    import utils
+
+    if hasattr(utils, "image_manager"):
+        delattr(utils, "image_manager")
+    importlib.import_module("utils.image_manager")
 
 
 class WorkerExitException(Exception):

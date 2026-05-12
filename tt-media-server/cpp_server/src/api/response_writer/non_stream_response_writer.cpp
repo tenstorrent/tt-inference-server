@@ -16,15 +16,35 @@ namespace tt::api {
 
 using namespace tt::domain::llm;
 
+namespace {
+
+std::string defaultChatCompletionBuilder(const LLMResponse& response) {
+  return ChatCompletionResponse::fromLLMResponse(response).toJsonString();
+}
+
+}  // namespace
+
 NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
-                                                 HttpCallback httpCallback)
+                                                 HttpCallback httpCallback,
+                                                 ResponseBuilder builder)
     : ResponseWriter(std::move(params)),
-      httpCallback(std::move(httpCallback)) {}
+      httpCallback(std::move(httpCallback)),
+      builder(std::move(builder)) {}
 
 std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
     ResponseWriterParams params, HttpCallback httpCallback) {
-  return std::shared_ptr<NonStreamResponseWriter>(
-      new NonStreamResponseWriter(std::move(params), std::move(httpCallback)));
+  return create(std::move(params), std::move(httpCallback),
+                &defaultChatCompletionBuilder);
+}
+
+std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
+    ResponseWriterParams params, HttpCallback httpCallback,
+    ResponseBuilder builder) {
+  if (!builder) {
+    builder = &defaultChatCompletionBuilder;
+  }
+  return std::shared_ptr<NonStreamResponseWriter>(new NonStreamResponseWriter(
+      std::move(params), std::move(httpCallback), std::move(builder)));
 }
 
 void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
@@ -70,10 +90,7 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
     }
   }
 
-  if (!choice.text.empty() || choice.reasoning.has_value() ||
-      choice.tool_calls.has_value()) {
-    noteToken();
-  }
+  noteToken(choice);
 
   if (choice.finish_reason.has_value()) {
     finishReason = choice.finish_reason.value();
@@ -125,11 +142,9 @@ void NonStreamResponseWriter::finalize() {
   llmResponse.choices.push_back(std::move(choice));
   llmResponse.usage = buildUsage();
 
-  auto chatResponse = ChatCompletionResponse::fromLLMResponse(llmResponse);
-
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  resp->setBody(chatResponse.toJsonString());
+  resp->setBody(builder(llmResponse));
 
   if (httpCallback) {
     auto cb = std::move(httpCallback);
