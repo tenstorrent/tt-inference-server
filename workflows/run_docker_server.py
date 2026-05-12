@@ -144,13 +144,19 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # Detect image-interface era from model_spec.version (the authoritative
-    # per-template release version — see DockerInterface enum and the
-    # comment block in workflows/docker_interface.py). V2_MODERN is the
-    # bash-c ENTRYPOINT shape introduced in 0.11.0 (CLI args after <image>,
-    # --ipc host, MODEL_WEIGHTS_DIR). V1_LEGACY is docker-entrypoint.sh +
-    # gosu (no CLI args after <image>, --shm-size 32G, env-var driven —
-    # MODEL_WEIGHTS_PATH, TT_MODEL_SPEC_JSON_PATH, TT_CACHE_PATH, CACHE_ROOT).
+    # Detect image-interface era from model_spec.version. Source of truth and
+    # full table of per-era differences lives in workflows/docker_interface.py.
+    # In short:
+    #   V2_MODERN (>=0.11.0): ENTRYPOINT is `bash -c source venv && exec python
+    #     run_vllm_api_server.py "$@" --`, so CMD = script args. --ipc host,
+    #     MODEL_WEIGHTS_DIR optional.
+    #   V1_LEGACY (<0.11.0): ENTRYPOINT is docker-entrypoint.sh + gosu, exec'ing
+    #     CMD verbatim. Default CMD ran the script with no args, but the script
+    #     itself requires --tt-device — so the image cannot start without a CMD
+    #     override. We replace CMD with the same bash -c invocation V2_MODERN
+    #     uses for ENTRYPOINT, with our args baked in. --shm-size 32G,
+    #     MODEL_WEIGHTS_PATH / TT_MODEL_SPEC_JSON_PATH / TT_CACHE_PATH /
+    #     CACHE_ROOT all required as env vars.
     #
     # When --override-docker-image is used, model_spec.version is also
     # re-parsed from the override tag (see ModelSpec.apply_overrides), so
@@ -343,20 +349,41 @@ def generate_docker_run_command(
     docker_command.append(model_spec.docker_image)
     # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
     #
-    # Pre-0.11 images: run_vllm_api_server.py took no CLI args at all. Their
-    # ENTRYPOINT was docker-entrypoint.sh -> gosu, which exec'd CMD verbatim;
-    # CMD ran the script with no args, reading TT_MODEL_SPEC_JSON_PATH /
-    # MODEL_WEIGHTS_PATH from the env. Passing --model / --tt-device here would
-    # be forwarded to gosu as the command and would fail.
-    if model_spec.inference_engine == InferenceEngine.VLLM.value and not is_v1_legacy:
-        docker_command.extend(["--model", model_spec.hf_model_repo])
-        docker_command.extend(["--tt-device", runtime_config.device])
+    # Pre-0.11 vs post-0.11 invocation shape:
+    #   post-0.11 ENTRYPOINT already runs `bash -c "source venv && python
+    #     run_vllm_api_server.py $@" --`, so the script args go directly
+    #     after <image> as CMD ($@).
+    #   pre-0.11 ENTRYPOINT is docker-entrypoint.sh + gosu, which exec's
+    #     CMD verbatim. Default CMD is `bash -c "...python
+    #     run_vllm_api_server.py"` (no args) — the script asserts on
+    #     --tt-device, so the image cannot be `docker run`'d without
+    #     overriding CMD. We replace it with the same bash -c invocation
+    #     used by the post-0.11 ENTRYPOINT, with our args baked in.
+    if model_spec.inference_engine == InferenceEngine.VLLM.value:
+        script_args = [
+            "--model",
+            model_spec.hf_model_repo,
+            "--tt-device",
+            runtime_config.device,
+        ]
         if runtime_config.no_auth:
-            docker_command.append("--no-auth")
+            script_args.append("--no-auth")
         if runtime_config.disable_trace_capture:
-            docker_command.append("--disable-trace-capture")
+            script_args.append("--disable-trace-capture")
         if runtime_config.service_port and str(runtime_config.service_port) != "8000":
-            docker_command.extend(["--service-port", str(runtime_config.service_port)])
+            script_args.extend(["--service-port", str(runtime_config.service_port)])
+        if is_v1_legacy:
+            quoted = " ".join(shlex.quote(a) for a in script_args)
+            docker_command.extend(
+                [
+                    "bash",
+                    "-c",
+                    f'source "$PYTHON_ENV_DIR/bin/activate" && '
+                    f"exec python run_vllm_api_server.py {quoted}",
+                ]
+            )
+        else:
+            docker_command.extend(script_args)
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 

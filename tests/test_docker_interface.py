@@ -292,22 +292,33 @@ class TestEraAwareDockerCommand:
         assert cmd[cmd.index("--shm-size") + 1] == "32G"
         assert "--ipc" not in cmd
 
-    def test_legacy_omits_cli_args_after_image(
+    def test_legacy_wraps_cli_args_in_bash_c_cmd_override(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
         # Pre-0.11 ENTRYPOINT is docker-entrypoint.sh + gosu, which exec's
-        # CMD verbatim. Passing --model / --tt-device would be forwarded to
-        # gosu as the command name and crash. The script took no CLI args.
+        # CMD verbatim. The image's default CMD runs the script with no args
+        # but the script asserts on --tt-device, so the image cannot start
+        # without a CMD override. We replace CMD with the post-0.11
+        # bash -c "...python run_vllm_api_server.py <args>" shape so the
+        # entrypoint forwards a working command to gosu.
         ms = dataclasses.replace(
             tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
         )
         cmd, _ = _generate(ms, runtime_config, _make_json_fpath(temp_dir))
 
         post_image = cmd[cmd.index(ms.docker_image) + 1 :]
-        assert "--model" not in post_image
-        assert "--tt-device" not in post_image
-        assert "--no-auth" not in post_image
-        assert "--disable-trace-capture" not in post_image
+        # CMD is three argv elements: bash -c <script>
+        assert post_image[0] == "bash"
+        assert post_image[1] == "-c"
+        script = post_image[2]
+        assert "python run_vllm_api_server.py" in script
+        assert "source" in script and "$PYTHON_ENV_DIR" in script
+        # Required args present in the wrapped script.
+        assert "--model" in script
+        assert "--tt-device" in script
+        # And NOT loose at the end (would be forwarded as gosu args, crash).
+        assert "--model" not in post_image[3:]
+        assert "--tt-device" not in post_image[3:]
 
     def test_legacy_sets_required_env_vars(
         self, tiny_model_spec, runtime_config, temp_dir
