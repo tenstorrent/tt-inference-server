@@ -36,12 +36,11 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   LLMService();
 
-  LLMService(const tt::utils::tokenizers::Tokenizer* tokenizer,
-             std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+  LLMService(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
              std::unique_ptr<ReasoningParser> reasoningParser,
              std::unique_ptr<IToolCallParser> toolCallParser,
-             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
   ~LLMService() override;
@@ -63,6 +62,8 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
       std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
   void abortRequest(uint32_t taskId);
+
+  ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
 
   tt::worker::WorkerManager* getWorkerManager() const {
     return workerManager.get();
@@ -88,8 +89,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
                                                      bool isFinal);
 
-  void init(const tt::utils::tokenizers::Tokenizer* tokenizer,
-            std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
+  void init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
             std::unique_ptr<tt::worker::WorkerManager> workerManager,
             std::unique_ptr<ReasoningParser> reasoningParser,
             std::unique_ptr<IToolCallParser> toolCallParser,
@@ -109,10 +109,10 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
-  const tt::utils::tokenizers::Tokenizer* tokenizer;
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;
+  std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
 }  // namespace tt::services

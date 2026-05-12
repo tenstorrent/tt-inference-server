@@ -2590,6 +2590,23 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
         tasks=[
             EvalTask(

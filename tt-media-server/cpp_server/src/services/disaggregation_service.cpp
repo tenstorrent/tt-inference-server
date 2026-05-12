@@ -64,6 +64,12 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
+            if (auto* reasoningParser = llmService->getReasoningParser()) {
+              reasoningParser->initializeTask(message.task_id);
+              reasoningParser->processToken(message.task_id,
+                                            message.token_ids.back(),
+                                            /*decodedText=*/"");
+            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
@@ -124,13 +130,9 @@ void DisaggregationService::setupSocketHandlers() {
           request.fast_mode = message.fast_mode;
 
           auto maxTokens = message.max_tokens;
-          using PromptVariant = std::variant<std::string, std::vector<int>>;
 
-          request.prompt =
-              message.token_ids.empty()
-                  ? PromptVariant(message.prompt)
-                  : PromptVariant(std::vector<int>(message.token_ids.begin(),
-                                                   message.token_ids.end()));
+          request.prompt = std::vector<int>(message.token_ids.begin(),
+                                            message.token_ids.end());
           auto slotId = message.slot_id;
           request.slotId = slotId;
 
@@ -186,7 +188,7 @@ void DisaggregationService::start() {
 void DisaggregationService::stop() { socketService->stop(); }
 
 void DisaggregationService::handleStreamingRequest(
-    LLMRequest& request, const StreamCallback& callback) {
+    LLMRequest& request, size_t requestHash, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     streamCallbacks.insert(request.task_id, callback);
 
@@ -194,7 +196,7 @@ void DisaggregationService::handleStreamingRequest(
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
     auto sent = socketService->sendPrefillRequest(
-        request.task_id, "",
+        request.task_id, requestHash,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
         slotId, tt::utils::mapper::mapSamplingParams(request));
 

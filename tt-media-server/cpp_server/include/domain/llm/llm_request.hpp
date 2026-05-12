@@ -70,6 +70,7 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> model;
 
   // Prompt can be a string or a list of token ids
+  // Can be either the original prompt or delta
   std::variant<std::string, std::vector<int>> prompt;
 
   // Original chat messages used to derive `prompt`. Kept here so downstream
@@ -118,6 +119,8 @@ struct LLMRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
+  int full_prompt_tokens_count =
+      0;  // Full prompt tokens (before delta replacement)
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 

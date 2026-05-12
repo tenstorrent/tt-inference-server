@@ -110,7 +110,7 @@ void SingleProcessWorker::start() {
     runner_->start([this]() {
       try {
         tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
-            tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+            tt::config::ttWarmupSignalsQueueName());
         warmupQueue.sendReady(worker_id);
         TT_LOG_INFO("[SingleProcessWorker] Worker {} signaled warmup complete",
                     worker_id);
