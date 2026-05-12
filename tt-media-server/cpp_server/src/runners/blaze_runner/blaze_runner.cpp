@@ -10,9 +10,9 @@
 
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
+#include "tt_llm_engine/pipeline/pipeline_types.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
-#include "tt_llm_engine/pipeline/pipeline_types.hpp"
 
 namespace {
 using namespace tt_llm_engine::scheduler::decode;
@@ -232,7 +232,8 @@ inline void BlazeRunner::handleMemoryRequest(
   memoryManager->handleRequest(request);
 }
 
-inline void BlazeRunner::handleMemoryResponse(const ds::SchedulerResponse& response) {
+inline void BlazeRunner::handleMemoryResponse(
+    const ds::SchedulerResponse& response) {
   memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
@@ -263,9 +264,9 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   context.tokensGenerated++;
   if (finished) {
     specAccepts = decodeScheduler->get_spec_accepts(output.slot_id) -
-                           context.specAcceptsAtStart;
+                  context.specAcceptsAtStart;
     specRejects = decodeScheduler->get_spec_rejects(output.slot_id) -
-                           context.specRejectsAtStart;
+                  context.specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
     TT_LOG_INFO(
@@ -322,7 +323,7 @@ void BlazeRunner::handleRequest(
     std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
-  assert(slotId < tt::config::pmMaxUsers());
+  assert(slotId < tt::config::dsMaxUsers());
 
   bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {
@@ -339,9 +340,8 @@ void BlazeRunner::handleRequest(
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
       slotContexts.size());
-  ds::ISRequest req =
-      isNew ? utils::makeSubmitRequest(slotId, *request)
-            : utils::makeContinueRequest(slotId, *request);
+  ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
+                            : utils::makeContinueRequest(slotId, *request);
   if (!decodeScheduler->push_request(req)) {
     TT_LOG_DEBUG(
         "[BlazeRunner] handleRequest: failed to push request, taskId={}, "

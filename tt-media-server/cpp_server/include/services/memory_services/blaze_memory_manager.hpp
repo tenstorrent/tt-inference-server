@@ -8,8 +8,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 
 namespace tt::services {
 

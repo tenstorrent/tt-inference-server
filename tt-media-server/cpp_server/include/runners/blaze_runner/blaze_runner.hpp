@@ -15,11 +15,11 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_types.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/runner_interface.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::runners {
 
