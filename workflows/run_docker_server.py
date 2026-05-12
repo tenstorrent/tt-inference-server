@@ -144,19 +144,17 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
 
-    # Detect image-interface era from model_spec.version. Source of truth and
-    # full table of per-era differences lives in workflows/docker_interface.py.
-    # In short:
+    # Detect image-interface era from model_spec.version. Source of truth lives
+    # in workflows/docker_interface.py. In short:
     #   V2_MODERN (>=0.11.0): ENTRYPOINT is `bash -c source venv && exec python
-    #     run_vllm_api_server.py "$@" --`, so CMD = script args. --ipc host,
-    #     MODEL_WEIGHTS_DIR optional.
+    #     run_vllm_api_server.py "$@" --`, so CMD = script args. --ipc host.
     #   V1_LEGACY (<0.11.0): ENTRYPOINT is docker-entrypoint.sh + gosu, exec'ing
     #     CMD verbatim. Default CMD ran the script with no args, but the script
     #     itself requires --tt-device — so the image cannot start without a CMD
     #     override. We replace CMD with the same bash -c invocation V2_MODERN
-    #     uses for ENTRYPOINT, with our args baked in. --shm-size 32G,
-    #     MODEL_WEIGHTS_PATH / TT_MODEL_SPEC_JSON_PATH / TT_CACHE_PATH /
-    #     CACHE_ROOT all required as env vars.
+    #     uses for ENTRYPOINT, with our args baked in. --shm-size 32G.
+    #     Same env vars as V2_MODERN: the script baked into pre-0.11 images is
+    #     post-50db8ac7 (the Dockerfile lagged but the script was rebuilt).
     #
     # When --override-docker-image is used, model_spec.version is also
     # re-parsed from the override tag (see ModelSpec.apply_overrides), so
@@ -237,20 +235,14 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
-    # weights env var: post-0.11 renamed MODEL_WEIGHTS_PATH -> MODEL_WEIGHTS_DIR.
-    weights_env_var = "MODEL_WEIGHTS_PATH" if is_v1_legacy else "MODEL_WEIGHTS_DIR"
     if setup_config:
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars[weights_env_var] = setup_config.container_model_weights_path
-        elif is_v1_legacy and setup_config.container_model_weights_path:
-            # Pre-0.11 invariant: MODEL_WEIGHTS_PATH is REQUIRED. Even without a
-            # readonly mount (e.g. --host-volume), the legacy entrypoint expects
-            # weights at cache_root/weights/<model>. Post-0.11 leaves
-            # MODEL_WEIGHTS_DIR unset, letting the container download/discover.
-            docker_env_vars[weights_env_var] = setup_config.container_model_weights_path
+            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
+                setup_config.container_model_weights_path
+            )
         if (
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
@@ -258,22 +250,6 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
-
-    # Pre-0.11 invariants: the in-image run_vllm_api_server.py asserts CACHE_ROOT
-    # and TT_CACHE_PATH unconditionally and crashes if either is unset (post-0.11
-    # has CACHE_ROOT baked in as an image ENV and derives TT_CACHE_PATH internally).
-    # Also the weights env var is REQUIRED pre-0.11, OPTIONAL post-0.11. Fill in
-    # safe defaults from setup_config or a baked container path.
-    if is_v1_legacy:
-        cache_root = (
-            setup_config.cache_root
-            if setup_config and setup_config.cache_root
-            else Path("/home/container_app_user/cache_root")
-        )
-        docker_env_vars.setdefault("CACHE_ROOT", cache_root)
-        docker_env_vars.setdefault(
-            "TT_CACHE_PATH", cache_root / "tt_metal_cache" / str(device_cache_dir)
-        )
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
@@ -285,11 +261,10 @@ def generate_docker_run_command(
             docker_env_vars["API_KEY"] = api_key
 
     user_home_path = "/home/container_app_user"
-    # Pre-0.11 invariant: TT_MODEL_SPEC_JSON_PATH is REQUIRED — the in-image
-    # script reads it at startup and crashes if unset. So pre-0.11 must mount
-    # the spec JSON whenever it's provided, regardless of --dev-mode. Post-0.11
-    # only needs RUNTIME_MODEL_SPEC_JSON_PATH in --dev-mode (otherwise the image
-    # uses its baked-in catalog path).
+    # V1_LEGACY images don't ship a baked-in model_spec catalog at the path the
+    # script's catalog-mode fallback expects, so RUNTIME_MODEL_SPEC_JSON_PATH
+    # must be set whenever we have a runtime spec to mount. V2_MODERN does ship
+    # the catalog, so the mount is only needed in --dev-mode.
     mount_spec_json = (
         is_v1_legacy or runtime_config.dev_mode
     ) and json_fpath is not None
@@ -300,11 +275,7 @@ def generate_docker_run_command(
             "--mount",
             f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
         ]
-        # Env-var name differs by era; both point at the same mounted file.
-        if is_v1_legacy:
-            docker_env_vars["TT_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
-        else:
-            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+        docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
     elif runtime_config.dev_mode:
         logger.warning(
             "No runtime model spec JSON path provided while in dev mode, using default model spec."

@@ -11,7 +11,7 @@ Covers:
     (workflows.docker_interface)
   * The pre-0.11 vs post-0.11 branches of generate_docker_run_command —
     verifying the right docker run shape (--ipc host vs --shm-size 32G,
-    CLI args after <image>, MODEL_WEIGHTS_DIR vs MODEL_WEIGHTS_PATH, etc.)
+    CLI args after <image> vs bash -c CMD wrapping, etc.)
     is emitted for each era.
 
 Setup-host integration (volume / weights / hf-cache combinations) lives in
@@ -320,25 +320,11 @@ class TestEraAwareDockerCommand:
         assert "--model" not in post_image[3:]
         assert "--tt-device" not in post_image[3:]
 
-    def test_legacy_sets_required_env_vars(
-        self, tiny_model_spec, runtime_config, temp_dir
-    ):
-        # Pre-0.11 script asserts these unconditionally; the container
-        # crashes at import time if any is unset.
-        ms = dataclasses.replace(
-            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
-        )
-        cmd, _ = _generate(ms, runtime_config, _make_json_fpath(temp_dir))
-
-        assert _find_env_var(cmd, "CACHE_ROOT") is not None
-        assert _find_env_var(cmd, "TT_CACHE_PATH") is not None
-        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
-
     def test_legacy_mounts_spec_json_outside_dev_mode(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
-        """TT_MODEL_SPEC_JSON_PATH is required by the in-image script, so
-        the spec JSON must mount any time it's provided — not just under
+        """Pre-0.11 images have no baked-in model_spec catalog, so the runtime
+        spec JSON must be mounted any time it's provided — not just under
         --dev-mode like the modern path."""
         rc = dataclasses.replace(runtime_config, dev_mode=False)
         ms = dataclasses.replace(
@@ -348,15 +334,14 @@ class TestEraAwareDockerCommand:
 
         cmd_str = " ".join(str(c) for c in cmd)
         assert "model_spec.json" in cmd_str
-        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
-        # And NOT the modern var name.
-        assert _find_env_var(cmd, "RUNTIME_MODEL_SPEC_JSON_PATH") is None
+        assert _find_env_var(cmd, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
 
-    def test_legacy_uses_model_weights_path_env(
+    def test_legacy_uses_same_weights_env_var_as_modern(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
-        """When weights ARE bind-mounted, pre-0.11 uses MODEL_WEIGHTS_PATH
-        (the old name; renamed to MODEL_WEIGHTS_DIR in 0.11)."""
+        """The script baked into pre-0.11 images is post-50db8ac7 and reads
+        MODEL_WEIGHTS_DIR — same as modern. (Pre-0.11 source originally used
+        MODEL_WEIGHTS_PATH, but the image we ship has the newer script.)"""
         from workflows.setup_host import SetupConfig
 
         weights_dir = temp_dir / "my_weights"
@@ -377,23 +362,23 @@ class TestEraAwareDockerCommand:
         ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
             cmd, _ = generate_docker_run_command(ms, runtime_config, config, json_fpath)
 
-        assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is not None
-        assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None
+        assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is not None
+        # And NOT the legacy name (which doesn't exist in the script anymore).
+        assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is None
 
 
 class TestLegacyRealisticFlagCombinations:
-    """Pre-0.11 invariants (TT_MODEL_SPEC_JSON_PATH, MODEL_WEIGHTS_PATH) must
-    hold under the flag combinations a user actually runs with — not only
-    the contrived "host_weights_dir is set" path. Each test exercises one
-    realistic combination of run.py / SetupConfig inputs.
+    """The pre-0.11 image has no baked-in model_spec catalog, so the runtime
+    spec must always be mounted (RUNTIME_MODEL_SPEC_JSON_PATH) for the
+    in-image script to start. Each test exercises one realistic combination
+    of run.py / SetupConfig inputs.
     """
 
     def test_legacy_mounts_spec_json_without_dev_mode(
         self, tiny_model_spec, runtime_config, temp_dir
     ):
-        """The legacy in-image script reads TT_MODEL_SPEC_JSON_PATH at import
-        time and crashes if it's unset. Verify the env var and JSON bind-mount
-        both appear for --docker-server without --dev-mode."""
+        """Verify RUNTIME_MODEL_SPEC_JSON_PATH and the spec JSON bind-mount
+        both appear for --docker-server without --dev-mode (legacy path)."""
         from workflows.setup_host import SetupConfig
 
         ms = dataclasses.replace(
@@ -411,43 +396,9 @@ class TestLegacyRealisticFlagCombinations:
         ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
             cmd, _ = generate_docker_run_command(ms, rc, config, json_fpath)
 
-        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
+        assert _find_env_var(cmd, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
         # And the file is actually bind-mounted into the container.
         assert any("model_spec.json" in str(a) for a in cmd)
-
-    def test_legacy_host_volume_sets_model_weights_path(
-        self, tiny_model_spec, runtime_config, temp_dir
-    ):
-        """--host-volume does NOT populate host_model_weights_mount_dir, but
-        pre-0.11 still requires MODEL_WEIGHTS_PATH. Verify it's derived from
-        cache_root/weights/<model> in this case."""
-        from workflows.setup_host import SetupConfig
-
-        volume_root = temp_dir / "persistent_volumes"
-        volume_root.mkdir()
-
-        ms = dataclasses.replace(
-            tiny_model_spec, docker_image="img:0.10.0-abc", version="0.10.0"
-        )
-        config = SetupConfig(model_spec=ms, host_volume=str(volume_root))
-        json_fpath = _make_json_fpath(temp_dir)
-
-        with patch(
-            "workflows.run_docker_server.get_repo_root_path",
-            return_value=Path("/tmp"),
-        ), patch(
-            "workflows.run_docker_server.DeviceTypes",
-        ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
-            cmd, _ = generate_docker_run_command(ms, runtime_config, config, json_fpath)
-
-        weights_path = _find_env_var(cmd, "MODEL_WEIGHTS_PATH")
-        assert weights_path is not None
-        # Path is cache_root / weights / <model_name>; default cache_root is
-        # /home/container_app_user/cache_root.
-        assert weights_path.endswith(f"weights/{TINY_MODEL_NAME}")
-        assert "cache_root" in weights_path
-        # And NOT the modern var name.
-        assert _find_env_var(cmd, "MODEL_WEIGHTS_DIR") is None
 
     def test_legacy_default_no_flags_auto_creates_host_volume(
         self, tiny_model_spec, monkeypatch, tmp_path
@@ -479,9 +430,7 @@ class TestLegacyRealisticFlagCombinations:
         # bind mount lands on the host (not on an anonymous docker volume).
         assert config.host_model_volume_root is not None
 
-        # And the resulting docker command must satisfy the pre-0.11 invariants
-        # (MODEL_WEIGHTS_PATH + CACHE_ROOT required), proving the auto-fallback
-        # actually unblocks the legacy entrypoint end-to-end.
+        # And the resulting docker command mounts the runtime spec end-to-end.
         rc = RuntimeConfig(
             model=TINY_MODEL_NAME,
             device="n150",
@@ -507,9 +456,7 @@ class TestLegacyRealisticFlagCombinations:
         ), patch("workflows.run_docker_server.short_uuid", return_value="test123"):
             cmd, _ = generate_docker_run_command(ms, rc, config, json_fpath)
 
-        assert _find_env_var(cmd, "MODEL_WEIGHTS_PATH") is not None
-        assert _find_env_var(cmd, "CACHE_ROOT") is not None
-        assert _find_env_var(cmd, "TT_MODEL_SPEC_JSON_PATH") is not None
+        assert _find_env_var(cmd, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
 
     def test_modern_default_no_flags_keeps_docker_named_volume(self, tiny_model_spec):
         """Post-0.11 images can download weights themselves; the auto-fallback

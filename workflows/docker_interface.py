@@ -19,17 +19,21 @@ the workflow stack.
 Per-era differences in `docker run` (see workflows/run_docker_server.py
 for the branching that implements them):
 
-    field               V1_LEGACY (< 0.11.0)            V2_MODERN (>= 0.11.0)
+    field               V1_LEGACY (< 0.11.0)           V2_MODERN (>= 0.11.0)
     ------------------  -----------------------------  -----------------------------
     ENTRYPOINT          docker-entrypoint.sh (gosu)    bash -c source venv && python
-    CLI args after img  none (script took none)        --model X --tt-device Y ...
+                                                       run_vllm_api_server.py "$@"
+    args/CMD shape      bash -c "...python ...args"    --model X --tt-device Y ...
+                        as a CMD override              as raw CMD ($@)
     shared memory       --shm-size 32G                 --ipc host
-    weights env var     MODEL_WEIGHTS_PATH (required)  MODEL_WEIGHTS_DIR (optional)
-    model selection     TT_MODEL_SPEC_JSON_PATH env    --model / --tt-device CLI
-                        (required) + JSON mount        (CLI args + optional
-                                                       RUNTIME_MODEL_SPEC_JSON_PATH)
-    TT_CACHE_PATH       required, must be set          optional, derived from CACHE_ROOT
-    CACHE_ROOT          required, must be set          ENV in image, optional override
+    spec JSON mount     required (image has no         --dev-mode only (image
+                        baked-in catalog)              has baked-in catalog)
+
+The in-image script (run_vllm_api_server.py) is the same across both eras —
+v0.10.0 images were built from main after commit 50db8ac7 (which rewrote the
+script) but before the Dockerfile ENTRYPOINT refactor. Env var names
+(RUNTIME_MODEL_SPEC_JSON_PATH, MODEL_WEIGHTS_DIR, CACHE_ROOT, TT_CACHE_PATH)
+are therefore identical across eras.
 """
 
 from enum import Enum
