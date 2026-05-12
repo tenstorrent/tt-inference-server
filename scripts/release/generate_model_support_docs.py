@@ -919,7 +919,9 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         for model_name, status_enum, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
-            filename = get_model_page_group_filename(model_name, DEVICE_HARDWARE_PAGE_GROUPS_MAPPING[device])
+            filename = get_model_page_group_filename(
+                model_name, DEVICE_HARDWARE_PAGE_GROUPS_MAPPING[device]
+            )
 
             model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name
