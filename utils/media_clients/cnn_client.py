@@ -40,16 +40,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            # 2026-01-11 11:05:48,031 - utils.media_clients.cnn_client - INFO - Runner in use: tt-xla-mobilenetv2
-
+            runner_in_use = self.require_health()
             eval_result = None
             if runner_in_use == CNN_MOBILENETV2_RUNNER:
                 eval_result = self._run_mobilenetv2_eval()
@@ -116,15 +107,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
+            self.require_health()
             status_list = self._run_image_analysis_benchmark()
 
             self._generate_report(status_list)
