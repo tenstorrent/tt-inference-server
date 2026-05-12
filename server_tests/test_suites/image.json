@@ -359,6 +359,7 @@
             ]
         },
         {
+            "_comment": "Blackhole Forge SDXL with LoRA support (Strategy A: recompile-on-change). LoRA load test stays disabled — its concurrent multi-LoRA pattern triggers a UNet recompile per switch and blows the 120s target; needs Strategy B (PEFT adapter swap) before enable.",
             "id": "sdxl-p150x8",
             "weights": [
                 "stable-diffusion-xl-base-1.0"
@@ -398,10 +399,25 @@
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
                     "description": "Param validation"
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "LoRA eval: pixel-art-xl",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0-lora",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20,
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        }
+                    }
                 }
             ]
         },
         {
+            "_comment": "Blackhole Forge SDXL with LoRA support (Strategy A: recompile-on-change). LoRA load test stays disabled — its concurrent multi-LoRA pattern triggers a UNet recompile per switch and blows the 120s target; needs Strategy B (PEFT adapter swap) before enable.",
             "id": "sdxl-p300x2",
             "weights": [
                 "stable-diffusion-xl-base-1.0"
@@ -441,6 +457,20 @@
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
                     "description": "Param validation"
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "LoRA eval: pixel-art-xl",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0-lora",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20,
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        }
+                    }
                 }
             ]
         }
