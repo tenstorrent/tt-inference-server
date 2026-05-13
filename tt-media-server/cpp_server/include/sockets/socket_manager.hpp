@@ -3,42 +3,30 @@
 
 #pragma once
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <atomic>
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <functional>
 #include <map>
-#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "sockets/socket_transport.hpp"
 #include "utils/logger.hpp"
-#include "utils/scoped_fd.hpp"
 
 namespace tt::sockets {
 
 /**
- * @brief Singleton socket manager for inter-server communication
+ * @brief High-level socket manager for inter-server communication
  *
- * Supports both server (listening) and client (connecting) modes.
+ * Provides typed message serialization and dispatch on top of SocketTransport.
  * Can serialize and send objects using Cereal library.
  */
 class SocketManager {
  public:
-  enum class Mode {
-    SERVER,  // Listen for incoming connections
-    CLIENT   // Connect to remote server
-  };
-
   SocketManager() = default;
   SocketManager(const SocketManager&) = delete;
   SocketManager& operator=(const SocketManager&) = delete;
@@ -63,7 +51,7 @@ class SocketManager {
 
   /**
    * @brief Send serializable object to connected peer
-   * @param message_type Type identifier for the message
+   * @param messageType Type identifier for the message
    * @param obj Object to send
    * @return true if successful
    */
@@ -72,7 +60,7 @@ class SocketManager {
 
   /**
    * @brief Register handler for incoming messages of specific type
-   * @param message_type Type identifier to handle
+   * @param messageType Type identifier to handle
    * @param handler Function to call when message is received
    */
   template <typename T>
@@ -106,41 +94,24 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
  private:
-  void serverLoop();
-  void clientLoop();
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
-  bool sendRawData(const std::vector<uint8_t>& data);
-  std::vector<uint8_t> receiveRawData();
 
-  Mode mode_;
-  std::string host_;
-  uint16_t port_;
-
-  tt::utils::ScopedFd serverSocket;
-  tt::utils::ScopedFd clientSocket;
-  int peerSocket = -1;  // Non-owning view of active connection FD
+  SocketTransport transport_;
 
   std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
+  std::thread messageThread_;
 
-  std::thread server_thread_;
-  std::thread message_thread_;
-
-  mutable std::mutex handlers_mutex_;
+  mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
       handlers_;
-
-  mutable std::mutex send_mutex_;
-
-  std::function<void()> connection_lost_callback_;
 };
 
 // Template implementations
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!connected_) {
+  if (!transport_.isConnected()) {
     return false;
   }
 
@@ -155,7 +126,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
     std::string serialized = oss.str();
     std::vector<uint8_t> data(serialized.begin(), serialized.end());
 
-    return sendRawData(data);
+    return transport_.sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -165,7 +136,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
 template <typename T>
 void SocketManager::registerHandler(const std::string& messageType,
                                     std::function<void(const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlers_mutex_);
+  std::lock_guard<std::mutex> lock(handlersMutex_);
 
   handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {
