@@ -415,6 +415,12 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    # EnvironmentConfig.vllm_api_key default is captured at module-load time
+    # (os.environ.get("VLLM_API_KEY") as a dataclass default), so it doesn't
+    # see env vars set later in this process. Re-read explicitly so the
+    # in-process PromptClient trace capture picks up VLLM_API_KEY values that
+    # were set after module import. Mirrors run_benchmarks.py:439.
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
