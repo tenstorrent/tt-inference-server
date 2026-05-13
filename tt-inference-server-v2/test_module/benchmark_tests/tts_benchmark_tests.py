@@ -236,7 +236,9 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     return Block(
-        kind="tts_benchmark",
+        kind="benchmarks",
+        task_type="text_to_speech",
+        title="Text-to-Speech Benchmark",
         id=block_id(ctx) or None,
         targets={"num_prompts": len(status_list)},
         data={

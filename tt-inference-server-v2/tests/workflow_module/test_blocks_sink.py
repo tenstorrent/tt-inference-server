@@ -24,7 +24,9 @@ SWEEP_ENVELOPE = {
 
 def _benchmark_block() -> Block:
     return Block(
-        kind="image_benchmark",
+        kind="benchmarks",
+        task_type="image",
+        title="Image Benchmark",
         id="tt-sdxl_n300",
         data={
             "Benchmarks": {
@@ -38,7 +40,9 @@ def _benchmark_block() -> Block:
 
 def _eval_block() -> Block:
     return Block(
-        kind="image_eval",
+        kind="evals",
+        task_type="image",
+        title="Image Eval",
         id="tt-sdxl_n300",
         data={
             "task_name": "sdxl-prompts",
@@ -55,13 +59,13 @@ def test_accumulator_preserves_insertion_order():
     acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
     acc.accept([_eval_block()])
     kinds = [b.kind for b in acc.blocks]
-    assert kinds == ["image_benchmark", "image_eval"]
+    assert kinds == ["benchmarks", "evals"]
 
 
 def test_accumulator_rejects_non_blocks():
     acc = BlockAccumulator()
     with pytest.raises(TypeError):
-        acc.accept([{"kind": "image_benchmark"}])  # type: ignore[list-item]
+        acc.accept([{"kind": "benchmarks"}])  # type: ignore[list-item]
 
 
 def test_envelope_first_write_wins():
@@ -80,7 +84,7 @@ def test_build_schema_uses_recorded_envelope():
     assert schema.metadata["device"] == "n300"
     assert schema.metadata["generated_at"] == "2026-05-05 12:00:00"
     assert schema.metadata["report_id"]  # synthesised, non-empty
-    assert [b.kind for b in schema.sections] == ["image_benchmark", "image_eval"]
+    assert [b.kind for b in schema.sections] == ["benchmarks", "evals"]
 
 
 def test_build_schema_round_trips_through_report_generator(tmp_path: Path):

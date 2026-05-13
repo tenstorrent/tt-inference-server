@@ -361,7 +361,9 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     )
     num_inference_steps_used = status_list[0].num_inference_steps if status_list else 0
     return Block(
-        kind="image_benchmark",
+        kind="benchmarks",
+        task_type="image",
+        title="Image Benchmark",
         id=block_id(ctx) or None,
         targets={
             "num_prompts": len(status_list),

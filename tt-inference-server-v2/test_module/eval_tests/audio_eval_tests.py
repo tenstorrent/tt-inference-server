@@ -271,7 +271,9 @@ def run_audio_eval(ctx: MediaContext) -> Block:
 
     task = ctx.all_params.tasks[0]
     return Block(
-        kind="audio_eval",
+        kind="evals",
+        task_type="audio",
+        title="Audio Eval",
         id=block_id(ctx) or None,
         targets={
             "task_name": task.task_name,

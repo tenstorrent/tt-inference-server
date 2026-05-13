@@ -245,7 +245,9 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         ctx, ttft_value, inference_steps_per_second
     )
     return Block(
-        kind="video_benchmark",
+        kind="benchmarks",
+        task_type="video",
+        title="Video Benchmark",
         id=block_id(ctx) or None,
         targets={
             "num_prompts": len(status_list),

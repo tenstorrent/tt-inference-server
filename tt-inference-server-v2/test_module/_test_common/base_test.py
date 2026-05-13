@@ -113,16 +113,13 @@ class BaseTest(ABC):
         return value
 
     def _block(self, data: Dict[str, Any]) -> Block:
-        """Wrap ``data`` in a Block tagged with this test's KIND.
-
-        ``Block.targets`` carries the test case's own threshold dict
-        (``self.targets``) so the JSON output preserves what each test
-        was measured against. 
-        """
+        """Wrap ``data`` in a Block tagged kind="server_tests"."""
         bid = block_id(self.ctx) or None if self.ctx is not None else None
         return Block(
-            kind=self.KIND,
+            kind="server_tests",
             id=bid,
+            title=self.KIND.replace("_", " ").title(),
+            task_type=self.TASK_TYPE,
             targets=dict(self.targets),
             data=data,
         )

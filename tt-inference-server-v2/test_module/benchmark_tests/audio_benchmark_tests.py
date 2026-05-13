@@ -291,7 +291,9 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
     )
 
     return Block(
-        kind="audio_benchmark",
+        kind="benchmarks",
+        task_type="audio",
+        title="Audio Benchmark",
         id=block_id(ctx) or None,
         targets={
             "num_prompts": len(status_list),

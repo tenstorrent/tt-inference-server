@@ -222,7 +222,9 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         data["published_score_ref"] = task.score.published_score_ref
 
     return Block(
-        kind="cnn_eval",
+        kind="evals",
+        task_type="cnn",
+        title="CNN Eval",
         id=block_id(ctx) or None,
         targets={
             "task_name": ctx.all_params.tasks[0].task_name,

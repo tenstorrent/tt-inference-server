@@ -497,7 +497,9 @@ def run_image_eval(ctx: MediaContext) -> Block:
             logger.warning(f"No device spec found for device: {ctx.device}")
 
     return Block(
-        kind="image_eval",
+        kind="evals",
+        task_type="image",
+        title="Image Eval",
         id=block_id(ctx) or None,
         targets={
             "task_name": task.task_name,

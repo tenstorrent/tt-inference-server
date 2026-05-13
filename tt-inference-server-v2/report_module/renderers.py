@@ -27,6 +27,7 @@ HIDDEN_COLUMNS = frozenset(
         "test_name",
         "description",
         "elapsed_seconds",
+        "logs",
     }
 )
 
@@ -106,8 +107,21 @@ def _resolve_model_device(
     return model, device
 
 
-def _heading(kind: str, model: str, device: str, title_override: str = "") -> str:
-    label = title_override or kind.replace("_", " ").title()
+def _heading(
+    kind: str,
+    model: str,
+    device: str,
+    title_override: str = "",
+    task_type: str = "",
+) -> str:
+    if title_override:
+        label = title_override
+    elif task_type and kind:
+        label = (
+            f"{task_type.replace('_', ' ').title()} {kind.replace('_', ' ').title()}"
+        )
+    else:
+        label = kind.replace("_", " ").title()
     suffix_bits = [bit for bit in (model, device) if bit]
     if not suffix_bits:
         return f"### {label}"
@@ -231,7 +245,9 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         return ""
 
     model, device = _resolve_model_device(block, metadata, records)
-    heading = _heading(block.kind, model, device, block.title or "")
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
 
     if len(records) > 1:
         table = _build_table(records)

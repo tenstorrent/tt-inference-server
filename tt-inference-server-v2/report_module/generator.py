@@ -263,6 +263,7 @@ def _collapse_same_heading_blocks(sections: List[Block]) -> List[Block]:
 def _has_same_heading(a: Block, b: Block) -> bool:
     return (
         a.kind == b.kind
+        and (a.task_type or "") == (b.task_type or "")
         and (a.title or "") == (b.title or "")
         and (a.id or "") == (b.id or "")
     )
@@ -273,9 +274,9 @@ def _merge_blocks(a: Block, b: Block) -> Block:
     return Block(
         kind=a.kind,
         title=a.title,
+        task_type=a.task_type,
         id=a.id,
         targets=dict(a.targets),
-        checks=dict(a.checks),
         data={"records": records},
     )
 

@@ -241,7 +241,9 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     task = ctx.all_params.tasks[0]
     target_checks, performance_check = _tts_target_checks(ctx, ttft_value, rtr_value)
     return Block(
-        kind="tts_eval",
+        kind="evals",
+        task_type="text_to_speech",
+        title="Text-to-Speech Eval",
         id=block_id(ctx) or None,
         targets={
             "task_name": task.task_name,

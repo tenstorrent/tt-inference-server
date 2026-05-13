@@ -180,7 +180,9 @@ def run_video_eval(ctx: MediaContext) -> Block:
         logger.error(f"Error running video FVD and FVMD eval: {e}")
 
     return Block(
-        kind="video_eval",
+        kind="evals",
+        task_type="video",
+        title="Video Eval",
         id=block_id(ctx) or None,
         targets={
             "task_name": ctx.all_params.tasks[0].task_name,

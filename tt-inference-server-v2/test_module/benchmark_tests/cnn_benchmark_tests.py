@@ -215,7 +215,9 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
         ctx, ttft_value, inference_steps_per_second
     )
     return Block(
-        kind="cnn_benchmark",
+        kind="benchmarks",
+        task_type="cnn",
+        title="CNN Benchmark",
         id=block_id(ctx) or None,
         targets={
             "num_prompts": len(status_list),

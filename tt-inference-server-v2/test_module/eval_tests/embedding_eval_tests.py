@@ -149,7 +149,9 @@ def run_embedding_eval(ctx: MediaContext) -> Block:
 
     logger.info("Generating evals report...")
     return Block(
-        kind="embedding_eval",
+        kind="evals",
+        task_type="embedding",
+        title="Embedding Eval",
         id=block_id(ctx) or None,
         targets={"task_name": ctx.all_params.tasks[0].task_name},
         data={
