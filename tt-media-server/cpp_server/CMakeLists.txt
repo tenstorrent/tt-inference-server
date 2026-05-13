@@ -537,7 +537,6 @@ target_include_directories(session_manager_test PRIVATE
 )
 
 add_executable(chat_completions_resolver_test
-    tests/chat_completions_resolver_test.cpp
     src/api/resolvers/chat_completions_resolver.cpp
     src/domain/session.cpp
     src/services/session_manager.cpp
