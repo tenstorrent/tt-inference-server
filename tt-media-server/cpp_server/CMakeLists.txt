@@ -614,6 +614,7 @@ add_executable(main_integration_test
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/resolvers/chat_completions_resolver.cpp
+    src/api/resolvers/responses_resolver.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
@@ -769,6 +770,7 @@ set(SOURCES
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
     src/api/resolvers/chat_completions_resolver.cpp
+    src/api/resolvers/responses_resolver.cpp
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp

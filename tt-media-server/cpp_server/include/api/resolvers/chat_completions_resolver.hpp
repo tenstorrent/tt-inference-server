@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "api/resolvers/session_error.hpp"
+#include "api/resolvers/session_resolver.hpp"
 #include "domain/llm/chat_message.hpp"
 #include "domain/llm/llm_request.hpp"
 
@@ -47,7 +48,7 @@ namespace tt::api::resolvers {
  * `cancelFn` is bound atomically with the in-flight state so a
  * concurrent SessionManager::closeSession aborts the request.
  */
-class ChatCompletionsResolver {
+class ChatCompletionsResolver : public SessionResolver {
  public:
   explicit ChatCompletionsResolver(
       std::shared_ptr<services::SessionManager> manager);
@@ -55,7 +56,7 @@ class ChatCompletionsResolver {
   void resolve(std::shared_ptr<domain::llm::LLMRequest> request,
                trantor::EventLoop* loop, std::function<void()> onDone,
                std::function<void(const SessionError&)> onError,
-               std::function<void()> cancelFn) const;
+               std::function<void()> cancelFn) const override;
 
   /**
    * Stable 64-bit identity hash of a chat-message list. Computed

@@ -26,6 +26,8 @@ class InterServerService;
 
 namespace tt::api::resolvers {
 class ChatCompletionsResolver;
+class ResponsesResolver;
+class SessionResolver;
 }  // namespace tt::api::resolvers
 
 namespace tt::api {
@@ -76,15 +78,19 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::SessionManager> sessionManager;
   std::shared_ptr<sockets::InterServerService> socketService;
   std::shared_ptr<resolvers::ChatCompletionsResolver> chatResolver;
+  std::shared_ptr<resolvers::ResponsesResolver> respResolver;
 
   /**
    * Handle streaming responses (SSE). The provided `formatter` decides the
    * SSE wire format (chat.completion.chunk vs Responses API events). When
    * `formatter` is null, the writer falls back to ChatCompletionEventFormatter.
+   * `resolver` is the endpoint-specific session resolver -- chat completions
+   * supplies prefix-cache routing, responses supplies plain allocation.
    */
   void handleStreaming(
       std::shared_ptr<LLMRequest> reqPtr,
       std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
+      const resolvers::SessionResolver& resolver,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
@@ -97,6 +103,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   void handleNonStreaming(
       std::shared_ptr<LLMRequest> reqPtr,
       NonStreamResponseWriter::ResponseBuilder builder,
+      const resolvers::SessionResolver& resolver,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**

@@ -15,6 +15,8 @@
 
 #include "api/error_response.hpp"
 #include "api/resolvers/chat_completions_resolver.hpp"
+#include "api/resolvers/responses_resolver.hpp"
+#include "api/resolvers/session_resolver.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/streaming_response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
@@ -47,15 +49,16 @@ LLMController::LLMController() {
   sessionManager = c.sessionManager();
   socketService = c.socket();
   chatResolver = c.chatCompletionsResolver();
+  respResolver = c.responsesResolver();
 
   if (!service) {
     throw std::runtime_error(
         "[LLMController] LLM service not found in container. "
         "Ensure initializeServices() is called before Drogon starts.");
   }
-  if (!chatResolver) {
+  if (!chatResolver || !respResolver) {
     throw std::runtime_error(
-        "[LLMController] ChatCompletionsResolver not found in container. "
+        "[LLMController] Session resolvers not found in container. "
         "Ensure initializeServices() is called before Drogon starts.");
   }
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
@@ -131,9 +134,10 @@ void LLMController::chatCompletions(
     const bool includeUsage = !reqPtr->stream_options.has_value() ||
                               reqPtr->stream_options->include_usage;
     handleStreaming(reqPtr, std::make_shared<ChatCompletionEventFormatter>(),
-                    includeUsage, std::move(callback));
+                    includeUsage, *chatResolver, std::move(callback));
   } else {
-    handleNonStreaming(reqPtr, /*builder=*/nullptr, std::move(callback));
+    handleNonStreaming(reqPtr, /*builder=*/nullptr, *chatResolver,
+                       std::move(callback));
   }
 }
 
@@ -179,8 +183,8 @@ void LLMController::responses(
   if (reqPtr->stream) {
     auto formatter =
         std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
-    handleStreaming(reqPtr, std::move(formatter),
-                    /*includeUsage=*/true, std::move(callback));
+    handleStreaming(reqPtr, std::move(formatter), /*includeUsage=*/true,
+                    *respResolver, std::move(callback));
     return;
   }
 
@@ -237,7 +241,8 @@ void LLMController::responses(
     return Json::writeString(writer, resp.toOpenaiJson());
   };
 
-  handleNonStreaming(reqPtr, std::move(builder), std::move(callback));
+  handleNonStreaming(reqPtr, std::move(builder), *respResolver,
+                     std::move(callback));
 }
 
 ResponseWriterParams LLMController::makeWriterParams(
@@ -294,6 +299,7 @@ drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
 void LLMController::handleStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
     std::shared_ptr<StreamEventFormatter> formatter, bool includeUsage,
+    const resolvers::SessionResolver& resolver,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -306,7 +312,7 @@ void LLMController::handleStreaming(
     svc->abortRequest(taskId);
   };
 
-  chatResolver->resolve(
+  resolver.resolve(
       reqPtr, loop,
       [this, reqPtr, cb, loop, formatter = std::move(formatter),
        includeUsage]() {
@@ -355,6 +361,7 @@ void LLMController::handleStreaming(
 void LLMController::handleNonStreaming(
     std::shared_ptr<LLMRequest> reqPtr,
     NonStreamResponseWriter::ResponseBuilder builder,
+    const resolvers::SessionResolver& resolver,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleNonStreaming");
 
@@ -367,7 +374,7 @@ void LLMController::handleNonStreaming(
     svc->abortRequest(taskId);
   };
 
-  chatResolver->resolve(
+  resolver.resolve(
       reqPtr, loop,
       [this, reqPtr, cb, builder = std::move(builder)]() mutable {
         try {
