@@ -3,10 +3,14 @@
 
 #include "services/image_service.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 #include "worker/worker_info.hpp"
 
@@ -61,11 +65,18 @@ bool ImageService::isModelReady() const {
 }
 
 std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
-  tt::worker::WorkerInfo info;
-  info.worker_id = "0";
-  info.is_ready = ready_.load(std::memory_order_acquire);
-  info.is_alive = true;
-  return {info};
+  const bool ready = ready_.load(std::memory_order_acquire);
+  const size_t count = std::max<size_t>(1, tt::config::numWorkers());
+  std::vector<tt::worker::WorkerInfo> out;
+  out.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    tt::worker::WorkerInfo info;
+    info.worker_id = std::to_string(i);
+    info.is_ready = ready;
+    info.is_alive = true;
+    out.push_back(std::move(info));
+  }
+  return out;
 }
 
 domain::image::ImageResponse ImageService::processRequest(
