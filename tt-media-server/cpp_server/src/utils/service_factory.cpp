@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "api/resolvers/chat_completions_resolver.hpp"
+#include "api/resolvers/responses_resolver.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/disaggregation_service.hpp"
@@ -69,9 +70,12 @@ void initializeServices() {
   auto sessionManager = std::make_shared<services::SessionManager>();
   auto chatCompletionsResolver =
       std::make_shared<api::resolvers::ChatCompletionsResolver>(sessionManager);
+  auto responsesResolver =
+      std::make_shared<api::resolvers::ResponsesResolver>(sessionManager);
 
   c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
-               std::move(sessionManager), std::move(chatCompletionsResolver));
+               std::move(sessionManager), std::move(chatCompletionsResolver),
+               std::move(responsesResolver));
 
   if (auto svc = c.configuredService()) {
     svc->start();

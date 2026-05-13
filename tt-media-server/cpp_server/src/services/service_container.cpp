@@ -12,11 +12,13 @@ void ServiceContainer::initialize(
     std::shared_ptr<DisaggregationService> disaggregation,
     std::shared_ptr<SessionManager> sessionMgr,
     std::shared_ptr<api::resolvers::ChatCompletionsResolver>
-        chatCompletionsResolver) {
+        chatCompletionsResolver,
+    std::shared_ptr<api::resolvers::ResponsesResolver> responsesResolver) {
   socket_ = std::move(socket);
   disaggregation_ = std::move(disaggregation);
   sessionManager_ = std::move(sessionMgr);
   chatCompletionsResolver_ = std::move(chatCompletionsResolver);
+  responsesResolver_ = std::move(responsesResolver);
 }
 
 std::shared_ptr<IService> ServiceContainer::configuredService() const {
