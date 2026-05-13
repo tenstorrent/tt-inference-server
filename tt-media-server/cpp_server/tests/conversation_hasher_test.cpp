@@ -168,8 +168,7 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
   }
 
   std::vector<ChatMessage> lastUser = {makeMessage("user", "first turn")};
-  std::string freshDelta =
-      renderLastUserTurn(lastUser, /*hasPriorTurn=*/false);
+  std::string freshDelta = renderLastUserTurn(lastUser, /*hasPriorTurn=*/false);
   EXPECT_EQ(freshDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
       << "Fresh sessions should keep BOS at the start of the delta";
 
@@ -192,8 +191,7 @@ TEST_F(ConversationHasherTest,
 
   PrefixCachingInfo info = computePrefixCachingInfo(messages);
 
-  EXPECT_EQ(info.deltaPrompt,
-            renderLastUserTurn(turns, info.hasPriorTurn));
+  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(turns, info.hasPriorTurn));
   EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
 
   std::optional<std::vector<ChatMessage>> prior =
@@ -216,9 +214,8 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
   EXPECT_FALSE(info.lookupHash.has_value());
   EXPECT_EQ(info.registrationHash,
             hashConversationPrefix(stripToolMessages(messages)));
-  EXPECT_EQ(info.deltaPrompt,
-            renderLastUserTurn(stripToolMessages(messages),
-                               /*hasPriorTurn=*/false));
+  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages),
+                                                 /*hasPriorTurn=*/false));
 }
 
 TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
@@ -293,7 +290,6 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StabilitySecondTurn) {
   ASSERT_TRUE(info2.hasPriorTurn);
   ASSERT_TRUE(info2.lookupHash.has_value());
   EXPECT_EQ(*info2.lookupHash, hTurn1);
-  EXPECT_EQ(info2.deltaPrompt,
-            renderLastUserTurn(stripToolMessages(turn2),
-                               /*hasPriorTurn=*/true));
+  EXPECT_EQ(info2.deltaPrompt, renderLastUserTurn(stripToolMessages(turn2),
+                                                  /*hasPriorTurn=*/true));
 }

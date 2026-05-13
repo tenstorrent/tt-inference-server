@@ -95,7 +95,8 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
   // sees the start-of-sequence marker. The BOS string is fixed for the
   // process lifetime, so cache it to avoid copying TokenizerConfig on every
   // call.
-  static const std::string bosToken = tokenizers::getTokenizerConfig().bos_token;
+  static const std::string bosToken =
+      tokenizers::getTokenizerConfig().bos_token;
   if (hasPriorTurn && !bosToken.empty() &&
       rendered.compare(0, bosToken.size(), bosToken) == 0) {
     rendered.erase(0, bosToken.size());
