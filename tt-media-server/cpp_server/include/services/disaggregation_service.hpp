@@ -36,7 +36,7 @@ class DisaggregationService {
   void start();
   void stop();
 
-  void handleStreamingRequest(LLMRequest& request,
+  void handleStreamingRequest(LLMRequest& request, const size_t hash,
                               const StreamCallback& callback);
 
  private:

@@ -33,6 +33,7 @@ class MediaContext:
     device: Any
     output_path: str
     service_port: int
+    spec_tests_num_prompts_cap: Optional[int] = None
 
     @property
     def base_url(self) -> str:

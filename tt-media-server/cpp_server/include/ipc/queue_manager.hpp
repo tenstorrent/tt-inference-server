@@ -8,13 +8,11 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_cancel_queue.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-namespace tt::ipc {
+#include "ipc/boost/boost_cancel_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
 
-constexpr size_t RING_BUFFER_CAPACITY = 65536;
-constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
+namespace tt::ipc {
 
 /**
  * Manages task queue, result queues, and cancel queues for LLM workers.
@@ -22,32 +20,32 @@ constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
  */
 class QueueManager {
  public:
-  std::shared_ptr<BoostIpcTaskQueue> taskQueue;
-  std::vector<std::shared_ptr<BoostIpcResultQueue>> resultQueues;
-  std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancelQueues;
+  std::shared_ptr<tt::ipc::boost::TaskQueue> taskQueue;
+  std::vector<std::shared_ptr<tt::ipc::boost::ResultQueue>> resultQueues;
+  std::vector<std::shared_ptr<tt::ipc::boost::CancelQueue>> cancelQueues;
 
   explicit QueueManager(int numWorkers) {
-    taskQueue = std::make_shared<BoostIpcTaskQueue>(
+    taskQueue = std::make_shared<tt::ipc::boost::TaskQueue>(
         tt::config::ttTaskQueueName(), 1024);
     resultQueues.reserve(numWorkers);
     cancelQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
       std::string resultName =
           std::string(tt::config::ttResultQueueName()) + std::to_string(i);
-      resultQueues.emplace_back(std::make_shared<BoostIpcResultQueue>(
-          resultName, RESULT_QUEUE_CAPACITY));
+      resultQueues.emplace_back(std::make_shared<tt::ipc::boost::ResultQueue>(
+          resultName, tt::config::resultQueueCapacity()));
 
       std::string cancelName =
           tt::config::ttCancelQueueName() + std::to_string(i);
-      cancelQueues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
-          cancelName, CANCEL_QUEUE_CAPACITY));
+      cancelQueues.emplace_back(std::make_shared<tt::ipc::boost::CancelQueue>(
+          cancelName, tt::config::cancelQueueCapacity()));
     }
   }
 
   ~QueueManager() { clear(); }
 
   void clear() {
-    BoostIpcTaskQueue::remove(tt::config::ttTaskQueueName());
+    tt::ipc::boost::TaskQueue::remove(tt::config::ttTaskQueueName());
     for (auto& queue : resultQueues) {
       queue->shutdown();
       queue->remove();

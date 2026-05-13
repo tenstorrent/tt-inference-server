@@ -15,8 +15,8 @@
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
+#include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
-#include "ipc/task_queue.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
@@ -40,7 +40,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
              std::unique_ptr<tt::worker::WorkerManager> workerManager,
              std::unique_ptr<ReasoningParser> reasoningParser,
              std::unique_ptr<IToolCallParser> toolCallParser,
-             std::unique_ptr<tt::ipc::QueueManager> queueManager = nullptr,
+             std::unique_ptr<tt::ipc::QueueManager> queueManager,
              size_t maxQueueSize = std::numeric_limits<size_t>::max());
 
   ~LLMService() override;
@@ -112,6 +112,7 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   std::unordered_set<int64_t> stopTokenSet;
   std::unique_ptr<ReasoningParser> reasoningParser;
   std::unique_ptr<IToolCallParser> toolCallParser;
+  std::unique_ptr<IToolCallParser> jsonToolCallParser;
 };
 
 }  // namespace tt::services
