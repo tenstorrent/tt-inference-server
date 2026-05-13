@@ -81,6 +81,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
+    DeviceTypes.P300X2: "https://tenstorrent.com/hardware/tt-quietbox",
     DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
     DeviceTypes.BLACKHOLE_GALAXY: "https://tenstorrent.com/hardware/galaxy",
 }
@@ -115,6 +116,7 @@ DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     ),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
+    DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),

@@ -1,4 +1,4 @@
-# Llama-3.3-70B-Instruct Tenstorrent Support on WH LoudBox/QuietBox
+# Llama-3.3-70B-Instruct Tenstorrent Support on BH QuietBox 2
 
 Supported weights variants for this model implementation are:
 
@@ -11,7 +11,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -20,9 +20,9 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
 - [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
-- [BH QuietBox 2](Llama-3.3-70B-Instruct_p300x2.md)
+- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
-## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -38,15 +38,15 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-750ca54-38dee8c \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241 \
   --model Llama-3.3-70B-Instruct \
-  --tt-device t3k
+  --tt-device p300x2
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --device t3k --workflow server --docker-server
+python3 run.py --model Llama-3.3-70B-Instruct --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -58,7 +58,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/750ca54/models/tt_transformers) |
-| tt-metal Commit | `750ca54` |
-| vLLM Commit | `38dee8c` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-750ca54-38dee8c` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
+| tt-metal Commit | `555f240` |
+| vLLM Commit | `22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241` |

@@ -1,8 +1,8 @@
-# Wan2.2-T2V-A14B-Diffusers Tenstorrent Support on WH LoudBox/QuietBox
+# Wan2.2-T2V-A14B-Diffusers Tenstorrent Support on BH QuietBox 2
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -11,9 +11,9 @@
 - [WH Galaxy](Wan2.2-T2V-A14B-Diffusers_galaxy.md)
 - [BH LoudBox](Wan2.2-T2V-A14B-Diffusers_p150x8.md)
 - [BH 4xP150](Wan2.2-T2V-A14B-Diffusers_p150x4.md)
-- [BH QuietBox 2](Wan2.2-T2V-A14B-Diffusers_p300x2.md)
+- [WH LoudBox/QuietBox](Wan2.2-T2V-A14B-Diffusers_t3k.md)
 
-## Quickstart - Deploy Wan2.2-T2V-A14B-Diffusers Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy Wan2.2-T2V-A14B-Diffusers Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -22,7 +22,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model Wan2.2-T2V-A14B-Diffusers --device t3k --workflow server --docker-server
+python3 run.py --model Wan2.2-T2V-A14B-Diffusers --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
