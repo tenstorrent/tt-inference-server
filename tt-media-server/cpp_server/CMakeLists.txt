@@ -540,6 +540,20 @@ target_include_directories(session_manager_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(chat_completions_resolver_test
+    tests/chat_completions_resolver_test.cpp
+    src/api/resolvers/chat_completions_resolver.cpp
+    src/domain/session.cpp
+    src/services/session_manager.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(chat_completions_resolver_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(chat_completions_resolver_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 add_executable(worker_manager_test
     tests/worker_manager_test.cpp
     src/worker/process_liveness.cpp
@@ -604,6 +618,7 @@ add_executable(main_integration_test
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/resolvers/chat_completions_resolver.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
@@ -652,6 +667,7 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
+gtest_discover_tests(chat_completions_resolver_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
@@ -758,6 +774,7 @@ set(SOURCES
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
+    src/api/resolvers/chat_completions_resolver.cpp
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp

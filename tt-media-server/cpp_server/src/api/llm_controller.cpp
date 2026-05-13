@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "api/error_response.hpp"
+#include "api/resolvers/chat_completions_resolver.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/streaming_response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
@@ -21,15 +22,12 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/responses_request.hpp"
 #include "domain/responses_response.hpp"
-#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
@@ -48,105 +46,47 @@ LLMController::LLMController() {
   disaggregationService = c.disaggregation();
   sessionManager = c.sessionManager();
   socketService = c.socket();
+  chatResolver = c.chatCompletionsResolver();
 
   if (!service) {
     throw std::runtime_error(
         "[LLMController] LLM service not found in container. "
         "Ensure initializeServices() is called before Drogon starts.");
   }
+  if (!chatResolver) {
+    throw std::runtime_error(
+        "[LLMController] ChatCompletionsResolver not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
+  }
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-void LLMController::resolveSession(
-    std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
-    std::function<void(SessionInfo)> onResolved,
-    std::function<void(const SessionError&)> onError,
-    std::function<void()> cancelFn) const {
+void LLMController::applyResolvedSession(
+    LLMRequest& request, const resolvers::ResolvedSession& resolved) {
+  if (resolved.sessionId.has_value()) {
+    request.sessionId = resolved.sessionId;
+  }
+  if (resolved.slotId.has_value()) {
+    request.slotId = resolved.slotId;
+  }
+  if (resolved.session != nullptr) {
+    request.session = resolved.session;
+  }
+  request.continuation = !resolved.isFresh;
+  if (!resolved.isFresh && !resolved.prompt.empty()) {
+    request.prompt = resolved.prompt;
+    request.prompt_tokens_count = resolved.promptTokensCount;
+  }
+}
+
+LLMController::SessionInfo LLMController::makeSessionInfo(
+    const resolvers::ResolvedSession& resolved) {
   SessionInfo info;
-
-  if (!sessionManager) {
-    TT_LOG_WARN("[LLMController] SessionManager not available");
-    onResolved(info);
-    return;
+  if (!resolved.isFresh && resolved.sessionId.has_value()) {
+    info.validSessionFound = true;
+    info.registrationHash = resolved.registrationHash;
   }
-
-  // Routing information derived once from the request's chat messages.
-  auto routingInfo = tt::utils::computePrefixCachingInfo(req->messages);
-  TT_LOG_DEBUG(
-      "[LLMController] Routing: hasPriorTurn={}, lookupHash={}, "
-      "registrationHash={}",
-      routingInfo.hasPriorTurn,
-      routingInfo.lookupHash.has_value()
-          ? std::to_string(*routingInfo.lookupHash)
-          : "none",
-      routingInfo.registrationHash);
-
-  // Layer 1: Prefix-cache routing. Requires a prior [assistant, user] pair
-  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
-    try {
-      auto acquired = sessionManager->tryAcquireByPrefixHash(
-          *routingInfo.lookupHash, cancelFn);
-
-      if (acquired.has_value()) {
-        // HIT: found matching session, send delta only
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
-        TT_LOG_DEBUG(
-            "[LLMController] Prefix cache HIT: hash={}, sessionId={}, "
-            "slotId={}",
-            *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
-        req->slotId = acquired->slotId;
-        req->session = sessionManager->getSession(acquired->sessionId);
-        req->continuation = true;
-        req->prompt = routingInfo.deltaPrompt;
-        req->prompt_tokens_count =
-            static_cast<int>(tt::utils::tokenizers::activeTokenizer()
-                                 .encode(routingInfo.deltaPrompt)
-                                 .size());
-        sessionManager->registerPrefixHash(acquired->sessionId,
-                                           routingInfo.registrationHash);
-        info.validSessionFound = true;
-        info.registrationHash = routingInfo.registrationHash;
-        onResolved(info);
-        return;
-      }
-
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
-      TT_LOG_DEBUG(
-          "[LLMController] Prefix cache MISS: hash={}, allocating new session",
-          *routingInfo.lookupHash);
-    } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMController] All sessions busy for hash={}: {}",
-                  *routingInfo.lookupHash, e.what());
-      onError({SessionErrorType::RATE_LIMIT, e.what()});
-      return;
-    }
-  }
-
-  // Layer 2: Allocate a new session. Async — onCompletion runs on loop.
-  sessionManager->createSession(
-      [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
-       mgr = sessionManager](const domain::Session& session) mutable {
-        req->sessionId = session.getSessionId();
-        req->slotId =
-            mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
-        req->session = mgr->getSession(session.getSessionId());
-        req->continuation = false;
-        mgr->registerPrefixHash(session.getSessionId(),
-                                routingInfo.registrationHash);
-        TT_LOG_INFO(
-            "[LLMController] New session: sessionId={}, slotId={}, "
-            "registered under hash={}",
-            session.getSessionId(),
-            req->slotId.has_value() ? std::to_string(*req->slotId) : "none",
-            routingInfo.registrationHash);
-
-        SessionInfo info;
-        onResolved(info);
-      },
-      [onError](std::string_view err) {
-        onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});
-      },
-      loop, routingInfo.registrationHash);
+  return info;
 }
 
 void LLMController::chatCompletions(
@@ -368,8 +308,8 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
 }
 
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
-    const SessionError& err) {
-  if (err.type == SessionErrorType::RATE_LIMIT) {
+    const resolvers::SessionError& err) {
+  if (err.type == resolvers::SessionErrorType::RATE_LIMIT) {
     return errorResponse(drogon::k429TooManyRequests, err.message,
                          "rate_limit_exceeded");
   }
@@ -394,10 +334,13 @@ void LLMController::handleStreaming(
     svc->abortRequest(taskId);
   };
 
-  resolveSession(
-      reqPtr, loop,
+  chatResolver->resolve(
+      reqPtr->messages, loop,
       [this, reqPtr, cb, loop, formatter = std::move(formatter),
-       includeUsage](SessionInfo sessionInfo) {
+       includeUsage](resolvers::ResolvedSession resolved) {
+        applyResolvedSession(*reqPtr, resolved);
+        SessionInfo sessionInfo = makeSessionInfo(resolved);
+
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
@@ -432,7 +375,7 @@ void LLMController::handleStreaming(
 
         (*cb)(writer->buildResponse());
       },
-      [cb](const SessionError& err) {
+      [cb](const resolvers::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
         (*cb)(makeSessionErrorResponse(err));
@@ -455,10 +398,13 @@ void LLMController::handleNonStreaming(
     svc->abortRequest(taskId);
   };
 
-  resolveSession(
-      reqPtr, loop,
-      [this, reqPtr, cb,
-       builder = std::move(builder)](SessionInfo sessionInfo) mutable {
+  chatResolver->resolve(
+      reqPtr->messages, loop,
+      [this, reqPtr, cb, builder = std::move(builder)](
+          resolvers::ResolvedSession resolved) mutable {
+        applyResolvedSession(*reqPtr, resolved);
+        SessionInfo sessionInfo = makeSessionInfo(resolved);
+
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
@@ -491,7 +437,7 @@ void LLMController::handleNonStreaming(
                             "internal_error");
         }
       },
-      [cb](const SessionError& err) {
+      [cb](const resolvers::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
         (*cb)(makeSessionErrorResponse(err));

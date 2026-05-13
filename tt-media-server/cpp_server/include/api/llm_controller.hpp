@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "api/resolvers/resolved_session.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
@@ -22,6 +23,10 @@
 namespace tt::sockets {
 class InterServerService;
 }
+
+namespace tt::api::resolvers {
+class ChatCompletionsResolver;
+}  // namespace tt::api::resolvers
 
 namespace tt::api {
 
@@ -70,6 +75,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
   std::shared_ptr<sockets::InterServerService> socketService;
+  std::shared_ptr<resolvers::ChatCompletionsResolver> chatResolver;
 
   /**
    * Handle streaming responses (SSE). The provided `formatter` decides the
@@ -98,27 +104,23 @@ class LLMController : public drogon::HttpController<LLMController> {
     std::optional<size_t> registrationHash;
   };
 
-  enum class SessionErrorType {
-    RATE_LIMIT,      // Returns 429 Too Many Requests
-    ALLOCATION_FAIL  // Returns 503 Service Unavailable
-  };
-
-  struct SessionError {
-    SessionErrorType type;
-    std::string message;
-  };
+  /**
+   * Apply a resolver decision onto the in-flight request. Mirrors the
+   * field writes that `LLMController::resolveSession` used to perform
+   * inline, kept here as a private helper so both streaming and
+   * non-streaming paths stay in sync.
+   */
+  static void applyResolvedSession(LLMRequest& request,
+                                   const resolvers::ResolvedSession& resolved);
 
   /**
-   * Validate/create session, mark it in-flight, and populate request fields.
-   * cancelFn is stored atomically with the in-flight state so that a concurrent
-   * closeSession always has a consistent view. Both streaming and non-streaming
-   * paths pass a cancelFn; when closeSession fires mid-flight the client
-   * receives finish_reason="abort" (partial response for non-streaming).
+   * Build the SessionInfo consumed by dispatchGeneration from the
+   * resolver's decision. registrationHash is only forwarded on a
+   * prefix-cache HIT; fresh allocations and the no-manager path leave it
+   * unset, preserving the original (pre-resolver) controller behavior.
    */
-  void resolveSession(std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
-                      std::function<void(SessionInfo)> onResolved,
-                      std::function<void(const SessionError&)> onError,
-                      std::function<void()> cancelFn = nullptr) const;
+  static SessionInfo makeSessionInfo(
+      const resolvers::ResolvedSession& resolved);
 
   /**
    * Determine if disaggregated prefill should be used for this request.
@@ -140,7 +142,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Translate a SessionError into a drogon HTTP error response.
    */
   static drogon::HttpResponsePtr makeSessionErrorResponse(
-      const SessionError& err);
+      const resolvers::SessionError& err);
 
   /**
    * Build the ResponseWriterParams shared by both streaming and non-streaming
