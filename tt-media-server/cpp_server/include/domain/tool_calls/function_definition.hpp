@@ -13,7 +13,6 @@ struct FunctionDefinition {
   std::string name;
   std::optional<std::string> description;
   Json::Value parameters;
-  bool strict = false;
 
   static FunctionDefinition fromJson(const Json::Value& json) {
     FunctionDefinition func;
@@ -25,9 +24,6 @@ struct FunctionDefinition {
     }
     if (const auto& paramsVal = json["parameters"]; !paramsVal.isNull()) {
       func.parameters = paramsVal;
-    }
-    if (const auto& strictVal = json["strict"]; !strictVal.isNull()) {
-      func.strict = strictVal.asBool();
     }
     return func;
   }
@@ -41,7 +37,6 @@ struct FunctionDefinition {
     if (!parameters.isNull()) {
       json["parameters"] = parameters;
     }
-    json["strict"] = strict;
     return json;
   }
 
@@ -58,7 +53,7 @@ struct FunctionDefinition {
     if (!parameters.isNull()) {
       out << ",\"parameters\":" << Json::writeString(builder, parameters);
     }
-    out << ",\"strict\":" << (strict ? "true" : "false") << "}";
+    out << "}";
   }
 };
 
