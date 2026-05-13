@@ -263,13 +263,14 @@ def main() -> int:
 
     schema = accumulator.build_schema()
     _inject_orchestrator_metadata(schema.metadata, ctx, args)
-    accepted, blockers = acceptance_criteria_check(schema)
+    accepted, blockers, categories = acceptance_criteria_check(schema)
     schema.metadata["acceptance_summary_markdown"] = format_acceptance_summary_markdown(
-        accepted, blockers
+        accepted, blockers, categories
     )
     schema.metadata["acceptance_criteria"] = {
         "accepted": accepted,
         "blockers": blockers,
+        "categories": [c.to_dict() for c in categories],
     }
     logger.info(
         "Acceptance criteria: %s (%d blocker(s))",
