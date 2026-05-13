@@ -3,10 +3,9 @@
 
 #include "sockets/zmq_socket_transport.hpp"
 
-#include <zmq.hpp>
-
 #include <chrono>
 #include <thread>
+#include <zmq.hpp>
 
 #include "utils/logger.hpp"
 
@@ -22,7 +21,8 @@ bool ZmqSocketTransport::initializeAsServer(uint16_t port) {
   endpoint_ = "tcp://*:" + std::to_string(port);
 
   try {
-    socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::router);
+    socket_ =
+        std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::router);
     socket_->set(zmq::sockopt::linger, 0);
     socket_->set(zmq::sockopt::rcvtimeo, 100);  // 100ms poll timeout
     socket_->bind(endpoint_);
@@ -42,11 +42,12 @@ bool ZmqSocketTransport::initializeAsClient(const std::string& host,
   endpoint_ = "tcp://" + host + ":" + std::to_string(port);
 
   try {
-    socket_ = std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::dealer);
+    socket_ =
+        std::make_unique<zmq::socket_t>(*context_, zmq::socket_type::dealer);
     socket_->set(zmq::sockopt::linger, 0);
     socket_->set(zmq::sockopt::rcvtimeo, 100);
     socket_->set(zmq::sockopt::reconnect_ivl, 1000);      // 1s reconnect
-    socket_->set(zmq::sockopt::reconnect_ivl_max, 5000);   // max 5s backoff
+    socket_->set(zmq::sockopt::reconnect_ivl_max, 5000);  // max 5s backoff
     socket_->connect(endpoint_);
     TT_LOG_INFO("[ZmqSocketTransport] Client connecting to {}", endpoint_);
     return true;
@@ -68,7 +69,8 @@ void ZmqSocketTransport::start() {
     try {
       zmq::message_t hello(0);
       socket_->send(hello, zmq::send_flags::dontwait);
-    } catch (...) {}
+    } catch (...) {
+    }
     connected_ = true;  // Client considers itself connected once socket is up.
   } else {
     // SERVER (ROUTER): we are NOT connected until we receive the first message
@@ -115,7 +117,8 @@ bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
       // ROUTER must prefix every outgoing message with the peer's identity.
       std::lock_guard<std::mutex> idLock(peerIdMutex_);
       if (peerId_.empty()) {
-        TT_LOG_ERROR("[ZmqSocketTransport] Cannot send — no peer identity known yet");
+        TT_LOG_ERROR(
+            "[ZmqSocketTransport] Cannot send — no peer identity known yet");
         return false;
       }
       zmq::message_t idFrame(peerId_.data(), peerId_.size());
@@ -143,8 +146,9 @@ std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
       // Store peer identity (update on every receive to stay current).
       {
         std::lock_guard<std::mutex> idLock(peerIdMutex_);
-        peerId_.assign(static_cast<uint8_t*>(identity.data()),
-                       static_cast<uint8_t*>(identity.data()) + identity.size());
+        peerId_.assign(
+            static_cast<uint8_t*>(identity.data()),
+            static_cast<uint8_t*>(identity.data()) + identity.size());
         if (!connected_) {
           connected_ = true;
           TT_LOG_INFO("[ZmqSocketTransport] Peer connected (identity size={})",
@@ -152,7 +156,8 @@ std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
         }
       }
 
-      if (!identity.more()) return {};  // Peer sent only identity (hello frame).
+      if (!identity.more())
+        return {};  // Peer sent only identity (hello frame).
     }
 
     zmq::message_t msg;

@@ -104,13 +104,13 @@ bool TcpSocketTransport::initializeAsServer(uint16_t port) {
 }
 
 bool TcpSocketTransport::initializeAsClient(const std::string& host,
-                                         uint16_t port) {
+                                            uint16_t port) {
   mode_ = Mode::CLIENT;
   host_ = host;
   port_ = port;
 
-  TT_LOG_INFO("[TcpSocketTransport] Client initialized to connect to {}:{}", host_,
-              port_);
+  TT_LOG_INFO("[TcpSocketTransport] Client initialized to connect to {}:{}",
+              host_, port_);
   return true;
 }
 
@@ -213,7 +213,8 @@ void TcpSocketTransport::clientLoop() {
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
-      TT_LOG_ERROR("[TcpSocketTransport] Connection failed: {}", strerror(errno));
+      TT_LOG_ERROR("[TcpSocketTransport] Connection failed: {}",
+                   strerror(errno));
       clientSocket_.reset();
       std::this_thread::sleep_for(std::chrono::seconds(5));
       continue;

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "sockets/i_socket_transport.hpp"
-
 #include "config/settings.hpp"
+#include "sockets/i_socket_transport.hpp"
 #include "sockets/tcp_socket_transport.hpp"
 #include "sockets/zmq_socket_transport.hpp"
 #include "utils/logger.hpp"
