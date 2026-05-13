@@ -535,15 +535,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -601,15 +601,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -1412,15 +1412,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
