@@ -57,16 +57,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Run video generation eval using VideoGenerationEvalsTest
+            self.require_health()
             eval_result = self._run_video_generation_eval()
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
@@ -150,20 +141,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from video benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
             status_list = self._run_video_generation_benchmark(num_calls)
-
             self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -395,17 +375,15 @@ class VideoClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
 
-        # Convert VideoGenerationTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "ttft": ttft_value,
+                "latency": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )
@@ -414,7 +392,7 @@ class VideoClientStrategy(BaseMediaStrategy):
                 else 0,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "video",
         }
@@ -423,11 +401,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
 
-    def _calculate_ttft_value(
-        self, status_list: list[VideoGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[VideoGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)

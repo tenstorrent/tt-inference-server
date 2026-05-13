@@ -455,9 +455,7 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 2
         assert benchmarks["num_inference_steps"] == 20
-        # TTFT: (1.0 + 2.0) / 2 = 1.5
-        assert benchmarks["ttft"] == 1.5
-        # inference_steps_per_second: (20.0 + 10.0) / 2 = 15.0
+        assert benchmarks["latency"] == 1.5
         assert benchmarks["inference_steps_per_second"] == 15.0
 
         # Verify metadata

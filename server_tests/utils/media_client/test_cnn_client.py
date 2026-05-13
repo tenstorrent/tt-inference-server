@@ -125,20 +125,10 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Multiple status entries to verify averaging
+        # Multiple status entries to verify averaging.
         status_list = [
-            CnnGenerationTestStatus(
-                status=True,
-                elapsed=1.0,
-                num_inference_steps=50,
-                inference_steps_per_second=50.0,
-            ),
-            CnnGenerationTestStatus(
-                status=True,
-                elapsed=2.0,
-                num_inference_steps=50,
-                inference_steps_per_second=25.0,
-            ),
+            CnnGenerationTestStatus(status=True, elapsed=1.0),
+            CnnGenerationTestStatus(status=True, elapsed=2.0),
         ]
 
         with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
@@ -174,12 +164,11 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
         for key, value in expected_metadata.items():
             assert report_data[key] == value
 
-        # Compare benchmarks structure
         expected_benchmarks = {
             "num_requests": 2,
-            "num_inference_steps": 50,
-            "ttft": 1.5,  # (1.0 + 2.0) / 2
-            "inference_steps_per_second": 37.5,  # (50.0 + 25.0) / 2
+            "num_inference_steps": 0,
+            "latency": 1.5,
+            "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
@@ -288,18 +277,8 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
     def test_generate_report_with_status_list(self, mock_mkdir, mock_file):
         strategy = self._create_strategy()
         status_list = [
-            CnnGenerationTestStatus(
-                status=True,
-                elapsed=1.0,
-                num_inference_steps=50,
-                inference_steps_per_second=50.0,
-            ),
-            CnnGenerationTestStatus(
-                status=True,
-                elapsed=2.0,
-                num_inference_steps=50,
-                inference_steps_per_second=25.0,
-            ),
+            CnnGenerationTestStatus(status=True, elapsed=1.0),
+            CnnGenerationTestStatus(status=True, elapsed=2.0),
         ]
 
         strategy._generate_report(status_list)
@@ -317,13 +296,12 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         written_content = "".join(call[0][0] for call in write_calls)
         report_data = json.loads(written_content)
 
-        # Compare expected values
         assert report_data["model"] == "test_model"
         assert report_data["task_type"] == "cnn"
         expected_benchmarks = {
             "num_requests": 2,
-            "ttft": 1.5,
-            "inference_steps_per_second": 37.5,
+            "latency": 1.5,
+            "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
@@ -342,40 +320,40 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
 
         expected_benchmarks = {
             "num_requests": 0,
-            "ttft": 0,
+            "latency": 0,
             "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
 
 
-class TestCnnClientStrategyCalculateTtft(unittest.TestCase):
-    """Tests for _calculate_ttft_value method."""
+class TestCnnClientStrategyCalculateLatency(unittest.TestCase):
+    """Tests for _calculate_latency method."""
 
     def _create_strategy(self):
         model_spec = MagicMock()
         device = MagicMock()
         return CnnClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    def test_calculate_ttft_with_status_list(self):
+    def test_calculate_latency_with_status_list(self):
         strategy = self._create_strategy()
         status_list = [
             CnnGenerationTestStatus(status=True, elapsed=1.0),
             CnnGenerationTestStatus(status=True, elapsed=2.0),
             CnnGenerationTestStatus(status=True, elapsed=3.0),
         ]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == 2.0
 
-    def test_calculate_ttft_empty_list(self):
+    def test_calculate_latency_empty_list(self):
         strategy = self._create_strategy()
-        result = strategy._calculate_ttft_value([])
+        result = strategy._calculate_latency([])
         assert result == 0
 
-    def test_calculate_ttft_single_item(self):
+    def test_calculate_latencyingle_item(self):
         strategy = self._create_strategy()
         status_list = [CnnGenerationTestStatus(status=True, elapsed=5.0)]
-        result = strategy._calculate_ttft_value(status_list)
+        result = strategy._calculate_latency(status_list)
         assert result == 5.0
 
 

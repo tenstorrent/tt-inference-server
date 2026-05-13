@@ -15,16 +15,17 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "pipeline_manager/pipeline_manager.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/runner_interface.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::runners {
 
 using namespace tt::domain::llm;
 
-namespace pm = tt_blaze::pipeline_manager;
+namespace ds = tt_llm_engine::scheduler::decode;
 
 class BlazeRunner : public IRunner {
  public:
@@ -44,8 +45,8 @@ class BlazeRunner : public IRunner {
   void drainAndHandleOutputs();
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleMemoryResponse(const pm::PMResponse& response);
-  void handleOutput(const pm::OutputMessage& output);
+  inline void handleMemoryResponse(const ds::SchedulerResponse& response);
+  void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
   void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
   void evictSlot(uint32_t slotId);
@@ -56,7 +57,7 @@ class BlazeRunner : public IRunner {
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
-  std::unique_ptr<pm::PipelineManager> pipelineManager;
+  std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
   std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
