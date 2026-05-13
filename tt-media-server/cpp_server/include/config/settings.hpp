@@ -73,6 +73,10 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
+/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
+ * Default: defaults::SOCKET_TRANSPORT. */
+std::string socketTransport();
+
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
 bool enableAccumulatedStreaming();

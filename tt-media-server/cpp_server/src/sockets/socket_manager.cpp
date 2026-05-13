@@ -12,11 +12,13 @@ namespace tt::sockets {
 SocketManager::~SocketManager() { stop(); }
 
 bool SocketManager::initializeAsServer(uint16_t port) {
-  return transport_.initializeAsServer(port);
+  transport_ = createSocketTransport();
+  return transport_->initializeAsServer(port);
 }
 
 bool SocketManager::initializeAsClient(const std::string& host, uint16_t port) {
-  return transport_.initializeAsClient(host, port);
+  transport_ = createSocketTransport();
+  return transport_->initializeAsClient(host, port);
 }
 
 void SocketManager::start() {
@@ -25,7 +27,7 @@ void SocketManager::start() {
   }
 
   running_ = true;
-  transport_.start();
+  transport_->start();
   messageThread_ = std::thread(&SocketManager::messageLoop, this);
 }
 
@@ -35,7 +37,7 @@ void SocketManager::stop() {
   }
 
   running_ = false;
-  transport_.stop();
+  transport_->stop();
 
   if (messageThread_.joinable()) {
     messageThread_.join();
@@ -46,13 +48,8 @@ void SocketManager::stop() {
 
 void SocketManager::messageLoop() {
   while (running_) {
-    if (!transport_.isConnected()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      continue;
-    }
-
     try {
-      auto data = transport_.receiveRawData();
+      auto data = transport_->receiveRawData();
       if (!data.empty()) {
         handleIncomingMessage(data);
       }
@@ -86,12 +83,18 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
   }
 }
 
-bool SocketManager::isConnected() const { return transport_.isConnected(); }
+bool SocketManager::isConnected() const {
+  return transport_ && transport_->isConnected();
+}
 
-std::string SocketManager::getStatus() const { return transport_.getStatus(); }
+std::string SocketManager::getStatus() const {
+  return transport_ ? transport_->getStatus() : "uninitialized";
+}
 
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
-  transport_.setConnectionLostCallback(std::move(callback));
+  if (transport_) {
+    transport_->setConnectionLostCallback(std::move(callback));
+  }
 }
 
 }  // namespace tt::sockets

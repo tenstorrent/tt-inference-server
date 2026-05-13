@@ -323,6 +323,12 @@ uint16_t socketPort() {
   return cached;
 }
 
+std::string socketTransport() {
+  static const std::string cached =
+      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
+  return cached;
+}
+
 size_t maxQueueSize() {
   static const size_t cached =
       static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));

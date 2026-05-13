@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-#include "sockets/socket_transport.hpp"
+#include "sockets/i_socket_transport.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -97,7 +97,7 @@ class SocketManager {
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
 
-  SocketTransport transport_;
+  std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
   std::thread messageThread_;
@@ -111,7 +111,7 @@ class SocketManager {
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!transport_.isConnected()) {
+  if (!transport_ || !transport_->isConnected()) {
     return false;
   }
 
@@ -126,7 +126,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
     std::string serialized = oss.str();
     std::vector<uint8_t> data(serialized.begin(), serialized.end());
 
-    return transport_.sendRawData(data);
+    return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
