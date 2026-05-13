@@ -2622,6 +2622,12 @@ vlm_templates = [
                     "trace_region_size": 28467200,
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GPU,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=False,
+            ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
