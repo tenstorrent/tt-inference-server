@@ -9,6 +9,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
+from report_module.display import DISPLAY_NAMES, decimal_places, display_name
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
@@ -154,6 +155,9 @@ def _format_cell(column: str, value: Any) -> str:
         and value in _CHECK_INT_TO_LABEL
     ):
         return _CHECK_INT_TO_LABEL[value]
+    places = decimal_places(column)
+    if places is not None and isinstance(value, float) and value == value:
+        return f"{value:.{places}f}"
     return format_value(value)
 
 
@@ -167,8 +171,8 @@ def _pivot_single_record(
     """
     return [
         {
-            PIVOT_FIELD_HEADER: col,
-            PIVOT_VALUE_HEADER: format_value(record.get(col)),
+            PIVOT_FIELD_HEADER: display_name(col),
+            PIVOT_VALUE_HEADER: _format_cell(col, record.get(col)),
         }
         for col in columns
     ]
@@ -179,7 +183,7 @@ def _build_table(records: Sequence[Mapping[str, Any]]) -> str:
     if not columns:
         return ""
     display_rows = [
-        {col: _format_cell(col, record.get(col)) for col in columns}
+        {display_name(col): _format_cell(col, record.get(col)) for col in columns}
         for record in records
     ]
     return build_markdown_table(display_rows)
@@ -190,7 +194,11 @@ _SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
 
 def _humanize_key(key: str) -> str:
     """Turn ``"summary_stats"`` into ``"Summary Stats"`` while leaving
-    already-formatted keys (``"TTFT vs. Context"``) untouched."""
+    already-formatted keys (``"TTFT vs. Context"``) untouched.
+
+    Prefers an explicit :mod:`display` mapping when one exists"""
+    if key in DISPLAY_NAMES:
+        return display_name(key)
     if _SNAKE_CASE.match(key):
         return key.replace("_", " ").title()
     return key
