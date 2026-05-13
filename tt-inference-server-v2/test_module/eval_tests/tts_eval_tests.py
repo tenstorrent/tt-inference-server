@@ -26,7 +26,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -244,7 +243,12 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     return Block(
         kind="tts_eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="text_to_speech"),
+        targets={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+        },
         data={
             "task_name": task.task_name,
             "tolerance": task.score.tolerance,

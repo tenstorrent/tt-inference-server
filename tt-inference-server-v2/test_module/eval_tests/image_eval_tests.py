@@ -29,7 +29,7 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 )
 from workflows.utils import is_sdxl_num_prompts_enabled
 
-from .._test_common import block_id, block_targets
+from .._test_common import block_id
 from ..context import MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
 
@@ -499,7 +499,12 @@ def run_image_eval(ctx: MediaContext) -> Block:
     return Block(
         kind="image_eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="image"),
+        targets={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+        },
         data=data,
     )
 

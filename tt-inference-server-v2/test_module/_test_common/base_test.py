@@ -17,7 +17,7 @@ import requests
 
 from report_module.schema import Block
 
-from .blockify import block_id, block_targets
+from .blockify import block_id
 from .test_classes import TestConfig
 
 if TYPE_CHECKING:
@@ -113,14 +113,19 @@ class BaseTest(ABC):
         return value
 
     def _block(self, data: Dict[str, Any]) -> Block:
-        """Wrap ``data`` in a Block tagged with this test's KIND/TASK_TYPE."""
-        if self.ctx is not None:
-            bid = block_id(self.ctx) or None
-            targets = block_targets(self.ctx, task_type=self.TASK_TYPE)
-        else:
-            bid = None
-            targets = {"task_type": self.TASK_TYPE}
-        return Block(kind=self.KIND, id=bid, targets=targets, data=data)
+        """Wrap ``data`` in a Block tagged with this test's KIND.
+
+        ``Block.targets`` carries the test case's own threshold dict
+        (``self.targets``) so the JSON output preserves what each test
+        was measured against. 
+        """
+        bid = block_id(self.ctx) or None if self.ctx is not None else None
+        return Block(
+            kind=self.KIND,
+            id=bid,
+            targets=dict(self.targets),
+            data=data,
+        )
 
     def run_tests(self) -> Block:
         """Run the test with retry/log accounting and return a Block.

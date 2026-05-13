@@ -27,7 +27,7 @@ from workflows.utils import (
 )
 from report_module.schema import Block
 
-from .._test_common import ReportCheckTypes, block_id, block_targets
+from .._test_common import ReportCheckTypes, block_id
 from ..context import MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
@@ -273,7 +273,12 @@ def run_audio_eval(ctx: MediaContext) -> Block:
     return Block(
         kind="audio_eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="audio"),
+        targets={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+        },
         data={
             "task_name": task.task_name,
             "tolerance": task.score.tolerance,

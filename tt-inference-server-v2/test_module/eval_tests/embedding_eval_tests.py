@@ -16,7 +16,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from .._test_common import block_id, block_targets
+from .._test_common import block_id
 from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -151,7 +151,7 @@ def run_embedding_eval(ctx: MediaContext) -> Block:
     return Block(
         kind="embedding_eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="embedding"),
+        targets={"task_name": ctx.all_params.tasks[0].task_name},
         data={
             "task_name": ctx.all_params.tasks[0].task_name,
             **metrics,

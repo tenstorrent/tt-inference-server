@@ -27,7 +27,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -239,7 +238,7 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     return Block(
         kind="tts_benchmark",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="tts"),
+        targets={"num_prompts": len(status_list)},
         data={
             "Benchmarks": {
                 "num_requests": len(status_list),

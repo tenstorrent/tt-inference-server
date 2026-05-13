@@ -24,7 +24,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -218,7 +217,12 @@ def run_cnn_benchmark(ctx: MediaContext) -> Block:
     return Block(
         kind="cnn_benchmark",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="cnn"),
+        targets={
+            "num_prompts": len(status_list),
+            "num_inference_steps": (
+                status_list[0].num_inference_steps if status_list else 0
+            ),
+        },
         data={
             "Benchmarks": {
                 "num_requests": len(status_list),

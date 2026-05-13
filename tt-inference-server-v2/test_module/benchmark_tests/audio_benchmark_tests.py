@@ -31,7 +31,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, count_tokens, require_health
@@ -294,7 +293,11 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
     return Block(
         kind="audio_benchmark",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="audio"),
+        targets={
+            "num_prompts": len(status_list),
+            "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+            "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+        },
         data={
             "Benchmarks": {
                 "num_requests": len(status_list),

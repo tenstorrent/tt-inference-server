@@ -26,7 +26,6 @@ def _benchmark_block() -> Block:
     return Block(
         kind="image_benchmark",
         id="tt-sdxl_n300",
-        targets={"task_type": "image"},
         data={
             "Benchmarks": {
                 "num_requests": 5,
@@ -41,7 +40,6 @@ def _eval_block() -> Block:
     return Block(
         kind="image_eval",
         id="tt-sdxl_n300",
-        targets={"task_type": "image"},
         data={
             "task_name": "sdxl-prompts",
             "tolerance": 0.05,
@@ -102,17 +100,15 @@ def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
     assert "### Image Eval" in md
 
 
-def test_block_targets_no_longer_duplicate_metadata(tmp_path: Path):
-    """Per-block targets carry only block-specific fields (task_type), so the
-    serialised JSON does not repeat model/device/timestamp on every section."""
+def test_sweep_metadata_lives_only_at_top_level(tmp_path: Path):
+    """Sweep-level model/device/timestamp live once in top-level metadata —
+    never duplicated onto every block's serialised payload."""
     acc = BlockAccumulator()
     acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
     schema = acc.build_schema()
     result = ReportGenerator().generate(schema, tmp_path)
 
     payload = result.json_path.read_text()
-    # model/device/timestamp appear once at the top, not in section.targets.
     assert payload.count('"model"') == 0
     assert payload.count('"device"') == 1  # top-level metadata.device
     assert payload.count('"timestamp"') == 0
-    assert '"task_type": "image"' in payload
