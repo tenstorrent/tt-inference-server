@@ -20,9 +20,9 @@
 namespace tt::sockets {
 
 /**
- * @brief High-level socket manager for inter-server communication
+ * @brief Singleton socket manager for inter-server communication
  *
- * Provides typed message serialization and dispatch on top of SocketTransport.
+ * Supports both server (listening) and client (connecting) modes.
  * Can serialize and send objects using Cereal library.
  */
 class SocketManager {
