@@ -50,12 +50,13 @@ def get_api_url():
     return api_url
 
 
-def make_request(api_url, headers, json_data, user_input_prompt):
+def make_request(api_url, headers, json_data, user_input_prompt, save_raw_dir=None):
     stream = json_data.get("stream", True)
     req_time = time.perf_counter()
-    # using requests stream=True, make sure to set a timeout
+    # 2-hour timeout to cover long CoT generations (e.g. Harmony at
+    # reasoning_effort=high with max_tokens >= 65k can run ~50-100 min).
     response = requests.post(
-        api_url, json=json_data, headers=headers, stream=stream, timeout=600
+        api_url, json=json_data, headers=headers, stream=stream, timeout=7200
     )
     # Handle chunked response
     full_text = ""
@@ -109,11 +110,24 @@ def make_request(api_url, headers, json_data, user_input_prompt):
 
     else:
         response_json = response.json()
+        # Harmony / reasoning-channel fallback: surface CoT text when the
+        # final-channel content is empty (e.g. truncated reasoning runs).
+        msg = response_json.get("choices", [{}])[0].get("message", {})
         full_text = (
-            response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+            msg.get("content")
+            or msg.get("reasoning_content")
+            or msg.get("reasoning")
+            or ""
         )
         if "usage" in response_json:
             usage = response_json["usage"]
+        if save_raw_dir:
+            import pathlib
+
+            outdir = pathlib.Path(save_raw_dir)
+            outdir.mkdir(parents=True, exist_ok=True)
+            with open(outdir / "raw_response.json", "w") as f:
+                json.dump(response_json, f, indent=2)
         # TODO: get tokens from tokenizer
         ttft = 0
         num_tokens = 2
@@ -367,6 +381,24 @@ def main():
         action="store_true",
         help="Force generation of max_tokens regardless of stop tokens",
     )
+    parser.add_argument(
+        "--reasoning_effort",
+        type=str,
+        default=None,
+        choices=["low", "medium", "high"],
+        help="reasoning_effort for Harmony / o1 / R1 style models",
+    )
+    parser.add_argument(
+        "--no_stream",
+        action="store_true",
+        help="Disable SSE streaming; return a single JSON response",
+    )
+    parser.add_argument(
+        "--save_raw_dir",
+        type=str,
+        default=None,
+        help="Directory to save the raw API response JSON (non-stream only)",
+    )
     args = parser.parse_args()
 
     assert args.temperature >= 0.0 and args.temperature <= 1.0, (
@@ -432,7 +464,7 @@ def main():
     if authorization is not None:
         headers["Authorization"] = f"Bearer {authorization}"
     api_url = get_api_url()
-    stream = True
+    stream = not args.no_stream
     logging.info(f"API_URL: {api_url}")
 
     # set API prompt and optional parameters
@@ -446,6 +478,9 @@ def main():
     # Add ignore_eos parameter if specified
     if args.ignore_eos:
         json_data["ignore_eos"] = True
+
+    if args.reasoning_effort:
+        json_data["reasoning_effort"] = args.reasoning_effort
 
     if stream:
         json_data["stream_options"] = {
@@ -577,7 +612,13 @@ def main():
 
         for loop_num in range(total_requests):
             logger.info(f"request: {loop_num}/{total_requests}")
-            response_data = make_request(api_url, headers, json_data, user_input_prompt)
+            response_data = make_request(
+                api_url,
+                headers,
+                json_data,
+                user_input_prompt,
+                save_raw_dir=args.save_raw_dir,
+            )
             pprint(response_data)
 
 

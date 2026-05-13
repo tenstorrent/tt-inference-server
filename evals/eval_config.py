@@ -3009,41 +3009,24 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                # max_concurrent=1: vLLM is launched with max_num_seqs=1 on
-                # P300x2, so the server processes prompts strictly serially.
-                # lm-eval-harness with max_concurrent>1 fans out parallel
-                # HTTP POSTs that pile up in the client-side queue while the
-                # server processes one at a time. AIME25 with
-                # reasoning_effort=high takes ~5-15 min per prompt, so
-                # queued requests routinely exceed the client timeout
-                # (we observed 10/30 AIME25 timeouts and 80/198 GPQA
-                # document-level timeouts on the May 1 100-hour sweep).
-                # Setting max_concurrent=1 matches server-side capacity and
-                # eliminates these timeouts (May 6 rerun saw 0/30 AIME25
-                # timeouts vs 10/30 previously).
+                # vLLM launches with max_num_seqs=1 on P300x2; serial decode
+                # means parallel client requests time out in the queue.
                 max_concurrent=1,
                 model_kwargs={
-                    # 14400s = 4-hour per-request budget. Hard AIME25
-                    # problems with reasoning_effort=high can run >2h on
-                    # QB2; 7200 was leaving a thin margin and timing out
-                    # the longest 1-2 problems per run.
                     "timeout": "14400",
                 },
                 gen_kwargs={
-                    # NOTE: stream=false. lm-eval-harness' _consume_sse_stream
-                    # (api_models.py) only understands /v1/completions chunks
-                    # (choice.text), not /v1/chat/completions chunks
-                    # (choice.delta.content). With stream=true the harness
-                    # silently drops every chat chunk and parse_generations
-                    # then fails with KeyError: 'message', producing empty
-                    # resps and 0% scores. The non-streaming path is fine
-                    # because vLLM keeps the connection open and timeout=14400
-                    # gives each request a 4-hour budget.
+                    # lm-eval-harness' SSE consumer only parses
+                    # /v1/completions chunks, not /v1/chat/completions; keep
+                    # stream=false to avoid empty resps + KeyError: 'message'.
                     "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    # Must stay strictly below max_context (131072); equal
+                    # values leave zero headroom, the Harmony path schedules
+                    # a 1-token prefill, and every response comes back empty.
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3066,22 +3049,16 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                # max_concurrent=1: see aime25 above. Same client-side
-                # queueing rationale; 80/198 GPQA documents timed out in
-                # the May 1 sweep before this fix was in place.
                 max_concurrent=1,
                 model_kwargs={
-                    # 4-hour per-request budget; see aime25 above.
                     "timeout": "14400",
                 },
                 gen_kwargs={
-                    # See aime25 above: stream=false to avoid the lm-eval
-                    # SSE-consumer bug that drops chat-completion chunks.
                     "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3109,8 +3086,6 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
-                    # See aime25 above: stream=false to avoid the lm-eval
-                    # SSE-consumer bug that drops chat-completion chunks.
                     "stream": "false",
                     "reasoning_effort": "low",
                     "do_sample": "true",

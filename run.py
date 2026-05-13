@@ -446,14 +446,9 @@ def handle_secrets(runtime_config):
         )
 
     # load secrets from env file or prompt user to enter them once.
-    # override=True so .env is authoritative over any pre-existing env
-    # vars on the host (e.g. stale JWT_SECRET cached by the GitHub Actions
-    # runner from a previous workflow). Without override, python-dotenv's
-    # default (override=False) silently keeps the runner's stale value
-    # while docker --env-file passes the .env value to the server
-    # container, leading to client/server JWT mismatch and per-request
-    # 401s in CI ("Could not parse generations: 'choices'").
-    if not load_dotenv(override=True):
+    # The local load_dotenv (workflows/utils.py) always overrides host env,
+    # so .env wins over any stale value cached by a CI runner.
+    if not load_dotenv():
         env_vars = {}
         for key in required_env_vars:
             _val = os.getenv(key)
@@ -463,10 +458,10 @@ def handle_secrets(runtime_config):
         assert all([env_vars[k] for k in required_env_vars])
         write_dotenv(env_vars)
         # read back secrets to current process env vars
-        check = load_dotenv(override=True)
+        check = load_dotenv()
         assert check, "load_dotenv() failed after write_dotenv(env_vars)."
     else:
-        logger.info("Using secrets from .env file (override=True).")
+        logger.info("Using secrets from .env file.")
         for key in required_env_vars:
             assert os.getenv(key), (
                 f"Required environment variable {key} is not set in .env file."
