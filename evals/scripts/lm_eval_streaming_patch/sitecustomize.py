@@ -164,7 +164,7 @@ def _consume_sync_sse_stream(response) -> dict:
         for line in response.iter_lines(decode_unicode=True):
             if _accumulate_sse_line(line or "", visible, reasoning):
                 break
-    except BaseException as exc:
+    except Exception as exc:
         if visible or reasoning:
             LOGGER.warning(
                 "Streaming interrupted (%r). Returning partial output for %d choice(s).",
@@ -198,7 +198,7 @@ async def _consume_sse_stream(self, response) -> dict:
             line = line_bytes.decode("utf-8")
             if _accumulate_sse_line(line, visible, reasoning):
                 break
-    except BaseException as exc:
+    except Exception as exc:
         if visible or reasoning:
             LOGGER.warning(
                 "Streaming interrupted (%r). Returning partial output for %d choice(s).",

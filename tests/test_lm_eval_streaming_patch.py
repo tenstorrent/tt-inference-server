@@ -6,6 +6,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_patch_module():
     patch_path = (
@@ -69,3 +71,16 @@ def test_mmlu_pro_regex_patch_only_changes_known_mmlu_pro_patterns():
 
     other_filter = FakeRegexFilter(r"#### (\d+)")
     assert other_filter.apply([["#### 42"]], [{}]) == [["ORIGINAL"]]
+
+
+def test_streaming_consumer_does_not_swallow_keyboard_interrupt():
+    patch = _load_patch_module()
+
+    class InterruptedResponse:
+        @staticmethod
+        def iter_lines(decode_unicode=True):
+            yield 'data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}'
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        patch._consume_sync_sse_stream(InterruptedResponse())

@@ -11,10 +11,17 @@
 set -euo pipefail
 
 TASK="${1:-}"
-INCLUDE_PATH="${2:-}"
+if [[ $# -gt 0 ]]; then
+    shift
+fi
+INCLUDE_PATH=""
+if [[ $# -gt 0 && "${1}" != --* ]]; then
+    INCLUDE_PATH="${1}"
+    shift
+fi
 
 if [[ -z "${TASK}" ]]; then
-    echo "usage: $0 <task_name> [include_path]" >&2
+    echo "usage: $0 <task_name> [include_path] [helper_external_lm_eval args...]" >&2
     exit 64
 fi
 
@@ -31,5 +38,6 @@ cmd=(
 if [[ -n "${INCLUDE_PATH}" ]]; then
     cmd+=(--include-path "${INCLUDE_PATH}")
 fi
+cmd+=("$@")
 
 exec "${cmd[@]}"

@@ -313,19 +313,38 @@ EOF
     fi
 }
 
-if [[ -n "${BASE_URL:-}" ]]; then
-    ROOT_URL="${BASE_URL}"
-elif [[ -n "${DEPLOY_URL:-}" ]]; then
-    ROOT_URL="${DEPLOY_URL%/}:${SERVICE_PORT:-443}"
-else
-    ROOT_URL="${DEFAULT_BASE_URL}"
-fi
+resolve_root_url() {
+    local host_python
+    host_python="$(find_host_python)" || {
+        echo "Python is required to resolve endpoint URLs." >&2
+        exit 1
+    }
 
-# Strip any trailing /v1 or /v1/... so we can append cleanly.
-ROOT_URL="${ROOT_URL%/}"
-ROOT_URL="${ROOT_URL%/v1}"
-ROOT_URL="${ROOT_URL%/v1/chat/completions}"
-ROOT_URL="${ROOT_URL%/v1/completions}"
+    PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    TT_EVAL_BASE_URL="${BASE_URL:-}" \
+    TT_EVAL_DEPLOY_URL="${DEPLOY_URL:-}" \
+    TT_EVAL_SERVICE_PORT="${SERVICE_PORT:-443}" \
+    TT_EVAL_DEFAULT_BASE_URL="${DEFAULT_BASE_URL}" \
+        "${host_python}" - <<'PY'
+import os
+from utils.prompt_configs import resolve_server_root_url
+
+base_url = os.environ.get("TT_EVAL_BASE_URL") or None
+deploy_url = os.environ.get("TT_EVAL_DEPLOY_URL") or None
+service_port = os.environ.get("TT_EVAL_SERVICE_PORT") or None
+if base_url is None and deploy_url is None:
+    base_url = os.environ["TT_EVAL_DEFAULT_BASE_URL"]
+print(
+    resolve_server_root_url(
+        service_port=service_port,
+        base_url=base_url,
+        deploy_url=deploy_url,
+    )
+)
+PY
+}
+
+ROOT_URL="$(resolve_root_url)"
 
 if [[ "${USE_CHAT_API}" == "1" ]]; then
     API_URL="${ROOT_URL}/v1/chat/completions"
