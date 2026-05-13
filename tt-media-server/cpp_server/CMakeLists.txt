@@ -614,6 +614,7 @@ add_executable(main_integration_test
     src/services/disaggregation_service.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
 )
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
@@ -755,6 +756,7 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
