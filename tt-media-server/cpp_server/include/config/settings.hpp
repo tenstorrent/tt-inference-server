@@ -73,6 +73,19 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
+/** True when the inter-server socket should integrate with the
+ * PrefillGateway: decode dials gateway as CLIENT, prefill listens as SERVER.
+ * From USE_PREFILL_GATEWAY. Default: defaults::USE_PREFILL_GATEWAY. */
+bool usePrefillGateway();
+
+/** Stable prefill identity sent in PrefillRegistrationMessage. From
+ * PREFILL_SERVER_ID. Defaults to "<hostname>:<SOCKET_PORT>" when unset. */
+std::string prefillServerId();
+
+/** Capacity hint advertised to the gateway. 0 = unlimited. From
+ * PREFILL_MAX_IN_FLIGHT. Default: defaults::PREFILL_MAX_IN_FLIGHT. */
+uint32_t prefillMaxInFlight();
+
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
 bool enableAccumulatedStreaming();

@@ -142,11 +142,23 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
+  /**
+   * @brief When running prefill behind the PrefillGateway, send the
+   * PrefillRegistrationMessage on each successful connection-established
+   * callback. No-op outside gateway-mode prefill.
+   */
+  void sendRegistrationIfArmed();
+
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+
+  // True only when this instance is the prefill side and gateway mode is on.
+  // Guards the connection-established callback so non-prefill/non-gateway
+  // callers don't accidentally emit registration messages.
+  bool gateway_registration_armed_ = false;
 };
 
 }  // namespace tt::sockets

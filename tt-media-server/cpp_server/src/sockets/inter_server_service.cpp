@@ -26,16 +26,41 @@ bool InterServerService::initializeFromConfig() {
 
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
+  const bool gateway_mode = tt::config::usePrefillGateway();
 
   bool success = false;
 
+  // Role mapping:
+  //   direct mode (default)              gateway mode
+  //   ────────────────────────────────  ────────────────────────────────
+  //   decode  → SERVER on SOCKET_PORT   decode  → CLIENT to gateway
+  //   prefill → CLIENT to SOCKET_HOST   prefill → SERVER on SOCKET_PORT
+  //
+  // The gateway sits between decode and prefill, so it listens for decode and
+  // dials each prefill — which is the inverse of the direct 1:1 setup.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as server on port {}", port);
-    success = socket_manager_.initializeAsServer(port);
+    if (gateway_mode) {
+      TT_LOG_INFO("[InterServerService] Decode (gateway mode): connecting to {}:{}",
+                  host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+    } else {
+      TT_LOG_INFO("[InterServerService] Decode (direct mode): listening on port {}",
+                  port);
+      success = socket_manager_.initializeAsServer(port);
+    }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as client to {}:{}", host,
-                port);
-    success = socket_manager_.initializeAsClient(host, port);
+    if (gateway_mode) {
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (gateway mode): listening on port {} "
+          "for gateway",
+          port);
+      success = socket_manager_.initializeAsServer(port);
+      gateway_registration_armed_ = success;
+    } else {
+      TT_LOG_INFO("[InterServerService] Prefill (direct mode): connecting to {}:{}",
+                  host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+    }
   }
 
   if (success) {
@@ -158,6 +183,22 @@ void InterServerService::setupMessageHandlers() {
         }
       });
 
+  // Decode-side: gateway informs us which prefill server was picked for a
+  // task. Informational for v1 (logging only); kept so the wire format is
+  // forward-compatible and decode doesn't log "no handler" warnings.
+  socket_manager_.registerHandler<PrefillAssignmentMessage>(
+      tags::PREFILL_ASSIGNMENT, [](const PrefillAssignmentMessage& message) {
+        TT_LOG_DEBUG(
+            "[InterServerService] PrefillAssignment for task {} → prefill '{}'",
+            message.task_id, message.server_id);
+      });
+
+  // Prefill-side gateway handshake: send PrefillRegistrationMessage on every
+  // successful connection-established event so the gateway can rebuild its
+  // peer view across restarts and reconnects without restarting the prefill.
+  socket_manager_.setConnectionEstablishedCallback(
+      [this]() { sendRegistrationIfArmed(); });
+
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
@@ -193,6 +234,26 @@ void InterServerService::setupMessageHandlers() {
                                  message.memory_usage, message.active_tasks);
         }
       });
+}
+
+void InterServerService::sendRegistrationIfArmed() {
+  if (!gateway_registration_armed_) {
+    return;
+  }
+  PrefillRegistrationMessage msg;
+  msg.server_id = tt::config::prefillServerId();
+  msg.max_in_flight = tt::config::prefillMaxInFlight();
+
+  bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
+  if (ok) {
+    TT_LOG_INFO(
+        "[InterServerService] Sent PrefillRegistration: id='{}' "
+        "max_in_flight={}",
+        msg.server_id, msg.max_in_flight);
+  } else {
+    TT_LOG_WARN(
+        "[InterServerService] Failed to send PrefillRegistration to gateway");
+  }
 }
 
 }  // namespace tt::sockets

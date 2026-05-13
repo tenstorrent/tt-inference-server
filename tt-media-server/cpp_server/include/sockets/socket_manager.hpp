@@ -100,10 +100,32 @@ class SocketManager {
   std::string getStatus() const;
 
   /**
-   * @brief Set callback for connection lost events
-   * @param callback Function to call when connection is lost
+   * @brief Set callback for connection lost events.
+   * @param callback Function called on the internal connection thread.
    */
   void setConnectionLostCallback(std::function<void()> callback);
+
+  /**
+   * @brief Set callback fired when a connection is established (TCP level).
+   *
+   * SERVER mode: called each time a new client is accepted.
+   * CLIENT mode: called each time a (re)connect succeeds.
+   *
+   * Useful for the gateway to know a socket is live before the
+   * PrefillRegistrationMessage arrives. May be called from a background thread.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff.
+   *
+   * On each failed connect attempt the delay doubles until it reaches
+   * `max_delay_ms`. The delay resets to `initial_delay_ms` on success.
+   * Defaults: initial=100ms, max=5000ms.
+   *
+   * Must be called before start().
+   */
+  void setReconnectBackoff(uint32_t initial_delay_ms, uint32_t max_delay_ms);
 
  private:
   void serverLoop();
@@ -134,6 +156,10 @@ class SocketManager {
   mutable std::mutex send_mutex_;
 
   std::function<void()> connection_lost_callback_;
+  std::function<void()> connection_established_callback_;
+
+  uint32_t reconnect_initial_delay_ms_ = 100;
+  uint32_t reconnect_max_delay_ms_ = 5000;
 };
 
 // Template implementations

@@ -125,8 +125,20 @@ void SocketManager::stop() {
   connected_ = false;
 
   // peerSocket is non-owning; just clear the reference.
-  // The owning UniqueFd (serverSocket or clientSocket) handles the close.
+  // The owning ScopedFd (serverSocket or clientSocket) handles the close.
   peerSocket = -1;
+
+  // Shutdown sockets before closing so any in-flight blocking syscall
+  // (accept on serverSocket, connect on clientSocket, blocking recv on the
+  // peer FD) returns immediately. close() alone is racy: a thread parked in
+  // accept(serverSocket) is not always woken by close(serverSocket), which
+  // would deadlock the join() below.
+  if (serverSocket) {
+    ::shutdown(serverSocket.get(), SHUT_RDWR);
+  }
+  if (clientSocket) {
+    ::shutdown(clientSocket.get(), SHUT_RDWR);
+  }
 
   clientSocket.reset();
   serverSocket.reset();
@@ -171,14 +183,23 @@ void SocketManager::serverLoop() {
     TT_LOG_INFO("[SocketManager] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
+    if (connection_established_callback_) {
+      connection_established_callback_();
+    }
+
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     accepted.reset();
     peerSocket = -1;
-    bool wasConnected = connected_.exchange(false);
-    if (wasConnected && connection_lost_callback_) {
+    // We were connected when we entered the spin (we just set connected_=true
+    // above and got past the established callback), so the transition out of
+    // the spin always represents a connection loss. Use a plain store + always
+    // fire — atomic exchange races with receiveRawData/sendRawData which set
+    // connected_=false on errors, swallowing the callback.
+    connected_ = false;
+    if (connection_lost_callback_) {
       connection_lost_callback_();
     }
 
@@ -187,12 +208,15 @@ void SocketManager::serverLoop() {
 }
 
 void SocketManager::clientLoop() {
+  uint32_t delay_ms = reconnect_initial_delay_ms_;
+
   while (running_) {
     clientSocket.reset(socket(AF_INET, SOCK_STREAM, 0));
     if (!clientSocket) {
       TT_LOG_ERROR("[SocketManager] Failed to create client socket: {}",
                    strerror(errno));
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      delay_ms = std::min(delay_ms * 2, reconnect_max_delay_ms_);
       continue;
     }
 
@@ -203,17 +227,20 @@ void SocketManager::clientLoop() {
     if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
       TT_LOG_ERROR("[SocketManager] Invalid address: {}", host_);
       clientSocket.reset();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      delay_ms = std::min(delay_ms * 2, reconnect_max_delay_ms_);
       continue;
     }
 
-    TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{}", host_, port_);
+    TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{} (backoff {}ms)",
+                host_, port_, delay_ms);
 
     if (connect(clientSocket.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[SocketManager] Connection failed: {}", strerror(errno));
       clientSocket.reset();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      delay_ms = std::min(delay_ms * 2, reconnect_max_delay_ms_);
       continue;
     }
 
@@ -227,8 +254,13 @@ void SocketManager::clientLoop() {
 
     peerSocket = clientSocket.get();
     connected_ = true;
+    delay_ms = reconnect_initial_delay_ms_;  // reset on success
 
-    TT_LOG_INFO("[SocketManager] Connected to server");
+    TT_LOG_INFO("[SocketManager] Connected to {}:{}", host_, port_);
+
+    if (connection_established_callback_) {
+      connection_established_callback_();
+    }
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -236,16 +268,14 @@ void SocketManager::clientLoop() {
 
     peerSocket = -1;
     clientSocket.reset();
-    bool wasConnected = connected_.exchange(false);
-    if (wasConnected && connection_lost_callback_) {
+    // See serverLoop: we were connected when we entered the spin, so this
+    // transition is always a real connection-loss event.
+    connected_ = false;
+    if (connection_lost_callback_) {
       connection_lost_callback_();
     }
 
-    TT_LOG_INFO("[SocketManager] Disconnected from server");
-
-    if (running_) {
-      std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
+    TT_LOG_INFO("[SocketManager] Disconnected from {}:{}", host_, port_);
   }
 }
 
@@ -282,7 +312,7 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
   uint32_t netSize = htonl(size);
 
   ssize_t sent = send(peerSocket, &netSize, sizeof(netSize), MSG_NOSIGNAL);
-  if (sent != sizeof(netSize)) {
+  if (sent != static_cast<ssize_t>(sizeof(netSize))) {
     connected_ = false;
     return false;
   }
@@ -317,7 +347,7 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
     return {};
   }
 
-  if (received != sizeof(netSize)) {
+  if (received != static_cast<ssize_t>(sizeof(netSize))) {
     connected_ = false;
     return {};
   }
@@ -405,6 +435,17 @@ std::string SocketManager::getStatus() const {
 
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
   connection_lost_callback_ = std::move(callback);
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  connection_established_callback_ = std::move(callback);
+}
+
+void SocketManager::setReconnectBackoff(uint32_t initial_delay_ms,
+                                        uint32_t max_delay_ms) {
+  reconnect_initial_delay_ms_ = initial_delay_ms;
+  reconnect_max_delay_ms_ = max_delay_ms;
 }
 
 }  // namespace tt::sockets

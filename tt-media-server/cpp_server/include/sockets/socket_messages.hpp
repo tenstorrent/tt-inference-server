@@ -199,4 +199,112 @@ struct LoadBalanceMessage {
   }
 };
 
+/**
+ * @brief Prefill registers itself with the gateway on connect.
+ *
+ * Identity is `server_id` (stable across reconnects), not (host, port). The
+ * gateway uses this to seed its peer registry and accept routing decisions
+ * against the prefill.
+ */
+struct PrefillRegistrationMessage {
+  std::string server_id;
+  uint32_t max_in_flight = 0;
+
+  template <class Archive>
+  void write(Archive& ar) const {
+    ar(server_id, max_in_flight);
+  }
+
+  template <class Archive>
+  static PrefillRegistrationMessage read(Archive& ar) {
+    PrefillRegistrationMessage msg;
+    ar(msg.server_id, msg.max_in_flight);
+    return msg;
+  }
+};
+
+/**
+ * @brief Gateway notifies decode which prefill server was picked for a task.
+ *
+ * Informational for v1 (decode logs / metrics). Reusable for KV-transfer
+ * routing later.
+ */
+struct PrefillAssignmentMessage {
+  uint32_t task_id = 0;
+  std::string server_id;
+
+  template <class Archive>
+  void write(Archive& ar) const {
+    ar(task_id, server_id);
+  }
+
+  template <class Archive>
+  static PrefillAssignmentMessage read(Archive& ar) {
+    PrefillAssignmentMessage msg;
+    ar(msg.task_id, msg.server_id);
+    return msg;
+  }
+};
+
+/**
+ * @brief Prefill informs gateway about new cache blocks (after a request).
+ *
+ * Gateway updates its per-prefill block-cache view used for longest-prefix
+ * match routing. Prefill may batch multiple block hashes per message.
+ */
+struct PrefillCacheBlocksAddedMessage {
+  std::string server_id;
+  std::vector<uint64_t> block_hashes;
+
+  template <class Archive>
+  void write(Archive& ar) const {
+    ar(server_id, block_hashes);
+  }
+
+  template <class Archive>
+  static PrefillCacheBlocksAddedMessage read(Archive& ar) {
+    PrefillCacheBlocksAddedMessage msg;
+    ar(msg.server_id, msg.block_hashes);
+    return msg;
+  }
+};
+
+/**
+ * @brief Prefill informs gateway about evicted cache blocks (LRU pressure).
+ *
+ * Mirror of PrefillCacheBlocksAddedMessage; gateway removes these from the
+ * per-prefill view so they don't influence routing.
+ */
+struct PrefillCacheBlocksEvictedMessage {
+  std::string server_id;
+  std::vector<uint64_t> block_hashes;
+
+  template <class Archive>
+  void write(Archive& ar) const {
+    ar(server_id, block_hashes);
+  }
+
+  template <class Archive>
+  static PrefillCacheBlocksEvictedMessage read(Archive& ar) {
+    PrefillCacheBlocksEvictedMessage msg;
+    ar(msg.server_id, msg.block_hashes);
+    return msg;
+  }
+};
+
+/**
+ * @brief Wire-protocol message-type tags shared by gateway, decode, prefill.
+ *
+ * Tags are short ASCII strings prepended by SocketManager::sendObject and
+ * matched by SocketManager::registerHandler. Existing tags
+ * ("prefill_request", "prefill_result", "health_check") are NOT redeclared
+ * here to keep changes additive; new tags below.
+ */
+namespace tags {
+constexpr const char* PREFILL_REGISTRATION = "prefill_registration";
+constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";
+constexpr const char* PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
+constexpr const char* PREFILL_CACHE_BLOCKS_EVICTED = "prefill_cache_evicted";
+}  // namespace tags
+
 }  // namespace tt::sockets
