@@ -122,7 +122,7 @@ DISPLAY_NAMES: Dict[str, str] = {
 # Raw key → digits after the decimal point. Missing keys use
 # :data:`report_module.formatting._format_float`'s significant-digits
 # default. Pull these straight from v1's sig_digits_map and
-# decimal_places_map; 
+# decimal_places_map;
 DECIMAL_PLACES: Dict[str, int] = {
     "mean_ttft_ms": 1,
     "std_ttft_ms": 1,
