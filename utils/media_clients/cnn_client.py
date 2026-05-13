@@ -261,7 +261,7 @@ class CnnClientStrategy(BaseMediaStrategy):
                 "inference_steps_per_second": 0,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "cnn",
         }

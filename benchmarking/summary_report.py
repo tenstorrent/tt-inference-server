@@ -469,21 +469,24 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "filename": filename,
             "task_type": "text_to_speech",
             "rtr": benchmarks_data.get("rtr", 0),
-            "p90_latency_ms": benchmarks_data.get("latency_p90", 0) * 1000
-            if benchmarks_data.get("latency_p90")
-            else None,
-            "p95_latency_ms": benchmarks_data.get("latency_p95", 0) * 1000
-            if benchmarks_data.get("latency_p95")
-            else None,
+            "p90_latency_ms": (
+                benchmarks_data["latency_p90"] * 1000
+                if benchmarks_data.get("latency_p90") is not None
+                else None
+            ),
+            "p95_latency_ms": (
+                benchmarks_data["latency_p95"] * 1000
+                if benchmarks_data.get("latency_p95") is not None
+                else None
+            ),
             "wer": benchmarks_data.get("wer", None),
         }
         return format_metrics(metrics)
 
     if params.get("task_type") == "audio":
         logger.info(f"Processing AUDIO benchmark file: {filename}")
-        # Audio keeps ``ttft`` because it is real first-token timing
-        # for streaming-on (0 for streaming-off).
         benchmarks_data = data.get("benchmarks: ", data)
+        ttft_seconds = benchmarks_data.get("benchmarks").get("ttft")
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -494,7 +497,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
             "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
             * 1000,
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
+            "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
             "task_type": "audio",
             "accuracy_check": benchmarks_data.get("benchmarks").get(

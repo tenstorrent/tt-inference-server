@@ -416,22 +416,22 @@ class AudioClientStrategy(BaseMediaStrategy):
             return 0
         return sum(status.elapsed for status in status_list) / len(status_list)
 
-    def _calculate_ttft_value(self, status_list: list[AudioTestStatus]) -> float:
-        """Mean TTFT in seconds; 0 when streaming is disabled."""
+    def _calculate_ttft_value(
+        self, status_list: list[AudioTestStatus]
+    ) -> Optional[float]:
+        """Mean TTFT in seconds; ``None`` when no first-token timing was captured."""
         logger.info("Calculating TTFT value")
 
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [
-                status.ttft for status in status_list if status.ttft is not None
-            ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
-                else 0
-            )
+        if not status_list:
+            return None
 
-        return ttft_value
+        valid_ttft_values = [
+            status.ttft for status in status_list if status.ttft is not None
+        ]
+        if not valid_ttft_values:
+            return None
+
+        return sum(valid_ttft_values) / len(valid_ttft_values)
 
     def _calculate_rtr_value(self, status_list: list[AudioTestStatus]) -> float:
         """Calculate RTR value based on model type and status list."""

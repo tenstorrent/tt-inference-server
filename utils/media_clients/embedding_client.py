@@ -61,7 +61,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
-    def run_benchmark(self, attempt=0) -> list[AudioTestStatus]:
+    def run_benchmark(self) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
