@@ -225,6 +225,15 @@ def parse_arguments():
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
     )
     parser.add_argument(
+        "--eval-samples",
+        type=str,
+        default=None,
+        help='Per-task doc_id filter passed to lm-eval as --samples. '
+        'Accepts a JSON string \'{"task_name": [int, ...]}\' or a path to a JSON file. '
+        "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
+        "Text/LLM evals only.",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -394,6 +403,9 @@ def parse_arguments():
         if "--skip-system-sw-validation" not in args:
             args.skip_system_sw_validation = True
 
+    if args.eval_samples and args.limit_samples_mode:
+        parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+
     return args
 
 
@@ -497,6 +509,7 @@ def format_cli_args_summary(runtime_config):
         f"  vllm_override_args:         {runtime_config.vllm_override_args}",
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
+        f"  eval_samples:               {runtime_config.eval_samples}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",
