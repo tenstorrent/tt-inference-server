@@ -69,7 +69,7 @@ This page lists all supported models organized by hardware type.
 
 | Status | Type | Model |
 |--------|------|-------|
-| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
+| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
 
 ## [p100](https://tenstorrent.com/hardware/blackhole)
 
@@ -117,32 +117,32 @@ This page lists all supported models organized by hardware type.
 
 | Status | Type | Model |
 |--------|------|-------|
-| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_n300.md) |
-| 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n300.md) |
-| 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n300.md) |
-| 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n300.md) |
-| 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_n300.md) |
-| 🟢 Complete | TTS | [speecht5_tts](tts/speecht5_tts_n300.md) |
-| 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_n300.md) |
-| 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_n300.md) |
-| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_n300.md) |
-| 🟡 Functional | VLM | [Llama-3.2-11B-Vision](vlm/Llama-3.2-11B-Vision_n300.md) |
-| 🛠️ Experimental | CNN | [efficientnet](cnn/efficientnet_n300.md) |
-| 🛠️ Experimental | CNN | [mobilenetv2](cnn/mobilenetv2_n300.md) |
-| 🛠️ Experimental | CNN | [resnet-50](cnn/resnet-50_n300.md) |
-| 🛠️ Experimental | CNN | [segformer](cnn/segformer_n300.md) |
-| 🛠️ Experimental | CNN | [unet](cnn/unet_n300.md) |
-| 🛠️ Experimental | CNN | [vit](cnn/vit_n300.md) |
-| 🛠️ Experimental | CNN | [vovnet](cnn/vovnet_n300.md) |
-| 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_n300.md) |
-| 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_n300.md) |
-| 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_n300.md) |
-| 🛠️ Experimental | LLM | [AFM-4.5B](llm/AFM-4.5B_n300.md) |
-| 🛠️ Experimental | LLM | [Qwen2.5-7B](llm/Qwen2.5-7B_n300.md) |
-| 🛠️ Experimental | LLM | [Qwen3-4B](llm/Qwen3-4B_n300.md) |
-| 🛠️ Experimental | VLM | [gemma-3-4b-it](vlm/gemma-3-4b-it_n300.md) |
-| 🛠️ Experimental | VLM | [Qwen2.5-VL-3B-Instruct](vlm/Qwen2.5-VL-3B-Instruct_n300.md) |
-| 🛠️ Experimental | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_n300.md) |
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_n150.md) |
+| 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n150.md) |
+| 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n150.md) |
+| 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n150.md) |
+| 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_n150.md) |
+| 🟢 Complete | TTS | [speecht5_tts](tts/speecht5_tts_n150.md) |
+| 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_n150.md) |
+| 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_n150.md) |
+| 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_n150.md) |
+| 🟡 Functional | VLM | [Llama-3.2-11B-Vision](vlm/Llama-3.2-11B-Vision_n150.md) |
+| 🛠️ Experimental | CNN | [efficientnet](cnn/efficientnet_n150.md) |
+| 🛠️ Experimental | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
+| 🛠️ Experimental | CNN | [resnet-50](cnn/resnet-50_n150.md) |
+| 🛠️ Experimental | CNN | [segformer](cnn/segformer_n150.md) |
+| 🛠️ Experimental | CNN | [unet](cnn/unet_n150.md) |
+| 🛠️ Experimental | CNN | [vit](cnn/vit_n150.md) |
+| 🛠️ Experimental | CNN | [vovnet](cnn/vovnet_n150.md) |
+| 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_n150.md) |
+| 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_n150.md) |
+| 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_n150.md) |
+| 🛠️ Experimental | LLM | [AFM-4.5B](llm/AFM-4.5B_n150.md) |
+| 🛠️ Experimental | LLM | [Qwen2.5-7B](llm/Qwen2.5-7B_n150.md) |
+| 🛠️ Experimental | LLM | [Qwen3-4B](llm/Qwen3-4B_n150.md) |
+| 🛠️ Experimental | VLM | [gemma-3-4b-it](vlm/gemma-3-4b-it_n150.md) |
+| 🛠️ Experimental | VLM | [Qwen2.5-VL-3B-Instruct](vlm/Qwen2.5-VL-3B-Instruct_n150.md) |
+| 🛠️ Experimental | VLM | [Qwen2.5-VL-7B-Instruct](vlm/Qwen2.5-VL-7B-Instruct_n150.md) |
 
 ## [n150](https://tenstorrent.com/hardware/wormhole)
 
