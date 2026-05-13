@@ -19,6 +19,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
 - [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
+- [BH QuietBox GE (2xP300)](Llama-3.3-70B-Instruct_p300x2.md)
 - [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on WH Galaxy
