@@ -24,3 +24,4 @@ deps/
 
 # Override root-level *.json ignore
 !resources/openapi.json
+!.mcp.json
