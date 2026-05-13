@@ -2704,9 +2704,12 @@ vlm_templates = [
                 max_context=36864,
                 default_impl=True,
                 env_vars={
-                    # Absolute path — the relative path used by other specs only
-                    # resolves correctly from the docker working dir.
-                    "TT_MESH_GRAPH_DESC_PATH": "/home/cust-team/ssinghal/tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                    # Container-internal absolute path. Works inside the docker
+                    # server (TT_METAL_HOME=/home/container_app_user/tt-metal).
+                    # For --local-server, export TT_MESH_GRAPH_DESC_PATH manually
+                    # before launching since the script applies spec env_vars
+                    # *after* tt-metal already needs the path.
+                    "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                     # T3K mesh descriptor is a MESH topology; the default
                     # FABRIC_1D_RING (cluster default on Galaxy chassis) wants
                     # a torus and won't initialize. Force FABRIC_1D via the env
