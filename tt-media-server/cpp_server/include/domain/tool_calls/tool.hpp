@@ -14,11 +14,11 @@ struct Tool {
 
   static Tool fromJson(const Json::Value& json) {
     Tool tool;
-    if (json.isMember("type") && !json["type"].isNull()) {
-      tool.type = json["type"].asString();
+    if (const auto& typeVal = json["type"]; !typeVal.isNull()) {
+      tool.type = typeVal.asString();
     }
-    if (json.isMember("function") && !json["function"].isNull()) {
-      tool.functionDefinition = FunctionDefinition::fromJson(json["function"]);
+    if (const auto& funcVal = json["function"]; !funcVal.isNull()) {
+      tool.functionDefinition = FunctionDefinition::fromJson(funcVal);
     }
     return tool;
   }
@@ -28,6 +28,12 @@ struct Tool {
     json["type"] = type;
     json["function"] = functionDefinition.toJson();
     return json;
+  }
+
+  void writeTo(std::ostream& out) const {
+    out << "{\"type\":\"" << type << "\",\"function\":";
+    functionDefinition.writeTo(out);
+    out << "}";
   }
 };
 }  // namespace tt::domain::tool_calls

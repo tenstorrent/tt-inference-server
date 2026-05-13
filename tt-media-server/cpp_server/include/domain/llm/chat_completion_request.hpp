@@ -207,11 +207,13 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     if (json.isMember("tools") && json["tools"].isArray()) {
+      const auto& toolsArr = json["tools"];
       std::vector<tool_calls::Tool> toolList;
-      for (const auto& tool : json["tools"]) {
-        toolList.push_back(tool_calls::Tool::fromJson(tool));
+      toolList.reserve(toolsArr.size());
+      for (const auto& tool : toolsArr) {
+        toolList.emplace_back(tool_calls::Tool::fromJson(tool));
       }
-      req.tools = toolList;
+      req.tools = std::move(toolList);
     }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())

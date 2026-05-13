@@ -4,6 +4,7 @@
 #include <json/value.h>
 
 #include <optional>
+#include <ostream>
 #include <string>
 
 namespace tt::domain::tool_calls {
@@ -16,17 +17,17 @@ struct FunctionDefinition {
 
   static FunctionDefinition fromJson(const Json::Value& json) {
     FunctionDefinition func;
-    if (json.isMember("name") && !json["name"].isNull()) {
-      func.name = json["name"].asString();
+    if (const auto& nameVal = json["name"]; !nameVal.isNull()) {
+      func.name = nameVal.asString();
     }
-    if (json.isMember("description") && !json["description"].isNull()) {
-      func.description = json["description"].asString();
+    if (const auto& descVal = json["description"]; !descVal.isNull()) {
+      func.description = descVal.asString();
     }
-    if (json.isMember("parameters") && !json["parameters"].isNull()) {
-      func.parameters = json["parameters"];
+    if (const auto& paramsVal = json["parameters"]; !paramsVal.isNull()) {
+      func.parameters = paramsVal;
     }
-    if (json.isMember("strict") && !json["strict"].isNull()) {
-      func.strict = json["strict"].asBool();
+    if (const auto& strictVal = json["strict"]; !strictVal.isNull()) {
+      func.strict = strictVal.asBool();
     }
     return func;
   }
@@ -42,6 +43,22 @@ struct FunctionDefinition {
     }
     json["strict"] = strict;
     return json;
+  }
+
+  void writeTo(std::ostream& out) const {
+    static Json::StreamWriterBuilder builder = []() {
+      Json::StreamWriterBuilder b;
+      b["indentation"] = "";
+      return b;
+    }();
+    out << "{\"name\":\"" << name << "\"";
+    if (description.has_value()) {
+      out << ",\"description\":\"" << description.value() << "\"";
+    }
+    if (!parameters.isNull()) {
+      out << ",\"parameters\":" << Json::writeString(builder, parameters);
+    }
+    out << ",\"strict\":" << (strict ? "true" : "false") << "}";
   }
 };
 

@@ -102,8 +102,9 @@ std::string DeepseekTokenizer::applyChatTemplate(
     out << toolsDescription;
 
     for (const auto& tool : *tools) {
-      out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
-          << tool.toJson() << "\n```\n";
+      out << "- `" << tool.functionDefinition.name << "`:\n```json\n";
+      tool.writeTo(out);
+      out << "\n```\n";
     }
   }
 

@@ -87,7 +87,8 @@ std::string LlamaTokenizer::applyChatTemplate(
         << "Do not use variables.\n\n";
 
     for (const auto& tool : *tools) {
-      out << tool.toJson() << "\n\n";
+      tool.writeTo(out);
+      out << "\n\n";
     }
 
     out << firstUserMessage << llamaEot;
