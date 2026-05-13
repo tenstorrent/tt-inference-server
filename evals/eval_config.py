@@ -1026,7 +1026,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # base_url intentionally omitted: run_evals.py sets it dynamically
+                    # from --service-port. Hardcoding base_url here causes the
+                    # appended-after-dynamic-value to win at lm_eval --model_args
+                    # parse time, defeating --service-port.
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
@@ -1063,7 +1066,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    # base_url intentionally omitted: see r1_gpqa_diamond task above.
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
