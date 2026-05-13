@@ -1,4 +1,4 @@
-# FLUX.1-dev Tenstorrent Support on BH QuietBox GE (2xP300)
+# FLUX.1-dev Tenstorrent Support on BH QuietBox 2
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `FLUX.1-dev` in commands below.
 
 #### Useful links
 
-- [BH QuietBox GE (2xP300) details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -20,7 +20,7 @@ To use non-default weights, replace `FLUX.1-dev` in commands below.
 - [BH 4xP150](FLUX.1-dev_p150x4.md)
 - [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
 
-## Quickstart - Deploy FLUX.1-dev Inference Server on BH QuietBox GE (2xP300)
+## Quickstart - Deploy FLUX.1-dev Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

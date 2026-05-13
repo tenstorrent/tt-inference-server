@@ -1,8 +1,8 @@
-# Wan2.2-T2V-A14B-Diffusers Tenstorrent Support on BH QuietBox GE (2xP300)
+# Wan2.2-T2V-A14B-Diffusers Tenstorrent Support on BH QuietBox 2
 
 #### Useful links
 
-- [BH QuietBox GE (2xP300) details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -13,7 +13,7 @@
 - [BH 4xP150](Wan2.2-T2V-A14B-Diffusers_p150x4.md)
 - [WH LoudBox/QuietBox](Wan2.2-T2V-A14B-Diffusers_t3k.md)
 
-## Quickstart - Deploy Wan2.2-T2V-A14B-Diffusers Inference Server on BH QuietBox GE (2xP300)
+## Quickstart - Deploy Wan2.2-T2V-A14B-Diffusers Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 

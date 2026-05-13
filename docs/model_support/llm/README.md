@@ -8,7 +8,7 @@ This page lists all supported large language model models and their device compa
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
+| Model Name | [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Llama-3.3-70B-Instruct](Llama-3.3-70B-Instruct_galaxy.md) | - | - | [🟢 Complete](Llama-3.3-70B-Instruct_galaxy.md) | [🟡 Functional](Llama-3.3-70B-Instruct_p150x8.md) | [🟡 Functional](Llama-3.3-70B-Instruct_p150x4.md) | [🟡 Functional](Llama-3.3-70B-Instruct_p300x2.md) | - | [🟡 Functional](Llama-3.3-70B-Instruct_t3k.md) | - |
 | [Qwen3-32B](Qwen3-32B_galaxy.md) | - | - | [🟢 Complete](Qwen3-32B_galaxy.md) | [🟡 Functional](Qwen3-32B_p150x8.md) | - | [🟡 Functional](Qwen3-32B_p300x2.md) | - | [🟡 Functional](Qwen3-32B_t3k.md) | - |
@@ -24,7 +24,7 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
 Models with EXPERIMENTAL status are under active development and may have stability or performance issues.
 
-| Model Name | [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
+| Model Name | [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [gpt-oss-120b](gpt-oss-120b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-120b_galaxy.md) | - | - | - | - | [🛠️ Experimental](gpt-oss-120b_t3k.md) | - |
 | [gpt-oss-20b](gpt-oss-20b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-20b_galaxy.md) | - | - | - | - | [🛠️ Experimental](gpt-oss-20b_t3k.md) | - |

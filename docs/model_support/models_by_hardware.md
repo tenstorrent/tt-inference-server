@@ -65,7 +65,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
-## [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox)
+## [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox)
 
 | Status | Type | Model |
 |--------|------|-------|

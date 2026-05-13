@@ -8,7 +8,7 @@ This page lists all supported image models and their device compatibility.
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
+| Model Name | [WH Galaxy](https://tenstorrent.com/hardware/galaxy) | [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox) | [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox) | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [FLUX.1-dev](FLUX.1-dev_galaxy.md) | [🟢 Complete](FLUX.1-dev_galaxy.md) | [🟢 Complete](FLUX.1-dev_p150x8.md) | [🟢 Complete](FLUX.1-dev_p150x4.md) | [🟢 Complete](FLUX.1-dev_p300x2.md) | - | [🟢 Complete](FLUX.1-dev_t3k.md) | - |
 | [Motif-Image-6B-Preview](Motif-Image-6B-Preview_galaxy.md) | [🟢 Complete](Motif-Image-6B-Preview_galaxy.md) | [🟢 Complete](Motif-Image-6B-Preview_p150x8.md) | - | [🟢 Complete](Motif-Image-6B-Preview_p300x2.md) | - | [🟢 Complete](Motif-Image-6B-Preview_t3k.md) | - |

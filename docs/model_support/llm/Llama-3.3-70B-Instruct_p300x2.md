@@ -1,4 +1,4 @@
-# Llama-3.3-70B-Instruct Tenstorrent Support on BH QuietBox GE (2xP300)
+# Llama-3.3-70B-Instruct Tenstorrent Support on BH QuietBox 2
 
 Supported weights variants for this model implementation are:
 
@@ -11,7 +11,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 
 #### Useful links
 
-- [BH QuietBox GE (2xP300) details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -22,7 +22,7 @@ To use non-default weights, replace `Llama-3.3-70B-Instruct` in commands below.
 - [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
-## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH QuietBox GE (2xP300)
+## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
