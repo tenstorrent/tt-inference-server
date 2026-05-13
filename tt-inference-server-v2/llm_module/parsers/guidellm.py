@@ -1,21 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Convert a raw guidellm benchmark dump into one ``kind="guidellm"`` record.
+"""Parser for the GuideLLM benchmarks dump.
 
 Performs every aggregation, percentile lookup, and derived calculation
 the report tables need so the report module just renders. No math
 inside the renderer / generator / schema.
 
-The output is a single record ready to drop into the unified
-``[{kind, model, device, timestamp, ...}]`` schema alongside other kinds
-like ``evals``, ``benchmarks`` or ``server_tests``. Section keys are
-display-friendly strings (``"Run Configuration"``, ``"Request Totals"``,
-``"TTFT vs. Context (Linear Regression)"``, ...); each value is a flat
-dict, list of dicts, or dict-of-dicts that ``render_generic_table`` in
-:mod:`report_module.renderers` emits as its own H4 sub-table beneath
-the kind heading.
+Section keys are display-friendly strings (``"Run Configuration"``,
+``"Request Totals"``, ``"TTFT vs. Context (Linear Regression)"``, ...);
+each value is a flat dict, list of dicts, or dict-of-dicts that
+``render_generic_table`` in :mod:`report_module.renderers` emits as its
+own H4 sub-table beneath the kind heading.
 """
 
 from __future__ import annotations
@@ -24,6 +21,10 @@ import datetime as dt
 import math
 import statistics
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
+
+from report_module.schema import Block
+
+from .base import LLMResultParser
 
 SUMMARY_METRICS: Tuple[str, ...] = (
     "time_to_first_token_ms",
@@ -56,47 +57,46 @@ SLO = {
 }
 
 
-def to_report_record(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    """Build a single ``kind="guidellm"`` record from a raw guidellm dump.
+class GuideLLMParser(LLMResultParser):
+    kind = "guidellm"
 
-    The returned record carries the universal record fields (``kind``,
-    ``model``, ``device``, ``timestamp``) plus one nested entry per
-    table the guidellm renderer emits.
-    """
-    md = raw.get("metadata", {})
-    benchmark = raw["benchmarks"][0]
-    config = benchmark["config"]
-    metrics = benchmark["metrics"]
-    scheduler = benchmark["scheduler_state"]
-    successful = benchmark["requests"]["successful"]
+    def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
+        md = raw.get("metadata") or {}
+        benchmarks = raw.get("benchmarks") or []
+        benchmark: Mapping[str, Any] = benchmarks[0] if benchmarks else {}
+        config = benchmark.get("config") or {}
+        metrics = benchmark.get("metrics") or {}
+        scheduler = benchmark.get("scheduler_state") or {}
+        successful = (benchmark.get("requests") or {}).get("successful") or []
 
-    backend = config.get("backend", {}) or {}
+        backend = config.get("backend") or {}
 
-    return {
-        "kind": "guidellm",
-        "model": backend.get("model", ""),
-        "device": "",
-        "timestamp": _epoch_to_timestamp(benchmark.get("end_time", 0)),
-        "Run Configuration": _run_header(md, benchmark, config),
-        "Request Totals": _request_totals(metrics, scheduler),
-        "Stopping Conditions": _stop_conditions(scheduler),
-        "Summary Statistics": _summary_stats(metrics),
-        "Latency Percentiles (ms)": _latency_percentiles(metrics),
-        "Tail Ratios": _tail_ratios(metrics),
-        "Token Accounting Sanity Check": _token_sanity(metrics, successful),
-        "Per-Turn Breakdown": _per_turn(successful),
-        "Cold vs. Warm TTFT": _cold_vs_warm(successful),
-        "TTFT vs. Context (Linear Regression)": _ttft_vs_context(successful),
-        "ITL / TPOT Stability": _stability(successful),
-        "Per-Request Latency Breakdown (ms)": _latency_breakdown(successful),
-        "Server vs. Harness Time": _server_vs_harness(successful, scheduler),
-        "Key Takeaways": _key_takeaways(metrics),
-        "Top 3 Latency Outliers": _top_outliers(successful),
-        "Errors / Incomplete": _errors_summary(benchmark),
-        "Time Accounting": _time_accounting(benchmark, scheduler, metrics),
-        "Workload Shape Verification": _shape_verification(config, successful),
-        "SLO Checks": _slo_checks(metrics),
-    }
+        record: Dict[str, Any] = {
+            "kind": self.kind,
+            "model": backend.get("model", ""),
+            "device": device,
+            "timestamp": _epoch_to_timestamp(benchmark.get("end_time", 0)),
+            "Run Configuration": _run_header(md, benchmark, config),
+            "Request Totals": _request_totals(metrics, scheduler),
+            "Stopping Conditions": _stop_conditions(scheduler),
+            "Summary Statistics": _summary_stats(metrics),
+            "Latency Percentiles (ms)": _latency_percentiles(metrics),
+            "Tail Ratios": _tail_ratios(metrics),
+            "Token Accounting Sanity Check": _token_sanity(metrics, successful),
+            "Per-Turn Breakdown": _per_turn(successful),
+            "Cold vs. Warm TTFT": _cold_vs_warm(successful),
+            "TTFT vs. Context (Linear Regression)": _ttft_vs_context(successful),
+            "ITL / TPOT Stability": _stability(successful),
+            "Per-Request Latency Breakdown (ms)": _latency_breakdown(successful),
+            "Server vs. Harness Time": _server_vs_harness(successful, scheduler),
+            "Key Takeaways": _key_takeaways(metrics),
+            "Top 3 Latency Outliers": _top_outliers(successful),
+            "Errors / Incomplete": _errors_summary(benchmark),
+            "Time Accounting": _time_accounting(benchmark, scheduler, metrics),
+            "Workload Shape Verification": _shape_verification(config, successful),
+            "SLO Checks": _slo_checks(metrics),
+        }
+        return self._wrap_record(record)
 
 
 def _epoch_to_timestamp(epoch: float) -> str:
@@ -278,15 +278,16 @@ def _per_turn(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     sorted_reqs = sorted(
         requests,
         key=lambda r: (
-            r["info"].get("conversation_id", ""),
-            r["info"].get("turn_index", 0),
+            (r.get("info") or {}).get("conversation_id", ""),
+            (r.get("info") or {}).get("turn_index", 0),
         ),
     )
     rows: List[Dict[str, Any]] = []
     for r in sorted_reqs:
+        info = r.get("info") or {}
         rows.append(
             {
-                "turn": r["info"].get("turn_index"),
+                "turn": info.get("turn_index"),
                 "ptok": r.get("prompt_tokens"),
                 "otok": r.get("output_tokens"),
                 "ttft_ms": _r(r.get("time_to_first_token_ms"), 3),
@@ -303,12 +304,14 @@ def _cold_vs_warm(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     cold = [
         r["time_to_first_token_ms"]
         for r in requests
-        if r["info"].get("turn_index") == 0
+        if (r.get("info") or {}).get("turn_index") == 0
+        and r.get("time_to_first_token_ms") is not None
     ]
     warm = [
         r["time_to_first_token_ms"]
         for r in requests
-        if r["info"].get("turn_index", 0) > 0
+        if (r.get("info") or {}).get("turn_index", 0) > 0
+        and r.get("time_to_first_token_ms") is not None
     ]
     cold_mean = statistics.mean(cold) if cold else 0.0
     warm_mean = statistics.mean(warm) if warm else 0.0
@@ -316,10 +319,20 @@ def _cold_vs_warm(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     delta = cold_mean - warm_mean
     speedup = (cold_mean / warm_mean) if warm_mean else 0.0
     cold_ptok = next(
-        (r["prompt_tokens"] for r in requests if r["info"].get("turn_index") == 0), 0
+        (
+            r.get("prompt_tokens", 0)
+            for r in requests
+            if (r.get("info") or {}).get("turn_index") == 0
+        ),
+        0,
     )
     warm_ptok = next(
-        (r["prompt_tokens"] for r in requests if r["info"].get("turn_index", 0) > 0), 0
+        (
+            r.get("prompt_tokens", 0)
+            for r in requests
+            if (r.get("info") or {}).get("turn_index", 0) > 0
+        ),
+        0,
     )
     ratio = (warm_ptok / cold_ptok) if cold_ptok else 0.0
     n_warm = len(warm)
@@ -338,8 +351,8 @@ def _ttft_vs_context(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     sorted_reqs = sorted(
         requests,
         key=lambda r: (
-            r["info"].get("conversation_id", ""),
-            r["info"].get("turn_index", 0),
+            (r.get("info") or {}).get("conversation_id", ""),
+            (r.get("info") or {}).get("turn_index", 0),
         ),
     )
     xs: List[float] = []
@@ -347,9 +360,11 @@ def _ttft_vs_context(requests: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     ctx = 0.0
     for r in sorted_reqs:
         ctx += float(r.get("prompt_tokens", 0)) + float(r.get("output_tokens", 0))
-        if r["info"].get("turn_index", 0) > 0:
+        info = r.get("info") or {}
+        ttft = r.get("time_to_first_token_ms")
+        if info.get("turn_index", 0) > 0 and ttft is not None:
             xs.append(ctx / 1000.0)
-            ys.append(float(r["time_to_first_token_ms"]))
+            ys.append(float(ttft))
     if len(xs) < 2:
         return {"linreg": "insufficient data (need >=2 warm turns)", "r_squared": "N/A"}
     slope, intercept, r2 = _linear_regression(xs, ys)
@@ -400,19 +415,26 @@ def _latency_breakdown(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, 
         "total (queued -> finalized)": [],
     }
     for r in requests:
-        t = r["info"].get("timings", {}) or {}
-        segments["queue_wait"].append((t["dequeued"] - t["queued"]) * 1000)
-        segments["sched_overhead"].append((t["request_start"] - t["dequeued"]) * 1000)
-        segments["prefill (TTFT)"].append(
-            (t["first_token_iteration"] - t["request_start"]) * 1000
-        )
-        segments["decode"].append(
-            (t["last_token_iteration"] - t["first_token_iteration"]) * 1000
-        )
-        segments["finalize"].append((t["finalized"] - t["request_end"]) * 1000)
-        segments["total (queued -> finalized)"].append(
-            (t["finalized"] - t["queued"]) * 1000
-        )
+        t = (r.get("info") or {}).get("timings") or {}
+        queued = t.get("queued")
+        dequeued = t.get("dequeued")
+        request_start = t.get("request_start")
+        first_token = t.get("first_token_iteration")
+        last_token = t.get("last_token_iteration")
+        request_end = t.get("request_end")
+        finalized = t.get("finalized")
+        if queued is not None and dequeued is not None:
+            segments["queue_wait"].append((dequeued - queued) * 1000)
+        if request_start is not None and dequeued is not None:
+            segments["sched_overhead"].append((request_start - dequeued) * 1000)
+        if first_token is not None and request_start is not None:
+            segments["prefill (TTFT)"].append((first_token - request_start) * 1000)
+        if last_token is not None and first_token is not None:
+            segments["decode"].append((last_token - first_token) * 1000)
+        if finalized is not None and request_end is not None:
+            segments["finalize"].append((finalized - request_end) * 1000)
+        if finalized is not None and queued is not None:
+            segments["total (queued -> finalized)"].append((finalized - queued) * 1000)
 
     rows: List[Dict[str, Any]] = []
     for name, vals in segments.items():
@@ -471,13 +493,25 @@ def _key_takeaways(metrics: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _top_outliers(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    top3 = sorted(requests, key=lambda r: -float(r.get("request_latency", 0)))[:3]
+    top3 = sorted(requests, key=lambda r: -float(r.get("request_latency", 0) or 0))[:3]
     rows: List[Dict[str, Any]] = []
     for rank, r in enumerate(top3, 1):
-        t = r["info"].get("timings", {}) or {}
-        prefill_ms = (t["first_token_iteration"] - t["request_start"]) * 1000
-        decode_ms = (t["last_token_iteration"] - t["first_token_iteration"]) * 1000
-        turn = r["info"].get("turn_index")
+        info = r.get("info") or {}
+        t = info.get("timings") or {}
+        request_start = t.get("request_start")
+        first_token = t.get("first_token_iteration")
+        last_token = t.get("last_token_iteration")
+        prefill_ms = (
+            (first_token - request_start) * 1000
+            if first_token is not None and request_start is not None
+            else None
+        )
+        decode_ms = (
+            (last_token - first_token) * 1000
+            if last_token is not None and first_token is not None
+            else None
+        )
+        turn = info.get("turn_index")
         if turn == 0:
             note = f"cold start, full {r.get('prompt_tokens')}-tok prefill"
         else:
@@ -487,7 +521,7 @@ def _top_outliers(requests: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]
                 "rank": rank,
                 "turn": turn,
                 "ptok": r.get("prompt_tokens"),
-                "lat_ms": _r(float(r.get("request_latency", 0)) * 1000, 2),
+                "lat_ms": _r(float(r.get("request_latency", 0) or 0) * 1000, 2),
                 "ttft_ms": _r(r.get("time_to_first_token_ms"), 2),
                 "prefill_ms": _r(prefill_ms, 2),
                 "decode_ms": _r(decode_ms, 2),
@@ -550,10 +584,13 @@ def _shape_verification(
     ptoks = [int(r.get("prompt_tokens", 0)) for r in requests]
     otoks = [int(r.get("output_tokens", 0)) for r in requests]
     convo_turns = {
-        (r["info"].get("conversation_id", ""), r["info"].get("turn_index", 0))
+        (
+            (r.get("info") or {}).get("conversation_id", ""),
+            (r.get("info") or {}).get("turn_index", 0),
+        )
         for r in requests
     }
-    convos = {r["info"].get("conversation_id", "") for r in requests}
+    convos = {(r.get("info") or {}).get("conversation_id", "") for r in requests}
     max_turn = max((t for _, t in convo_turns), default=0)
     return {
         "advertised": advertised,

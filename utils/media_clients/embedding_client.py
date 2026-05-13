@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_types import ReportCheckTypes, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 # Local imports
@@ -53,21 +53,10 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
+            self.require_health()
             logger.info("Running embedding eval...")
-
             status_list = self._run_embedding_transcription_eval()
-
             self._generate_evals_report(status_list)
-
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -78,20 +67,9 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            status_list = []
+            self.require_health()
             status_list = self._run_embedding_transcription_benchmark()
-
             self._generate_benchmarking_report(status_list)
-
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -193,7 +171,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
                 "req_tput": req_tput,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "embedding",
         }
@@ -318,14 +296,19 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
+        task = self.all_params.tasks[0]
         report_data = {
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "embedding",
-            "task_name": self.all_params.tasks[0].task_name,
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "score": metrics.get("main_score"),
+            "published_score_ref": task.score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.NA,
         }
-        # Attach metrics dict
         report_data.update(metrics)
 
         report_data = [report_data]
