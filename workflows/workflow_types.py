@@ -122,7 +122,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "BH P300",
-            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
+            DeviceTypes.P300X2: "BH QuietBox 2",
             DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",

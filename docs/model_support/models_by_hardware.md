@@ -65,6 +65,17 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p150x4.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x4.md) |
 
+## [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300x2.md) |
+| 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
+| 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
+| 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
+| 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
+
 ## [p150](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
