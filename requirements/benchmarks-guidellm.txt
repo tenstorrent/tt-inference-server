@@ -8,27 +8,17 @@
 # GuideLLM is a benchmarking harness for LLM serving stacks.
 # Repository: https://github.com/neuralmagic/guidellm
 #
-# Extra runtime deps below are not covered by guidellm core or
-# guidellm[recommended] (which is just [perf, tokenizers]):
+# `guidellm[all]` pulls in every optional extra (perf, tokenizers, vision,
+# audio, ...). The audio extra ships `torchcodec`, which transitively pins
+# its own compatible `torch`, so we deliberately do not pin torch here.
+#
+# Extra runtime deps below are not covered by any guidellm extra:
 #   - requests, pyjwt: used by the wrapper benchmarking/run_guidellm_benchmarks.py
 #     for JWT auth-token generation and PromptClient server health checks
 #     (guidellm itself ships its own httpx client, not requests).
-#   - pillow: required by guidellm's `encode_media` preprocessor for image
-#     omni_modal scenarios (part of guidellm's [vision] extra).
-#   - imageio, imageio-ffmpeg: video decoding backends for video omni_modal
-#     scenarios. guidellm's [audio] extra pulls torchcodec which pins
-#     torch==2.10.*, conflicting with the torch==2.4.0+cpu pinned below, so
-#     imageio backends are installed instead.
-#
-# torch is pinned to a CPU build to keep the venv lightweight.
 
 -c constraints.txt
---extra-index-url https://download.pytorch.org/whl/cpu
 
-torch==2.4.0+cpu
-guidellm
+guidellm[all]
 requests
 pyjwt
-pillow
-imageio
-imageio-ffmpeg
