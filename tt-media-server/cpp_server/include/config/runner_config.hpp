@@ -35,6 +35,8 @@ struct MediaRunnerConfigBase : RunnerConfigBase {
   std::string model_weights_path;
 
   unsigned weights_distribution_timeout_seconds = 1800;
+
+  std::string visible_devices;
 };
 
 struct LLMConfig : RunnerConfigBase {

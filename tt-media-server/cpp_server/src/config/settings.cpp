@@ -309,6 +309,7 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
       envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
+  cfg.visible_devices = visibleDevicesForWorker(0);
 }
 
 }  // namespace

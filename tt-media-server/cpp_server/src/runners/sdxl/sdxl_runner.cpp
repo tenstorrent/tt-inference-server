@@ -28,12 +28,16 @@ using ::tt::utils::image_codec::parseFormat;
 py::module_ importTorch() { return py::module_::import("torch"); }
 py::module_ importTtnn() { return py::module_::import("ttnn"); }
 
-/** Set OMP / MKL / TORCH thread caps only if unset, to avoid overriding the
- * operator's environment. */
-void setupRunnerEnvironment() {
+void setupRunnerEnvironment(const config::ImageConfig& config) {
   setenv("OMP_NUM_THREADS", "2", 0);
   setenv("MKL_NUM_THREADS", "2", 0);
   setenv("TORCH_NUM_THREADS", "1", 0);
+  if (!config.visible_devices.empty()) {
+    setenv("TT_VISIBLE_DEVICES", config.visible_devices.c_str(), 1);
+  }
+  if (config.is_galaxy) {
+    setenv("TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE", "7,7", 1);
+  }
 }
 
 }  // namespace
@@ -43,7 +47,7 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
       batch_size_(config.max_batch_size),
       is_tensor_parallel_(!config.device_mesh_shape.empty() &&
                           config.device_mesh_shape[0] > 1) {
-  setupRunnerEnvironment();
+  setupRunnerEnvironment(config);
   // py::initialize_interpreter leaves the GIL held by this thread; on that
   // path we drop it explicitly below so the worker thread pool can acquire.
   const bool ownsInterpreter = !Py_IsInitialized();
@@ -65,11 +69,12 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
     PyEval_SaveThread();
   }
   TT_LOG_INFO(
-      "[SDXL] Constructed runner type={} mesh={}x{} galaxy={} weights='{}'",
+      "[SDXL] Constructed runner type={} mesh={}x{} galaxy={} "
+      "visible_devices='{}' weights='{}'",
       config::toString(config.runner_type),
       config.device_mesh_shape.size() > 0 ? config.device_mesh_shape[0] : 0,
       config.device_mesh_shape.size() > 1 ? config.device_mesh_shape[1] : 0,
-      config.is_galaxy, config.model_weights_path);
+      config.is_galaxy, config.visible_devices, config.model_weights_path);
 }
 
 SDXLBaseRunner::~SDXLBaseRunner() { stop(); }
