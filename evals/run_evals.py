@@ -380,16 +380,64 @@ def main():
     # Setup authentication based on model type
     if model_spec.model_type in EVAL_TASK_TYPES:
         _setup_openai_api_key(args, logger)
-    elif args.jwt_secret:
-        # For LLM models, generate JWT token from jwt_secret
-        json_payload = json.loads(
-            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
-        )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
-        os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
+    else:
+        # LLM (vLLM) auth. Mirror the server's resolution order in
+        # vllm-tt-metal/src/run_vllm_api_server.py:435-449 so the eval client
+        # picks the same bearer the server expects:
+        #   VLLM_API_KEY (raw token) > JWT_SECRET (sign one) > existing OPENAI_API_KEY.
+        # Fail loud if none are set: otherwise lm-eval sends unauthenticated
+        # requests, vLLM returns 401, openai_completions.parse_generations()
+        # catches KeyError('choices') and substitutes "" for every output, so
+        # every task scores 0% with thousands of "Could not parse generations:
+        # 'choices'" warnings (this is what bit the CI evals workflow).
+        #
+        # Diagnostic fingerprints: log non-reversible sha256[:8] prefixes of
+        # the JWT_SECRET / bearer token so we can correlate with the server
+        # log's matching fingerprint and detect cross-process divergence
+        # (e.g. .env vs runner-cached env). NEVER logs raw secrets.
+        import hashlib
+
+        vllm_api_key = os.getenv("VLLM_API_KEY")
+        if vllm_api_key:
+            os.environ["OPENAI_API_KEY"] = vllm_api_key
+            bearer_fp = hashlib.sha256(vllm_api_key.encode()).hexdigest()[:8]
+            logger.info(
+                f"OPENAI_API_KEY set from VLLM_API_KEY env var "
+                f"(sha256[:8]={bearer_fp})."
+            )
+        elif args.jwt_secret:
+            json_payload = json.loads(
+                '{"team_id": "tenstorrent", "token_id": "debug-test"}'
+            )
+            encoded_jwt = jwt.encode(
+                json_payload, args.jwt_secret, algorithm="HS256"
+            )
+            os.environ["OPENAI_API_KEY"] = encoded_jwt
+            secret_fp = hashlib.sha256(args.jwt_secret.encode()).hexdigest()[:8]
+            bearer_fp = hashlib.sha256(encoded_jwt.encode()).hexdigest()[:8]
+            logger.info(
+                f"OPENAI_API_KEY set from JWT signed with JWT_SECRET "
+                f"(JWT_SECRET sha256[:8]={secret_fp}, bearer "
+                f"sha256[:8]={bearer_fp})."
+            )
+        elif os.getenv("OPENAI_API_KEY"):
+            existing = os.getenv("OPENAI_API_KEY")
+            bearer_fp = hashlib.sha256(existing.encode()).hexdigest()[:8]
+            logger.info(
+                f"OPENAI_API_KEY already set in env; using as-is "
+                f"(sha256[:8]={bearer_fp}, set VLLM_API_KEY or JWT_SECRET to override)."
+            )
+        else:
+            raise RuntimeError(
+                "No bearer-token material available for the vLLM API server. "
+                "The server requires JWT auth by default, so unauthenticated "
+                "requests return 401 and lm-eval scores 0% on every task. "
+                "Set one of: VLLM_API_KEY (raw bearer token), JWT_SECRET (to "
+                "sign a token), --jwt-secret on the command line, or "
+                "OPENAI_API_KEY directly. If the server was launched with "
+                "--disable-vllm-api-key, set OPENAI_API_KEY to any non-empty "
+                "placeholder so this guard is satisfied."
+            )
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 

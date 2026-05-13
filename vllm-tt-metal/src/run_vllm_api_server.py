@@ -435,7 +435,14 @@ def handle_secrets(no_auth=False):
     # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
     vllm_api_key = os.getenv("VLLM_API_KEY")
     if vllm_api_key:
-        logger.info("VLLM_API_KEY is already set, using existing value")
+        # Diagnostic: short non-reversible fingerprint for cross-process comparison
+        # with the eval client. NEVER logs the secret itself.
+        import hashlib
+
+        fp = hashlib.sha256(vllm_api_key.encode()).hexdigest()[:8]
+        logger.info(
+            f"VLLM_API_KEY is already set, using existing value (sha256[:8]={fp})"
+        )
         return
 
     # VLLM_API_KEY is not set, check if JWT_SECRET is available
@@ -446,11 +453,23 @@ def handle_secrets(no_auth=False):
         )
         return
 
+    # Diagnostic: log a short non-reversible fingerprint of JWT_SECRET so we
+    # can compare with the eval client's fingerprint and detect divergence
+    # between server and client environments (e.g. .env not loaded, runner
+    # caching a stale value, etc.). NEVER logs the secret itself.
+    import hashlib
+
+    secret_fp = hashlib.sha256(jwt_secret.encode()).hexdigest()[:8]
+
     encoded_api_key = get_encoded_api_key(jwt_secret)
     if encoded_api_key is not None:
         os.environ["VLLM_API_KEY"] = encoded_api_key
+        bearer_fp = hashlib.sha256(encoded_api_key.encode()).hexdigest()[:8]
         logger.info(
-            "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
+            f"JWT_SECRET is set (sha256[:8]={secret_fp}, derived bearer "
+            f"sha256[:8]={bearer_fp}): HTTP requests to vLLM API require "
+            "bearer token in 'Authorization' header. See docs for how to "
+            "get bearer token."
         )
 
 
@@ -544,6 +563,29 @@ def set_runtime_env_vars(model_spec_json):
                 f"env var value:={value} is not a string, converting to string: {value}"
             )
             value = str(value)
+
+        # Resolve a relative TT_MESH_GRAPH_DESC_PATH against TT_METAL_HOME.
+        # Model specs declare the descriptor path with the `../../tt-metal/...`
+        # form expected inside the docker image. When the server is launched
+        # outside the image (e.g. via --local-server), the cwd no longer makes
+        # that relative path resolvable, and tt-metal aborts startup with
+        # "Custom mesh graph descriptor file not found". Rewriting the path to
+        # an absolute one anchored on TT_METAL_HOME keeps the spec portable
+        # without forcing every caller to chdir.
+        if (
+            key == "TT_MESH_GRAPH_DESC_PATH"
+            and not os.path.isabs(value)
+            and "tt-metal/" in value
+        ):
+            tt_metal_home = os.getenv("TT_METAL_HOME")
+            if tt_metal_home:
+                suffix = value.split("tt-metal/", 1)[1]
+                resolved = os.path.join(tt_metal_home, suffix)
+                logger.info(
+                    f"resolved TT_MESH_GRAPH_DESC_PATH via TT_METAL_HOME: "
+                    f"'{value}' -> '{resolved}'"
+                )
+                value = resolved
 
         original_value = os.getenv(key)
         if original_value is not None:

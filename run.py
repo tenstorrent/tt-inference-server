@@ -433,7 +433,9 @@ def handle_secrets(runtime_config):
             "Set API_KEY in .env or as an environment variable."
         )
 
-    # load secrets from env file or prompt user to enter them once
+    # load secrets from env file or prompt user to enter them once.
+    # The local load_dotenv (workflows/utils.py) always overrides host env,
+    # so .env wins over any stale value cached by a CI runner.
     if not load_dotenv():
         env_vars = {}
         for key in required_env_vars:
