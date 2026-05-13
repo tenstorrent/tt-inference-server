@@ -167,7 +167,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t pmMaxUsers() {
+size_t dsMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -214,6 +214,32 @@ std::string ttMemoryResultQueueName() {
 
 std::string workerMetricsShmName() {
   return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
+size_t resultQueueCapacity() {
+  return envUlong("RESULT_QUEUE_CAPACITY", defaults::RESULT_QUEUE_CAPACITY);
+}
+
+size_t cancelQueueCapacity() {
+  return envUlong("CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY);
+}
+
+size_t memoryQueueCapacity() {
+  return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+int shmSlots() {
+  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
+}
+
+int prefillMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
+}
+
+int decodeMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
 }
 
 LLMConfig llmEngineConfig() {

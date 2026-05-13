@@ -24,7 +24,7 @@
 #include <string>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/result_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"

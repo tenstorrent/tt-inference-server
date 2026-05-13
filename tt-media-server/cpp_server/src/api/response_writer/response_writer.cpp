@@ -18,7 +18,8 @@ int ResponseWriter::noteToken(const LLMChoice& choice) {
     specRejects.store(choice.spec_rejects);
   }
 
-  if (choice.text.empty() && !choice.reasoning.has_value()) {
+  if (choice.text.empty() && !choice.reasoning.has_value() &&
+      !choice.tool_calls.has_value()) {
     return completionTokens.load();
   }
 

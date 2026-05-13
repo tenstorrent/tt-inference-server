@@ -31,12 +31,9 @@ def block_targets(
     """Per-block envelope attached to ``Block.targets`` by a runner.
 
     ``ctx`` is unused today but kept in the signature so future
-    per-block envelope fields (e.g. a model variant id) have a place to
-    plug in without churning every call site. ``task_type`` is the v1
-    record-level label (``"image"``, ``"audio"``, …); ``kind``
-    (``"image_benchmark"``) on the Block is the canonical renderer key.
-    ``extra`` lets a caller fold in additional envelope-style fields
-    without polluting ``Block.data``.
+    per-block envelope fields have a place to plug in without churning
+    every call site. ``extra`` lets a caller fold in additional
+    envelope-style fields without polluting ``Block.data``.
     """
     del ctx  # reserved for future per-block envelope fields
     targets: Dict[str, Any] = {"task_type": task_type}
@@ -45,18 +42,26 @@ def block_targets(
 
 
 def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
-    """Sweep-level envelope handed to the workflow accumulator.
-
-    These three fields are recorded once for the whole sweep and become
-    the report's top-level ``metadata`` — they're identical across every
-    block a sweep emits, so duplicating them per-block in
-    ``Block.targets`` would be pure noise in the resulting JSON.
-    """
-    return {
-        "model_name": ctx.model_spec.model_name,
+    """Sweep-level metadata recorded once for the whole report."""
+    spec = ctx.model_spec
+    impl = getattr(spec, "impl", None)
+    model_id = getattr(spec, "model_id", None)
+    generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    envelope: Dict[str, Any] = {
+        "model_name": getattr(spec, "model_name", ""),
+        "model_id": model_id,
+        "model_repo": getattr(spec, "hf_model_repo", None),
+        "model_impl": getattr(impl, "impl_name", None) if impl else None,
+        "inference_engine": getattr(spec, "inference_engine", None),
         "device": ctx.device.name,
-        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "tt_metal_commit": getattr(spec, "tt_metal_commit", None),
+        "vllm_commit": getattr(spec, "vllm_commit", None),
+        "generated_at": generated_at,
     }
+    if model_id:
+        ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        envelope["report_id"] = f"{model_id}_{ts}"
+    return envelope
 
 
 def block_id(ctx: "MediaContext") -> str:

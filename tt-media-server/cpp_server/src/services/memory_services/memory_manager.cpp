@@ -10,9 +10,9 @@ namespace tt::services {
 
 MemoryManager::MemoryManager() {
   // Open existing queues created by SessionManager in the main process
-  requestQueue = ipc::MemoryRequestQueue::openExisting(
+  requestQueue = ipc::boost::MemoryRequestQueue::openExisting(
       tt::config::ttMemoryRequestQueueName());
-  resultQueue = ipc::MemoryResultQueue::openExisting(
+  resultQueue = ipc::boost::MemoryResultQueue::openExisting(
       tt::config::ttMemoryResultQueueName());
 
   if (!requestQueue || !resultQueue) {

@@ -8,9 +8,9 @@
 
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "ipc/cancel_queue.hpp"
-#include "ipc/result_queue.hpp"
-#include "ipc/task_queue.hpp"
+#include "ipc/interface/cancel_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
+#include "ipc/interface/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {

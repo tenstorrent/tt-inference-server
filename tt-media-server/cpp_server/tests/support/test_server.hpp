@@ -29,9 +29,9 @@
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "http_client.hpp"
-#include "ipc/boost_ipc_queue.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "utils/service_factory.hpp"
@@ -62,21 +62,21 @@ class TestServer {
   uint16_t port() const { return kPort; }
 
   // Test reads from here to see what the controller pushed.
-  tt::ipc::BoostIpcTaskQueue& taskQueue() { return *taskQueue_; }
+  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueue_; }
 
   // Test pushes tokens here to mock the model response.
-  tt::ipc::BoostIpcResultQueue& resultQueue() { return *resultQueue_; }
+  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueue_; }
 
   // Test reads memory ALLOCATE/DEALLOCATE/MOVE requests pushed by
   // SessionManager. Disable the auto-responder before consuming, otherwise
   // the background thread will drain it first.
-  tt::ipc::MemoryRequestQueue& memoryRequestQueue() {
+  tt::ipc::boost::MemoryRequestQueue& memoryRequestQueue() {
     return *memoryRequestQueue_;
   }
 
   // Test pushes ManageMemoryResult here to satisfy SessionManager's
   // outstanding allocations.
-  tt::ipc::MemoryResultQueue& memoryResultQueue() {
+  tt::ipc::boost::MemoryResultQueue& memoryResultQueue() {
     return *memoryResultQueue_;
   }
 
@@ -125,13 +125,13 @@ class TestServer {
   }
 
   void openIpcQueues() {
-    taskQueue_ = std::make_unique<tt::ipc::BoostIpcTaskQueue>(
+    taskQueue_ = std::make_unique<tt::ipc::boost::TaskQueue>(
         tt::config::ttTaskQueueName());
-    resultQueue_ = std::make_unique<tt::ipc::BoostIpcResultQueue>(
+    resultQueue_ = std::make_unique<tt::ipc::boost::ResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
-    memoryRequestQueue_ = tt::ipc::MemoryRequestQueue::openExisting(
+    memoryRequestQueue_ = tt::ipc::boost::MemoryRequestQueue::openExisting(
         tt::config::ttMemoryRequestQueueName());
-    memoryResultQueue_ = tt::ipc::MemoryResultQueue::openExisting(
+    memoryResultQueue_ = tt::ipc::boost::MemoryResultQueue::openExisting(
         tt::config::ttMemoryResultQueueName());
   }
 
@@ -210,10 +210,10 @@ class TestServer {
     mockWorker.join();
   }
 
-  std::unique_ptr<tt::ipc::BoostIpcTaskQueue> taskQueue_;
-  std::unique_ptr<tt::ipc::BoostIpcResultQueue> resultQueue_;
-  std::unique_ptr<tt::ipc::MemoryRequestQueue> memoryRequestQueue_;
-  std::unique_ptr<tt::ipc::MemoryResultQueue> memoryResultQueue_;
+  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueue_;
+  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueue_;
+  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue_;
+  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueue_;
   std::thread drogonThread_;
   std::thread memoryAutoResponderThread_;
   std::atomic<bool> autoRespond_{true};

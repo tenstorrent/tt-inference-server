@@ -150,9 +150,9 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Pipeline manager max users from PM_MAX_USERS. Default:
- * defaults::PM_MAX_USERS. */
-size_t pmMaxUsers();
+/** Decode scheduler max users from DS_MAX_USERS. Default:
+ * defaults::DS_MAX_USERS. */
+size_t dsMaxUsers();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -194,6 +194,31 @@ std::string workerMetricsShmName();
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */
 bool useDeepseekMdFormat();
+
+// IPC queue capacities - configurable via environment variables
+/** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
+ * defaults::RESULT_QUEUE_CAPACITY. */
+size_t resultQueueCapacity();
+
+/** Cancel queue capacity from CANCEL_QUEUE_CAPACITY. Default:
+ * defaults::CANCEL_QUEUE_CAPACITY. */
+size_t cancelQueueCapacity();
+
+/** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
+ * defaults::MEMORY_QUEUE_CAPACITY. */
+size_t memoryQueueCapacity();
+
+// Shared memory slot buffer constants
+/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
+int shmSlots();
+
+/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
+ * defaults::PREFILL_MAX_TOKEN_IDS. */
+int prefillMaxTokenIds();
+
+/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
+ * defaults::DECODE_MAX_TOKEN_IDS. */
+int decodeMaxTokenIds();
 
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
