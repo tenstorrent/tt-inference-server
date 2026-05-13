@@ -193,6 +193,13 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   return result;
 }
 
+void SessionManager::releaseInFlight(const std::string& sessionId) {
+  sessions.modify(sessionId, [](domain::Session& s) {
+    s.updateActivityTime();
+    s.clearInFlight();
+  });
+}
+
 domain::Session* SessionManager::getSession(const std::string& sessionId) {
   return sessions.getPtr(sessionId);
 }

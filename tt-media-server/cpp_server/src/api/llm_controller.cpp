@@ -246,7 +246,7 @@ void LLMController::responses(
 }
 
 ResponseWriterParams LLMController::makeWriterParams(
-    const LLMRequest& request) const {
+    const LLMRequest& request, services::SlotLease lease) const {
   ResponseWriterParams params;
   params.completionId = "chatcmpl-" + std::to_string(request.task_id);
   params.model = request.model.value_or("default");
@@ -264,23 +264,19 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
-  if (request.session) {
-    params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
-  }
+  params.lease = std::move(lease);
   return params;
 }
 
 std::function<void(const LLMStreamChunk&, bool)>
-LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
-                                     domain::Session* session) {
-  return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
-                                               bool isFinal) {
+LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer) {
+  return [writer = std::move(writer)](const LLMStreamChunk& chunk,
+                                      bool isFinal) {
     if (writer->isDone()) return;
     if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-    if (isFinal) {
-      if (session) session->clearInFlight();
-      writer->finalize();
-    }
+    // finalize() releases the SlotLease held in the writer's params,
+    // so the session becomes idle the moment the generator is done.
+    if (isFinal) writer->finalize();
   };
 }
 
@@ -315,34 +311,35 @@ void LLMController::handleStreaming(
   resolver.resolve(
       reqPtr, loop,
       [this, reqPtr, cb, loop, formatter = std::move(formatter),
-       includeUsage]() {
+       includeUsage](services::SlotLease lease) mutable {
+        // The lease lives in this lambda until it is moved into the
+        // writer's params. Any early-return below destroys it, which
+        // releases the session's in-flight grant.
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
         }
 
         auto writer = StreamingResponseWriter::create(
-            loop, makeWriterParams(*reqPtr), includeUsage, formatter);
+            loop, makeWriterParams(*reqPtr, std::move(lease)), includeUsage,
+            formatter);
 
         try {
-          dispatchGeneration(*reqPtr,
-                             makeStreamingCallback(writer, reqPtr->session));
+          dispatchGeneration(*reqPtr, makeStreamingCallback(writer));
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          writer->abort();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
+          writer->abort();
           (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
                               "internal_error"));
           return;
@@ -376,16 +373,15 @@ void LLMController::handleNonStreaming(
 
   resolver.resolve(
       reqPtr, loop,
-      [this, reqPtr, cb, builder = std::move(builder)]() mutable {
+      [this, reqPtr, cb, builder = std::move(builder)](
+          services::SlotLease lease) mutable {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
           return;
         } catch (const std::exception& e) {
-          if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
                               "invalid_request_error"));
           return;
@@ -393,14 +389,14 @@ void LLMController::handleNonStreaming(
 
         // Move the http callback into the writer; from here on out every
         // success/error path goes through writer->finalize / sendError so
-        // the response is delivered exactly once and the session in-flight
-        // slot is always released.
+        // the response is delivered exactly once and the SlotLease the
+        // writer holds is released exactly once.
         auto writer = NonStreamResponseWriter::create(
-            makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
+            makeWriterParams(*reqPtr, std::move(lease)), std::move(*cb),
+            std::move(builder));
 
         try {
-          dispatchGeneration(*reqPtr,
-                             makeStreamingCallback(writer, reqPtr->session));
+          dispatchGeneration(*reqPtr, makeStreamingCallback(writer));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
                             "rate_limit_exceeded");

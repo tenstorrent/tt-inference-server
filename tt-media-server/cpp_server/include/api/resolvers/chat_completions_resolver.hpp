@@ -54,7 +54,8 @@ class ChatCompletionsResolver : public SessionResolver {
       std::shared_ptr<services::SessionManager> manager);
 
   void resolve(std::shared_ptr<domain::llm::LLMRequest> request,
-               trantor::EventLoop* loop, std::function<void()> onDone,
+               trantor::EventLoop* loop,
+               std::function<void(services::SlotLease)> onDone,
                std::function<void(const SessionError&)> onError,
                std::function<void()> cancelFn) const override;
 

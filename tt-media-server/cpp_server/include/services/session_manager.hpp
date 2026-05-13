@@ -72,6 +72,12 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
+  // Clear the in-flight bit and drop the registered cancel function. Called
+  // by SlotLease on destruction. No-op when the session is missing (it was
+  // already closed by closeSession or eviction) -- the lease release is
+  // therefore safe regardless of who lost the race.
+  void releaseInFlight(const std::string& sessionId);
+
   domain::Session* getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 

@@ -19,6 +19,7 @@
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
+#include "services/slot_lease.hpp"
 
 namespace tt::sockets {
 class InterServerService;
@@ -133,16 +134,21 @@ class LLMController : public drogon::HttpController<LLMController> {
 
   /**
    * Build the ResponseWriterParams shared by both streaming and non-streaming
-   * writers.
+   * writers. The supplied lease is moved into the params so the writer
+   * owns the session's in-flight grant for the duration of the response.
    */
-  ResponseWriterParams makeWriterParams(const LLMRequest& request) const;
+  ResponseWriterParams makeWriterParams(const LLMRequest& request,
+                                        services::SlotLease lease) const;
 
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
    * ResponseWriter. Common to both streaming and non-streaming code paths.
+   * Releasing the SlotLease is the writer's responsibility (it does so on
+   * finalize / sendError / abort), so the callback no longer needs the
+   * session.
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
-      std::shared_ptr<ResponseWriter> writer, domain::Session* session);
+      std::shared_ptr<ResponseWriter> writer);
 };
 
 }  // namespace tt::api

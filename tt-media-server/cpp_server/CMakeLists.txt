@@ -527,6 +527,7 @@ add_executable(session_manager_test
     tests/session_manager_test.cpp
     src/domain/session.cpp
     src/services/session_manager.cpp
+    src/services/slot_lease.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_test PRIVATE
@@ -541,6 +542,7 @@ add_executable(chat_completions_resolver_test
     src/api/resolvers/chat_completions_resolver.cpp
     src/domain/session.cpp
     src/services/session_manager.cpp
+    src/services/slot_lease.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(chat_completions_resolver_test PRIVATE
@@ -599,6 +601,7 @@ add_executable(main_integration_test
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
+    src/services/slot_lease.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/worker/worker_manager.cpp
@@ -752,6 +755,7 @@ set(SOURCES
     src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
     src/services/session_manager.cpp
+    src/services/slot_lease.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp

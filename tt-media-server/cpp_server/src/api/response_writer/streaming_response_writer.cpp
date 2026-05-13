@@ -115,17 +115,24 @@ void StreamingResponseWriter::finalize() {
   auto self =
       std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
   loop->queueInLoop([self]() {
-    if (!self->done.exchange(true) && *self->streamPtr) {
-      self->flushAccumulated();
+    if (!self->done.exchange(true)) {
+      // Release the in-flight slot before flushing the final SSE -- the
+      // session becomes idle the instant generation is done, regardless
+      // of network drain.
+      self->params.lease.release();
 
-      auto usage = self->buildUsage();
-      auto finalSse = self->formatter->formatFinalEvents(
-          self->params, usage, self->accumulatedText, self->lastFinishReason,
-          self->includeUsage);
-      if (!finalSse.empty()) {
-        (*self->streamPtr)->send(finalSse);
+      if (*self->streamPtr) {
+        self->flushAccumulated();
+
+        auto usage = self->buildUsage();
+        auto finalSse = self->formatter->formatFinalEvents(
+            self->params, usage, self->accumulatedText, self->lastFinishReason,
+            self->includeUsage);
+        if (!finalSse.empty()) {
+          (*self->streamPtr)->send(finalSse);
+        }
+        (*self->streamPtr)->close();
       }
-      (*self->streamPtr)->close();
     }
   });
 }
@@ -136,7 +143,7 @@ void StreamingResponseWriter::abort() {
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
-    if (params.onSessionRelease) params.onSessionRelease();
+    params.lease.release();
   }
 }
 

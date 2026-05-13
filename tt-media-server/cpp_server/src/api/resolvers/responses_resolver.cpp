@@ -8,6 +8,7 @@
 
 #include "domain/session.hpp"
 #include "services/session_manager.hpp"
+#include "services/slot_lease.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api::resolvers {
@@ -18,12 +19,13 @@ ResponsesResolver::ResponsesResolver(
 
 void ResponsesResolver::resolve(
     std::shared_ptr<domain::llm::LLMRequest> request,
-    trantor::EventLoop* loop, std::function<void()> onDone,
+    trantor::EventLoop* loop,
+    std::function<void(services::SlotLease)> onDone,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
   if (!sessionManager) {
     TT_LOG_WARN("[ResponsesResolver] SessionManager not available");
-    onDone();
+    onDone(services::SlotLease{});
     return;
   }
 
@@ -37,22 +39,20 @@ void ResponsesResolver::resolve(
       [request = std::move(request), cancelFn = std::move(cancelFn),
        mgr = sessionManager,
        onDone = std::move(onDone)](const tt::domain::Session& session) mutable {
-        request->sessionId = session.getSessionId();
-        request->slotId =
-            mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
-        request->session = mgr->getSession(session.getSessionId());
+        const auto sessionId = session.getSessionId();
+        const uint32_t slotId =
+            mgr->acquireInFlight(sessionId, std::move(cancelFn));
+        request->sessionId = sessionId;
+        request->slotId = slotId;
         request->continuation = false;
         // registrationHash stays at 0: there is no prefix-cache key to
         // register this session under, and the disaggregation service
         // treats 0 as "fresh prefix, no slot reuse".
 
-        TT_LOG_INFO(
-            "[ResponsesResolver] New session: sessionId={}, slotId={}",
-            session.getSessionId(),
-            request->slotId.has_value() ? std::to_string(*request->slotId)
-                                        : "none");
+        TT_LOG_INFO("[ResponsesResolver] New session: sessionId={}, slotId={}",
+                    sessionId, slotId);
 
-        onDone();
+        onDone(services::SlotLease{mgr.get(), sessionId, slotId});
       },
       [onError = std::move(onError)](std::string_view err) {
         onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});

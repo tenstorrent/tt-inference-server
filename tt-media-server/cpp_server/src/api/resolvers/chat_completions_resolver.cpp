@@ -14,6 +14,7 @@
 #include "domain/session.hpp"
 #include "metrics/metrics.hpp"
 #include "services/session_manager.hpp"
+#include "services/slot_lease.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "xxhash.h"
@@ -117,12 +118,12 @@ ChatCompletionsResolver::ChatCompletionsResolver(
 
 void ChatCompletionsResolver::resolve(
     std::shared_ptr<domain::llm::LLMRequest> request, trantor::EventLoop* loop,
-    std::function<void()> onDone,
+    std::function<void(services::SlotLease)> onDone,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
   if (!sessionManager) {
     TT_LOG_WARN("[ChatCompletionsResolver] SessionManager not available");
-    onDone();
+    onDone(services::SlotLease{});
     return;
   }
 
@@ -152,7 +153,6 @@ void ChatCompletionsResolver::resolve(
 
         request->sessionId = acquired->sessionId;
         request->slotId = acquired->slotId;
-        request->session = sessionManager->getSession(acquired->sessionId);
         request->continuation = true;
         request->registrationHash = routing.registrationHash;
         request->prompt_tokens_count =
@@ -163,7 +163,8 @@ void ChatCompletionsResolver::resolve(
         sessionManager->registerPrefixHash(acquired->sessionId,
                                            routing.registrationHash);
 
-        onDone();
+        onDone(services::SlotLease{sessionManager.get(), acquired->sessionId,
+                                   acquired->slotId});
         return;
       }
 
@@ -189,22 +190,20 @@ void ChatCompletionsResolver::resolve(
        registrationHash = routing.registrationHash,
        cancelFn = std::move(cancelFn), mgr = sessionManager,
        onDone = std::move(onDone)](const tt::domain::Session& session) mutable {
-        request->sessionId = session.getSessionId();
-        request->slotId =
-            mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
-        request->session = mgr->getSession(session.getSessionId());
+        const auto sessionId = session.getSessionId();
+        const uint32_t slotId =
+            mgr->acquireInFlight(sessionId, std::move(cancelFn));
+        request->sessionId = sessionId;
+        request->slotId = slotId;
         request->continuation = false;
-        mgr->registerPrefixHash(session.getSessionId(), registrationHash);
+        mgr->registerPrefixHash(sessionId, registrationHash);
 
         TT_LOG_INFO(
             "[ChatCompletionsResolver] New session: sessionId={}, slotId={}, "
             "registered under hash={}",
-            session.getSessionId(),
-            request->slotId.has_value() ? std::to_string(*request->slotId)
-                                        : "none",
-            registrationHash);
+            sessionId, slotId, registrationHash);
 
-        onDone();
+        onDone(services::SlotLease{mgr.get(), sessionId, slotId});
       },
       [onError = std::move(onError)](std::string_view err) {
         onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});

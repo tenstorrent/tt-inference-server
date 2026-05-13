@@ -99,6 +99,7 @@ void NonStreamResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
 
 void NonStreamResponseWriter::finalize() {
   if (done.exchange(true)) return;
+  params.lease.release();
 
   LLMResponse llmResponse{params.taskId};
   llmResponse.id = params.completionId;
@@ -156,7 +157,7 @@ void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
                                         const std::string& message,
                                         const std::string& type) {
   if (done.exchange(true)) return;
-  if (params.onSessionRelease) params.onSessionRelease();
+  params.lease.release();
   if (httpCallback) {
     auto cb = std::move(httpCallback);
     cb(errorResponse(status, message, type));

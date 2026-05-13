@@ -5,13 +5,13 @@
 
 #include <atomic>
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
 #include "services/llm_service.hpp"
+#include "services/slot_lease.hpp"
 
 namespace tt::api {
 
@@ -30,7 +30,13 @@ struct ResponseWriterParams {
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
-  std::function<void()> onSessionRelease;
+
+  // RAII handle for the session's in-flight grant. The writer holds the
+  // lease for the duration of the response; the destructor releases the
+  // slot. Concrete writers also call `lease.release()` explicitly on the
+  // first done-transition (finalize / sendError / abort) so the slot is
+  // freed before the writer's shared_ptr keepalive expires.
+  services::SlotLease lease;
 };
 
 /**

@@ -19,6 +19,7 @@
 #include "domain/llm/llm_request.hpp"
 #include "domain/session.hpp"
 #include "services/session_manager.hpp"
+#include "services/slot_lease.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
@@ -28,6 +29,7 @@ using tt::api::resolvers::SessionError;
 using tt::api::resolvers::SessionErrorType;
 using tt::domain::llm::ChatMessage;
 using tt::domain::llm::LLMRequest;
+using tt::services::SlotLease;
 using tt::utils::tokenizers::activeTokenizer;
 
 ChatMessage makeMessage(std::string role, std::string content) {
@@ -132,17 +134,22 @@ TEST(ChatCompletionsResolverNoManager, LeavesRequestUntouched) {
   req->registrationHash = 42u;
 
   bool calledOnDone = false;
+  bool leaseWasEmpty = false;
   resolver.resolve(
-      req, /*loop=*/nullptr, [&]() { calledOnDone = true; },
+      req, /*loop=*/nullptr,
+      [&](SlotLease lease) {
+        calledOnDone = true;
+        leaseWasEmpty = lease.empty();
+      },
       [](const SessionError&) { FAIL() << "expected onDone, got onError"; },
       /*cancelFn=*/nullptr);
 
   EXPECT_TRUE(calledOnDone);
+  EXPECT_TRUE(leaseWasEmpty);
 
   // Request was not mutated.
   EXPECT_FALSE(req->sessionId.has_value());
   EXPECT_FALSE(req->slotId.has_value());
-  EXPECT_EQ(req->session, nullptr);
   EXPECT_TRUE(req->continuation);
   EXPECT_EQ(req->registrationHash, 42u);
   ASSERT_TRUE(std::holds_alternative<std::string>(req->prompt));
@@ -193,8 +200,13 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
   req->prompt = std::string{"full-conversation prompt"};
 
   bool calledOnDone = false;
+  SlotLease handedOut;
   resolver->resolve(
-      req, lf.loop, [&]() { calledOnDone = true; },
+      req, lf.loop,
+      [&](SlotLease lease) {
+        calledOnDone = true;
+        handedOut = std::move(lease);
+      },
       [](const SessionError& e) {
         FAIL() << "expected onDone, got onError: " << e.message;
       },
@@ -207,7 +219,6 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
   EXPECT_EQ(*req->sessionId, sessionId);
   ASSERT_TRUE(req->slotId.has_value());
   EXPECT_EQ(*req->slotId, 17u);
-  ASSERT_NE(req->session, nullptr);
   EXPECT_TRUE(req->continuation);
   EXPECT_EQ(req->registrationHash,
             ChatCompletionsResolver::hashMessages(turn2));
@@ -217,8 +228,11 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
             std::string::npos);
   EXPECT_GT(req->prompt_tokens_count, 0);
 
-  // Release in-flight so the LoopFixture teardown can close the session.
-  req->session->clearInFlight();
+  // Lease binds the right session/slot and carries the in-flight grant.
+  ASSERT_FALSE(handedOut.empty());
+  EXPECT_EQ(handedOut.sessionId(), sessionId);
+  EXPECT_EQ(handedOut.slotId(), 17u);
+  // Dropping the lease releases the session so teardown can close it.
 }
 
 TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
@@ -245,7 +259,8 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
   bool calledOnError = false;
   SessionError err;
   resolver->resolve(
-      req, lf.loop, []() { FAIL() << "expected RATE_LIMIT error"; },
+      req, lf.loop,
+      [](SlotLease) { FAIL() << "expected RATE_LIMIT error"; },
       [&](const SessionError& e) {
         calledOnError = true;
         err = e;
@@ -258,7 +273,6 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
   // Request must remain in its pre-resolve state — no session/slot bound.
   EXPECT_FALSE(req->sessionId.has_value());
   EXPECT_FALSE(req->slotId.has_value());
-  EXPECT_EQ(req->session, nullptr);
   EXPECT_FALSE(req->continuation);
   EXPECT_EQ(req->registrationHash, 0u);
 
@@ -289,8 +303,8 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
 
   resolver->resolve(
       req, lf.loop,
-      [&]() {
-        if (req->session) req->session->clearInFlight();
+      [](SlotLease /*lease*/) {
+        // Lease falls out of scope here, releasing the in-flight grant.
       },
       [](const SessionError& e) { FAIL() << e.message; },
       /*cancelFn=*/nullptr);
@@ -333,14 +347,13 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_IgnoresToolMessages) {
 
   auto req = makeRequest(turn2);
   resolver->resolve(
-      req, lf.loop, []() {}, [](const SessionError& e) { FAIL() << e.message; },
+      req, lf.loop, [](SlotLease /*lease*/) {},
+      [](const SessionError& e) { FAIL() << e.message; },
       /*cancelFn=*/nullptr);
 
   ASSERT_TRUE(req->sessionId.has_value());
   EXPECT_EQ(*req->sessionId, sessionId);
   EXPECT_TRUE(req->continuation);
-
-  if (req->session) req->session->clearInFlight();
 }
 
 }  // namespace

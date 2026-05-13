@@ -15,7 +15,6 @@
 #include "domain/json_field.hpp"
 #include "domain/llm/chat_message.hpp"
 #include "domain/response_format.hpp"
-#include "domain/session.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "domain/tool_calls/tool_choice.hpp"
 
@@ -140,11 +139,11 @@ struct LLMRequest : BaseRequest {
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
-  // Session management (internal use only, not parsed from JSON)
+  // Session management (internal use only, not parsed from JSON).
+  // The session's in-flight grant is held by a SlotLease in the response
+  // writer; downstream code only needs the identity fields below.
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
-  tt::domain::Session* session =
-      nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
   uint64_t registrationHash =
