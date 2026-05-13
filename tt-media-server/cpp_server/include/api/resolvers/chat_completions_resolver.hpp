@@ -5,10 +5,13 @@
 
 #include <trantor/net/EventLoop.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "api/resolvers/session_error.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/llm/llm_request.hpp"
 
 namespace tt::services {
@@ -53,6 +56,16 @@ class ChatCompletionsResolver {
                trantor::EventLoop* loop, std::function<void()> onDone,
                std::function<void(const SessionError&)> onError,
                std::function<void()> cancelFn) const;
+
+  /**
+   * Stable 64-bit identity hash of a chat-message list. Computed
+   * structurally over (role, content) pairs -- no tokenizer involvement
+   * -- so the value is reproducible by any caller that needs to talk to
+   * the SessionManager's prefix-hash registry (currently: this resolver
+   * and its tests). Returns 0 for an empty list.
+   */
+  static uint64_t hashMessages(
+      const std::vector<domain::llm::ChatMessage>& messages);
 
  private:
   std::shared_ptr<services::SessionManager> sessionManager;

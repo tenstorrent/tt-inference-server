@@ -40,7 +40,7 @@ class ServiceContainer {
                   std::shared_ptr<DisaggregationService> disaggregation,
                   std::shared_ptr<SessionManager> sessionMgr,
                   std::shared_ptr<api::resolvers::ChatCompletionsResolver>
-                      chatCompletionsResolver = nullptr);
+                      chatCompletionsResolver);
 
   std::shared_ptr<IService> configuredService() const;
 

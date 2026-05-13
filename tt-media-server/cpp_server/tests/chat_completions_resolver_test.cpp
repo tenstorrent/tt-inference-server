@@ -13,7 +13,6 @@
 #include <variant>
 #include <vector>
 
-#include "api/resolvers/prefix_caching.hpp"
 #include "api/resolvers/session_error.hpp"
 #include "config/settings.hpp"
 #include "domain/llm/chat_message.hpp"
@@ -25,7 +24,6 @@
 namespace {
 
 using tt::api::resolvers::ChatCompletionsResolver;
-using tt::api::resolvers::hashConversationPrefix;
 using tt::api::resolvers::SessionError;
 using tt::api::resolvers::SessionErrorType;
 using tt::domain::llm::ChatMessage;
@@ -90,6 +88,37 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
 }
 
 // ---------------------------------------------------------------------------
+// hashMessages: structural identity, no tokenizer dependency.
+// ---------------------------------------------------------------------------
+
+TEST(ChatCompletionsResolverHash, EmptyIsZero) {
+  EXPECT_EQ(ChatCompletionsResolver::hashMessages({}), 0u);
+}
+
+TEST(ChatCompletionsResolverHash, DeterministicAndContentSensitive) {
+  std::vector<ChatMessage> a = {makeMessage("user", "hello")};
+  std::vector<ChatMessage> b = {makeMessage("user", "hello")};
+  std::vector<ChatMessage> c = {makeMessage("user", "Hello")};
+  std::vector<ChatMessage> d = {makeMessage("assistant", "hello")};
+
+  EXPECT_EQ(ChatCompletionsResolver::hashMessages(a),
+            ChatCompletionsResolver::hashMessages(b));
+  EXPECT_NE(ChatCompletionsResolver::hashMessages(a),
+            ChatCompletionsResolver::hashMessages(c));
+  EXPECT_NE(ChatCompletionsResolver::hashMessages(a),
+            ChatCompletionsResolver::hashMessages(d));
+}
+
+TEST(ChatCompletionsResolverHash, BoundaryNotAmbiguous) {
+  // (role="us", content="er.x") must not collide with (role="user",
+  // content=".x")
+  std::vector<ChatMessage> a = {makeMessage("us", "er.x")};
+  std::vector<ChatMessage> b = {makeMessage("user", ".x")};
+  EXPECT_NE(ChatCompletionsResolver::hashMessages(a),
+            ChatCompletionsResolver::hashMessages(b));
+}
+
+// ---------------------------------------------------------------------------
 // Resolver behavior when no SessionManager is wired up. Exercised on every
 // build because it short-circuits before reaching the tokenizer.
 // ---------------------------------------------------------------------------
@@ -151,7 +180,7 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = ChatCompletionsResolver::hashMessages(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
   // Turn 2's lookupHash matches the registered turn-1 hash.
@@ -180,7 +209,8 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
   EXPECT_EQ(*req->slotId, 17u);
   ASSERT_NE(req->session, nullptr);
   EXPECT_TRUE(req->continuation);
-  EXPECT_EQ(req->registrationHash, hashConversationPrefix(turn2));
+  EXPECT_EQ(req->registrationHash,
+            ChatCompletionsResolver::hashMessages(turn2));
   ASSERT_TRUE(std::holds_alternative<std::string>(req->prompt));
   EXPECT_NE(std::get<std::string>(req->prompt), "full-conversation prompt");
   EXPECT_NE(std::get<std::string>(req->prompt).find("second"),
@@ -198,7 +228,7 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = ChatCompletionsResolver::hashMessages(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
   // Mark the only candidate session in-flight before resolving.
@@ -246,7 +276,7 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = ChatCompletionsResolver::hashMessages(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
   std::vector<ChatMessage> turn2 = {
@@ -254,7 +284,7 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
       makeMessage("assistant", "ack"),
       makeMessage("user", "second"),
   };
-  const uint64_t hTurn2 = hashConversationPrefix(turn2);
+  const uint64_t hTurn2 = ChatCompletionsResolver::hashMessages(turn2);
   auto req = makeRequest(turn2);
 
   resolver->resolve(
@@ -274,6 +304,43 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
   auto* session = sessionManager->getSession(sessionId);
   ASSERT_NE(session, nullptr);
   session->clearInFlight();
+}
+
+TEST_F(ChatCompletionsResolverTest, PrefixHashHit_IgnoresToolMessages) {
+  // Tool turns sitting between assistant + user must NOT change prefix
+  // identity: a session registered under [user "q1"] should be found by
+  // a turn-2 conversation that includes a tool turn before the new user.
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(*sessionManager, lf.loop, 20u);
+  ASSERT_FALSE(sessionId.empty());
+
+  std::vector<ChatMessage> priorPrefix = {makeMessage("user", "q1")};
+  sessionManager->registerPrefixHash(
+      sessionId, ChatCompletionsResolver::hashMessages(priorPrefix));
+
+  ChatMessage toolTurn;
+  toolTurn.role = "tool";
+  toolTurn.content = "tool result blob";
+  toolTurn.tool_call_id = "call_abc";
+
+  std::vector<ChatMessage> turn2 = {
+      makeMessage("user", "q1"),
+      makeMessage("assistant", "let me call a tool"),
+      toolTurn,
+      makeMessage("user", "follow up"),
+  };
+
+  auto req = makeRequest(turn2);
+  resolver->resolve(
+      req, lf.loop, []() {}, [](const SessionError& e) { FAIL() << e.message; },
+      /*cancelFn=*/nullptr);
+
+  ASSERT_TRUE(req->sessionId.has_value());
+  EXPECT_EQ(*req->sessionId, sessionId);
+  EXPECT_TRUE(req->continuation);
+
+  if (req->session) req->session->clearInFlight();
 }
 
 }  // namespace
