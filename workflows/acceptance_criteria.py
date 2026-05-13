@@ -11,6 +11,7 @@ TARGET_CHECK_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
 BENCHMARK_ACTUAL_FIELDS = {
     "ttft": ("ttft",),
+    "latency": ("latency",),
     "tput_user": ("tput_user",),
     "tput_prefill": ("tput_prefill",),
     "e2el_ms": ("e2el_ms",),

@@ -80,13 +80,19 @@ class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_result = report_data[0]
 
-        # Verify all required keys exist
+        # Verify all required keys exist (parity with the other media
+        # clients' eval reports - issue #3243).
         required_keys = [
             "model",
             "device",
             "timestamp",
             "task_type",
             "task_name",
+            "tolerance",
+            "published_score",
+            "score",
+            "published_score_ref",
+            "accuracy_check",
         ]
         for key in required_keys:
             assert key in eval_result, f"Missing required key: {key}"
@@ -96,11 +102,19 @@ class TestEmbeddingClientStrategyRunEval(unittest.TestCase):
         assert eval_result["spearman"] == 0.82
         assert eval_result["main_score"] == 0.835
 
+        # Score is the MTEB main_score (Spearman correlation).
+        assert eval_result["score"] == 0.835
+        # No quality threshold defined for embeddings yet.
+        assert eval_result["accuracy_check"] == 1  # ReportCheckTypes.NA
+
         # Verify metadata from model_spec and all_params
         assert eval_result["model"] == "test_model"
         assert eval_result["device"] == "test_device"
         assert eval_result["task_type"] == "embedding"
         assert eval_result["task_name"] == "test_task"
+        assert eval_result["tolerance"] == 0.1
+        assert eval_result["published_score"] == 0.9
+        assert eval_result["published_score_ref"] == "ref"
 
     @patch.object(EmbeddingClientStrategy, "get_health", return_value=(False, None))
     def test_run_eval_health_check_failed(self, mock_health):
@@ -586,7 +600,14 @@ class TestEmbeddingClientStrategyGenerateEvalsReport(unittest.TestCase):
         device = MagicMock()
         device.name = "test_device"
         all_params = MagicMock()
-        all_params.tasks = [MagicMock(task_name="test_task")]
+        all_params.tasks = [
+            MagicMock(
+                task_name="test_task",
+                score=MagicMock(
+                    tolerance=0.1, published_score=0.9, published_score_ref="ref"
+                ),
+            )
+        ]
         return EmbeddingClientStrategy(all_params, model_spec, device, "/tmp", 8000)
 
     @patch("builtins.open", new_callable=mock_open)
@@ -620,13 +641,19 @@ class TestEmbeddingClientStrategyGenerateEvalsReport(unittest.TestCase):
         assert len(report_data) == 1
         eval_result = report_data[0]
 
-        # Verify all required keys exist
+        # Verify all required keys exist (parity with the other media
+        # clients' eval reports - issue #3243).
         required_keys = [
             "model",
             "device",
             "timestamp",
             "task_type",
             "task_name",
+            "tolerance",
+            "published_score",
+            "score",
+            "published_score_ref",
+            "accuracy_check",
         ]
         for key in required_keys:
             assert key in eval_result, f"Missing required key: {key}"
@@ -635,12 +662,18 @@ class TestEmbeddingClientStrategyGenerateEvalsReport(unittest.TestCase):
         assert eval_result["pearson"] == 0.85
         assert eval_result["spearman"] == 0.82
         assert eval_result["main_score"] == 0.835
+        # `score` mirrors the MTEB main_score
+        assert eval_result["score"] == 0.835
 
         # Verify metadata
         assert eval_result["model"] == "test_model"
         assert eval_result["device"] == "test_device"
         assert eval_result["task_type"] == "embedding"
         assert eval_result["task_name"] == "test_task"
+        assert eval_result["tolerance"] == 0.1
+        assert eval_result["published_score"] == 0.9
+        assert eval_result["published_score_ref"] == "ref"
+        assert eval_result["accuracy_check"] == 1  # ReportCheckTypes.NA
 
 
 class TestEmbeddingClientStrategyRunEmbeddingTranscriptionBenchmark(unittest.TestCase):

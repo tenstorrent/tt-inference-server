@@ -97,17 +97,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            self.runner_in_use = runner_in_use
-
-            # Route to appropriate eval method using dispatch map
+            self.runner_in_use = self.require_health()
             eval_method = self.eval_methods.get(
                 self.runner_in_use, self._run_image_generation_eval
             )
@@ -142,15 +132,14 @@ class ImageClientStrategy(BaseMediaStrategy):
                 "deviation_clip_score"
             )
             benchmark_data["accuracy_check"] = eval_results.get("accuracy_check")
-            benchmark_data["score"] = None  # no TTFT for ImageGenerationEvalsTest
+            benchmark_data["score"] = None
         else:
             # Legacy eval methods returning (status_list, total_time)
             status_list, total_time = eval_result
 
-            # Calculate TTFT
-            ttft_value = self._calculate_ttft_value(status_list)
-            logger.info(f"Extracted TTFT value: {ttft_value}")
-            benchmark_data["score"] = ttft_value
+            latency_value = self._calculate_latency(status_list)
+            logger.info(f"Extracted latency value (s): {latency_value}")
+            benchmark_data["score"] = latency_value
 
             logger.info("Running and calculating accuracy and metrics")
             fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
@@ -214,46 +203,31 @@ class ImageClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            self.runner_in_use = runner_in_use
-
-            # Get num_calls from benchmark parameters
+            self.runner_in_use = self.require_health()
             num_calls = get_num_calls(self)
 
-            # Override num_calls for SDXL models to 100 prompts
-            if runner_in_use in [
+            if self.runner_in_use in [
                 "tt-sdxl-trace",
                 "tt-sdxl-image-to-image",
                 "tt-sdxl-edit",
             ]:
                 logger.info(
-                    f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                    f"Overriding num_calls for SDXL {self.runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
                 )
                 num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
-            # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
                 self.runner_in_use, self._run_image_generation_benchmark
             )
             status_list = benchmark_method(num_calls)
-
             self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _calculate_ttft_value(
-        self, status_list: list[ImageGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on model type and status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[ImageGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
@@ -274,17 +248,15 @@ class ImageClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
 
-        # Convert ImageGenerationTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "ttft": ttft_value,
+                "latency": latency_value,
                 "inference_steps_per_second": sum(
                     status.inference_steps_per_second for status in status_list
                 )
@@ -293,7 +265,7 @@ class ImageClientStrategy(BaseMediaStrategy):
                 else 0,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "image",
         }
