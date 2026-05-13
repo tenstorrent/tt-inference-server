@@ -54,8 +54,7 @@ class ReportGenerator:
 
         render_sections = _collapse_same_heading_blocks(normalized.sections)
         section_markdowns = [
-            self._render_block(block, normalized.metadata)
-            for block in render_sections
+            self._render_block(block, normalized.metadata) for block in render_sections
         ]
         rendered = [md for md in section_markdowns if md]
 
@@ -140,8 +139,7 @@ def generate_report(
 
 
 def _collapse_same_heading_blocks(sections: List[Block]) -> List[Block]:
-    """Merge consecutive blocks that would render under the same heading.
-    """
+    """Merge consecutive blocks that would render under the same heading."""
     merged: List[Block] = []
     for block in sections:
         if merged and _has_same_heading(merged[-1], block):
