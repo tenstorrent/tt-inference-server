@@ -161,6 +161,23 @@ def generate_docker_run_command(
 
     # fmt: off
     # note: --env-file is just used for secrets, avoids persistent state on host
+
+    # Compatibility shim for older vLLM images (e.g. 0.10.0-e0e0500-409b1cd) whose
+    # baked-in Entrypoint=/usr/local/bin/docker-entrypoint.sh + CMD without "$@"
+    # drops the run.py args before they reach run_vllm_api_server.py and also calls
+    # `stat $CACHE_ROOT` unconditionally. Override the entrypoint to the modern
+    # bash-c-with-"$@" pattern so docker-run-args propagate correctly. Newer
+    # images already use this pattern; the override is a no-op for them.
+    entrypoint_override = [
+        "--entrypoint",
+        "/bin/bash",
+    ]
+    entrypoint_cmd_prefix = [
+        "-c",
+        'source ${PYTHON_ENV_DIR}/bin/activate && exec python run_vllm_api_server.py "$@"',
+        "--",
+    ]
+
     docker_command = [
         "docker",
         "run",
@@ -169,6 +186,7 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
+        *entrypoint_override,
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -211,6 +229,15 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    # Older images' docker-entrypoint.sh runs `stat $CACHE_ROOT` unconditionally
+    # and fails with "stat: cannot statx ''" when the variable is unset. With the
+    # --entrypoint override above we bypass that script entirely, so this is a
+    # no-op for both old and new images, but keep it for any code path that
+    # still routes through docker-entrypoint.sh.
+    # Do NOT put CACHE_ROOT in the host .env file because workflows/utils.py
+    # load_dotenv() propagates it into run.py's own os.environ and breaks the
+    # host-side log dir (run.py would try to mkdir the container path on host).
+    docker_env_vars["CACHE_ROOT"] = "/home/container_app_user/cache_root"
     if setup_config:
         if (
             setup_config.container_model_weights_path
@@ -289,6 +316,9 @@ def generate_docker_run_command(
     docker_command.append(model_spec.docker_image)
     # TODO: add --model and --tt-device for media server, Dockerfile refactor needed
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
+        # Entrypoint shim args (see entrypoint_override above): "-c <script> --"
+        # so the args that follow are received as "$@" by run_vllm_api_server.py.
+        docker_command.extend(entrypoint_cmd_prefix)
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
         if runtime_config.no_auth:
