@@ -49,7 +49,11 @@ from workflows.workflow_config import (
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ModelType, ReportCheckTypes
+from workflows.workflow_types import (
+    DeviceTypes,
+    ModelType,
+    ReportCheckTypes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -3885,23 +3889,34 @@ def main():
             else [],
         }
 
-        # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
-        # Add parameter_support_tests only if data exists
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
-        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
-            output_data
+        known_issues = model_spec.device_model_spec.known_issues
+        accepted, acceptance_blockers, enforcement_metadata = acceptance_criteria_check(
+            output_data, model_spec.status, known_issues
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria, acceptance_blockers
+            accepted, acceptance_blockers, enforcement_metadata
         )
-        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_criteria"] = accepted
         output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_criteria_metadata"] = enforcement_metadata
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+        if known_issues:
+            output_data["known_issues_declared"] = enforcement_metadata[
+                "known_issues_declared"
+            ]
+
+        logger.info(
+            f"Acceptance criteria enforcement: {enforcement_metadata['enforcement_result']} "
+            f"(status={enforcement_metadata['model_status']}, "
+            f"enforced={enforcement_metadata['enforced_tiers']}, "
+            f"failed={enforcement_metadata['failed_enforced_tiers']})"
+        )
 
         release_str = (
             f"{release_header}\n\n{metadata_str}\n\n"
@@ -3916,8 +3931,13 @@ def main():
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 
-    main_return_code = 0
-    return main_return_code
+    if enforcement_metadata["enforcement_result"] == "FAIL":
+        logger.warning(
+            f"Acceptance criteria FAILED for {model_spec.model_name}: "
+            f"required tiers {enforcement_metadata['failed_enforced_tiers']} "
+            f"did not pass (model status: {enforcement_metadata['model_status']})"
+        )
+    return 0
 
 
 def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):
