@@ -170,16 +170,20 @@ def _instantiate_spec_test(case: dict, ctx: MediaContext):
     BaseTest accepts ``(config, targets, description="", ctx=None)`` but a
     handful of test classes (e.g. ImageGenerationEvalsTest) override
     ``__init__`` with just ``(config, targets)`` — so we try the rich form
-    first and fall back to the minimal one rather than introspecting.
+    first and fall back to the minimal one, patching ``description`` on
+    afterward so the summary block can still surface it.
     """
     config = TestConfig(case.get("test_config") or {})
     targets = case.get("targets") or {}
+    description = case.get("description") or ""
     module = importlib.import_module(case["module"])
     cls = getattr(module, case["name"])
     try:
-        return cls(config, targets, ctx=ctx)
+        return cls(config, targets, description=description, ctx=ctx)
     except TypeError:
-        return cls(config, targets)
+        instance = cls(config, targets)
+        instance.description = description
+        return instance
 
 
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:

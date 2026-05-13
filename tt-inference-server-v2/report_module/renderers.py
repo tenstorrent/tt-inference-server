@@ -17,7 +17,17 @@ logger = logging.getLogger(__name__)
 
 RendererFn = Callable[[Block, Mapping[str, Any]], str]
 
-HIDDEN_COLUMNS = frozenset({"kind", "model", "device", "timestamp"})
+HIDDEN_COLUMNS = frozenset(
+    {
+        "kind",
+        "model",
+        "device",
+        "timestamp",
+        "test_name",
+        "description",
+        "elapsed_seconds",
+    }
+)
 
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",

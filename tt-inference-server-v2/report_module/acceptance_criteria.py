@@ -26,7 +26,6 @@ EVAL_KINDS = frozenset(
         "tts_eval",
         "video_eval",
         "embedding_eval",
-        "image_generation_evals",
     }
 )
 HEALTH_INFRA_KINDS = frozenset(

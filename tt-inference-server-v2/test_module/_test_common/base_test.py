@@ -126,7 +126,8 @@ class BaseTest(ABC):
         """Run the test with retry/log accounting and return a Block.
 
         On success, ``Block.data`` carries the envelope keys
-        (``success``, ``attempts``, ``logs``) merged with the test's own
+        (``success``, ``attempts``, ``logs``, ``elapsed_seconds``,
+        ``test_name``, ``description``) merged with the test's own
         result dict at the top level — so a result like
         ``{"runner_in_use": "vllm", "ttft": 0.18}`` becomes
         ``{"success": True, "attempts": 1, "logs": [...],
@@ -143,7 +144,8 @@ class BaseTest(ABC):
 
         On failure (all retries exhausted)::
             {"success": False, "attempts": int, "logs": list,
-             "error": {"type": str, "message": str}}
+             "elapsed_seconds": float, "test_name": str,
+             "description": str, "error": {"type": str, "message": str}}
 
         ``break_on_failure=True`` re-raises ``SystemExit`` after building the
         failure Block so callers that opt into hard-fail still get one;
@@ -151,6 +153,7 @@ class BaseTest(ABC):
         """
         last_exception: Optional[BaseException] = None
         attempts_used = 0
+        run_started = time.monotonic()
 
         for attempt in range(self.retry_attempts + 1):
             attempts_used = attempt + 1
@@ -186,6 +189,9 @@ class BaseTest(ABC):
                 data["success"] = success
                 data["attempts"] = attempts_used
                 data["logs"] = list(self.logs)
+                data["elapsed_seconds"] = time.monotonic() - run_started
+                data["test_name"] = type(self).__name__
+                data["description"] = self.description
                 return self._block(data)
 
             except asyncio.TimeoutError as e:
@@ -270,6 +276,9 @@ class BaseTest(ABC):
                 "success": False,
                 "attempts": attempts_used,
                 "logs": list(self.logs),
+                "elapsed_seconds": time.monotonic() - run_started,
+                "test_name": type(self).__name__,
+                "description": self.description,
                 "error": error_payload,
             }
         )
