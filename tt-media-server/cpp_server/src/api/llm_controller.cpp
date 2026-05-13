@@ -61,34 +61,6 @@ LLMController::LLMController() {
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-void LLMController::applyResolvedSession(
-    LLMRequest& request, const resolvers::ResolvedSession& resolved) {
-  if (resolved.sessionId.has_value()) {
-    request.sessionId = resolved.sessionId;
-  }
-  if (resolved.slotId.has_value()) {
-    request.slotId = resolved.slotId;
-  }
-  if (resolved.session != nullptr) {
-    request.session = resolved.session;
-  }
-  request.continuation = !resolved.isFresh;
-  if (!resolved.isFresh && !resolved.prompt.empty()) {
-    request.prompt = resolved.prompt;
-    request.prompt_tokens_count = resolved.promptTokensCount;
-  }
-}
-
-LLMController::SessionInfo LLMController::makeSessionInfo(
-    const resolvers::ResolvedSession& resolved) {
-  SessionInfo info;
-  if (!resolved.isFresh && resolved.sessionId.has_value()) {
-    info.validSessionFound = true;
-    info.registrationHash = resolved.registrationHash;
-  }
-  return info;
-}
-
 void LLMController::chatCompletions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
@@ -335,12 +307,9 @@ void LLMController::handleStreaming(
   };
 
   chatResolver->resolve(
-      reqPtr->messages, loop,
+      reqPtr, loop,
       [this, reqPtr, cb, loop, formatter = std::move(formatter),
-       includeUsage](resolvers::ResolvedSession resolved) {
-        applyResolvedSession(*reqPtr, resolved);
-        SessionInfo sessionInfo = makeSessionInfo(resolved);
-
+       includeUsage]() {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
@@ -359,7 +328,7 @@ void LLMController::handleStreaming(
             loop, makeWriterParams(*reqPtr), includeUsage, formatter);
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo,
+          dispatchGeneration(*reqPtr,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
@@ -399,12 +368,8 @@ void LLMController::handleNonStreaming(
   };
 
   chatResolver->resolve(
-      reqPtr->messages, loop,
-      [this, reqPtr, cb, builder = std::move(builder)](
-          resolvers::ResolvedSession resolved) mutable {
-        applyResolvedSession(*reqPtr, resolved);
-        SessionInfo sessionInfo = makeSessionInfo(resolved);
-
+      reqPtr, loop,
+      [this, reqPtr, cb, builder = std::move(builder)]() mutable {
         try {
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
@@ -427,7 +392,7 @@ void LLMController::handleNonStreaming(
             makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo,
+          dispatchGeneration(*reqPtr,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
@@ -446,7 +411,7 @@ void LLMController::handleNonStreaming(
 }
 
 void LLMController::dispatchGeneration(
-    LLMRequest& request, SessionInfo sessionInfo,
+    LLMRequest& request,
     const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
   if (mode == tt::config::LLMMode::REGULAR) {
@@ -455,7 +420,8 @@ void LLMController::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (shouldDoPrefillOnDecode(request, sessionInfo.validSessionFound)) {
+    if (shouldDoPrefillOnDecode(request,
+                                /*validSessionFound=*/request.continuation)) {
       TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
       service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -465,7 +431,7 @@ void LLMController::dispatchGeneration(
           "sessionId: {}",
           request.sessionId.value_or("none"));
       disaggregationService->handleStreamingRequest(
-          request, sessionInfo.registrationHash.value_or(0), cb);
+          request, request.registrationHash, cb);
     }
     return;
   }

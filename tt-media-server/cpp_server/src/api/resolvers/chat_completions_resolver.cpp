@@ -6,10 +6,10 @@
 #include <string>
 #include <utility>
 
+#include "api/resolvers/prefix_caching.hpp"
 #include "domain/session.hpp"
 #include "metrics/metrics.hpp"
 #include "services/session_manager.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
@@ -20,17 +20,17 @@ ChatCompletionsResolver::ChatCompletionsResolver(
     : sessionManager(std::move(manager)) {}
 
 void ChatCompletionsResolver::resolve(
-    const std::vector<domain::llm::ChatMessage>& messages,
-    trantor::EventLoop* loop, std::function<void(ResolvedSession)> onDone,
+    std::shared_ptr<domain::llm::LLMRequest> request, trantor::EventLoop* loop,
+    std::function<void()> onDone,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
   if (!sessionManager) {
     TT_LOG_WARN("[ChatCompletionsResolver] SessionManager not available");
-    onDone(ResolvedSession{});
+    onDone();
     return;
   }
 
-  auto routingInfo = tt::utils::computePrefixCachingInfo(messages);
+  auto routingInfo = computePrefixCachingInfo(request->messages);
   TT_LOG_DEBUG(
       "[ChatCompletionsResolver] Routing: hasPriorTurn={}, lookupHash={}, "
       "registrationHash={}",
@@ -52,21 +52,21 @@ void ChatCompletionsResolver::resolve(
             "[ChatCompletionsResolver] Prefix cache HIT: hash={}, "
             "sessionId={}, slotId={}",
             *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
-        sessionManager->registerPrefixHash(acquired->sessionId,
-                                           routingInfo.registrationHash);
 
-        ResolvedSession resolved;
-        resolved.sessionId = acquired->sessionId;
-        resolved.slotId = acquired->slotId;
-        resolved.session = sessionManager->getSession(acquired->sessionId);
-        resolved.isFresh = false;
-        resolved.registrationHash = routingInfo.registrationHash;
-        resolved.prompt = routingInfo.deltaPrompt;
-        resolved.promptTokensCount =
+        request->sessionId = acquired->sessionId;
+        request->slotId = acquired->slotId;
+        request->session = sessionManager->getSession(acquired->sessionId);
+        request->continuation = true;
+        request->registrationHash = routingInfo.registrationHash;
+        request->prompt = routingInfo.deltaPrompt;
+        request->prompt_tokens_count =
             static_cast<int>(tt::utils::tokenizers::activeTokenizer()
                                  .encode(routingInfo.deltaPrompt)
                                  .size());
-        onDone(std::move(resolved));
+        sessionManager->registerPrefixHash(acquired->sessionId,
+                                           routingInfo.registrationHash);
+
+        onDone();
         return;
       }
 
@@ -85,28 +85,29 @@ void ChatCompletionsResolver::resolve(
 
   // Layer 2: Allocate a new session. createSession is async — `onCompletion`
   // and `onError` are queued on `loop` by the SessionManager.
+  // Fresh allocations leave `request->registrationHash` at 0 (the
+  // disaggregation service treats unhashed requests as fresh prefix).
   sessionManager->createSession(
-      [registrationHash = routingInfo.registrationHash,
+      [request = std::move(request),
+       registrationHash = routingInfo.registrationHash,
        cancelFn = std::move(cancelFn), mgr = sessionManager,
        onDone = std::move(onDone)](const tt::domain::Session& session) mutable {
-        ResolvedSession resolved;
-        resolved.sessionId = session.getSessionId();
-        resolved.slotId =
+        request->sessionId = session.getSessionId();
+        request->slotId =
             mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
-        resolved.session = mgr->getSession(session.getSessionId());
-        resolved.isFresh = true;
-        resolved.registrationHash = registrationHash;
-
+        request->session = mgr->getSession(session.getSessionId());
+        request->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(), registrationHash);
+
         TT_LOG_INFO(
             "[ChatCompletionsResolver] New session: sessionId={}, slotId={}, "
             "registered under hash={}",
             session.getSessionId(),
-            resolved.slotId.has_value() ? std::to_string(*resolved.slotId)
+            request->slotId.has_value() ? std::to_string(*request->slotId)
                                         : "none",
             registrationHash);
 
-        onDone(std::move(resolved));
+        onDone();
       },
       [onError = std::move(onError)](std::string_view err) {
         onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});

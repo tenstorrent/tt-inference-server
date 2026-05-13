@@ -7,10 +7,9 @@
 
 #include <functional>
 #include <memory>
-#include <vector>
 
-#include "api/resolvers/resolved_session.hpp"
-#include "domain/llm/chat_message.hpp"
+#include "api/resolvers/session_error.hpp"
+#include "domain/llm/llm_request.hpp"
 
 namespace tt::services {
 class SessionManager;
@@ -27,20 +26,22 @@ namespace tt::api::resolvers {
  * the matching slot in-flight. On a miss it allocates a new session
  * asynchronously via the SessionManager's IPC path.
  *
- * The resolver does NOT mutate the LLMRequest; the controller copies
- * the fields from ResolvedSession onto the request after `onDone` fires.
+ * On success the resolver mutates the request in place with the
+ * resolved session, slot, continuation flag, `registrationHash`, and
+ * (on a HIT) delta prompt + token count. The `onDone` callback then
+ * signals "request is ready, dispatch generation".
  *
  * Dispatch:
- *   - Prefix-cache HIT path is synchronous: `onDone` fires on the calling
- *     thread before `resolve()` returns.
- *   - Allocation path is asynchronous: `onDone` / `onError` are queued on
- *     `loop` by the SessionManager.
+ *   - Prefix-cache HIT path is synchronous: `onDone` fires on the
+ *     calling thread before `resolve()` returns.
+ *   - Allocation path is asynchronous: `onDone` / `onError` are queued
+ *     on `loop` by the SessionManager.
  *   - RATE_LIMIT (all candidate sessions in-flight) is reported
  *     synchronously via `onError`.
- *   - When no SessionManager is wired up, `onDone` fires synchronously
- *     with a default-constructed ResolvedSession.
+ *   - When no SessionManager is wired up, the request is left untouched
+ *     and `onDone` fires synchronously.
  *
- * `cancelFn` is bound atomically with the in-flight state so that a
+ * `cancelFn` is bound atomically with the in-flight state so a
  * concurrent SessionManager::closeSession aborts the request.
  */
 class ChatCompletionsResolver {
@@ -48,9 +49,8 @@ class ChatCompletionsResolver {
   explicit ChatCompletionsResolver(
       std::shared_ptr<services::SessionManager> manager);
 
-  void resolve(const std::vector<domain::llm::ChatMessage>& messages,
-               trantor::EventLoop* loop,
-               std::function<void(ResolvedSession)> onDone,
+  void resolve(std::shared_ptr<domain::llm::LLMRequest> request,
+               trantor::EventLoop* loop, std::function<void()> onDone,
                std::function<void(const SessionError&)> onError,
                std::function<void()> cancelFn) const;
 

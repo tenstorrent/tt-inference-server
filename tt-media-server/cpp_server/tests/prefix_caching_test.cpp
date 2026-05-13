@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "utils/conversation_hasher.hpp"
+#include "api/resolvers/prefix_caching.hpp"
 
 #include <gtest/gtest.h>
 
@@ -12,14 +12,16 @@
 #include "domain/llm/chat_message.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-using namespace tt::domain;
-using namespace tt::domain::llm;
-using namespace tt::utils;
+using tt::api::resolvers::computePrefixCachingInfo;
+using tt::api::resolvers::extractPriorTurnPrefix;
+using tt::api::resolvers::hashConversationPrefix;
+using tt::api::resolvers::PrefixCachingInfo;
+using tt::api::resolvers::renderLastUserTurn;
+using tt::api::resolvers::stripToolMessages;
+using tt::domain::llm::ChatMessage;
 using tt::utils::tokenizers::activeTokenizer;
 
 namespace {
-
-using namespace tt::domain::llm;
 
 ChatMessage makeMessage(std::string role, std::string content) {
   ChatMessage m;
@@ -32,7 +34,7 @@ ChatMessage makeMessage(std::string role, std::string content) {
 // Pure helpers (no tokenizer)
 // ---------------------------------------------------------------------------
 
-TEST(ConversationHasherLogic, StripToolMessages_DropsToolAndFunction) {
+TEST(PrefixCachingLogic, StripToolMessages_DropsToolAndFunction) {
   std::vector<ChatMessage> in = {
       makeMessage("system", "sys"),   makeMessage("user", "u1"),
       makeMessage("tool", "t1"),      makeMessage("function", "f1"),
@@ -45,17 +47,17 @@ TEST(ConversationHasherLogic, StripToolMessages_DropsToolAndFunction) {
   EXPECT_EQ(out[2].role, "assistant");
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_RequiresUserTail) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_RequiresUserTail) {
   EXPECT_FALSE(extractPriorTurnPrefix({}).has_value());
   EXPECT_FALSE(extractPriorTurnPrefix({makeMessage("user", "x")}).has_value());
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_TooShortAfterStrip) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_TooShortAfterStrip) {
   std::vector<ChatMessage> oneUser = {makeMessage("user", "only")};
   EXPECT_FALSE(extractPriorTurnPrefix(oneUser).has_value());
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_SecondToLastNotAssistant) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_SecondToLastNotAssistant) {
   std::vector<ChatMessage> userUser = {
       makeMessage("user", "a"),
       makeMessage("user", "b"),
@@ -63,7 +65,7 @@ TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_SecondToLastNotAssistant) {
   EXPECT_FALSE(extractPriorTurnPrefix(userUser).has_value());
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_AssistantUserOnly) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_AssistantUserOnly) {
   std::vector<ChatMessage> pair = {
       makeMessage("assistant", "a"),
       makeMessage("user", "b"),
@@ -71,7 +73,7 @@ TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_AssistantUserOnly) {
   EXPECT_FALSE(extractPriorTurnPrefix(pair).has_value());
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_TrailingPair) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_TrailingPair) {
   std::vector<ChatMessage> thread = {
       makeMessage("system", "s"),
       makeMessage("user", "first"),
@@ -87,7 +89,7 @@ TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_TrailingPair) {
   EXPECT_EQ((*prior)[1].content, "first");
 }
 
-TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_IgnoresToolInTail) {
+TEST(PrefixCachingLogic, ExtractPriorTurnPrefix_IgnoresToolInTail) {
   std::vector<ChatMessage> withTool = {
       makeMessage("user", "q"),
       makeMessage("assistant", "with tool next"),
@@ -101,7 +103,7 @@ TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_IgnoresToolInTail) {
   EXPECT_EQ((*prior)[0].content, "q");
 }
 
-TEST(ConversationHasherLogic, HashConversationPrefix_EmptyIsZero) {
+TEST(PrefixCachingLogic, HashConversationPrefix_EmptyIsZero) {
   EXPECT_EQ(hashConversationPrefix({}), 0u);
 }
 
@@ -111,7 +113,7 @@ TEST(ConversationHasherLogic, HashConversationPrefix_EmptyIsZero) {
 // Tokenizer-backed tests
 // ---------------------------------------------------------------------------
 
-class ConversationHasherTest : public ::testing::Test {
+class PrefixCachingTest : public ::testing::Test {
  protected:
   void SetUp() override {
     std::string path = tt::config::tokenizerPath();
@@ -119,7 +121,6 @@ class ConversationHasherTest : public ::testing::Test {
       GTEST_SKIP()
           << "Tokenizer path not configured (set model / tokenizer path)";
     }
-    // exercise the same model path the server uses; activeTokenizer is static
     const auto& tok = activeTokenizer();
     if (!tok.isLoaded()) {
       GTEST_SKIP() << "Active tokenizer not loaded for path: " << path;
@@ -127,7 +128,7 @@ class ConversationHasherTest : public ::testing::Test {
   }
 };
 
-TEST_F(ConversationHasherTest, HashConversationPrefix_IsDeterministic) {
+TEST_F(PrefixCachingTest, HashConversationPrefix_IsDeterministic) {
   std::vector<ChatMessage> prefix = {
       makeMessage("user", "hello hasher"),
   };
@@ -136,13 +137,13 @@ TEST_F(ConversationHasherTest, HashConversationPrefix_IsDeterministic) {
   EXPECT_EQ(a, b);
 }
 
-TEST_F(ConversationHasherTest, HashConversationPrefix_DiffersForContent) {
+TEST_F(PrefixCachingTest, HashConversationPrefix_DiffersForContent) {
   uint64_t h1 = hashConversationPrefix({makeMessage("user", "A")});
   uint64_t h2 = hashConversationPrefix({makeMessage("user", "B")});
   EXPECT_NE(h1, h2);
 }
 
-TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
+TEST_F(PrefixCachingTest, RenderLastUserTurn_PicksLastUser) {
   std::vector<ChatMessage> thread = {
       makeMessage("user", "older"),
       makeMessage("assistant", "reply"),
@@ -155,11 +156,11 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
   EXPECT_EQ(delta.find("older"), std::string::npos);
 }
 
-TEST_F(ConversationHasherTest, RenderLastUserTurn_NoUserRoleReturnsEmpty) {
+TEST_F(PrefixCachingTest, RenderLastUserTurn_NoUserRoleReturnsEmpty) {
   EXPECT_EQ(renderLastUserTurn({makeMessage("assistant", "no user")}), "");
 }
 
-TEST_F(ConversationHasherTest,
+TEST_F(PrefixCachingTest,
        ComputePrefixCachingInfo_AlignedWithDecomposedPipeline) {
   // Primary regression target: computePrefixCachingInfo() must stay consistent
   // with strip / hash / render / prior extraction.
@@ -188,7 +189,7 @@ TEST_F(ConversationHasherTest,
   }
 }
 
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
+TEST_F(PrefixCachingTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
   std::vector<ChatMessage> messages = {makeMessage("user", "solo")};
   PrefixCachingInfo info = computePrefixCachingInfo(messages);
 
@@ -199,7 +200,7 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
   EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages)));
 }
 
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
+TEST_F(PrefixCachingTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
   std::vector<ChatMessage> messages = {
       makeMessage("user", "q1"),
       makeMessage("assistant", "a1"),
@@ -216,7 +217,7 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
   EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
 }
 
-TEST_F(ConversationHasherTest,
+TEST_F(PrefixCachingTest,
        ComputePrefixCachingInfo_AssistantUserOnlyHasNoLookup) {
   std::vector<ChatMessage> messages = {
       makeMessage("assistant", "hi"),
@@ -228,7 +229,7 @@ TEST_F(ConversationHasherTest,
   EXPECT_FALSE(info.lookupHash.has_value());
 }
 
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StripsTools) {
+TEST_F(PrefixCachingTest, ComputePrefixCachingInfo_StripsTools) {
   std::vector<ChatMessage> messages = {
       makeMessage("user", "q1"),
       makeMessage("assistant", "call tool"),
@@ -244,7 +245,6 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StripsTools) {
   PrefixCachingInfo got = computePrefixCachingInfo(messages);
   PrefixCachingInfo noToolInfo = computePrefixCachingInfo(noTool);
 
-  // Stripped view matches a conversation without the tool line.
   EXPECT_EQ(got.registrationHash, noToolInfo.registrationHash);
   EXPECT_EQ(got.deltaPrompt, noToolInfo.deltaPrompt);
   EXPECT_EQ(got.hasPriorTurn, noToolInfo.hasPriorTurn);
@@ -256,7 +256,7 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StripsTools) {
   }
 }
 
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StabilitySecondTurn) {
+TEST_F(PrefixCachingTest, ComputePrefixCachingInfo_StabilitySecondTurn) {
   // After turn 1, "registration" is the one-message conversation; add assistant
   // + user and ensure lookup would find the first registration hash.
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};

@@ -286,7 +286,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/llm/sequence.cpp
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
-    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -423,8 +422,14 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
 
-add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
-target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
+add_executable(prefix_caching_test
+    tests/prefix_caching_test.cpp
+    src/api/resolvers/prefix_caching.cpp
+)
+target_link_libraries(prefix_caching_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(prefix_caching_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
@@ -543,6 +548,7 @@ target_include_directories(session_manager_test PRIVATE
 add_executable(chat_completions_resolver_test
     tests/chat_completions_resolver_test.cpp
     src/api/resolvers/chat_completions_resolver.cpp
+    src/api/resolvers/prefix_caching.cpp
     src/domain/session.cpp
     src/services/session_manager.cpp
     src/metrics/metrics.cpp
@@ -612,13 +618,13 @@ add_executable(main_integration_test
     src/worker/worker_metrics_shm.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
-    src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runners/embedding_runner.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/resolvers/chat_completions_resolver.cpp
+    src/api/resolvers/prefix_caching.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
@@ -659,7 +665,7 @@ gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
-gtest_discover_tests(conversation_hasher_test)
+gtest_discover_tests(prefix_caching_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
@@ -775,6 +781,7 @@ set(SOURCES
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
     src/api/resolvers/chat_completions_resolver.cpp
+    src/api/resolvers/prefix_caching.cpp
     src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp

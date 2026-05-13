@@ -10,23 +10,26 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
-#include "api/resolvers/resolved_session.hpp"
+#include "api/resolvers/prefix_caching.hpp"
+#include "api/resolvers/session_error.hpp"
 #include "config/settings.hpp"
 #include "domain/llm/chat_message.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "domain/session.hpp"
 #include "services/session_manager.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
 
 using tt::api::resolvers::ChatCompletionsResolver;
-using tt::api::resolvers::ResolvedSession;
+using tt::api::resolvers::hashConversationPrefix;
 using tt::api::resolvers::SessionError;
 using tt::api::resolvers::SessionErrorType;
 using tt::domain::llm::ChatMessage;
+using tt::domain::llm::LLMRequest;
 using tt::utils::tokenizers::activeTokenizer;
 
 ChatMessage makeMessage(std::string role, std::string content) {
@@ -34,6 +37,13 @@ ChatMessage makeMessage(std::string role, std::string content) {
   m.role = std::move(role);
   m.content = std::move(content);
   return m;
+}
+
+std::shared_ptr<LLMRequest> makeRequest(std::vector<ChatMessage> messages) {
+  auto req = std::make_shared<LLMRequest>(/*taskId=*/0u);
+  req->messages = std::move(messages);
+  req->prompt = std::string{};  // resolver only writes prompt on a HIT
+  return req;
 }
 
 // Trantor requires an EventLoop to be both created and run on the same thread.
@@ -84,28 +94,30 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
 // build because it short-circuits before reaching the tokenizer.
 // ---------------------------------------------------------------------------
 
-TEST(ChatCompletionsResolverNoManager, ReturnsEmptyResolvedSession) {
-  ChatCompletionsResolver resolver(/*sessionManager=*/nullptr);
+TEST(ChatCompletionsResolverNoManager, LeavesRequestUntouched) {
+  ChatCompletionsResolver resolver(/*manager=*/nullptr);
+
+  auto req = makeRequest({makeMessage("user", "hello")});
+  req->prompt = std::string{"original prompt"};
+  req->continuation = true;  // sentinel: resolver must not flip this
+  req->registrationHash = 42u;
 
   bool calledOnDone = false;
-  ResolvedSession got;
   resolver.resolve(
-      {makeMessage("user", "hello")}, /*loop=*/nullptr,
-      [&](ResolvedSession r) {
-        calledOnDone = true;
-        got = std::move(r);
-      },
+      req, /*loop=*/nullptr, [&]() { calledOnDone = true; },
       [](const SessionError&) { FAIL() << "expected onDone, got onError"; },
       /*cancelFn=*/nullptr);
 
   EXPECT_TRUE(calledOnDone);
-  EXPECT_FALSE(got.sessionId.has_value());
-  EXPECT_FALSE(got.slotId.has_value());
-  EXPECT_EQ(got.session, nullptr);
-  EXPECT_TRUE(got.isFresh);
-  EXPECT_EQ(got.registrationHash, 0u);
-  EXPECT_TRUE(got.prompt.empty());
-  EXPECT_EQ(got.promptTokensCount, 0);
+
+  // Request was not mutated.
+  EXPECT_FALSE(req->sessionId.has_value());
+  EXPECT_FALSE(req->slotId.has_value());
+  EXPECT_EQ(req->session, nullptr);
+  EXPECT_TRUE(req->continuation);
+  EXPECT_EQ(req->registrationHash, 42u);
+  ASSERT_TRUE(std::holds_alternative<std::string>(req->prompt));
+  EXPECT_EQ(std::get<std::string>(req->prompt), "original prompt");
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +143,7 @@ class ChatCompletionsResolverTest : public ::testing::Test {
   std::unique_ptr<ChatCompletionsResolver> resolver;
 };
 
-TEST_F(ChatCompletionsResolverTest, PrefixHashHit_ReturnsExistingSession) {
+TEST_F(ChatCompletionsResolverTest, PrefixHashHit_MutatesRequestWithDelta) {
   LoopFixture lf;
 
   // Stand up a session under the hash that turn 1 would register.
@@ -139,45 +151,44 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_ReturnsExistingSession) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = tt::utils::hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = hashConversationPrefix(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
-  // Resolve a turn-2 conversation; its lookupHash should match the
-  // registered turn-1 hash.
+  // Turn 2's lookupHash matches the registered turn-1 hash.
   std::vector<ChatMessage> turn2 = {
       makeMessage("user", "first"),
       makeMessage("assistant", "ack"),
       makeMessage("user", "second"),
   };
+  auto req = makeRequest(turn2);
+  req->prompt = std::string{"full-conversation prompt"};
 
   bool calledOnDone = false;
-  ResolvedSession got;
   resolver->resolve(
-      turn2, lf.loop,
-      [&](ResolvedSession r) {
-        calledOnDone = true;
-        got = std::move(r);
-      },
+      req, lf.loop, [&]() { calledOnDone = true; },
       [](const SessionError& e) {
         FAIL() << "expected onDone, got onError: " << e.message;
       },
       /*cancelFn=*/nullptr);
 
   EXPECT_TRUE(calledOnDone);
-  ASSERT_TRUE(got.sessionId.has_value());
-  EXPECT_EQ(*got.sessionId, sessionId);
-  ASSERT_TRUE(got.slotId.has_value());
-  EXPECT_EQ(*got.slotId, 17u);
-  ASSERT_NE(got.session, nullptr);
-  EXPECT_FALSE(got.isFresh);
-  EXPECT_EQ(got.registrationHash, tt::utils::hashConversationPrefix(turn2));
-  // delta prompt is the rendered last user turn.
-  EXPECT_FALSE(got.prompt.empty());
-  EXPECT_NE(got.prompt.find("second"), std::string::npos);
-  EXPECT_GT(got.promptTokensCount, 0);
+
+  // Request must carry the cached session / slot and the delta prompt.
+  ASSERT_TRUE(req->sessionId.has_value());
+  EXPECT_EQ(*req->sessionId, sessionId);
+  ASSERT_TRUE(req->slotId.has_value());
+  EXPECT_EQ(*req->slotId, 17u);
+  ASSERT_NE(req->session, nullptr);
+  EXPECT_TRUE(req->continuation);
+  EXPECT_EQ(req->registrationHash, hashConversationPrefix(turn2));
+  ASSERT_TRUE(std::holds_alternative<std::string>(req->prompt));
+  EXPECT_NE(std::get<std::string>(req->prompt), "full-conversation prompt");
+  EXPECT_NE(std::get<std::string>(req->prompt).find("second"),
+            std::string::npos);
+  EXPECT_GT(req->prompt_tokens_count, 0);
 
   // Release in-flight so the LoopFixture teardown can close the session.
-  got.session->clearInFlight();
+  req->session->clearInFlight();
 }
 
 TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
@@ -187,7 +198,7 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = tt::utils::hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = hashConversationPrefix(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
   // Mark the only candidate session in-flight before resolving.
@@ -198,12 +209,13 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
       makeMessage("assistant", "ack"),
       makeMessage("user", "second"),
   };
+  auto req = makeRequest(turn2);
+  req->prompt = std::string{"full-conversation prompt"};
 
   bool calledOnError = false;
   SessionError err;
   resolver->resolve(
-      turn2, lf.loop,
-      [](ResolvedSession) { FAIL() << "expected RATE_LIMIT error"; },
+      req, lf.loop, []() { FAIL() << "expected RATE_LIMIT error"; },
       [&](const SessionError& e) {
         calledOnError = true;
         err = e;
@@ -212,6 +224,13 @@ TEST_F(ChatCompletionsResolverTest, AllSessionsInFlight_EmitsRateLimit) {
 
   EXPECT_TRUE(calledOnError);
   EXPECT_EQ(err.type, SessionErrorType::RATE_LIMIT);
+
+  // Request must remain in its pre-resolve state — no session/slot bound.
+  EXPECT_FALSE(req->sessionId.has_value());
+  EXPECT_FALSE(req->slotId.has_value());
+  EXPECT_EQ(req->session, nullptr);
+  EXPECT_FALSE(req->continuation);
+  EXPECT_EQ(req->registrationHash, 0u);
 
   auto* session = sessionManager->getSession(sessionId);
   ASSERT_NE(session, nullptr);
@@ -227,7 +246,7 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
   ASSERT_FALSE(sessionId.empty());
 
   std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  const uint64_t hTurn1 = tt::utils::hashConversationPrefix(turn1);
+  const uint64_t hTurn1 = hashConversationPrefix(turn1);
   sessionManager->registerPrefixHash(sessionId, hTurn1);
 
   std::vector<ChatMessage> turn2 = {
@@ -235,18 +254,18 @@ TEST_F(ChatCompletionsResolverTest, PrefixHashHit_PromotesNextTurnHash) {
       makeMessage("assistant", "ack"),
       makeMessage("user", "second"),
   };
-  const uint64_t hTurn2 = tt::utils::hashConversationPrefix(turn2);
+  const uint64_t hTurn2 = hashConversationPrefix(turn2);
+  auto req = makeRequest(turn2);
 
   resolver->resolve(
-      turn2, lf.loop,
-      [](ResolvedSession r) {
-        if (r.session) r.session->clearInFlight();
+      req, lf.loop,
+      [&]() {
+        if (req->session) req->session->clearInFlight();
       },
       [](const SessionError& e) { FAIL() << e.message; },
       /*cancelFn=*/nullptr);
 
-  // Look up by the turn-2 hash should now return the same session (after
-  // marking it idle above) — verify by trying to acquire it.
+  // Looking up by the turn-2 hash should now return the same session.
   auto acquired =
       sessionManager->tryAcquireByPrefixHash(hTurn2, /*cancelFn=*/nullptr);
   ASSERT_TRUE(acquired.has_value());

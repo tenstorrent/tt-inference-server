@@ -10,7 +10,7 @@
 #include <memory>
 #include <string>
 
-#include "api/resolvers/resolved_session.hpp"
+#include "api/resolvers/session_error.hpp"
 #include "api/response_writer/non_stream_response_writer.hpp"
 #include "api/response_writer/response_writer.hpp"
 #include "api/stream_event_formatter.hpp"
@@ -99,29 +99,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       NonStreamResponseWriter::ResponseBuilder builder,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-  struct SessionInfo {
-    bool validSessionFound = false;
-    std::optional<size_t> registrationHash;
-  };
-
-  /**
-   * Apply a resolver decision onto the in-flight request. Mirrors the
-   * field writes that `LLMController::resolveSession` used to perform
-   * inline, kept here as a private helper so both streaming and
-   * non-streaming paths stay in sync.
-   */
-  static void applyResolvedSession(LLMRequest& request,
-                                   const resolvers::ResolvedSession& resolved);
-
-  /**
-   * Build the SessionInfo consumed by dispatchGeneration from the
-   * resolver's decision. registrationHash is only forwarded on a
-   * prefix-cache HIT; fresh allocations and the no-manager path leave it
-   * unset, preserving the original (pre-resolver) controller behavior.
-   */
-  static SessionInfo makeSessionInfo(
-      const resolvers::ResolvedSession& resolved);
-
   /**
    * Determine if disaggregated prefill should be used for this request.
    */
@@ -131,11 +108,14 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Submit the request to the appropriate streaming producer based on
    * llm_mode (REGULAR vs DECODE_ONLY) and the prefill-on-decode heuristic.
-   * Caller must invoke service->preProcess(req) beforehand. Throws on
-   * unsupported mode or queue/dispatch failures.
+   * Reads `request.continuation` (true on prefix-cache HIT) and
+   * `request.registrationHash` (populated by the resolver on HIT, zero
+   * on fresh allocation) to pick the routing path. Caller must invoke
+   * service->preProcess(req) beforehand. Throws on unsupported mode or
+   * queue/dispatch failures.
    */
   void dispatchGeneration(
-      LLMRequest& request, SessionInfo sessionInfo,
+      LLMRequest& request,
       const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
 
   /**
