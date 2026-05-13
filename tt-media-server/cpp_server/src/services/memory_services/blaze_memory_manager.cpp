@@ -44,7 +44,7 @@ void BlazeMemoryManager::handleRequest(
     case domain::MemoryManagementAction::DEALLOCATE: {
       auto slotId = request.slotId;
       if (!decodeScheduler.push_request(
-              utils::makeCancelRequest(request.taskId, slotId))) {
+              utils::makeEvictRequest(request.taskId, slotId))) {
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] DEALLOCATE push_request failed for "
             "slotId={}; deferring retry for taskId={}",

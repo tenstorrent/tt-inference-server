@@ -51,11 +51,13 @@ namespace utils = blaze_utils;
 
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
-                         tt::ipc::ITaskQueue* taskQueue)
+                         tt::ipc::ITaskQueue* taskQueue,
+                         tt::ipc::ICancelQueue* cancelQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
+      cancelQueue(cancelQueue),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
@@ -103,7 +105,7 @@ bool BlazeRunner::warmup() {
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   constexpr uint32_t warmupAllocateRequestId = 0;
-  constexpr uint32_t warmupCancelRequestId = 1;
+  constexpr uint32_t warmupEvictRequestId = 1;
 
   const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
   const auto pollInterval = std::chrono::milliseconds(10);
@@ -155,7 +157,7 @@ bool BlazeRunner::warmup() {
   }
 
   decodeScheduler->push_request(
-      utils::makeCancelRequest(warmupCancelRequestId, slotId));
+      utils::makeEvictRequest(warmupEvictRequestId, slotId));
   ds::SchedulerResponse cancelResponse{};
   const auto cancelDeadline = std::chrono::steady_clock::now() + timeout;
   while (!decodeScheduler->try_pop_response(cancelResponse)) {
