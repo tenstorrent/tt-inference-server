@@ -9,7 +9,11 @@ from types import SimpleNamespace
 
 import utils.prompt_client as prompt_client_module
 from utils.prompt_client import PromptClient
-from utils.prompt_configs import EnvironmentConfig, resolve_api_base_url
+from utils.prompt_configs import (
+    EnvironmentConfig,
+    resolve_api_base_url,
+    resolve_server_root_url,
+)
 
 
 class _StalledCacheMonitor:
@@ -141,4 +145,24 @@ def test_resolve_api_base_url_accepts_full_completions_endpoint():
             include_v1=True,
         )
         == "https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com/v1"
+    )
+
+
+def test_resolve_server_root_url_keeps_existing_deploy_port():
+    assert (
+        resolve_server_root_url(
+            service_port="443",
+            deploy_url="http://localhost:8000",
+        )
+        == "http://localhost:8000"
+    )
+
+
+def test_resolve_server_root_url_strips_deploy_api_suffix_before_adding_port():
+    assert (
+        resolve_server_root_url(
+            service_port="443",
+            deploy_url="https://example.test/v1/chat/completions",
+        )
+        == "https://example.test:443"
     )

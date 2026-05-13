@@ -15,6 +15,7 @@ AGGREGATOR="${HERE}/helper_aggregate_pass1.py"
 
 RUNS="${AIME_PASS1_RUNS:-16}"
 TASK="${AIME_PASS1_TASK:-r1_aime24}"
+LIMIT="${AIME_PASS1_LIMIT:-}"
 AIME_PASS1_PARALLEL_RUNS="${AIME_PASS1_PARALLEL_RUNS:-1}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 ROOT_OUTPUT="${OUTPUT_DIR:-${REPO_ROOT}/eval_results/${TASK}_pass1x${RUNS}_${TIMESTAMP}}"
@@ -34,10 +35,20 @@ mkdir -p "${ROOT_OUTPUT}"
 include_args=()
 if [[ "${TASK}" == "r1_aime24_short" ]]; then
     include_args=("${REPO_ROOT}/evals/custom_tasks/r1_aime24_short")
+elif [[ -n "${AIME_PASS1_INCLUDE_PATH:-}" ]]; then
+    include_args=("${AIME_PASS1_INCLUDE_PATH}")
+fi
+
+extra_args=()
+if [[ -n "${LIMIT}" ]]; then
+    extra_args+=(--limit "${LIMIT}")
 fi
 
 echo "Running ${TASK} pass@1 estimate"
 echo "Samples per problem: ${RUNS}"
+if [[ -n "${LIMIT}" ]]; then
+    echo "Problem limit: ${LIMIT}"
+fi
 echo "Parallel sample runs: ${AIME_PASS1_PARALLEL_RUNS}"
 echo "Output dir: ${ROOT_OUTPUT}"
 
@@ -56,7 +67,7 @@ run_one() {
 
     MODEL_SEED="${run_seed}" \
     OUTPUT_DIR="${run_output}" \
-        "${RUNNER}" "${TASK}" "${include_args[@]}"
+        "${RUNNER}" "${TASK}" "${include_args[@]}" "${extra_args[@]}"
 }
 
 run_one_quiet() {
@@ -76,7 +87,7 @@ run_one_quiet() {
 
     MODEL_SEED="${run_seed}" \
     OUTPUT_DIR="${run_output}" \
-        "${RUNNER}" "${TASK}" "${include_args[@]}" > "${log_path}" 2>&1
+        "${RUNNER}" "${TASK}" "${include_args[@]}" "${extra_args[@]}" > "${log_path}" 2>&1
 }
 
 if [[ "${AIME_PASS1_PARALLEL_RUNS}" -eq 1 ]]; then
