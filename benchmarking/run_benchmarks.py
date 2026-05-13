@@ -165,7 +165,21 @@ def build_benchmark_command(
 
     # VLM models need multimodal dataset; text models use standard dataset
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
-    backend = "openai-chat"
+    # Forge/media servers reject the openai-chat content array form
+    # ([{"type":"text","text":...}]) with 422, and the container's entrypoint
+    # silently drops --no-auth so auth is always required. Use the plain
+    # completions backend with an explicit Bearer header for text tasks on
+    # those engines. VLM tasks need chat completions for multimodal content.
+    forge_or_media = model_spec.inference_engine in (
+        InferenceEngine.FORGE.value,
+        InferenceEngine.MEDIA.value,
+    )
+    if forge_or_media and params.task_type != "vlm":
+        backend = "openai"
+        endpoint = "/v1/completions"
+    else:
+        backend = "openai-chat"
+        endpoint = "/v1/chat/completions"
 
     # fmt: off
     cmd = [
@@ -173,7 +187,7 @@ def build_benchmark_command(
         "bench",
         "serve",
         "--backend", backend,
-        "--endpoint", "/v1/chat/completions",
+        "--endpoint", endpoint,
         "--model", model_spec.hf_model_repo,
         "--port", str(service_port),
         "--dataset-name", dataset_name,
@@ -186,6 +200,8 @@ def build_benchmark_command(
         "--save-detailed",
         "--result-filename", str(result_filename),
     ]
+    if forge_or_media:
+        cmd.extend(["--header", "Authorization=Bearer your-secret-key"])
 
     # only truncate prompts for text-only tasks; VLMs interleave vision tokens
     # in the prompt and truncation can drop them, causing 400s at the preprocessor
