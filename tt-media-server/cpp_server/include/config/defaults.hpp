@@ -75,4 +75,21 @@ constexpr int CALLBACK_POOL_THREADS = 16;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
 
+// IPC queue capacities
+constexpr size_t RESULT_QUEUE_CAPACITY = 65536;
+constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
+constexpr size_t MEMORY_QUEUE_CAPACITY = 128;
+
+// IPC message sizes
+constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
+constexpr size_t TASK_QUEUE_MAX_MSG_SIZE =
+    MAX_CONTEXT_LENGTH * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
+constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
+constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
+
+// Shared memory slot buffer constants
+constexpr int SHM_SLOTS = 64;
+constexpr int PREFILL_MAX_TOKEN_IDS = 131072;  // upper bound for prefill prompt
+constexpr int DECODE_MAX_TOKEN_IDS = 1;
+
 }  // namespace tt::config::defaults

@@ -20,8 +20,8 @@
 #include <utility>
 #include <vector>
 
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/result_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
 
 namespace tt::test {
 
@@ -54,7 +54,7 @@ class WorkerResponse {
         0, ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR);
   }
 
-  void sendTo(ipc::BoostIpcResultQueue& queue) const {
+  void sendTo(ipc::boost::ResultQueue& queue) const {
     uint32_t idx = 0;
     for (const auto& [tokenId, flags] : tokens_) {
       ipc::SharedToken tok{};

@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import base64
+
 import imageio.v3 as iio
 import requests
 from PIL import Image
@@ -33,7 +35,29 @@ DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
+VIDEO_GENERATION_I2V_ENDPOINT = "v1/videos/generations/i2v"
 DATASET_DIR = "server_tests/datasets/videos"
+HTTP_ACCEPTED = 202
+
+# Models routed through the image-to-video endpoint;
+I2V_MODEL_NAMES = frozenset({"Wan2.2-I2V-A14B-Diffusers"})
+
+I2V_FIXTURE_IMAGE_PATH = (
+    Path(__file__).parent.parent
+    / "datasets"
+    / "imagenet_subset"
+    / "imagenet_002_volcano.jpg"
+)
+
+
+def _load_i2v_fixture_image_base64() -> str:
+    """Return the I2V conditioning frame, base64-encoded."""
+    if not I2V_FIXTURE_IMAGE_PATH.exists():
+        raise FileNotFoundError(
+            f"I2V fixture image missing at {I2V_FIXTURE_IMAGE_PATH}. "
+            "Expected a tracked sample from server_tests/datasets/imagenet_subset/."
+        )
+    return base64.b64encode(I2V_FIXTURE_IMAGE_PATH.read_bytes()).decode("ascii")
 
 
 @dataclass
@@ -88,6 +112,7 @@ class VideoGenerationEvalsTest(BaseTest):
             prompts=prompts,
             server_url=request.server_url,
             num_inference_steps=request.num_inference_steps,
+            model_name=request.model_name,
         )
 
         # Step 3: Calculate CLIP scores
@@ -121,23 +146,97 @@ class VideoGenerationEvalsTest(BaseTest):
             "eval_results": results,
         }
 
+    @staticmethod
+    def _is_i2v_model(model_name: str) -> bool:
+        return model_name in I2V_MODEL_NAMES
+
+    def _build_video_payload(
+        self,
+        prompt: str,
+        num_inference_steps: int,
+        image_b64: str | None,
+    ) -> dict:
+        """Build the request body for either the T2V or I2V endpoint."""
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+        }
+        if image_b64 is not None:
+            payload["image_prompts"] = [{"image": image_b64, "frame_pos": 0}]
+        return payload
+
+    def _submit_video(
+        self,
+        base_url: str,
+        endpoint: str,
+        payload: dict,
+        headers: dict,
+        prompt: str,
+    ) -> dict | None:
+        """Submit one video job, poll until completion, and download the result.
+
+        Returns the videos_info entry dict on success, None on submission or
+        polling failure. Generation latency is logged here.
+        """
+        generation_start = time.time()
+        try:
+            response = requests.post(
+                f"{base_url}/{endpoint}",
+                json=payload,
+                headers=headers,
+                timeout=90,
+            )
+
+            if response.status_code != HTTP_ACCEPTED:
+                logger.error(f"Failed to submit video job: {response.status_code}")
+                return None
+
+            job_id = response.json().get("id")
+            logger.info(f"Video job submitted: {job_id}")
+
+            video_path = self._poll_video_completion(
+                base_url=base_url,
+                job_id=job_id,
+                headers=headers,
+            )
+
+            generation_duration = time.time() - generation_start
+            logger.info(f"Generation took {generation_duration:.1f}s")
+
+            if not video_path:
+                logger.error(f"❌ Video generation failed for job: {job_id}")
+                return None
+
+            logger.info(f"✅ Video generated successfully: {video_path}")
+            return {"prompt": prompt, "video_path": video_path, "job_id": job_id}
+
+        except Exception as e:
+            logger.error(f"Error generating video for prompt '{prompt[:50]}': {e}")
+            return None
+
     def _generate_videos(
         self,
         prompts: list[str],
         server_url: str | None,
         num_inference_steps: int,
+        model_name: str,
     ) -> list[dict]:
         """Generate videos for all prompts.
+
+        Routes to ``/v1/videos/generations/i2v`` with a fixture conditioning
+        frame for I2V models, otherwise to the standard ``/v1/videos/generations``
+        T2V endpoint.
 
         Args:
             prompts: List of text prompts
             server_url: Base server URL (e.g., http://localhost:8000)
             num_inference_steps: Number of inference steps for generation
+            model_name: Model name used to select T2V vs I2V routing
 
         Returns:
             List of dicts with video information: {'prompt': str, 'video_path': str, 'job_id': str}
         """
-        logger.info(f"Generating {len(prompts)} videos")
+        logger.info(f"Generating {len(prompts)} videos for model={model_name}")
 
         # Remove any stale videos from previous runs so FVD/FVMD only sees
         # outputs produced in the current eval.
@@ -151,66 +250,36 @@ class VideoGenerationEvalsTest(BaseTest):
             raise RuntimeError("Server health check failed - server not ready")
 
         base_url = server_url or SERVER_BASE_URL
-        videos_info = []
-
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {DEFAULT_AUTHORIZATION}",
             "Content-Type": "application/json",
         }
 
+        is_i2v = self._is_i2v_model(model_name)
+        endpoint = (
+            VIDEO_GENERATION_I2V_ENDPOINT if is_i2v else VIDEO_GENERATION_ENDPOINT
+        )
+        image_b64 = _load_i2v_fixture_image_base64() if is_i2v else None
+        logger.info(f"Submit endpoint: /{endpoint}")
+
+        videos_info = []
         for idx, prompt in enumerate(prompts):
             logger.info(f"Generating video {idx + 1}/{len(prompts)}: {prompt[:50]}...")
-
-            payload = {
-                "prompt": prompt,
-                "num_inference_steps": num_inference_steps,
-            }
-
-            generation_start = time.time()
-            try:
-                # Submit video generation job
-                response = requests.post(
-                    f"{base_url}/{VIDEO_GENERATION_ENDPOINT}",
-                    json=payload,
-                    headers=headers,
-                    timeout=90,
-                )
-
-                if response.status_code != 202:
-                    logger.error(f"Failed to submit video job: {response.status_code}")
-                    continue
-
-                job_data = response.json()
-                job_id = job_data.get("id")
-                logger.info(f"Video job submitted: {job_id}")
-
-                # Poll for completion
-                video_path = self._poll_video_completion(
-                    base_url=base_url,
-                    job_id=job_id,
-                    headers=headers,
-                )
-
-                generation_duration = time.time() - generation_start
-                if video_path:
-                    videos_info.append(
-                        {
-                            "prompt": prompt,
-                            "video_path": video_path,
-                            "job_id": job_id,
-                        }
-                    )
-                    logger.info(f"✅ Video generated successfully: {video_path}")
-                else:
-                    logger.error(f"❌ Video generation failed for job: {job_id}")
-                logger.info(
-                    f"Video {idx + 1} generation took {generation_duration:.1f}s"
-                )
-
-            except Exception as e:
-                logger.error(f"Error generating video for prompt '{prompt[:50]}': {e}")
-                continue
+            payload = self._build_video_payload(
+                prompt=prompt,
+                num_inference_steps=num_inference_steps,
+                image_b64=image_b64,
+            )
+            entry = self._submit_video(
+                base_url=base_url,
+                endpoint=endpoint,
+                payload=payload,
+                headers=headers,
+                prompt=prompt,
+            )
+            if entry is not None:
+                videos_info.append(entry)
 
         logger.info(f"Generated {len(videos_info)}/{len(prompts)} videos successfully")
         return videos_info

@@ -105,6 +105,7 @@ void LLMController::resolveSession(
         sessionManager->registerPrefixHash(acquired->sessionId,
                                            routingInfo.registrationHash);
         info.validSessionFound = true;
+        info.registrationHash = routingInfo.registrationHash;
         onResolved(info);
         return;
       }
@@ -415,7 +416,7 @@ void LLMController::handleStreaming(
             loop, makeWriterParams(*reqPtr), includeUsage, formatter);
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+          dispatchGeneration(*reqPtr, sessionInfo,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
@@ -480,7 +481,7 @@ void LLMController::handleNonStreaming(
             makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+          dispatchGeneration(*reqPtr, sessionInfo,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
@@ -499,7 +500,7 @@ void LLMController::handleNonStreaming(
 }
 
 void LLMController::dispatchGeneration(
-    LLMRequest& request, bool validSessionFound,
+    LLMRequest& request, SessionInfo sessionInfo,
     const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
   if (mode == tt::config::LLMMode::REGULAR) {
@@ -508,7 +509,7 @@ void LLMController::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (shouldDoPrefillOnDecode(request, validSessionFound)) {
+    if (shouldDoPrefillOnDecode(request, sessionInfo.validSessionFound)) {
       TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
       service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -517,7 +518,8 @@ void LLMController::dispatchGeneration(
           "[LLMController] Using disaggregated prefill for request with "
           "sessionId: {}",
           request.sessionId.value_or("none"));
-      disaggregationService->handleStreamingRequest(request, cb);
+      disaggregationService->handleStreamingRequest(
+          request, sessionInfo.registrationHash.value_or(0), cb);
     }
     return;
   }

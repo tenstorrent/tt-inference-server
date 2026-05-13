@@ -6,18 +6,18 @@
 #include <cstdint>
 #include <thread>
 
-#include "ipc/result_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
 #include "utils/logger.hpp"
 
-namespace tt::ipc {
+namespace tt::ipc::helpers {
 
-inline void pushToken(IResultQueue& queue, uint32_t taskId, uint64_t tokenId,
-                      bool finished, uint32_t specAccepts = 0,
+inline void pushToken(tt::ipc::IResultQueue& queue, uint32_t taskId,
+                      uint64_t tokenId, bool finished, uint32_t specAccepts = 0,
                       uint32_t specRejects = 0) {
-  SharedToken token{};
+  tt::ipc::SharedToken token{};
   token.task_id = taskId;
   token.token_id = tokenId;
-  token.flags = finished ? SharedToken::FLAG_FINAL : 0u;
+  token.flags = finished ? tt::ipc::SharedToken::FLAG_FINAL : 0u;
   token.spec_accepts = specAccepts;
   token.spec_rejects = specRejects;
   if (finished) {
@@ -28,13 +28,14 @@ inline void pushToken(IResultQueue& queue, uint32_t taskId, uint64_t tokenId,
   }
 }
 
-inline void pushErrorToken(IResultQueue& queue, uint32_t taskId) {
-  SharedToken token{};
+inline void pushErrorToken(tt::ipc::IResultQueue& queue, uint32_t taskId) {
+  tt::ipc::SharedToken token{};
   token.task_id = taskId;
-  token.flags = SharedToken::FLAG_FINAL | SharedToken::FLAG_ERROR;
+  token.flags =
+      tt::ipc::SharedToken::FLAG_FINAL | tt::ipc::SharedToken::FLAG_ERROR;
   while (!queue.push(token)) {
     std::this_thread::yield();
   }
 }
 
-}  // namespace tt::ipc
+}  // namespace tt::ipc::helpers
