@@ -38,6 +38,7 @@ from workflows.workflow_config import (
 from workflows.workflow_types import (
     DeviceTypes,
     EvalLimitMode,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -380,8 +381,21 @@ def main():
     # Setup authentication based on model type
     if model_spec.model_type in EVAL_TASK_TYPES:
         _setup_openai_api_key(args, logger)
+    elif model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+    ):
+        # FORGE/MEDIA LLM servers use a fixed API key (default "your-secret-key"),
+        # not JWT. Mirror what run_benchmarks.py does for these engines so the
+        # lm-eval-harness subprocess sends a valid Authorization header.
+        api_key = os.getenv("API_KEY", "your-secret-key")
+        os.environ["OPENAI_API_KEY"] = api_key
+        os.environ["VLLM_API_KEY"] = api_key
+        logger.info(
+            f"OPENAI_API_KEY/VLLM_API_KEY set for {model_spec.inference_engine} engine."
+        )
     elif args.jwt_secret:
-        # For LLM models, generate JWT token from jwt_secret
+        # For tt-transformers / vllm-tt LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
