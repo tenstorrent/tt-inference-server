@@ -43,6 +43,19 @@ void setSocketKeepAlive(int socketFd) {
                 strerror(errno));
   }
 }
+
+void setNonBlocking(int socketFd) {
+  int flags = fcntl(socketFd, F_GETFL, 0);
+  if (flags < 0 || fcntl(socketFd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
+                strerror(errno));
+  }
+}
+
+void configureSocket(int socketFd) {
+  setNonBlocking(socketFd);
+  setSocketKeepAlive(socketFd);
+}
 }  // namespace
 
 SocketManager::~SocketManager() { stop(); }
@@ -158,12 +171,7 @@ void SocketManager::serverLoop() {
       break;
     }
 
-    int flags = fcntl(accepted.get(), F_GETFL, 0);
-    if (flags < 0 || fcntl(accepted.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
-      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
-                  strerror(errno));
-    }
-    setSocketKeepAlive(accepted.get());
+    configureSocket(accepted.get());
 
     peerSocket = accepted.get();
     connected_ = true;
@@ -217,13 +225,7 @@ void SocketManager::clientLoop() {
       continue;
     }
 
-    int flags = fcntl(clientSocket.get(), F_GETFL, 0);
-    if (flags < 0 ||
-        fcntl(clientSocket.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
-      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
-                  strerror(errno));
-    }
-    setSocketKeepAlive(clientSocket.get());
+    configureSocket(clientSocket.get());
 
     peerSocket = clientSocket.get();
     connected_ = true;
