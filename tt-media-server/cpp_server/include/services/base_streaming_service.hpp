@@ -20,7 +20,8 @@ namespace tt::services {
 //
 // The chunk type is intentionally not constrained by BaseResponse: streaming
 // chunks (such as LLMStreamChunk) are partial deltas, not full responses.
-template <std::derived_from<domain::BaseRequest> RequestType, typename ChunkType>
+template <std::derived_from<domain::BaseRequest> RequestType,
+          typename ChunkType>
 class BaseStreamingService : public RequestPipeline<RequestType> {
  public:
   ~BaseStreamingService() override = default;
@@ -32,12 +33,11 @@ class BaseStreamingService : public RequestPipeline<RequestType> {
     if (!skipPreProcess) {
       this->preProcess(request);
     }
-    produceStream(
-        std::move(request),
-        [this, cb = std::move(callback)](ChunkType& chunk, bool isFinal) {
-          streamingPostProcess(chunk);
-          cb(chunk, isFinal);
-        });
+    produceStream(std::move(request), [this, cb = std::move(callback)](
+                                          ChunkType& chunk, bool isFinal) {
+      streamingPostProcess(chunk);
+      cb(chunk, isFinal);
+    });
   }
 
   // Cancel an in-flight streaming request. Default implementation is a
