@@ -116,5 +116,10 @@ ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"
+# Base tt-metal dev image uses /usr/local/bin/entrypoint.sh, which ends with `exec "$@"`.
+# vLLM-style `docker run ... <image> --model ...` makes `$1` `--model`; bash then treats
+# that as an option to `exec` and fails with: exec: --: invalid option
+# Forge is configured via env (e.g. MODEL) and this CMD; drop the dev entrypoint.
+ENTRYPOINT []
 EXPOSE 8000
 CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]
