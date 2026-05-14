@@ -115,7 +115,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 | `-it`, `--interactive`   | false   | Run Docker in interactive mode (`sleep infinity`).                          |
 | `--service-port`         | `8000`  | Service port. Also reads from `$SERVICE_PORT` env var.                     |
 | `--no-auth`              | false   | Disable vLLM API key authorization (skips `JWT_SECRET` requirement).       |
-| `--print-docker-cmd`     | false   | Print the generated Docker run command and exit without starting.          |
+| `--print-compose`        | false   | Print the generated Docker Compose configuration and exit without starting. |
 
 ### Host Storage Options
 
@@ -181,10 +181,10 @@ Add `--dev-mode` to bind mount source code into the container for live editing:
 python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --dev-mode
 ```
 
-Use `--print-docker-cmd` to inspect the generated Docker command without starting the server:
+Use `--print-compose` to inspect the generated Docker Compose configuration without starting the server:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --print-docker-cmd
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server --print-compose
 ```
 
 On successful start, log output includes the container ID and log file path:

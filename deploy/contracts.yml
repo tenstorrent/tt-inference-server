@@ -1,0 +1,42 @@
+# Maps inference-server image version → compose contract file.
+#
+# Selection rule (see workflows.compose_config.lookup_contract):
+#   pick the entry with the largest min_version <= image_version.
+#
+# A new entry is added only when a breaking change in the inference-server
+# image interface (entrypoint, env vars, mount paths, command shape) makes
+# the previous contract inadequate. This is rare; expect few entries.
+#
+# Filenames encode the LOWER bound of the era (e.g. -0.11.yml means
+# "applies to anything >= 0.11.0").
+#
+# Engine names match InferenceEngine enum values from workflows/workflow_types.py:
+#   VLLM = "vLLM"  (note: mixed case)
+#   MEDIA = "media"
+#   FORGE = "forge"  (uses the same image and contract as media)
+#
+# Pre-0.11 vLLM is intentionally absent — see
+# workflows.validate_setup._check_image_version_supported, which refuses
+# pre-0.11 vLLM specs early with a "git checkout v<version>" migration
+# message. Adding a pre-0.11 vLLM contract here would silently bypass that
+# policy.
+
+contracts:
+  vLLM:
+    # 0.11.0 changed the image entrypoint: venv is now pre-activated by
+    # ENTRYPOINT and run_vllm_api_server.py takes --model / --tt-device
+    # CLI args. Older images are refused at validate_setup time.
+    - min_version: "0.11.0"
+      file: docker-compose.vllm-0.11.yml
+
+  media:
+    # No breaking change at 0.11 for the media engine; pre-0.11 media
+    # specs are not blocked and use the same contract.
+    - min_version: "0.0.0"
+      file: docker-compose.media-0.11.yml
+
+  forge:
+    # Forge models run on the tt-media-server image, with the same contract
+    # as the media engine.
+    - min_version: "0.0.0"
+      file: docker-compose.media-0.11.yml

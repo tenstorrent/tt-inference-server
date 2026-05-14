@@ -1,0 +1,13 @@
+# Host-cache overlay — replaces the named-volume cache mount with a host
+# bind mount. Used when the caller (or setup_config) wants the cache
+# directory persisted at a specific host path instead of in a docker volume.
+#
+# Stacked by run.py when setup_config.host_model_volume_root is set.
+#
+# Required env vars:
+#   HOST_CACHE_ROOT — absolute host path to bind-mount as cache_root.
+
+services:
+  inference-server:
+    volumes:
+      - ${HOST_CACHE_ROOT:?HOST_CACHE_ROOT is required for host-cache overlay}:/home/container_app_user/cache_root

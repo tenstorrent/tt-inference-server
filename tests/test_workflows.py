@@ -685,7 +685,7 @@ class TestMainWorkflowIntegration:
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "run.run_compose_server",
             side_effect=RuntimeError("docker start failed"),
         ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
@@ -723,7 +723,12 @@ class TestMainWorkflowIntegration:
     def test_main_release_ignores_docker_server_status_after_workflows(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test release does not perform a Docker status post-check."""
+        """Test release does not poll docker container status after workflows.
+
+        Compose handles lifecycle so a `docker compose down` IS expected in
+        the teardown (subprocess.run is called with `down`), but we never
+        run `docker inspect` / `docker ps` style status polling.
+        """
         test_args = [
             "run.py",
             "--model",
@@ -737,9 +742,8 @@ class TestMainWorkflowIntegration:
 
         mock_server_handle = {
             "container_name": "tt-inference-server-test",
-            "container_id": "abc123",
-            "docker_log_file_path": str(temp_dir / "docker.log"),
-            "service_port": "8000",
+            "compose_files": [temp_dir / "docker-compose.vllm-0.11.yml"],
+            "env_file": temp_dir / ".env.compose",
         }
 
         with patch("sys.argv", test_args), patch(
@@ -748,7 +752,7 @@ class TestMainWorkflowIntegration:
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "run.run_compose_server",
             return_value=mock_server_handle,
         ), patch(
             "run.run_workflows",
@@ -767,7 +771,13 @@ class TestMainWorkflowIntegration:
             result = main()
 
         assert result == 0
-        mock_subprocess_run.assert_not_called()
+        # `docker compose down` in teardown is the only legitimate
+        # subprocess.run; no docker inspect / ps status polling.
+        for call in mock_subprocess_run.call_args_list:
+            argv = call.args[0]
+            assert argv[:2] == ["docker", "compose"] and "down" in argv, (
+                f"unexpected subprocess.run: {argv}"
+            )
 
     def test_error_handling_invalid_model(self, mock_env_vars):
         """Test error handling for invalid model configuration."""

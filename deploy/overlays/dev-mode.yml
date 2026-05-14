@@ -1,0 +1,18 @@
+# Dev-mode overlay — bind-mounts source trees from the host into the
+# container so edits to benchmarking/, evals/, utils/, tests/, and the
+# engine src/ are picked up without rebuilding the image.
+#
+# Stacked by run.py when --dev-mode is set.
+#
+# Required env vars:
+#   REPO_ROOT — absolute path to the tt-inference-server repo root on the
+#               host. run.py writes this to .env.compose.
+
+services:
+  inference-server:
+    volumes:
+      - ${REPO_ROOT:?REPO_ROOT is required for dev-mode overlay}/benchmarking:/home/container_app_user/app/benchmarking
+      - ${REPO_ROOT}/evals:/home/container_app_user/app/evals
+      - ${REPO_ROOT}/utils:/home/container_app_user/app/utils
+      - ${REPO_ROOT}/tests:/home/container_app_user/app/tests
+      - ${REPO_ROOT}/vllm-tt-metal/src:/home/container_app_user/app/src

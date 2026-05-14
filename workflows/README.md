@@ -205,7 +205,6 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--service-port` | `8000` | Service port for inference HTTP server, e.g. vLLM. |
 | `--bind-host` | `0.0.0.0` | Host interface for Docker port publishing. Use `127.0.0.1` for localhost-only access. |
 | `--no-auth` | false | Disable vLLM API key authorization (skips `JWT_SECRET` requirement). |
-| `--print-docker-cmd` | false | Print the Docker run command and exit without starting the server. |
 
 **Host Storage Options:**
 
@@ -332,13 +331,14 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --local-server \
   --tt-metal-home /opt/tt-metal
 ```
 
-### Print Docker Command
+### Print Compose
 
-Use `--print-docker-cmd` to output the generated `docker run` command without starting the server. This is useful for inspecting or customizing the command before running it manually.
+Use `--print-compose` to render the merged Docker Compose YAML (`docker compose config`) without starting the server. This is useful for inspecting the resolved contract + overlays + variables before running.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server --print-docker-cmd
+python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server --print-compose
 ```
+
 
 ### Example Commands
 
