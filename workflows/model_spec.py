@@ -2877,7 +2877,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
         version="0.11.1",
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="6900b0c",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
