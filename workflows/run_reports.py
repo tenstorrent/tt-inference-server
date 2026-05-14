@@ -49,7 +49,11 @@ from workflows.workflow_config import (
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ModelType, ReportCheckTypes
+from workflows.workflow_types import (
+    DeviceTypes,
+    ModelType,
+    ReportCheckTypes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -3159,6 +3163,7 @@ def benchmarks_release_data_format(
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
+    # Internally aggregated in ms; released JSON is in seconds.
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         "model": model_spec.model_name,
@@ -3168,7 +3173,7 @@ def benchmarks_release_data_format(
         "device": device_str,
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
-        "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
+        "latency": benchmark_summary_data.get("mean_latency_ms", 0) / 1000,
         "inference_steps_per_second": benchmark_summary_data.get(
             "inference_steps_per_second", 0
         ),
@@ -3184,11 +3189,11 @@ def benchmarks_release_data_format(
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
     if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
-        benchmark_summary["ttft_p90"] = (
-            benchmark_summary_data.get("p90_ttft_ms", 0) / 1000
+        benchmark_summary["latency_p90"] = (
+            benchmark_summary_data.get("p90_latency_ms", 0) / 1000
         )
-        benchmark_summary["ttft_p95"] = (
-            benchmark_summary_data.get("p95_ttft_ms", 0) / 1000
+        benchmark_summary["latency_p95"] = (
+            benchmark_summary_data.get("p95_latency_ms", 0) / 1000
         )
         benchmark_summary["rtr"] = benchmark_summary_data.get("rtr", 0)
 
@@ -3251,21 +3256,21 @@ def add_target_checks_cnn_image_video(
     logger.info("Calculating target checks")
     target_checks = {
         "functional": {
-            "ttft": metrics["functional_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["functional_ttft_ratio"],
-            "ttft_check": metrics["functional_ttft_check"],
+            "latency": metrics["functional_latency"],
+            "latency_ratio": metrics["functional_latency_ratio"],
+            "latency_check": metrics["functional_latency_check"],
             "tput_check": 2 if tput_user > functional_tput_user else 3,
         },
         "complete": {
-            "ttft": metrics["complete_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["complete_ttft_ratio"],
-            "ttft_check": metrics["complete_ttft_check"],
+            "latency": metrics["complete_latency"],
+            "latency_ratio": metrics["complete_latency_ratio"],
+            "latency_check": metrics["complete_latency_check"],
             "tput_check": 2 if tput_user > complete_tput_user else 3,
         },
         "target": {
-            "ttft": metrics["target_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["target_ttft_ratio"],
-            "ttft_check": metrics["target_ttft_check"],
+            "latency": metrics["target_latency"],
+            "latency_ratio": metrics["target_latency_ratio"],
+            "latency_check": metrics["target_latency_check"],
             "tput_check": 2 if tput_user > target_tput_user else 3,
         },
     }
@@ -3408,26 +3413,27 @@ def calculate_target_metrics(metrics_config):
 
 
 def add_target_checks_audio(metrics):
+    """Build target_checks for Audio benchmark release data."""
     logger.info("Adding target_checks to Audio benchmark release data")
     # tput_check is always 1 for now (no tput target)
     tput_check = 1
     target_checks = {
         "functional": {
-            "ttft": metrics["functional_ttft"],
-            "ttft_ratio": metrics["functional_ttft_ratio"],
-            "ttft_check": metrics["functional_ttft_check"],
+            "latency": metrics["functional_latency"],
+            "latency_ratio": metrics["functional_latency_ratio"],
+            "latency_check": metrics["functional_latency_check"],
             "tput_check": tput_check,
         },
         "complete": {
-            "ttft": metrics["complete_ttft"],
-            "ttft_ratio": metrics["complete_ttft_ratio"],
-            "ttft_check": metrics["complete_ttft_check"],
+            "latency": metrics["complete_latency"],
+            "latency_ratio": metrics["complete_latency_ratio"],
+            "latency_check": metrics["complete_latency_check"],
             "tput_check": tput_check,
         },
         "target": {
-            "ttft": metrics["target_ttft"],
-            "ttft_ratio": metrics["target_ttft_ratio"],
-            "ttft_check": metrics["target_ttft_check"],
+            "latency": metrics["target_latency"],
+            "latency_ratio": metrics["target_latency_ratio"],
+            "latency_check": metrics["target_latency_check"],
             "tput_check": tput_check,
         },
     }
@@ -3436,28 +3442,29 @@ def add_target_checks_audio(metrics):
 
 
 def add_target_checks_tts(metrics):
+    """Build target_checks for TTS benchmark release data."""
     logger.info("Adding target_checks to TTS benchmark release data")
     # tput_check is always 1 for now (no tput target)
     tput_check = 1
     target_checks = {
         "functional": {
-            "ttft": metrics.get("functional_ttft"),
-            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
+            "latency": metrics.get("functional_latency"),
+            "latency_ratio": metrics.get("functional_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("functional_latency_check", "Undefined"),
             "rtr_check": metrics.get("functional_rtr_check", 1),
             "tput_check": tput_check,
         },
         "complete": {
-            "ttft": metrics.get("complete_ttft"),
-            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
+            "latency": metrics.get("complete_latency"),
+            "latency_ratio": metrics.get("complete_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("complete_latency_check", "Undefined"),
             "rtr_check": metrics.get("complete_rtr_check", 1),
             "tput_check": tput_check,
         },
         "target": {
-            "ttft": metrics.get("target_ttft"),
-            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
+            "latency": metrics.get("target_latency"),
+            "latency_ratio": metrics.get("target_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("target_latency_check", "Undefined"),
             "rtr_check": metrics.get("target_rtr_check", 1),
             "tput_check": tput_check,
         },
@@ -3674,19 +3681,17 @@ def main():
             )
             logger.info(f"Performance targets: {targets}")
 
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = targets.ttft_ms
+            # PerformanceTargets stores the latency threshold under ``ttft_ms``.
+            target_latency = targets.ttft_ms / 1000.0 if targets.ttft_ms else None
             target_rtr = targets.rtr if hasattr(targets, "rtr") else None
 
-            # Initialize the benchmark summary data
             benchmark_summary_data = {}
 
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
+            total_latency_ms = 0.0
             total_tput = 0.0
             total_rtr = 0.0
             for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_latency_ms += benchmark.get("mean_latency_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
                 # Aggregate RTR for TTS models
                 if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
@@ -3701,12 +3706,12 @@ def main():
                     "inference_steps_per_second", 0
                 )
                 benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get(
-                    "mean_ttft_ms", 0
+                benchmark_summary_data["mean_latency_ms"] = benchmark.get(
+                    "mean_latency_ms", 0
                 )
 
-            avg_ttft = (
-                total_ttft / len(benchmarks_release_data)
+            avg_latency = (
+                (total_latency_ms / len(benchmarks_release_data)) / 1000.0
                 if len(benchmarks_release_data) > 0
                 else 0
             )
@@ -3720,13 +3725,15 @@ def main():
                     else 0
                 )
 
-            # Calculate all target metrics using centralized function
-            # TTFT: lower is better, so is_ascending_metric=False
+            # Calculate all target metrics using centralized function.
+            # latency: lower is better, so is_ascending_metric=False.
+            # Both avg_metric and target_metric are in seconds so the
+            # ratio is unit-correct.
             metrics_config = [
                 {
-                    "avg_metric": avg_ttft,
-                    "target_metric": target_ttft,
-                    "field_name": "ttft",
+                    "avg_metric": avg_latency,
+                    "target_metric": target_latency,
+                    "field_name": "latency",
                     "is_ascending_metric": False,
                 },
             ]
@@ -3882,23 +3889,34 @@ def main():
             else [],
         }
 
-        # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
-        # Add parameter_support_tests only if data exists
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
-        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
-            output_data
+        known_issues = model_spec.device_model_spec.known_issues
+        accepted, acceptance_blockers, enforcement_metadata = acceptance_criteria_check(
+            output_data, model_spec.status, known_issues
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria, acceptance_blockers
+            accepted, acceptance_blockers, enforcement_metadata
         )
-        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_criteria"] = accepted
         output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_criteria_metadata"] = enforcement_metadata
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+        if known_issues:
+            output_data["known_issues_declared"] = enforcement_metadata[
+                "known_issues_declared"
+            ]
+
+        logger.info(
+            f"Acceptance criteria enforcement: {enforcement_metadata['enforcement_result']} "
+            f"(status={enforcement_metadata['model_status']}, "
+            f"enforced={enforcement_metadata['enforced_tiers']}, "
+            f"failed={enforcement_metadata['failed_enforced_tiers']})"
+        )
 
         release_str = (
             f"{release_header}\n\n{metadata_str}\n\n"
@@ -3913,8 +3931,13 @@ def main():
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 
-    main_return_code = 0
-    return main_return_code
+    if enforcement_metadata["enforcement_result"] == "FAIL":
+        logger.warning(
+            f"Acceptance criteria FAILED for {model_spec.model_name}: "
+            f"required tiers {enforcement_metadata['failed_enforced_tiers']} "
+            f"did not pass (model status: {enforcement_metadata['model_status']})"
+        )
+    return 0
 
 
 def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):
