@@ -24,6 +24,11 @@ defaults:
   serverType: vllm
   replicaCount: 1
   progressDeadlineSeconds: 3600
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   podAnnotations: {}
   podSecurityContext: {}
   image:
@@ -55,6 +60,9 @@ defaults:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  podAntiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
   extraEnv: []
 
 # ---------------------------------------------------------------------------
