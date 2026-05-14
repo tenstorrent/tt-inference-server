@@ -371,7 +371,7 @@
               "text/plain; version=0.0.4": {
                 "schema": {
                   "type": "string",
-                  "example": "# HELP tt_generation_tokens_total Total number of generation tokens produced\n# TYPE tt_generation_tokens_total counter\ntt_generation_tokens_total{model_name=\"llm\"} 42\n"
+                  "example": "# HELP tt_generation_tokens_total Total number of generation tokens produced\n# TYPE tt_generation_tokens_total counter\ntt_generation_tokens_total{model_name=\"llm\"} 42\n# HELP tt_request_success_total Number of completed requests labelled by finish reason\n# TYPE tt_request_success_total counter\ntt_request_success_total{model_name=\"llm\",finished_reason=\"stop\"} 40\ntt_request_success_total{model_name=\"llm\",finished_reason=\"length\"} 2\n"
                 }
               }
             }

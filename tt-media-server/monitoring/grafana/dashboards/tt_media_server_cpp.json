@@ -1314,12 +1314,71 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-second rate of completed requests, split by finish reason (stop / length / tool_calls / abort / error).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (finished_reason) (rate(tt_request_success_total[1m]))",
+          "legendFormat": "{{finished_reason}}"
+        }
+      ],
+      "title": "Request Throughput by Finish Reason",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "id": 200,
       "title": "Worker Health",
@@ -1366,7 +1425,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 58
+        "y": 66
       },
       "id": 202,
       "options": {
@@ -1429,7 +1488,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 58
+        "y": 66
       },
       "id": 203,
       "options": {
@@ -1477,7 +1536,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 58
+        "y": 66
       },
       "id": 204,
       "options": {
@@ -1505,7 +1564,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 75
       },
       "id": 104,
       "title": "Infrastructure (per-process CPU / memory / threads)",
@@ -1540,7 +1599,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 68
+        "y": 76
       },
       "id": 105,
       "options": {
@@ -1598,7 +1657,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 68
+        "y": 76
       },
       "id": 106,
       "options": {
@@ -1656,7 +1715,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 68
+        "y": 76
       },
       "id": 107,
       "options": {
@@ -1714,7 +1773,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 76
+        "y": 84
       },
       "id": 108,
       "options": {
@@ -1772,7 +1831,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 76
+        "y": 84
       },
       "id": 109,
       "options": {
@@ -1830,7 +1889,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 76
+        "y": 84
       },
       "id": 110,
       "options": {
@@ -1873,7 +1932,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 92
       },
       "id": 111,
       "title": "HTTP Requests",
@@ -1941,7 +2000,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 93
       },
       "id": 112,
       "options": {

@@ -380,6 +380,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
       bool useJsonParser =
           toolChoiceType == "function" || toolChoiceType == "required";
+      std::optional<std::string> finalFinishReason;
 
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
@@ -413,11 +414,15 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         // Emit tool call delta
         auto response = buildToolCallStreamChunk(
             token, toolCallResult->tool_calls_delta, isFinal);
+        if (isFinal) {
+          finalFinishReason = "tool_calls";
+        }
         entry->callback(response, isFinal);
 
       } else if (inToolCall) {
         // Inside tool call parsing, suppress regular output
         if (isFinal) {
+          finalFinishReason = "tool_calls";
           // Final token - emit empty chunk with finish_reason
           Json::Value emptyDelta(Json::arrayValue);
           Json::Value emptyCall;
@@ -436,12 +441,26 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           continue;
         }
 
+        if (isFinal) {
+          bool isStop =
+              stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+          finalFinishReason = isStop ? "stop" : "length";
+        }
+
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
       }
 
       // Cleanup at finalization
       if (isFinal) {
+        if (!finalFinishReason.has_value()) {
+          TT_LOG_WARN(
+              "[Consumer-{}] Final token for task {} reached cleanup without "
+              "a finish reason set; defaulting to \"stop\"",
+              workerIdx, taskId);
+        }
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, finalFinishReason.value_or("stop"));
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
         toolChoiceMap.take(taskId);  // Clean up tool choice

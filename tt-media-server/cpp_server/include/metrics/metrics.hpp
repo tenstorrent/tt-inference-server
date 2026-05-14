@@ -173,6 +173,8 @@ class ServerMetrics {
   prometheus::Counter* prompt_tokens_total_{nullptr};
   prometheus::Counter* generation_tokens_total_{nullptr};
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
+  std::unordered_map<std::string, prometheus::Counter*>
+      request_success_by_reason_;
   prometheus::Family<prometheus::Counter>* http_requests_family_{nullptr};
   prometheus::Counter* prefix_cache_queries_total_{nullptr};
   prometheus::Counter* prefix_cache_hits_total_{nullptr};
