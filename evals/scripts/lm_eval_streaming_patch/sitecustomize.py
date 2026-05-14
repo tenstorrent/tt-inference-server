@@ -36,9 +36,7 @@ _ANSWER_LETTER = (
 )
 _OPTION_PREFIX = r"(?:(?:option|choice)\s*)?"
 _MMLU_PRO_ANSWER_PATTERNS = [
-    re.compile(
-        rf"(?is)\bfinal\s+answer\s*(?:is|:)\s*{_OPTION_PREFIX}{_ANSWER_LETTER}"
-    ),
+    re.compile(rf"(?is)\bfinal\s+answer\s*(?:is|:)\s*{_OPTION_PREFIX}{_ANSWER_LETTER}"),
     re.compile(
         rf"(?is)\b(?:final\s+)?answer\s*:\s*(?:\*\*)?\s*"
         rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
@@ -47,9 +45,7 @@ _MMLU_PRO_ANSWER_PATTERNS = [
         rf"(?is)\bthe\s+(?:best\s+|correct\s+)?answer\s+is\s*"
         rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
     ),
-    re.compile(
-        rf"(?is)\b(?:the\s+)?(?:correct|best)\s+option\s+is\s*{_ANSWER_LETTER}"
-    ),
+    re.compile(rf"(?is)\b(?:the\s+)?(?:correct|best)\s+option\s+is\s*{_ANSWER_LETTER}"),
     re.compile(
         rf"(?is)\b(?:option|choice)\s*{_ANSWER_LETTER}\s*"
         rf"(?:is\s+)?(?:the\s+)?(?:correct|right|best)\b"
@@ -72,8 +68,7 @@ def _allowed_mmlu_pro_letters(doc: dict) -> set[str]:
     if not options:
         return set("ABCDEFGHIJ")
     return {
-        chr(ord("A") + idx)
-        for idx in range(min(len(options), MMLU_PRO_MAX_CHOICES))
+        chr(ord("A") + idx) for idx in range(min(len(options), MMLU_PRO_MAX_CHOICES))
     }
 
 
@@ -129,7 +124,9 @@ def _choice_delta_text(choice: dict) -> tuple[str, str]:
     return str(content), str(reasoning)
 
 
-def _accumulate_sse_line(line: str, visible: Dict[int, str], reasoning: Dict[int, str]) -> bool:
+def _accumulate_sse_line(
+    line: str, visible: Dict[int, str], reasoning: Dict[int, str]
+) -> bool:
     """Accumulate one SSE line. Return True when the stream is done."""
 
     line = line.strip()
@@ -395,7 +392,9 @@ def _patch_configurable_task_process_results(ConfigurableTask) -> None:
             )
         return original(self, doc, results)
 
-    process_results_with_livecodebench_patch._tt_livecodebench_process_results_patch = True
+    process_results_with_livecodebench_patch._tt_livecodebench_process_results_patch = (
+        True
+    )
     process_results_with_livecodebench_patch._tt_original_process_results = original
     ConfigurableTask.process_results = process_results_with_livecodebench_patch
 

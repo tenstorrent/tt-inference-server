@@ -285,7 +285,9 @@ def _load_json(path: Path) -> dict:
 
 def _write_json(path: Path, payload: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
@@ -327,7 +329,9 @@ def _read_lm_eval_sample_count(output_dir: Path, benchmark: Benchmark) -> int | 
     return int(effective) if effective is not None else None
 
 
-def _read_pass1_score(output_dir: Path, task: str, metric: str = "pass_at_1_percent") -> float:
+def _read_pass1_score(
+    output_dir: Path, task: str, metric: str = "pass_at_1_percent"
+) -> float:
     summary_path = _pass1_summary_path(output_dir, task)
     payload = _load_json(summary_path)
     return float(payload[metric])
@@ -440,7 +444,9 @@ def _collect_result(root: Path, benchmark: Benchmark, status: str) -> BenchmarkR
         measured = _read_pass1_score(root / benchmark.key, benchmark.task or "")
     elif benchmark.kind == "pass1_derived":
         dep = BENCHMARKS[benchmark.dependencies[0]]
-        measured = _read_pass1_score(root / dep.key, dep.task or "", benchmark.metric or "")
+        measured = _read_pass1_score(
+            root / dep.key, dep.task or "", benchmark.metric or ""
+        )
     elif benchmark.kind == "combined_pass1":
         measured = _combined_score(root, "pass1")
     elif benchmark.kind == "combined_majority":
@@ -463,7 +469,9 @@ def _format_score(value: float | None) -> str:
     return f"{value:.2f}"
 
 
-def _summary_markdown(mode: str, output_dir: Path, results: Sequence[BenchmarkResult]) -> str:
+def _summary_markdown(
+    mode: str, output_dir: Path, results: Sequence[BenchmarkResult]
+) -> str:
     lines = [
         f"# DeepSeek External Eval Summary: `{mode}`",
         "",
@@ -504,7 +512,11 @@ def _print_table(results: Sequence[BenchmarkResult]) -> None:
     rows = [
         ("Benchmark", "Measured", "Reference"),
         *[
-            (result.benchmark, _format_score(result.measured), _format_score(result.reference))
+            (
+                result.benchmark,
+                _format_score(result.measured),
+                _format_score(result.reference),
+            )
             for result in results
         ],
     ]
@@ -512,13 +524,21 @@ def _print_table(results: Sequence[BenchmarkResult]) -> None:
     measured_rule = "-" * max(1, widths[1] - 1) + ":"
     reference_rule = "-" * max(1, widths[2] - 1) + ":"
     print()
-    print(f"| {rows[0][0]:<{widths[0]}} | {rows[0][1]:>{widths[1]}} | {rows[0][2]:>{widths[2]}} |")
-    print(f"| {'-' * widths[0]} | {measured_rule:>{widths[1]}} | {reference_rule:>{widths[2]}} |")
+    print(
+        f"| {rows[0][0]:<{widths[0]}} | {rows[0][1]:>{widths[1]}} | {rows[0][2]:>{widths[2]}} |"
+    )
+    print(
+        f"| {'-' * widths[0]} | {measured_rule:>{widths[1]}} | {reference_rule:>{widths[2]}} |"
+    )
     for row in rows[1:]:
-        print(f"| {row[0]:<{widths[0]}} | {row[1]:>{widths[1]}} | {row[2]:>{widths[2]}} |")
+        print(
+            f"| {row[0]:<{widths[0]}} | {row[1]:>{widths[1]}} | {row[2]:>{widths[2]}} |"
+        )
 
 
-def _resolve_benchmarks(args: argparse.Namespace, mode_config: ModeConfig) -> tuple[str, ...]:
+def _resolve_benchmarks(
+    args: argparse.Namespace, mode_config: ModeConfig
+) -> tuple[str, ...]:
     if not args.benchmarks:
         return mode_config.benchmarks
     keys = tuple(item.strip() for item in args.benchmarks.split(",") if item.strip())
@@ -542,7 +562,9 @@ def _prepare_output_dir(args: argparse.Namespace) -> Path:
     if args.output_dir:
         root = Path(args.output_dir).expanduser()
     else:
-        root = REPO_ROOT / "eval_results" / f"deepseek_external_{args.mode}_{_timestamp()}"
+        root = (
+            REPO_ROOT / "eval_results" / f"deepseek_external_{args.mode}_{_timestamp()}"
+        )
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
@@ -591,7 +613,9 @@ def _sanity_exit_code(output_dir: Path, results: Sequence[BenchmarkResult]) -> i
         return 1
 
     benchmark = BENCHMARKS["aime24_short_sanity"]
-    sample_count = _read_lm_eval_sample_count(output_dir / benchmark.key, benchmark) or 5
+    sample_count = (
+        _read_lm_eval_sample_count(output_dir / benchmark.key, benchmark) or 5
+    )
     correct = round((sanity.measured / 100.0) * sample_count)
     if sanity.measured >= 100.0:
         print(
@@ -632,7 +656,10 @@ def run_suite(args: argparse.Namespace) -> int:
     for index, key in enumerate(benchmark_keys, start=1):
         benchmark = BENCHMARKS[key]
         if benchmark.kind in {"pass1_derived", "combined_pass1", "combined_majority"}:
-            if not all(_benchmark_complete(output_dir, BENCHMARKS[dep]) for dep in benchmark.dependencies):
+            if not all(
+                _benchmark_complete(output_dir, BENCHMARKS[dep])
+                for dep in benchmark.dependencies
+            ):
                 print(f"==> {benchmark.name}: waiting for dependencies")
                 continue
             result = _collect_result(output_dir, benchmark, "derived")
@@ -642,7 +669,9 @@ def run_suite(args: argparse.Namespace) -> int:
 
         bench_output = output_dir / benchmark.key
         if not force and _benchmark_complete(output_dir, benchmark):
-            print(f"==> [{index}/{len(benchmark_keys)}] {benchmark.name}: already complete")
+            print(
+                f"==> [{index}/{len(benchmark_keys)}] {benchmark.name}: already complete"
+            )
             results.append(_collect_result(output_dir, benchmark, "skipped"))
             _write_run_state(output_dir, args.mode, benchmark_keys, results)
             continue
@@ -650,7 +679,9 @@ def run_suite(args: argparse.Namespace) -> int:
         print(f"==> [{index}/{len(benchmark_keys)}] {benchmark.name}")
         bench_output.mkdir(parents=True, exist_ok=True)
         if benchmark.kind == "lm_eval":
-            _run_lm_eval(benchmark, bench_output, _limit_for(benchmark, mode_config), env)
+            _run_lm_eval(
+                benchmark, bench_output, _limit_for(benchmark, mode_config), env
+            )
         elif benchmark.kind == "pass1":
             _run_pass1(benchmark, bench_output, mode_config, env)
         else:
@@ -679,7 +710,9 @@ def list_benchmarks() -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run DeepSeek-R1 endpoint eval suites.")
+    parser = argparse.ArgumentParser(
+        description="Run DeepSeek-R1 endpoint eval suites."
+    )
     parser.add_argument("mode", nargs="?", choices=sorted(MODE_CONFIGS))
     parser.add_argument(
         "--benchmarks",
