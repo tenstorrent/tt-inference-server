@@ -493,6 +493,39 @@ class TestModelSpecSystem:
         assert spec.tt_metal_commit == new_tt_metal_commit
         assert spec.vllm_commit == new_vllm_commit
         assert spec.docker_image == docker_image_with_commits
+        # version is also re-parsed from the override tag — see comment in
+        # apply_overrides. Drives the pre-0.11 support check in
+        # validate_setup._check_image_version_supported.
+        assert spec.version == "0.4.0"
+
+    def test_apply_overrides_unparseable_tag_keeps_template_version(
+        self, sample_impl, sample_device_model_spec
+    ):
+        """Override tags like ':dev' / ':latest' have no parseable version;
+        the template's declared version must be left alone."""
+        from workflows.runtime_config import RuntimeConfig
+
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=sample_impl,
+            hf_model_repo="test/TestModel-7B",
+            model_id="id_test-impl_TestModel-7B_n150",
+            model_name="TestModel-7B",
+            tt_metal_commit="x",
+            vllm_commit="y",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=sample_device_model_spec,
+            version="0.13.0",
+        )
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image="ghcr.io/foo/bar:dev",
+        )
+
+        spec.apply_overrides(rc)
+        assert spec.version == "0.13.0"
 
 
 class TestSystemIntegration:

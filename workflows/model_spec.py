@@ -15,6 +15,7 @@ from workflows.utils import (
     get_repo_root_path,
     get_version,
     parse_commits_from_docker_image,
+    parse_image_version,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import (
@@ -779,6 +780,15 @@ class ModelSpec:
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
+            # Re-parse `version` from the override tag so the pre-0.11
+            # support check (validate_runtime_args) sees the actual image
+            # being run, not the template default. Unparseable override
+            # tags (`:dev`, `:latest`) leave version untouched.
+            parsed_version = parse_image_version(runtime_config.override_docker_image)
+            if parsed_version is not None:
+                object.__setattr__(
+                    self, "version", ".".join(str(p) for p in parsed_version)
+                )
 
 
 @dataclass(frozen=True)
