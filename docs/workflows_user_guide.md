@@ -357,6 +357,8 @@ This report summarizes metrics and uses defined tolerance thresholds to determin
 
 See [Logs](#logs) section below for example format of the report files generated.
 
+> Running reports against a GPU/CUDA backend has additional setup requirements (per-model `DeviceModelSpec` entry, external vLLM server). See [GPU Report Generation](gpu_reports.md).
+
 ## Server Spec Tests
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
@@ -460,6 +462,7 @@ The logs have the following structure:
 
 - [Workflows Reference](../workflows/README.md) -- CLI reference, architecture diagrams, model config
 - [Container Interface](../vllm-tt-metal/README.md#container-interface-direct-docker-run) -- Direct Docker run, container CLI args
+- [GPU Report Generation](gpu_reports.md) -- running `reports` / `benchmarks` / `evals` against a CUDA/NVIDIA vLLM server
 - [Development](development.md)
 - [Benchmarking](../benchmarking/README.md)
 - [Evals](../evals/README.md)
