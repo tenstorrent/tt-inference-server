@@ -41,7 +41,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -78,7 +78,10 @@ class AuthManifest:
     base_url: Optional[str]
     run_id: Optional[str]
     created_at: str = field(
-        default_factory=lambda: datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        default_factory=lambda: datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
     )
 
     def __post_init__(self) -> None:
