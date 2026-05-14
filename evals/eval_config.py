@@ -3085,6 +3085,54 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-7B-Instruct",
+        tasks=[
+            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
+            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
+            # and send them as List[List[int]] to /v1/completions, which the forge
+            # server's pydantic schema rejects with HTTP 422 (it only accepts
+            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
+            # chat template host-side, sends prompts as strings, and the server
+            # tokenizes them — schema-compatible.
+            EvalTask(
+                task_name="ifeval",
+                tokenizer_backend="none",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                tokenizer_backend="none",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 

@@ -38,6 +38,7 @@ from workflows.workflow_config import (
 from workflows.workflow_types import (
     DeviceTypes,
     EvalLimitMode,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -380,8 +381,15 @@ def main():
     # Setup authentication based on model type
     if model_spec.model_type in EVAL_TASK_TYPES:
         _setup_openai_api_key(args, logger)
+    elif model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+    ):
+        # Forge/media servers validate the literal API key, not JWTs.
+        _setup_openai_api_key(args, logger)
+        os.environ["VLLM_API_KEY"] = os.environ["OPENAI_API_KEY"]
     elif args.jwt_secret:
-        # For LLM models, generate JWT token from jwt_secret
+        # For tt-transformers / vllm-tt LLMs, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
@@ -415,6 +423,10 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    # EnvironmentConfig.vllm_api_key default is captured at module-load time;
+    # explicitly re-read so in-process PromptClient sees later env updates
+    # (mirrors run_benchmarks.py:439).
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
