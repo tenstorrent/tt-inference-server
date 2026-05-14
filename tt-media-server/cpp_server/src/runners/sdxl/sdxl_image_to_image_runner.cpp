@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "runners/sdxl/sdxl_runner.hpp"
+#include "runners/sdxl/sdxl_image_to_image_runner.hpp"
 
 namespace tt::runners::sdxl {
 

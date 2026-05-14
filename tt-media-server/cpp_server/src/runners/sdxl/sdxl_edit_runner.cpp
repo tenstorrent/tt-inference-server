@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "runners/sdxl/sdxl_runner.hpp"
+#include "runners/sdxl/sdxl_edit_runner.hpp"
 
 namespace tt::runners::sdxl {
 
