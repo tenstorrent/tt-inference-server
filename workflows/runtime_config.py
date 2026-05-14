@@ -87,6 +87,12 @@ class RuntimeConfig:
     # Runtime state (set during execution, not from CLI)
     run_id: Optional[str] = None
     runtime_model_spec: Optional[Dict] = field(default=None, repr=False)
+    # Path to the JSON auth manifest written by run.py:handle_secrets.
+    # Subprocesses (eval/benchmark clients) read this to get the same
+    # bearer the in-container server validates, avoiding cross-process
+    # divergence between os.environ / .env / docker --env-file. Falls
+    # back to env-based bearer resolution when None.
+    auth_manifest_path: Optional[str] = None
 
     @classmethod
     def from_args(

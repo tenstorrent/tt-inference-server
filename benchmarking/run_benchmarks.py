@@ -36,6 +36,7 @@ from benchmarking.benchmark_config import (
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.auth_probe import assert_probe_ok, probe_bearer
 from utils.prompt_client import PromptClient
+from workflows.auth_manifest import load_bearer_or_fallback
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
@@ -461,7 +462,12 @@ def main():
     # "Benchmark duration (s): 0.00" numbers, because vLLM error responses
     # are counted as "successful" HTTP at the benchmark layer.
     probe_base_url = f"{env_config.deploy_url}:{env_config.service_port}/v1"
-    probe_bearer_token = os.environ.get("OPENAI_API_KEY")
+    # Prefer the manifest's authoritative bearer; fall back to env.
+    probe_bearer_token, _bearer_src = load_bearer_or_fallback(
+        getattr(runtime_config, "auth_manifest_path", None)
+    )
+    if probe_bearer_token is None:
+        probe_bearer_token = os.environ.get("OPENAI_API_KEY")
     probe_result = probe_bearer(
         probe_base_url,
         probe_bearer_token,

@@ -13,6 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from workflows.auth_manifest import resolve_and_write_from_env
 from workflows.bootstrap_uv import bootstrap_uv
 from workflows.device_utils import infer_default_device
 from workflows.log_setup import setup_run_logger
@@ -228,8 +229,8 @@ def parse_arguments():
         "--eval-samples",
         type=str,
         default=None,
-        help='Per-task doc_id filter passed to lm-eval as --samples. '
-        'Accepts a JSON string \'{"task_name": [int, ...]}\' or a path to a JSON file. '
+        help="Per-task doc_id filter passed to lm-eval as --samples. "
+        "Accepts a JSON string '{\"task_name\": [int, ...]}' or a path to a JSON file. "
         "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
         "Text/LLM evals only.",
     )
@@ -626,6 +627,27 @@ def main():
     logger.info(f"TT-Inference version: {version}")
     logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
     logger.info(format_cli_args_summary(runtime_config))
+
+    # Write auth manifest (single source of truth for bearer used by
+    # both the in-container vLLM server and every host-side workflow
+    # client). Persisted next to the runtime model spec so subprocesses
+    # discover it via RuntimeConfig.auth_manifest_path. See
+    # workflows/auth_manifest.py for the rationale.
+    try:
+        _, _manifest_path = resolve_and_write_from_env(
+            target_dir=runtime_model_spec_dir,
+            run_id=run_id,
+            service_port=runtime_config.service_port,
+        )
+        runtime_config.auth_manifest_path = str(_manifest_path)
+    except Exception as exc:
+        # Manifest is a hardening layer; never block the workflow if
+        # writing it fails. Subprocesses fall back to env resolution.
+        logger.warning(
+            "auth manifest could not be written (%s); subprocesses will "
+            "fall back to per-process env-based bearer resolution",
+            exc,
+        )
 
     # Write runtime model spec + runtime config for subprocess scripts
     json_fpath = runtime_config.to_json(

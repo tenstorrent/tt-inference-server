@@ -17,6 +17,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.auth_probe import assert_probe_ok, probe_bearer
+from workflows.auth_manifest import load_bearer_or_fallback
 from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
@@ -632,7 +633,14 @@ def main():
         # treats every "Could not parse generations: 'choices'" warning
         # as an empty completion.
         probe_base_url = f"{env_config.deploy_url}:{env_config.service_port}/v1"
-        probe_bearer_token = os.environ.get("OPENAI_API_KEY")
+        # Prefer the manifest's authoritative bearer (single source of
+        # truth) and fall back to OPENAI_API_KEY in env. Same bearer
+        # the in-container vLLM server validates against, by construction.
+        probe_bearer_token, _bearer_src = load_bearer_or_fallback(
+            getattr(runtime_config, "auth_manifest_path", None)
+        )
+        if probe_bearer_token is None:
+            probe_bearer_token = os.environ.get("OPENAI_API_KEY")
         probe_model = getattr(env_config, "vllm_model", None) or getattr(
             model_spec, "hf_model_repo", None
         )
