@@ -513,6 +513,7 @@ def main():
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
+            _dump_eval_samples(args, model_spec, task, logger)
 
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed evals")
@@ -521,6 +522,39 @@ def main():
             f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
         )
         return 1
+
+
+def _dump_eval_samples(args, model_spec, task, logger):
+    """Dump per-sample doc + model response from lm_eval samples_*.jsonl to
+    stdout for CI debugging. Called after each task completes.
+
+    See branch sraizada/aime-c32-print-repro: used to diagnose CI hangs where
+    requests are routed to engines but no decode tokens are returned.
+    """
+    try:
+        output_dir_path = Path(args.output_path) / f"eval_{model_spec.model_id}"
+        sample_files = sorted(output_dir_path.rglob(f"samples_{task.task_name}_*.jsonl"))
+        logger.info(
+            f"[REPRO-DUMP] task={task.task_name} found {len(sample_files)} sample files under {output_dir_path}"
+        )
+        for sf in sample_files:
+            logger.info(f"[REPRO-DUMP] === BEGIN {sf} ===")
+            with open(sf, "r") as fh:
+                for i, line in enumerate(fh):
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        logger.info(f"[REPRO-DUMP] sample[{i}] raw={line.rstrip()[:1000]}")
+                        continue
+                    doc = rec.get("doc", {})
+                    resps = rec.get("resps") or rec.get("filtered_resps") or rec.get("target")
+                    logger.info(
+                        f"[REPRO-DUMP] sample[{i}] doc_id={rec.get('doc_id')} "
+                        f"problem={str(doc)[:300]} resps={str(resps)[:2000]}"
+                    )
+            logger.info(f"[REPRO-DUMP] === END {sf} ===")
+    except Exception as e:
+        logger.warning(f"[REPRO-DUMP] sample dump failed: {e}")
 
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):
@@ -563,3 +597,4 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
 
 if __name__ == "__main__":
     sys.exit(main())
+
