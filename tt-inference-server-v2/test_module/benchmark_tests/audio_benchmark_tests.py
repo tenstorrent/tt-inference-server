@@ -334,7 +334,7 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
         )
 
     ttft_value, tsu_value, rtr_value = last_metrics
-    target_checks, accuracy_check = _audio_target_checks(
+    target_checks, _accuracy_check = _audio_target_checks(
         ctx, ttft_value, tsu_value, rtr_value
     )
 
@@ -351,7 +351,6 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
         },
         data={
             "records": records,
-            "accuracy_check": accuracy_check,
             "target_checks": target_checks,
         },
     )

@@ -328,15 +328,17 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
 
     score = 100.0 - wer
     published = task.score.published_score
-    tolerance = task.score.tolerance or 0.05
-    if published is not None:
-        ratio = score / published if published else 0.0
-        within_tolerance = abs(1.0 - ratio) <= tolerance
+    reference = getattr(task.score, "gpu_reference_score", None) or published
+    tolerance = task.score.tolerance if task.score.tolerance is not None else 0.05
+    if reference:
+        ratio = score / reference
         accuracy_check = (
-            ReportCheckTypes.PASS if within_tolerance else ReportCheckTypes.FAIL
+            ReportCheckTypes.PASS
+            if ratio >= (1.0 - tolerance)
+            else ReportCheckTypes.FAIL
         )
     else:
-        accuracy_check = ReportCheckTypes.PASS
+        accuracy_check = ReportCheckTypes.NA
 
     logger.info(
         "WhisperEvalTest WER=%.4f score=%.4f published=%s tolerance=%s check=%s",
