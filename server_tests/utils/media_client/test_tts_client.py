@@ -216,62 +216,11 @@ class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
         assert result == 0
 
 
-class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
-    """Tests for _calculate_tail_latency method."""
-
-    @patch("transformers.AutoTokenizer.from_pretrained")
-    def _create_strategy(self, mock_tokenizer):
-        mock_tokenizer.return_value = MagicMock()
-        model_spec = MagicMock()
-        model_spec.hf_model_repo = "test/model"
-        device = MagicMock()
-        return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
-
-    def test_calculate_tail_latency_with_valid_values(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.2),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.4),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.5),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.6),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.7),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.8),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.9),
-            TtsTestStatus(status=True, elapsed=1.0, latency=1.0),
-        ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
-        # P90 = 9th value (index 8) = 0.9 s; P95 = 10th value (index 9) = 1.0 s.
-        assert p90 == 0.9
-        assert p95 == 1.0
-
-    def test_calculate_tail_latency_empty_list(self):
-        strategy = self._create_strategy()
-        p90, p95 = strategy._calculate_tail_latency([])
-        assert p90 == 0.0  # Returns 0.0 for empty list
-        assert p95 == 0.0
-
-    def test_calculate_tail_latency_with_none_values(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
-            TtsTestStatus(status=True, elapsed=1.0, latency=None),
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.3),
-        ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
-        # Only 2 valid values, P90 and P95 should be the same (0.3 s)
-        assert p90 == 0.3
-        assert p95 == 0.3
-
-    def test_calculate_tail_latencyingle_value(self):
-        strategy = self._create_strategy()
-        status_list = [
-            TtsTestStatus(status=True, elapsed=1.0, latency=0.1),
-        ]
-        p90, p95 = strategy._calculate_tail_latency(status_list)
-        assert p90 == 0.1
-        assert p95 == 0.1
+# NOTE: tail-latency behavior is now covered by
+# ``test_base_strategy_helpers.TestCalculateTailLatencies`` since the helper
+# lives on ``BaseMediaStrategy``. The TTS-specific implementation was removed
+# in this PR (one helper instead of N copies, with stricter min-sample
+# semantics returning ``None`` rather than ``0.0`` below the threshold).
 
 
 class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
@@ -523,6 +472,8 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
 
         assert "score" in eval_data
         assert "rtr" in eval_data
+        assert "throughput_rps" in eval_data
+        assert "latency_p50" in eval_data
         assert "latency_p90" in eval_data
         assert "latency_p95" in eval_data
         assert "performance_check" in eval_data
@@ -530,8 +481,11 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
 
         assert eval_data["score"] == pytest.approx(0.15)
         assert eval_data["rtr"] == pytest.approx(2.5)
-        assert eval_data["latency_p90"] == pytest.approx(0.2)
-        assert eval_data["latency_p95"] == pytest.approx(0.2)
+        # 2 samples is below MIN_TAIL_LATENCY_SAMPLES (10) → percentiles
+        # must be ``None`` rather than misleading numbers from a tiny sample.
+        assert eval_data["latency_p50"] is None
+        assert eval_data["latency_p90"] is None
+        assert eval_data["latency_p95"] is None
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -608,8 +562,14 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         assert benchmarks["num_requests"] == 2
         assert benchmarks["latency"] == pytest.approx(0.15)
         assert benchmarks["rtr"] == pytest.approx(2.5)
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
         assert "latency_p90" in benchmarks
         assert "latency_p95" in benchmarks
+        # 2 samples is below MIN_TAIL_LATENCY_SAMPLES (10).
+        assert benchmarks["latency_p50"] is None
+        assert benchmarks["latency_p90"] is None
+        assert benchmarks["latency_p95"] is None
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
@@ -681,6 +641,8 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         assert benchmarks["num_requests"] == 1
         assert benchmarks["latency"] == 0.1  # in seconds
         assert benchmarks["rtr"] == 2.0
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
         assert "latency_p90" in benchmarks
         assert "latency_p95" in benchmarks
 

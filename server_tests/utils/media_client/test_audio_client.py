@@ -506,6 +506,10 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         assert benchmarks["t/s/u"] == 10.0
         assert benchmarks["rtr"] == 2.0
         assert "performance_check" in report_data
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify metadata
         assert report_data["model"] == "test_model"
@@ -629,6 +633,10 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         assert benchmarks["t/s/u"] == 10.0
         assert benchmarks["rtr"] == 2.0
         assert "performance_check" in report_data
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify model/device metadata
         assert report_data["model"] == "test_model"
