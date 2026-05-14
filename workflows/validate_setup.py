@@ -55,8 +55,9 @@ def _check_image_version_supported(model_spec):
         min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
         tag = f"v{model_spec.version}"
         raise RuntimeError(
-            f"⛔ Image v{model_spec.version} is too old (need v{min_str}+). "
-            f"Check out the matching release tag {tag} and re-run:\n"
+            f"⛔ Image v{model_spec.version} is not supported in this "
+            f"version of run.py (need v{min_str}+). Check out the matching "
+            f"release tag {tag} and re-run:\n"
             f"    git checkout {tag}"
         )
 

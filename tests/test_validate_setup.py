@@ -558,7 +558,7 @@ class TestCheckImageVersionSupported:
 
     def test_pre_0_11_versions_raise(self):
         for v in ("0.10.9", "0.10.1", "0.10.0", "0.9.0", "0.2.0"):
-            with pytest.raises(RuntimeError, match="too old"):
+            with pytest.raises(RuntimeError, match="not supported"):
                 _check_image_version_supported(self._spec(v))
 
     def test_error_names_exact_tag_to_checkout(self):
