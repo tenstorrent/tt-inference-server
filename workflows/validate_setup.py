@@ -40,12 +40,18 @@ def _check_image_version_supported(model_spec):
     "Simplify and improve vLLM Docker image interface"): ENTRYPOINT changed
     from docker-entrypoint.sh + gosu to bash -c, the script's CLI argument
     contract changed, and shared-memory + env-var conventions changed. main
-    only emits the new contract, so an older image won't start.
+    only emits the new contract, so an older vLLM image won't start.
+
+    Scoped to vLLM only — media-inference-server and forge images have
+    different Dockerfiles and aren't affected by this interface change
+    (the docker command for them is also simpler and stable across versions).
 
     apply_overrides re-parses model_spec.version from --override-docker-image
     when present, so this check covers both template-pinned versions and
     override paths.
     """
+    if model_spec.inference_engine != InferenceEngine.VLLM.value:
+        return
     parsed = parse_version_tuple(model_spec.version)
     if parsed is None:
         # Unparseable versions (`dev`, `latest`, etc.) default to "newest

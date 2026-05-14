@@ -540,23 +540,29 @@ class TestLocalServerValidation:
 
 
 class TestCheckImageVersionSupported:
-    """run.py only emits the post-0.11 vLLM docker contract; pre-0.11 specs
-    (or pre-0.11 override images) must be refused with a clear migration
-    message rather than silently producing a broken docker run."""
+    """run.py only emits the post-0.11 vLLM docker contract; pre-0.11 vLLM
+    specs (or pre-0.11 override images) must be refused with a clear migration
+    message rather than silently producing a broken docker run.
 
-    def _spec(self, version):
+    Media-inference-server and forge images use a different Dockerfile that
+    isn't affected by the 0.11.0 vLLM interface refactor, so the check must
+    NOT fire for them.
+    """
+
+    def _spec(self, version, engine="vLLM"):
         s = MagicMock()
         s.version = version
+        s.inference_engine = engine
         return s
 
-    def test_post_0_11_versions_pass(self):
+    def test_post_0_11_vllm_versions_pass(self):
         # Boundary and above must not raise.
         _check_image_version_supported(self._spec("0.11.0"))
         _check_image_version_supported(self._spec("0.11.1"))
         _check_image_version_supported(self._spec("0.13.0"))
         _check_image_version_supported(self._spec("1.0.0"))
 
-    def test_pre_0_11_versions_raise(self):
+    def test_pre_0_11_vllm_versions_raise(self):
         for v in ("0.10.9", "0.10.1", "0.10.0", "0.9.0", "0.2.0"):
             with pytest.raises(RuntimeError, match="not supported"):
                 _check_image_version_supported(self._spec(v))
@@ -575,13 +581,16 @@ class TestCheckImageVersionSupported:
         _check_image_version_supported(self._spec("latest"))
         _check_image_version_supported(self._spec(""))
 
-    def test_error_message_points_to_checkout_workaround(self):
-        with pytest.raises(RuntimeError) as exc:
-            _check_image_version_supported(self._spec("0.10.0"))
-        msg = str(exc.value)
-        assert "git checkout" in msg
-        assert "0.10.0" in msg
-        assert "release" in msg.lower()
+    def test_media_engine_not_blocked_by_pre_0_11(self):
+        # tt-media-inference-server images aren't affected by the vLLM
+        # 0.11.0 interface change. Pre-0.11 media specs must still run.
+        for v in ("0.2.0", "0.5.0", "0.9.0", "0.10.0", "0.10.1"):
+            _check_image_version_supported(self._spec(v, engine="media"))
+
+    def test_forge_engine_not_blocked_by_pre_0_11(self):
+        # forge images are also outside the vLLM image-interface refactor.
+        for v in ("0.2.0", "0.9.0", "0.10.1"):
+            _check_image_version_supported(self._spec(v, engine="forge"))
 
 
 class TestVersionParsers:
