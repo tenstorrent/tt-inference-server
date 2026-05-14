@@ -57,7 +57,7 @@ void ImageService::stop() {
   }
   if (t.joinable()) t.join();
   const bool wasReady = ready_.exchange(false, std::memory_order_acq_rel);
-  if (wasReady && runner_) runner_->stop();
+  if (runner_) runner_->stop();
   if (wasReady) TT_LOG_INFO("[ImageService] Stopped");
 }
 

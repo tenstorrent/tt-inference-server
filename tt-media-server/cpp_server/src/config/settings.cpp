@@ -342,6 +342,10 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
         "[Config] DEVICE_MESH_SHAPE must be 2-D 'rows,cols'; got '" + s +
         "' with " + std::to_string(out.size()) + " dimensions");
   }
+  if (out[0] == 0 || out[1] == 0) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE dimensions must be >= 1; got '" + s + "'");
+  }
   return out;
 }
 
