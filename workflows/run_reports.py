@@ -62,6 +62,59 @@ FUNCTIONAL_TARGET = 10
 COMPLETE_TARGET = 2
 
 
+def _coerce_metric(res: dict, key: str):
+    """Best-effort float coercion for a benchmark metric.
+
+    Benchmark rows can carry numeric metrics as `int`, `float`, the
+    literal string ``"N/A"`` (placeholder for missing values), `None`,
+    or `nan` when the upstream benchmark produced no real numbers
+    (e.g. server returned 401 and zero tokens were generated).
+
+    Returns a finite `float` or `None` when the value cannot be safely
+    used as a divisor. Callers should treat `None` as "metric not
+    usable" and mark the corresponding target check as NA.
+    """
+    import math
+
+    value = res.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        if math.isnan(float(value)) or math.isinf(float(value)):
+            return None
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "" or stripped.upper() in {"N/A", "NA", "NAN", "NONE"}:
+            return None
+        try:
+            parsed = float(stripped)
+        except ValueError:
+            return None
+        if math.isnan(parsed) or math.isinf(parsed):
+            return None
+        return parsed
+    return None
+
+
+def _is_zero_token_row(res: dict) -> bool:
+    """Detect benchmark rows that produced no tokens.
+
+    Used to short-circuit target checks for rows that almost certainly
+    came from a server error (e.g. 401 returning a JSON body without a
+    ``choices`` key). Such rows have no informative throughput signal
+    and should be reported as NA rather than as PASS/FAIL.
+    """
+    for key in ("total_generated_tokens", "total_output_tokens", "output_tokens"):
+        if key in res:
+            value = _coerce_metric(res, key)
+            if value is not None and value <= 0:
+                return True
+    return False
+
+
 def generate_embedding_report_data(model_spec, eval_run_id):
     """Generate embedding-specific report data.
 
@@ -1901,54 +1954,77 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
 
                 # Prepare a dictionary to hold checks for all targets.
                 text_perf_results[p_ref_key]["target_checks"] = {}
+
+                zero_token_row = _is_zero_token_row(res)
+                if zero_token_row:
+                    logger.warning(
+                        "Benchmark row %s produced 0 generated tokens; "
+                        "marking all target checks NA. Likely upstream "
+                        "server error (e.g. auth) — check server logs.",
+                        p_ref_key,
+                    )
+
+                mean_ttft = _coerce_metric(res, "mean_ttft_ms")
+                mean_tps = _coerce_metric(res, "mean_tps")
+                tput_decode = _coerce_metric(res, "tps_decode_throughput")
+
                 # Iterate over each target defined in p_ref.targets.
                 for target_name, perf_target in p_ref.targets.items():
                     target_check = {}
 
                     # Check for ttft metric if defined.
-                    if perf_target.ttft_ms is not None:
+                    if perf_target.ttft_ms is None:
+                        target_check["ttft_check"] = ReportCheckTypes.NA
+                    elif zero_token_row or mean_ttft is None or mean_ttft <= 0:
+                        target_check["ttft"] = perf_target.ttft_ms
+                        target_check["ttft_check"] = ReportCheckTypes.NA
+                    else:
                         assert perf_target.ttft_ms > 0, (
                             f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
                         )
-                        ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
+                        ttft_ratio = mean_ttft / perf_target.ttft_ms
                         check = ReportCheckTypes.from_result(
                             ttft_ratio < (1 + perf_target.tolerance)
                         )
                         target_check["ttft"] = perf_target.ttft_ms
                         target_check["ttft_ratio"] = ttft_ratio
                         target_check["ttft_check"] = check
-                    else:
-                        target_check["ttft_check"] = ReportCheckTypes.NA
 
                     # Check for tput_user metric if defined.
-                    if perf_target.tput_user is not None:
+                    if perf_target.tput_user is None:
+                        target_check["tput_user_check"] = ReportCheckTypes.NA
+                    elif zero_token_row or mean_tps is None or mean_tps <= 0:
+                        target_check["tput_user"] = perf_target.tput_user
+                        target_check["tput_user_check"] = ReportCheckTypes.NA
+                    else:
                         assert perf_target.tput_user > 0, (
                             f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
                         )
-                        tput_user_ratio = res["mean_tps"] / perf_target.tput_user
+                        tput_user_ratio = mean_tps / perf_target.tput_user
                         check = ReportCheckTypes.from_result(
                             tput_user_ratio > (1 - perf_target.tolerance)
                         )
                         target_check["tput_user"] = perf_target.tput_user
                         target_check["tput_user_ratio"] = tput_user_ratio
                         target_check["tput_user_check"] = check
-                    else:
-                        target_check["tput_user_check"] = ReportCheckTypes.NA
 
                     # Check for tput metric if defined.
-                    if perf_target.tput is not None:
+                    if perf_target.tput is None:
+                        target_check["tput_check"] = ReportCheckTypes.NA
+                    elif zero_token_row or tput_decode is None or tput_decode <= 0:
+                        target_check["tput"] = perf_target.tput
+                        target_check["tput_check"] = ReportCheckTypes.NA
+                    else:
                         assert perf_target.tput > 0, (
                             f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
                         )
-                        tput_ratio = res["tps_decode_throughput"] / perf_target.tput
+                        tput_ratio = tput_decode / perf_target.tput
                         check = ReportCheckTypes.from_result(
                             tput_ratio > (1 - perf_target.tolerance)
                         )
                         target_check["tput"] = perf_target.tput
                         target_check["tput_ratio"] = tput_ratio
                         target_check["tput_check"] = check
-                    else:
-                        target_check["tput_check"] = ReportCheckTypes.NA
 
                     # Save the computed checks under the target's name.
                     text_perf_results[p_ref_key]["target_checks"][target_name] = (
