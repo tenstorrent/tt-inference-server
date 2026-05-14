@@ -555,11 +555,15 @@ class TestMainWorkflowIntegration:
     def test_main_workflow_benchmarks_no_docker(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py workflow for benchmarks without docker server."""
+        """Test main run.py workflow for benchmarks without docker server.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
@@ -582,11 +586,15 @@ class TestMainWorkflowIntegration:
     def test_main_returns_one_when_any_workflow_fails(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py returns failure when any workflow result is non-zero."""
+        """Test main run.py returns failure when any workflow result is non-zero.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
