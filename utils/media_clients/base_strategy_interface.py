@@ -35,7 +35,7 @@ class BaseMediaStrategy(ABC):
         pass
 
     @abstractmethod
-    def run_benchmark(self, num_calls: int) -> list[BaseTestStatus]:
+    def run_benchmark(self) -> list[BaseTestStatus]:
         """Run benchmark workflow for this media type."""
         pass
 

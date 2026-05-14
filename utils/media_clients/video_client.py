@@ -135,7 +135,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"

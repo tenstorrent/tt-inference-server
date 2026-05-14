@@ -106,7 +106,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> list[TtsTestStatus]:
+    def run_benchmark(self) -> list[TtsTestStatus]:
         """Run benchmarks for the TTS model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"

@@ -197,7 +197,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"Eval report written despite failure; raising: {error}")
             raise RuntimeError(error)
 
-    def run_benchmark(self, attempt=0) -> list[ImageGenerationTestStatus]:
+    def run_benchmark(self) -> list[ImageGenerationTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
