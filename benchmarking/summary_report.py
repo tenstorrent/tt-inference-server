@@ -419,6 +419,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 * 1000,
                 "filename": filename,
                 "task_type": "cnn",
+                "performance_check": data.get("performance_check", 0),
             }
             return format_metrics(metrics)
         elif params.get("task_type") == "image":
@@ -444,6 +445,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 ),
                 "filename": filename,
                 "task_type": "image",
+                "performance_check": data.get("performance_check", 0),
             }
             return format_metrics(metrics)
 
@@ -474,6 +476,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 else None
             ),
             "wer": benchmarks_data.get("wer", None),
+            "performance_check": data.get("performance_check", 0),
         }
         return format_metrics(metrics)
 
@@ -534,6 +537,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "request_throughput": benchmarks_data.get("benchmarks").get(
                 "req_tput", 0.0
             ),
+            "performance_check": data.get("performance_check", 0),
         }
         return format_metrics(metrics)
 
@@ -559,6 +563,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "num_inference_steps": benchmarks_data.get("benchmarks").get(
                 "num_inference_steps", 0
             ),
+            "performance_check": data.get("performance_check", 0),
         }
         return format_metrics(metrics)
 
@@ -818,6 +823,7 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("rtr", "RTR"),
         ("p90_latency_ms", "P90 Latency (ms)"),
         ("p95_latency_ms", "P95 Latency (ms)"),
+        ("performance_check", "Performance Check"),
         # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
         # Similar to how image and audio pipelines work
     ]
@@ -850,6 +856,7 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -868,6 +875,7 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
         ("num_inference_steps", "Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
         ("inference_steps_per_second", "Steps/Sec"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -888,6 +896,7 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("mean_latency_ms", "Latency (ms)"),
         ("task_type", "Task Type"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -906,6 +915,7 @@ def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
