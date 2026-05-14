@@ -109,7 +109,7 @@ class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
     def test_calculate_ttft_empty_list(self):
         strategy = self._create_strategy()
         result = strategy._calculate_ttft_value([])
-        assert result == 0
+        assert result is None
 
     def test_calculate_ttft_with_none_values(self):
         strategy = self._create_strategy()
@@ -128,7 +128,7 @@ class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
             MagicMock(ttft=None),
         ]
         result = strategy._calculate_ttft_value(status_list)
-        assert result == 0
+        assert result is None
 
 
 class TestAudioClientStrategyCalculateRtr(unittest.TestCase):
@@ -446,7 +446,7 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
         return_value=True,
     )
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(
@@ -562,7 +562,7 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
         return_value=False,
     )
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -1032,7 +1032,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
 
     # PerformanceTargets.ttft_ms is in ms; latency_value is in seconds.
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_all_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1046,7 +1046,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 2  # PASS
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_latency_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1060,7 +1060,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 3  # FAIL
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_no_latency_target(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1073,7 +1073,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == ReportCheckTypes.NA
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_tsu_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1086,7 +1086,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 3  # FAIL (TSU failed)
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_rtr_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1099,7 +1099,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 3  # FAIL (RTR failed)
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_default_tolerance(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1112,7 +1112,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 2  # PASS with default tolerance
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_tsu_and_rtr_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
@@ -1125,7 +1125,7 @@ class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 2  # PASS
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_tpu_target_but_tsu_none(self, mock_targets):
         """Test branch where tput_user target exists but measured tsu_value is None."""
         strategy = self._create_strategy()
