@@ -131,7 +131,7 @@ else()
     message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
-# Ensure static libraries are built with -fPIC (required when linking into shared libs like pipeline_manager)
+# Ensure static libraries are built with -fPIC (required when linking into shared libs like tt-llm-engine)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # spdlog for logging - use tt-metal's fmt library when available
@@ -149,18 +149,17 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)
 
-# Option to enable tt-blaze pipeline_manager
-option(ENABLE_BLAZE "Enable tt-blaze pipeline_manager support" OFF)
+# Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
+option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
 
 if(ENABLE_BLAZE)
-    # tt-blaze pipeline_manager (core-only at compile time; use LD_PRELOAD with
-    # the pre-built Full .so at runtime for SocketPipeline support)
-    set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(tt-blaze/pipeline_manager)
-    message(STATUS "tt-blaze pipeline_manager: ENABLED")
+    # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
+    # the Full target adds SocketPipeline support when Metalium is available).
+    set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(tt-llm-engine)
+    message(STATUS "tt-llm-engine: ENABLED")
 else()
-    message(STATUS "tt-blaze pipeline_manager: DISABLED (use -DENABLE_BLAZE=ON to enable)")
+    message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
 endif()
 
 # Option for Tracy support
@@ -305,13 +304,13 @@ set(LLM_RUNNER_LIB_SOURCES
     src/api/route_registry.cpp
 )
 
-# Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
+# Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runners/blaze_runner/blaze_runner.cpp
         src/services/memory_services/blaze_memory_manager.cpp
     )
-    message(STATUS "llm_runner_lib: including pipeline_manager-dependent sources (ENABLE_BLAZE=ON)")
+    message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
 
 # Add socket backend when tt-metal is available
@@ -332,19 +331,19 @@ target_include_directories(llm_runner_lib PUBLIC
 # Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
 target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
-# Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
+# Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
 if(ENABLE_BLAZE)
-    if(TARGET PipelineManager::Full)
-        target_link_libraries(llm_runner_lib PUBLIC PipelineManager::Full)
-        message(STATUS "Linking llm_runner_lib against PipelineManager::Full")
-    elseif(TARGET PipelineManager::Core)
-        target_link_libraries(llm_runner_lib PUBLIC PipelineManager::Core)
-        message(STATUS "Linking llm_runner_lib against PipelineManager::Core")
+    if(TARGET TtLlmEngine::Full)
+        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
+    elseif(TARGET TtLlmEngine::Core)
+        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
+        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
 else()
-    message(STATUS "Skipping PipelineManager linking (ENABLE_BLAZE=OFF)")
+    message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
 endif()
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
@@ -615,6 +614,7 @@ add_executable(main_integration_test
     src/services/disaggregation_service.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
 )
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
@@ -756,6 +756,7 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
@@ -821,19 +822,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
 # build runner (e.g. CI build on ubuntu-latest, bench on a self-hosted
 # runner with a different workspace path). Without this, CMake bakes the
 # absolute build-time path into RUNPATH and ld.so fails to find
-# libpipeline_manager_core.so.1 elsewhere.
+# libtt_llm_engine_core.so.0 elsewhere.
 if(ENABLE_BLAZE)
-    # $ORIGIN/tt-blaze/pipeline_manager keeps libpipeline_manager_core.so.1
-    # resolvable when the build artifact is unpacked on a different machine
-    # (see commit that introduced this block).
+    # $ORIGIN/tt-llm-engine keeps libtt_llm_engine_core.so.0 / libtt_llm_engine.so.0
+    # resolvable when the build artifact is unpacked on a different machine.
     # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
-    # directories (e.g. tt-blaze/tt-metal/build_Release/lib where libfmt.so.11,
+    # directories (e.g. tt-llm-engine/tt-metal/build_Release/lib where libfmt.so.11,
     # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
     # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
     # they just won't resolve on a different runner, while $ORIGIN still does.
     set_target_properties(${PROJECT_NAME} PROPERTIES
         BUILD_WITH_INSTALL_RPATH TRUE
-        INSTALL_RPATH "$ORIGIN/tt-blaze/pipeline_manager"
+        INSTALL_RPATH "$ORIGIN/tt-llm-engine"
         INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 endif()
