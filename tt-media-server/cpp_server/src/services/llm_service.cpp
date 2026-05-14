@@ -381,6 +381,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool useJsonParser =
           toolChoiceType == "function" || toolChoiceType == "required";
       std::optional<std::string> finalFinishReason;
+      auto captureFinalFinishReason =
+          [&finalFinishReason](const LLMStreamChunk& response) {
+            if (!response.choices.empty() &&
+                response.choices[0].finish_reason.has_value()) {
+              finalFinishReason = response.choices[0].finish_reason.value();
+            }
+          };
 
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
@@ -414,15 +421,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         // Emit tool call delta
         auto response = buildToolCallStreamChunk(
             token, toolCallResult->tool_calls_delta, isFinal);
-        if (isFinal) {
-          finalFinishReason = "tool_calls";
-        }
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
 
       } else if (inToolCall) {
         // Inside tool call parsing, suppress regular output
         if (isFinal) {
-          finalFinishReason = "tool_calls";
           // Final token - emit empty chunk with finish_reason
           Json::Value emptyDelta(Json::arrayValue);
           Json::Value emptyCall;
@@ -431,6 +437,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           emptyDelta.append(emptyCall);
           auto response = buildToolCallStreamChunk(token, emptyDelta, true);
           entry->callback(response, isFinal);
+          captureFinalFinishReason(response);
         }
         // else: suppress, don't emit
 
@@ -441,14 +448,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           continue;
         }
 
-        if (isFinal) {
-          bool isStop =
-              stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
-          finalFinishReason = isStop ? "stop" : "length";
-        }
-
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
       }
 
       // Cleanup at finalization
