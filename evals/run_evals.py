@@ -16,9 +16,6 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.media_clients.base_strategy_interface import BaseMediaStrategy
-from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
-
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
@@ -79,12 +76,27 @@ def _select_eval_config(
     if limit_mode != EvalLimitMode.SMOKE_TEST or not eval_config.tasks:
         return eval_config
 
-    selected_task = eval_config.tasks[0]
-    logger.info(
-        "Smoke-test mode enabled; running only first eval task: %s",
-        selected_task.task_name,
-    )
-    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=[selected_task])
+    # TODO: revert this logic later
+    agentic_tasks = [
+        t for t in eval_config.tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    ]
+    non_agentic_tasks = [
+        t for t in eval_config.tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+    ]
+    selected_non_agentic = [non_agentic_tasks[0]] if non_agentic_tasks else []
+    if selected_non_agentic:
+        logger.info(
+            "Smoke-test mode: keeping first non-agentic task: %s",
+            selected_non_agentic[0].task_name,
+        )
+    if agentic_tasks:
+        logger.info(
+            "Smoke-test mode: keeping all %d agentic task(s): %s",
+            len(agentic_tasks),
+            [t.task_name for t in agentic_tasks],
+        )
+    tasks = selected_non_agentic + agentic_tasks
+    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=tasks)
 
 
 def _resolve_eval_limit(
@@ -114,6 +126,7 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     Raises:
         RuntimeError: If media server is not healthy after all retry attempts
     """
+    from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 
     # Create a minimal strategy instance just for health check
     class HealthCheckStrategy(BaseMediaStrategy):
@@ -154,6 +167,45 @@ def _setup_openai_api_key(args, logger):
         )
     os.environ["OPENAI_API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set.")
+
+
+def _has_agentic_eval_tasks(eval_config: EvalConfig) -> bool:
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        for task in eval_config.tasks
+    )
+
+
+def _get_openai_base_url(service_port) -> str:
+    return f"http://127.0.0.1:{service_port}/v1"
+
+
+def _setup_agentic_eval_env(service_port):
+    base_url = _get_openai_base_url(service_port)
+    os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
+    os.environ.setdefault("OPENAI_BASE_URL", base_url)
+    os.environ.setdefault("OPENAI_API_BASE", base_url)
+    logger.info("OpenAI-compatible environment configured for agentic evals.")
+
+
+def _resolve_n_tasks(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> Optional[int]:
+    agentic_config = task.agentic_eval_config or task.swebench_eval_config
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is None:
+        return agentic_config.n_tasks if agentic_config else None
+
+    limit_arg = task.limit_samples_map.get(limit_mode)
+    if limit_arg is None:
+        return agentic_config.n_tasks if agentic_config else None
+    if isinstance(limit_arg, float) and limit_arg < 1:
+        logger.warning(
+            "Agentic eval limits are task counts, not fractions; using one task for %s",
+            task.task_name,
+        )
+        return 1
+    return int(limit_arg)  # 0 means skip — callers check for this
 
 
 def parse_args():
@@ -213,6 +265,15 @@ def build_eval_command(
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC:
+        return build_agentic_eval_command(
+            task,
+            model_spec,
+            output_path,
+            service_port,
+            runtime_config=runtime_config,
+        )
+
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
@@ -348,6 +409,133 @@ def build_eval_command(
     return cmd
 
 
+def build_agentic_eval_command(
+    task: EvalTask,
+    model_spec,
+    output_path,
+    service_port,
+    runtime_config=None,
+) -> List[str]:
+    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    runner_path = project_root / "evals" / "agentic" / "run_agentic_eval.py"
+    n_tasks = _resolve_n_tasks(task, runtime_config)
+    if n_tasks == 0:
+        logger.info("Skipping agentic task %s: n_tasks=0 for this limit mode", task.task_name)
+        return []
+
+    if task.swebench_eval_config is not None:
+        swebench_config = task.swebench_eval_config
+        output_dir = (
+            Path(output_path) / f"eval_{model_spec.model_id}" / "agentic" / task.task_name
+        )
+        model_name = swebench_config.model or f"openai/{model_spec.hf_model_repo}"
+        cmd = [
+            str(task_venv_config.venv_python),
+            str(runner_path),
+            "swebench",
+            "--task-name",
+            task.task_name,
+            "--dataset-name",
+            swebench_config.dataset_name,
+            "--dataset-split",
+            swebench_config.dataset_split,
+            "--sweagent-subset",
+            swebench_config.sweagent_subset,
+            "--agent-backend",
+            swebench_config.agent_backend,
+            "--model-name",
+            model_name,
+            "--api-base",
+            _get_openai_base_url(service_port),
+            "--output-dir",
+            str(output_dir),
+            "--sweagent-config",
+            swebench_config.sweagent_config,
+            "--mini-config",
+            swebench_config.mini_config,
+            "--mini-model-class",
+            swebench_config.mini_model_class,
+            "--mini-environment-class",
+            swebench_config.mini_environment_class,
+            "--n-concurrent-trials",
+            str(swebench_config.n_concurrent_trials),
+            "--max-workers",
+            str(swebench_config.max_workers),
+            "--temperature",
+            str(swebench_config.temperature),
+            "--top-p",
+            str(swebench_config.top_p),
+            "--max-input-tokens",
+            str(swebench_config.max_input_tokens),
+            "--completion-kwargs-json",
+            json.dumps(swebench_config.completion_kwargs),
+            "--random-delay-multiplier",
+            str(swebench_config.random_delay_multiplier),
+        ]
+        if n_tasks is not None:
+            cmd.extend(["--n-tasks", str(n_tasks)])
+        if swebench_config.max_output_tokens is not None:
+            cmd.extend(["--max-output-tokens", str(swebench_config.max_output_tokens)])
+        if swebench_config.swebench_timeout_sec is not None:
+            cmd.extend(["--swebench-timeout-sec", str(swebench_config.swebench_timeout_sec)])
+        if not swebench_config.shuffle:
+            cmd.append("--no-shuffle")
+        return cmd
+
+    if task.agentic_eval_config is not None:
+        agentic_config = task.agentic_eval_config
+        jobs_dir = Path(output_path) / f"eval_{model_spec.model_id}" / "agentic"
+        model_name = agentic_config.model or f"openai/{model_spec.hf_model_repo}"
+        cmd = [
+            str(task_venv_config.venv_python),
+            str(runner_path),
+            "terminal-bench",
+            "--task-name",
+            task.task_name,
+            "--dataset",
+            agentic_config.dataset,
+            "--agent",
+            agentic_config.agent,
+            "--model-name",
+            model_name,
+            "--jobs-dir",
+            str(jobs_dir),
+            "--api-base",
+            _get_openai_base_url(service_port),
+            "--n-concurrent-trials",
+            str(agentic_config.n_concurrent_trials),
+            "--n-attempts",
+            str(agentic_config.n_attempts),
+            "--environment-type",
+            agentic_config.environment_type,
+            "--agent-kwargs-json",
+            json.dumps(agentic_config.agent_kwargs),
+        ]
+        if n_tasks is not None:
+            cmd.extend(["--n-tasks", str(n_tasks)])
+        if agentic_config.override_cpus is not None:
+            cmd.extend(["--override-cpus", str(agentic_config.override_cpus)])
+        if agentic_config.override_memory_mb is not None:
+            cmd.extend(["--override-memory-mb", str(agentic_config.override_memory_mb)])
+        if agentic_config.timeout_multiplier is not None:
+            cmd.extend(["--timeout-multiplier", str(agentic_config.timeout_multiplier)])
+        if agentic_config.agent_timeout_sec is not None:
+            cmd.extend(["--agent-timeout-sec", str(agentic_config.agent_timeout_sec)])
+        for task_name in agentic_config.task_names:
+            cmd.extend(["--include-task-name", task_name])
+        for task_name in agentic_config.exclude_task_names:
+            cmd.extend(["--exclude-task-name", task_name])
+        if not agentic_config.quiet:
+            cmd.append("--no-quiet")
+        if not agentic_config.yes:
+            cmd.append("--no-yes")
+        return cmd
+
+    raise ValueError(
+        f"Task {task.task_name} has neither agentic_eval_config nor swebench_eval_config"
+    )
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -398,9 +586,6 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    # copy env vars to pass to subprocesses
-    env_vars = os.environ.copy()
-
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
         message = f"No evaluation tasks defined for model: {model_spec.model_name}"
@@ -417,6 +602,13 @@ def main():
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
+
+    has_agentic_eval_tasks = _has_agentic_eval_tasks(eval_config)
+    if has_agentic_eval_tasks:
+        _setup_agentic_eval_env(runtime_config.service_port)
+
+    # copy env vars to pass to subprocesses
+    env_vars = os.environ.copy()
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -495,7 +687,9 @@ def main():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
 
-        if not disable_trace_capture:
+        if has_agentic_eval_tasks:
+            logger.info("Skipping trace capture for agentic eval tasks.")
+        elif not disable_trace_capture:
             if "image" in model_spec.supported_modalities:
                 prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
             else:
@@ -523,6 +717,10 @@ def main():
                 runtime_config.service_port,
                 runtime_config=runtime_config,
             )
+            if not cmd:
+                logger.info("Skipping task %s (no command built)", task.task_name)
+                return_codes.append(0)
+                continue
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
 
@@ -543,6 +741,11 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     This function uses ImageClient which can handle both cnn, image and audio transcription
     models via tt-media-server, but in the evals workflow it's only called for cnn and image models.
     """
+    from utils.media_clients.media_client_factory import (
+        MediaClientFactory,
+        MediaTaskType,
+    )
+
     logger.info(
         f"Running media (image and cnn) benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
@@ -560,6 +763,11 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run audio benchmarks for the given model and device.
     """
+    from utils.media_clients.media_client_factory import (
+        MediaClientFactory,
+        MediaTaskType,
+    )
+
     logger.info(
         f"Running audio evals for model: {model_spec.model_name} on device: {device.name}"
     )

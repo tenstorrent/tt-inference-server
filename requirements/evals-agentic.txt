@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_AGENTIC workflow venv.
+# Used by: setup_evals_agentic() in workflows/workflow_venvs.py
+#
+# SWE-agent is NOT listed here — it is cloned from GitHub and installed as an
+# editable package by the setup_evals_agentic() hook, so that its config
+# directory is available at a known path on disk.
+
+-c constraints.txt
+
+harbor
+mini-swe-agent
+git+https://github.com/epoch-research/SWE-bench.git

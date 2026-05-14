@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from evals.eval_utils import (
     score_multilevel_keys_mean,
@@ -24,6 +24,50 @@ class EvalTaskScore:
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
     tolerance: float = 0.05
+
+
+@dataclass(frozen=True)
+class AgenticEvalConfig:
+    dataset: str
+    agent: str
+    model: Optional[str] = None
+    n_concurrent_trials: int = 1
+    n_attempts: int = 1
+    n_tasks: Optional[int] = None
+    task_names: List[str] = field(default_factory=list)
+    exclude_task_names: List[str] = field(default_factory=list)
+    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    environment_type: str = "docker"
+    override_cpus: Optional[int] = None
+    override_memory_mb: Optional[int] = None
+    timeout_multiplier: Optional[float] = None
+    agent_timeout_sec: Optional[float] = None
+    quiet: bool = True
+    yes: bool = True
+
+
+@dataclass(frozen=True)
+class SWEbenchEvalConfig:
+    dataset_name: str
+    sweagent_subset: str = "verified"
+    dataset_split: str = "test"
+    agent_backend: str = "mini-swe-agent"
+    model: Optional[str] = None
+    n_concurrent_trials: int = 1
+    max_workers: int = 1
+    n_tasks: Optional[int] = None
+    temperature: float = 1.0
+    top_p: float = 0.95
+    max_input_tokens: int = 200 * 1024
+    max_output_tokens: Optional[int] = None
+    completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    sweagent_config: str = "config/default.yaml"
+    mini_config: str = "swebench.yaml"
+    mini_model_class: str = "litellm"
+    mini_environment_class: str = "docker"
+    swebench_timeout_sec: Optional[int] = None
+    shuffle: bool = True
+    random_delay_multiplier: float = 0.3
 
 
 @dataclass(frozen=True)
@@ -59,6 +103,8 @@ class EvalTask:
             EvalLimitMode.SMOKE_TEST: 0.01,
         }
     )
+    agentic_eval_config: Optional[AgenticEvalConfig] = None
+    swebench_eval_config: Optional[SWEbenchEvalConfig] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -91,6 +137,102 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    # Leaving these here for now
+    # TODO: Move to a more appropriate place?
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.6-27B",
+        tasks=[
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=59.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=53.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4450842511",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=AgenticEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    n_tasks=89,
+                    # override_cpus=16,
+                    # override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0,
+                    EvalLimitMode.CI_COMMIT: 0,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=62.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    # we will need to specify specific tasks
+                    # for CI runs to keep runtime reasonable
+                    dataset_split="test",
+                    # that is the preferred agent for evaluation,
+                    # but we can also run with the default sweagent
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=200 * 1024,
+                    # max output tokens is not specifed in Qwen docs btw
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0,
+                    EvalLimitMode.CI_COMMIT: 0,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="arcee-ai/AFM-4.5B",
         tasks=[
@@ -3144,3 +3286,8 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
+# TODO: remove this when we have eval configs for all model specs, but in the meantime,
+# for dummy testing, we want to include all eval configs
+# even if they don't have a corresponding MODEL_SPEC
+for eval_config in _eval_config_list:
+    EVAL_CONFIGS.setdefault(eval_config.hf_model_repo.split("/")[-1], eval_config)
