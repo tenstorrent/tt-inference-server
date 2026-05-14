@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 import argparse
 import csv
@@ -209,6 +209,41 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         }
         return params
 
+    # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
+    # Dataset is non-greedy so names that contain underscores (e.g.
+    # "xgrammar_bench") are captured up to the so-/no-so anchor that follows.
+    # Example: benchmark_structured_id_tt-transformers_Llama-3.1-8B-Instruct_galaxy_2026-04-28_18-01-30_dataset-xgrammar_bench_so-1.0_osl-128_maxcon-4_n-100.json
+    structured_pattern = r"""
+        ^benchmark_structured_
+        (?P<model>.+?)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _dataset-(?P<dataset>.+?)
+        _(?P<so_tag>no-so|so-[\d.]+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        \.json$
+    """
+    match = re.search(structured_pattern, filename, re.VERBOSE)
+    if match:
+        logger.info(
+            f"Found structured-output benchmark pattern in filename: {filename}"
+        )
+        so_tag = match.group("so_tag")
+        ratio = None if so_tag == "no-so" else float(so_tag.removeprefix("so-"))
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "dataset": match.group("dataset"),
+            "structured_output_ratio": ratio,
+            "task_type": "structured_output",
+        }
+
     # Fall back to text benchmark pattern
     text_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
@@ -383,8 +418,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
+                "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+                * 1000,
                 "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                     "inference_steps_per_second", 0
                 ),
@@ -408,8 +443,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_inference_steps": benchmarks_data.get("benchmarks").get(
                     "num_inference_steps", 0
                 ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
+                "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+                * 1000,
                 "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                     "inference_steps_per_second", 0
                 ),
@@ -418,9 +453,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             }
             return format_metrics(metrics)
 
-    if params.get("task_type") == "text_to_speech" or params.get("task_type") == "tts":
+    if params.get("task_type") == "text_to_speech":
         logger.info(f"Processing TTS benchmark file: {filename}")
-        # For TTS benchmarks, extract data from JSON content
+        # Producer emits latency in seconds; convert to ms for display.
         benchmarks_data = data.get("benchmarks", {})
         metrics = {
             "timestamp": params["timestamp"],
@@ -430,25 +465,28 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "text_to_speech",
             "device": params["device"],
             "num_requests": benchmarks_data.get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("ttft", 0)
-            * 1000,  # ttft is in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("latency", 0) * 1000,
             "filename": filename,
-            "task_type": "tts",
+            "task_type": "text_to_speech",
             "rtr": benchmarks_data.get("rtr", 0),
-            "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
-            if benchmarks_data.get("ttft_p90")
-            else None,
-            "p95_ttft": benchmarks_data.get("ttft_p95", 0) * 1000
-            if benchmarks_data.get("ttft_p95")
-            else None,
+            "p90_latency_ms": (
+                benchmarks_data["latency_p90"] * 1000
+                if benchmarks_data.get("latency_p90") is not None
+                else None
+            ),
+            "p95_latency_ms": (
+                benchmarks_data["latency_p95"] * 1000
+                if benchmarks_data.get("latency_p95") is not None
+                else None
+            ),
             "wer": benchmarks_data.get("wer", None),
         }
         return format_metrics(metrics)
 
     if params.get("task_type") == "audio":
         logger.info(f"Processing AUDIO benchmark file: {filename}")
-        # For audio benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks: ", data)
+        ttft_seconds = benchmarks_data.get("benchmarks").get("ttft")
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -457,8 +495,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "backend": "audio",
             "device": params["device"],
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+            * 1000,
+            "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
             "task_type": "audio",
             "accuracy_check": benchmarks_data.get("benchmarks").get(
@@ -518,8 +557,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "filename": filename,
             "task_type": "video",
             "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
+            * 1000,
             "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
                 "inference_steps_per_second", 0
             ),
@@ -528,6 +567,16 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             ),
         }
         return format_metrics(metrics)
+
+    if params.get("task_type") == "structured_output":
+        logger.info(f"Processing STRUCTURED OUTPUT benchmark file: {filename}")
+        # Filename omits isl for structured-output runs; derive mean ISL from
+        # the upstream payload so the default path below can use it.
+        total_input_tokens = data.get("total_input_tokens") or 0
+        num_prompts = data.get("num_prompts") or params["num_requests"]
+        params["input_sequence_length"] = (
+            round(total_input_tokens / num_prompts) if num_prompts else 0
+        )
 
     # Calculate statistics for text/image benchmarks
     logger.info(
@@ -546,8 +595,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         std_tps = None
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode_throughput = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill_throughput = (params["input_sequence_length"] * actual_max_con) / (
-        data.get("mean_ttft_ms") / 1000
+    tps_prefill_throughput = (
+        (params["input_sequence_length"] * actual_max_con)
+        / (data.get("mean_ttft_ms") / 1000)
+        if params["input_sequence_length"] and data.get("mean_ttft_ms")
+        else None
     )
 
     metrics = {
@@ -585,6 +637,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "images_per_prompt": params["images_per_prompt"],
                 "image_height": params["image_height"],
                 "image_width": params["image_width"],
+            }
+        )
+
+    if params["task_type"] == "structured_output":
+        metrics.update(
+            {
+                "dataset": params["dataset"],
+                "structured_output_ratio": params["structured_output_ratio"],
+                "correct_rate_pct": data.get("correct_rate(%)"),
             }
         )
 
@@ -715,6 +776,7 @@ def create_audio_display_dict(
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
@@ -758,10 +820,10 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("rtr", "RTR"),
-        ("p90_ttft", "P90 TTFT (ms)"),
-        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
         # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
         # Similar to how image and audio pipelines work
     ]
@@ -810,7 +872,7 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("inference_steps_per_second", "Steps/Sec"),
     ]
 
@@ -826,12 +888,12 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
 
 
 def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for cnn benchmarks
+    """Create display dictionary for CNN benchmarks."""
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("task_type", "Task Type"),
     ]
 
@@ -844,13 +906,13 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
 
 def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for video benchmarks
+    """Create display dictionary for video benchmarks."""
     logger.info(f"Video result: {json.dumps(result, indent=2)}")
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
     ]
 
     display_dict = {}
@@ -1004,6 +1066,71 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
     return "\n".join([header_row, separator_row] + value_rows) + end_notes + explain_str
 
 
+def render_structured_output_sections(
+    structured_results: List[Dict[str, Any]],
+    model_name: str,
+    device: str,
+    source_label: str = "",
+) -> List[str]:
+    """Render a single combined markdown section for structured-output results.
+
+    Deduplicates per (dataset, ratio) by keeping the latest run by timestamp,
+    then emits one table covering all groups so they can be compared
+    side-by-side. Dataset, SO Ratio, and Correct Rate appear as columns
+    alongside the standard performance metrics.
+    """
+    if not structured_results:
+        return []
+
+    latest_by_key: Dict[Tuple[str, float], Dict[str, Any]] = {}
+    for r in structured_results:
+        key = (r.get("dataset", ""), r.get("structured_output_ratio"))
+        existing = latest_by_key.get(key)
+        if existing is None or str(r.get("timestamp", "")) > str(
+            existing.get("timestamp", "")
+        ):
+            latest_by_key[key] = r
+
+    sorted_keys = sorted(
+        latest_by_key.keys(),
+        key=lambda kv: (kv[0], kv[1] if isinstance(kv[1], (int, float)) else -1.0),
+    )
+
+    display_rows: List[Dict[str, str]] = []
+    for key in sorted_keys:
+        r = latest_by_key[key]
+        ratio = r.get("structured_output_ratio")
+        if isinstance(ratio, (int, float)):
+            ratio_str = f"{ratio:.1f}"
+        elif ratio in (None, NOT_MEASURED_STR):
+            ratio_str = "off"
+        else:
+            ratio_str = str(ratio)
+        cr = r.get("correct_rate_pct")
+        if isinstance(cr, (int, float)):
+            cr_str = f"{cr:g}%"
+        elif cr in (None, NOT_MEASURED_STR):
+            cr_str = NOT_MEASURED_STR
+        else:
+            cr_str = str(cr)
+
+        row = {
+            "Dataset": str(r.get("dataset", "")),
+            "SO Ratio": ratio_str,
+        }
+        row.update(create_display_dict(r))
+        row["Correct Rate"] = cr_str
+        display_rows.append(row)
+
+    table_md = get_markdown_table(display_rows)
+    prefix = f"{source_label} " if source_label else ""
+    title = (
+        f"#### {prefix}Structured Output Performance Benchmark Sweeps "
+        f"for {model_name} on {device}"
+    )
+    return [f"{title}\n\n{table_md}"]
+
+
 def save_markdown_table(
     markdown_str: str, filepath: str, add_title: str = None, add_notes: List[str] = None
 ) -> None:
@@ -1082,10 +1209,13 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
-    tts_results = [r for r in results if r.get("task_type") == "tts"]
+    tts_results = [r for r in results if r.get("task_type") == "text_to_speech"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]
+    structured_results = [
+        r for r in results if r.get("task_type") == "structured_output"
+    ]
 
     markdown_sections = []
 
@@ -1095,6 +1225,14 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         text_markdown_str = get_markdown_table(text_display_results)
         text_section = f"#### Text-to-Text Performance Benchmark Sweeps for {model_name} on {device}\n\n{text_markdown_str}"
         markdown_sections.append(text_section)
+
+    # Generate structured-output sections (one per dataset+ratio combination)
+    if structured_results:
+        markdown_sections.extend(
+            render_structured_output_sections(
+                structured_results, model_name, device, source_label=""
+            )
+        )
 
     # Generate VLM benchmarks section if any exist
     if vlm_results:

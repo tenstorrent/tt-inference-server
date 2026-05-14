@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #pragma once
 
 #include <mutex>
@@ -7,6 +7,8 @@
 #include <unordered_map>
 
 #include "profiling/tracy.hpp"
+
+namespace tt::utils {
 
 template <typename Key, typename Value>
 class ConcurrentMap {
@@ -19,7 +21,12 @@ class ConcurrentMap {
     map_[key] = value;
   }
 
-  std::optional<Value> get(const Key& key) {
+  void insert(const Key& key, Value&& value) {
+    std::lock_guard lock(mutex);
+    map_[key] = std::move(value);
+  }
+
+  std::optional<Value> get(const Key& key) const {
     std::lock_guard lock(mutex);
     auto it = map_.find(key);
     if (it != map_.end()) {
@@ -44,7 +51,22 @@ class ConcurrentMap {
     return value;
   }
 
-  bool contains(const Key& key) {
+  template <typename Pred>
+  std::optional<Value> takeIf(const Key& key, Pred&& pred) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) {
+      return std::nullopt;
+    }
+    if (!pred(it->second)) {
+      return std::nullopt;
+    }
+    auto value = std::move(it->second);
+    map_.erase(it);
+    return value;
+  }
+
+  bool contains(const Key& key) const {
     std::lock_guard lock(mutex);
     return map_.find(key) != map_.end();
   }
@@ -52,6 +74,28 @@ class ConcurrentMap {
   void clear() {
     std::lock_guard lock(mutex);
     map_.clear();
+  }
+
+  size_t size() const {
+    std::lock_guard lock(mutex);
+    return map_.size();
+  }
+
+  template <typename Func>
+  bool modify(const Key& key, Func&& func) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) return false;
+    func(it->second);
+    return true;
+  }
+
+  // Get a pointer to the value in the map
+  Value* getPtr(const Key& key) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) return nullptr;
+    return &it->second;
   }
 
   template <typename Func>
@@ -67,5 +111,7 @@ class ConcurrentMap {
 
  private:
   std::unordered_map<Key, Value> map_;
-  TRACY_LOCKABLE(std::mutex, mutex);
+  mutable TRACY_LOCKABLE(std::mutex, mutex);
 };
+
+}  // namespace tt::utils

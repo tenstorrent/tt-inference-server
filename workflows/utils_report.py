@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from __future__ import annotations
 
@@ -121,6 +121,13 @@ class BenchmarkTaskParams:
 
     # has to go in here so init can read it
     num_inference_steps: int = None  # Used for CNN models
+
+    # Structured-output benchmark fields. structured_dataset is one of
+    # {"json", "json-unique", "grammar", "regex", "choice", "xgrammar_bench"}.
+    # structured_output_ratio is the fraction of requests using structured
+    # outputs; None means run with --no-structured-output (the baseline).
+    structured_dataset: str = None
+    structured_output_ratio: float = None
 
     def __post_init__(self):
         self._infer_data()

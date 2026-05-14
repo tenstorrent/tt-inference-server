@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "config/settings.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
@@ -14,7 +15,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
 
@@ -60,10 +61,10 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
                   // all).
   }
   std::vector<std::string> out;
-  const std::string SEP = "),(";
+  const std::string sep = "),(";
   size_t pos = 0;
   for (;;) {
-    size_t next = s.find(SEP, pos);
+    size_t next = s.find(sep, pos);
     std::string segment =
         (next == std::string::npos) ? s.substr(pos) : s.substr(pos, next - pos);
     if (!segment.empty()) {
@@ -72,27 +73,23 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
     }
     out.push_back(std::move(segment));
     if (next == std::string::npos) break;
-    pos = next + SEP.size();
+    pos = next + sep.size();
   }
   return out;
 }
 
 const std::vector<std::string>& deviceIdsParsed() {
-  static std::vector<std::string> cached;
-  std::string current = envString("DEVICE_IDS", defaults::DEVICE_IDS);
-  static std::string lastEnv;
-  if (current != lastEnv) {
-    lastEnv = std::move(current);
-    cached = parseDeviceIds(lastEnv);
-  }
+  static const std::vector<std::string> cached =
+      parseDeviceIds(envString("DEVICE_IDS", defaults::DEVICE_IDS));
   return cached;
 }
 
 }  // namespace
 
 ModelService modelService() {
-  return modelServiceFromString(
+  static const ModelService cached = modelServiceFromString(
       envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
+  return cached;
 }
 
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
@@ -129,7 +126,7 @@ static std::filesystem::path tokenizersDir() {
 std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -142,7 +139,7 @@ std::string tokenizerPath() { return tokenizerPath(modelType()); }
 std::string tokenizerConfigPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer_config.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -158,51 +155,156 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
+std::string blazeSocketDescriptorPrefix() {
+  static const std::string cached =
+      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
+                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
+  return cached;
+}
+
+unsigned pmConnectTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+}
+
+size_t dsMaxUsers() {
+  return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+}
+
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
+unsigned outputHangTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+}
+
+bool useDeepseekMdFormat() {
+  return static_cast<bool>(
+      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
+}
+
+std::string ttTaskQueueName() {
+  return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string ttResultQueueName() {
+  return envString("TT_RESULT_QUEUE", defaults::TT_RESULT_QUEUE);
+}
+
+std::string ttCancelQueueName() {
+  return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
+}
+
+std::string ttWarmupSignalsQueueName() {
+  return envString("TT_WARMUP_SIGNALS_QUEUE",
+                   defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string ttMemoryRequestQueueName() {
+  return envString("TT_MEMORY_REQUEST_QUEUE",
+                   defaults::TT_MEMORY_REQUEST_QUEUE);
+}
+
+std::string ttMemoryResultQueueName() {
+  return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
+size_t resultQueueCapacity() {
+  return envUlong("RESULT_QUEUE_CAPACITY", defaults::RESULT_QUEUE_CAPACITY);
+}
+
+size_t cancelQueueCapacity() {
+  return envUlong("CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY);
+}
+
+size_t memoryQueueCapacity() {
+  return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+int shmSlots() {
+  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
+}
+
+int prefillMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
+}
+
+int decodeMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
+}
+
 LLMConfig llmEngineConfig() {
-  LLMConfig cfg;
-  cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
-  cfg.max_in_flight_count = maxInFlightCount();
-  std::string backend =
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-  if (backend == "pipeline") {
-    cfg.runner_type = ModelRunnerType::PIPELINE;
-    cfg.max_in_flight_count = 1;
-  } else if (backend == "llama") {
-    cfg.kvcache_block_size = 32;
-    cfg.max_num_batched_tokens = 16384;
-    cfg.runner_type = ModelRunnerType::LLAMA;
-  } else if (backend == "mock") {
-    cfg.runner_type = ModelRunnerType::MOCK;
-  } else if (backend == "mock_pipeline") {
-    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-  } else {
-    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-  }
-  cfg.scheduling_policy = schedulingPolicy();
-  return cfg;
+  static const LLMConfig cached = [] {
+    LLMConfig cfg;
+    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
+    cfg.max_in_flight_count = maxInFlightCount();
+    std::string backend =
+        envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
+    if (backend == "prefill") {
+      cfg.runner_type = ModelRunnerType::PREFILL;
+      cfg.max_in_flight_count = 1;
+    } else if (backend == "llama") {
+      cfg.kvcache_block_size = 32;
+      cfg.max_num_batched_tokens = 16384;
+      cfg.runner_type = ModelRunnerType::LLAMA;
+    } else if (backend == "mock") {
+      cfg.runner_type = ModelRunnerType::MOCK;
+    } else if (backend == "mock_pipeline") {
+      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    } else if (backend == "pipeline_manager") {
+      cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
+    } else {
+      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    }
+    cfg.scheduling_policy = schedulingPolicy();
+    return cfg;
+  }();
+  return cached;
 }
 
 ModelType modelType() {
-  return modelTypeFromDeviceBackend(
+  static const ModelType cached = modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  return cached;
+}
+
+Model model() {
+  static const Model cached =
+      modelFromString(envString("MODEL", defaults::MODEL));
+  return cached;
 }
 
 LLMMode llmMode() {
-  return llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
+  static const LLMMode cached =
+      llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
+  return cached;
 }
 
 SchedulingPolicy schedulingPolicy() {
-  return schedulingPolicyFromString(
+  static const SchedulingPolicy cached = schedulingPolicyFromString(
       envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
+  return cached;
 }
 
 size_t maxInFlightCount() {
-  return static_cast<size_t>(
+  static const size_t cached = static_cast<size_t>(
       envUlong("MAX_IN_FLIGHT_COUNT", defaults::MAX_IN_FLIGHT_COUNT));
+  return cached;
 }
 
 std::string socketHost() {
-  return envString("SOCKET_HOST", defaults::SOCKET_HOST);
+  static const std::string cached =
+      envString("SOCKET_HOST", defaults::SOCKET_HOST);
+  return cached;
 }
 
 bool enableAccumulatedStreaming() {
@@ -216,12 +318,81 @@ size_t maxAccumulatedTokens() {
 }
 
 uint16_t socketPort() {
-  return static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
+  static const uint16_t cached =
+      static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
+  return cached;
 }
 
 size_t maxQueueSize() {
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+  return cached;
+}
+
+namespace {
+std::atomic<size_t> maxSessionsCountOverride{0};
+}
+
+size_t maxSessionsCount() {
+  size_t overrideVal = maxSessionsCountOverride.load(std::memory_order_relaxed);
+  if (overrideVal > 0) {
+    return overrideVal;
+  }
   return static_cast<size_t>(
-      envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+      envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+void setMaxSessionsCount(size_t count) {
+  maxSessionsCountOverride.store(count, std::memory_order_relaxed);
+}
+
+unsigned sessionEvictionRate() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_EVICTION_RATE", defaults::SESSION_EVICTION_RATE));
+}
+
+size_t sessionEvictionCount() {
+  return static_cast<size_t>(
+      envUlong("SESSION_EVICTION_COUNT", defaults::SESSION_EVICTION_COUNT));
+}
+
+size_t maxTokensToPrefillOnDecode() {
+  return static_cast<size_t>(
+      envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
+               defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
+}
+
+size_t maxContextLength() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
+  return cached;
+}
+
+bool useFastMode() {
+  return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
+}
+
+std::string kafkaBrokers() {
+  return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
+}
+
+std::string kafkaOffloadTopicName() {
+  return envString("KAFKA_OFFLOAD_TOPIC_NAME",
+                   defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaGroupId() {
+  return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
+}
+unsigned sessionAllocationMaxRetries() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_ALLOCATION_MAX_RETRIES",
+               defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

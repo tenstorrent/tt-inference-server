@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#include "utils/id_generator.hpp"
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // Smoke test: two processes communicate through a Boost IPC task queue.
 //
 //   Parent  -- creates the shared-memory message queue, pushes two sequences,
 //              then forks.
-//   Child   -- opens the queue via BoostIpcTaskQueue, creates a Scheduler,
+//   Child   -- opens the queue via boost TaskQueue, creates a Scheduler,
 //              calls schedule(), and verifies the deserialized batch.
 //
 // Exit code 0 = PASS.
@@ -21,20 +22,24 @@
 #include <iostream>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 namespace ipc = boost::interprocess;
+
+using namespace tt::domain::llm;
 
 static const char* queueName = "tt_ipc_scheduler_smoke_test";
 static constexpr size_t MAX_NUM_MSGS = 64;
 static constexpr size_t MAX_MSG_SIZE = 4096;
 
 int main() {
-  using namespace llm_engine;
+  using namespace tt::runners::schedulers;
   using Config = tt::config::LLMConfig;
 
   // Clean up any leftover queue from a previous failed run.
@@ -45,16 +50,15 @@ int main() {
                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  std::string seq1Id = TaskID::generate();
-  std::string seq2Id = TaskID::generate();
-  Sequence seq1(TaskID(seq1Id), 256, {1, 2, 3, 4},
-                SamplingParams{.max_tokens = 10});
-  Sequence seq2(TaskID(seq2Id), 256, {10, 20, 30},
+  uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();
+  uint32_t seq2Id = tt::utils::TaskIDGenerator::generate();
+  Sequence seq1(seq1Id, 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
-  // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
+  // Push via boost TaskQueue (opens the existing shared-memory queue).
   {
-    tt::ipc::BoostIpcTaskQueue producer(queueName);
+    tt::ipc::boost::TaskQueue producer(queueName);
     producer.push(seq1);
     producer.push(seq2);
   }
@@ -80,7 +84,7 @@ int main() {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(queueName);
+    auto queue = std::make_unique<tt::ipc::boost::TaskQueue>(queueName);
     PrefillFirstScheduler sched(config, queue.get(), 1);
 
     auto [batch, is_prefill] = sched.schedule();
@@ -91,10 +95,11 @@ int main() {
     for (auto* s : batch) {
       std::cout << "[child]    task_id=" << s->taskId << " size=" << s->size()
                 << " max_tokens="
-                << (s->samplingParams->max_tokens.has_value()
-                        ? std::to_string(s->samplingParams->max_tokens.value())
+                << (s->getSamplingParams().max_tokens.has_value()
+                        ? std::to_string(
+                              s->getSamplingParams().max_tokens.value())
                         : "none")
-                << " temperature=" << s->samplingParams->temperature
+                << " temperature=" << s->getSamplingParams().temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -114,9 +119,9 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->taskId.id != seq1Id) fail("seq1 task_id mismatch");
+      if (batch[0]->taskId != seq1Id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->samplingParams->max_tokens != 10)
+      if (batch[0]->getSamplingParams().max_tokens != 10)
         fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 || (*batch[0])[2] != 3 ||
           (*batch[0])[3] != 4)

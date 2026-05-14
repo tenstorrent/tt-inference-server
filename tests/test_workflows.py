@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import json
 import importlib
+import json
 import os
 import tempfile
 from argparse import Namespace
@@ -14,7 +14,7 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from run import main
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
@@ -194,6 +194,8 @@ class TestWorkflowExecution:
 
         # Mock run_single_workflow to return ordered named results
         with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=True
+        ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
             workflow_results = run_workflows(
@@ -221,8 +223,8 @@ class TestWorkflowExecution:
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
 
-    def test_release_workflow_omits_tests_when_unconfigured(self):
-        """Test release skips the pytest workflow for models without test config."""
+    def test_release_workflow_omits_optional_tests_when_unconfigured(self):
+        """Test release skips optional workflows (pytest, spec_tests) when the model lacks config."""
         model_spec = Namespace(
             model_name="missing-model",
         )
@@ -244,18 +246,19 @@ class TestWorkflowExecution:
             )
 
         with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=False
+        ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ):
             workflow_results = run_workflows(
                 model_spec, runtime_config, "test_json_path.json"
             )
 
-        assert workflow_calls == ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+        assert workflow_calls == ["EVALS", "BENCHMARKS", "REPORTS"]
         assert workflow_results == [
             WorkflowResult(workflow_name="evals", return_code=0),
             WorkflowResult(workflow_name="benchmarks", return_code=1),
-            WorkflowResult(workflow_name="spec_tests", return_code=2),
-            WorkflowResult(workflow_name="reports", return_code=3),
+            WorkflowResult(workflow_name="reports", return_code=2),
         ]
 
     def test_non_release_workflow_includes_reports_result(self):
@@ -552,11 +555,15 @@ class TestMainWorkflowIntegration:
     def test_main_workflow_benchmarks_no_docker(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py workflow for benchmarks without docker server."""
+        """Test main run.py workflow for benchmarks without docker server.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
@@ -579,11 +586,15 @@ class TestMainWorkflowIntegration:
     def test_main_returns_one_when_any_workflow_fails(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py returns failure when any workflow result is non-zero."""
+        """Test main run.py returns failure when any workflow result is non-zero.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
@@ -778,42 +789,68 @@ class TestMainWorkflowIntegration:
 class TestSpecTestsBehavior:
     """Test spec-tests return codes for missing config and interruption."""
 
-    def test_spec_tests_missing_config_returns_one(self):
-        spec_tests_run = importlib.import_module("tests.server_tests.run")
+    def test_spec_tests_no_matching_suites_returns_one(self):
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
             model="missing-model",
             device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
         )
 
-        with patch.object(spec_tests_run, "configure_logging"), patch.object(
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
         ), patch.object(
-            spec_tests_run, "find_test_config_by_model_and_device", return_value=None
-        ), patch(
-            "builtins.open",
-            mock_open(read_data=json.dumps([{"weights": ["other"], "device": "n150"}])),
+            spec_tests_run.TestFrameworkRunner, "apply_filters", return_value=[]
         ):
             result = spec_tests_run.main()
 
         assert result == 1
 
     def test_spec_tests_keyboard_interrupt_returns_130(self):
-        spec_tests_run = importlib.import_module("tests.server_tests.run")
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
-            model="Llama-3.1-8B-Instruct",
+            model="stable-diffusion-xl-base-1.0",
             device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
         )
-        test_cases_config = {
+
+        fake_suite = {
+            "id": "fake",
+            "weights": ["fake"],
+            "device": "n150",
             "test_cases": [
                 {
                     "name": "FakeCase",
                     "module": "fake_server_tests_module",
                     "test_config": {},
                     "targets": {},
+                    "markers": [],
+                    "description": "",
+                    "enabled": True,
                 }
-            ]
+            ],
         }
 
         class FakeCase:
@@ -824,12 +861,12 @@ class TestSpecTestsBehavior:
 
         fake_module = Namespace(FakeCase=FakeCase)
 
-        with patch.object(spec_tests_run, "configure_logging"), patch.object(
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
         ), patch.object(
-            spec_tests_run,
-            "find_test_config_by_model_and_device",
-            return_value=test_cases_config,
+            spec_tests_run.TestFrameworkRunner,
+            "apply_filters",
+            return_value=[fake_suite],
         ), patch.object(
             spec_tests_run.importlib, "import_module", return_value=fake_module
         ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Union
@@ -1006,6 +1006,85 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-4B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "Qwen/Qwen3-4B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
             EvalTask(
@@ -1160,6 +1239,96 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=45.96,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=88.41,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=86.24,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "</s>",
+                    "stream": "False",
+                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -1329,10 +1498,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=91.40,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1346,9 +1515,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 2048,
+                    "max_length": 32768,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "1536"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -1358,10 +1530,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=81.00,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=81.31,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1375,9 +1547,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 2048,
+                    "max_length": 32768,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "1536"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -2335,10 +2510,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=(100 - 3.91),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
@@ -2365,10 +2540,10 @@ _eval_config_list = [
                     gpu_reference_score=(100 - 5.1208),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/194#issuecomment-2791159501",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
@@ -2399,6 +2574,23 @@ _eval_config_list = [
     ),
     EvalConfig(
         hf_model_repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        tasks=[
+            EvalTask(
+                task_name="load_video",
+                workflow_venv_type=WorkflowVenvType.EVALS_VIDEO,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         tasks=[
             EvalTask(
                 task_name="load_video",
@@ -2501,6 +2693,25 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/BAAI/bge-large-en-v1.5",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="BAAI/bge-m3",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score="",
+                    published_score_ref="",
+                    gpu_reference_score=0.7873,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/2892",
                     score_func=lambda results: 0.0,
                 ),
             ),
@@ -2707,7 +2918,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2738,7 +2949,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2769,7 +2980,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
             ),
@@ -2806,7 +3017,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2837,7 +3048,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2868,8 +3079,56 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-7B-Instruct",
+        tasks=[
+            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
+            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
+            # and send them as List[List[int]] to /v1/completions, which the forge
+            # server's pydantic schema rejects with HTTP 422 (it only accepts
+            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
+            # chat template host-side, sends prompts as strings, and the server
+            # tokenizes them — schema-compatible.
+            EvalTask(
+                task_name="ifeval",
+                tokenizer_backend="none",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                tokenizer_backend="none",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],

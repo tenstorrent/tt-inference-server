@@ -1,15 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 from functools import lru_cache
 from typing import Optional
 
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    MODEL_NAME_OVERRIDES,
+    INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
+    SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
+    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -32,8 +35,8 @@ class Settings(BaseSettings):
     device: Optional[str] = "n150"
 
     # Device settings
-    device_ids: str = "(0)"
-    is_galaxy: bool = False  # used for graph device split and class init
+    device_ids: str = DeviceIds.DEVICE_IDS_32.value
+    is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -41,14 +44,19 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.MOCK_VIDEO.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    training_model: Optional[str] = None
+    chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = False
+    download_weights_from_service: bool = True
+
+    # SDXL resolution (applies to text-to-image only, not img2img/inpainting)
+    sdxl_image_resolution: tuple = (1024, 1024)
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -68,6 +76,10 @@ class Settings(BaseSettings):
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
+    weights_distribution_timeout_seconds: int = 1200
+    # SHM response deadline in SPRunner (server-side proxy to video_runner).
+    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
+    video_request_timeout_seconds: float = 300.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -95,10 +107,26 @@ class Settings(BaseSettings):
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
 
+    # Video generation settings
+    use_async_video: bool = (
+        True  # If False, video is generated synchronously and returned directly
+    )
+
+    # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
+    # Currently only supported in LoraSingleChipRunner
+    lora_adapter: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.sdxl_image_resolution = tuple(self.sdxl_image_resolution)
+        if self.sdxl_image_resolution not in SDXL_VALID_IMAGE_RESOLUTIONS:
+            raise ValueError(
+                f"Invalid sdxl_image_resolution={self.sdxl_image_resolution}, "
+                f"must be one of {SDXL_VALID_IMAGE_RESOLUTIONS}"
+            )
 
         model_to_run = os.getenv("MODEL")
         logger.info(
@@ -140,7 +168,9 @@ class Settings(BaseSettings):
             model_runner_enum = ModelRunners(self.model_runner)
 
             # Use dictionary key access
-            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                model_runner_enum
+            )
 
             if model_names_set:
                 # Get first model name from the set
@@ -173,6 +203,7 @@ class Settings(BaseSettings):
             logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
+            self.max_batch_size = self.vllm.max_num_seqs
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
@@ -184,7 +215,7 @@ class Settings(BaseSettings):
             return
 
         dm = DeviceManager()
-        devices = None
+        devices = []
         mesh = self.device_mesh_shape
 
         try:
@@ -239,6 +270,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
+            ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
         ]:
             self.default_throttle_level = None
 
@@ -247,6 +280,7 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
+            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)
@@ -264,12 +298,23 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # Find the appropriate model runner for this model name
-        model_runner_enum = None
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+        explicit_runner = os.getenv("MODEL_RUNNER")
+        model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
+        if model_runner_enum is None:
+            logger.warning(
+                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
+                f"falling back to default runner."
+            )
+        else:
+            logger.info(
+                f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
+            )
+
+        for runner, model_names in INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
-                model_runner_enum = runner
-                break
+                if not model_runner_enum:
+                    model_runner_enum = runner
+                    break
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)
@@ -290,11 +335,19 @@ class Settings(BaseSettings):
             if supported_model:
                 self.model_weights_path = supported_model.value
 
-            # Apply all configuration values
+            # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key.upper() in os.environ:
+                        continue
                     if key == "vllm" and isinstance(value, dict):
                         value = VLLMSettings(**value)
+                    setattr(self, key, value)
+
+            # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
+            model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
+            for key, value in model_overrides.items():
+                if hasattr(self, key):
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value

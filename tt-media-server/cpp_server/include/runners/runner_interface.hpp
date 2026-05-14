@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -25,7 +25,7 @@ class IRunner {
   /**
    * Warm up the runner by preloading models and resources.
    */
-  bool warmup() { return true; }
+  virtual bool warmup() { return true; }
 
   /**
    * Warm up then run the inference loop. Optional onWarmupDone is invoked

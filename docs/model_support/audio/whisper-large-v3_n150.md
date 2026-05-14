@@ -40,7 +40,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
 | tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.0-bac8b34` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
 
 ---
 
@@ -63,4 +63,4 @@ python3 run.py --model whisper-large-v3 --device n300 --workflow server --docker
 | Max Batch Size | 1 |
 | Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
 | tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.0-bac8b34` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
@@ -7,6 +7,9 @@ project(tt_media_server_cpp CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
+add_compile_options(-g)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -69,6 +72,49 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# GCC 12's libstdc++ still uses the C++17-deprecated std::get_temporary_buffer
+# inside std::stable_sort, which gtest.cc triggers when sorting TestInfo*.
+# Silence on the googletest targets only — keep -Wdeprecated-declarations active
+# for our own code.
+foreach(_gt_target gtest gtest_main gmock gmock_main)
+    if(TARGET ${_gt_target})
+        target_compile_options(${_gt_target} PRIVATE -Wno-deprecated-declarations)
+    endif()
+endforeach()
+
+# xxHash for stable, cross-platform hashing (conversation prefix caching)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(xxhash)
+add_library(xxhash_lib INTERFACE)
+target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
+# xgrammar for structured output / guided decoding (JSON schema constrained generation)
+FetchContent_Declare(xgrammar
+    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
+    GIT_TAG        v0.1.33
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(xgrammar)
+if(NOT xgrammar_POPULATED)
+    FetchContent_Populate(xgrammar)
+    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
+    # in the source tree so its CMakeLists.txt picks up our settings.
+    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
+        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
+        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
+        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
+        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
+        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
+    )
+    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
+    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
+endif()
+
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -85,6 +131,9 @@ else()
     message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
+# Ensure static libraries are built with -fPIC (required when linking into shared libs like tt-llm-engine)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # spdlog for logging - use tt-metal's fmt library when available
 FetchContent_Declare(
     spdlog
@@ -98,16 +147,40 @@ set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(spdlog)
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
-find_package(Boost REQUIRED)
+find_package(Boost 1.71 REQUIRED)
+
+# Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
+option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+
+if(ENABLE_BLAZE)
+    # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
+    # the Full target adds SocketPipeline support when Metalium is available).
+    set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(tt-llm-engine)
+    message(STATUS "tt-llm-engine: ENABLED")
+else()
+    message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
+endif()
 
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
+
+# Option for Kafka support
+option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
 if(ENABLE_TRACY)
     FetchContent_Declare(
         tracy
         GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
-        GIT_TAG master
+        GIT_TAG v0.10-tt.0
     )
     FetchContent_MakeAvailable(tracy)
 
@@ -119,6 +192,20 @@ if(ENABLE_TRACY)
         TRACY_MANUAL_LIFETIME
     )
 endif()
+
+# Prometheus metrics (core only — no embedded HTTP server, no push gateway)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    prometheus-cpp
+    GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+    GIT_TAG        v1.2.4
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(prometheus-cpp)
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -134,7 +221,7 @@ FetchContent_MakeAvailable(tokenizers_cpp)
 if(CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
   if(CLANG_TIDY_EXE)
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*")
   else()
     message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
   endif()
@@ -187,48 +274,79 @@ else()
     endif()
 endif()
 
-# LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
-set(LLM_ENGINE_SOURCES
+# LLM runner static library (sources under include/runners/llm_runner/,
+# src/runners/llm_runner/; C++ namespace tt::runners::llm_engine)
+set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/block_manager.cpp
-    src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/scheduler.cpp
-    src/runners/llm_runner/sequence.cpp
-    src/runners/llm_runner/sampling_params.cpp
+    src/runners/schedulers/scheduler.cpp
+    src/domain/llm/sequence.cpp
+    src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
-    src/utils/tokenizer.cpp
-    src/utils/deepseek_tokenizer.cpp
-    src/utils/llama_tokenizer.cpp
-    src/utils/tokenizer_config_loader.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
-    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
-    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/utils/tokenizers/tokenizer.cpp
+    src/utils/tokenizers/deepseek_tokenizer.cpp
+    src/utils/tokenizers/llama_tokenizer.cpp
+    src/utils/tokenizers/tokenizer_config_loader.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
+    src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
+    src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
+    src/runners/guided_decoder_manager.cpp
+    src/services/deepseek_tool_call_parser.cpp
+    src/services/json_tool_call_parser.cpp
+    src/services/service_registry.cpp
+    src/utils/runner_registry.cpp
+    src/api/route_registry.cpp
 )
+
+# Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
+if(ENABLE_BLAZE)
+    list(APPEND LLM_RUNNER_LIB_SOURCES
+        src/runners/blaze_runner/blaze_runner.cpp
+        src/services/memory_services/blaze_memory_manager.cpp
+    )
+    message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
+endif()
+
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    list(APPEND LLM_ENGINE_SOURCES
+    list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runners/llama_model_runner.cpp
     )
-    message(STATUS "LLM engine: building with tt-metal socket integration")
+    message(STATUS "llm_runner_lib: building with tt-metal socket integration")
 else()
-    message(STATUS "LLM engine: building without tt-metal (tt-metal not found)")
+    message(STATUS "llm_runner_lib: building without tt-metal (tt-metal not found)")
 endif()
-add_library(llm_engine ${LLM_ENGINE_SOURCES})
-target_include_directories(llm_engine PUBLIC
+add_library(llm_runner_lib ${LLM_RUNNER_LIB_SOURCES})
+target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
+
+# Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
+# fall back to Core (mock pipeline only).
+if(ENABLE_BLAZE)
+    if(TARGET TtLlmEngine::Full)
+        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
+    elseif(TARGET TtLlmEngine::Core)
+        target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
+        message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
+    endif()
+    target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+else()
+    message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
+endif()
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
+    target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
     set(_tt_metal_lib_dir "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
@@ -237,28 +355,24 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
     endif()
     if(_tt_metal_lib_dir)
-        target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl fmt)
+        target_link_directories(llm_runner_lib PUBLIC "${_tt_metal_lib_dir}")
+        target_link_libraries(llm_runner_lib PUBLIC tt_metal tt_stl fmt)
     endif()
-    target_link_libraries(llm_engine PUBLIC pybind11::embed)
+    target_link_libraries(llm_runner_lib PUBLIC pybind11::embed)
 endif()
 if(USE_EXTERNAL_FMT)
-    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
+    target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
 else()
-    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog)
+    target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(llm_engine PUBLIC rt)
+    target_link_libraries(llm_runner_lib PUBLIC rt)
 endif()
-target_compile_features(llm_engine PUBLIC cxx_std_20)
+target_compile_features(llm_runner_lib PUBLIC cxx_std_20)
+target_compile_options(llm_runner_lib PRIVATE -Wall -Wextra -Wpedantic)
 
 if(ENABLE_TRACY)
-    target_link_libraries(llm_engine PUBLIC tracy_client)
-endif()
-
-option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
-if(LLM_ENGINE_DEBUG_BUILD)
-    target_compile_definitions(llm_engine PUBLIC LLM_ENGINE_DEBUG)
+    target_link_libraries(llm_runner_lib PUBLIC tracy_client)
 endif()
 
 option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
@@ -267,33 +381,33 @@ if(SANITIZE_THREAD AND SANITIZE_ADDRESS)
     message(FATAL_ERROR "SANITIZE_THREAD and SANITIZE_ADDRESS are mutually exclusive; enable only one.")
 endif()
 if(SANITIZE_THREAD)
-    target_compile_options(llm_engine PUBLIC -fsanitize=thread -g)
-    target_link_options(llm_engine PUBLIC -fsanitize=thread)
+    target_compile_options(llm_runner_lib PUBLIC -fsanitize=thread -g)
+    target_link_options(llm_runner_lib PUBLIC -fsanitize=thread)
 endif()
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
-    target_compile_options(llm_engine PUBLIC ${ASAN_FLAGS})
-    target_link_options(llm_engine PUBLIC -fsanitize=address)
+    target_compile_options(llm_runner_lib PUBLIC ${ASAN_FLAGS})
+    target_link_options(llm_runner_lib PUBLIC -fsanitize=address)
 endif()
 
-# Unit tests (LLM engine)
+# Unit tests (link llm_runner_lib)
 enable_testing()
 add_executable(scheduler_test tests/scheduler_test.cpp)
-target_link_libraries(scheduler_test PRIVATE llm_engine GTest::gtest_main)
+target_link_libraries(scheduler_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(scheduler_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 add_executable(llm_runner_test tests/llm_runner_test.cpp)
-target_link_libraries(llm_runner_test PRIVATE llm_engine GTest::gtest_main)
+target_link_libraries(llm_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(llm_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 add_executable(sequence_test tests/sequence_test.cpp)
-target_link_libraries(sequence_test PRIVATE llm_engine GTest::gtest_main)
+target_link_libraries(sequence_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -306,71 +420,350 @@ target_include_directories(lockfree_queue_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
-if(USE_EXTERNAL_FMT)
-    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
-else()
-    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
-endif()
-target_include_directories(test_tokenizer PRIVATE
+add_executable(test_tokenizer tests/test_tokenizer.cpp)
+target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
+target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
+target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(cancel_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancellation_test tests/cancellation_test.cpp)
+target_link_libraries(cancellation_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(cancellation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(structured_output_test tests/structured_output_test.cpp)
+target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(structured_output_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Tool call parser test
+add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
+target_link_libraries(test_tool_call_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_tool_call_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
+add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
+target_link_libraries(test_chat_template_tools PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_template_tools PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+target_compile_definitions(test_chat_template_tools PRIVATE
+    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
+)
+
+# Chat completion request test
+add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
+target_link_libraries(test_chat_completion_request PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_completion_request PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+# Reasoning parser test
+add_executable(test_reasoning_parser
+    tests/test_reasoning_parser.cpp
+    src/services/reasoning_parser.cpp
+)
+target_link_libraries(test_reasoning_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_reasoning_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+add_executable(worker_metrics_shm_test
+    tests/worker_metrics_shm_test.cpp
+    src/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(worker_metrics_shm_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_metrics_shm_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(model_service_registry_test
+    tests/model_service_registry_test.cpp
+    src/services/service_container.cpp
+)
+target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
+target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
+target_include_directories(concurrent_map_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(session_test
+    tests/session_test.cpp
+    src/domain/session.cpp
+)
+target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_include_directories(session_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(session_manager_test
+    tests/session_manager_test.cpp
+    src/domain/session.cpp
+    src/services/session_manager.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(session_manager_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(session_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+add_executable(worker_manager_test
+    tests/worker_manager_test.cpp
+    src/worker/process_liveness.cpp
+)
+target_link_libraries(worker_manager_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+# LLMService unit test: drives processStreamingRequest in-process.
+# Pulls in the same translation units that the main server links so the
+# real LLMService can be constructed without forking workers.
+add_executable(llm_service_test
+    tests/llm_service_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+)
+target_link_libraries(llm_service_test PRIVATE
+    llm_runner_lib
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(llm_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+add_executable(main_integration_test
+    tests/main_integration_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/domain/session.cpp
+    src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
+    src/worker/single_process_worker.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runners/embedding_runner.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
+)
+target_link_libraries(main_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    GTest::gtest_main)
+target_include_directories(main_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
+# main_integration_test boots the whole server stack (services, IPC queues,
+# Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
+# tears it down via TearDownTestSuite. Registering each TEST_F as its own
+# ctest entry would invoke the binary once per test, paying that boot cost six
+# times AND exposing a racy teardown. Run all six tests in a single process.
+add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
+# fails with ctest's captured stdout instead of hanging the job indefinitely.
+set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(conversation_hasher_test)
+gtest_discover_tests(cancel_queue_test)
+gtest_discover_tests(cancellation_test)
+gtest_discover_tests(structured_output_test)
+gtest_discover_tests(worker_metrics_shm_test)
+gtest_discover_tests(concurrent_map_test)
+gtest_discover_tests(session_test)
+gtest_discover_tests(session_manager_test)
+gtest_discover_tests(worker_manager_test)
+gtest_discover_tests(llm_service_test)
+gtest_discover_tests(model_service_registry_test)
+
+# Register tool call tests
+add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
+add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
+add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
+add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
-target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_engine)
+target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib)
 target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
-# Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
-target_include_directories(tokenizer_benchmark PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+# Cancellation E2E test (starts mock server, runs Python tests, stops server)
+add_test(NAME CancellationE2E
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-if(USE_EXTERNAL_FMT)
-    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
+
+# Tokenizer benchmark
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
+target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
+
+# Kafka messaging support (optional)
+if(KAFKA_ENABLED)
+    # Kafka messaging library
+    find_library(RDKAFKA_LIB rdkafka REQUIRED)
+    find_library(RDKAFKACPP_LIB rdkafka++ REQUIRED)
+    find_path(RDKAFKA_INCLUDE_DIR librdkafka/rdkafka.h REQUIRED)
+
+    message(STATUS "Kafka support enabled")
+    message(STATUS "  librdkafka: ${RDKAFKA_LIB}")
+    message(STATUS "  librdkafka++: ${RDKAFKACPP_LIB}")
+    message(STATUS "  include: ${RDKAFKA_INCLUDE_DIR}")
+
+    add_library(messaging
+        src/messaging/kafka_producer.cpp
+        src/messaging/kafka_consumer.cpp
+    )
+    target_include_directories(messaging PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${RDKAFKA_INCLUDE_DIR}
+    )
+    target_link_libraries(messaging PUBLIC
+        ${RDKAFKA_LIB}
+        ${RDKAFKACPP_LIB}
+        spdlog::spdlog
+    )
+
+    # Migration worker library (for consumer instances)
+    add_library(migration_worker
+        src/worker/migration_worker.cpp
+    )
+    target_include_directories(migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+        JsonCpp::JsonCpp
+    )
 else()
-    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
+    message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
 
-# Source files
+# Source files that aren't provided by llm_runner_lib
 set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/socket_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
+    src/api/info_controller.cpp
     src/api/openapi.cpp
-    src/config/settings.cpp
-    src/ipc/boost_ipc_warmup_signal_queue.cpp
-    src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
-    src/utils/tokenizer.cpp
-    src/utils/logger.cpp
-    src/utils/deepseek_tokenizer.cpp
-    src/utils/llama_tokenizer.cpp
+    src/services/deepseek_tool_call_parser.cpp
+    src/services/json_tool_call_parser.cpp
+    src/services/session_manager.cpp
+    src/domain/session.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
+    src/worker/process_liveness.cpp
     src/utils/service_factory.cpp
+    src/services/service_container.cpp
+    src/services/model_service_registration.cpp
     src/utils/runner_factory.cpp
-    src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
+    src/sockets/socket_transport.cpp
     src/sockets/inter_server_service.cpp
+    src/metrics/metrics.cpp
+    src/api/metrics_controller.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/worker/worker_metrics_aggregator.cpp
+    src/worker/blaze_worker_metrics_renderer.cpp
 )
 
 # Create executable
@@ -380,18 +773,39 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_BINARY_DIR}/generated
     ${rapidjson_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-# Compile definitions for performance optimization
-target_compile_definitions(${PROJECT_NAME} PRIVATE)
+# Build-time codegen for config/build_info.hpp (build-identity constants
+# consumed by InfoController and any future caller that wants to label a
+# log line / metric / response with the running binary's version + SHAs).
+# Runs on every build so commit SHAs reflect the current tree, not whatever
+# was checked out at the last `cmake -B build` invocation.
+add_custom_target(generate_build_info ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DCPP_SERVER_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DTEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/include/config/build_info.hpp.in
+        -DOUTPUT=${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuildInfo.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/config/build_info.hpp
+    COMMENT "Generating config/build_info.hpp from VERSION + git"
+    VERBATIM
+)
+add_dependencies(${PROJECT_NAME} generate_build_info)
 
-# Link Drogon and llm_engine (used by LLMService)
+# Link Drogon, llm_runner_lib, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog fmt::fmt prometheus-cpp::core)
 else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog prometheus-cpp::core)
+endif()
+
+# Link Kafka messaging if enabled
+if(KAFKA_ENABLED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE messaging)
 endif()
 if(ENABLE_TRACY)
     target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
@@ -401,6 +815,28 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# Make the executable's runtime library lookup self-contained relative to
+# its own location (DT_RUNPATH = $ORIGIN/...). Required so the build
+# artifact can be unpacked and run on a different machine than the
+# build runner (e.g. CI build on ubuntu-latest, bench on a self-hosted
+# runner with a different workspace path). Without this, CMake bakes the
+# absolute build-time path into RUNPATH and ld.so fails to find
+# libtt_llm_engine_core.so.0 elsewhere.
+if(ENABLE_BLAZE)
+    # $ORIGIN/tt-llm-engine keeps libtt_llm_engine_core.so.0 / libtt_llm_engine.so.0
+    # resolvable when the build artifact is unpacked on a different machine.
+    # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
+    # directories (e.g. tt-llm-engine/tt-metal/build_Release/lib where libfmt.so.11,
+    # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
+    # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
+    # they just won't resolve on a different runner, while $ORIGIN still does.
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN/tt-llm-engine"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
 
 # Compiler warnings
 target_compile_options(${PROJECT_NAME} PRIVATE
@@ -414,19 +850,53 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
 endif()
 
+
+# Consumer executable (separate Drogon instance for Kafka consumption)
+if(KAFKA_ENABLED)
+    add_executable(tt_consumer
+        src/consumer_main.cpp
+    )
+    target_include_directories(tt_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    )
+    target_link_libraries(tt_consumer PRIVATE
+        Drogon::Drogon
+        llm_runner_lib
+        migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
-    target_compile_options(${PROJECT_NAME} PRIVATE ${ASAN_FLAGS})
-    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-    target_compile_options(scheduler_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(scheduler_test PRIVATE -fsanitize=address)
-    target_compile_options(llm_runner_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(llm_runner_test PRIVATE -fsanitize=address)
-    target_compile_options(sequence_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(sequence_test PRIVATE -fsanitize=address)
-    target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
-    target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
+    set(ASAN_TARGETS
+        ${PROJECT_NAME}
+        scheduler_test
+        llm_runner_test
+        sequence_test
+        lockfree_queue_test
+        ipc_scheduler_smoke_test
+        cancel_queue_test
+        cancellation_test
+        structured_output_test
+    )
+    if(KAFKA_ENABLED)
+        list(APPEND ASAN_TARGETS tt_consumer)
+    endif()
+    foreach(target IN LISTS ASAN_TARGETS)
+        target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endforeach()
 endif()

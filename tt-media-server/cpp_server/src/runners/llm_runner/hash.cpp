@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 static constexpr uint64_t K_FNV_PRIME = 1099511628211ULL;
 static constexpr uint64_t K_FNV_OFFSET = 0xcbf29ce484222325ULL;
@@ -26,4 +26,4 @@ int64_t hashTokenIds(const std::vector<int64_t>& tokenIds, int64_t prefix) {
   return static_cast<int64_t>(h);
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

@@ -1,93 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "api/embedding_controller.hpp"
+#include "utils/id_generator.hpp"
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <chrono>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
-#include <queue>
-#include <random>
-#include <sstream>
-#include <thread>
-#include <vector>
+#include <optional>
 
+#include "api/embedding_controller.hpp"
+#include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
+#include "services/service_container.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_factory.hpp"
+#include "utils/thread_pool.hpp"
 
 namespace tt::api {
 
 namespace {
-// Generate random hex string for task IDs
-std::string randomHex(size_t length) {
-  static const char HEX_CHARS[] = "0123456789abcdef";
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dist(0, 15);
-
-  std::string result;
-  result.reserve(length);
-  for (size_t i = 0; i < length; ++i) {
-    result += HEX_CHARS[dist(gen)];
-  }
-  return result;
-}
-
-// Simple thread pool for handling response callbacks
-class CallbackThreadPool {
- public:
-  CallbackThreadPool(size_t numThreads = 8) : stop(false) {
-    for (size_t i = 0; i < numThreads; ++i) {
-      workers.emplace_back([this] {
-        while (true) {
-          std::function<void()> task;
-          {
-            std::unique_lock lock(mutex);
-            cv.wait(lock, [this] { return stop || !tasks.empty(); });
-            if (stop && tasks.empty()) return;
-            task = std::move(tasks.front());
-            tasks.pop();
-          }
-          task();
-        }
-      });
-    }
-  }
-
-  ~CallbackThreadPool() {
-    {
-      std::lock_guard lock(mutex);
-      stop = true;
-    }
-    cv.notify_all();
-    for (auto& worker : workers) {
-      if (worker.joinable()) worker.join();
-    }
-  }
-
-  void submit(std::function<void()> task) {
-    {
-      std::lock_guard lock(mutex);
-      tasks.push(std::move(task));
-    }
-    cv.notify_one();
-  }
-
- private:
-  std::vector<std::thread> workers;
-  std::queue<std::function<void()>> tasks;
-  TRACY_LOCKABLE(std::mutex, mutex);
-  std::condition_variable_any cv;
-  bool stop;
-};
-
-// Global thread pool for callbacks
-CallbackThreadPool& getCallbackPool() {
-  static CallbackThreadPool pool(16);  // 16 threads for handling callbacks
+tt::utils::ThreadPool& getCallbackPool() {
+  static tt::utils::ThreadPool pool(
+      tt::config::defaults::CALLBACK_POOL_THREADS);
   return pool;
 }
 }  // namespace
@@ -97,19 +29,18 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::service_factory::getServiceByType<
-      services::EmbeddingService>();
+  service_ = std::dynamic_pointer_cast<tt::services::EmbeddingService>(
+      tt::services::ServiceContainer::instance().getService(
+          tt::config::ModelService::EMBEDDING));
   if (!service_) {
     throw std::runtime_error(
-        "[EmbeddingController] Embedding service not found in service factory. "
-        "Ensure register_services() is called before Drogon starts.");
+        "[EmbeddingController] Embedding service not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
   }
   TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }
 
 EmbeddingController::~EmbeddingController() = default;
-
-std::string EmbeddingController::generateTaskId() { return randomHex(24); }
 
 void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
@@ -119,28 +50,28 @@ void EmbeddingController::createEmbedding(
   // Parse request body
   auto json = req->getJsonObject();
   if (!json) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        Json::Value("Invalid JSON body"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
     return;
   }
 
-  // Validate required fields
   if (!json->isMember("input")) {
-    Json::Value error;
-    error["error"]["message"] = "Missing required field: input";
-    error["error"]["type"] = "invalid_request_error";
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Missing required field: input",
+                           "invalid_request_error"));
     return;
   }
 
-  // Build request
-  domain::TaskID taskId(generateTaskId());
-  domain::EmbeddingRequest request =
-      domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
+  uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+  std::optional<domain::EmbeddingRequest> requestOpt;
+  try {
+    requestOpt = domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::invalid_argument& e) {
+    callback(errorResponse(drogon::k400BadRequest, e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+  auto request = std::move(*requestOpt);
 
   // Default model if not specified
   if (request.model.empty()) {
@@ -159,12 +90,8 @@ void EmbeddingController::createEmbedding(
       auto gotResponseTime = std::chrono::steady_clock::now();
 
       if (!response.error.empty()) {
-        Json::Value error;
-        error["error"]["message"] = response.error;
-        error["error"]["type"] = "server_error";
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-        resp->setStatusCode(drogon::k500InternalServerError);
-        callback(resp);
+        callback(errorResponse(drogon::k500InternalServerError, response.error,
+                               "server_error"));
         return;
       }
 
@@ -195,19 +122,12 @@ void EmbeddingController::createEmbedding(
       callback(resp);
 
     } catch (const services::QueueFullException& e) {
-      Json::Value error;
-      error["error"]["message"] = e.what();
-      error["error"]["type"] = "rate_limit_exceeded";
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-      resp->setStatusCode(drogon::k429TooManyRequests);
-      callback(resp);
+      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                             "rate_limit_exceeded"));
     } catch (const std::exception& e) {
-      Json::Value error;
-      error["error"]["message"] = std::string("Internal error: ") + e.what();
-      error["error"]["type"] = "server_error";
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-      resp->setStatusCode(drogon::k500InternalServerError);
-      callback(resp);
+      callback(errorResponse(drogon::k500InternalServerError,
+                             std::string("Internal error: ") + e.what(),
+                             "server_error"));
     }
   });
 }

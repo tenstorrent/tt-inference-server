@@ -1,29 +1,42 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import os
+import pickle
 import struct
+import sys
 import threading
 import time
 import uuid
+from unittest.mock import Mock, patch
 
 import pytest
-
-import sys
-from unittest.mock import Mock
 
 sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
 mock_settings.enable_telemetry = False
+mock_settings.model_runner = "sp_runner"
+mock_settings.use_dynamic_batcher = False
+mock_settings.is_galaxy = False
+mock_settings.device_mesh_shape = (1, 1)
+# Match test_video_runner: unset Mock is truthy and breaks runner_utils env setup.
+mock_settings.default_throttle_level = ""
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
 sys.modules["telemetry.telemetry_client"] = Mock()
 
-from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
-
+from ipc.video_shm import (
+    VideoRequest,
+    VideoResponse,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+    video_result_path,
+)
 
 # ── Helpers ──
 
@@ -33,15 +46,18 @@ def _unique_name(prefix: str = "test_vshm") -> str:
 
 
 def _force_cleanup_shm(name: str) -> None:
-    """Best-effort removal of a SHM region from /dev/shm/."""
-    try:
-        from multiprocessing import shared_memory
+    """Best-effort removal of a SHM region (and its ``<name>_state`` sibling)
+    from ``/dev/shm/``. Every ``VideoShm`` now owns two segments under the
+    create-or-attach model, so both must be unlinked between tests."""
+    from multiprocessing import shared_memory
 
-        s = shared_memory.SharedMemory(name=name, create=False)
-        s.close()
-        s.unlink()
-    except FileNotFoundError:
-        pass
+    for target in (name, f"{name}{VideoShm._STATE_SUFFIX}"):
+        try:
+            s = shared_memory.SharedMemory(name=target, create=False)
+            s.close()
+            s.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _make_request(**overrides) -> VideoRequest:
@@ -64,22 +80,13 @@ def _make_request(**overrides) -> VideoRequest:
 def _make_response(
     task_id: str = "abcdef12-3456-7890-abcd-ef1234567890",
     status: VideoStatus = VideoStatus.SUCCESS,
-    num_frames: int = 3,
-    height: int = 4,
-    width: int = 4,
-    channels: int = 3,
-    data_byte: int = 0xAB,
+    file_path: str = "/dev/shm/tt_video_test.pkl",
     error_message: str = "",
 ) -> VideoResponse:
-    data_len = num_frames * height * width * channels
     return VideoResponse(
         task_id=task_id,
         status=status,
-        num_frames=num_frames,
-        height=height,
-        width=width,
-        channels=channels,
-        frame_data=bytes([data_byte] * data_len),
+        file_path=file_path,
         error_message=error_message,
     )
 
@@ -213,16 +220,23 @@ class TestVideoShmLifecycle:
         with pytest.raises(FileNotFoundError):
             shared_memory.SharedMemory(name=name, create=False)
 
-    def test_open_create_replaces_existing(self):
-        """open(create=True) unlinks stale SHM and recreates without fd leak."""
-        name = _unique_name("recreate")
+    def test_open_is_idempotent_when_segment_exists(self):
+        """Under the create-or-attach model, a second open() on an existing
+        segment must succeed (attach), not raise. The `create` kwarg is
+        accepted for backward-compat but ignored — behaviour is always
+        create-if-missing-else-attach."""
+        name = _unique_name("reopen")
         shm1 = VideoShm(name, mode="input")
-        shm1.open(create=True)
+        shm1.open()
 
         shm2 = VideoShm(name, mode="input")
-        shm2.open(create=True)
+        shm2.open()  # attaches; must not unlink or recreate
         assert shm2._shm is not None
         assert shm2._buf is not None
+
+        # Cross-handle visibility: a write through shm1 is seen by shm2.
+        struct.pack_into("<i", shm1._buf, 0, 0xBEEF)
+        assert struct.unpack_from("<i", shm2._buf, 0)[0] == 0xBEEF
 
         shm1.close()
         shm2.close()
@@ -348,6 +362,53 @@ class TestRequestRoundtrip:
         assert got.seed == 0
         assert got.num_inference_steps == 0
 
+    def test_image_path_default_empty(self, input_pair):
+        """Default ``VideoRequest`` has ``image_path=""`` for backward T2V compat."""
+        writer, reader = input_pair
+        req = _make_request()
+        assert req.image_path == ""
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == ""
+
+    def test_image_path_populated_roundtrip(self, input_pair):
+        """A non-empty ``image_path`` survives the SHM round-trip unchanged."""
+        from ipc.video_shm import image_prompts_path
+
+        writer, reader = input_pair
+        path = image_prompts_path("abcdef12-3456-7890-abcd-ef1234567890")
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == path
+
+    def test_image_path_max_length(self, input_pair):
+        """``image_path`` exactly at ``MAX_IMAGE_PATH_LEN`` survives unchanged."""
+        from ipc.video_shm import MAX_IMAGE_PATH_LEN
+
+        writer, reader = input_pair
+        path = "/dev/shm/" + "a" * (MAX_IMAGE_PATH_LEN - len("/dev/shm/"))
+        assert len(path) == MAX_IMAGE_PATH_LEN
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.image_path == path
+        assert len(got.image_path) == MAX_IMAGE_PATH_LEN
+
+    def test_image_path_truncated_when_too_long(self, input_pair):
+        """Paths longer than ``MAX_IMAGE_PATH_LEN`` are truncated, matching
+        the existing behaviour of other string fields. T2V backward-compat
+        is preserved because oversized paths can never be produced by the
+        ``image_prompts_path`` helper."""
+        from ipc.video_shm import MAX_IMAGE_PATH_LEN
+
+        writer, reader = input_pair
+        path = "/dev/shm/" + "z" * (MAX_IMAGE_PATH_LEN + 50)
+        req = _make_request(image_path=path)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert len(got.image_path) == MAX_IMAGE_PATH_LEN
+
 
 # ── Response roundtrip ──
 
@@ -362,126 +423,88 @@ class TestResponseRoundtrip:
         assert got is not None
         assert got.task_id == resp.task_id
         assert got.status == VideoStatus.SUCCESS
-        assert got.num_frames == 3
-        assert got.height == 4
-        assert got.width == 4
-        assert got.channels == 3
-        assert got.frame_data == resp.frame_data
+        assert got.file_path == resp.file_path
         assert got.error_message == ""
 
     def test_error_response(self, output_pair):
         writer, reader = output_pair
         resp = _make_response(
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
+            file_path="",
             error_message="pipeline exploded",
         )
         writer.write_response(resp)
         got = reader.read_response()
         assert got.status == VideoStatus.ERROR
         assert got.error_message == "pipeline exploded"
-        assert got.frame_data == b""
+        assert got.file_path == ""
 
-    def test_oversized_response_raises(self, output_pair):
-        writer, _ = output_pair
-        oversized = bytes(VideoShm.MAX_VIDEO_SIZE + 1)
-        resp = VideoResponse(
-            task_id="tid",
-            status=VideoStatus.SUCCESS,
-            num_frames=1,
-            height=1,
-            width=1,
-            channels=1,
-            frame_data=oversized,
-            error_message="",
-        )
-        with pytest.raises(ValueError, match="exceeds MAX_VIDEO_SIZE"):
-            writer.write_response(resp)
+    def test_long_file_path_truncated(self, output_pair):
+        from ipc.video_shm import MAX_FILE_PATH_LEN
 
-    def test_large_response_data(self, output_pair):
         writer, reader = output_pair
-        large_data = bytes(range(256)) * 4096
-        resp = VideoResponse(
-            task_id="abcdef12-3456-7890-abcd-ef1234567890",
-            status=VideoStatus.SUCCESS,
-            num_frames=1,
-            height=1,
-            width=len(large_data),
-            channels=1,
-            frame_data=large_data,
-            error_message="",
-        )
+        long_path = "/dev/shm/" + "x" * 300
+        resp = _make_response(file_path=long_path)
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.frame_data == large_data
+        assert len(got.file_path) == MAX_FILE_PATH_LEN
 
     def test_multiple_responses_sequential(self, output_pair):
         writer, reader = output_pair
         for i in range(4):
-            resp = _make_response(num_frames=i + 1, height=2, width=2)
+            resp = _make_response(file_path=f"/dev/shm/tt_video_task_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
-            assert got.num_frames == i + 1
+            assert got.file_path == f"/dev/shm/tt_video_task_{i}.pkl"
 
-    def test_empty_frame_data(self, output_pair):
+    def test_empty_file_path_on_error(self, output_pair):
         writer, reader = output_pair
         resp = _make_response(
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
+            file_path="",
             error_message="err",
         )
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.frame_data == b""
-        assert got.height == 0
+        assert got.file_path == ""
+        assert got.error_message == "err"
 
     def test_response_preserves_all_fields(self, output_pair):
         writer, reader = output_pair
         resp = VideoResponse(
             task_id="abcdef12-3456-7890-abcd-ef1234567890",
             status=VideoStatus.SUCCESS,
-            num_frames=10,
-            height=720,
-            width=1280,
-            channels=4,
-            frame_data=b"\xde\xad" * 64,
+            file_path="/dev/shm/tt_video_my_task.pkl",
             error_message="",
         )
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.num_frames == 10
-        assert got.height == 720
-        assert got.width == 1280
-        assert got.channels == 4
-        assert got.frame_data == b"\xde\xad" * 64
+        assert got.task_id == resp.task_id
+        assert got.status == VideoStatus.SUCCESS
+        assert got.file_path == "/dev/shm/tt_video_my_task.pkl"
+        assert got.error_message == ""
 
 
 # ── Slot states ──
 
 
 class TestSlotStateTransitions:
-    def test_slot_starts_free(self, input_shm):
+    def test_slot_starts_empty(self, input_shm):
         state = struct.unpack_from("<i", input_shm._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
-    def test_write_sets_taken(self, input_pair):
+    def test_write_sets_filled(self, input_pair):
         writer, _ = input_pair
         writer.write_request(_make_request())
         state = struct.unpack_from("<i", writer._buf, 0)[0]
-        assert state == VideoShm._TAKEN
+        assert state == VideoShm._FILLED
 
-    def test_read_sets_free(self, input_pair):
+    def test_read_sets_empty(self, input_pair):
         writer, reader = input_pair
         writer.write_request(_make_request())
         reader.read_request()
         state = struct.unpack_from("<i", reader._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
 
 # ── Ring buffer wrapping ──
@@ -491,23 +514,260 @@ class TestRingBufferWrapping:
     def test_position_wraps_after_slots(self, input_pair):
         writer, reader = input_pair
         req = _make_request()
-        for _ in range(VideoShm.INPUT_SLOTS + 2):
+        total = VideoShm.INPUT_SLOTS + 2
+        for _ in range(total):
             writer.write_request(req)
             got = reader.read_request()
             assert got is not None
             assert got.task_id == req.task_id
-        assert writer._pos == 2
-        assert reader._pos == 2
+        # Indices live in the <name>_state SHM segment and are monotonic u64
+        # counters (not mod-slots) — the slot index is derived as (idx % _slots).
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.INPUT_SLOTS == 2
+        assert reader._get_reader_index() % VideoShm.INPUT_SLOTS == 2
 
     def test_responses_wrap(self, output_pair):
         writer, reader = output_pair
-        for i in range(VideoShm.OUTPUT_SLOTS + 1):
-            resp = _make_response(num_frames=i + 1, height=2, width=2)
+        total = VideoShm.OUTPUT_SLOTS + 1
+        for i in range(total):
+            resp = _make_response(file_path=f"/dev/shm/tt_video_wrap_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
-            assert got.num_frames == i + 1
-        assert writer._pos == 1
-        assert reader._pos == 1
+            assert got.file_path == f"/dev/shm/tt_video_wrap_{i}.pkl"
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.OUTPUT_SLOTS == 1
+        assert reader._get_reader_index() % VideoShm.OUTPUT_SLOTS == 1
+
+
+# ── Crash recovery ──
+#
+# The non-atomic gap between "flip slot state" and "bump index" can leave the
+# ring in a detectable-but-inconsistent state after a crash. ``recover()`` is
+# designed to be run when the OTHER side of the ring is quiescent — these
+# tests simulate that exact scenario by manually poking the ring into the
+# post-crash state and verifying recover() makes it consistent again.
+
+
+class TestCrashRecovery:
+    def _set_state(self, shm, slot_idx, state_value, state_off_in_slot):
+        """Directly set the state word of a slot (simulating a partial commit)."""
+        off = slot_idx * shm._slot_size + state_off_in_slot
+        struct.pack_into("<i", shm._buf, off, state_value)
+
+    def test_recover_noop_on_clean_ring(self, input_shm):
+        result = input_shm.recover()
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 0
+        assert input_shm._get_reader_index() == 0
+
+    def test_recover_fixes_writer_gap(self, input_shm):
+        """Writer flipped slot to FILLED then crashed before bumping widx."""
+        # Simulate: widx=2, ridx=2, slot 2 has been packed+flipped-FILLED but
+        # writer_index wasn't bumped.
+        input_shm._set_writer_index(2)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 3
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_fixes_reader_gap(self, input_shm):
+        """Reader flipped slot to EMPTY then crashed before bumping ridx."""
+        # Simulate: widx=5, ridx=2, slot 2 has been consumed+flipped-EMPTY but
+        # reader_index wasn't bumped. Slots 3 and 4 are still legitimately
+        # FILLED (writer got ahead).
+        input_shm._set_writer_index(5)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 3
+
+    def test_recover_fixes_both_sides(self, input_shm):
+        """Both writer and reader crashed in their respective gaps."""
+        # widx=4, ridx=1. Writer gap: slot 4 FILLED (unbumped).
+        # Reader gap: slot 1 EMPTY (unbumped). Slots 2, 3 legitimately FILLED.
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_skips_full_ring(self, input_shm):
+        """A full ring legitimately has slot(widx%N) == FILLED — must not
+        misinterpret as a writer gap."""
+        n = VideoShm.INPUT_SLOTS
+        input_shm._set_writer_index(n)
+        input_shm._set_reader_index(0)
+        for i in range(n):
+            self._set_state(input_shm, i, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == n
+        assert input_shm._get_reader_index() == 0
+
+    def test_recover_skips_empty_ring(self, input_shm):
+        """An empty ring legitimately has slot(ridx%N) == EMPTY — must not
+        misinterpret as a reader gap."""
+        input_shm._set_writer_index(3)
+        input_shm._set_reader_index(3)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 3
+        assert input_shm._get_reader_index() == 3
+
+    def test_recover_on_output_ring_uses_correct_state_offset(self, output_shm):
+        """Output slots have their state word at _OUT_STATE, not _IN_STATE —
+        verify recover uses the mode-appropriate offset."""
+        output_shm._set_writer_index(1)
+        output_shm._set_reader_index(1)
+        self._set_state(output_shm, 1, VideoShm._FILLED, VideoShm._OUT_STATE)
+
+        result = output_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert output_shm._get_writer_index() == 2
+
+    def test_recover_unblocks_reader_after_simulated_crash(self, input_pair):
+        """End-to-end: after a reader-gap recovery, the next read_request
+        correctly picks up the slot following the consumed-but-unbumped one,
+        instead of spin-waiting on a stale EMPTY slot (the deadlock case)."""
+        writer, reader = input_pair
+
+        # Writer produces 3 requests (widx=3, ridx=0, slots 0..2 FILLED).
+        for i in range(3):
+            writer.write_request(
+                _make_request(task_id=f"t{i}abcdef-0000-0000-0000-000000000000")
+            )
+
+        # Reader consumes slot 0 normally (ridx=1, slot 0 EMPTY).
+        r0 = reader.read_request()
+        assert r0.task_id.startswith("t0")
+
+        # Simulate reader crash mid-consume of slot 1:
+        #   slot 1 flipped to EMPTY, but ridx wasn't bumped (still 1).
+        # We effectively "consumed" slot 1's payload without advancing.
+        self._set_state(reader, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+
+        # Without recovery: reader would spin waiting for slot 1 to become
+        # FILLED, but the writer has moved on to slot 3. That's the deadlock
+        # case from the design doc.
+        result = reader.recover()
+        assert result["reader_bumped"] == 1
+
+        # Next read must deliver slot 2 (ridx advanced past the gap), not
+        # spin forever.
+        r2 = reader.read_request(timeout_s=0.5)
+        assert r2 is not None
+        assert r2.task_id.startswith("t2")
+
+    # ── Side-scoped recovery (transparent self-heal on respawn) ──
+
+    def test_recover_side_invalid_raises(self, input_shm):
+        with pytest.raises(ValueError, match="side must be one of"):
+            input_shm.recover(side="bogus")
+
+    def test_recover_side_reader_ignores_writer_gap(self, input_shm):
+        """``side='reader'`` must not touch widx even if a writer gap is
+        present — simulates a freshly-respawned reader running recovery
+        with the writer still alive."""
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="reader")
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 4
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_side_writer_ignores_reader_gap(self, input_shm):
+        """``side='writer'`` must not touch ridx even if a reader gap is
+        present — simulates a freshly-respawned writer running recovery
+        with the reader still alive."""
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="writer")
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 1
+
+    def test_recover_side_reader_is_noop_when_no_reader_gap(self, input_shm):
+        """Reader respawn with a clean reader lane and a writer gap
+        present: recovery must do nothing (writer gap is not our lane)."""
+        input_shm._set_writer_index(2)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="reader")
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 2
+        assert input_shm._get_reader_index() == 2
+
+    def test_respawn_reader_self_heals_after_simulated_crash(self, input_pair):
+        """End-to-end: a reader that crashes mid-consume leaves a gap; a
+        brand-new reader process that attaches and calls
+        ``recover(side='reader')`` on startup unblocks itself without any
+        operator action and reads the correct next item — even though the
+        writer is still live."""
+        writer, crashed_reader = input_pair
+        shm_name = writer.name
+
+        for i in range(3):
+            writer.write_request(
+                _make_request(task_id=f"t{i}abcdef-0000-0000-0000-000000000000")
+            )
+
+        assert crashed_reader.read_request().task_id.startswith("t0")
+
+        # Simulate: reader flipped slot 1 to EMPTY, then crashed (no ridx bump).
+        self._set_state(crashed_reader, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        crashed_reader.close()
+
+        # A fresh reader process attaches. Writer is still live on shm_name.
+        respawned = VideoShm(shm_name, mode="input")
+        respawned.open()
+        try:
+            # Simulate runner startup: self-heal our own lane. No operator CLI.
+            repair = respawned.recover(side="reader")
+            assert repair == {"writer_bumped": 0, "reader_bumped": 1}
+
+            got = respawned.read_request(timeout_s=0.5)
+            assert got is not None
+            assert got.task_id.startswith("t2")
+        finally:
+            respawned.close()
 
 
 # ── Shutdown signaling ──
@@ -565,7 +825,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.INPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
@@ -589,7 +849,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.OUTPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
@@ -598,7 +858,7 @@ class TestShutdownSignaling:
 
         t = threading.Thread(target=trigger_shutdown)
         t.start()
-        shm.write_response(_make_response(height=2, width=2))
+        shm.write_response(_make_response())
         t.join()
 
         shm.close()
@@ -687,7 +947,7 @@ class TestTimeout:
     ):
         """Timeout should not fire when data is available promptly."""
         writer, reader = output_pair
-        resp = _make_response(height=2, width=2)
+        resp = _make_response()
 
         def delayed_write():
             time.sleep(0.05)
@@ -699,7 +959,7 @@ class TestTimeout:
         result = reader.read_response(timeout_s=5.0)
         t.join()
         assert result is not None
-        assert result.frame_data == resp.frame_data
+        assert result.file_path == resp.file_path
 
 
 # ── Error response protocol (end-to-end) ──
@@ -735,11 +995,7 @@ class TestErrorResponseProtocol:
                 VideoResponse(
                     task_id=req.task_id,
                     status=VideoStatus.ERROR,
-                    num_frames=0,
-                    height=0,
-                    width=0,
-                    channels=0,
-                    frame_data=b"",
+                    file_path="",
                     error_message="pipeline crashed",
                 )
             )
@@ -767,6 +1023,132 @@ class TestErrorResponseProtocol:
         out_shm_creator.close()
         _force_cleanup_shm(in_name)
         _force_cleanup_shm(out_name)
+
+
+# ── File-based IPC helpers ──
+
+
+class TestVideoResultPath:
+    def test_returns_expected_path(self):
+        task_id = "abc-123"
+        path = video_result_path(task_id)
+        from ipc.video_shm import VIDEO_FILE_DIR
+
+        assert path == os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+    def test_unique_per_task_id(self):
+        assert video_result_path("a") != video_result_path("b")
+
+
+class TestCleanupOrphanedVideoFiles:
+    """Verify :func:`cleanup_orphaned_video_files` removes matching files."""
+
+    @pytest.fixture(autouse=True)
+    def _use_tmpdir(self, tmp_path, monkeypatch):
+        """Redirect VIDEO_FILE_DIR to a temp directory for isolation."""
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
+        self._tmp = tmp_path
+
+    def test_removes_matching_files(self):
+        for i in range(3):
+            (self._tmp / f"tt_video_task{i}.pkl").write_bytes(b"x")
+        removed = cleanup_orphaned_video_files()
+        assert removed == 3
+        assert list(self._tmp.glob("tt_video_*.pkl")) == []
+
+    def test_ignores_non_matching_files(self):
+        (self._tmp / "other_file.txt").write_bytes(b"keep")
+        (self._tmp / "tt_video_only.pkl").write_bytes(b"x")
+        removed = cleanup_orphaned_video_files()
+        assert removed == 1
+        assert (self._tmp / "other_file.txt").exists()
+
+    def test_returns_zero_when_no_files(self):
+        assert cleanup_orphaned_video_files() == 0
+
+    def test_oserror_on_unlink_is_ignored(self, monkeypatch):
+        """Per-file unlink failures are swallowed (lines 85–86 in video_shm)."""
+        import ipc.video_shm as video_shm_mod
+
+        (self._tmp / "tt_video_stale.pkl").write_bytes(b"x")
+
+        def unlink_raises(_path):
+            raise OSError("permission denied")
+
+        # Patch the same os object cleanup_orphaned_video_files uses (covers except OSError).
+        monkeypatch.setattr(video_shm_mod.os, "unlink", unlink_raises)
+        assert cleanup_orphaned_video_files() == 0
+        assert (self._tmp / "tt_video_stale.pkl").exists()
+
+    def test_oserror_on_unlink_via_patch(self):
+        """Same as test_oserror_on_unlink_is_ignored using patch (diff-cover reliability)."""
+        import ipc.video_shm as video_shm_mod
+
+        p = self._tmp / "tt_video_patch.pkl"
+        p.write_bytes(b"x")
+        with patch.object(video_shm_mod.os, "unlink", side_effect=OSError("busy")):
+            assert cleanup_orphaned_video_files() == 0
+        assert p.exists()
+
+
+# ── End-to-end file-based IPC roundtrip ──
+
+
+class TestFileBasedRoundtrip:
+    """Simulate the full file-based IPC cycle: write video → SHM → read → load → cleanup."""
+
+    @pytest.fixture(autouse=True)
+    def _use_tmpdir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
+        self._tmp = tmp_path
+
+    def test_write_read_cleanup_cycle(self, output_pair):
+        writer, reader = output_pair
+        task_id = "e2e-roundtrip-task-id-0123456789ab"
+        payload = {"frames": [1, 2, 3], "meta": "test"}
+
+        file_path = video_result_path(task_id)
+        with open(file_path, "wb") as fh:
+            pickle.dump(payload, fh)
+        assert os.path.exists(file_path)
+
+        writer.write_response(
+            VideoResponse(
+                task_id=task_id,
+                status=VideoStatus.SUCCESS,
+                file_path=file_path,
+                error_message="",
+            )
+        )
+
+        resp = reader.read_response()
+        assert resp is not None
+        assert resp.file_path == file_path
+
+        with open(resp.file_path, "rb") as fh:
+            loaded = pickle.load(fh)
+        os.unlink(resp.file_path)
+
+        assert loaded == payload
+        assert not os.path.exists(file_path)
+
+    def test_error_response_no_file_created(self, output_pair):
+        writer, reader = output_pair
+        task_id = "e2e-error-task-id-0123456789abcd"
+
+        writer.write_response(
+            VideoResponse(
+                task_id=task_id,
+                status=VideoStatus.ERROR,
+                file_path="",
+                error_message="OOM during inference",
+            )
+        )
+
+        resp = reader.read_response()
+        assert resp.status == VideoStatus.ERROR
+        assert resp.file_path == ""
+        assert resp.error_message == "OOM during inference"
 
 
 if __name__ == "__main__":

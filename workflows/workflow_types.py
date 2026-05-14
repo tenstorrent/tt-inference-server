@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
+from typing import List
 
 
 class WorkflowType(IntEnum):
@@ -53,6 +54,7 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
     HTTP_CLIENT_VIDEO_API = auto()
+    HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
@@ -71,6 +73,7 @@ class DeviceTypes(IntEnum):
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
     P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
+    BLACKHOLE_GALAXY = auto()  # BH Galaxy - 32x P150 chips
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -97,6 +100,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X8: "P150x8",
             DeviceTypes.P300: "P300",
             DeviceTypes.P300X2: "P300x2",
+            DeviceTypes.BLACKHOLE_GALAXY: "BH-Galaxy",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -119,7 +123,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "BH P300",
-            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
+            DeviceTypes.P300X2: "BH QuietBox 2",
+            DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -164,6 +169,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X8,
             DeviceTypes.P300,
             DeviceTypes.P300X2,
+            DeviceTypes.BLACKHOLE_GALAXY,
         )
         return self in blackhole_devices
 
@@ -209,6 +215,12 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
             (DeviceTypes.P150X8, 8): DeviceTypes.P150,
+            (DeviceTypes.BLACKHOLE_GALAXY, 1): DeviceTypes.BLACKHOLE_GALAXY,
+            (DeviceTypes.BLACKHOLE_GALAXY, 4): DeviceTypes.P150X8,
+            (DeviceTypes.BLACKHOLE_GALAXY, 8): DeviceTypes.P150X4,
+            (DeviceTypes.BLACKHOLE_GALAXY, 32): DeviceTypes.P150,
+            (DeviceTypes.DUAL_GALAXY, 8): DeviceTypes.T3K,
+            (DeviceTypes.QUAD_GALAXY, 16): DeviceTypes.T3K,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
@@ -283,6 +295,24 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }[self]
+
+    @property
+    def required_target_tiers(self) -> List[str]:
+        """Tiers that MUST pass for a model at this status level.
+
+        Tiers not in this list are still computed and reported but
+        treated as informational -- failures are accepted and do not
+        block a release. This enables programmatic masking: e.g. an
+        EXPERIMENTAL model (forge, new bring-up) can fail every
+        performance benchmark and still be released.
+        """
+        tier_map = {
+            ModelStatusTypes.EXPERIMENTAL: [],
+            ModelStatusTypes.FUNCTIONAL: ["functional"],
+            ModelStatusTypes.COMPLETE: ["functional", "complete"],
+            ModelStatusTypes.TOP_PERF: ["functional", "complete", "target"],
+        }
+        return tier_map[self]
 
 
 class EvalLimitMode(IntEnum):
@@ -372,3 +402,17 @@ class ModelType(IntEnum):
             ModelType.VIDEO: "Video",
         }
         return short_names[self]
+
+    @property
+    def task_type(self) -> str:
+        task_types = {
+            ModelType.LLM: "text",
+            ModelType.VLM: "vlm",
+            ModelType.AUDIO: "audio",
+            ModelType.IMAGE: "image",
+            ModelType.CNN: "cnn",
+            ModelType.EMBEDDING: "embedding",
+            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.VIDEO: "video",
+        }
+        return task_types[self]

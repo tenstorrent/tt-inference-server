@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -21,6 +22,18 @@ class IWarmupSignalQueue;
 }
 
 namespace tt::worker {
+
+/** Result of polling a worker process; `transitionedToDead` is true on (and
+ * only on) the call that flips `aliveFlag` from true to false. */
+struct ProcessLivenessTransition {
+  bool stillAlive;
+  bool transitionedToDead;
+};
+
+/** Reap `pid` if it has exited, update `aliveFlag`, and log the cause. */
+ProcessLivenessTransition pollProcessLiveness(pid_t pid,
+                                              std::atomic<bool>& aliveFlag,
+                                              size_t workerIdx);
 
 /**
  * Manages worker process lifecycle: spawning, warmup signaling, crash detection
@@ -51,20 +64,27 @@ class WorkerManager {
 
   SingleProcessWorker* worker(size_t idx);
 
-  /** Returns false if the worker process has exited. Updates is_alive flag. */
+  /** Returns false if the worker process has exited; updates is_alive and
+   * fires the death callback exactly once on the alive -> dead transition. */
   bool checkWorkerAlive(size_t workerIdx);
 
   /** Re-fork a crashed worker process and update the workers entry. */
   void restartWorker(size_t workerIdx);
+
+  /** Fired once per worker on the alive -> dead transition, on the liveness
+   * checker thread. Callback must not re-enter WorkerManager::stop(). */
+  using WorkerDeathCallback = std::function<void(size_t workerIdx, pid_t pid)>;
+  void setWorkerDeathCallback(WorkerDeathCallback callback);
 
  private:
   bool isWorkerWarmed(int workerId) const;
 
   void startWorkers();
   void startWarmupListener();
-  void waitForFirstWarmup();
   void stopWarmupListener();
   void stopProcesses();
+  void startLivenessChecker();
+  void stopLivenessChecker();
   WorkerConfig makeWorkerConfig(int workerId);
 
   /** Parent: fork/exec worker subprocess; sets worker.pid to child pid. Does
@@ -77,12 +97,17 @@ class WorkerManager {
 
   std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmupQueue;
   std::thread warmupListenerThread;
+  std::thread livenessCheckerThread;
+  std::atomic<bool> livenessCheckerShouldStop{false};
   std::mutex warmupMutex;
   std::condition_variable warmupCv;
   std::atomic<bool> warmupReceived{false};
   std::atomic<bool> ready{false};
   mutable std::mutex warmedMutex;
   mutable std::set<int> warmedWorkerIds;
+
+  mutable std::mutex deathCallbackMutex;
+  WorkerDeathCallback deathCallback;
 };
 
 /** Build a WorkerConfig for the worker subprocess (used by main.cpp --worker).

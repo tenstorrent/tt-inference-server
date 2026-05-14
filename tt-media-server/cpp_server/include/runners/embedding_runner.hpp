@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -34,7 +34,7 @@ class EmbeddingRunner : public IRunner {
    * Initialize Python, import modules, create BGELargeENRunner instance,
    * and call warmup().
    */
-  bool warmup();
+  bool warmup() override;
 
   /**
    * Clean up Python objects and optionally finalize interpreter.
@@ -50,7 +50,7 @@ class EmbeddingRunner : public IRunner {
   // IRunner interface implementation
   void run() override;
   void stop() override;
-  const char* runnerType() const { return "EmbeddingRunner"; }
+  const char* runnerType() const override { return "EmbeddingRunner"; }
 
   /**
    * Get the device ID.

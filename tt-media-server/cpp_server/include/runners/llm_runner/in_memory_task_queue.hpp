@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -7,42 +7,46 @@
 #include <memory>
 #include <sstream>
 
-#include "runners/llm_runner/task_queue.hpp"
+#include "domain/llm/sequence.hpp"
+#include "ipc/interface/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 /**
  * In-process ITaskQueue backed by a deque of owned pointers.
  * Avoids requiring Sequence to be copy-constructible.
  * Useful for unit testing without IPC overhead.
  */
-class InMemoryTaskQueue : public ITaskQueue {
+class InMemoryTaskQueue : public tt::ipc::ITaskQueue {
  public:
-  void push(const Sequence& seq) override {
+  void push(const tt::domain::llm::Sequence& seq) override {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue_.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
+    queue.push_back(std::make_unique<tt::domain::llm::Sequence>(
+        tt::domain::llm::Sequence::deserialize(is)));
   }
 
-  Sequence* tryPop() {
-    if (queue_.empty()) return nullptr;
-    Sequence* seq = queue_.front().release();
-    queue_.pop_front();
+  std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
+    if (queue.empty()) return nullptr;
+    auto seq = std::move(queue.front());
+    queue.pop_front();
     return seq;
   }
 
-  Sequence* receive() override {
-    if (queue_.empty()) return nullptr;
-    Sequence* seq = queue_.front().release();
-    queue_.pop_front();
+  std::unique_ptr<tt::domain::llm::Sequence> receive() override {
+    if (queue.empty()) return nullptr;
+    auto seq = std::move(queue.front());
+    queue.pop_front();
     return seq;
   }
 
-  bool empty() const override { return queue_.empty(); }
+  bool empty() const override { return queue.empty(); }
 
  private:
-  std::deque<std::unique_ptr<Sequence>> queue_;
+  std::deque<std::unique_ptr<tt::domain::llm::Sequence>> queue;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

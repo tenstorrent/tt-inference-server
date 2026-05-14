@@ -13,9 +13,15 @@ build-tracy/
 # In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
 CMakeFiles/
 
+tt-llm-engine/
+
 # Runtime logs (Drogon setLogPath)
 logs/
 
 **/vllm-venv
 
 deps/
+
+# Override root-level *.json ignore
+!resources/openapi.json
+!.mcp.json

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 
 import os
@@ -10,10 +10,6 @@ import ttnn
 from config.constants import SupportedModels
 from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
-from models.demos.wormhole.bge_large_en.demo.generator_vllm import BGEForEmbedding
-from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
-    Qwen3ForEmbedding,
-)
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.embedding_tokenizer import EmbeddingTokenizer
@@ -100,6 +96,10 @@ class BGELargeENRunner(EmbeddingRunner):
 
     def _load_model(self):
         self.logger.info(f"Device {self.device_id}: Loading model...")
+        from models.demos.wormhole.bge_large_en.demo.generator_vllm import (
+            BGEForEmbedding,
+        )
+
         self.model = BGEForEmbedding(
             device=self.ttnn_device,
             model_location_generator=_model_location_generator,
@@ -107,6 +107,49 @@ class BGELargeENRunner(EmbeddingRunner):
             max_seq_len=self.max_model_len,
             act_dtype=ttnn.bfloat16,
             weight_dtype=ttnn.bfloat8_b,
+            model_name=self.model_name,
+        )
+        self.logger.info(f"Device {self.device_id}: Model loaded successfully")
+
+
+class BGEM3Runner(EmbeddingRunner):
+    """Dense-only BGE-M3 embedding runner."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.max_model_len = self.settings.vllm.max_model_length
+        self.max_num_seqs = self.settings.vllm.max_num_seqs
+        self.model_name = SupportedModels.BGE_M3.value
+        self.tokenizer = EmbeddingTokenizer(self.model_name)
+
+    def get_pipeline_device_params(self):
+        return {
+            "num_command_queues": 2,
+            "trace_region_size": self.settings.trace_region_size,
+        }
+
+    def run(self, requests: list[TextEmbeddingRequest]):
+        self._validate_requests(requests)
+        text_inputs = [req.input for req in requests]
+        num_requests = len(requests)
+        tokenized = self.tokenizer.tokenize(text_inputs, self.max_model_len)
+        token_counts = self.tokenizer.calculate_token_counts(tokenized, num_requests)
+        result = self.model.forward(
+            tokenized["input_ids"],
+            attention_mask=tokenized.get("attention_mask"),
+        )
+        ttnn.synchronize_device(self.ttnn_device)
+        return super()._process_result(result["dense_vecs"], requests, token_counts)
+
+    def _load_model(self):
+        self.logger.info(f"Device {self.device_id}: Loading model...")
+        from models.demos.wormhole.bge_m3.demo.generator_vllm import BgeM3ForEmbedding
+
+        self.model = BgeM3ForEmbedding(
+            device=self.ttnn_device,
+            max_batch_size=self.settings.max_batch_size,
+            max_seq_len=self.max_model_len,
+            dtype=ttnn.bfloat8_b,
             model_name=self.model_name,
         )
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
@@ -127,6 +170,10 @@ class Qwen3Embedding8BRunner(EmbeddingRunner):
 
     def _load_model(self):
         self.logger.info(f"Device {self.device_id}: Loading model...")
+        from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
+            Qwen3ForEmbedding,
+        )
+
         self.model = Qwen3ForEmbedding(
             device=self.ttnn_device,
             model_location_generator=_model_location_generator,

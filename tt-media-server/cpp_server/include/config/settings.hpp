@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -93,8 +93,138 @@ SchedulingPolicy schedulingPolicy();
  * defaults::MAX_IN_FLIGHT_COUNT. */
 size_t maxInFlightCount();
 
+/** Max sessions count from MAX_SESSIONS_COUNT. Default:
+ * defaults::MAX_SESSIONS_COUNT. Can be overridden at runtime via
+ * setMaxSessionsCount(). */
+size_t maxSessionsCount();
+
+/** Set max sessions count override. Pass 0 to clear the override and use the
+ * environment variable value. */
+void setMaxSessionsCount(size_t count);
+
+/** Session eviction rate percentage from SESSION_EVICTION_RATE. Default:
+ * defaults::SESSION_EVICTION_RATE. */
+unsigned sessionEvictionRate();
+
+/** Number of sessions to evict at once from SESSION_EVICTION_COUNT. Default:
+ * defaults::SESSION_EVICTION_COUNT. */
+size_t sessionEvictionCount();
+
+/** Max tokens to prefill on decode server from MAX_TOKENS_TO_PREFILL_ON_DECODE.
+ * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
+size_t maxTokensToPrefillOnDecode();
+
+/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
+ * defaults::MAX_CONTEXT_LENGTH. */
+size_t maxContextLength();
+
+/** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
+bool useFastMode();
+
+/** Kafka broker addresses from KAFKA_BROKERS. Default:
+ * defaults::KAFKA_BROKERS. */
+std::string kafkaBrokers();
+
+/** Kafka topic name from KAFKA_OFFLOAD_TOPIC_NAME. Default:
+ * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
+std::string kafkaOffloadTopicName();
+
+/** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
+ * defaults::KAFKA_GROUP_ID. */
+std::string kafkaGroupId();
+
+/** Max retries for session slot allocation from
+ * SESSION_ALLOCATION_MAX_RETRIES. Default:
+ * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
+unsigned sessionAllocationMaxRetries();
+
+/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
+ * defaults::PREFILL_TIMEOUT_MS. */
+unsigned prefillTimeoutMs();
+
+/** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
+ * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
+std::string blazeSocketDescriptorPrefix();
+
+/** Pipeline manager connect timeout (ms) from PM_CONNECT_TIMEOUT_MS. Default:
+ * defaults::PM_CONNECT_TIMEOUT_MS. */
+unsigned pmConnectTimeoutMs();
+
+/** Decode scheduler max users from DS_MAX_USERS. Default:
+ * defaults::DS_MAX_USERS. */
+size_t dsMaxUsers();
+
+/** Warmup timeout (ms) while waiting for the first token during runner warmup.
+ * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
+unsigned warmupTimeoutMs();
+
+/** Max time (ms) without any model output while at least one request is in
+ * flight before the runner self-terminates the worker process. From
+ * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
+unsigned outputHangTimeoutMs();
+
+/** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
+std::string ttTaskQueueName();
+
+/** Result queue name from TT_RESULT_QUEUE. Default: defaults::TT_RESULT_QUEUE.
+ */
+std::string ttResultQueueName();
+
+/** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
+ */
+std::string ttCancelQueueName();
+
+/** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
+ * defaults::TT_MEMORY_REQUEST_QUEUE. */
+std::string ttMemoryRequestQueueName();
+
+/** Warmup signals queue name from TT_WARMUP_SIGNALS_QUEUE. Default:
+ * defaults::TT_WARMUP_SIGNALS_QUEUE. */
+std::string ttWarmupSignalsQueueName();
+
+/** Memory result queue name from TT_MEMORY_RESULT_QUEUE. Default:
+ * defaults::TT_MEMORY_RESULT_QUEUE. */
+std::string ttMemoryResultQueueName();
+
+/** POSIX shared-memory segment name backing the worker metrics transport.
+ * From TT_WORKER_METRICS_SHM. Default: defaults::TT_WORKER_METRICS_SHM.
+ * Inherited across fork+execv so main and worker resolve to the same name. */
+std::string workerMetricsShmName();
+
+/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
+ * defaults::USE_DEEPSEEK_MD_FORMAT. */
+bool useDeepseekMdFormat();
+
+// IPC queue capacities - configurable via environment variables
+/** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
+ * defaults::RESULT_QUEUE_CAPACITY. */
+size_t resultQueueCapacity();
+
+/** Cancel queue capacity from CANCEL_QUEUE_CAPACITY. Default:
+ * defaults::CANCEL_QUEUE_CAPACITY. */
+size_t cancelQueueCapacity();
+
+/** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
+ * defaults::MEMORY_QUEUE_CAPACITY. */
+size_t memoryQueueCapacity();
+
+// Shared memory slot buffer constants
+/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
+int shmSlots();
+
+/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
+ * defaults::PREFILL_MAX_TOKEN_IDS. */
+int prefillMaxTokenIds();
+
+/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
+ * defaults::DECODE_MAX_TOKEN_IDS. */
+int decodeMaxTokenIds();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
+
+/** Model from MODEL. Default: defaults::MODEL. */
+Model model();
 
 }  // namespace tt::config

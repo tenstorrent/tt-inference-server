@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 # Standard library imports
 import asyncio
@@ -31,6 +31,7 @@ from workflows.utils import (
     is_streaming_enabled_for_whisper,
 )
 from workflows.utils_report import get_performance_targets
+from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -54,63 +55,45 @@ class AudioClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
             status_list = self._run_audio_transcription_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
-        benchmark_data = {}
-
-        # Calculate TTFT
+        latency_value = self._calculate_latency(status_list)
         ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-        logger.info(f"Extracted RTR value: {rtr_value}")
-
-        # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
-        logger.info(f"Extracted T/S/U value: {tsu_value}")
-
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
+        logger.info(
+            f"Extracted latency={latency_value}, TTFT={ttft_value} "
+            f"(streaming-only), RTR={rtr_value}, T/S/U={tsu_value}"
         )
-        benchmark_data["task_type"] = "audio"
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        # For now hardcode accuracy_check to 2
-        benchmark_data["accuracy_check"] = 2
-        benchmark_data["t/s/u"] = tsu_value
-        benchmark_data["rtr"] = rtr_value
+
+        # ``score`` is end-to-end latency so streaming-on and -off
+        # runs are comparable; ``ttft`` is only meaningful when
+        # streaming is enabled.
+        benchmark_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name.lower(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "audio",
+            "task_name": self.all_params.tasks[0].task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": latency_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.NA,
+            "ttft": ttft_value,
+            "t/s/u": tsu_value,
+            "rtr": rtr_value,
+        }
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -135,21 +118,9 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
-            status_list = []
             status_list = self._run_audio_transcription_benchmark(num_calls)
-
             return self._generate_report(status_list)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -164,33 +135,27 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
+        latency_value = self._calculate_latency(status_list)
         ttft_value = self._calculate_ttft_value(status_list)
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-
-        # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
-
-        # Calculate accuracy check
         accuracy_check = self._calculate_accuracy_check(
-            ttft_value, tsu_value, rtr_value
+            latency_value, tsu_value, rtr_value
         )
 
-        # Convert AudioTestStatus objects to dictionaries for JSON serialization
+        # ``ttft`` is only meaningful when streaming is enabled
+        # (0 otherwise).
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": 0,
+                "latency": latency_value,
                 "ttft": ttft_value,
-                "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
                 "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "audio",
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
@@ -267,8 +232,9 @@ class AudioClientStrategy(BaseMediaStrategy):
             timeout=90,
         )
         elapsed = time.time() - start_time
-        ttft = elapsed
-        tsu = None  # No streaming, so T/U/S is not applicable
+        # Non-streaming endpoint: no first-token timestamp.
+        ttft = None
+        tsu = None
 
         # Calculate RTR (Real-Time Ratio)
         rtr = None
@@ -442,22 +408,30 @@ class AudioClientStrategy(BaseMediaStrategy):
             logger.error(f"Streaming transcription failed: {e}")
             return False, 0.0, None, None, None
 
-    def _calculate_ttft_value(self, status_list: list[AudioTestStatus]) -> float:
-        """Calculate TTFT value based on model type and status list."""
+    def _calculate_latency(self, status_list: list[AudioTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
+
+        if not status_list:
+            return 0
+        return sum(status.elapsed for status in status_list) / len(status_list)
+
+    def _calculate_ttft_value(
+        self, status_list: list[AudioTestStatus]
+    ) -> Optional[float]:
+        """Mean TTFT in seconds; ``None`` when no first-token timing was captured."""
         logger.info("Calculating TTFT value")
 
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [
-                status.ttft for status in status_list if status.ttft is not None
-            ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
-                else 0
-            )
+        if not status_list:
+            return None
 
-        return ttft_value
+        valid_ttft_values = [
+            status.ttft for status in status_list if status.ttft is not None
+        ]
+        if not valid_ttft_values:
+            return None
+
+        return sum(valid_ttft_values) / len(valid_ttft_values)
 
     def _calculate_rtr_value(self, status_list: list[AudioTestStatus]) -> float:
         """Calculate RTR value based on model type and status list."""
@@ -505,12 +479,11 @@ class AudioClientStrategy(BaseMediaStrategy):
         return len(text.split())
 
     def _calculate_accuracy_check(
-        self, ttft_value: float, tsu_value: float, rtr_value: float
-    ):
-        """Calculate accuracy check based on TTFT, RTR, T/S/U targets."""
-        logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
+        self, latency_value: float, tsu_value: float, rtr_value: float
+    ) -> ReportCheckTypes:
+        """Calculate accuracy check based on latency, RTR, T/S/U targets."""
+        logger.info("Calculating accuracy check based on latency, RTR, T/S/U targets")
 
-        # Get performance targets using the shared utility
         device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
             self.model_spec.model_name,
@@ -520,11 +493,14 @@ class AudioClientStrategy(BaseMediaStrategy):
         logger.info(f"Performance targets: {targets}")
 
         if not targets.ttft_ms:
-            logger.warning("⚠️ No TTFT target found, skipping accuracy check")
-            return 0  # UNDEFINED
+            logger.warning(
+                "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
+                "skipping accuracy check"
+            )
+            return ReportCheckTypes.NA
 
         available_metrics = [
-            "TTFT" if targets.ttft_ms else None,
+            "latency" if targets.ttft_ms else None,
             "T/S/U" if targets.tput_user and tsu_value else None,
             "RTR" if targets.rtr and rtr_value else None,
         ]
@@ -542,18 +518,18 @@ class AudioClientStrategy(BaseMediaStrategy):
         checks_passed = 0
         checks_total = 0
 
-        # Always check TTFT if target is available
+        # PerformanceTargets stores the latency threshold under ``ttft_ms``.
         if targets.ttft_ms is not None:  # pragma: no branch
             checks_total += 1
-            ttft_threshold = targets.ttft_ms * (1 + tolerance)
-            if ttft_value <= ttft_threshold:
+            latency_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
+            if latency_value <= latency_threshold_s:
                 logger.info(
-                    f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms"
+                    f"✅ latency PASSED: {latency_value:.4f}s <= {latency_threshold_s:.4f}s"
                 )
                 checks_passed += 1
             else:
                 logger.warning(
-                    f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
+                    f"❌ latency FAILED: {latency_value:.4f}s > {latency_threshold_s:.4f}s"
                 )
 
         # Only check T/S/U if we have both target and measured value (streaming mode)
@@ -580,13 +556,12 @@ class AudioClientStrategy(BaseMediaStrategy):
             else:
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
-        # Determine overall result
         if checks_total == 0:  # pragma: no cover
             logger.warning("No targets available for accuracy check")
-            return 0  # UNDEFINED
-        elif checks_passed == checks_total:
+            return ReportCheckTypes.NA
+        if checks_passed == checks_total:
             logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-            return 2  # PASS
+            return ReportCheckTypes.PASS
 
         logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-        return 3  # FAIL
+        return ReportCheckTypes.FAIL

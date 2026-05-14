@@ -1,26 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <atomic>
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <functional>
 #include <map>
-#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "sockets/socket_transport.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -33,15 +27,12 @@ namespace tt::sockets {
  */
 class SocketManager {
  public:
-  enum class Mode {
-    SERVER,  // Listen for incoming connections
-    CLIENT   // Connect to remote server
-  };
-
-  /**
-   * @brief Get singleton instance
-   */
-  static SocketManager& getInstance();
+  SocketManager() = default;
+  SocketManager(const SocketManager&) = delete;
+  SocketManager& operator=(const SocketManager&) = delete;
+  SocketManager(SocketManager&&) = delete;
+  SocketManager& operator=(SocketManager&&) = delete;
+  ~SocketManager();
 
   /**
    * @brief Initialize as server (listening mode)
@@ -60,7 +51,7 @@ class SocketManager {
 
   /**
    * @brief Send serializable object to connected peer
-   * @param message_type Type identifier for the message
+   * @param messageType Type identifier for the message
    * @param obj Object to send
    * @return true if successful
    */
@@ -69,7 +60,7 @@ class SocketManager {
 
   /**
    * @brief Register handler for incoming messages of specific type
-   * @param message_type Type identifier to handle
+   * @param messageType Type identifier to handle
    * @param handler Function to call when message is received
    */
   template <typename T>
@@ -102,49 +93,25 @@ class SocketManager {
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
-  // Disable copy/move for singleton
-  SocketManager(const SocketManager&) = delete;
-  SocketManager& operator=(const SocketManager&) = delete;
-
  private:
-  SocketManager() = default;
-  ~SocketManager();
-
-  void serverLoop();
-  void clientLoop();
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
-  bool sendRawData(const std::vector<uint8_t>& data);
-  std::vector<uint8_t> receiveRawData();
 
-  Mode mode_;
-  std::string host_;
-  uint16_t port_;
-
-  int server_socket_ = -1;
-  int client_socket_ = -1;
-  int peer_socket_ = -1;  // Active connection socket
+  SocketTransport transport_;
 
   std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
+  std::thread messageThread_;
 
-  std::thread server_thread_;
-  std::thread message_thread_;
-
-  mutable std::mutex handlers_mutex_;
+  mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
       handlers_;
-
-  mutable std::mutex send_mutex_;
-
-  std::function<void()> connection_lost_callback_;
 };
 
 // Template implementations
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!connected_) {
+  if (!transport_.isConnected()) {
     return false;
   }
 
@@ -159,7 +126,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
     std::string serialized = oss.str();
     std::vector<uint8_t> data(serialized.begin(), serialized.end());
 
-    return sendRawData(data);
+    return transport_.sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -169,7 +136,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
 template <typename T>
 void SocketManager::registerHandler(const std::string& messageType,
                                     std::function<void(const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlers_mutex_);
+  std::lock_guard<std::mutex> lock(handlersMutex_);
 
   handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {

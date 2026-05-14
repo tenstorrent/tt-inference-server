@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "sockets/inter_server_service.hpp"
 
 #include <string>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
 
-InterServerService::InterServerService()
-    : socket_manager_(SocketManager::getInstance()) {
-  setupMessageHandlers();
-}
+InterServerService::InterServerService() { setupMessageHandlers(); }
 
 InterServerService::~InterServerService() { stop(); }
 
@@ -74,16 +72,23 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    const tt::domain::TaskID& taskId, const std::string& prompt,
-    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens) {
+    uint32_t taskId, size_t registrationHash,
+    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    std::optional<uint32_t> slotId,
+    const tt::domain::llm::SamplingParams& sampling) {
   if (!enabled_) {
     return false;
   }
 
   PrefillRequestMessage message(taskId);
-  message.prompt = prompt;
+  message.registration_hash = registrationHash;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
+  message.slot_id = slotId;
+  message.temperature = sampling.temperature;
+  message.top_p = sampling.top_p;
+  message.top_k = sampling.top_k;
+  message.fast_mode = sampling.fast_mode;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -147,7 +152,7 @@ void InterServerService::setupMessageHandlers() {
       "prefill_request", [this](const PrefillRequestMessage& message) {
         TT_LOG_INFO(
             "[InterServerService] Received prefill request: {} (tokens: {})",
-            message.task_id.id, message.token_ids.size());
+            message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
         }
@@ -156,14 +161,20 @@ void InterServerService::setupMessageHandlers() {
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
-        TT_LOG_INFO(
-            "[InterServerService] Received prefill result: {} - text: '{}', "
-            "remaining: {}, token_ids: {}",
-            message.task_id.id, message.generated_text.substr(0, 50),
-            message.remaining_tokens.has_value()
-                ? std::to_string(message.remaining_tokens.value())
-                : "none",
-            message.token_ids.size());
+        if (message.error) {
+          TT_LOG_ERROR(
+              "[InterServerService] Received prefill error for task: {}",
+              message.task_id);
+        } else {
+          TT_LOG_INFO(
+              "[InterServerService] Received prefill result: {} - text: '{}', "
+              "remaining: {}, token_ids: {}",
+              message.task_id, message.generated_text.substr(0, 50),
+              message.remaining_tokens.has_value()
+                  ? std::to_string(message.remaining_tokens.value())
+                  : "none",
+              message.token_ids.size());
+        }
         if (prefill_complete_callback_) {
           prefill_complete_callback_(message);
         }

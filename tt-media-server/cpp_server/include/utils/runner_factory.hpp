@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -8,8 +8,9 @@
 
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "ipc/shared_memory.hpp"
-#include "runners/llm_runner/task_queue.hpp"
+#include "ipc/interface/cancel_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
+#include "ipc/interface/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {
@@ -21,12 +22,13 @@ namespace tt::utils::runner_factory {
  * @param config Runner configuration data
  * @param result_queue Result queue for the runner to push results into
  * @param task_queue Task queue for worker communication (used by LLM runner)
+ * @param cancel_queue Cancel queue for abort signals (nullable)
  * @return Unique pointer to the created runner
  */
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue);
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+    ipc::ICancelQueue* cancelQueue = nullptr);
 
 /**
  * Get the runner type string for the current configuration.

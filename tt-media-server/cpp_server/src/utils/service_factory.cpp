@@ -1,53 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "utils/service_factory.hpp"
 
-#include "api/socket_controller.hpp"
+#include <memory>
+
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "services/embedding_service.hpp"
+#include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
+#include "services/model_service_registration.hpp"
+#include "services/service_registry.hpp"
+#include "services/session_manager.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils::service_factory {
 
 namespace {
-std::unique_ptr<tt::api::SocketController> socketController;
+
+// Per-model-service post-construction wiring. New services that need
+// auxiliaries add an `if (auto x = dynamic_pointer_cast<XService>(...))` arm
+// next to the LLM one rather than growing a central switch.
+struct AuxiliaryServices {
+  std::shared_ptr<sockets::InterServerService> socket;
+  std::shared_ptr<services::DisaggregationService> disaggregation;
+};
+
+AuxiliaryServices buildAuxiliaryServices(
+    const std::shared_ptr<services::IService>& activeService) {
+  if (auto llm =
+          std::dynamic_pointer_cast<services::LLMService>(activeService)) {
+    const auto mode = tt::config::llmMode();
+    if (mode != tt::config::LLMMode::REGULAR) {
+      auto socket = std::make_shared<sockets::InterServerService>();
+      socket->initializeFromConfig();
+      auto disagg =
+          std::make_shared<services::DisaggregationService>(mode, llm, socket);
+      return {std::move(socket), std::move(disagg)};
+    }
+  }
+  return {};
 }
 
-void registerServices() {
+}  // namespace
+
+void initializeServices() {
   tracy_config::tracyStartMainProcess();
 
-  if (tt::config::isLlmServiceEnabled()) {
-    auto llm = std::make_shared<services::LLMService>();
-    llm->start();
+  services::registerBuiltinModelServices();
 
-    if (tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
-      socketController = std::make_unique<tt::api::SocketController>(
-          llm, llm->getSocketService());
-    }
+  auto& c = services::ServiceContainer::instance();
+  const auto active = tt::config::modelService();
 
-    registerService(std::move(llm));
-    TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
+  auto activeService = services::ServiceRegistry::instance().create(active);
+  if (!activeService) {
+    TT_LOG_WARN(
+        "[ServiceFactory] No service registered for MODEL_SERVICE='{}'; "
+        "container left empty.",
+        tt::config::toString(active));
+  } else {
+    c.registerService(active, activeService);
   }
 
-  if (tt::config::isEmbeddingService()) {
-    auto emb = std::make_shared<services::EmbeddingService>();
-    emb->start();
-    registerService(std::move(emb));
-    TT_LOG_INFO("[ServiceFactory] Embedding service registered and started");
-  }
-}
+  auto aux = buildAuxiliaryServices(activeService);
 
-std::shared_ptr<services::IService> getConfiguredService() {
-  switch (tt::config::modelService()) {
-    case tt::config::ModelService::LLM:
-      return getServiceByType<services::LLMService>();
-    case tt::config::ModelService::EMBEDDING:
-      return getServiceByType<services::EmbeddingService>();
+  c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
+               std::make_shared<services::SessionManager>());
+
+  if (auto svc = c.configuredService()) {
+    svc->start();
+    TT_LOG_INFO("[ServiceFactory] {} service started",
+                tt::config::toString(active));
   }
-  return nullptr;
+  if (c.disaggregation()) {
+    c.disaggregation()->start();
+    TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
+  }
+  if (c.sessionManager()) {
+    TT_LOG_INFO("[ServiceFactory] Session manager initialized");
+  }
+
+  TT_LOG_INFO("[ServiceFactory] Active model service: {}",
+              tt::config::toString(active));
 }
 
 }  // namespace tt::utils::service_factory

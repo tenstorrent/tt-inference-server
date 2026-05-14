@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "runners/llama_model_runner.hpp"
 
@@ -9,13 +9,16 @@
 #include <cstdlib>
 #include <string>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 #include "utils/logger.hpp"
 
 namespace py = pybind11;
 
-namespace llm_engine {
+using namespace tt::domain::llm;
 
+namespace tt::runners::llm_engine {
+using Sequence = tt::domain::llm::Sequence;
+using TokenResult = tt::domain::llm::TokenResult;
 using Config = tt::config::LLMConfig;
 
 namespace {
@@ -56,7 +59,7 @@ bool LlamaModelRunner::initialize() {
       TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
       TT_LOG_INFO("[LlamaModelRunner] Llama runner ready (in-process)");
-      initialized_ = true;
+      initialized = true;
       success = true;
     }
   } catch (const py::error_already_set& e) {
@@ -70,20 +73,20 @@ bool LlamaModelRunner::initialize() {
 void LlamaModelRunner::failSequences(const std::vector<Sequence*>& seqs) {
   for (Sequence* seq : seqs) {
     TokenResult dr(seq->taskId, 0, {}, true);
-    decode_callback_(dr);
+    decodeCallback(dr);
   }
 }
 
 LlamaModelRunner::LlamaModelRunner(const Config& config,
                                    DecodeCallback callback)
-    : config_(config), decode_callback_(std::move(callback)) {
+    : config(config), decodeCallback(std::move(callback)) {
   initialize();
 }
 
 LlamaModelRunner::~LlamaModelRunner() { exit(); }
 
 void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
-  if (stop_.load() || !initialized_) return;
+  if (stop.load() || !initialized) return;
 
   bool hadError = false;
   {
@@ -93,21 +96,21 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       for (Sequence* seq : seqs) {
         py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->tokenIds) tokenIds.append(t);
+          for (int64_t t : seq->getTokenIds()) tokenIds.append(t);
         } else {
-          tokenIds.append(seq->tokenIds.back());
+          tokenIds.append(seq->getTokenIds().back());
         }
 
         py::list blockTable;
-        for (int bid : seq->blockTable) {
+        for (int bid : seq->getBlockTable()) {
           blockTable.append(bid);
         }
 
         int currentPos =
-            isPrefill ? 0 : static_cast<int>(seq->tokenIds.size() - 1);
-        int promptLen = static_cast<int>(seq->numPromptTokens);
+            isPrefill ? 0 : static_cast<int>(seq->getTokenIds().size() - 1);
+        int promptLen = static_cast<int>(seq->getNumPromptTokens());
 
-        const SamplingParams* sp = seq->samplingParams.get();
+        const tt::domain::llm::SamplingParams* sp = &seq->getSamplingParams();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 
@@ -141,32 +144,55 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
         double frequencyPenalty =
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
+        py::object allowedTokenIds = py::none();
+        if (sp && sp->token_bitmask.has_value()) {
+          py::list pyAllowed;
+          const auto& bitmask = *sp->token_bitmask;
+          int vocabSize = sp->bitmask_vocab_size;
+          for (size_t w = 0; w < bitmask.size(); ++w) {
+            auto word = static_cast<uint32_t>(bitmask[w]);
+            while (word != 0) {
+              int bit = __builtin_ctz(word);
+              int tokenId = static_cast<int>(w) * 32 + bit;
+              if (tokenId < vocabSize) pyAllowed.append(tokenId);
+              word &= word - 1;
+            }
+          }
+          allowedTokenIds = std::move(pyAllowed);
+        } else if (sp && sp->allowed_token_ids.has_value()) {
+          py::list pyAllowed;
+          for (int tid : *sp->allowed_token_ids) {
+            pyAllowed.append(tid);
+          }
+          allowedTokenIds = std::move(pyAllowed);
+        }
+
         pySeqs.append(gStepSeqClass(
-            seq->taskId.id, tokenIds, temperature, ignoreEos, blockTable,
+            seq->taskId, tokenIds, temperature, ignoreEos, blockTable,
             currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
-            presencePenalty, frequencyPenalty));
+            presencePenalty, frequencyPenalty, allowedTokenIds));
       }
 
       // First decode step after prefill must set reset_batch=true so on-device
       // sampling state is initialized correctly.
-      bool resetBatch = !isPrefill && lastStepWasPrefill_;
-      lastStepWasPrefill_ = isPrefill;
+      bool resetBatch = !isPrefill && lastStepWasPrefill;
+      lastStepWasPrefill = isPrefill;
 
       py::object results = gRunner.attr("run")(isPrefill, pySeqs, resetBatch);
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TaskID drTaskId(item.attr("task_id").cast<std::string>());
+        uint32_t drTaskId = item.attr("task_id").cast<uint32_t>();
         uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
         bool drIsError = !error.empty();
         if (drIsError) {
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId.id,
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId,
                        error);
         }
         TokenResult dr(drTaskId, drTokenId, {}, drIsError);
-        decode_callback_(dr);
+        decodeCallback(dr);
       }
     } catch (const py::error_already_set& e) {
       TT_LOG_ERROR("[LlamaModelRunner] Python error in run_step: {}", e.what());
@@ -175,19 +201,19 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
   }
   if (hadError) {
     failSequences(seqs);
-    stop_.store(true);
+    stop.store(true);
   }
 }
 
 void LlamaModelRunner::exit() {
-  if (stop_.exchange(true)) return;
-  if (!initialized_) return;
+  if (stop.exchange(true)) return;
+  if (!initialized) return;
   {
     py::gil_scoped_acquire acquire;
     gRunner = py::object();
     gStepSeqClass = py::object();
   }
-  initialized_ = false;
+  initialized = false;
   TT_LOG_INFO("[LlamaModelRunner] Runner exited");
 }
 
@@ -200,4 +226,4 @@ std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
   return runner;
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

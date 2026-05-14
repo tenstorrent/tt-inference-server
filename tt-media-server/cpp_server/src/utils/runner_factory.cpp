@@ -1,40 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "utils/runner_factory.hpp"
 
-#include "runners/embedding_runner.hpp"
-#include "runners/llm_runner.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include <stdexcept>
+#include <variant>
+
+#include "services/model_service_registration.hpp"
 #include "utils/logger.hpp"
+#include "utils/runner_registry.hpp"
 
 namespace tt::utils::runner_factory {
 
+namespace {
+
+// Every RunnerConfig arm exposes `runner_type`.
+config::ModelRunnerType runnerTypeFromConfig(
+    const config::RunnerConfig& config) {
+  return std::visit([](const auto& cfg) { return cfg.runner_type; }, config);
+}
+
+}  // namespace
+
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue) {
-  switch (service) {
-    case config::ModelService::EMBEDDING: {
-      TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
-      return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
-    }
-    case config::ModelService::LLM:
-    default: {
-      auto& cfg = std::get<config::LLMConfig>(config);
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+    ipc::ICancelQueue* cancelQueue) {
+  // Required for callers that bypass service_factory (e.g. tests).
+  services::registerBuiltinModelServices();
 
-      if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
-          cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
-        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
-        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
-                                                           taskQueue);
-      }
+  const config::ModelRunnerType runnerType = runnerTypeFromConfig(config);
 
-      TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
-      return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
-                                                      taskQueue);
-    }
+  auto runner = RunnerRegistry::instance().create(
+      service, runnerType, config, resultQueue, taskQueue, cancelQueue);
+  if (!runner) {
+    TT_LOG_ERROR(
+        "[RunnerFactory] No runner registered for service+type; refusing to "
+        "create");
+    throw std::runtime_error("No runner registered for the requested service");
   }
+  return runner;
 }
 
 }  // namespace tt::utils::runner_factory

@@ -26,7 +26,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Mistral-7B-Instruct-v0.3:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-9b67e09-a91b644 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-9b67e09-a91b644 \
   --model Mistral-7B-Instruct-v0.3 \
   --tt-device n150
 ```
@@ -49,7 +49,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers) |
 | tt-metal Commit | `9b67e09` |
 | vLLM Commit | `a91b644` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-9b67e09-a91b644` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-9b67e09-a91b644` |
 
 ---
 
@@ -67,7 +67,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Mistral-7B-Instruct-v0.3:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-9b67e09-a91b644 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-9b67e09-a91b644 \
   --model Mistral-7B-Instruct-v0.3 \
   --tt-device n300
 ```
@@ -89,4 +89,4 @@ python3 run.py --model Mistral-7B-Instruct-v0.3 --device n300 --workflow server 
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/9b67e09/models/tt_transformers) |
 | tt-metal Commit | `9b67e09` |
 | vLLM Commit | `a91b644` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-9b67e09-a91b644` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-9b67e09-a91b644` |

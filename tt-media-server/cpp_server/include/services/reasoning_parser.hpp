@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <cstdint>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -15,15 +14,6 @@ namespace tt::services {
 enum class ContentType {
   REASONING,  // Inside <think>...</think> block
   ANSWER      // Outside reasoning block (normal content)
-};
-
-// Result of parsing complete text for reasoning blocks
-struct ReasoningParseResult {
-  std::optional<std::string> reasoning;  // Reasoning content (inside <think>)
-  std::string answer;                    // Answer content (outside <think>)
-  bool has_reasoning;                    // Whether reasoning was found
-  bool
-      is_malformed;  // Whether reasoning block is incomplete (missing </think>)
 };
 
 // Result of processing a single token
@@ -54,11 +44,6 @@ class ReasoningParser {
   // Token IDs for DeepSeek R1 reasoning markers
   static constexpr int64_t THINK_START_TOKEN = 128798;  // <think>
   static constexpr int64_t THINK_END_TOKEN = 128799;    // </think>
-  static constexpr int64_t NEWLINE_TOKEN = 201;         // \n
-
-  // String markers for text-based parsing
-  static constexpr const char* THINK_START_TAG = "<think>";
-  static constexpr const char* THINK_END_TAG = "</think>";
 
   ReasoningParser() = default;
   ~ReasoningParser() = default;
@@ -68,16 +53,10 @@ class ReasoningParser {
   ReasoningParser& operator=(const ReasoningParser&) = delete;
 
   /**
-   * Parse complete text to extract reasoning and answer.
-   * Used for non-streaming requests.
-   */
-  ReasoningParseResult parseComplete(const std::string& text) const;
-
-  /**
    * Initialize streaming state for a task.
    * Call before processing first token.
    */
-  void initializeTask(const std::string& task_id);
+  void initializeTask(uint32_t task_id);
 
   /**
    * Process single token for streaming.
@@ -88,19 +67,19 @@ class ReasoningParser {
    * @param decoded_text Decoded text for this token
    * @return TokenParseResult with content type and emit flag
    */
-  TokenParseResult processToken(const std::string& task_id, int64_t token_id,
+  TokenParseResult processToken(uint32_t task_id, int64_t token_id,
                                 const std::string& decoded_text);
 
   /**
    * Finalize task state and cleanup.
    * Call when generation completes.
    */
-  void finalizeTask(const std::string& task_id);
+  void finalizeTask(uint32_t task_id);
 
   /**
    * Check if task is currently in reasoning mode.
    */
-  bool isInReasoning(const std::string& task_id) const;
+  bool isInReasoning(uint32_t task_id) const;
 
   /**
    * Get count of active tasks.
@@ -109,7 +88,7 @@ class ReasoningParser {
 
  private:
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, TaskState> task_states_;
+  std::unordered_map<uint32_t, TaskState> task_states_;
 };
 
 }  // namespace tt::services

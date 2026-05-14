@@ -2,13 +2,16 @@
 
 #include <cstdint>
 #include <deque>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
+
+using namespace tt::domain::llm;
 
 class Block {
  public:
@@ -17,34 +20,37 @@ class Block {
   void update(int64_t hash, std::vector<int64_t> tokenIds);
   void reset();
 
-  int block_id = 0;
-  int ref_count = 0;
+  int blockId = 0;
+  int refCount = 0;
   int64_t hash = -1;
-  std::vector<int64_t> token_ids;
+  std::vector<int64_t> tokenIds;
 };
 
 class BlockManager {
  public:
-  BlockManager(int numBlocks, int blockSize);
+  BlockManager(size_t numBlocks, size_t blockSize);
 
   static int64_t computeHash(const std::vector<int64_t>& tokenIds,
                              int64_t prefix = -1);
 
-  bool canAllocate(const Sequence& seq) const;
-  void allocate(Sequence& seq);
-  void deallocate(Sequence& seq);
-  bool canAppend(const Sequence& seq) const;
-  void mayAppend(Sequence& seq);
+  bool allocate(tt::domain::llm::Sequence& seq);
+  void deallocate(tt::domain::llm::Sequence& seq);
+  bool canAppend(const tt::domain::llm::Sequence& seq) const;
+  void mayAppend(tt::domain::llm::Sequence& seq);
+
+  int getBlockSize() const { return static_cast<int>(blockSize); }
+  size_t numFreeBlocks() const;
 
  private:
   Block& allocateBlock(int blockId);
   void deallocateBlock(int blockId);
 
-  int block_size_;
-  std::vector<Block> blocks_;
-  std::unordered_map<int64_t, int> hash_to_block_id_;
-  std::deque<int> free_block_ids_;
-  std::unordered_set<int> used_block_ids_;
+  size_t blockSize;
+  std::vector<Block> blocks;
+  std::unordered_map<int64_t, int> hashToBlockId;
+  std::deque<int> freeBlockIds;
+  std::unordered_set<int> usedBlockIds;
+  mutable std::mutex mutex;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

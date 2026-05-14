@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -7,50 +7,57 @@
 #include <string>
 #include <vector>
 
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "config/settings.hpp"
+#include "ipc/boost/boost_cancel_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
 
 namespace tt::ipc {
 
-using namespace std;
-
-constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
-constexpr size_t RING_BUFFER_CAPACITY = 65536;
-
 /**
- * Manages task queue and result queues for LLM workers.
+ * Manages task queue, result queues, and cancel queues for LLM workers.
  * Handles creation, cleanup, and coordination of IPC queues.
  */
 class QueueManager {
  public:
-  shared_ptr<BoostIpcTaskQueue> task_queue;
-  vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
+  std::shared_ptr<tt::ipc::boost::TaskQueue> taskQueue;
+  std::vector<std::shared_ptr<tt::ipc::boost::ResultQueue>> resultQueues;
+  std::vector<std::shared_ptr<tt::ipc::boost::CancelQueue>> cancelQueues;
 
   explicit QueueManager(int numWorkers) {
-    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-    task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
-    result_queues.reserve(numWorkers);
+    taskQueue = std::make_shared<tt::ipc::boost::TaskQueue>(
+        tt::config::ttTaskQueueName(), 1024);
+    resultQueues.reserve(numWorkers);
+    cancelQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
-      result_queues.emplace_back(
-          make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-              "/tt_tokens_" + to_string(i), true));
+      std::string resultName =
+          std::string(tt::config::ttResultQueueName()) + std::to_string(i);
+      resultQueues.emplace_back(std::make_shared<tt::ipc::boost::ResultQueue>(
+          resultName, tt::config::resultQueueCapacity()));
+
+      std::string cancelName =
+          tt::config::ttCancelQueueName() + std::to_string(i);
+      cancelQueues.emplace_back(std::make_shared<tt::ipc::boost::CancelQueue>(
+          cancelName, tt::config::cancelQueueCapacity()));
     }
   }
 
   ~QueueManager() { clear(); }
 
   void clear() {
-    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-    for (auto& queue : result_queues) {
+    tt::ipc::boost::TaskQueue::remove(tt::config::ttTaskQueueName());
+    for (auto& queue : resultQueues) {
       queue->shutdown();
+      queue->remove();
+    }
+    for (size_t i = 0; i < cancelQueues.size(); i++) {
+      cancelQueues[i]->remove();
     }
   }
 
-  // Delete copy constructor and assignment operator
   QueueManager(const QueueManager&) = delete;
   QueueManager& operator=(const QueueManager&) = delete;
 
-  // Allow move constructor and assignment operator
   QueueManager(QueueManager&&) = default;
   QueueManager& operator=(QueueManager&&) = default;
 };

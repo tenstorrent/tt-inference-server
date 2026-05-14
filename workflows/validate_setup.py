@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import logging
 import os
@@ -9,14 +9,16 @@ from pathlib import Path
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    MIN_SUPPORTED_IMAGE_VERSION,
     check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_groups_for_uid,
     get_repo_root_path,
+    parse_version_tuple,
     resolve_hf_snapshot_dir,
     run_command,
 )
@@ -29,6 +31,41 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _check_image_version_supported(model_spec):
+    """Refuse to run a pre-0.11 vLLM image with this run.py.
+
+    The vLLM docker image interface was reshaped in v0.11.0 (commit 50db8ac7
+    "Simplify and improve vLLM Docker image interface"): ENTRYPOINT changed
+    from docker-entrypoint.sh + gosu to bash -c, the script's CLI argument
+    contract changed, and shared-memory + env-var conventions changed. main
+    only emits the new contract, so an older vLLM image won't start.
+
+    Scoped to vLLM only — media-inference-server and forge images have
+    different Dockerfiles and aren't affected by this interface change
+    (the docker command for them is also simpler and stable across versions).
+
+    apply_overrides re-parses model_spec.version from --override-docker-image
+    when present, so this check covers both template-pinned versions and
+    override paths.
+    """
+    if model_spec.inference_engine != InferenceEngine.VLLM.value:
+        return
+    parsed = parse_version_tuple(model_spec.version)
+    if parsed is None:
+        # Unparseable versions (`dev`, `latest`, etc.) default to "newest
+        # contract" — let the runtime decide, matches main's behaviour.
+        return
+    if parsed < MIN_SUPPORTED_IMAGE_VERSION:
+        min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
+        tag = f"v{model_spec.version}"
+        raise RuntimeError(
+            f"⛔ Image v{model_spec.version} is not supported in this "
+            f"version of run.py (need v{min_str}+). Check out the matching "
+            f"release tag {tag} and re-run:\n"
+            f"    git checkout {tag}"
+        )
 
 
 def validate_runtime_args(model_spec, runtime_config):
@@ -46,6 +83,8 @@ def validate_runtime_args(model_spec, runtime_config):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
+
+    _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
@@ -192,6 +231,64 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
         _validate_local_vllm_installation(runtime_config)
 
     logger.info("✅ validating local setup completed")
+
+
+def run_multihost_validation_subprocess(
+    multihost_config, model_spec, json_fpath, dry_run=False
+):
+    """Run multihost validation via subprocess with dedicated venv.
+
+    This aligns multihost validation with single-host validation pattern:
+    - Uses SYSTEM_SOFTWARE_VALIDATION venv (with packaging library)
+    - Runs run_multihost_validation.py as subprocess
+    - Returns validated hosts list
+
+    Args:
+        multihost_config: MultiHostConfig object with hosts, paths, etc.
+        model_spec: ModelSpec for system software version validation
+        json_fpath: Path to runtime model spec JSON file
+        dry_run: If True, skip directory existence and permission checks
+
+    Returns:
+        List of validated hostnames
+
+    Raises:
+        ValueError: If validation fails
+    """
+    venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
+    venv_config.setup(model_spec=model_spec)
+
+    cmd = [
+        str(venv_config.venv_python),
+        str(get_repo_root_path() / "workflows" / "run_multihost_validation.py"),
+        "--hosts",
+        ",".join(multihost_config.hosts),
+        "--shared-storage-root",
+        str(multihost_config.shared_storage_root),
+        "--config-pkl-dir",
+        str(multihost_config.config_pkl_dir),
+        "--mpi-interface",
+        multihost_config.mpi_interface,
+        "--tt-smi-path",
+        multihost_config.tt_smi_path,
+    ]
+
+    if json_fpath is not None:
+        cmd.extend(["--runtime-model-spec-json", str(json_fpath)])
+
+    if dry_run:
+        cmd.append("--dry-run")
+
+    return_code = run_command(cmd, logger=logger)
+
+    if return_code != 0:
+        raise ValueError(
+            "⛔ Multi-host validation failed. See errors above.\n"
+            "To skip system software validation, use the flag: --skip-system-sw-validation"
+        )
+
+    logger.info("✅ Multi-host validation completed")
+    return multihost_config.hosts
 
 
 def _try_fix_path_permissions_for_uid(path, uid, need_write=False):

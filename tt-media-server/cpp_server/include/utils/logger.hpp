@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -199,54 +199,5 @@ void ZeroOverheadLogger::logImpl(Level level, const char* fmtStr,
 #define TT_LOG_WARN(...) TT_LOG_WARN_ZERO(__VA_ARGS__)
 #define TT_LOG_ERROR(...) TT_LOG_ERROR_ZERO(__VA_ARGS__)
 #define TT_LOG_CRITICAL(...) TT_LOG_CRITICAL_ZERO(__VA_ARGS__)
-
-// Legacy function for backward compatibility
-void initializeLogger();
-
-// Legacy Logger class for backward compatibility
-class Logger {
- public:
-  enum Level {
-    TRACE = 0,
-    DEBUG = 1,
-    INFO = 2,
-    WARN = 3,
-    ERROR = 4,
-    CRITICAL = 5
-  };
-
-  static std::shared_ptr<Logger> getLogger() {
-    static std::shared_ptr<Logger> instance(new Logger());
-    return instance;
-  }
-
-  void log(Level level, const std::string& message) {
-    switch (level) {
-      case TRACE:
-        TT_LOG_TRACE("{}", message);
-        break;
-      case DEBUG:
-        TT_LOG_DEBUG("{}", message);
-        break;
-      case INFO:
-        TT_LOG_INFO("{}", message);
-        break;
-      case WARN:
-        TT_LOG_WARN("{}", message);
-        break;
-      case ERROR:
-        TT_LOG_ERROR("{}", message);
-        break;
-      case CRITICAL:
-        TT_LOG_CRITICAL("{}", message);
-        break;
-    }
-  }
-
-  void logDebug(const std::string& message) { TT_LOG_DEBUG("{}", message); }
-  void logInfo(const std::string& message) { TT_LOG_INFO("{}", message); }
-  void logWarn(const std::string& message) { TT_LOG_WARN("{}", message); }
-  void logError(const std::string& message) { TT_LOG_ERROR("{}", message); }
-};
 
 }  // namespace tt::utils

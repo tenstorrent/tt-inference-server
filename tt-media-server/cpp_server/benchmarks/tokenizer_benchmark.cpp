@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include <chrono>
 #include <iomanip>
@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
-using namespace tt::utils;
+using namespace tt::utils::tokenizers;
 
 constexpr size_t NUM_WARMUP_ITERATIONS = 5;
 constexpr size_t NUM_BENCHMARK_ITERATIONS = 50;

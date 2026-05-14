@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """Tests for multi-host configuration generation."""
 
@@ -26,7 +26,7 @@ from workflows.utils import (
     check_path_permissions_for_uid,
     get_groups_for_uid,
 )
-from workflows.validate_multihost import (
+from workflows.run_multihost_validation import (
     _run_ssh_command,
     validate_multihost_bind_mount_permissions,
 )

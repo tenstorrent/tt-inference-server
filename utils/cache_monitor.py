@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """Host-side tensor cache monitoring used by benchmark and eval startup waits.
 
@@ -180,10 +180,9 @@ def _get_unreadable_docker_volume_info(
     volume_name: str, mountpoint: Path, error: OSError
 ) -> DockerVolumeInfo:
     logger.info(
-        "Docker volume %s mountpoint could not be inspected by the current user: %s (%s)",
+        "Docker volume %s mountpoint could not be inspected by the current user: %s",
         volume_name,
         mountpoint,
-        error,
     )
     return DockerVolumeInfo(
         volume_name=volume_name,
@@ -578,7 +577,7 @@ class CacheMonitor:
     TT_METAL_CACHE_FIRST_RUN_STARTED = "TT_METAL_CACHE_FIRST_RUN_STARTED"
     TT_METAL_CACHE_COMPLETED = "TT_METAL_CACHE_COMPLETED"
     DEFAULT_TENSOR_CACHE_TIMEOUT = 1200.0
-    TENSOR_CACHE_NO_CHANGE_TIMEOUT = 300
+    TENSOR_CACHE_NO_CHANGE_TIMEOUT = 900
 
     def __init__(
         self,

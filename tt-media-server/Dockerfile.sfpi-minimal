@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 # ==============================================================================
 # Minimal TTNN Docker Image
@@ -27,7 +27,7 @@
 
 FROM ubuntu:22.04 AS base
 
-LABEL maintainer="Tenstorrent AI ULC"
+LABEL maintainer="Tenstorrent USA, Inc.
 LABEL description="Minimal TTNN environment with SFPI dependencies"
 
 ARG DEBIAN_FRONTEND=noninteractive

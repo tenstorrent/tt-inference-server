@@ -23,6 +23,20 @@
             }
         }
     },
+    "stable-diffusion-xl-base-1.0-512x512": {
+        "accuracy": {
+            "100": {
+                "fid_valid_range": [
+                    150.0,
+                    250.0
+                ],
+                "clip_valid_range": [
+                    28.0,
+                    34.0
+                ]
+            }
+        }
+    },
     "stable-diffusion-3.5-large": {
         "accuracy": {
             "5000": {
@@ -238,6 +252,21 @@
     },
     "Wan2.2-T2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+        "num_inference_steps": 40,
+        "accuracy": {
+            "5": {
+                "clip_valid_range": [
+                    28.25276,
+                    30.54000
+                ]
+            }
+        },
+        "extra_args": {
+            "output_type": "pil"
+        }
+    },
+    "Wan2.2-I2V-A14B-Diffusers": {
+        "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         "num_inference_steps": 40,
         "accuracy": {
             "5": {

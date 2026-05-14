@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """
 Tests for run_command error handling and check parameter behavior.
@@ -280,12 +280,17 @@ class TestVenvConfigSetupCheckTrue:
 
 
 # =============================================================================
-# setup_benchmarks_genai_perf docker check - check=True
+# BENCHMARKS_GENAI_PERF docker check hook - check=True
 # =============================================================================
 
 
 class TestGenaiPerfDockerCheckTrue:
-    """Test setup_benchmarks_genai_perf uses check=True for docker version."""
+    """Test the BENCHMARKS_GENAI_PERF setup hook uses check=True for docker --version.
+
+    The genai-perf venv is Docker-based — no pip installs. Its `setup_function`
+    hook (`check_docker_available`) verifies Docker is available on the host
+    via `docker --version` and must raise on failure.
+    """
 
     @pytest.fixture
     def mock_venv_config(self):
@@ -303,10 +308,10 @@ class TestGenaiPerfDockerCheckTrue:
 
     def test_docker_version_uses_check_true(self, mock_venv_config, mock_model_spec):
         """Test docker --version command uses check=True."""
-        from workflows.workflow_venvs import setup_benchmarks_genai_perf
+        from workflows.workflow_venvs import check_docker_available
 
         with patch("workflows.workflow_venvs.run_command") as mock_run:
-            setup_benchmarks_genai_perf(mock_venv_config, mock_model_spec)
+            check_docker_available(mock_venv_config, mock_model_spec)
 
             # Find the docker --version call
             docker_call = None
@@ -320,14 +325,24 @@ class TestGenaiPerfDockerCheckTrue:
 
     def test_docker_version_raises_on_failure(self, mock_venv_config, mock_model_spec):
         """Test docker --version failure raises RuntimeError."""
-        from workflows.workflow_venvs import setup_benchmarks_genai_perf
+        from workflows.workflow_venvs import check_docker_available
 
         with patch(
             "workflows.workflow_venvs.run_command",
             side_effect=RuntimeError("docker not found"),
         ):
             with pytest.raises(RuntimeError, match="docker not found"):
-                setup_benchmarks_genai_perf(mock_venv_config, mock_model_spec)
+                check_docker_available(mock_venv_config, mock_model_spec)
+
+    def test_genai_perf_config_registers_docker_hook(self):
+        """Registry sanity: BENCHMARKS_GENAI_PERF declares the docker hook and no pip deps."""
+        from workflows.workflow_types import WorkflowVenvType
+        from workflows.workflow_venvs import VENV_CONFIGS, check_docker_available
+
+        cfg = VENV_CONFIGS[WorkflowVenvType.BENCHMARKS_GENAI_PERF]
+        assert cfg.requirements_file is None
+        assert cfg.setup_function is check_docker_available
+        assert "artifacts" in cfg.extra_dirs
 
 
 # =============================================================================
@@ -411,112 +426,100 @@ class TestSystemSoftwareValidationCheckFalse:
 
 
 # =============================================================================
-# Setup functions return setup_succeeded boolean
+# install_requirements() helper return value
 # =============================================================================
 
 
-class TestSetupFunctionsReturnBool:
-    """Test setup_*() functions return setup_succeeded boolean based on command success."""
+class TestInstallRequirementsReturnBool:
+    """Test install_requirements() returns True/False based on the pip install result.
+
+    Pure-pip workflow venvs declare a `requirements_file` and rely on
+    install_requirements() to drive the install. The helper wraps a single
+    `uv pip install -r ...` invocation, so its return value is determined by
+    a single `run_command` exit code.
+    """
 
     @pytest.fixture
     def mock_venv_config(self):
-        """Create a mock venv config."""
+        """Create a mock venv config that points install_requirements at any file."""
         mock_config = MagicMock()
         mock_config.venv_python = "/fake/venv/bin/python"
-        mock_config.venv_path = MagicMock()
-        mock_config.venv_path.exists.return_value = True
-        mock_config.venv_path.__truediv__ = MagicMock(return_value=MagicMock())
         return mock_config
 
-    @pytest.fixture
-    def mock_model_spec(self):
-        """Create a mock model spec."""
-        mock_spec = MagicMock()
-        mock_spec.model_name = "test-model"
-        mock_spec.model_type = MagicMock()
-        return mock_spec
-
     @pytest.mark.parametrize(
-        "setup_func_name",
+        "requirements_file",
         [
-            "setup_evals_common",
-            "setup_benchmarks_vllm",
-            "setup_evals_vision",
-            "setup_evals_audio",
-            "setup_evals_embedding",
-            "setup_evals_video",
-            "setup_stress_tests_run_script",
-            "setup_evals_run_script",
-            "setup_benchmarks_run_script",
-            "setup_reports_run_script",
-            "setup_hf_setup",
-            "setup_benchmarks_aiperf",
-            "setup_system_software_validation",
-            "setup_tt_smi",
-            "setup_tt_topology",
-            "setup_tests_run_script",
+            "evals-common.txt",
+            "evals-vision.txt",
+            "evals-audio.txt",
+            "evals-embedding.txt",
+            "evals-video.txt",
+            "evals-run-script.txt",
+            "stress-tests-run-script.txt",
+            "benchmarks-run-script.txt",
+            "benchmarks-vllm.txt",
+            "benchmarks-aiperf.txt",
+            "reports-run-script.txt",
+            "hf-setup.txt",
+            "system-software-validation.txt",
+            "tt-smi.txt",
+            "tt-topology.txt",
+            "tests-run-script.txt",
         ],
     )
-    def test_setup_function_returns_true_on_success(
-        self, mock_venv_config, mock_model_spec, setup_func_name
+    def test_install_requirements_returns_true_on_success(
+        self, mock_venv_config, requirements_file
     ):
-        """Test setup functions return True when all commands succeed."""
-        import workflows.workflow_venvs as venvs
-
-        setup_func = getattr(venvs, setup_func_name)
+        """install_requirements() returns True when uv pip install succeeds (rc=0)."""
+        from workflows.workflow_venvs import install_requirements
 
         with patch("workflows.workflow_venvs.run_command", return_value=0):
-            result = setup_func(mock_venv_config, mock_model_spec)
-        assert result is True
+            assert install_requirements(mock_venv_config, requirements_file) is True
 
-    @pytest.mark.parametrize(
-        "setup_func_name",
-        [
-            "setup_evals_common",
-            "setup_benchmarks_vllm",
-            "setup_evals_vision",
-            "setup_evals_audio",
-            "setup_evals_embedding",
-            "setup_reports_run_script",
-            "setup_hf_setup",
-            "setup_system_software_validation",
-            "setup_tt_smi",
-            "setup_tt_topology",
-        ],
-    )
-    def test_setup_function_returns_false_on_failure(
-        self, mock_venv_config, mock_model_spec, setup_func_name
-    ):
-        """Test setup functions return False when command fails."""
-        import workflows.workflow_venvs as venvs
-
-        setup_func = getattr(venvs, setup_func_name)
+    def test_install_requirements_returns_false_on_failure(self, mock_venv_config):
+        """install_requirements() returns False when uv pip install fails (rc!=0)."""
+        from workflows.workflow_venvs import install_requirements
 
         with patch("workflows.workflow_venvs.run_command", return_value=1):
-            result = setup_func(mock_venv_config, mock_model_spec)
-        assert result is False
+            assert install_requirements(mock_venv_config, "evals-common.txt") is False
 
-    def test_setup_with_multiple_commands_tracks_all_failures(
-        self, mock_venv_config, mock_model_spec
-    ):
-        """Test that setup functions with multiple commands track all failures."""
-        from workflows.workflow_venvs import setup_evals_run_script
+    def test_install_requirements_raises_for_missing_file(self, mock_venv_config):
+        """install_requirements() raises FileNotFoundError if the file doesn't exist."""
+        from workflows.workflow_venvs import install_requirements
 
-        # All commands fail
-        with patch("workflows.workflow_venvs.run_command", return_value=1):
-            result = setup_evals_run_script(mock_venv_config, mock_model_spec)
-            assert result is False
+        with pytest.raises(FileNotFoundError, match="Requirements file not found"):
+            install_requirements(mock_venv_config, "this-file-does-not-exist.txt")
 
-    def test_setup_with_multiple_commands_returns_false_on_any_failure(
-        self, mock_venv_config, mock_model_spec
-    ):
-        """Test setup returns False if any command fails."""
-        from workflows.workflow_venvs import setup_benchmarks_run_script
 
-        # Last command fails
-        with patch("workflows.workflow_venvs.run_command", side_effect=[0, 0, 1]):
-            result = setup_benchmarks_run_script(mock_venv_config, mock_model_spec)
-        assert result is False
+class TestVenvConfigRegistry:
+    """Sanity checks on the declarative VENV_CONFIGS registry.
+
+    Catches accidental deletion or mis-pointing of a per-venv requirements file.
+    """
+
+    def test_every_referenced_requirements_file_exists(self):
+        """Every `requirements_file` referenced in VENV_CONFIGS must exist on disk."""
+        from workflows.workflow_venvs import REQUIREMENTS_DIR, VENV_CONFIGS
+
+        missing = []
+        for venv_type, cfg in VENV_CONFIGS.items():
+            if cfg.requirements_file is None:
+                continue
+            path = REQUIREMENTS_DIR / cfg.requirements_file
+            if not path.is_file():
+                missing.append(f"{venv_type.name} -> {path}")
+        assert missing == [], f"Missing requirements files: {missing}"
+
+    def test_every_pure_pip_venv_has_no_setup_function(self):
+        """Pure-pip venvs (no extra_dirs, no hook) must declare a requirements_file."""
+        from workflows.workflow_venvs import VENV_CONFIGS
+
+        for venv_type, cfg in VENV_CONFIGS.items():
+            if cfg.setup_function is None and not cfg.extra_dirs:
+                assert cfg.requirements_file is not None, (
+                    f"Venv {venv_type.name} has no requirements_file, no extra_dirs, "
+                    f"and no setup_function — it would do nothing on setup()."
+                )
 
 
 # =============================================================================

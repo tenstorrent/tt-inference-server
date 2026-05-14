@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import logging
 from abc import ABC, abstractmethod
 
-from tests.server_tests.test_cases.device_liveness_test import DeviceLivenessTest
-from tests.server_tests.test_classes import TestConfig
+from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
+from server_tests.test_classes import TestConfig
 
 # Import test framework components
 from .test_status import BaseTestStatus
@@ -101,3 +101,16 @@ class BaseMediaStrategy(ABC):
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return (False, None)
+
+    def require_health(self) -> str:
+        """Run the health check and abort the workflow if the server is not ready.
+
+        Returns the runner-in-use string so callers can dispatch on it.
+        Raises ``RuntimeError``.
+        """
+        health_status, runner_in_use = self.get_health()
+        if not health_status:
+            logger.error("Health check failed.")
+            raise RuntimeError("Health check failed; aborting workflow.")
+        logger.info(f"Health check passed. Runner in use: {runner_in_use}")
+        return runner_in_use

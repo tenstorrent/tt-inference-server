@@ -28,6 +28,8 @@ Browse models by type:
 
 Browse models by hardware:
 
+- [Dual WH Galaxy](docs/model_support/models_by_hardware.md#dual-wh-galaxy)
+- [Quad WH Galaxy](docs/model_support/models_by_hardware.md#quad-wh-galaxy)
 - [WH Galaxy](docs/model_support/models_by_hardware.md#wh-galaxy)
 - [BH LoudBox](docs/model_support/models_by_hardware.md#bh-loudbox)
 - [BH 4xP150](docs/model_support/models_by_hardware.md#bh-4xp150)

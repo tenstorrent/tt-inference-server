@@ -202,7 +202,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--docker-server` | false | Run inference server in a Docker container. |
 | `--local-server` | false | Run the vLLM inference server directly on the host. Requires `--tt-metal-home` and always uses host filesystem persistence for logs and TT caches. |
 | `-it`, `--interactive` | false | Run Docker in interactive mode. |
-| `--service-port` | `8000` | Service port. Also reads from `SERVICE_PORT` env var. |
+| `--service-port` | `8000` | Service port for inference HTTP server, e.g. vLLM. |
 | `--bind-host` | `0.0.0.0` | Host interface for Docker port publishing. Use `127.0.0.1` for localhost-only access. |
 | `--no-auth` | false | Disable vLLM API key authorization (skips `JWT_SECRET` requirement). |
 | `--print-docker-cmd` | false | Print the Docker run command and exit without starting the server. |
@@ -415,8 +415,8 @@ Run benchmarks against an external vLLM server:
 # Server running on localhost:8000
 python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K --disable-trace-capture
 
-# can use --service-port or SERVICE_PORT env var to set another port
-SERVICE_PORT=9000 python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --tt-device N150 --disable-trace-capture
+# can use --service-port env var to set another port
+python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --tt-device N150 --disable-trace-capture --service-port 9000  
 ```
 
 Run evaluations against an external vLLM server:
@@ -424,7 +424,7 @@ Run evaluations against an external vLLM server:
 # Server running on localhost:8000
 python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --disable-trace-capture
 
-# can use --service-port or SERVICE_PORT env var to set another port
+# can use --service-port to set another port
 python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --disable-trace-capture --service-port 7592
 ```
 
@@ -456,7 +456,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 
 
 - **Model Mismatch**: Ensure the model served by the external server matches the model specified in the `--model` parameter.
 
-- **Port Conflicts**: Make sure the `SERVICE_PORT` environment variable matches the actual port your external server is listening on.
+- **Port Conflicts**: Make sure the `--service-port` arg, or `SERVICE_PORT` environment variable matches the actual port your external server is listening on.
 
 
 ## Workflow Setup

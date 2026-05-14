@@ -1,27 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "runners/llm_runner/scheduler.hpp"
+#include "utils/id_generator.hpp"
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
-namespace llm_engine {
+namespace tt::runners::schedulers {
+
+using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
+using tt::runners::llm_engine::InMemoryTaskQueue;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -43,7 +48,7 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID nextId() { return TaskID(TaskID::generate()); }
+uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 // --- make_scheduler factory tests ---
 
@@ -79,7 +84,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -108,7 +113,7 @@ TEST(PrefillFirstSchedulerTest,
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -206,13 +211,13 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
   sched.preempt(*batch[0]);
-  EXPECT_EQ(batch[0]->status, SequenceStatus::WAITING);
+  EXPECT_EQ(batch[0]->getStatus(), tt::domain::llm::SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
   EXPECT_EQ(batch2.size(), 1u);
@@ -225,7 +230,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2TaskId = seq2.taskId;
+  uint32_t seq2TaskId = seq2.taskId;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
   ASSERT_TRUE(prefill1);
@@ -344,7 +349,7 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2Id = seq2.taskId;
+  uint32_t seq2Id = seq2.taskId;
   sched.add(seq1);
   sched.add(seq2);
 
@@ -522,4 +527,4 @@ TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   EXPECT_EQ(b3.size(), 2u);
 }
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::schedulers

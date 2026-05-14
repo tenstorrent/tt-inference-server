@@ -28,7 +28,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [speecht5-tts](https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/experimental/speecht5_tts) |
 | tt-metal Commit | `a9b09e0` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-a9b09e0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-a9b09e0` |
 
 ---
 
@@ -51,4 +51,4 @@ python3 run.py --model speecht5_tts --device n300 --workflow server --docker-ser
 | Max Batch Size | 1 |
 | Implementation Code | [speecht5-tts](https://github.com/tenstorrent/tt-metal/tree/a9b09e0/models/experimental/speecht5_tts) |
 | tt-metal Commit | `a9b09e0` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-a9b09e0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-a9b09e0` |

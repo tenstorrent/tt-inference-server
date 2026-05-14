@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import csv
 import json
 import logging
+import os
 import re
 import sys
 from datetime import datetime
@@ -27,7 +28,9 @@ from evals.eval_config import EVAL_CONFIGS
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
 )
-from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
+from server_tests.utils.vllm_parameter_json_to_md import (
+    main as generate_vllm_parameter_report,
+)
 from workflows.acceptance_criteria import (
     acceptance_criteria_check,
     format_acceptance_summary_markdown,
@@ -46,7 +49,11 @@ from workflows.workflow_config import (
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ModelType, ReportCheckTypes
+from workflows.workflow_types import (
+    DeviceTypes,
+    ModelType,
+    ReportCheckTypes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1518,15 +1525,33 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+    structured_pattern = f"benchmark_structured_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
 
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
     aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
+    structured_files = glob(f"{benchmarks_output_dir}/{structured_pattern}")
+    # vllm_pattern also matches structured files; subtract them so they're processed once.
+    vllm_files = [f for f in vllm_files if f not in set(structured_files)]
+
+    # Mirror the runtime gate from run_benchmarks.py: when only structured-output
+    # tasks were executed, the report should not surface stale text/vlm/aiperf
+    # JSONs left in the shared benchmarks_output/ directory by prior runs.
+    if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
+        logger.info(
+            "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; restricting report to "
+            "structured-output result files only."
+        )
+        vllm_files = []
+        genai_files = []
+        aiperf_files = []
 
     logger.info(
-        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files before deduplication"
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, "
+        f"{len(aiperf_files)} AIPerf, {len(structured_files)} structured-output "
+        "benchmark files before deduplication"
     )
 
     # Deduplicate files - keep only latest run for each config
@@ -1569,7 +1594,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     output_dir = Path(args.output_path) / "benchmarks"
 
-    if not vllm_files and not genai_files and not aiperf_files:
+    if not vllm_files and not genai_files and not aiperf_files and not structured_files:
         logger.info("No benchmark files found. Skipping.")
         return (
             "",
@@ -1596,6 +1621,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         create_video_display_dict,
         create_vlm_display_dict,
         get_markdown_table,
+        render_structured_output_sections,
         save_markdown_table,
         save_to_csv,
     )
@@ -1620,7 +1646,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
         vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
-        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
+        vllm_tts = [
+            r for r in vllm_release_raw if r.get("task_type") == "text_to_speech"
+        ]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
@@ -1693,6 +1721,27 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             video_sections.append(
                 f"#### vLLM Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_video_md}"
             )
+
+    # Process structured-output benchmarks (vLLM-family; one section per dataset+ratio)
+    if structured_files:
+        _, structured_release_raw, _, _ = benchmark_generate_report_helper(
+            structured_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(structured_release_raw)
+
+        structured_rows = [
+            r
+            for r in structured_release_raw
+            if r.get("task_type") == "structured_output"
+        ]
+        text_sections.extend(
+            render_structured_output_sections(
+                structured_rows,
+                model_spec.model_name,
+                args.device,
+                source_label="vLLM",
+            )
+        )
 
     # Process AIPerf benchmarks
     if aiperf_files:
@@ -2188,6 +2237,7 @@ def extract_eval_results(files):
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
+    task_type = model_spec.model_type.task_type
     report_rows = []
 
     for task in eval_config.tasks:
@@ -2280,6 +2330,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                         "model": model_spec.model_name,
                         "device": args.device,
                         "task_name": t_key,
+                        "task_type": task_type,
                         "accuracy_check": accuracy_check,
                         "score": score,
                         "ratio_to_reference": ratio_to_reference,
@@ -2302,6 +2353,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     "model": model_spec.model_name,
                     "device": args.device,
                     "task_name": task.task_name,
+                    "task_type": task_type,
                     "accuracy_check": accuracy_check,
                     "score": score,
                     "ratio_to_reference": ratio_to_reference,
@@ -2606,76 +2658,96 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    # glob on all test reports - each test category might produce its own report
-    file_name_pattern = f"test_{model_spec.model_id}_*/*"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
-    logger.info("Tests Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
-        logger.info("No tests report files found. Skipping.")
-        return (
-            "",
-            [
-                {
-                    "model": getattr(args, "model", "unknown_model"),
-                    "device": getattr(args, "device", "unknown_device"),
-                }
-            ],
-            None,
-            None,
+    empty_result = (
+        "",
+        [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ],
+        None,
+        None,
+    )
+
+    # Find the latest test output directory for this model
+    tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
+    dir_pattern = f"test_{model_spec.model_id}__*"
+    matching_dirs = list(tests_output_dir.glob(dir_pattern))
+    if not matching_dirs:
+        logger.info(
+            f"No test output directories matching '{dir_pattern}' "
+            f"in {tests_output_dir}. Skipping."
         )
-    # When multiple test runs exist, use only the most recent result
-    files = max(files, key=lambda f: Path(f).stat().st_mtime)
-    logger.info(f"Selected most recent test report: {files}")
+        return empty_result
 
-    # generate vLLM parameter coverage report
-    markdown_str = generate_vllm_parameter_report(
-        files, output_path, report_id, metadata, model_spec=model_spec
-    )
+    latest_dir = max(matching_dirs, key=lambda d: d.stat().st_mtime)
+    logger.info(f"Using latest test output directory: {latest_dir}")
 
-    # Look for parameter_report.json in tests_output directory
-    release_raw = None
-    test_dir_pattern = f"test_{model_spec.model_id}_*"
-    test_dir_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
-    )
-    test_dirs = sorted(
-        glob(test_dir_path_pattern),
-        key=lambda d: Path(d).stat().st_mtime,
-        reverse=True,
-    )
-    for test_dir in test_dirs:
-        parameter_report_path = Path(test_dir) / "parameter_report.json"
-        if parameter_report_path.exists():
-            try:
-                with open(parameter_report_path, "r", encoding="utf-8") as f:
-                    release_raw = json.load(f)
-                logger.info(f"Loaded parameter report from: {parameter_report_path}")
-                break
-            except Exception as e:
-                logger.warning(
-                    f"Could not read parameter report {parameter_report_path}: {e}"
-                )
+    # Collect report file paths from parameter_report_*.json files
+    report_files = []
+    for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
+        report_files.append(str(report_path))
+        logger.info(f"  Found report: {report_path}")
 
-    if release_raw is None:
-        logger.info("No parameter_report.json found in tests_output directory.")
+    logger.info(f"Found {len(report_files)} parameter report(s)")
+
+    if not report_files:
+        logger.info("No parameter report files found in test output directory.")
+        return empty_result
+
+    logger.info(f"Processing {len(report_files)} parameter report(s)")
+
+    # Generate vLLM parameter coverage report from all report files
+    # Each JSON contains its own task_name field
+    markdown_str = generate_vllm_parameter_report(report_files)
+
+    # Merge all parameter report data into combined release_raw
+    release_raw_list = []
+    for report_file in report_files:
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                release_raw_list.append(json.load(f))
+            logger.info(f"Loaded parameter report from: {report_file}")
+        except Exception as e:
+            logger.warning(f"Could not read parameter report {report_file}: {e}")
+
+    if not release_raw_list:
         release_raw = [
             {
                 "model": getattr(args, "model", "unknown_model"),
                 "device": getattr(args, "device", "unknown_device"),
             }
         ]
+    elif len(release_raw_list) == 1:
+        release_raw = release_raw_list[0]
+    else:
+        # Merge results from multiple reports
+        release_raw = {
+            "endpoint_url": ", ".join(
+                r.get("endpoint_url", "N/A") for r in release_raw_list
+            ),
+            "model_name": release_raw_list[0].get("model_name", "unknown-model"),
+            "model_impl": release_raw_list[0].get("model_impl", "unknown-impl"),
+            "results": {},
+        }
+        for report_data in release_raw_list:
+            for test_case, tests in report_data.get("results", {}).items():
+                if test_case in release_raw["results"]:
+                    release_raw["results"][test_case].extend(tests)
+                else:
+                    release_raw["results"][test_case] = list(tests)
 
-    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = (
+        f"### Test Results for {model_spec.model_name} on {args.device}"
+        f"\n\n{markdown_str}"
+    )
 
     # Write markdown report to file
     with output_path.open("w", encoding="utf-8") as f:
@@ -3091,6 +3163,7 @@ def benchmarks_release_data_format(
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
+    # Internally aggregated in ms; released JSON is in seconds.
     benchmark_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
         "model": model_spec.model_name,
@@ -3100,12 +3173,12 @@ def benchmarks_release_data_format(
         "device": device_str,
         "num_requests": benchmark_summary_data.get("num_requests", 1),
         "num_inference_steps": benchmark_summary_data.get("num_inference_steps", 0),
-        "ttft": benchmark_summary_data.get("mean_ttft_ms", 0) / 1000,
+        "latency": benchmark_summary_data.get("mean_latency_ms", 0) / 1000,
         "inference_steps_per_second": benchmark_summary_data.get(
             "inference_steps_per_second", 0
         ),
         "filename": benchmark_summary_data.get("filename", ""),
-        "task_type": model_spec.model_type.name.lower(),
+        "task_type": model_spec.model_type.task_type,
     }
 
     if (
@@ -3116,11 +3189,11 @@ def benchmarks_release_data_format(
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
 
     if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
-        benchmark_summary["ttft_p90"] = (
-            benchmark_summary_data.get("p90_ttft_ms", 0) / 1000
+        benchmark_summary["latency_p90"] = (
+            benchmark_summary_data.get("p90_latency_ms", 0) / 1000
         )
-        benchmark_summary["ttft_p95"] = (
-            benchmark_summary_data.get("p95_ttft_ms", 0) / 1000
+        benchmark_summary["latency_p95"] = (
+            benchmark_summary_data.get("p95_latency_ms", 0) / 1000
         )
         benchmark_summary["rtr"] = benchmark_summary_data.get("rtr", 0)
 
@@ -3162,7 +3235,7 @@ def benchmarks_release_data_format_embedding(
             "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
             "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
             "filename": benchmark_summary_data.get("filename", ""),
-            "task_type": model_spec.model_type.name.lower(),
+            "task_type": model_spec.model_type.task_type,
         }
     ]
 
@@ -3183,21 +3256,21 @@ def add_target_checks_cnn_image_video(
     logger.info("Calculating target checks")
     target_checks = {
         "functional": {
-            "ttft": metrics["functional_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["functional_ttft_ratio"],
-            "ttft_check": metrics["functional_ttft_check"],
+            "latency": metrics["functional_latency"],
+            "latency_ratio": metrics["functional_latency_ratio"],
+            "latency_check": metrics["functional_latency_check"],
             "tput_check": 2 if tput_user > functional_tput_user else 3,
         },
         "complete": {
-            "ttft": metrics["complete_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["complete_ttft_ratio"],
-            "ttft_check": metrics["complete_ttft_check"],
+            "latency": metrics["complete_latency"],
+            "latency_ratio": metrics["complete_latency_ratio"],
+            "latency_check": metrics["complete_latency_check"],
             "tput_check": 2 if tput_user > complete_tput_user else 3,
         },
         "target": {
-            "ttft": metrics["target_ttft"] / 1000,  # Convert ms to seconds
-            "ttft_ratio": metrics["target_ttft_ratio"],
-            "ttft_check": metrics["target_ttft_check"],
+            "latency": metrics["target_latency"],
+            "latency_ratio": metrics["target_latency_ratio"],
+            "latency_check": metrics["target_latency_check"],
             "tput_check": 2 if tput_user > target_tput_user else 3,
         },
     }
@@ -3340,26 +3413,27 @@ def calculate_target_metrics(metrics_config):
 
 
 def add_target_checks_audio(metrics):
+    """Build target_checks for Audio benchmark release data."""
     logger.info("Adding target_checks to Audio benchmark release data")
     # tput_check is always 1 for now (no tput target)
     tput_check = 1
     target_checks = {
         "functional": {
-            "ttft": metrics["functional_ttft"],
-            "ttft_ratio": metrics["functional_ttft_ratio"],
-            "ttft_check": metrics["functional_ttft_check"],
+            "latency": metrics["functional_latency"],
+            "latency_ratio": metrics["functional_latency_ratio"],
+            "latency_check": metrics["functional_latency_check"],
             "tput_check": tput_check,
         },
         "complete": {
-            "ttft": metrics["complete_ttft"],
-            "ttft_ratio": metrics["complete_ttft_ratio"],
-            "ttft_check": metrics["complete_ttft_check"],
+            "latency": metrics["complete_latency"],
+            "latency_ratio": metrics["complete_latency_ratio"],
+            "latency_check": metrics["complete_latency_check"],
             "tput_check": tput_check,
         },
         "target": {
-            "ttft": metrics["target_ttft"],
-            "ttft_ratio": metrics["target_ttft_ratio"],
-            "ttft_check": metrics["target_ttft_check"],
+            "latency": metrics["target_latency"],
+            "latency_ratio": metrics["target_latency_ratio"],
+            "latency_check": metrics["target_latency_check"],
             "tput_check": tput_check,
         },
     }
@@ -3368,28 +3442,29 @@ def add_target_checks_audio(metrics):
 
 
 def add_target_checks_tts(metrics):
+    """Build target_checks for TTS benchmark release data."""
     logger.info("Adding target_checks to TTS benchmark release data")
     # tput_check is always 1 for now (no tput target)
     tput_check = 1
     target_checks = {
         "functional": {
-            "ttft": metrics.get("functional_ttft"),
-            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
+            "latency": metrics.get("functional_latency"),
+            "latency_ratio": metrics.get("functional_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("functional_latency_check", "Undefined"),
             "rtr_check": metrics.get("functional_rtr_check", 1),
             "tput_check": tput_check,
         },
         "complete": {
-            "ttft": metrics.get("complete_ttft"),
-            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
+            "latency": metrics.get("complete_latency"),
+            "latency_ratio": metrics.get("complete_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("complete_latency_check", "Undefined"),
             "rtr_check": metrics.get("complete_rtr_check", 1),
             "tput_check": tput_check,
         },
         "target": {
-            "ttft": metrics.get("target_ttft"),
-            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
-            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
+            "latency": metrics.get("target_latency"),
+            "latency_ratio": metrics.get("target_latency_ratio", "Undefined"),
+            "latency_check": metrics.get("target_latency_check", "Undefined"),
             "rtr_check": metrics.get("target_rtr_check", 1),
             "tput_check": tput_check,
         },
@@ -3606,19 +3681,17 @@ def main():
             )
             logger.info(f"Performance targets: {targets}")
 
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = targets.ttft_ms
+            # PerformanceTargets stores the latency threshold under ``ttft_ms``.
+            target_latency = targets.ttft_ms / 1000.0 if targets.ttft_ms else None
             target_rtr = targets.rtr if hasattr(targets, "rtr") else None
 
-            # Initialize the benchmark summary data
             benchmark_summary_data = {}
 
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
+            total_latency_ms = 0.0
             total_tput = 0.0
             total_rtr = 0.0
             for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
+                total_latency_ms += benchmark.get("mean_latency_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
                 # Aggregate RTR for TTS models
                 if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
@@ -3633,12 +3706,12 @@ def main():
                     "inference_steps_per_second", 0
                 )
                 benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get(
-                    "mean_ttft_ms", 0
+                benchmark_summary_data["mean_latency_ms"] = benchmark.get(
+                    "mean_latency_ms", 0
                 )
 
-            avg_ttft = (
-                total_ttft / len(benchmarks_release_data)
+            avg_latency = (
+                (total_latency_ms / len(benchmarks_release_data)) / 1000.0
                 if len(benchmarks_release_data) > 0
                 else 0
             )
@@ -3652,13 +3725,15 @@ def main():
                     else 0
                 )
 
-            # Calculate all target metrics using centralized function
-            # TTFT: lower is better, so is_ascending_metric=False
+            # Calculate all target metrics using centralized function.
+            # latency: lower is better, so is_ascending_metric=False.
+            # Both avg_metric and target_metric are in seconds so the
+            # ratio is unit-correct.
             metrics_config = [
                 {
-                    "avg_metric": avg_ttft,
-                    "target_metric": target_ttft,
-                    "field_name": "ttft",
+                    "avg_metric": avg_latency,
+                    "target_metric": target_latency,
+                    "field_name": "latency",
                     "is_ascending_metric": False,
                 },
             ]
@@ -3814,23 +3889,34 @@ def main():
             else [],
         }
 
-        # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
-        # Add parameter_support_tests only if data exists
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
-        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
-            output_data
+        known_issues = model_spec.device_model_spec.known_issues
+        accepted, acceptance_blockers, enforcement_metadata = acceptance_criteria_check(
+            output_data, model_spec.status, known_issues
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria, acceptance_blockers
+            accepted, acceptance_blockers, enforcement_metadata
         )
-        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_criteria"] = accepted
         output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_criteria_metadata"] = enforcement_metadata
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+        if known_issues:
+            output_data["known_issues_declared"] = enforcement_metadata[
+                "known_issues_declared"
+            ]
+
+        logger.info(
+            f"Acceptance criteria enforcement: {enforcement_metadata['enforcement_result']} "
+            f"(status={enforcement_metadata['model_status']}, "
+            f"enforced={enforcement_metadata['enforced_tiers']}, "
+            f"failed={enforcement_metadata['failed_enforced_tiers']})"
+        )
 
         release_str = (
             f"{release_header}\n\n{metadata_str}\n\n"
@@ -3845,8 +3931,13 @@ def main():
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)
 
-    main_return_code = 0
-    return main_return_code
+    if enforcement_metadata["enforcement_result"] == "FAIL":
+        logger.warning(
+            f"Acceptance criteria FAILED for {model_spec.model_name}: "
+            f"required tiers {enforcement_metadata['failed_enforced_tiers']} "
+            f"did not pass (model status: {enforcement_metadata['model_status']})"
+        )
+    return 0
 
 
 def server_tests_generate_report(args, server_mode, model_spec, report_id, metadata={}):

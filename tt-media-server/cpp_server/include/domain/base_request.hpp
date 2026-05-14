@@ -1,13 +1,13 @@
 #pragma once
 
-#include "domain/task_id.hpp"
+#include <cstdint>
 
 namespace tt::domain {
 
 struct BaseRequest {
-  TaskID task_id;
+  uint32_t task_id;
 
-  explicit BaseRequest(TaskID taskId) : task_id(std::move(taskId)) {}
+  explicit BaseRequest(uint32_t taskId) : task_id(taskId) {}
 };
 
 }  // namespace tt::domain

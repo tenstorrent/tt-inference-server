@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "worker/worker_manager.hpp"
 
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
+#include "ipc/boost/boost_cancel_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
+#include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "ipc/queue_manager.hpp"
-#include "ipc/shared_memory.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -24,6 +29,11 @@ namespace {
 [[noreturn]] void execWorkerProcessHelper(
     size_t workerId,
     const std::unordered_map<std::string, std::string>& envVars) {
+  // Request SIGTERM when the parent (main server) process dies so that workers
+  // do not become orphaned under PID 1 if the main process crashes.  This
+  // survives execv, so it only needs to be set once here in the child.
+  prctl(PR_SET_PDEATHSIG, SIGTERM);
+
   for (const auto& [key, value] : envVars) {
     setenv(key.c_str(), value.c_str(), 1);
   }
@@ -60,10 +70,11 @@ WorkerManager::~WorkerManager() { stop(); }
 void WorkerManager::start() {
   startWarmupListener();
   startWorkers();
-  waitForFirstWarmup();
+  startLivenessChecker();
 }
 
 void WorkerManager::stop() {
+  stopLivenessChecker();
   stopWarmupListener();
   stopProcesses();
 }
@@ -101,7 +112,10 @@ std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
   for (const auto& w : workers) {
     WorkerInfo info;
     info.worker_id = std::to_string(w->worker_id);
-    info.is_ready = isWorkerWarmed(w->worker_id);
+    info.pid = w->pid;
+    info.is_alive = w->is_alive;
+    // Worker is ready only if it's warmed up and the process is still alive
+    info.is_ready = w->is_alive && isWorkerWarmed(w->worker_id);
     out.push_back(std::move(info));
   }
   return out;
@@ -113,19 +127,31 @@ SingleProcessWorker* WorkerManager::worker(size_t idx) {
 
 bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   auto* w = workers[workerIdx].get();
-  if (w->pid <= 0) {
-    return false;
+  auto result = pollProcessLiveness(w->pid, w->is_alive, workerIdx);
+  if (result.transitionedToDead) {
+    WorkerDeathCallback callback;
+    {
+      std::lock_guard<std::mutex> lock(deathCallbackMutex);
+      callback = deathCallback;
+    }
+    if (callback) {
+      try {
+        callback(workerIdx, w->pid);
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[WorkerManager] Worker death callback threw: {}",
+                     e.what());
+      } catch (...) {
+        TT_LOG_ERROR(
+            "[WorkerManager] Worker death callback threw a non-std exception");
+      }
+    }
   }
-  int status;
-  pid_t result = waitpid(w->pid, &status, WNOHANG);
-  if (result == 0) {
-    return true;
-  }
-  if (result == w->pid) {
-    w->is_alive = false;
-    return false;
-  }
-  return true;  // waitpid error -- assume alive
+  return result.stillAlive;
+}
+
+void WorkerManager::setWorkerDeathCallback(WorkerDeathCallback callback) {
+  std::lock_guard<std::mutex> lock(deathCallbackMutex);
+  deathCallback = std::move(callback);
 }
 
 void WorkerManager::restartWorker(size_t workerIdx) {
@@ -142,11 +168,12 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
-  cfg.result_queue =
-      std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(workerId), false);
+  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
+      tt::config::ttTaskQueueName());
+  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
+      std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;
@@ -177,10 +204,8 @@ void WorkerManager::startWorkers() {
 }
 
 void WorkerManager::startWarmupListener() {
-  tt::ipc::BoostIpcWarmupSignalQueue::remove(
-      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
-  warmupQueue = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
-      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
+  warmupQueue = std::make_unique<tt::ipc::boost::WarmupSignalQueue>(
+      tt::config::ttWarmupSignalsQueueName(), workerCount);
   warmupReceived = false;
   warmupListenerThread = std::thread([this]() {
     try {
@@ -206,21 +231,51 @@ void WorkerManager::startWarmupListener() {
   });
 }
 
-void WorkerManager::waitForFirstWarmup() {
-  if (!warmupQueue) return;
-  std::unique_lock<std::mutex> lock(warmupMutex);
-  warmupCv.wait(lock, [this]() { return warmupReceived.load(); });
+void WorkerManager::startLivenessChecker() {
+  livenessCheckerShouldStop = false;
+  livenessCheckerThread = std::thread([this]() {
+    TT_LOG_INFO("[WorkerManager] Liveness checker thread started");
+    while (!livenessCheckerShouldStop.load()) {
+      // Wait 5 seconds, but wake up if stop is requested
+      for (int i = 0; i < 50 && !livenessCheckerShouldStop.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+
+      if (livenessCheckerShouldStop.load()) {
+        break;
+      }
+
+      // Check all workers
+      for (size_t i = 0; i < workers.size(); ++i) {
+        bool alive = checkWorkerAlive(i);
+        if (!alive) {
+          TT_LOG_ERROR(
+              "[WorkerManager] Liveness check: Worker {} is dead (PID {})", i,
+              workers[i]->pid);
+        }
+      }
+    }
+    TT_LOG_INFO("[WorkerManager] Liveness checker thread stopped");
+  });
+}
+
+void WorkerManager::stopLivenessChecker() {
+  livenessCheckerShouldStop = true;
+  if (livenessCheckerThread.joinable()) {
+    livenessCheckerThread.join();
+  }
 }
 
 WorkerConfig makeWorkerConfigForProcess(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
-  cfg.result_queue =
-      std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(workerId), false);
+  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
+      tt::config::ttTaskQueueName());
+  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
+      std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 
@@ -118,8 +118,10 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
+        prompts = self._inject_lora_triggers(prompts, requests[0].lora_path)
 
         self._apply_request_settings(requests[0])
+        self._ensure_lora_state(requests[0])
         self._apply_image_to_image_request_settings(requests[0])
 
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")

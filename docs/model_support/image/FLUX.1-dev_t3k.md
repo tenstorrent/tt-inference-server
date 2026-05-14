@@ -18,6 +18,7 @@ To use non-default weights, replace `FLUX.1-dev` in commands below.
 - [WH Galaxy](FLUX.1-dev_galaxy.md)
 - [BH LoudBox](FLUX.1-dev_p150x8.md)
 - [BH 4xP150](FLUX.1-dev_p150x4.md)
+- [BH QuietBox 2](FLUX.1-dev_p300x2.md)
 
 ## Quickstart - Deploy FLUX.1-dev Inference Server on WH LoudBox/QuietBox
 
@@ -41,4 +42,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
 | tt-metal Commit | `555f240` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240` |

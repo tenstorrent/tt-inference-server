@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from typing import Any, Dict, List, Optional
-from pathlib import Path
-
-import sqlite3
 import json
+import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class JobDatabase:
@@ -53,7 +52,8 @@ class JobDatabase:
                     created_at INTEGER NOT NULL,
                     completed_at INTEGER,
                     error_message TEXT,
-                    result_path TEXT
+                    result_path TEXT,
+                    org_id TEXT
                 );
             """)
             cursor.execute("""
@@ -63,9 +63,36 @@ class JobDatabase:
                     epoch INTEGER NOT NULL,
                     metric_name TEXT NOT NULL,
                     value FLOAT NOT NULL,
+                    learning_rate FLOAT,
                     timestamp REAL NOT NULL,
-                    
-                    PRIMARY KEY (job_id, global_step, metric_name), 
+
+                    PRIMARY KEY (job_id, global_step, metric_name),
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    job_id TEXT NOT NULL,
+                    checkpoint_id TEXT NOT NULL,
+                    step INTEGER NOT NULL,
+                    epoch INTEGER NOT NULL,
+                    metrics TEXT,
+                    created_at REAL NOT NULL,
+
+                    PRIMARY KEY (job_id, checkpoint_id),
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS logs (
+                    job_id TEXT NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    step INTEGER,
+                    message TEXT NOT NULL,
+
+                    PRIMARY KEY (job_id, log_index),
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
             """)
@@ -78,12 +105,13 @@ class JobDatabase:
         request_parameters: dict,
         status: str,
         created_at: int,
+        org_id: Optional[str] = None,
     ) -> None:
         """Insert a new job into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
                 """
-                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -92,6 +120,7 @@ class JobDatabase:
                     status,
                     json.dumps(request_parameters),
                     created_at,
+                    org_id,
                 ),
             )
 
@@ -188,19 +217,28 @@ class JobDatabase:
         metric_name: str,
         value: float,
         timestamp: float,
+        learning_rate: Optional[float] = None,
     ) -> None:
         """Insert a new metric into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
-                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                (job_id, global_step, epoch, metric_name, value, timestamp),
+                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, learning_rate, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job_id,
+                    global_step,
+                    epoch,
+                    metric_name,
+                    value,
+                    learning_rate,
+                    timestamp,
+                ),
             )
 
     def get_metrics_flat(self, job_id: str) -> List[Dict[str, Any]]:
         """Returns metrics as a flat list."""
         with self._get_cursor(commit=False) as cursor:
             cursor.execute(
-                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
+                "SELECT global_step, epoch, metric_name, value, learning_rate, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
                 (job_id,),
             )
             return [
@@ -209,7 +247,74 @@ class JobDatabase:
                     "epoch": r["epoch"],
                     "metric_name": r["metric_name"],
                     "value": r["value"],
+                    "learning_rate": r["learning_rate"],
                     "timestamp": r["timestamp"],
+                }
+                for r in cursor.fetchall()
+            ]
+
+    # ------------- CHECKPOINTS -------------
+    def insert_checkpoint(
+        self,
+        job_id: str,
+        checkpoint_id: str,
+        step: int,
+        epoch: int,
+        metrics: dict,
+        created_at: float,
+    ) -> None:
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO checkpoints (job_id, checkpoint_id, step, epoch, metrics, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, checkpoint_id, step, epoch, json.dumps(metrics), created_at),
+            )
+
+    def get_checkpoints(self, job_id: str) -> List[Dict[str, Any]]:
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute(
+                "SELECT checkpoint_id, step, epoch, metrics, created_at FROM checkpoints WHERE job_id = ? ORDER BY step ASC",
+                (job_id,),
+            )
+            return [
+                {
+                    "id": r["checkpoint_id"],
+                    "step": r["step"],
+                    "epoch": r["epoch"],
+                    "metrics": json.loads(r["metrics"]) if r["metrics"] else {},
+                    "created_at": r["created_at"],
+                }
+                for r in cursor.fetchall()
+            ]
+
+    # ------------- LOGS -------------
+    def insert_log(
+        self,
+        job_id: str,
+        log_index: int,
+        timestamp: str,
+        log_type: str,
+        step: int,
+        message: str,
+    ) -> None:
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO logs (job_id, log_index, timestamp, type, step, message) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, log_index, timestamp, log_type, step, message),
+            )
+
+    def get_logs(self, job_id: str) -> List[Dict[str, Any]]:
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute(
+                "SELECT log_index, timestamp, type, step, message FROM logs WHERE job_id = ? ORDER BY log_index ASC",
+                (job_id,),
+            )
+            return [
+                {
+                    "id": r["log_index"],
+                    "timestamp": r["timestamp"],
+                    "type": r["type"],
+                    "step": r["step"],
+                    "message": r["message"],
                 }
                 for r in cursor.fetchall()
             ]
