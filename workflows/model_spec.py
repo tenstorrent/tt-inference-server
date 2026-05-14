@@ -2846,7 +2846,7 @@ video_templates = [
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-I2V-A14B-Diffusers"],
         version="0.10.0",
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2908,7 +2908,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
         version="0.11.1",
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="6900b0c",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2996,11 +2996,10 @@ image_templates = [
     ModelSpecTemplate(
         weights=["diffusers/stable-diffusion-xl-1.0-inpainting-0.1"],
         version="0.12.0",
-        tt_metal_commit="fbbbd2d",
+        tt_metal_commit="6900b0c",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
         model_type=ModelType.IMAGE,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
