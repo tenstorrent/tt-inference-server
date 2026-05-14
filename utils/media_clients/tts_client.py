@@ -15,7 +15,7 @@ from typing import Optional
 
 import aiohttp
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import TtsTestStatus
 
 # Add project root to Python path
@@ -24,7 +24,6 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import get_num_calls
-from workflows.utils_report import get_performance_targets
 from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
@@ -164,6 +163,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
         p90_latency, p95_latency = self._calculate_tail_latency(status_list)
+        performance_check = self._calculate_performance_check(latency_value, rtr_value)
 
         report_data = {
             "benchmarks": {
@@ -177,6 +177,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "text_to_speech",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
@@ -400,76 +401,23 @@ class TtsClientStrategy(BaseMediaStrategy):
         latency_value: Optional[float] = None,
         rtr_value: Optional[float] = None,
     ) -> ReportCheckTypes:
-        """Calculate performance check based on latency and RTR targets.
+        """TTS perf check: compares latency and RTR vs configured targets.
 
-        Uses get_performance_targets from model_performance_reference.json.
-
-        Args:
-            latency_value: End-to-end request latency in seconds.
-            rtr_value: Real-time ratio (audio_duration / generation_time)
-
-        Returns:
-            ``ReportCheckTypes`` member. ``IntEnum`` serialises to JSON as its
-            integer value, so downstream consumers still see 1/2/3 (NA/PASS/FAIL).
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
         """
-        logger.info("Calculating performance check based on latency, RTR targets")
-
-        device_str = self.model_spec.cli_args.get("device")
-        targets = get_performance_targets(
-            self.model_spec.model_name,
-            device_str,
-            model_type=self.model_spec.model_type.name,
-        )
+        targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
-
-        # PerformanceTargets stores the latency threshold under ``ttft_ms``.
-        if not targets.ttft_ms:
-            logger.warning(
-                "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
-                "skipping performance check"
-            )
-            return ReportCheckTypes.NA
-
-        tolerance = targets.tolerance if targets.tolerance else 0.05
-        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-        checks_passed = 0
-        checks_total = 0
-
-        if targets.ttft_ms is not None:
-            checks_total += 1
-            latency_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
-            if latency_value <= latency_threshold_s:
-                logger.info(
-                    f"✅ latency PASSED: {latency_value:.4f}s <= {latency_threshold_s:.4f}s"
-                )
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ latency FAILED: {latency_value:.4f}s > {latency_threshold_s:.4f}s"
-                )
-
-        if targets.rtr is not None:
-            checks_total += 1
-            rtr_threshold = targets.rtr * (1 - tolerance)
-            if rtr_value >= rtr_threshold:
-                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        if checks_total == 0:
-            logger.warning("⚠️ No metrics available for validation")
-            return ReportCheckTypes.NA
-
-        if checks_passed == checks_total:
-            logger.info(f"✅ All {checks_total} performance checks passed")
-            return ReportCheckTypes.PASS
-
-        logger.warning(
-            f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
+        latency_target_s = targets.ttft_ms / 1000.0 if targets.ttft_ms else None
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck("RTR", rtr_value, targets.rtr, lower_is_better=False),
+            ],
+            tolerance=targets.tolerance,
         )
-        return ReportCheckTypes.FAIL
 
     def _calculate_accuracy_check(self) -> ReportCheckTypes:
         """No quality metric implemented yet for TTS; always reports N/A."""

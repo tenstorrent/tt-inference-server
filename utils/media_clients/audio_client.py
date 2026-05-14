@@ -17,7 +17,7 @@ import requests
 from transformers import AutoTokenizer
 
 # Local imports
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import AudioTestStatus
 
 # Add project root to Python path
@@ -30,7 +30,6 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.utils_report import get_performance_targets
 from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
@@ -76,6 +75,10 @@ class AudioClientStrategy(BaseMediaStrategy):
             f"(streaming-only), RTR={rtr_value}, T/S/U={tsu_value}"
         )
 
+        performance_check = self._calculate_performance_check(
+            latency_value, tsu_value, rtr_value
+        )
+
         # ``score`` is end-to-end latency so streaming-on and -off
         # runs are comparable; ``ttft`` is only meaningful when
         # streaming is enabled.
@@ -90,6 +93,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             "score": latency_value,
             "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
             "accuracy_check": ReportCheckTypes.NA,
+            "performance_check": performance_check,
             "ttft": ttft_value,
             "t/s/u": tsu_value,
             "rtr": rtr_value,
@@ -477,91 +481,26 @@ class AudioClientStrategy(BaseMediaStrategy):
         return len(text.split())
 
     def _calculate_performance_check(
-        self, latency_value: float, tsu_value: float, rtr_value: float
+        self,
+        latency_value: Optional[float],
+        tsu_value: Optional[float],
+        rtr_value: Optional[float],
     ) -> ReportCheckTypes:
-        """Compare measured latency / RTR / T-S-U to the configured perf targets."""
-        logger.info(
-            "Calculating performance check based on latency, RTR, T/S/U targets"
-        )
+        """Audio perf check: compares latency / T-S-U / RTR vs configured targets.
 
-        device_str = self.model_spec.cli_args.get("device")
-        targets = get_performance_targets(
-            self.model_spec.model_name,
-            device_str,
-            model_type=self.model_spec.model_type.name,
-        )
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
+        """
+        targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
-
-        if not targets.ttft_ms:
-            logger.warning(
-                "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
-                "skipping performance check"
-            )
-            return ReportCheckTypes.NA
-
-        available_metrics = [
-            "latency" if targets.ttft_ms else None,
-            "T/S/U" if targets.tput_user and tsu_value else None,
-            "RTR" if targets.rtr and rtr_value else None,
-        ]
-        logger.info(
-            f"Available metrics for validation: {[m for m in available_metrics if m]}"
+        latency_target_s = targets.ttft_ms / 1000.0 if targets.ttft_ms else None
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck("T/S/U", tsu_value, targets.tput_user, lower_is_better=False),
+                PerfCheck("RTR", rtr_value, targets.rtr, lower_is_better=False),
+            ],
+            tolerance=targets.tolerance,
         )
-
-        # Use measured values passed as parameters (not recalculated)
-        tolerance = (
-            targets.tolerance if targets.tolerance else 0.05
-        )  # Default 5% tolerance
-        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-        # Check each metric individually and determine overall result
-        checks_passed = 0
-        checks_total = 0
-
-        # PerformanceTargets stores the latency threshold under ``ttft_ms``.
-        if targets.ttft_ms is not None:  # pragma: no branch
-            checks_total += 1
-            latency_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
-            if latency_value <= latency_threshold_s:
-                logger.info(
-                    f"✅ latency PASSED: {latency_value:.4f}s <= {latency_threshold_s:.4f}s"
-                )
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ latency FAILED: {latency_value:.4f}s > {latency_threshold_s:.4f}s"
-                )
-
-        # Only check T/S/U if we have both target and measured value (streaming mode)
-        if targets.tput_user is not None and tsu_value is not None:
-            checks_total += 1
-            tsu_threshold = targets.tput_user * (
-                1 - tolerance
-            )  # For throughput, lower is worse
-            if tsu_value >= tsu_threshold:
-                logger.info(f"✅ T/S/U PASSED: {tsu_value:.2f} >= {tsu_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ T/S/U FAILED: {tsu_value:.2f} < {tsu_threshold:.2f}"
-                )
-
-        # Only check RTR if we have both target and measured value (streaming mode)
-        if targets.rtr is not None and rtr_value is not None:
-            checks_total += 1
-            rtr_threshold = targets.rtr * (1 - tolerance)  # For RTR, lower is worse
-            if rtr_value >= rtr_threshold:
-                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        if checks_total == 0:  # pragma: no cover
-            logger.warning("No targets available for performance check")
-            return ReportCheckTypes.NA
-        if checks_passed == checks_total:
-            logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-            return ReportCheckTypes.PASS
-
-        logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-        return ReportCheckTypes.FAIL
