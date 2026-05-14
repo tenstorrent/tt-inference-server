@@ -21,11 +21,10 @@
 namespace tt::utils {
 
 /**
- * Registry for both runner families keyed on (ModelService, ModelRunnerType).
- * IPC factories build loop-driven runners (LLM, embedding) and need queue
- * plumbing; media factories build direct-call runners (image; audio, TTS,
- * video next) from config alone. IPC lookup falls back to `(service, MOCK)`;
- * media requires an exact match.
+ * Registry of runner factories keyed on (ModelService, ModelRunnerType).
+ * IPC factories build loop-driven runners with queue plumbing; media
+ * factories build direct-call runners from config alone. IPC lookup falls
+ * back to `(service, MOCK)`; media requires an exact match.
  */
 class RunnerRegistry {
  public:
@@ -41,7 +40,6 @@ class RunnerRegistry {
 
   static RunnerRegistry& instance();
 
-  // IPC-loop runners.
   void registerIpcRunner(config::ModelService service,
                          config::ModelRunnerType type, IpcFactory factory);
 
@@ -52,7 +50,6 @@ class RunnerRegistry {
 
   bool hasIpc(config::ModelService service, config::ModelRunnerType type) const;
 
-  // Direct-call media runners.
   void registerMediaRunner(config::ModelService service,
                            config::ModelRunnerType type, MediaFactory factory);
 

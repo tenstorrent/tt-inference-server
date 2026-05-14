@@ -13,13 +13,9 @@ namespace tt::runners::sdxl {
 namespace py = pybind11;
 
 /**
- * Python helpers owned by the C++ SDXL runner. Bundles the bits that need
- * to run inside the interpreter (LoRA discovery, sys.path bootstrap) so the
- * C++ runner stays free of `tt_model_runners` / `utils.lora_utils` imports.
- *
- * Materialised lazily on first `helpers()` call and registered as
- * `_tt_cpp_sdxl_helpers` in `sys.modules`. All static methods require the
- * GIL.
+ * Python helpers owned by the C++ SDXL runner (LoRA discovery, sys.path).
+ * Loaded lazily as `_tt_cpp_sdxl_helpers` in `sys.modules`. All methods
+ * require the GIL.
  */
 class PythonHelpers {
  public:

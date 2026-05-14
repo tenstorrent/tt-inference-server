@@ -14,12 +14,9 @@
 
 namespace tt::utils::ipc_runner_factory {
 
-/**
- * Worker-process entry point for IPC runners (LLM, embedding). Ensures
- * `services::registerBuiltinModelServices()` has run, then delegates to
- * `RunnerRegistry::createIpc`. Direct-call media runners don't go through
- * here; they're constructed inline at registration time.
- */
+/** Worker-process entry point for IPC runners (LLM, embedding). Delegates
+ *  to `RunnerRegistry::createIpc`; media runners go directly through
+ *  `service_factory` instead. */
 std::unique_ptr<runners::IRunner> createIpcRunner(
     config::ModelService service, const config::RunnerConfig& config,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,

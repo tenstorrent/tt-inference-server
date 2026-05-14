@@ -41,7 +41,7 @@ void registerLLM() {
   auto& runners = utils::RunnerRegistry::instance();
 
   // MOCK and LLAMA share LLMRunner; the inner IModelRunner is picked from
-  // cfg.runner_type in llm_runner/model_runner.cpp::makeModelRunner.
+  // cfg.runner_type in llm_runner/model_runner.cpp.
   auto llmFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
@@ -201,8 +201,8 @@ void registerAlwaysExemptRoutes() {
 }  // namespace
 
 void registerBuiltinModelServices() {
-  // call_once publishes the registry writes to subsequent readers via its
-  // happens-before guarantee; a plain atomic<bool> exchange would not.
+  // call_once gives a happens-before for the registry writes; an
+  // atomic<bool> exchange would not.
   static std::once_flag flag;
   std::call_once(flag, []() {
     registerLLM();

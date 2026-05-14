@@ -15,9 +15,7 @@ namespace tt::runners::sdxl {
 
 namespace {
 
-// Inline Python helper module. Replaces utils.lora_utils with a narrow,
-// self-contained reimplementation that only depends on stdlib +
-// huggingface_hub.
+// Narrow reimplementation of utils.lora_utils (stdlib + huggingface_hub only).
 constexpr const char* HELPER_SOURCE = R"PY(
 """C++-owned SDXL helpers, loaded into sys.modules['_tt_cpp_sdxl_helpers']."""
 

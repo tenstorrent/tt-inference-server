@@ -46,9 +46,8 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   config::ImageConfig config_;
   std::unique_ptr<Runner> runner_;
   std::atomic<bool> ready_{false};
-  // Warmup (Python init + model load) runs on this thread so start() can
-  // return immediately and the HTTP listener can bind; /tt-liveness reports
-  // model_ready=false until warmup completes.
+  // Warmup runs here so start() can return immediately and the HTTP listener
+  // can bind; /tt-liveness reports model_ready=false until warmup completes.
   std::thread warmup_thread_;
   std::mutex warmup_mutex_;
 };

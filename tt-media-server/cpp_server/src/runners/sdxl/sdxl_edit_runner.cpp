@@ -110,7 +110,6 @@ py::object SDXLEditRunner::generateInputTensors(
   py::object mask = stackMaskBatch(requests);
   py::object cond = mask.attr("__lt__")(0.5F);
   py::object maskedImage = image.attr("__mul__")(cond);
-
   const auto& head = requests.front();
   py::dict kwargs;
   kwargs["torch_image"] = image;

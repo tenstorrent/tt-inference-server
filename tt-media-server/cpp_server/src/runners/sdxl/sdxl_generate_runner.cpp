@@ -63,10 +63,6 @@ void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
 py::object SDXLGenerateRunner::generateInputTensors(
     const std::vector<domain::ImageGenerateRequest>& requests,
     py::object promptEmbeds, py::object addTextEmbeds) {
-  // Text-to-image has no per-request image input — prompt embeds are already
-  // batched by encode_prompts. Pipeline-state fields (seed/timesteps/sigmas)
-  // are guaranteed uniform across the batch by areBatchCompatible; use the
-  // head request as the source of truth.
   const auto& head = requests.front();
   py::dict kwargs;
   kwargs["all_prompt_embeds_torch"] = promptEmbeds;

@@ -93,10 +93,8 @@ py::object SDXLImageToImageRunner::preprocessImage(
 
 py::object SDXLImageToImageRunner::stackImageBatch(
     const std::vector<domain::ImageGenerateRequest>& requests) const {
-  // Preprocess each user-facing slot, then pad the trailing rows up to
-  // max_batch_size with copies of the first slot (the pipeline still runs
-  // on those rows; postProcessImages discards their outputs).
-  const size_t pad = batch_size_ > requests.size() ? batch_size_ - requests.size() : 0;
+  const size_t pad =
+      batch_size_ > requests.size() ? batch_size_ - requests.size() : 0;
   py::list rows;
   for (const auto& r : requests) {
     rows.append(preprocessImage(r.image.value_or("")));
@@ -108,13 +106,16 @@ py::object SDXLImageToImageRunner::stackImageBatch(
   return torch_module_.attr("cat")(rows, py::arg("dim") = 0);
 }
 
+bool SDXLImageToImageRunner::areBatchCompatible(
+    const domain::ImageGenerateRequest& a,
+    const domain::ImageGenerateRequest& b) const {
+  return SDXLBaseRunner::areBatchCompatible(a, b) && a.strength == b.strength;
+}
+
 py::object SDXLImageToImageRunner::generateInputTensors(
     const std::vector<domain::ImageGenerateRequest>& requests,
     py::object promptEmbeds, py::object addTextEmbeds) {
   py::object torchImage = stackImageBatch(requests);
-
-  // Compatibility gate guarantees seed/timesteps/sigmas are uniform across
-  // the batch.
   const auto& head = requests.front();
   py::dict kwargs;
   kwargs["torch_image"] = torchImage;
@@ -144,7 +145,6 @@ void SDXLImageToImageRunner::applyModeSpecificSettings(
   if (request.strength.has_value()) {
     tt_sdxl_.attr("set_strength")(*request.strength);
   }
-  // aesthetic_score / negative_aesthetic_score: not wired (tt-metal#31032).
 }
 
 }  // namespace tt::runners::sdxl

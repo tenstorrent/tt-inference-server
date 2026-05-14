@@ -27,8 +27,8 @@ std::unique_ptr<runners::IRunner> RunnerRegistry::createIpc(
     return exact->second(config, resultQueue, taskQueue, cancelQueue);
   }
 
-  // Fall back to MOCK rather than scanning: unordered_map iteration is not
-  // deterministic, so a "first available" pick would vary across runs.
+  // Fall back to MOCK rather than scanning (unordered_map iteration is
+  // non-deterministic).
   auto mock = ipc_factories_.find({service, config::ModelRunnerType::MOCK});
   if (mock != ipc_factories_.end() && mock->second) {
     TT_LOG_WARN(

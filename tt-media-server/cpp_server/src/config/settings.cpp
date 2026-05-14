@@ -326,8 +326,7 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
   return out;
 }
 
-/** Shared by every in-process media runner reader (image; audio, TTS, video
- *  next). */
+/** Shared reader for every in-process media runner config. */
 void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));

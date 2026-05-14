@@ -20,10 +20,8 @@
 #include "utils/logger.hpp"
 
 namespace {
-// Time the batcher waits for additional compatible requests after popping
-// the first slot. Bounds tail latency for the leading request when the
-// batch isn't full. Picked small relative to one SDXL step (~hundreds of
-// ms) so it doesn't extend per-batch latency meaningfully.
+// Window the batcher waits for additional compatible requests before running
+// a non-full batch. Small relative to one SDXL step (~hundreds of ms).
 constexpr std::chrono::milliseconds BATCH_FILL_WINDOW{5};
 }  // namespace
 
@@ -58,8 +56,8 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
       is_tensor_parallel_(!config.device_mesh_shape.empty() &&
                           config.device_mesh_shape[0] > 1) {
   setupRunnerEnvironment(config);
-  // py::initialize_interpreter leaves the GIL held by this thread; on that
-  // path we drop it explicitly below so the worker thread pool can acquire.
+  // py::initialize_interpreter leaves the GIL held; release it so worker
+  // threads can re-acquire on demand.
   const bool ownsInterpreter = !Py_IsInitialized();
   if (ownsInterpreter) {
     py::initialize_interpreter();
@@ -91,8 +89,6 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
 SDXLBaseRunner::~SDXLBaseRunner() { stop(); }
 
 void SDXLBaseRunner::stop() {
-  // Drain pending requests with a stop exception so callers don't hang on
-  // their futures, then join the batcher before tearing down the pipeline.
   {
     std::lock_guard<std::mutex> lk(queue_mutex_);
     batcher_stop_.store(true, std::memory_order_release);
@@ -210,8 +206,6 @@ bool SDXLBaseRunner::warmup() {
   try {
     runFullWarmup();
     initialized_ = true;
-    // Spin up the batcher only after the pipeline is healthy; queued
-    // requests would otherwise race a half-built pipeline.
     batcher_stop_.store(false, std::memory_order_release);
     batcher_thread_ = std::thread(&SDXLBaseRunner::batcherLoop, this);
     TT_LOG_INFO("[SDXL] Warmup completed");
@@ -238,8 +232,6 @@ void SDXLBaseRunner::runFullWarmup() {
   TT_LOG_INFO("[SDXL] tt-metal pipeline constructed");
 
   runWithTimeout("warmup_inference", 1000, [&]() {
-    // Exercise the batched path with a single-element vector so warmup
-    // builds the exact same Python objects the live path will.
     std::vector<domain::ImageGenerateRequest> singleton{warmupRequest()};
     const auto& head = singleton.front();
     auto prompts = processPrompts(singleton);
@@ -281,7 +273,7 @@ SDXLBaseRunner::PromptPack SDXLBaseRunner::processPrompts(
   for (const auto& r : requests) pack.prompts.push_back(r.prompt);
   for (int i = 0; i < pack.needed_padding; ++i) pack.prompts.emplace_back("");
 
-  // Collapse to absent when all entries are null (Python's `[None] * N`).
+  // Mirror Python's `negative_prompts == [None]` collapse to absent.
   std::vector<std::string> negs;
   bool anyNeg = false;
   negs.reserve(static_cast<size_t>(batch_size_));
@@ -375,20 +367,17 @@ void SDXLBaseRunner::ensureLoraState(
 
 std::vector<std::string> SDXLBaseRunner::postProcessImages(
     const py::object& imgsList,
-    const domain::ImageGenerateRequest& formatRequest, int batchCount) const {
-  Format format =
-      parseFormat(formatRequest.image_return_format.value_or("JPEG"));
-  int quality = formatRequest.image_quality.value_or(85);
-
+    const std::vector<domain::ImageGenerateRequest>& requests) const {
   std::vector<std::string> out;
   py::list imgs(imgsList);
   const int total = static_cast<int>(imgs.size());
-  // Anything past `batchCount` is dummy padding produced by processPrompts.
-  const int limit = std::min(total, batchCount);
+  const int limit = std::min(total, static_cast<int>(requests.size()));
   out.reserve(static_cast<size_t>(std::max(0, limit)));
   for (int i = 0; i < limit; ++i) {
-    py::object img = imgs[py::int_(i)];
-    py::object tensor = img;
+    const auto& req = requests[static_cast<size_t>(i)];
+    Format format = parseFormat(req.image_return_format.value_or("JPEG"));
+    int quality = req.image_quality.value_or(85);
+    py::object tensor = imgs[py::int_(i)];
     tensor = tensor.attr("detach")();
     tensor =
         tensor.attr("to")(py::arg("dtype") = torch_module_.attr("float32"));
@@ -409,20 +398,17 @@ std::vector<std::string> SDXLBaseRunner::postProcessImages(
 
 bool SDXLBaseRunner::areBatchCompatible(
     const domain::ImageGenerateRequest& a,
-    const domain::ImageGenerateRequest& b) {
-  // Any LoRA in play forces single-request batches: load_lora_weights /
-  // fuse_lora rewrite the in-memory pipeline weights, so even two requests
-  // with the same lora_path must run sequentially (subsequent fuses would
-  // double-apply).
-  if (a.lora_path.has_value() || b.lora_path.has_value()) return false;
+    const domain::ImageGenerateRequest& b) const {
+  // Mirrors BaseSDXLRunner.is_request_batchable. Same-LoRA batches are
+  // allowed: _ensure_lora_state is a no-op when path+scale already match.
   return a.num_inference_steps == b.num_inference_steps &&
          a.guidance_scale == b.guidance_scale &&
          a.guidance_rescale == b.guidance_rescale &&
          a.crop_coords_top_left == b.crop_coords_top_left &&
-         a.strength == b.strength && a.timesteps == b.timesteps &&
-         a.sigmas == b.sigmas &&
-         a.image_return_format == b.image_return_format &&
-         a.image_quality == b.image_quality;
+         a.timesteps == b.timesteps && a.sigmas == b.sigmas &&
+         a.prompt_2 == b.prompt_2 &&
+         a.negative_prompt_2 == b.negative_prompt_2 &&
+         a.lora_path == b.lora_path && a.lora_scale == b.lora_scale;
 }
 
 void SDXLBaseRunner::batcherLoop() {
@@ -439,9 +425,6 @@ void SDXLBaseRunner::batcherLoop() {
       batch.push_back(std::move(queue_.front()));
       queue_.pop_front();
 
-      // Drain compatible requests up to max_batch_size, waiting briefly for
-      // late arrivals so a single-request burst can still coalesce. Skipped
-      // for batch_size_ == 1 to keep single-stream latency tight.
       if (batch_size_ > 1) {
         const auto deadline =
             std::chrono::steady_clock::now() + BATCH_FILL_WINDOW;
@@ -453,8 +436,7 @@ void SDXLBaseRunner::batcherLoop() {
               queue_.pop_front();
               continue;
             }
-            // Incompatible head — process the current batch first to
-            // preserve FIFO ordering across compatibility groups.
+            // Stop on incompatible head to preserve FIFO across groups.
             break;
           }
           if (std::chrono::steady_clock::now() >= deadline) break;
@@ -482,9 +464,8 @@ void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
 
     py::gil_scoped_acquire acquire;
     auto prompts = processPrompts(requests);
-    // Compatibility gate (areBatchCompatible) guarantees every
-    // pipeline-state field is uniform across the batch, so we drive the
-    // pipeline from requests[0].
+    // areBatchCompatible guarantees pipeline-state fields are uniform across
+    // the batch; drive the pipeline from requests[0] (matches Python).
     const auto& head = requests.front();
     injectLoraTriggers(prompts.prompts, head.lora_path);
     applyRequestSettings(head);
@@ -511,7 +492,7 @@ void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
     tt_sdxl_.attr("compile_image_processing")();
 
     py::object imgs = tt_sdxl_.attr("generate_images")();
-    images = postProcessImages(imgs, head, static_cast<int>(batch.size()));
+    images = postProcessImages(imgs, requests);
   } catch (const py::error_already_set& e) {
     error = std::make_exception_ptr(std::runtime_error(
         std::string("[SDXL] inference failed: ") + e.what()));
@@ -559,8 +540,7 @@ std::vector<std::string> SDXLBaseRunner::run(
   std::future<std::vector<std::string>> future;
   {
     std::lock_guard<std::mutex> lk(queue_mutex_);
-    // Re-check under the lock so an enqueue can't race with stop()'s drain
-    // pass and leave a request waiting on a promise no one will set.
+    // Check under the lock to avoid racing with stop()'s drain pass.
     if (batcher_stop_.load(std::memory_order_acquire)) {
       throw std::runtime_error("[SDXL] Runner is stopping");
     }

@@ -14,7 +14,6 @@ namespace tt::utils::ipc_runner_factory {
 
 namespace {
 
-// Every RunnerConfig arm exposes `runner_type`.
 config::ModelRunnerType runnerTypeFromConfig(
     const config::RunnerConfig& config) {
   return std::visit([](const auto& cfg) { return cfg.runner_type; }, config);
@@ -26,8 +25,8 @@ std::unique_ptr<runners::IRunner> createIpcRunner(
     config::ModelService service, const config::RunnerConfig& config,
     ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
-  // Required for callers that bypass service_factory (e.g. tests, exec'd
-  // worker children that don't inherit parent registration state).
+  // Needed for callers bypassing service_factory (tests, exec'd worker
+  // children that don't inherit parent registration state).
   services::registerBuiltinModelServices();
 
   const config::ModelRunnerType runnerType = runnerTypeFromConfig(config);

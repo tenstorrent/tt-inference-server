@@ -25,13 +25,9 @@ namespace tt::runners::sdxl {
 namespace py = pybind11;
 
 /**
- * C++ port of `tt_model_runners.base_sdxl_runner.BaseSDXLRunner`.
- *
- * Orchestrates the SDXL pipeline entirely in C++ (device setup, prompt prep,
- * LoRA state, post-processing) and delegates the heavy lifting to the
- * tt-metal SDXL pipeline via pybind11. The embedded interpreter is left
- * running between calls; all Python interactions are guarded by
- * `py::gil_scoped_acquire`.
+ * C++ port of `tt_model_runners.base_sdxl_runner.BaseSDXLRunner`. Drives the
+ * tt-metal SDXL pipeline via pybind11; the embedded interpreter is reused
+ * across requests and all Python access is guarded by the GIL.
  */
 class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
                                            std::vector<std::string>> {
@@ -42,9 +38,6 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   SDXLBaseRunner& operator=(const SDXLBaseRunner&) = delete;
 
   bool warmup() override;
-  /** Enqueue the request onto the batcher and block until the result (or an
-   *  exception) is ready. Concurrent callers are coalesced into batches up to
-   *  `max_batch_size` by the consumer thread; FIFO order is preserved. */
   std::vector<std::string> run(
       const domain::ImageGenerateRequest& request) override;
   void stop() override;
@@ -53,36 +46,30 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   explicit SDXLBaseRunner(const config::ImageConfig& config);
 
   virtual py::object loadDiffusersPipeline() = 0;
-
-  /** Distribute weights to device, build `self.tt_sdxl`. */
   virtual void distributeBlock() = 0;
-
-  /** Call `tt_sdxl.prepare_input_tensors([...])` in the order expected by
-   * the specific pipeline. */
   virtual void prepareInputTensorsForIteration(py::object tensors) = 0;
-
   virtual py::object generateInputTensors(
       const std::vector<domain::ImageGenerateRequest>& requests,
       py::object promptEmbeds, py::object addTextEmbeds) = 0;
-
   virtual domain::ImageGenerateRequest warmupRequest() const = 0;
-
   virtual void applyModeSpecificSettings(
       const domain::ImageGenerateRequest& /*request*/) {}
 
-  /** Run a callable on a detached worker with a hard timeout. The caller
-   * MUST NOT hold the GIL — the worker re-acquires it. After a timeout the
-   * runner is unhealthy. */
+  /** Port of `BaseSDXLRunner.is_request_batchable`. Override in subclasses to
+   *  add mode-specific fields (e.g. `strength` for img2img). */
+  virtual bool areBatchCompatible(const domain::ImageGenerateRequest& a,
+                                  const domain::ImageGenerateRequest& b) const;
+
+  /** Run `work` with a hard timeout. Caller MUST NOT hold the GIL. */
   static void runWithTimeout(const std::string& tag, unsigned timeoutSeconds,
                              const std::function<void()>& work);
 
-  /** Encode the first `batchCount` entries of `imgsList` to base64 strings
-   *  using the encoding hints from `formatRequest`. Trailing
-   *  `max_batch_size - batchCount` entries are dummy paddings produced by
-   *  `processPrompts`. */
+  /** Encode the first `requests.size()` entries of `imgsList`; trailing
+   *  entries are dummy padding produced by `processPrompts`. Each request
+   *  selects its own format / quality. */
   std::vector<std::string> postProcessImages(
       const py::object& imgsList,
-      const domain::ImageGenerateRequest& formatRequest, int batchCount) const;
+      const std::vector<domain::ImageGenerateRequest>& requests) const;
 
   struct PromptPack {
     std::vector<std::string> prompts;
@@ -91,21 +78,15 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
     std::optional<std::string> negative_prompt_2;
     int needed_padding = 0;
   };
-  /** Pad prompts to max_batch_size. */
   PromptPack processPrompts(
       const std::vector<domain::ImageGenerateRequest>& requests) const;
 
   void injectLoraTriggers(std::vector<std::string>& prompts,
                           const std::optional<std::string>& loraPath) const;
-
   void applyRequestSettings(const domain::ImageGenerateRequest& request);
-
   void ensureLoraState(const domain::ImageGenerateRequest& request);
-
   void initDevice();
-
   void runFullWarmup();
-
   py::dict pipelineDeviceParams();
 
   config::ImageConfig config_;
@@ -113,7 +94,6 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   bool is_tensor_parallel_ = false;
   bool initialized_ = false;
 
-  // Held GIL-side; null until `warmup()` succeeds.
   py::object ttnn_device_;
   py::object pipeline_;
   py::object tt_sdxl_;
@@ -124,34 +104,14 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   std::optional<float> current_lora_scale_;
 
  private:
-  /** One in-flight request waiting for its slice of a batched pipeline run. */
   struct BatchSlot {
     domain::ImageGenerateRequest request;
     std::promise<std::vector<std::string>> promise;
   };
 
-  /** True when `a` and `b` can be packed into the same pipeline call.
-   *  Compares every field that influences pipeline state (scheduler steps,
-   *  guidance, lora, strength, sigmas/timesteps) or output encoding. Returns
-   *  false when either side has a LoRA configured (load_lora_weights mutates
-   *  pipeline weights, so cross-LoRA batches would corrupt each other's
-   *  outputs even when paths match). */
-  static bool areBatchCompatible(const domain::ImageGenerateRequest& a,
-                                 const domain::ImageGenerateRequest& b);
-
-  /** Consumer loop running on `batcher_thread_`. Owns the embedded
-   *  interpreter for inference: pops one slot, drains compatible slots up to
-   *  `max_batch_size` while preserving FIFO across incompatible groups, then
-   *  hands the batch to `runBatch`. */
   void batcherLoop();
-
-  /** Single pipeline pass over `batch`. On success fulfills each slot's
-   *  promise with that slot's image; on failure surfaces the same exception
-   *  to every slot in the batch. */
   void runBatch(std::vector<BatchSlot>& batch);
 
-  // Replaces the old per-call run_mutex_. The batcher_thread_ is the sole
-  // owner of pipeline state, so no in-Python mutex is needed.
   std::mutex queue_mutex_;
   std::condition_variable queue_cv_;
   std::deque<BatchSlot> queue_;
@@ -189,14 +149,16 @@ class SDXLImageToImageRunner : public SDXLBaseRunner {
   domain::ImageGenerateRequest warmupRequest() const override;
   void applyModeSpecificSettings(
       const domain::ImageGenerateRequest& request) override;
+  bool areBatchCompatible(
+      const domain::ImageGenerateRequest& a,
+      const domain::ImageGenerateRequest& b) const override;
 
-  /** base64 -> PIL -> diffusers image_processor.preprocess; returns torch
-   * tensor (1, C, H, W). */
+  /** base64 -> PIL -> torch tensor (1, C, H, W). */
   py::object preprocessImage(const std::string& base64Image) const;
 
-  /** Stack per-request preprocessed images and pad up to `max_batch_size`
-   *  with copies of the first slot (the pipeline still runs on the padded
-   *  rows, the outputs are dropped in `postProcessImages`). */
+  /** Stack per-request preprocessed images; pad trailing rows with copies of
+   *  the first slot. The pipeline runs over padded rows; outputs are
+   *  discarded in `postProcessImages`. */
   py::object stackImageBatch(
       const std::vector<domain::ImageGenerateRequest>& requests) const;
 };
@@ -217,8 +179,6 @@ class SDXLEditRunner : public SDXLImageToImageRunner {
 
  private:
   py::object preprocessMask(const std::string& base64Mask) const;
-
-  /** Like `stackImageBatch` but for masks. */
   py::object stackMaskBatch(
       const std::vector<domain::ImageGenerateRequest>& requests) const;
 };

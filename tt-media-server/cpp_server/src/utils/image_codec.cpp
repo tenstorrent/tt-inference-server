@@ -26,7 +26,6 @@ void stbWriteCallback(void* context, void* data, int size) {
 }
 
 uint8_t denormalize(float v) {
-  // diffusers postprocess for [-1, 1] inputs: x/2 + 0.5, clamp, quantize.
   float scaled = (v * 0.5F + 0.5F) * 255.0F;
   if (std::isnan(scaled)) scaled = 0.0F;
   if (scaled < 0.0F) scaled = 0.0F;
