@@ -1026,7 +1026,14 @@ llm_templates = [
                     "no-async-scheduling": True,
                 },
                 override_tt_config={
-                    "sample_on_device_mode": "all",
+                    # WORKAROUND: sample_on_device_mode="all" produces garbage
+                    # tokens with non-batched single-user prefill (gpt-oss-120b
+                    # max_num_seqs=32 → users_row_sharded=False → falls through
+                    # to broken sampling.sample(logits) prefill path). Forcing
+                    # "decode_only" so prefill samples on host. Local verified:
+                    # AIME25 6/6 with this config vs 0/6 with "all".
+                    "sample_on_device_mode": "decode_only",
+                    "fabric_config": "FABRIC_1D_RING",
                     "trace_region_size": 134217728,  # 128 MB; vLLM default 50 MB is too small for long prefill
                 },
             ),
