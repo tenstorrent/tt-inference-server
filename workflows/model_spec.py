@@ -15,6 +15,7 @@ from workflows.utils import (
     get_repo_root_path,
     get_version,
     parse_commits_from_docker_image,
+    parse_image_version,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import (
@@ -23,6 +24,7 @@ from workflows.workflow_types import (
     ModelStatusTypes,
     ModelType,
     VersionMode,
+    WorkflowType,
 )
 
 if TYPE_CHECKING:
@@ -281,6 +283,25 @@ class SystemRequirements:
 
 
 @dataclass(frozen=True)
+class KnownIssue:
+    workflow_type: WorkflowType
+    reason: str
+    task_name: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.workflow_type, WorkflowType):
+            coerced = WorkflowType.from_string(str(self.workflow_type))
+            object.__setattr__(self, "workflow_type", coerced)
+
+    def matches(self, workflow_type: WorkflowType, task_name: Optional[str]) -> bool:
+        if self.workflow_type != workflow_type:
+            return False
+        if self.task_name is None:
+            return True
+        return task_name is not None and self.task_name == task_name
+
+
+@dataclass(frozen=True)
 class DeviceModelSpec:
     """
     Model-specific specification for a specific device.
@@ -297,6 +318,7 @@ class DeviceModelSpec:
     env_vars: Dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
+    known_issues: List[KnownIssue] = field(default_factory=list)
 
     def __post_init__(self):
         self.validate_data()
@@ -333,6 +355,14 @@ class DeviceModelSpec:
         object.__setattr__(self, "vllm_args", merged_vllm_args)
 
         self._infer_env_vars()
+
+    def find_known_issue(
+        self, workflow_type: WorkflowType, task_name: Optional[str] = None
+    ) -> Optional[KnownIssue]:
+        for issue in self.known_issues:
+            if issue.matches(workflow_type, task_name):
+                return issue
+        return None
 
     def _infer_env_vars(self):
         inferred_env_vars = {}
@@ -664,6 +694,12 @@ class ModelSpec:
                         else:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
+                known_issues = value.get("known_issues", [])
+                if known_issues:
+                    value["known_issues"] = [
+                        KnownIssue(**ki) if isinstance(ki, dict) else ki
+                        for ki in known_issues
+                    ]
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, dict):
                 for requirement_name, requirement_spec in value.items():
@@ -779,6 +815,15 @@ class ModelSpec:
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
+            # Re-parse `version` from the override tag so the pre-0.11
+            # support check (validate_runtime_args) sees the actual image
+            # being run, not the template default. Unparseable override
+            # tags (`:dev`, `:latest`) leave version untouched.
+            parsed_version = parse_image_version(runtime_config.override_docker_image)
+            if parsed_version is not None:
+                object.__setattr__(
+                    self, "version", ".".join(str(p) for p in parsed_version)
+                )
 
 
 @dataclass(frozen=True)
@@ -886,6 +931,7 @@ class ModelSpecTemplate:
                     env_vars=device_model_spec.env_vars,
                     tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
                     system_requirements=device_model_spec.system_requirements,
+                    known_issues=device_model_spec.known_issues,
                 )
                 spec = ModelSpec(
                     # Core identity
