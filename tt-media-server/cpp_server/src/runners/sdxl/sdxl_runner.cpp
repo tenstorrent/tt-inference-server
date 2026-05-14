@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
+#include <future>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -16,6 +18,14 @@
 #include "runners/sdxl/sdxl_python_helpers.hpp"
 #include "utils/image_codec.hpp"
 #include "utils/logger.hpp"
+
+namespace {
+// Time the batcher waits for additional compatible requests after popping
+// the first slot. Bounds tail latency for the leading request when the
+// batch isn't full. Picked small relative to one SDXL step (~hundreds of
+// ms) so it doesn't extend per-batch latency meaningfully.
+constexpr std::chrono::milliseconds BATCH_FILL_WINDOW{5};
+}  // namespace
 
 namespace tt::runners::sdxl {
 
@@ -70,16 +80,35 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
   }
   TT_LOG_INFO(
       "[SDXL] Constructed runner type={} mesh={}x{} galaxy={} "
-      "visible_devices='{}' weights='{}'",
+      "visible_devices='{}' weights='{}' max_batch_size={}",
       config::toString(config.runner_type),
       config.device_mesh_shape.size() > 0 ? config.device_mesh_shape[0] : 0,
       config.device_mesh_shape.size() > 1 ? config.device_mesh_shape[1] : 0,
-      config.is_galaxy, config.visible_devices, config.model_weights_path);
+      config.is_galaxy, config.visible_devices, config.model_weights_path,
+      batch_size_);
 }
 
 SDXLBaseRunner::~SDXLBaseRunner() { stop(); }
 
 void SDXLBaseRunner::stop() {
+  // Drain pending requests with a stop exception so callers don't hang on
+  // their futures, then join the batcher before tearing down the pipeline.
+  {
+    std::lock_guard<std::mutex> lk(queue_mutex_);
+    batcher_stop_.store(true, std::memory_order_release);
+    auto pending = std::move(queue_);
+    queue_.clear();
+    for (auto& slot : pending) {
+      try {
+        slot.promise.set_exception(std::make_exception_ptr(
+            std::runtime_error("[SDXL] Runner stopped before request ran")));
+      } catch (const std::future_error&) {
+      }
+    }
+  }
+  queue_cv_.notify_all();
+  if (batcher_thread_.joinable()) batcher_thread_.join();
+
   if (!initialized_) return;
   py::gil_scoped_acquire acquire;
   try {
@@ -181,6 +210,10 @@ bool SDXLBaseRunner::warmup() {
   try {
     runFullWarmup();
     initialized_ = true;
+    // Spin up the batcher only after the pipeline is healthy; queued
+    // requests would otherwise race a half-built pipeline.
+    batcher_stop_.store(false, std::memory_order_release);
+    batcher_thread_ = std::thread(&SDXLBaseRunner::batcherLoop, this);
     TT_LOG_INFO("[SDXL] Warmup completed");
     return true;
   } catch (const std::exception& e) {
@@ -205,14 +238,15 @@ void SDXLBaseRunner::runFullWarmup() {
   TT_LOG_INFO("[SDXL] tt-metal pipeline constructed");
 
   runWithTimeout("warmup_inference", 1000, [&]() {
-    auto warmupReq = warmupRequest();
-    // Inlined run() body: the worker already holds the GIL, so calling
-    // run() directly would double-acquire.
-    auto prompts = processPrompts({warmupReq});
-    injectLoraTriggers(prompts.prompts, warmupReq.lora_path);
-    applyRequestSettings(warmupReq);
-    ensureLoraState(warmupReq);
-    applyModeSpecificSettings(warmupReq);
+    // Exercise the batched path with a single-element vector so warmup
+    // builds the exact same Python objects the live path will.
+    std::vector<domain::ImageGenerateRequest> singleton{warmupRequest()};
+    const auto& head = singleton.front();
+    auto prompts = processPrompts(singleton);
+    injectLoraTriggers(prompts.prompts, head.lora_path);
+    applyRequestSettings(head);
+    ensureLoraState(head);
+    applyModeSpecificSettings(head);
 
     tt_sdxl_.attr("compile_text_encoding")();
     py::object encoded = tt_sdxl_.attr("encode_prompts")(
@@ -229,7 +263,7 @@ void SDXLBaseRunner::runFullWarmup() {
     py::object addTextEmbeds = encoded[py::int_(1)];
 
     py::object tensors =
-        generateInputTensors(warmupReq, promptEmbeds, addTextEmbeds);
+        generateInputTensors(singleton, promptEmbeds, addTextEmbeds);
     prepareInputTensorsForIteration(tensors);
     tt_sdxl_.attr("compile_image_processing")();
     tt_sdxl_.attr("generate_images")();
@@ -340,18 +374,18 @@ void SDXLBaseRunner::ensureLoraState(
 }
 
 std::vector<std::string> SDXLBaseRunner::postProcessImages(
-    const py::object& imgsList, const domain::ImageGenerateRequest& request,
-    int neededPadding) const {
-  Format format = parseFormat(request.image_return_format.value_or("JPEG"));
-  int quality = request.image_quality.value_or(85);
+    const py::object& imgsList,
+    const domain::ImageGenerateRequest& formatRequest, int batchCount) const {
+  Format format =
+      parseFormat(formatRequest.image_return_format.value_or("JPEG"));
+  int quality = formatRequest.image_quality.value_or(85);
 
   std::vector<std::string> out;
   py::list imgs(imgsList);
   const int total = static_cast<int>(imgs.size());
-  // Drop trailing padding entries inserted by processPrompts.
-  const int realCount =
-      std::max(0, static_cast<int>(batch_size_) - neededPadding);
-  const int limit = std::min(total, realCount);
+  // Anything past `batchCount` is dummy padding produced by processPrompts.
+  const int limit = std::min(total, batchCount);
+  out.reserve(static_cast<size_t>(std::max(0, limit)));
   for (int i = 0; i < limit; ++i) {
     py::object img = imgs[py::int_(i)];
     py::object tensor = img;
@@ -373,22 +407,89 @@ std::vector<std::string> SDXLBaseRunner::postProcessImages(
   return out;
 }
 
-std::vector<std::string> SDXLBaseRunner::run(
-    const domain::ImageGenerateRequest& request) {
-  if (!initialized_) {
-    throw std::runtime_error("[SDXL] Runner not initialized");
-  }
+bool SDXLBaseRunner::areBatchCompatible(
+    const domain::ImageGenerateRequest& a,
+    const domain::ImageGenerateRequest& b) {
+  // Any LoRA in play forces single-request batches: load_lora_weights /
+  // fuse_lora rewrite the in-memory pipeline weights, so even two requests
+  // with the same lora_path must run sequentially (subsequent fuses would
+  // double-apply).
+  if (a.lora_path.has_value() || b.lora_path.has_value()) return false;
+  return a.num_inference_steps == b.num_inference_steps &&
+         a.guidance_scale == b.guidance_scale &&
+         a.guidance_rescale == b.guidance_rescale &&
+         a.crop_coords_top_left == b.crop_coords_top_left &&
+         a.strength == b.strength && a.timesteps == b.timesteps &&
+         a.sigmas == b.sigmas &&
+         a.image_return_format == b.image_return_format &&
+         a.image_quality == b.image_quality;
+}
 
-  // Acquire the C++ mutex BEFORE the GIL: the pipeline carries scheduler /
-  // input-tensor / trace state that is not safe under concurrent calls.
-  std::lock_guard<std::mutex> serialize(run_mutex_);
-  py::gil_scoped_acquire acquire;
+void SDXLBaseRunner::batcherLoop() {
+  while (true) {
+    std::vector<BatchSlot> batch;
+    {
+      std::unique_lock<std::mutex> lk(queue_mutex_);
+      queue_cv_.wait(lk, [&] {
+        return batcher_stop_.load(std::memory_order_acquire) ||
+               !queue_.empty();
+      });
+      if (batcher_stop_.load(std::memory_order_acquire)) return;
+
+      batch.push_back(std::move(queue_.front()));
+      queue_.pop_front();
+
+      // Drain compatible requests up to max_batch_size, waiting briefly for
+      // late arrivals so a single-request burst can still coalesce. Skipped
+      // for batch_size_ == 1 to keep single-stream latency tight.
+      if (batch_size_ > 1) {
+        const auto deadline =
+            std::chrono::steady_clock::now() + BATCH_FILL_WINDOW;
+        while (batch.size() < batch_size_) {
+          if (!queue_.empty()) {
+            if (areBatchCompatible(batch.front().request,
+                                   queue_.front().request)) {
+              batch.push_back(std::move(queue_.front()));
+              queue_.pop_front();
+              continue;
+            }
+            // Incompatible head — process the current batch first to
+            // preserve FIFO ordering across compatibility groups.
+            break;
+          }
+          if (std::chrono::steady_clock::now() >= deadline) break;
+          queue_cv_.wait_until(lk, deadline, [&] {
+            return batcher_stop_.load(std::memory_order_acquire) ||
+                   !queue_.empty();
+          });
+          if (batcher_stop_.load(std::memory_order_acquire)) break;
+        }
+      }
+    }
+    runBatch(batch);
+  }
+}
+
+void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
+  if (batch.empty()) return;
+
+  std::vector<std::string> images;
+  std::exception_ptr error;
   try {
-    auto prompts = processPrompts({request});
-    injectLoraTriggers(prompts.prompts, request.lora_path);
-    applyRequestSettings(request);
-    ensureLoraState(request);
-    applyModeSpecificSettings(request);
+    std::vector<domain::ImageGenerateRequest> requests;
+    requests.reserve(batch.size());
+    for (auto& slot : batch) requests.push_back(slot.request);
+
+    py::gil_scoped_acquire acquire;
+    auto prompts = processPrompts(requests);
+    // Compatibility gate (areBatchCompatible) guarantees every
+    // pipeline-state field is uniform across the batch, so we drive the
+    // pipeline from requests[0].
+    const auto& head = requests.front();
+    injectLoraTriggers(prompts.prompts, head.lora_path);
+    applyRequestSettings(head);
+    ensureLoraState(head);
+    applyModeSpecificSettings(head);
 
     tt_sdxl_.attr("compile_text_encoding")();
     py::object encoded = tt_sdxl_.attr("encode_prompts")(
@@ -405,16 +506,71 @@ std::vector<std::string> SDXLBaseRunner::run(
     py::object addTextEmbeds = encoded[py::int_(1)];
 
     py::object tensors =
-        generateInputTensors(request, promptEmbeds, addTextEmbeds);
+        generateInputTensors(requests, promptEmbeds, addTextEmbeds);
     prepareInputTensorsForIteration(tensors);
     tt_sdxl_.attr("compile_image_processing")();
 
     py::object imgs = tt_sdxl_.attr("generate_images")();
-    return postProcessImages(imgs, request, prompts.needed_padding);
+    images = postProcessImages(imgs, head, static_cast<int>(batch.size()));
   } catch (const py::error_already_set& e) {
-    throw std::runtime_error(std::string("[SDXL] inference failed: ") +
-                             e.what());
+    error = std::make_exception_ptr(std::runtime_error(
+        std::string("[SDXL] inference failed: ") + e.what()));
+  } catch (...) {
+    error = std::current_exception();
   }
+
+  if (error) {
+    for (auto& slot : batch) {
+      try {
+        slot.promise.set_exception(error);
+      } catch (const std::future_error&) {
+      }
+    }
+    return;
+  }
+
+  if (images.size() != batch.size()) {
+    auto eptr = std::make_exception_ptr(std::runtime_error(
+        "[SDXL] postProcessImages returned " + std::to_string(images.size()) +
+        " images for batch of " + std::to_string(batch.size())));
+    for (auto& slot : batch) {
+      try {
+        slot.promise.set_exception(eptr);
+      } catch (const std::future_error&) {
+      }
+    }
+    return;
+  }
+
+  for (size_t i = 0; i < batch.size(); ++i) {
+    try {
+      batch[i].promise.set_value({images[i]});
+    } catch (const std::future_error&) {
+    }
+  }
+}
+
+std::vector<std::string> SDXLBaseRunner::run(
+    const domain::ImageGenerateRequest& request) {
+  if (!initialized_) {
+    throw std::runtime_error("[SDXL] Runner not initialized");
+  }
+
+  std::future<std::vector<std::string>> future;
+  {
+    std::lock_guard<std::mutex> lk(queue_mutex_);
+    // Re-check under the lock so an enqueue can't race with stop()'s drain
+    // pass and leave a request waiting on a promise no one will set.
+    if (batcher_stop_.load(std::memory_order_acquire)) {
+      throw std::runtime_error("[SDXL] Runner is stopping");
+    }
+    queue_.emplace_back();
+    auto& slot = queue_.back();
+    slot.request = request;
+    future = slot.promise.get_future();
+  }
+  queue_cv_.notify_one();
+  return future.get();
 }
 
 }  // namespace tt::runners::sdxl

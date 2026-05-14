@@ -91,21 +91,41 @@ py::object SDXLImageToImageRunner::preprocessImage(
   return torch_module_.attr("cat")(py::make_tuple(tensor), py::arg("dim") = 0);
 }
 
-py::object SDXLImageToImageRunner::generateInputTensors(
-    const domain::ImageGenerateRequest& request, py::object promptEmbeds,
-    py::object addTextEmbeds) {
-  py::object torchImage = preprocessImage(request.image.value_or(""));
+py::object SDXLImageToImageRunner::stackImageBatch(
+    const std::vector<domain::ImageGenerateRequest>& requests) const {
+  // Preprocess each user-facing slot, then pad the trailing rows up to
+  // max_batch_size with copies of the first slot (the pipeline still runs
+  // on those rows; postProcessImages discards their outputs).
+  const size_t pad = batch_size_ > requests.size() ? batch_size_ - requests.size() : 0;
+  py::list rows;
+  for (const auto& r : requests) {
+    rows.append(preprocessImage(r.image.value_or("")));
+  }
+  if (pad > 0) {
+    py::object padRow = preprocessImage(requests.front().image.value_or(""));
+    for (size_t i = 0; i < pad; ++i) rows.append(padRow);
+  }
+  return torch_module_.attr("cat")(rows, py::arg("dim") = 0);
+}
 
+py::object SDXLImageToImageRunner::generateInputTensors(
+    const std::vector<domain::ImageGenerateRequest>& requests,
+    py::object promptEmbeds, py::object addTextEmbeds) {
+  py::object torchImage = stackImageBatch(requests);
+
+  // Compatibility gate guarantees seed/timesteps/sigmas are uniform across
+  // the batch.
+  const auto& head = requests.front();
   py::dict kwargs;
   kwargs["torch_image"] = torchImage;
   kwargs["all_prompt_embeds_torch"] = promptEmbeds;
   kwargs["torch_add_text_embeds"] = addTextEmbeds;
   kwargs["start_latent_seed"] =
-      request.seed.has_value() ? py::cast(*request.seed) : py::none();
+      head.seed.has_value() ? py::cast(*head.seed) : py::none();
   kwargs["timesteps"] =
-      request.timesteps.has_value() ? py::cast(*request.timesteps) : py::none();
+      head.timesteps.has_value() ? py::cast(*head.timesteps) : py::none();
   kwargs["sigmas"] =
-      request.sigmas.has_value() ? py::cast(*request.sigmas) : py::none();
+      head.sigmas.has_value() ? py::cast(*head.sigmas) : py::none();
   return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
 }
 

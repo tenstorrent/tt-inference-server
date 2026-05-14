@@ -61,17 +61,22 @@ void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
 }
 
 py::object SDXLGenerateRunner::generateInputTensors(
-    const domain::ImageGenerateRequest& request, py::object promptEmbeds,
-    py::object addTextEmbeds) {
+    const std::vector<domain::ImageGenerateRequest>& requests,
+    py::object promptEmbeds, py::object addTextEmbeds) {
+  // Text-to-image has no per-request image input — prompt embeds are already
+  // batched by encode_prompts. Pipeline-state fields (seed/timesteps/sigmas)
+  // are guaranteed uniform across the batch by areBatchCompatible; use the
+  // head request as the source of truth.
+  const auto& head = requests.front();
   py::dict kwargs;
   kwargs["all_prompt_embeds_torch"] = promptEmbeds;
   kwargs["torch_add_text_embeds"] = addTextEmbeds;
   kwargs["start_latent_seed"] =
-      request.seed.has_value() ? py::cast(*request.seed) : py::none();
+      head.seed.has_value() ? py::cast(*head.seed) : py::none();
   kwargs["timesteps"] =
-      request.timesteps.has_value() ? py::cast(*request.timesteps) : py::none();
+      head.timesteps.has_value() ? py::cast(*head.timesteps) : py::none();
   kwargs["sigmas"] =
-      request.sigmas.has_value() ? py::cast(*request.sigmas) : py::none();
+      head.sigmas.has_value() ? py::cast(*head.sigmas) : py::none();
   return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
 }
 
