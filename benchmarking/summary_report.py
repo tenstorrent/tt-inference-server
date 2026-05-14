@@ -17,7 +17,7 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, ReportCheckTypes
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
@@ -419,7 +419,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 * 1000,
                 "filename": filename,
                 "task_type": "cnn",
-                "performance_check": data.get("performance_check", 0),
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             }
             return format_metrics(metrics)
         elif params.get("task_type") == "image":
@@ -445,7 +445,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 ),
                 "filename": filename,
                 "task_type": "image",
-                "performance_check": data.get("performance_check", 0),
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             }
             return format_metrics(metrics)
 
@@ -476,7 +476,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 else None
             ),
             "wer": benchmarks_data.get("wer", None),
-            "performance_check": data.get("performance_check", 0),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -499,7 +499,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "task_type": "audio",
             # ``performance_check`` lives at the top level of the report JSON
             # (it's a perf-target check, not an accuracy/quality check).
-            "performance_check": data.get("performance_check", 0),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
             "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
@@ -537,7 +537,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "request_throughput": benchmarks_data.get("benchmarks").get(
                 "req_tput", 0.0
             ),
-            "performance_check": data.get("performance_check", 0),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -563,7 +563,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "num_inference_steps": benchmarks_data.get("benchmarks").get(
                 "num_inference_steps", 0
             ),
-            "performance_check": data.get("performance_check", 0),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 

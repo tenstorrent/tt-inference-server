@@ -425,7 +425,9 @@ class VideoClientStrategy(BaseMediaStrategy):
         """Video perf check: compares latency vs configured target."""
         targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
-        latency_target_s = targets.ttft_ms / 1000.0 if targets.ttft_ms else None
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
         return self.calculate_performance_check(
             checks=[
                 PerfCheck(
