@@ -104,7 +104,6 @@ void SDXLBaseRunner::stop() {
   queue_cv_.notify_all();
   if (batcher_thread_.joinable()) batcher_thread_.join();
 
-  if (!initialized_) return;
   py::gil_scoped_acquire acquire;
   try {
     if (!ttnn_device_.is_none() && !ttnn_module_.is_none()) {
@@ -120,9 +119,9 @@ void SDXLBaseRunner::stop() {
   initialized_ = false;
 }
 
-void SDXLBaseRunner::runWithTimeout(const std::string& tag,
-                                    unsigned timeoutSeconds,
-                                    const std::function<void()>& work) {
+void SDXLBaseRunner::runAndCheckDuration(
+    const std::string& tag, unsigned timeoutSeconds,
+    const std::function<void()>& work) {
   const auto start = std::chrono::steady_clock::now();
   {
     py::gil_scoped_acquire acquire;
@@ -134,7 +133,7 @@ void SDXLBaseRunner::runWithTimeout(const std::string& tag,
   const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::steady_clock::now() - start);
   if (elapsed > std::chrono::seconds(timeoutSeconds)) {
-    throw std::runtime_error("[SDXL] " + tag + " timed out after " +
+    throw std::runtime_error("[SDXL] " + tag + " exceeded duration limit of " +
                              std::to_string(timeoutSeconds) + "s");
   }
 }
@@ -224,13 +223,13 @@ void SDXLBaseRunner::runFullWarmup() {
   }
 
   // Distribute weights: minutes-long, GIL is released at this point and
-  // runWithTimeout's worker re-acquires it.
-  runWithTimeout("distribute_block",
-                 config_.weights_distribution_timeout_seconds,
-                 [&]() { distributeBlock(); });
+  // runAndCheckDuration's worker re-acquires it.
+  runAndCheckDuration("distribute_block",
+                      config_.weights_distribution_timeout_seconds,
+                      [&]() { distributeBlock(); });
   TT_LOG_INFO("[SDXL] tt-metal pipeline constructed");
 
-  runWithTimeout("warmup_inference", 1000, [&]() {
+  runAndCheckDuration("warmup_inference", 1000, [&]() {
     std::vector<domain::ImageGenerateRequest> singleton{warmupRequest()};
     const auto& head = singleton.front();
     auto prompts = processPrompts(singleton);

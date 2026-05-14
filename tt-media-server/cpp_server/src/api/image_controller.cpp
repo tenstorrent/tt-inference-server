@@ -43,7 +43,7 @@ void ImageController::imageToImage(
   dispatchJsonRequest<tt::services::ImageService,
                       tt::domain::ImageGenerateRequest>(
       req, std::move(callback), service_, request_counter_, "ImageController",
-      "image-to-image", {"prompt", "image"});
+      "image-to-image", {"prompt", "image"}, applyImageToImageDefaults);
 }
 
 void ImageController::edit(
@@ -52,7 +52,14 @@ void ImageController::edit(
   dispatchJsonRequest<tt::services::ImageService,
                       tt::domain::ImageGenerateRequest>(
       req, std::move(callback), service_, request_counter_, "ImageController",
-      "edits", {"prompt", "image", "mask"});
+      "edits", {"prompt", "image", "mask"}, applyImageToImageDefaults);
+}
+
+void ImageController::applyImageToImageDefaults(
+    tt::domain::ImageGenerateRequest& request) {
+  if (!request.strength.has_value()) {
+    request.strength = DEFAULT_IMAGE_TO_IMAGE_STRENGTH;
+  }
 }
 
 }  // namespace tt::api

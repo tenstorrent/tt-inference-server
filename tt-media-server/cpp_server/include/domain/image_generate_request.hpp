@@ -59,8 +59,10 @@ struct ImageGenerateRequest : BaseRequest {
       return json.isMember(key) && !json[key].isNull();
     };
 
-    if (present("prompt"))
-      req.prompt = json_field::getString(json["prompt"], "prompt");
+    if (!present("prompt")) {
+      throw std::invalid_argument("Missing required field: prompt");
+    }
+    req.prompt = json_field::getString(json["prompt"], "prompt");
     if (present("prompt_2"))
       req.prompt_2 = json_field::getString(json["prompt_2"], "prompt_2");
     if (present("negative_prompt"))
@@ -80,9 +82,19 @@ struct ImageGenerateRequest : BaseRequest {
       req.guidance_rescale =
           json_field::getFloat(json["guidance_rescale"], "guidance_rescale");
     if (present("seed")) req.seed = json_field::getInt(json["seed"], "seed");
-    if (present("number_of_images"))
+    if (present("number_of_images")) {
       req.number_of_images =
           json_field::getInt(json["number_of_images"], "number_of_images");
+      // The C++ runner produces one image per request. The Python service
+      // emulates number_of_images > 1 via repeated runs with incremented
+      // seeds; that loop is not ported here, so reject up front instead of
+      // silently dropping all but the first image.
+      if (req.number_of_images.value() != 1) {
+        throw std::invalid_argument(
+            "number_of_images must be 1 (multi-image batching is not "
+            "supported by the C++ runner)");
+      }
+    }
 
     if (present("crop_coords_top_left")) {
       const auto& arr = json["crop_coords_top_left"];

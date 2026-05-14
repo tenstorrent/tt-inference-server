@@ -791,6 +791,10 @@
             "type": "object",
             "description": "Worker status keyed by worker ID (Python-server-compatible format)",
             "additionalProperties": { "$ref": "#/components/schemas/WorkerInfo" }
+          },
+          "runner_in_use": {
+            "type": "string",
+            "description": "Active runner identifier (image services only). Mirrors the Python ModelRunners enum (e.g. 'tt-sdxl-trace', 'tt-sdxl-image-to-image', 'tt-sdxl-edit'). Omitted when the active service does not expose a runner."
           }
         }
       },

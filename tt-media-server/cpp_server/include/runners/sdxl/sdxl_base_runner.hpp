@@ -60,9 +60,9 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   virtual bool areBatchCompatible(const domain::ImageGenerateRequest& a,
                                   const domain::ImageGenerateRequest& b) const;
 
-  /** Run `work` with a hard timeout. Caller MUST NOT hold the GIL. */
-  static void runWithTimeout(const std::string& tag, unsigned timeoutSeconds,
-                             const std::function<void()>& work);
+  static void runAndCheckDuration(const std::string& tag,
+                                  unsigned timeoutSeconds,
+                                  const std::function<void()>& work);
 
   /** Encode the first `requests.size()` entries of `imgsList`; trailing
    *  entries are dummy padding produced by `processPrompts`. Each request

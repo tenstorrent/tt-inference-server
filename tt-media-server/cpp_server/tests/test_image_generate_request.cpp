@@ -82,7 +82,7 @@ TEST(ImageGenerateRequestParseTest, ExplicitFieldsOverrideDefaults) {
   json["guidance_scale"] = 7.5;
   json["guidance_rescale"] = 0.2;
   json["seed"] = 1234;
-  json["number_of_images"] = 2;
+  json["number_of_images"] = 1;
   json["lora_path"] = "/tmp/lora.safetensors";
   json["lora_scale"] = 0.75;
   json["image_return_format"] = "PNG";
@@ -102,7 +102,7 @@ TEST(ImageGenerateRequestParseTest, ExplicitFieldsOverrideDefaults) {
   EXPECT_FLOAT_EQ(*req.guidance_rescale, 0.2F);
   ASSERT_TRUE(req.seed.has_value());
   EXPECT_EQ(*req.seed, 1234);
-  EXPECT_EQ(*req.number_of_images, 2);
+  EXPECT_EQ(*req.number_of_images, 1);
   ASSERT_TRUE(req.lora_path.has_value());
   EXPECT_EQ(*req.lora_path, "/tmp/lora.safetensors");
   EXPECT_FLOAT_EQ(*req.lora_scale, 0.75F);
@@ -190,6 +190,26 @@ TEST(ImageGenerateRequestParseTest, NonStringPromptRejected) {
 TEST(ImageGenerateRequestParseTest, NonIntegerStepsRejected) {
   auto json = minimalGenerateJson();
   json["num_inference_steps"] = "twenty";
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+}
+
+TEST(ImageGenerateRequestParseTest, NumberOfImagesGreaterThanOneRejected) {
+  auto json = minimalGenerateJson();
+  json["number_of_images"] = 2;
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+}
+
+TEST(ImageGenerateRequestParseTest, MissingPromptRejected) {
+  Json::Value json;
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+}
+
+TEST(ImageGenerateRequestParseTest, NullPromptRejected) {
+  Json::Value json;
+  json["prompt"] = Json::Value::null;
   EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
                std::invalid_argument);
 }

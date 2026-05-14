@@ -48,7 +48,7 @@ void dispatchJsonRequest(
     return;
   }
   for (const char* field : requiredFields) {
-    if (!json->isMember(field)) {
+    if (!json->isMember(field) || (*json)[field].isNull()) {
       callback(errorResponse(drogon::k400BadRequest,
                              std::string("Missing required field: ") + field,
                              "invalid_request_error"));

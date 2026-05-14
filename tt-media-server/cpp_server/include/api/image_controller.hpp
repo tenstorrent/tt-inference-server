@@ -8,6 +8,7 @@
 #include <atomic>
 #include <memory>
 
+#include "domain/image_generate_request.hpp"
 #include "services/image_service.hpp"
 
 namespace tt::api {
@@ -37,6 +38,11 @@ class ImageController : public drogon::HttpController<ImageController> {
             std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
  private:
+  static constexpr float DEFAULT_IMAGE_TO_IMAGE_STRENGTH = 0.6F;
+
+  static void applyImageToImageDefaults(
+      tt::domain::ImageGenerateRequest& request);
+
   std::shared_ptr<services::ImageService> service_;
   std::atomic<uint64_t> request_counter_{0};
 };

@@ -293,7 +293,7 @@ LLMConfig llmEngineConfig() {
 namespace {
 
 /** Parse "WxH" (case-insensitive 'x'); std::nullopt if malformed or either
- *  dimension is non-positive. */
+ *  dimension is non-positive. Strict: rejects trailing junk like "1024x1024foo". */
 std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
   std::istringstream ss(s);
   long long w = 0, h = 0;
@@ -302,12 +302,18 @@ std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
   if (!ss || w <= 0 || h <= 0 || (sep != 'x' && sep != 'X')) {
     return std::nullopt;
   }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    return std::nullopt;
+  }
   return std::make_pair(static_cast<size_t>(w), static_cast<size_t>(h));
 }
 
 /** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}. Rejects
  *  single-axis input ("8") with a clear error: silently promoting to {8, 1}
- *  would flip tensor parallelism on without the operator asking for it. */
+ *  would flip tensor parallelism on without the operator asking for it.
+ *  Rejects more than 2 dims and trailing junk: the rest of the code indexes
+ *  [0]/[1] and treats the mesh as (rows, cols). */
 std::vector<size_t> parseMeshShape(const std::string& s) {
   std::vector<size_t> out;
   std::istringstream ss(s);
@@ -316,12 +322,24 @@ std::vector<size_t> parseMeshShape(const std::string& s) {
     out.push_back(v);
     if (ss.peek() == ',') ss.ignore();
   }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE has trailing junk after parsing; "
+        "expected 'rows,cols', got '" +
+        s + "'");
+  }
   if (out.empty()) return {1, 1};
   if (out.size() == 1) {
     throw std::runtime_error(
         "[Config] DEVICE_MESH_SHAPE must be 'rows,cols' (e.g. '1,1' for "
         "single device, '2,4' for 2x4 mesh); got '" +
         s + "'");
+  }
+  if (out.size() > 2) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 2-D 'rows,cols'; got '" + s +
+        "' with " + std::to_string(out.size()) + " dimensions");
   }
   return out;
 }
