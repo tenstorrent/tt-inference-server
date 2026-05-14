@@ -1116,7 +1116,7 @@ llm_templates = [
         impl=gpt_oss_impl,
         version="0.12.0",
         tt_metal_commit="0cc6a39", 
-        vllm_commit="1abfcfc",
+        vllm_commit="ae0f073",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
