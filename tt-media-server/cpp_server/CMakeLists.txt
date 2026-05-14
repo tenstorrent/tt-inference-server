@@ -20,9 +20,13 @@ endif()
 # Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
 option(CLANG_TIDY "Run clang-tidy during build" OFF)
 
-# Find Drogon and JsonCpp (tokenizer_config parsing)
+# Find Drogon and JsonCpp (tokenizer_config parsing).
+# Use CONFIG mode for jsoncpp so we always get the `JsonCpp::JsonCpp` target
+# from the upstream package config (both Homebrew and modern Ubuntu ship it).
+# Without CONFIG, Drogon's bundled Findjsoncpp.cmake shadows the config and
+# only creates `Jsoncpp_lib`, leaving `JsonCpp::JsonCpp` undefined.
 find_package(Drogon REQUIRED)
-find_package(jsoncpp REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Try to find cereal, or fetch it if not available
@@ -46,7 +50,13 @@ endif()
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
 
-# pybind11 for embedding Python interpreter (in-process model runner calls)
+# pybind11 for embedding Python interpreter (in-process model runner calls).
+# Force pybind11 to use the modern FindPython (driven by our find_package(Python3)
+# call above) instead of the legacy FindPythonInterp/FindPythonLibs. On macOS
+# the legacy modules pick up /usr/bin/python3 (system Apple Python) and then
+# fail to locate libpython3.9, even when Homebrew Python 3.11 is the intended
+# target.
+set(PYBIND11_FINDPYTHON ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11.git
@@ -134,17 +144,24 @@ endif()
 # Ensure static libraries are built with -fPIC (required when linking into shared libs like tt-llm-engine)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# spdlog for logging - use tt-metal's fmt library when available
-FetchContent_Declare(
-    spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.17.0
-)
-set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
-set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(spdlog)
+# spdlog for logging - use tt-metal's fmt library when available.
+# On macOS, Homebrew's Drogon transitively imports a spdlog::spdlog target via
+# find_package(Drogon); fetching spdlog then tries to create the same ALIAS
+# and CMake errors out. Skip the fetch when the target is already present.
+if(NOT TARGET spdlog::spdlog)
+    FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG        v1.17.0
+    )
+    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(spdlog)
+else()
+    message(STATUS "Using pre-existing spdlog::spdlog target (likely from Drogon's transitive deps)")
+endif()
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)

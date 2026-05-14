@@ -3,7 +3,12 @@
 
 #include "worker/worker_manager.hpp"
 
+#ifdef __linux__
 #include <sys/prctl.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -32,18 +37,29 @@ namespace {
   // Request SIGTERM when the parent (main server) process dies so that workers
   // do not become orphaned under PID 1 if the main process crashes.  This
   // survives execv, so it only needs to be set once here in the child.
+  // No direct macOS equivalent — workers may be orphaned on Darwin.
+#ifdef __linux__
   prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
 
   for (const auto& [key, value] : envVars) {
     setenv(key.c_str(), value.c_str(), 1);
   }
   char exePath[PATH_MAX];
+#ifdef __APPLE__
+  uint32_t pathSize = sizeof(exePath);
+  if (_NSGetExecutablePath(exePath, &pathSize) != 0) {
+    perror("_NSGetExecutablePath");
+    _exit(1);
+  }
+#else
   ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
   if (n <= 0) {
     perror("readlink /proc/self/exe");
     _exit(1);
   }
   exePath[n] = '\0';
+#endif
   char idBuf[16];
   std::snprintf(idBuf, sizeof(idBuf), "%zu", workerId);
   char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf, nullptr};

@@ -3,6 +3,10 @@
 
 #include "config/settings.hpp"
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -109,11 +113,25 @@ std::string pythonPath() {
   return envString("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
 }
 
-static std::filesystem::path tokenizersDir() {
+static std::filesystem::path currentExecutablePath() {
   std::error_code ec;
-  std::filesystem::path exePath =
-      std::filesystem::read_symlink("/proc/self/exe", ec);
-  if (!ec) {
+#ifdef __APPLE__
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::string buf(size, '\0');
+  if (_NSGetExecutablePath(buf.data(), &size) != 0) {
+    return {};
+  }
+  if (auto end = buf.find('\0'); end != std::string::npos) buf.resize(end);
+  return std::filesystem::weakly_canonical(buf, ec);
+#else
+  return std::filesystem::read_symlink("/proc/self/exe", ec);
+#endif
+}
+
+static std::filesystem::path tokenizersDir() {
+  std::filesystem::path exePath = currentExecutablePath();
+  if (!exePath.empty()) {
     std::filesystem::path dir =
         exePath.parent_path().parent_path() / "tokenizers";
     if (std::filesystem::is_directory(dir)) {

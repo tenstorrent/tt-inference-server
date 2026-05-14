@@ -4,6 +4,10 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -12,11 +16,26 @@
 
 namespace tt::api {
 
+static std::filesystem::path currentExecutablePath() {
+  std::error_code ec;
+#ifdef __APPLE__
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::string buf(size, '\0');
+  if (_NSGetExecutablePath(buf.data(), &size) != 0) {
+    return {};
+  }
+  if (auto end = buf.find('\0'); end != std::string::npos) buf.resize(end);
+  return std::filesystem::weakly_canonical(buf, ec);
+#else
+  return std::filesystem::read_symlink("/proc/self/exe", ec);
+#endif
+}
+
 static std::filesystem::path resolveResourcePath(
     const std::string& relativePath) {
-  std::error_code ec;
-  auto exePath = std::filesystem::read_symlink("/proc/self/exe", ec);
-  if (ec) {
+  auto exePath = currentExecutablePath();
+  if (exePath.empty()) {
     return {};
   }
   auto resourceDir = exePath.parent_path().parent_path() / "resources";

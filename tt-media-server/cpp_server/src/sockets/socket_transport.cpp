@@ -23,9 +23,16 @@ void setSocketKeepAlive(int socketFd) {
   }
 
   int idle = 10;
-  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) <
+  // Linux: TCP_KEEPIDLE. macOS: TCP_KEEPALIVE (same semantic — idle seconds
+  // before the first keepalive probe).
+#ifdef __APPLE__
+  constexpr int kTcpKeepIdleOpt = TCP_KEEPALIVE;
+#else
+  constexpr int kTcpKeepIdleOpt = TCP_KEEPIDLE;
+#endif
+  if (setsockopt(socketFd, IPPROTO_TCP, kTcpKeepIdleOpt, &idle, sizeof(idle)) <
       0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set TCP_KEEPIDLE: {}",
+    TT_LOG_WARN("[SocketTransport] Failed to set TCP keepalive idle: {}",
                 strerror(errno));
   }
 

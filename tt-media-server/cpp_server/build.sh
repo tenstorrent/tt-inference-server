@@ -153,6 +153,7 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     else
         echo "Please install Drogon framework first:"
         echo "  Ubuntu/Debian: sudo apt install libdrogon-dev"
+        echo "  macOS:        brew install drogon"
         echo "  Or build from source: https://github.com/drogonframework/drogon"
         exit 1
     fi
@@ -168,6 +169,27 @@ HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
 if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
     HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
 fi
+
+# Portable downloader: prefer curl (default on macOS and most Linux), fall back to wget.
+# Usage: http_download <url> <output_path> [auth_token]
+http_download() {
+    local url="$1"
+    local out="$2"
+    local token="${3:-}"
+
+    if command -v curl >/dev/null 2>&1; then
+        local curl_args=(-fsSL -o "${out}")
+        [ -n "${token}" ] && curl_args+=(-H "Authorization: Bearer ${token}")
+        curl "${curl_args[@]}" "${url}"
+    elif command -v wget >/dev/null 2>&1; then
+        local wget_args=(-q -O "${out}")
+        [ -n "${token}" ] && wget_args+=(--header "Authorization: Bearer ${token}")
+        wget "${wget_args[@]}" "${url}"
+    else
+        echo "  ERROR: neither curl nor wget is installed."
+        return 127
+    fi
+}
 
 download_tokenizer() {
     local model_name="$1"
@@ -189,15 +211,15 @@ download_tokenizer() {
         return 0
     fi
 
-    local wget_args=()
+    local auth_token=""
     if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
-        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
+        auth_token="${HF_TOKEN_RESOLVED}"
     fi
 
     mkdir -p "${model_dir}"
 
     echo "Downloading ${model_name} tokenizer..."
-    if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
+    if http_download "${hf_repo}/tokenizer.json" "${tok_json}" "${auth_token}"; then
         echo "  tokenizer.json downloaded to ${tok_json}"
     else
         rm -f "${tok_json}"
@@ -208,11 +230,10 @@ download_tokenizer() {
             echo "    1. A valid HF_TOKEN set in your environment"
             echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
         fi
-        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
         return 1
     fi
 
-    if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
+    if http_download "${hf_repo}/tokenizer_config.json" "${tok_config}" "${auth_token}"; then
         echo "  tokenizer_config.json downloaded to ${tok_config}"
     else
         rm -f "${tok_config}"
