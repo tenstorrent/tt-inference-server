@@ -783,10 +783,6 @@
             "type": "string",
             "description": "Device type"
           },
-          "workers": {
-            "type": "array",
-            "items": { "$ref": "#/components/schemas/WorkerInfo" }
-          },
           "worker_info": {
             "type": "object",
             "description": "Worker status keyed by worker ID (Python-server-compatible format)",
