@@ -132,13 +132,23 @@ def _parse_eval_samples_mapping(value: Optional[str]) -> Optional[dict]:
         return None
     try:
         parsed = json.loads(value)
+    except TypeError as exc:
+        raise ValueError(
+            "--eval-samples must be a JSON string or a path to a JSON file; "
+            f"got {type(value).__name__}"
+        ) from exc
     except json.JSONDecodeError:
         path = Path(value)
         if not path.is_file():
             raise ValueError(
                 f"--eval-samples value is not valid JSON and not an existing file: {value}"
             )
-        parsed = json.loads(path.read_text())
+        try:
+            parsed = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"--eval-samples file does not contain valid JSON: {path}"
+            ) from exc
     if not isinstance(parsed, dict):
         raise ValueError(
             "--eval-samples must decode to a JSON object mapping task_name -> "
@@ -178,12 +188,19 @@ def _resolve_eval_samples(
             task.task_name,
         )
         return None
+    if not isinstance(indices, (list, tuple)) or not all(
+        isinstance(i, int) and not isinstance(i, bool) and i >= 0 for i in indices
+    ):
+        raise ValueError(
+            f"--eval-samples entry for task '{task.task_name}' must be a list of "
+            f"non-negative integers; got {indices!r}"
+        )
     logger.info(
         "Filtering task %s to %d doc_id(s) via --samples",
         task.task_name,
         len(indices),
     )
-    return json.dumps({task.task_name: indices})
+    return json.dumps({task.task_name: list(indices)})
 
 
 def _check_media_server_health(model_spec, device, output_path, service_port):

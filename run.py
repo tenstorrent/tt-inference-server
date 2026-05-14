@@ -228,8 +228,8 @@ def parse_arguments():
         "--eval-samples",
         type=str,
         default=None,
-        help='Per-task doc_id filter passed to lm-eval as --samples. '
-        'Accepts a JSON string \'{"task_name": [int, ...]}\' or a path to a JSON file. '
+        help="Per-task doc_id filter passed to lm-eval as --samples. "
+        "Accepts a JSON string '{\"task_name\": [int, ...]}' or a path to a JSON file. "
         "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
         "Text/LLM evals only.",
     )
