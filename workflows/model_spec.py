@@ -1414,7 +1414,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 115818496,
+                    "trace_region_size": 235929600,
                 },
             ),
         ],
@@ -1925,7 +1925,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 164552704,
+                    "trace_region_size": 102400000,
                 },
             ),
         ],
@@ -2265,7 +2265,7 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 105000000,
+                    "trace_region_size": 155000000,
                 },
             ),
             DeviceModelSpec(
