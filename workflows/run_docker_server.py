@@ -328,7 +328,8 @@ def generate_docker_run_command(
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
-        if api_key:
+        # Skip API_KEY when --no-auth: container sees no key → auth disabled.
+        if api_key and not runtime_config.no_auth:
             docker_env_vars["API_KEY"] = api_key
         if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
