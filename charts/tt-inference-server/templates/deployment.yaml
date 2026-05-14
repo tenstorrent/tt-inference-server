@@ -15,7 +15,7 @@ spec:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
   strategy:
-    type: RollingUpdate
+    {{- toYaml $cfg.updateStrategy | nindent 4 }}
   template:
     metadata:
       labels:
@@ -140,9 +140,17 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $cfg.affinity }}
+      {{- if not (empty $cfg.affinity) }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml $cfg.affinity | nindent 8 }}
+      {{- else if $cfg.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ include "tt-inference-server.name" . }}
+              topologyKey: {{ $cfg.podAntiAffinity.topologyKey }}
       {{- end }}
       {{- with $cfg.tolerations }}
       tolerations:

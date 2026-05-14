@@ -35,6 +35,14 @@ hfCacheDir: ""
 defaults:
   replicaCount: 1
   progressDeadlineSeconds: 3600
+  # Single-node clusters with required podAntiAffinity must terminate the old
+  # pod before scheduling the new one; maxSurge: 0 prevents the upgrade from
+  # hanging on a pending replacement that cannot share the only node.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   podAnnotations: {}
   podSecurityContext: {}
   image:
@@ -65,7 +73,13 @@ defaults:
       initialDelaySeconds: 2400
   nodeSelector: {}
   tolerations: []
+  # Escape hatch: when set, replaces the auto-generated podAntiAffinity entirely.
   affinity: {}
+  # Enforces 1:1 Pod-to-Node allocation so pods do not collide on /dev/tenstorrent.
+  # Disable for multi-pod-per-node once a device plugin or DRA driver is in place.
+  podAntiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
   extraEnv: []
 
 # ---------------------------------------------------------------------------
