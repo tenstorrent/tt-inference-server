@@ -64,8 +64,8 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_);
   for (const auto& reason : K_PRECREATED_FINISH_REASONS) {
     request_success_by_reason_.emplace(
-        reason, &request_success_family_->Add(
-                    {{"model_name", model_name_}, {"finished_reason", reason}}));
+        reason, &request_success_family_->Add({{"model_name", model_name_},
+                                               {"finished_reason", reason}}));
   }
 
   http_requests_family_ =
@@ -357,7 +357,8 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
   if (reasonIt == request_success_by_reason_.end()) {
     auto* counter = &request_success_family_->Add(
         {{"model_name", model_name_}, {"finished_reason", e.finish_reason}});
-    reasonIt = request_success_by_reason_.emplace(e.finish_reason, counter).first;
+    reasonIt =
+        request_success_by_reason_.emplace(e.finish_reason, counter).first;
   }
   reasonIt->second->Increment();
 }
