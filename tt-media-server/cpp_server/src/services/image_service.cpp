@@ -64,6 +64,10 @@ bool ImageService::isModelReady() const {
   return ready_.load(std::memory_order_acquire);
 }
 
+std::string ImageService::runnerInUse() const {
+  return config::toClientRunnerName(config_.runner_type);
+}
+
 std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
   const bool ready = ready_.load(std::memory_order_acquire);
   const size_t count = std::max<size_t>(1, tt::config::numWorkers());

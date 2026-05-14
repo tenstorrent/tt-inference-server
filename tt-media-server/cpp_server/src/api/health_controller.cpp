@@ -104,6 +104,10 @@ void HealthController::ready(
     response["model_ready"] = status.modelReady;
     response["queue_size"] = static_cast<Json::UInt64>(status.queueSize);
     response["max_queue_size"] = static_cast<Json::UInt64>(status.maxQueueSize);
+    const std::string runnerInUse = service_->runnerInUse();
+    if (!runnerInUse.empty()) {
+      response["runner_in_use"] = runnerInUse;
+    }
 
     if (socket_) {
       response["socket_status"] = socket_->getStatus();

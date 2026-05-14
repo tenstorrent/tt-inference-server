@@ -35,6 +35,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   void start() override;
   void stop() override;
   bool isModelReady() const override;
+  std::string runnerInUse() const override;
 
  protected:
   domain::image::ImageResponse processRequest(

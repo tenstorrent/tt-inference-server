@@ -5,6 +5,7 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "domain/base_request.hpp"
@@ -33,6 +34,7 @@ class IService {
   virtual void stop() = 0;
   virtual bool isModelReady() const = 0;
   virtual SystemStatus getSystemStatus() const = 0;
+  virtual std::string runnerInUse() const { return ""; }
 };
 
 template <std::derived_from<domain::BaseRequest> RequestType,

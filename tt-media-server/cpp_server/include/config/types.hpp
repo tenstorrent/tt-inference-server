@@ -135,6 +135,25 @@ inline std::string toString(ModelRunnerType m) {
   return "unknown";
 }
 
+// Must match the `ModelRunners` enum values in tt-media-server/config/constants.py so the
+inline std::string toClientRunnerName(ModelRunnerType m) {
+  switch (m) {
+    case ModelRunnerType::TT_SDXL_GENERATE:
+      return "tt-sdxl-trace";
+    case ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE:
+      return "tt-sdxl-image-to-image";
+    case ModelRunnerType::TT_SDXL_EDIT:
+      return "tt-sdxl-edit";
+    case ModelRunnerType::MOCK:
+    case ModelRunnerType::LLAMA:
+    case ModelRunnerType::MOCK_PIPELINE:
+    case ModelRunnerType::PIPELINE_MANAGER:
+    case ModelRunnerType::PREFILL:
+      return "";
+  }
+  return "";
+}
+
 inline Model modelFromString(const std::string_view& v) {
   for (const auto& entry : MODEL_MAPPINGS) {
     if (entry.name == v) return entry.model;
