@@ -16,6 +16,7 @@ from open_ai_api import (
     embedding,
     fine_tuning,
     image,
+    lidar,
     llm,
     models,
     text_to_speech,
@@ -68,6 +69,9 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.EMBEDDING.value: [
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
+    ],
+    ModelServices.LIDAR.value: [
+        ServiceRoute(lidar.router, "/v1/lidar", "/lidar", ["LiDAR 3D detection"]),
     ],
 }
 

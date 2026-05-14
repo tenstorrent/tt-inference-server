@@ -69,6 +69,7 @@ class ModelNames(Enum):
     SEGFORMER = "segformer"
     UNET = "unet"
     VIT = "vit"
+    CENTERPOINT = "centerpoint"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
@@ -117,6 +118,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    TT_XLA_CENTERPOINT = "tt-xla-centerpoint"
     TRAINING_LORA = "training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
@@ -138,6 +140,7 @@ class ModelServices(Enum):
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
     EMBEDDING = "embedding"
+    LIDAR = "lidar"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
@@ -177,6 +180,9 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_UNET,
         ModelRunners.TT_XLA_VIT,
         ModelRunners.TT_YOLOV4,
+    },
+    ModelServices.LIDAR: {
+        ModelRunners.TT_XLA_CENTERPOINT,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -229,6 +235,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
     ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
+    ModelRunners.TT_XLA_CENTERPOINT: {ModelNames.CENTERPOINT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
@@ -1319,6 +1326,14 @@ for runner in [
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
+    }
+
+for device in [DeviceTypes.N150, DeviceTypes.N300]:
+    ModelConfigs[(ModelRunners.TT_XLA_CENTERPOINT, device)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "download_weights_from_service": False,
     }
 
 
