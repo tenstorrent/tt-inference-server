@@ -542,9 +542,8 @@ std::vector<std::string> SDXLBaseRunner::run(
     if (batcher_stop_.load(std::memory_order_acquire)) {
       throw std::runtime_error("[SDXL] Runner is stopping");
     }
-    queue_.emplace_back();
+    queue_.emplace_back(request);
     auto& slot = queue_.back();
-    slot.request = request;
     future = slot.promise.get_future();
   }
   queue_cv_.notify_one();

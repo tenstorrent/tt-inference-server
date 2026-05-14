@@ -105,6 +105,8 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
 
  private:
   struct BatchSlot {
+    explicit BatchSlot(const domain::ImageGenerateRequest& req)
+        : request(req) {}
     domain::ImageGenerateRequest request;
     std::promise<std::vector<std::string>> promise;
   };
