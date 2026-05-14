@@ -16,6 +16,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.auth_probe import assert_probe_ok, probe_bearer
 from utils.media_clients.base_strategy_interface import BaseMediaStrategy
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
 
@@ -502,9 +503,7 @@ def main():
             json_payload = json.loads(
                 '{"team_id": "tenstorrent", "token_id": "debug-test"}'
             )
-            encoded_jwt = jwt.encode(
-                json_payload, args.jwt_secret, algorithm="HS256"
-            )
+            encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
             os.environ["OPENAI_API_KEY"] = encoded_jwt
             secret_fp = hashlib.sha256(args.jwt_secret.encode()).hexdigest()[:8]
             bearer_fp = hashlib.sha256(encoded_jwt.encode()).hexdigest()[:8]
@@ -623,6 +622,26 @@ def main():
         if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
+
+        # Preflight auth probe: /health is unauthenticated on vLLM, so a
+        # healthy server does NOT prove the eval client and the server
+        # agree on the bearer. We send one max_tokens=1 request and
+        # assert the response has a usable 'choices' list. If it does
+        # not (e.g. 401 / error JSON without 'choices'), aborting now
+        # prevents the silent 0%-score failure mode where lm-eval
+        # treats every "Could not parse generations: 'choices'" warning
+        # as an empty completion.
+        probe_base_url = f"{env_config.deploy_url}:{env_config.service_port}/v1"
+        probe_bearer_token = os.environ.get("OPENAI_API_KEY")
+        probe_model = getattr(env_config, "vllm_model", None) or getattr(
+            model_spec, "hf_model_repo", None
+        )
+        probe_result = probe_bearer(
+            probe_base_url,
+            probe_bearer_token,
+            model=probe_model,
+        )
+        assert_probe_ok(probe_result)
 
         if not disable_trace_capture:
             if "image" in model_spec.supported_modalities:

@@ -34,6 +34,7 @@ from benchmarking.benchmark_config import (
     select_smoke_test_benchmark_config,
 )
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
+from utils.auth_probe import assert_probe_ok, probe_bearer
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -452,6 +453,22 @@ def main():
     if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
+
+    # Preflight auth probe: /health is unauthenticated on vLLM, so a
+    # healthy server does NOT prove the benchmark client and the server
+    # agree on the bearer. Without this probe, an auth mismatch silently
+    # surfaces as "Total generated tokens: 0" with nonsense
+    # "Benchmark duration (s): 0.00" numbers, because vLLM error responses
+    # are counted as "successful" HTTP at the benchmark layer.
+    probe_base_url = f"{env_config.deploy_url}:{env_config.service_port}/v1"
+    probe_bearer_token = os.environ.get("OPENAI_API_KEY")
+    probe_result = probe_bearer(
+        probe_base_url,
+        probe_bearer_token,
+        model=getattr(env_config, "vllm_model", None)
+        or getattr(model_spec, "hf_model_repo", None),
+    )
+    assert_probe_ok(probe_result)
 
     # keep track of captured traces to avoid re-running requests
     captured_traces = set()
