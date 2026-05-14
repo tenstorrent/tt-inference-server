@@ -41,12 +41,15 @@ inline ModelService modelServiceFromString(const std::string& v) {
 enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  QWEN_2_5_1_5B_INSTRUCT,
 };
 
 /** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" ->
- * LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. Expects lowercase input. */
+ * LLAMA_3_1_8B_INSTRUCT, "qwen" -> QWEN_2_5_1_5B_INSTRUCT, else
+ * DEEPSEEK_R1_0528. Expects lowercase input. */
 inline ModelType modelTypeFromDeviceBackend(const std::string& v) {
   if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
+  if (v == "qwen") return ModelType::QWEN_2_5_1_5B_INSTRUCT;
   return ModelType::DEEPSEEK_R1_0528;
 }
 
@@ -79,6 +82,7 @@ inline LLMMode llmModeFromString(const std::string& v) {
 enum class ModelRunnerType {
   MOCK,
   LLAMA,
+  QWEN,
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
   PREFILL
@@ -112,6 +116,8 @@ inline std::string toString(ModelRunnerType m) {
       return "mock";
     case ModelRunnerType::LLAMA:
       return "llama";
+    case ModelRunnerType::QWEN:
+      return "qwen";
     case ModelRunnerType::MOCK_PIPELINE:
       return "mock_pipeline";
     case ModelRunnerType::PIPELINE_MANAGER:

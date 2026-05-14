@@ -404,6 +404,8 @@ class DeepSeekToolCallParser : public IToolCallParser {
 
 }  // namespace
 
+std::unique_ptr<IToolCallParser> createQwenToolCallParser();
+
 std::unique_ptr<IToolCallParser> createToolCallParser(
     tt::config::ModelType modelType) {
   switch (modelType) {
@@ -412,6 +414,8 @@ std::unique_ptr<IToolCallParser> createToolCallParser(
     case tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       // TODO: Implement Llama tool call parser
       return std::make_unique<DeepSeekToolCallParser>();
+    case tt::config::ModelType::QWEN_2_5_1_5B_INSTRUCT:
+      return createQwenToolCallParser();
     default:
       return std::make_unique<DeepSeekToolCallParser>();
   }
