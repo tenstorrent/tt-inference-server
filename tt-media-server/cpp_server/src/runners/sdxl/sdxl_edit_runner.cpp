@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "runners/sdxl/sdxl_edit_runner.hpp"
+
 #include <pybind11/stl.h>
 
 #include <string>
-
-#include "runners/sdxl/sdxl_edit_runner.hpp"
 
 namespace tt::runners::sdxl {
 
@@ -91,7 +91,8 @@ void SDXLEditRunner::prepareInputTensorsForIteration(py::object tensors) {
 
 py::object SDXLEditRunner::stackMaskBatch(
     const std::vector<domain::ImageGenerateRequest>& requests) const {
-  const size_t pad = batch_size_ > requests.size() ? batch_size_ - requests.size() : 0;
+  const size_t pad =
+      batch_size_ > requests.size() ? batch_size_ - requests.size() : 0;
   py::list rows;
   for (const auto& r : requests) {
     rows.append(preprocessMask(r.mask.value_or("")));

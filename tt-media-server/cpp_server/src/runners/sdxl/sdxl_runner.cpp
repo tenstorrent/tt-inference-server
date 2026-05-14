@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sdxl/sdxl_base_runner.hpp"
-
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
@@ -15,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "runners/sdxl/sdxl_base_runner.hpp"
 #include "runners/sdxl/sdxl_python_helpers.hpp"
 #include "utils/image_codec.hpp"
 #include "utils/logger.hpp"
@@ -417,8 +416,7 @@ void SDXLBaseRunner::batcherLoop() {
     {
       std::unique_lock<std::mutex> lk(queue_mutex_);
       queue_cv_.wait(lk, [&] {
-        return batcher_stop_.load(std::memory_order_acquire) ||
-               !queue_.empty();
+        return batcher_stop_.load(std::memory_order_acquire) || !queue_.empty();
       });
       if (batcher_stop_.load(std::memory_order_acquire)) return;
 

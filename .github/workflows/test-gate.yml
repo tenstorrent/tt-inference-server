@@ -554,6 +554,11 @@ jobs:
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
+      - name: Install CMake >= 3.24
+        run: |
+          pip install --quiet cmake==3.30.5
+          cmake --version
+
       - name: C++ format check (.clang-format)
         run: |
           cd cpp_server

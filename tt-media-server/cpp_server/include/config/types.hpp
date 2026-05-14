@@ -135,7 +135,8 @@ inline std::string toString(ModelRunnerType m) {
   return "unknown";
 }
 
-// Must match the `ModelRunners` enum values in tt-media-server/config/constants.py so the
+// Must match the `ModelRunners` enum values in
+// tt-media-server/config/constants.py so the
 inline std::string toClientRunnerName(ModelRunnerType m) {
   switch (m) {
     case ModelRunnerType::TT_SDXL_GENERATE:

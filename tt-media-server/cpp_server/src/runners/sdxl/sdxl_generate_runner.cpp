@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "runners/sdxl/sdxl_generate_runner.hpp"
+
 #include <pybind11/stl.h>
 
 #include <string>
-
-#include "runners/sdxl/sdxl_generate_runner.hpp"
 
 namespace tt::runners::sdxl {
 
