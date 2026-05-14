@@ -3,7 +3,7 @@
 
 #include "services/service_registry.hpp"
 
-#include "services/base_service.hpp"
+#include "services/service.hpp"
 
 namespace tt::services {
 

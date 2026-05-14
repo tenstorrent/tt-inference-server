@@ -17,9 +17,8 @@
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
-#include "services/base_service.hpp"
+#include "services/base_streaming_service.hpp"
 #include "services/reasoning_parser.hpp"
-#include "services/streamable.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -29,8 +28,7 @@ namespace tt::services {
 
 using namespace tt::domain::llm;
 
-class LLMService : public BaseService<LLMRequest, LLMResponse>,
-                   public Streamable<LLMRequest, LLMStreamChunk> {
+class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
  public:
   using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
@@ -55,13 +53,12 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
   void preProcess(LLMRequest& request) const override;
 
-  void postProcess(LLMResponse& response) const override;
+  // Final assembly hook invoked by NonStreamResponseWriter when collapsing a
+  // stream of chunks back into a single LLMResponse. Not part of the base
+  // class contract: the streaming pipeline only knows about chunks.
+  void postProcess(LLMResponse& response) const;
 
-  void processStreamingRequest(
-      LLMRequest request,
-      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
-
-  void abortRequest(uint32_t taskId);
+  void abortRequest(uint32_t taskId) override;
 
   ReasoningParser* getReasoningParser() const { return reasoningParser.get(); }
 
@@ -71,11 +68,12 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
 
  protected:
   size_t currentQueueSize() const override;
-  LLMResponse processRequest(LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(LLMStreamChunk&) const override {}
+  void produceStream(
+      LLMRequest request,
+      std::function<void(LLMStreamChunk&, bool isFinal)> callback) override;
 
  private:
   struct StreamCallbackEntry {

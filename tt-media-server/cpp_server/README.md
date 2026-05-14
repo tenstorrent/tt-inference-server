@@ -788,8 +788,12 @@ cpp_server/
 
 ### Services
 
-- `BaseService`: Base class with pre/post processing hooks
-- `LLMService`: LLM-specific service implementation
+- `IService`: Lifecycle + status interface (`start`, `stop`, `isModelReady`, `getSystemStatus`)
+- `RequestPipeline<Req>`: Shared queue-capacity + status scaffolding with a `preProcess` hook
+- `BaseSyncService<Req, Resp>`: Request/response services (drives `preProcess -> produceResponse -> postProcess`)
+- `BaseStreamingService<Req, Chunk>`: Streaming services (drives `preProcess -> produceStream` with per-chunk `streamingPostProcess` and an overridable `abortRequest`)
+- `EmbeddingService`: Embedding sync service implementation
+- `LLMService`: LLM streaming service implementation
 
 ### Runners
 

@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "services/base_service.hpp"
+#include "services/service.hpp"
 
 namespace tt::sockets {
 class InterServerService;

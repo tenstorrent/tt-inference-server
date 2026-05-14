@@ -9,7 +9,7 @@
 #include "api/error_response.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "services/base_service.hpp"
+#include "services/service.hpp"
 #include "services/service_container.hpp"
 #include "utils/logger.hpp"
 #include "utils/thread_pool.hpp"

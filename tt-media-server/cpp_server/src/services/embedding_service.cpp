@@ -476,7 +476,7 @@ size_t EmbeddingService::currentQueueSize() const {
 
 void EmbeddingService::postProcess(domain::EmbeddingResponse&) const {}
 
-domain::EmbeddingResponse EmbeddingService::processRequest(
+domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
   auto future = impl_->submitRequest(std::move(request));
   return future.get();

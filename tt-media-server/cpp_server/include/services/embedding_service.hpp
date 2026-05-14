@@ -7,7 +7,7 @@
 
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "services/base_service.hpp"
+#include "services/base_sync_service.hpp"
 
 namespace tt::services {
 
@@ -17,8 +17,8 @@ namespace tt::services {
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
  * Synchronous: submit_request blocks until the embedding is computed.
  */
-class EmbeddingService
-    : public BaseService<domain::EmbeddingRequest, domain::EmbeddingResponse> {
+class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
+                                                domain::EmbeddingResponse> {
  public:
   EmbeddingService();
   ~EmbeddingService() override;
@@ -34,7 +34,7 @@ class EmbeddingService
   size_t currentQueueSize() const override;
   void postProcess(domain::EmbeddingResponse& response) const override;
 
-  domain::EmbeddingResponse processRequest(
+  domain::EmbeddingResponse produceResponse(
       domain::EmbeddingRequest request) override;
 
  private:
