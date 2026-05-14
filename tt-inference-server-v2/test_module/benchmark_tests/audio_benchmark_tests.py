@@ -46,11 +46,16 @@ def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]
 
 
 def _transcribe_audio_streaming_off(
-    ctx: MediaContext, is_preprocessing_enabled: bool
+    ctx: MediaContext,
+    is_preprocessing_enabled: bool,
+    audio_b64: Optional[str] = None,
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("Transcribing audio without streaming")
-    with open(f"{ctx.test_payloads_path}/image_client_audio_payload", "r") as f:
-        audio_file = json.load(f)
+    if audio_b64 is not None:
+        audio_file = {"file": audio_b64}
+    else:
+        with open(f"{ctx.test_payloads_path}/image_client_audio_payload", "r") as f:
+            audio_file = json.load(f)
 
     headers = {
         "accept": "application/json",
@@ -94,14 +99,19 @@ def _transcribe_audio_streaming_off(
 
 
 async def _transcribe_audio_streaming_on(
-    ctx: MediaContext, is_preprocessing_enabled: bool
+    ctx: MediaContext,
+    is_preprocessing_enabled: bool,
+    audio_b64: Optional[str] = None,
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("Transcribing audio with streaming enabled")
 
-    with open(
-        f"{ctx.test_payloads_path}/image_client_audio_streaming_payload", "r"
-    ) as f:
-        audio_file = json.load(f)
+    if audio_b64 is not None:
+        audio_file = {"file": audio_b64}
+    else:
+        with open(
+            f"{ctx.test_payloads_path}/image_client_audio_streaming_payload", "r"
+        ) as f:
+            audio_file = json.load(f)
 
     hf_model_repo = ctx.model_spec.hf_model_repo
     headers = {
@@ -216,25 +226,32 @@ async def _transcribe_audio_streaming_on(
 
 async def _transcribe_audio(
     ctx: MediaContext,
+    audio_b64: Optional[str] = None,
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("🔈 Calling whisper")
     is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(ctx)
     logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
 
     if is_streaming_enabled_for_whisper(ctx):
-        return await _transcribe_audio_streaming_on(ctx, is_preprocessing_enabled)
+        return await _transcribe_audio_streaming_on(
+            ctx, is_preprocessing_enabled, audio_b64=audio_b64
+        )
 
-    return _transcribe_audio_streaming_off(ctx, is_preprocessing_enabled)
+    return _transcribe_audio_streaming_off(
+        ctx, is_preprocessing_enabled, audio_b64=audio_b64
+    )
 
 
 def _run_audio_transcription_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, audio_b64: Optional[str] = None
 ) -> list[AudioTestStatus]:
     logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
     status_list: list[AudioTestStatus] = []
     for i in range(num_calls):
         logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
-        status, elapsed, ttft, tsu, rtr = asyncio.run(_transcribe_audio(ctx))
+        status, elapsed, ttft, tsu, rtr = asyncio.run(
+            _transcribe_audio(ctx, audio_b64=audio_b64)
+        )
         logger.info(f"Transcribed audio in {elapsed:.2f} seconds.")
         status_list.append(
             AudioTestStatus(status=status, elapsed=elapsed, ttft=ttft, tsu=tsu, rtr=rtr)
@@ -269,6 +286,77 @@ def _audio_target_checks(
     )
 
 
+def _is_whisper(ctx: MediaContext) -> bool:
+    impl = getattr(ctx.model_spec, "impl", None)
+    return getattr(impl, "impl_name", None) == "whisper"
+
+
+def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
+    """Multi-size audio benchmark for whisper: runs 30s and 60s clips and
+    emits one ``benchmarks`` block with a row per size.
+
+    Target checks are computed from the 60s (heavier) pass and placed at
+    the top level of ``data`` so the acceptance gate keeps working.
+    """
+    from ..load_param_tests.test_payloads.audio_payload_30s import (
+        dataset as dataset30s,
+    )
+    from ..load_param_tests.test_payloads.audio_payload_60s import (
+        dataset as dataset60s,
+    )
+
+    records = []
+    last_metrics = None
+    for label, audio_b64 in (
+        ("Benchmarks 30s", dataset30s["file"]),
+        ("Benchmarks 60s", dataset60s["file"]),
+    ):
+        logger.info("Running whisper benchmark sweep: %s", label)
+        status_list = _run_audio_transcription_benchmark(
+            ctx, num_calls, audio_b64=audio_b64
+        )
+        ttft_value = _audio_avg(status_list, "ttft")
+        rtr_value = _audio_avg(status_list, "rtr")
+        tsu_value = _audio_avg(status_list, "tsu")
+        last_metrics = (ttft_value, tsu_value, rtr_value)
+        records.append(
+            {
+                "name": label,
+                "num_requests": len(status_list),
+                "num_inference_steps": 0,
+                "ttft": ttft_value,
+                "inference_steps_per_second": 0,
+                "t/s/u": tsu_value,
+                "rtr": rtr_value,
+                "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+                "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+            }
+        )
+
+    ttft_value, tsu_value, rtr_value = last_metrics
+    target_checks, accuracy_check = _audio_target_checks(
+        ctx, ttft_value, tsu_value, rtr_value
+    )
+
+    return Block(
+        kind="benchmarks",
+        task_type="audio",
+        title="Audio Benchmark",
+        id=block_id(ctx) or None,
+        targets={
+            "num_prompts": num_calls,
+            "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
+            "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+            "sweep_sizes": ["30s", "60s"],
+        },
+        data={
+            "records": records,
+            "accuracy_check": accuracy_check,
+            "target_checks": target_checks,
+        },
+    )
+
+
 def run_audio_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for an audio model (Whisper, etc.)."""
     logger.info(
@@ -278,6 +366,8 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
 
     try:
         num_calls = get_num_calls(ctx)
+        if _is_whisper(ctx):
+            return _run_whisper_benchmark_sweep(ctx, num_calls)
         status_list = _run_audio_transcription_benchmark(ctx, num_calls)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
