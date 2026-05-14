@@ -4,17 +4,47 @@
 
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Optional
 
 from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from server_tests.test_classes import TestConfig
+
+# Eager import so the model performance reference JSON is parsed exactly once
+# at module import time. Without this, ``get_performance_targets`` lazily
+# imports ``workflows.model_spec`` on first call, which can collide with tests
+# that monkey-patch ``builtins.open`` and then unexpectedly observe an empty
+# JSON payload.
+import workflows.model_spec  # noqa: F401
+from workflows.utils_report import PerformanceTargets, get_performance_targets
+from workflows.workflow_types import ReportCheckTypes
 
 # Import test framework components
 from .test_status import BaseTestStatus
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
+DEFAULT_PERF_CHECK_TOLERANCE = 0.05
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PerfCheck:
+    """One measured metric to compare against a performance target.
+
+    ``measured`` and ``target`` MUST be in the same unit (callers convert at
+    the boundary, e.g. when ``PerformanceTargets`` stores a value in ms but
+    the measurement is in seconds).
+
+    Set ``lower_is_better=True`` for latency-style metrics (smaller is
+    better) and ``False`` for throughput-style metrics (larger is better).
+    """
+
+    name: str
+    measured: Optional[float]
+    target: Optional[float]
+    lower_is_better: bool
 
 
 class BaseMediaStrategy(ABC):
@@ -114,3 +144,65 @@ class BaseMediaStrategy(ABC):
             raise RuntimeError("Health check failed; aborting workflow.")
         logger.info(f"Health check passed. Runner in use: {runner_in_use}")
         return runner_in_use
+
+    def get_performance_targets(self) -> PerformanceTargets:
+        """Look up the configured perf targets for this strategy's model+device."""
+        device_str = self.model_spec.cli_args.get("device")
+        return get_performance_targets(
+            self.model_spec.model_name,
+            device_str,
+            model_type=self.model_spec.model_type.name,
+        )
+
+    @staticmethod
+    def _evaluate_perf_check(check: PerfCheck, tolerance: float) -> bool:
+        """Evaluate a single perf check, log the outcome, and return pass/fail."""
+        if check.lower_is_better:
+            threshold = check.target * (1 + tolerance)
+            cmp, ok = "<=", check.measured <= threshold
+        else:
+            threshold = check.target * (1 - tolerance)
+            cmp, ok = ">=", check.measured >= threshold
+
+        if ok:
+            logger.info(
+                f"✅ {check.name} PASSED: {check.measured:.4f} {cmp} {threshold:.4f}"
+            )
+        else:
+            logger.warning(
+                f"❌ {check.name} FAILED: {check.measured:.4f} not {cmp} {threshold:.4f}"
+            )
+        return ok
+
+    def calculate_performance_check(
+        self,
+        checks: List[PerfCheck],
+        tolerance: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """Compare measured perf metrics to configured targets with tolerance.
+
+        - Skips checks where either ``measured`` or ``target`` is ``None``.
+        - Returns NA when no check is applicable, PASS when every applicable
+          check is within tolerance, FAIL otherwise.
+        """
+        tol = tolerance if tolerance is not None else DEFAULT_PERF_CHECK_TOLERANCE
+        logger.info(f"Calculating performance check (tolerance={tol * 100:.2f}%)")
+
+        applicable = [
+            c for c in checks if c.measured is not None and c.target is not None
+        ]
+        if not applicable:
+            logger.warning(
+                "⚠️ No performance check applicable (no measured metric had a configured target)"
+            )
+            return ReportCheckTypes.NA
+
+        passed = sum(self._evaluate_perf_check(c, tol) for c in applicable)
+        total = len(applicable)
+
+        if passed == total:
+            logger.info(f"🎉 ALL CHECKS PASSED ({passed}/{total})")
+            return ReportCheckTypes.PASS
+
+        logger.warning(f"⛔️ {total - passed}/{total} performance checks failed")
+        return ReportCheckTypes.FAIL
