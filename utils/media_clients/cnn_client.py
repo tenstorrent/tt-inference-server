@@ -100,7 +100,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -252,13 +252,13 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
 
-        # CNN inference is not iterative, so step-based fields are 0.
+        # CNN inference is single-shot, not iterative, so step-based fields
+        # (``num_inference_steps`` / ``inference_steps_per_second``) do not
+        # apply and are intentionally omitted from the CNN benchmark JSON.
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": 0,
                 "latency": latency_value,
-                "inference_steps_per_second": 0,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
