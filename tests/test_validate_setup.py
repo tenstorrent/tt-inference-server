@@ -558,8 +558,16 @@ class TestCheckImageVersionSupported:
 
     def test_pre_0_11_versions_raise(self):
         for v in ("0.10.9", "0.10.1", "0.10.0", "0.9.0", "0.2.0"):
-            with pytest.raises(RuntimeError, match="predates the v0.11.0"):
+            with pytest.raises(RuntimeError, match="too old"):
                 _check_image_version_supported(self._spec(v))
+
+    def test_error_names_exact_tag_to_checkout(self):
+        # The matching tt-inference-server release tag is `v<spec.version>`.
+        with pytest.raises(RuntimeError) as exc:
+            _check_image_version_supported(self._spec("0.10.1"))
+        msg = str(exc.value)
+        assert "v0.10.1" in msg
+        assert "git checkout v0.10.1" in msg
 
     def test_unparseable_versions_pass(self):
         # `dev`, `latest`, empty — let the runtime decide, matches main.

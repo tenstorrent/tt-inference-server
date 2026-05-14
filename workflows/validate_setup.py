@@ -53,14 +53,11 @@ def _check_image_version_supported(model_spec):
         return
     if parsed < MIN_SUPPORTED_IMAGE_VERSION:
         min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
+        tag = f"v{model_spec.version}"
         raise RuntimeError(
-            f"⛔ ModelSpec version {model_spec.version!r} predates the "
-            f"v{min_str} docker image interface change. This run.py only "
-            f"supports v{min_str} and newer images.\n"
-            f"   To run this image, check out the matching tt-inference-server "
-            f"release (e.g. `git checkout v{model_spec.version}`) and use that "
-            f"version's run.py.\n"
-            f"   See https://github.com/tenstorrent/tt-inference-server/releases."
+            f"Image v{model_spec.version} is too old (need v{min_str}+). "
+            f"Check out the matching release tag {tag} and re-run:\n"
+            f"    git checkout {tag}"
         )
 
 
