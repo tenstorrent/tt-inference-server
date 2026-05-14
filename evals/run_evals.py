@@ -74,8 +74,9 @@ def _get_limit_mode(runtime_config: Optional[RuntimeConfig]) -> Optional[EvalLim
 def _select_eval_config(
     eval_config: EvalConfig, runtime_config: Optional[RuntimeConfig]
 ) -> EvalConfig:
-    if runtime_config is not None and runtime_config.eval_samples and eval_config.tasks:
-        mapping = _parse_eval_samples_mapping(runtime_config.eval_samples)
+    eval_samples = getattr(runtime_config, "eval_samples", None)
+    if eval_samples and eval_config.tasks:
+        mapping = _parse_eval_samples_mapping(eval_samples)
         if mapping:
             requested = set(mapping.keys())
             filtered = [t for t in eval_config.tasks if t.task_name in requested]
@@ -166,7 +167,8 @@ def _resolve_eval_samples(
     entry in the user-supplied mapping, or when the task uses a vision/audio
     (lmms-eval) backend that does not support the --samples flag.
     """
-    if runtime_config is None or not runtime_config.eval_samples:
+    eval_samples = getattr(runtime_config, "eval_samples", None)
+    if not eval_samples:
         return None
     if task.workflow_venv_type in (
         WorkflowVenvType.EVALS_VISION,
@@ -178,7 +180,7 @@ def _resolve_eval_samples(
             task.task_name,
         )
         return None
-    mapping = _parse_eval_samples_mapping(runtime_config.eval_samples)
+    mapping = _parse_eval_samples_mapping(eval_samples)
     if mapping is None:
         return None
     indices = mapping.get(task.task_name)
