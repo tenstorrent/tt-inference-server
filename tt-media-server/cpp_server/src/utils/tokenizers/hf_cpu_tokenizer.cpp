@@ -74,8 +74,8 @@ std::string HFCPUTokenizer::applyChatTemplate(
   }
 
   // Qwen-compatible chat template. When `tools` is provided we inline the
-  // Qwen tool-calling system prompt that the jinja template in
-  // tokenizers/Qwen/Qwen2.5-1.5B-Instruct/chat_template.jinja produces.
+  // Qwen tool-calling system prompt (matching the jinja template that ships
+  // with Qwen2.5-Instruct on Hugging Face).
   const bool hasTools = tools.has_value() && !tools->empty();
 
   std::ostringstream out;

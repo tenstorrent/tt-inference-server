@@ -292,7 +292,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/deepseek_tokenizer.cpp
     src/utils/tokenizers/hf_cpu_tokenizer.cpp
     src/utils/tokenizers/llama_tokenizer.cpp
-    src/utils/tokenizers/qwen_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp

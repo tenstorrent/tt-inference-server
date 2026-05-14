@@ -14,7 +14,6 @@
 #include "utils/tokenizers/deepseek_tokenizer.hpp"
 #include "utils/tokenizers/hf_cpu_tokenizer.hpp"
 #include "utils/tokenizers/llama_tokenizer.hpp"
-#include "utils/tokenizers/qwen_tokenizer.hpp"
 
 namespace tt::utils::tokenizers {
 

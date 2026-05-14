@@ -11,11 +11,12 @@
 namespace tt::runners::llm_engine {
 
 /**
- * IModelRunner that runs Qwen-3-1.5B-Instruct via embedded Python interpreter
- * (pybind11). Calls tt_model_runners.qwen_runner.Qwen15BRunner methods
+ * IModelRunner that runs a HuggingFace causal LM (Qwen2.5-1.5B-Instruct by
+ * default, configurable via HF_MODEL) via embedded Python interpreter
+ * (pybind11). Calls tt_model_runners.hf_cpu_runner.HFCPURunner methods
  * directly in-process.
  *
- * This is a CPU-only runner (no tt-metal).  KV cache is managed by the
+ * This is a CPU-only runner (no tt-metal). KV cache is managed by the
  * Python-side DynamicCache; block_table is ignored.
  */
 class QwenModelRunner : public IModelRunner {
