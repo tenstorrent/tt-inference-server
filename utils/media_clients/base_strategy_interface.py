@@ -3,43 +3,34 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from server_tests.test_classes import TestConfig
 
-# Eager import so the model performance reference JSON is parsed exactly once
-# at module import time. Without this, ``get_performance_targets`` lazily
-# imports ``workflows.model_spec`` on first call, which can collide with tests
-# that monkey-patch ``builtins.open`` and then unexpectedly observe an empty
-# JSON payload.
 import workflows.model_spec  # noqa: F401
 from workflows.utils_report import PerformanceTargets, get_performance_targets
 from workflows.workflow_types import ReportCheckTypes
 
-# Import test framework components
+
 from .test_status import BaseTestStatus
 
 # BaseMediaStrategy constants
 DEVICE_LIVENESS_TEST_ALIVE = "alive"
 DEFAULT_PERF_CHECK_TOLERANCE = 0.05
 
+MIN_TAIL_LATENCY_SAMPLES = 10
+TAIL_LATENCY_PERCENTILES = (50, 90, 95)
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class PerfCheck:
-    """One measured metric to compare against a performance target.
-
-    ``measured`` and ``target`` MUST be in the same unit (callers convert at
-    the boundary, e.g. when ``PerformanceTargets`` stores a value in ms but
-    the measurement is in seconds).
-
-    Set ``lower_is_better=True`` for latency-style metrics (smaller is
-    better) and ``False`` for throughput-style metrics (larger is better).
-    """
+    """One measured metric to compare against a performance target."""
 
     name: str
     measured: Optional[float]
@@ -206,3 +197,44 @@ class BaseMediaStrategy(ABC):
 
         logger.warning(f"⛔️ {total - passed}/{total} performance checks failed")
         return ReportCheckTypes.FAIL
+
+    @staticmethod
+    def _calculate_tail_latencies(
+        values: Sequence[Optional[float]],
+        min_samples: int = MIN_TAIL_LATENCY_SAMPLES,
+    ) -> Dict[str, Optional[float]]:
+        """Mean p50/p90/p95 over ``values``"""
+        result: Dict[str, Optional[float]] = {
+            f"latency_p{p}": None for p in TAIL_LATENCY_PERCENTILES
+        }
+
+        valid = [v for v in values if v is not None]
+        if len(valid) < min_samples:
+            logger.info(
+                f"Tail latency: {len(valid)} sample(s) < min_samples={min_samples}; "
+                f"emitting None for {list(result)}"
+            )
+            return result
+
+        sorted_values = sorted(valid)
+        n = len(sorted_values)
+        for percentile in TAIL_LATENCY_PERCENTILES:
+            index = min(math.ceil(n * percentile / 100.0) - 1, n - 1)
+            result[f"latency_p{percentile}"] = sorted_values[index]
+        logger.info(f"Tail latency over {n} samples: {result}")
+        return result
+
+    @staticmethod
+    def _calculate_throughput_rps(
+        num_requests: int,
+        wall_clock_seconds: Optional[float],
+    ) -> Optional[float]:
+        """Requests-per-second over the wall-clock duration of the loop.
+
+        Returns ``None`` when either input is missing/non-positive so the
+        producer can serialise that as JSON ``null`` instead of silently
+        emitting ``inf`` or ``0`` (both of which mislead downstream).
+        """
+        if not num_requests or not wall_clock_seconds or wall_clock_seconds <= 0:
+            return None
+        return num_requests / wall_clock_seconds
