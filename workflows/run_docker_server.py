@@ -21,7 +21,6 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
-from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -29,6 +28,7 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
+from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -330,11 +330,16 @@ def generate_docker_run_command(
         api_key = os.getenv("API_KEY")
         if api_key:
             docker_env_vars["API_KEY"] = api_key
-        # cpp_server reads OPENAI_API_KEY (not API_KEY) for bearer auth.
         if _is_cpp_media_spec(model_spec):
-            openai_api_key = os.getenv("OPENAI_API_KEY")
+            openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
             if openai_api_key:
                 docker_env_vars["OPENAI_API_KEY"] = openai_api_key
+            else:
+                logger.warning(
+                    "Neither OPENAI_API_KEY nor API_KEY is set; cpp_server will "
+                    "fall back to its default bearer token. Set OPENAI_API_KEY "
+                    "(preferred) or API_KEY to override."
+                )
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:

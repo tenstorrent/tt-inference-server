@@ -40,12 +40,15 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
  protected:
   domain::image::ImageResponse processRequest(
       domain::ImageGenerateRequest request) override;
+  void preProcess(domain::ImageGenerateRequest& request) const override;
+  size_t currentQueueSize() const override;
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
   config::ImageConfig config_;
   std::unique_ptr<Runner> runner_;
   std::atomic<bool> ready_{false};
+  mutable std::atomic<size_t> in_flight_{0};
   // Warmup runs here so start() can return immediately and the HTTP listener
   // can bind; /tt-liveness reports model_ready=false until warmup completes.
   std::thread warmup_thread_;

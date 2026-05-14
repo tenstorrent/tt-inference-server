@@ -22,8 +22,9 @@ ImageService::ImageService(config::ImageConfig config,
   if (!runner_) {
     throw std::invalid_argument("[ImageService] runner must not be null");
   }
-  TT_LOG_INFO("[ImageService] Initialized with runner '{}'",
-              runner_->runnerType());
+  this->maxQueueSize = tt::config::maxQueueSize();
+  TT_LOG_INFO("[ImageService] Initialized with runner '{}' (max_queue_size={})",
+              runner_->runnerType(), this->maxQueueSize);
 }
 
 ImageService::~ImageService() { stop(); }
@@ -83,8 +84,25 @@ std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
   return out;
 }
 
+void ImageService::preProcess(domain::ImageGenerateRequest& /*request*/) const {
+  const size_t prev = in_flight_.fetch_add(1, std::memory_order_acq_rel);
+  if (prev >= this->maxQueueSize) {
+    in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+    throw QueueFullException{};
+  }
+}
+
+size_t ImageService::currentQueueSize() const {
+  return in_flight_.load(std::memory_order_acquire);
+}
+
 domain::image::ImageResponse ImageService::processRequest(
     domain::ImageGenerateRequest request) {
+  struct InFlightGuard {
+    std::atomic<size_t>& counter;
+    ~InFlightGuard() { counter.fetch_sub(1, std::memory_order_acq_rel); }
+  } guard{in_flight_};
+
   domain::image::ImageResponse response(request.task_id);
   if (!ready_.load(std::memory_order_acquire)) {
     response.error = "Image service not ready";

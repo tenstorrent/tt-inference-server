@@ -127,12 +127,24 @@ struct ImageGenerateRequest : BaseRequest {
     if (present("lora_scale"))
       req.lora_scale = json_field::getFloat(json["lora_scale"], "lora_scale");
 
-    if (present("image_return_format"))
-      req.image_return_format = json_field::getString(
-          json["image_return_format"], "image_return_format");
-    if (present("image_quality"))
-      req.image_quality =
+    if (present("image_return_format")) {
+      const auto format = json_field::getString(json["image_return_format"],
+                                                "image_return_format");
+      if (format != "JPEG" && format != "PNG") {
+        throw std::invalid_argument(
+            "image_return_format must be either 'JPEG' or 'PNG'");
+      }
+      req.image_return_format = format;
+    }
+    if (present("image_quality")) {
+      const int quality =
           json_field::getInt(json["image_quality"], "image_quality");
+      if (quality < 50 || quality > 100) {
+        throw std::invalid_argument(
+            "image_quality must be between 50 and 100 (inclusive)");
+      }
+      req.image_quality = quality;
+    }
 
     if (present("image"))
       req.image = json_field::getString(json["image"], "image");

@@ -1038,9 +1038,9 @@
           "image_quality": {
             "type": "integer",
             "default": 85,
-            "minimum": 1,
+            "minimum": 50,
             "maximum": 100,
-            "description": "Quality factor for JPEG encoding (ignored for PNG)"
+            "description": "Quality factor for JPEG encoding (ignored for PNG). Bounds match the Python service's Pydantic constraint (ge=50, le=100)."
           },
           "image": {
             "type": "string",

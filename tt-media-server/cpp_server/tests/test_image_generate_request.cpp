@@ -213,3 +213,32 @@ TEST(ImageGenerateRequestParseTest, NullPromptRejected) {
   EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
                std::invalid_argument);
 }
+
+TEST(ImageGenerateRequestParseTest, InvalidImageReturnFormatRejected) {
+  auto json = minimalGenerateJson();
+  json["image_return_format"] = "GIF";
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+}
+
+TEST(ImageGenerateRequestParseTest, ImageQualityOutOfRangeRejected) {
+  auto json = minimalGenerateJson();
+  json["image_quality"] = 49;
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+
+  json["image_quality"] = 101;
+  EXPECT_THROW(ImageGenerateRequest::fromJson(json, TEST_TASK_ID),
+               std::invalid_argument);
+}
+
+TEST(ImageGenerateRequestParseTest, ImageQualityBoundsAccepted) {
+  auto json = minimalGenerateJson();
+  json["image_quality"] = 50;
+  auto req = ImageGenerateRequest::fromJson(json, TEST_TASK_ID);
+  EXPECT_EQ(*req.image_quality, 50);
+
+  json["image_quality"] = 100;
+  req = ImageGenerateRequest::fromJson(json, TEST_TASK_ID);
+  EXPECT_EQ(*req.image_quality, 100);
+}

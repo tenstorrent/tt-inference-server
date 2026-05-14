@@ -15,9 +15,16 @@ namespace tt::utils::service_factory {
 void initializeServices();
 
 /**
- * Start workers + model warmup for the configured service. Slow; intended
- * to run on a background thread so the listener can bind while
- * isModelReady() is still false.
+ * Start workers + model warmup for the configured service.
+ *
+ * Threading contract:
+ *   - MUST be called on the main thread for fork-based services (LLM,
+ *     embedding). They set PR_SET_PDEATHSIG on the worker, which sends
+ *     SIGTERM as soon as the thread that called fork() exits — so a
+ *     background-thread call would kill the worker immediately.
+ *   - In-process services (e.g. ImageService) own a private warmup thread
+ *     internally, so this call returns quickly and the HTTP listener can
+ *     bind while isModelReady() is still false.
  */
 void startConfiguredService();
 
