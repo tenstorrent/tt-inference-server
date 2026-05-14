@@ -23,7 +23,9 @@ from typing import Iterable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REFERENCE = REPO_ROOT / "evals/reference/aime24_generation_length_reference.csv"
-DEFAULT_REFERENCE_URL = "https://github.com/tenstorrent/tt-metal/issues/38446#issuecomment-4073998777"
+DEFAULT_REFERENCE_URL = (
+    "https://github.com/tenstorrent/tt-metal/issues/38446#issuecomment-4073998777"
+)
 DEFAULT_TOKENIZER = "deepseek-ai/DeepSeek-R1-0528"
 SAMPLE_RE = re.compile(r"^samples_(?P<task>.+)_\d{4}-\d{2}-\d{2}T.*\.jsonl$")
 
@@ -102,10 +104,24 @@ class MarkdownTable:
             return "-" * width
 
         lines = []
-        lines.append("| " + " | ".join(cell(h, w, a) for h, w, a in zip(self.headers, widths, self.aligns)) + " |")
-        lines.append("| " + " | ".join(separator(w, a) for w, a in zip(widths, self.aligns)) + " |")
+        lines.append(
+            "| "
+            + " | ".join(
+                cell(h, w, a) for h, w, a in zip(self.headers, widths, self.aligns)
+            )
+            + " |"
+        )
+        lines.append(
+            "| "
+            + " | ".join(separator(w, a) for w, a in zip(widths, self.aligns))
+            + " |"
+        )
         for row in self.rows:
-            lines.append("| " + " | ".join(cell(c, w, a) for c, w, a in zip(row, widths, self.aligns)) + " |")
+            lines.append(
+                "| "
+                + " | ".join(cell(c, w, a) for c, w, a in zip(row, widths, self.aligns))
+                + " |"
+            )
         return "\n".join(lines)
 
 
@@ -119,19 +135,44 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Eval output directory or samples_*.jsonl file. Defaults to the latest AIME24 output under eval_results/.",
     )
-    parser.add_argument("--task", default=None, help="Task name to report. Defaults to r1_aime24 when present.")
-    parser.add_argument("--tokenizer", default=None, help=f"Tokenizer repo. Defaults to run metadata or {DEFAULT_TOKENIZER}.")
-    parser.add_argument("--reference", type=Path, default=DEFAULT_REFERENCE, help="Reference JSON file")
-    parser.add_argument("--output", type=Path, default=None, help="Optional path to also write the Markdown report")
-    parser.add_argument("--no-color", action="store_true", help="Use ASCII status labels instead of emoji markers")
-    parser.add_argument("--show-reference-tt", action="store_true", help="Include the historical reference TT-token column")
+    parser.add_argument(
+        "--task",
+        default=None,
+        help="Task name to report. Defaults to r1_aime24 when present.",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        default=None,
+        help=f"Tokenizer repo. Defaults to run metadata or {DEFAULT_TOKENIZER}.",
+    )
+    parser.add_argument(
+        "--reference", type=Path, default=DEFAULT_REFERENCE, help="Reference JSON file"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional path to also write the Markdown report",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Use ASCII status labels instead of emoji markers",
+    )
+    parser.add_argument(
+        "--show-reference-tt",
+        action="store_true",
+        help="Include the historical reference TT-token column",
+    )
     return parser.parse_args()
 
 
 def load_reference(path: Path) -> tuple[dict[int, ReferenceRow], dict]:
     text_lines = path.read_text(encoding="utf-8").splitlines()
     comments = [line[1:].strip() for line in text_lines if line.startswith("#")]
-    csv_lines = [line for line in text_lines if line.strip() and not line.startswith("#")]
+    csv_lines = [
+        line for line in text_lines if line.strip() and not line.startswith("#")
+    ]
     data = list(csv.DictReader(csv_lines))
     rows = {
         int(row["aime_id"]): ReferenceRow(
@@ -165,16 +206,28 @@ def latest_aime_output() -> Path | None:
     candidates = [
         path
         for path in root.iterdir()
-        if path.is_dir() and (path.name.startswith("r1_aime24_") or path.name.startswith("r1_aime24_short_"))
+        if path.is_dir()
+        and (
+            path.name.startswith("r1_aime24_")
+            or path.name.startswith("r1_aime24_short_")
+        )
     ]
-    return max(candidates, key=lambda candidate: candidate.stat().st_mtime) if candidates else None
+    return (
+        max(candidates, key=lambda candidate: candidate.stat().st_mtime)
+        if candidates
+        else None
+    )
 
 
-def discover_sample_files(path: Path | None, task: str | None) -> tuple[Path, str, list[Path]]:
+def discover_sample_files(
+    path: Path | None, task: str | None
+) -> tuple[Path, str, list[Path]]:
     if path is None:
         path = latest_aime_output()
         if path is None:
-            raise SystemExit("No output directory supplied and no AIME24 outputs found under eval_results/.")
+            raise SystemExit(
+                "No output directory supplied and no AIME24 outputs found under eval_results/."
+            )
     path = path.expanduser().resolve()
     if not path.exists():
         raise SystemExit(f"Path does not exist: {path}")
@@ -184,7 +237,11 @@ def discover_sample_files(path: Path | None, task: str | None) -> tuple[Path, st
         inferred_tasks = {sample_task(path)} - {None}
         root = path.parent
     else:
-        all_files = [candidate for candidate in sorted(path.glob("**/samples_*.jsonl")) if sample_task(candidate)]
+        all_files = [
+            candidate
+            for candidate in sorted(path.glob("**/samples_*.jsonl"))
+            if sample_task(candidate)
+        ]
         inferred_tasks = {sample_task(candidate) for candidate in all_files} - {None}
         root = path
         files = all_files
@@ -243,6 +300,7 @@ def load_tokenizer(name: str):
     try:
         with suppress_stderr():
             from transformers import AutoTokenizer, logging as transformers_logging
+
             transformers_logging.set_verbosity_error()
             return AutoTokenizer.from_pretrained(name, trust_remote_code=True)
     except ImportError as exc:
@@ -311,12 +369,16 @@ def load_samples(paths: Sequence[Path], tokenizer) -> dict[int, SampleSummary]:
                 row = json.loads(line)
                 aid = aime_id(row)
                 if aid is None:
-                    raise SystemExit(f"Could not determine AIME id for {path}:{line_no}")
+                    raise SystemExit(
+                        f"Could not determine AIME id for {path}:{line_no}"
+                    )
                 text = response_text(row)
                 token_count = len(tokenizer.encode(text, add_special_tokens=False))
                 target = str(row.get("target", ""))
                 if aid not in by_id:
-                    by_id[aid] = SampleSummary(aime_id=aid, target=target, token_counts=[], scores=[])
+                    by_id[aid] = SampleSummary(
+                        aime_id=aid, target=target, token_counts=[], scores=[]
+                    )
                 by_id[aid].token_counts.append(token_count)
                 by_id[aid].scores.append(score(row))
     return by_id
@@ -335,7 +397,9 @@ def format_tokens(summary: SampleSummary) -> str:
 
 
 def format_gpu_tokens(row: ReferenceRow) -> str:
-    return f"{format_num(row.gpu_tokens_mean)} ± {format_num(row.gpu_tokens_half_range)}"
+    return (
+        f"{format_num(row.gpu_tokens_mean)} ± {format_num(row.gpu_tokens_half_range)}"
+    )
 
 
 def status(summary: SampleSummary, reference: ReferenceRow, ascii_only: bool) -> str:
@@ -363,7 +427,11 @@ def correct_status(summary: SampleSummary, ascii_only: bool) -> str:
     return f"{summary.correct_count}/{summary.sample_count}"
 
 
-def count_statuses(summaries: Iterable[SampleSummary], references: dict[int, ReferenceRow], ascii_only: bool) -> dict[str, int]:
+def count_statuses(
+    summaries: Iterable[SampleSummary],
+    references: dict[int, ReferenceRow],
+    ascii_only: bool,
+) -> dict[str, int]:
     counts: dict[str, int] = defaultdict(int)
     for summary in summaries:
         ref = references.get(summary.aime_id)
@@ -388,7 +456,9 @@ def render_report(
     total_tokens = sum(summary.total_tokens for summary in present)
     total_samples = sum(summary.sample_count for summary in present)
     total_correct = sum(summary.correct_count for summary in present)
-    valid_scores = sum(1 for summary in present for item in summary.scores if item is not None)
+    valid_scores = sum(
+        1 for summary in present for item in summary.scores if item is not None
+    )
     status_counts = count_statuses(present, references, ascii_only)
     below_label = "LOW" if ascii_only else "💪"
     ok_label = "OK" if ascii_only else "✅"
@@ -406,19 +476,37 @@ def render_report(
 
     summary_table = MarkdownTable(["Metric", "Value"], ["left", "right"])
     summary_table.add(["Total generated tokens", f"{total_tokens:,}"])
-    summary_table.add(["Mean tokens / generation", f"{(total_tokens / total_samples):,.1f}" if total_samples else "n/a"])
-    summary_table.add(["Correct", f"{total_correct}/{valid_scores}" if valid_scores else "n/a"])
-    summary_table.add([f"{below_label} below GPU min", status_counts.get(below_label, 0)])
+    summary_table.add(
+        [
+            "Mean tokens / generation",
+            f"{(total_tokens / total_samples):,.1f}" if total_samples else "n/a",
+        ]
+    )
+    summary_table.add(
+        ["Correct", f"{total_correct}/{valid_scores}" if valid_scores else "n/a"]
+    )
+    summary_table.add(
+        [f"{below_label} below GPU min", status_counts.get(below_label, 0)]
+    )
     summary_table.add([f"{ok_label} within GPU range", status_counts.get(ok_label, 0)])
     summary_table.add([f"{high_label} above GPU max", status_counts.get(high_label, 0)])
     lines.append(summary_table.render())
-    lines.extend([
-        "",
-        f"Legend: {below_label} below GPU min, {ok_label} within GPU min/max, {high_label} above GPU max.",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            f"Legend: {below_label} below GPU min, {ok_label} within GPU min/max, {high_label} above GPU max.",
+            "",
+        ]
+    )
 
-    headers = ["AIME ID", "TT Tokens", "GPU Tokens", "In range", "TT Correct", "GPU Correct"]
+    headers = [
+        "AIME ID",
+        "TT Tokens",
+        "GPU Tokens",
+        "In range",
+        "TT Correct",
+        "GPU Correct",
+    ]
     aligns = ["right", "right", "right", "center", "center", "center"]
     if show_reference_tt:
         headers.insert(2, "Ref TT")
@@ -428,7 +516,14 @@ def render_report(
         summary = summaries[aid]
         ref = references.get(aid)
         if ref is None:
-            row = [aid, format_tokens(summary), "n/a", "n/a", correct_status(summary, ascii_only), "n/a"]
+            row = [
+                aid,
+                format_tokens(summary),
+                "n/a",
+                "n/a",
+                correct_status(summary, ascii_only),
+                "n/a",
+            ]
             if show_reference_tt:
                 row.insert(2, "n/a")
         else:

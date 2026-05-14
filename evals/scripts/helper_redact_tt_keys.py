@@ -16,7 +16,9 @@ from pathlib import Path
 TT_KEY_RE = re.compile(rb"sk-tt-[A-Za-z0-9._=-]+")
 TT_KEY_TEXT_RE = re.compile(r"sk-tt-[A-Za-z0-9._=-]+")
 TT_KEY_PREFIX = b"sk-tt-"
-TOKEN_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._=-")
+TOKEN_BYTES = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._=-"
+)
 REDACTION = b"sk-tt-REDACTED"
 TEXT_REDACTION = "sk-tt-REDACTED"
 SUPPRESSED_STREAM_PATTERNS = (
@@ -49,7 +51,9 @@ def split_safe_prefix(data: bytes) -> tuple[bytes, bytes]:
             hold_start = min(hold_start, len(data) - prefix_len)
 
     idx = data.rfind(TT_KEY_PREFIX)
-    if idx != -1 and all(byte in TOKEN_BYTES for byte in data[idx + len(TT_KEY_PREFIX) :]):
+    if idx != -1 and all(
+        byte in TOKEN_BYTES for byte in data[idx + len(TT_KEY_PREFIX) :]
+    ):
         hold_start = min(hold_start, idx)
 
     return data[:hold_start], data[hold_start:]
@@ -97,7 +101,9 @@ def redact_stream() -> int:
         else:
             emit(data)
 
-    if held_line and not any(pattern in held_line for pattern in SUPPRESSED_STREAM_PATTERNS):
+    if held_line and not any(
+        pattern in held_line for pattern in SUPPRESSED_STREAM_PATTERNS
+    ):
         emit(held_line)
     emit(b"", final=True)
     return 0

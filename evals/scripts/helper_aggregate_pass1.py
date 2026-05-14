@@ -19,9 +19,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Aggregate repeated lm_eval samples into DeepSeek-style pass@1.",
     )
-    parser.add_argument("root", type=Path, help="Root directory containing repeated eval run outputs")
+    parser.add_argument(
+        "root", type=Path, help="Root directory containing repeated eval run outputs"
+    )
     parser.add_argument("--task", default="r1_aime24", help="Task name to aggregate")
-    parser.add_argument("--expected-runs", type=int, default=None, help="Expected samples per problem")
+    parser.add_argument(
+        "--expected-runs", type=int, default=None, help="Expected samples per problem"
+    )
     return parser.parse_args()
 
 
@@ -113,7 +117,9 @@ def summarize(rows: list[dict], task: str, expected_runs: int | None) -> dict:
     per_problem = []
     all_scores = []
     majority_scores = []
-    for doc_key in sorted(by_doc, key=lambda value: int(value) if value.isdigit() else value):
+    for doc_key in sorted(
+        by_doc, key=lambda value: int(value) if value.isdigit() else value
+    ):
         doc_rows = by_doc[doc_key]
         scores = [row_score(row) for row in doc_rows]
         predictions = [row_prediction(row) for row in doc_rows]
@@ -144,11 +150,7 @@ def summarize(rows: list[dict], task: str, expected_runs: int | None) -> dict:
 
     missing = []
     if expected_runs is not None:
-        missing = [
-            item
-            for item in per_problem
-            if item["samples"] != expected_runs
-        ]
+        missing = [item for item in per_problem if item["samples"] != expected_runs]
 
     return {
         "task": task,
@@ -209,11 +211,17 @@ def main() -> int:
 
     json_path = root / f"{args.task}_pass1_summary.json"
     md_path = root / f"{args.task}_pass1_summary.md"
-    json_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     md_path.write_text(markdown(summary), encoding="utf-8")
 
-    print(f"pass@1: {summary['pass_at_1_percent']:.2f}% ({summary['num_samples']} samples)")
-    print(f"majority@1: {summary['majority_at_1_percent']:.2f}% ({summary['num_problems']} problems)")
+    print(
+        f"pass@1: {summary['pass_at_1_percent']:.2f}% ({summary['num_samples']} samples)"
+    )
+    print(
+        f"majority@1: {summary['majority_at_1_percent']:.2f}% ({summary['num_problems']} problems)"
+    )
     print(f"Summary JSON: {json_path}")
     print(f"Summary Markdown: {md_path}")
     if summary["missing_or_extra_sample_counts"]:
