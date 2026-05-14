@@ -293,7 +293,8 @@ LLMConfig llmEngineConfig() {
 namespace {
 
 /** Parse "WxH" (case-insensitive 'x'); std::nullopt if malformed or either
- *  dimension is non-positive. Strict: rejects trailing junk like "1024x1024foo". */
+ *  dimension is non-positive. Strict: rejects trailing junk like
+ * "1024x1024foo". */
 std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
   std::istringstream ss(s);
   long long w = 0, h = 0;

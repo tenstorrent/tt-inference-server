@@ -58,8 +58,8 @@ Format parseFormat(const std::string& s) {
   std::string lower;
   lower.reserve(s.size());
   for (char c : s) {
-    lower.push_back(static_cast<char>(
-        std::tolower(static_cast<unsigned char>(c))));
+    lower.push_back(
+        static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
   }
   if (lower == "png") return Format::PNG;
   return Format::JPEG;

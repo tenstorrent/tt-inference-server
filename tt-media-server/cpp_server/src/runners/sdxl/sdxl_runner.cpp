@@ -119,9 +119,9 @@ void SDXLBaseRunner::stop() {
   initialized_ = false;
 }
 
-void SDXLBaseRunner::runAndCheckDuration(
-    const std::string& tag, unsigned timeoutSeconds,
-    const std::function<void()>& work) {
+void SDXLBaseRunner::runAndCheckDuration(const std::string& tag,
+                                         unsigned timeoutSeconds,
+                                         const std::function<void()>& work) {
   const auto start = std::chrono::steady_clock::now();
   {
     py::gil_scoped_acquire acquire;
