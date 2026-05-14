@@ -12,11 +12,13 @@ from evals.eval_config import EVAL_CONFIGS
 from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    MIN_SUPPORTED_IMAGE_VERSION,
     check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_groups_for_uid,
     get_repo_root_path,
+    parse_version_tuple,
     resolve_hf_snapshot_dir,
     run_command,
 )
@@ -29,6 +31,37 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _check_image_version_supported(model_spec):
+    """Refuse to run a pre-0.11 vLLM image with this run.py.
+
+    The vLLM docker image interface was reshaped in v0.11.0 (commit 50db8ac7
+    "Simplify and improve vLLM Docker image interface"): ENTRYPOINT changed
+    from docker-entrypoint.sh + gosu to bash -c, the script's CLI argument
+    contract changed, and shared-memory + env-var conventions changed. main
+    only emits the new contract, so an older image won't start.
+
+    apply_overrides re-parses model_spec.version from --override-docker-image
+    when present, so this check covers both template-pinned versions and
+    override paths.
+    """
+    parsed = parse_version_tuple(model_spec.version)
+    if parsed is None:
+        # Unparseable versions (`dev`, `latest`, etc.) default to "newest
+        # contract" — let the runtime decide, matches main's behaviour.
+        return
+    if parsed < MIN_SUPPORTED_IMAGE_VERSION:
+        min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
+        raise RuntimeError(
+            f"⛔ ModelSpec version {model_spec.version!r} predates the "
+            f"v{min_str} docker image interface change. This run.py only "
+            f"supports v{min_str} and newer images.\n"
+            f"   To run this image, check out the matching tt-inference-server "
+            f"release (e.g. `git checkout v{model_spec.version}`) and use that "
+            f"version's run.py.\n"
+            f"   See https://github.com/tenstorrent/tt-inference-server/releases."
+        )
 
 
 def validate_runtime_args(model_spec, runtime_config):
@@ -46,6 +79,8 @@ def validate_runtime_args(model_spec, runtime_config):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
+
+    _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
