@@ -146,8 +146,10 @@ class VideoClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = get_num_calls(self)
+            loop_start = time.monotonic()
             status_list = self._run_video_generation_benchmark(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -368,7 +370,11 @@ class VideoClientStrategy(BaseMediaStrategy):
             logger.error(f"Error downloading video: {e}")
             return ""
 
-    def _generate_report(self, status_list: list[VideoGenerationTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[VideoGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -381,6 +387,10 @@ class VideoClientStrategy(BaseMediaStrategy):
         latency_value = self._calculate_latency(status_list)
         performance_check = self._calculate_performance_check(
             latency_value=latency_value
+        )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
         )
 
         report_data = {
@@ -396,6 +406,8 @@ class VideoClientStrategy(BaseMediaStrategy):
                 / len(status_list)
                 if status_list
                 else 0,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
