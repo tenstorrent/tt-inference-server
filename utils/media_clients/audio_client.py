@@ -112,7 +112,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> list[AudioTestStatus]:
+    def run_benchmark(self) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -139,12 +139,10 @@ class AudioClientStrategy(BaseMediaStrategy):
         ttft_value = self._calculate_ttft_value(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
         tsu_value = self._calculate_tsu_value(status_list)
-        accuracy_check = self._calculate_accuracy_check(
+        performance_check = self._calculate_performance_check(
             latency_value, tsu_value, rtr_value
         )
 
-        # ``ttft`` is only meaningful when streaming is enabled
-        # (0 otherwise).
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
@@ -152,12 +150,12 @@ class AudioClientStrategy(BaseMediaStrategy):
                 "ttft": ttft_value,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
-                "accuracy_check": accuracy_check,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "audio",
+            "performance_check": performance_check,
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
             "preprocessing_enabled": is_preprocessing_enabled_for_whisper(self),
         }
@@ -478,11 +476,13 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Fallback to word counting
         return len(text.split())
 
-    def _calculate_accuracy_check(
+    def _calculate_performance_check(
         self, latency_value: float, tsu_value: float, rtr_value: float
     ) -> ReportCheckTypes:
-        """Calculate accuracy check based on latency, RTR, T/S/U targets."""
-        logger.info("Calculating accuracy check based on latency, RTR, T/S/U targets")
+        """Compare measured latency / RTR / T-S-U to the configured perf targets."""
+        logger.info(
+            "Calculating performance check based on latency, RTR, T/S/U targets"
+        )
 
         device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
@@ -495,7 +495,7 @@ class AudioClientStrategy(BaseMediaStrategy):
         if not targets.ttft_ms:
             logger.warning(
                 "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
-                "skipping accuracy check"
+                "skipping performance check"
             )
             return ReportCheckTypes.NA
 
@@ -557,7 +557,7 @@ class AudioClientStrategy(BaseMediaStrategy):
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
         if checks_total == 0:  # pragma: no cover
-            logger.warning("No targets available for accuracy check")
+            logger.warning("No targets available for performance check")
             return ReportCheckTypes.NA
         if checks_passed == checks_total:
             logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")

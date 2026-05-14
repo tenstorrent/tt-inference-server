@@ -415,14 +415,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_requests": benchmarks_data.get("benchmarks").get(
                     "num_requests", 0
                 ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
                 "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
                 * 1000,
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                    "inference_steps_per_second", 0
-                ),
                 "filename": filename,
                 "task_type": "cnn",
             }
@@ -500,9 +494,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
             "task_type": "audio",
-            "accuracy_check": benchmarks_data.get("benchmarks").get(
-                "accuracy_check", 0
-            ),
+            # ``performance_check`` lives at the top level of the report JSON
+            # (it's a perf-target check, not an accuracy/quality check).
+            "performance_check": data.get("performance_check", 0),
             "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
             "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
@@ -780,7 +774,7 @@ def create_audio_display_dict(
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
-        ("accuracy_check", "Accuracy Check"),
+        ("performance_check", "Performance Check"),
         ("t/s/u", "T/S/U"),
         ("rtr", "RTR"),
     ]
@@ -892,7 +886,6 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("num_inference_steps", "Num Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
         ("task_type", "Task Type"),
     ]
