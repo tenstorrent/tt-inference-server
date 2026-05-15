@@ -430,12 +430,19 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        default_env_vars = {
-            "VLLM_CONFIGURE_LOGGING": "1",
-            "VLLM_RPC_TIMEOUT": "900000",
-            "VLLM_TARGET_DEVICE": "tt",
-            "TORCHDYNAMO_DISABLE": "1",
-        }
+        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        if self.inference_engine in (
+            InferenceEngine.FORGE.value,
+            InferenceEngine.MEDIA.value,
+        ):
+            default_env_vars = {}
+        else:
+            default_env_vars = {
+                "VLLM_CONFIGURE_LOGGING": "1",
+                "VLLM_RPC_TIMEOUT": "900000",
+                "VLLM_TARGET_DEVICE": "tt",
+                "TORCHDYNAMO_DISABLE": "1",
+            }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
             **default_env_vars,
@@ -793,6 +800,22 @@ class ModelSpec:
                     merged_vllm_args[key] = value
 
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
+
+            # Mirror overridden vllm_args into env_vars so forge/media containers,
+            # which read bare env vars (not vllm CLI args), pick up the override.
+            VLLM_ARG_TO_ENV = {
+                "max_num_seqs": "MAX_NUM_SEQS",
+                "max_model_len": "MAX_MODEL_LENGTH",
+            }
+            overridden_env = {
+                env_key: str(vllm_override_args_from_cli[vllm_key])
+                for vllm_key, env_key in VLLM_ARG_TO_ENV.items()
+                if vllm_override_args_from_cli.get(vllm_key) is not None
+            }
+            if overridden_env:
+                object.__setattr__(
+                    self, "env_vars", {**self.env_vars, **overridden_env}
+                )
 
         if runtime_config.service_port:
             merged_vllm_args = {
@@ -3658,6 +3681,7 @@ cnn_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "2",
                 },
             ),
             DeviceModelSpec(
@@ -3669,6 +3693,7 @@ cnn_templates = [
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "2",
                 },
             ),
         ],

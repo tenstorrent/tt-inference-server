@@ -56,7 +56,8 @@ async def complete_text(
 
     sub_requests = _split_batched_prompts(completion_request)
 
-    # Reject prompts that exceed the model's context window
+    # Compute prompt token counts (for context-window validation and usage stats).
+    prompt_tokens_total = 0
     try:
         max_model_len = settings.vllm.max_model_length
         for r in sub_requests:
@@ -67,6 +68,7 @@ async def complete_text(
                 prompt_tokens = len(p)
             else:
                 prompt_tokens = 0
+            prompt_tokens_total += prompt_tokens
             if prompt_tokens > max_model_len:
                 logger.warning(
                     f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
@@ -85,6 +87,7 @@ async def complete_text(
             results = await asyncio.gather(
                 *(service.process_request(r) for r in sub_requests)
             )
+            completion_tokens = sum(_count_tokens(r.text) for r in results if r.text)
             response = {
                 "id": completion_id,
                 "object": "text_completion",
@@ -100,9 +103,9 @@ async def complete_text(
                     for i, r in enumerate(results)
                 ],
                 "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
+                    "prompt_tokens": prompt_tokens_total,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens_total + completion_tokens,
                 },
             }
             return JSONResponse(content=response)
