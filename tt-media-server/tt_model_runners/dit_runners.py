@@ -52,6 +52,9 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2.value: "Wan22",
     ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: "Wan22-I2V-Prodia",
+    ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
+    ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
+    ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -636,3 +639,222 @@ class TTWan22I2VRunner(TTDiTRunner):
             num_inference_steps=2,
             image_prompts=[ImagePromptEntry(image=b64, frame_pos=0)],
         )
+
+
+# ---------------------------------------------------------------------------
+# Wan2.2 I2V experimental variants: AniSora, Distill (LightX2V), LoRA
+# ---------------------------------------------------------------------------
+
+
+def _wan22_i2v_warmup_request(prompt: str = "Sunrise on a beach"):
+    """Shared warmup request builder for I2V experimental runners."""
+    dummy = Image.new("RGB", (64, 64), color=0)
+    buf = io.BytesIO()
+    dummy.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return VideoI2VGenerateRequest.model_construct(
+        prompt=prompt,
+        negative_prompt="",
+        num_inference_steps=2,
+        image_prompts=[ImagePromptEntry(image=b64, frame_pos=0)],
+    )
+
+
+class TTWan22I2VAniSoraRunner(TTDiTRunner):
+    """Wan2.2 I2V with AniSora V3.2 anime fine-tune weights."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.experimental.pipelines.pipeline_anisora import (
+                AniSoraPipeline,
+            )
+
+            return AniSoraPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "AniSora I2V pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'AniSora')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running AniSora inference")
+        request = requests[0]
+        pipeline_args = _wan22_pipeline_args(
+            request, self.resolution, image_prompt=self._build_image_prompt(request),
+        )
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: AniSora inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        return _wan22_i2v_warmup_request("An anime girl smiling, soft lighting")
+
+
+class TTWan22I2VDistillRunner(TTDiTRunner):
+    """Wan2.2 I2V with LightX2V 4-step distilled weights.
+
+    Distill bakes in classifier-free guidance, so ``guidance_scale`` is forced
+    to 1.0 and ``num_inference_steps`` defaults to 4.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.experimental.pipelines.pipeline_wan_distill import (
+                WanDistillPipelineI2V,
+            )
+
+            return WanDistillPipelineI2V.create_pipeline(
+                mesh_device=self.ttnn_device,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Distill I2V pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'Distill')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running Distill inference")
+        request = requests[0]
+        seed = int(request.seed) if request.seed is not None else None
+        pipeline_args = {
+            "prompt": request.prompt,
+            "height": self.resolution.height,
+            "width": self.resolution.width,
+            "num_frames": WAN22_NUM_FRAMES,
+            "num_inference_steps": request.num_inference_steps or 4,
+            "guidance_scale": 1.0,
+            "guidance_scale_2": 1.0,
+            "seed": seed,
+            "traced": True,
+            "image_prompt": self._build_image_prompt(request),
+        }
+        if bool(request.negative_prompt):
+            pipeline_args["negative_prompt"] = request.negative_prompt
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: Distill inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        return _wan22_i2v_warmup_request()
+
+
+class TTWan22I2VLoRARunner(TTDiTRunner):
+    """Wan2.2 I2V with LoRA adapter fusion (camera control, style, etc.).
+
+    LoRA weights are resolved from ``LORA_HIGH_PATH`` / ``LORA_LOW_PATH``
+    environment variables by the pipeline's ``__init__``.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.experimental.pipelines.pipeline_wan_lora import (
+                WanLoraPipelineI2V,
+            )
+
+            return WanLoraPipelineI2V.create_pipeline(
+                mesh_device=self.ttnn_device,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "LoRA I2V pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'LoRA')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running LoRA inference")
+        request = requests[0]
+        pipeline_args = _wan22_pipeline_args(
+            request, self.resolution, image_prompt=self._build_image_prompt(request),
+        )
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: LoRA inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
