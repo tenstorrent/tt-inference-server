@@ -13,9 +13,9 @@ namespace {
 
 const PrefillSnapshot* findSnap(const std::vector<PrefillSnapshot>& snaps,
                                 const std::string& id) {
-  auto it = std::find_if(
-      snaps.begin(), snaps.end(),
-      [&](const PrefillSnapshot& s) { return s.server_id == id; });
+  auto it =
+      std::find_if(snaps.begin(), snaps.end(),
+                   [&](const PrefillSnapshot& s) { return s.server_id == id; });
   return it == snaps.end() ? nullptr : &*it;
 }
 
@@ -51,11 +51,11 @@ TEST(PrefillRegistryTest, MarkRegisteredFiresOnPrefillUpCallback) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
 
-  std::string seen_id;
-  reg.setOnPrefillUp([&](const std::string& id) { seen_id = id; });
+  std::string seenId;
+  reg.setOnPrefillUp([&](const std::string& id) { seenId = id; });
 
   reg.markRegistered("A", 4);
-  EXPECT_EQ(seen_id, "A");
+  EXPECT_EQ(seenId, "A");
 }
 
 TEST(PrefillRegistryTest, MarkDownTurnsPrefillUnhealthyAndFiresCallback) {
@@ -63,15 +63,15 @@ TEST(PrefillRegistryTest, MarkDownTurnsPrefillUnhealthyAndFiresCallback) {
   reg.preRegister("A", nullptr);
   reg.markRegistered("A", 4);
 
-  std::string seen_id;
-  reg.setOnPrefillDown([&](const std::string& id) { seen_id = id; });
+  std::string seenId;
+  reg.setOnPrefillDown([&](const std::string& id) { seenId = id; });
 
   reg.markDown("A");
 
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
   EXPECT_FALSE(snaps[0].healthy);
-  EXPECT_EQ(seen_id, "A");
+  EXPECT_EQ(seenId, "A");
 }
 
 TEST(PrefillRegistryTest, MarkDownIsNoopForUnknownPrefill) {

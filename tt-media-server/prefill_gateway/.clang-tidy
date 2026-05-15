@@ -6,7 +6,7 @@ Checks: >
   -*
   ,readability-identifier-naming
 WarningsAsErrors: ''
-HeaderFilterRegex: 'prefill_gateway/include/.*'
+HeaderFilterRegex: ''
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.ClassMethodCase

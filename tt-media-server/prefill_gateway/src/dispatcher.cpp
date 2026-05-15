@@ -12,20 +12,21 @@
 
 namespace tt::gateway {
 
-Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinity_cache,
+Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
                        Senders senders)
     : registry_(registry),
-      affinity_cache_(affinity_cache),
+      affinity_cache_(affinityCache),
       senders_(std::move(senders)) {}
 
-void Dispatcher::onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg) {
+void Dispatcher::onPrefillRequest(
+    const tt::sockets::PrefillRequestMessage& msg) {
   auto prefills = registry_.snapshot();
   auto sticky = (msg.registration_hash != 0)
                     ? affinity_cache_.lookup(msg.registration_hash)
                     : std::nullopt;
 
-  SelectionResult decision =
-      selectPrefill(prefills, msg.registration_hash, sticky, round_robin_cursor_);
+  SelectionResult decision = selectPrefill(prefills, msg.registration_hash,
+                                           sticky, round_robin_cursor_);
 
   if (!decision.server_id.has_value()) {
     failTaskToDecode(msg.task_id, "no_prefill_available");
@@ -65,18 +66,18 @@ void Dispatcher::onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg)
   }
 }
 
-void Dispatcher::onPrefillResult(const std::string& from_server_id,
+void Dispatcher::onPrefillResult(const std::string& fromServerId,
                                  const tt::sockets::PrefillResultMessage& msg) {
   std::string assigned;
   size_t hash = 0;
-  bool was_tracked = false;
+  bool wasTracked = false;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
     auto it = in_flight_task_to_prefill_.find(msg.task_id);
     if (it != in_flight_task_to_prefill_.end()) {
       assigned = it->second;
       in_flight_task_to_prefill_.erase(it);
-      was_tracked = true;
+      wasTracked = true;
     }
     auto hit = in_flight_task_to_hash_.find(msg.task_id);
     if (hit != in_flight_task_to_hash_.end()) {
@@ -87,11 +88,11 @@ void Dispatcher::onPrefillResult(const std::string& from_server_id,
 
   // Decrement against the responder, not the original assignee, so a stray
   // result still decrements the right counter.
-  registry_.decrementInflight(from_server_id);
+  registry_.decrementInflight(fromServerId);
 
   // Don't cache failures — they'd resend to the same broken prefill.
-  if (was_tracked && !msg.error && hash != 0) {
-    affinity_cache_.record(hash, from_server_id);
+  if (wasTracked && !msg.error && hash != 0) {
+    affinity_cache_.record(hash, fromServerId);
   }
 
   if (senders_.sendResultToDecode) {
@@ -110,15 +111,15 @@ void Dispatcher::onCacheBlocksEvicted(
   registry_.evictCachedBlocks(msg.server_id, msg.block_hashes);
 }
 
-void Dispatcher::onPrefillDown(const std::string& server_id) {
-  affinity_cache_.evictPrefill(server_id);
+void Dispatcher::onPrefillDown(const std::string& serverId) {
+  affinity_cache_.evictPrefill(serverId);
 
   std::vector<uint32_t> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
     for (auto it = in_flight_task_to_prefill_.begin();
          it != in_flight_task_to_prefill_.end();) {
-      if (it->second == server_id) {
+      if (it->second == serverId) {
         orphaned.push_back(it->first);
         in_flight_task_to_hash_.erase(it->first);
         it = in_flight_task_to_prefill_.erase(it);
@@ -128,13 +129,13 @@ void Dispatcher::onPrefillDown(const std::string& server_id) {
     }
   }
 
-  for (uint32_t task_id : orphaned) {
-    failTaskToDecode(task_id, "prefill_down");
+  for (uint32_t taskId : orphaned) {
+    failTaskToDecode(taskId, "prefill_down");
   }
 }
 
-void Dispatcher::failTaskToDecode(uint32_t task_id, const std::string& reason) {
-  tt::sockets::PrefillResultMessage err(task_id);
+void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason) {
+  tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;
   err.finished = true;
   err.generated_text = reason;

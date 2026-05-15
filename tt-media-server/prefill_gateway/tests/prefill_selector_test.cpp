@@ -9,23 +9,22 @@ namespace tt::gateway {
 namespace {
 
 PrefillSnapshot prefill(std::string id, bool healthy = true,
-                        bool accepting = true, uint32_t in_flight = 0,
-                        uint32_t max_in_flight = 0) {
+                        bool accepting = true, uint32_t inFlight = 0,
+                        uint32_t maxInFlight = 0) {
   PrefillSnapshot p;
   p.server_id = std::move(id);
   p.healthy = healthy;
   p.accepting_tasks = accepting;
-  p.in_flight = in_flight;
-  p.max_in_flight = max_in_flight;
+  p.in_flight = inFlight;
+  p.max_in_flight = maxInFlight;
   return p;
 }
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", false),
-                                          prefill("B", false)};
+                                           prefill("B", false)};
   size_t cursor = 0;
-  SelectionResult d =
-      selectPrefill(prefills, /*hash=*/0, std::nullopt, cursor);
+  SelectionResult d = selectPrefill(prefills, /*hash=*/0, std::nullopt, cursor);
 
   EXPECT_EQ(d.reason, SelectionReason::NO_PEERS_AVAILABLE);
   EXPECT_FALSE(d.server_id.has_value());
@@ -33,7 +32,7 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllDown) {
 
 TEST(PrefillSelectorTest, NoPeersAvailableWhenAllRefusingTasks) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, false),
-                                          prefill("B", true, false)};
+                                           prefill("B", true, false)};
   size_t cursor = 0;
   SelectionResult d = selectPrefill(prefills, 0, std::nullopt, cursor);
   EXPECT_EQ(d.reason, SelectionReason::NO_PEERS_AVAILABLE);
@@ -41,8 +40,8 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllRefusingTasks) {
 
 TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
   std::vector<PrefillSnapshot> prefills = {
-      prefill("A", true, true, /*in_flight=*/5),
-      prefill("B", true, true, /*in_flight=*/0)};
+      prefill("A", true, true, /*inFlight=*/5),
+      prefill("B", true, true, /*inFlight=*/0)};
   size_t cursor = 0;
   // Sticky -> A even though B is less loaded.
   SelectionResult d =
@@ -54,7 +53,7 @@ TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
 
 TEST(PrefillSelectorTest, StickyFallsBackWhenTargetUnhealthy) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", /*healthy=*/false),
-                                          prefill("B", true, true, 0)};
+                                           prefill("B", true, true, 0)};
   size_t cursor = 0;
   SelectionResult d = selectPrefill(prefills, 42, std::string{"A"}, cursor);
   EXPECT_EQ(d.reason, SelectionReason::LEAST_INFLIGHT);
@@ -64,8 +63,8 @@ TEST(PrefillSelectorTest, StickyFallsBackWhenTargetUnhealthy) {
 
 TEST(PrefillSelectorTest, StickyFallsBackWhenTargetOverloaded) {
   std::vector<PrefillSnapshot> prefills = {
-      prefill("A", true, true, /*in_flight=*/8, /*max=*/8),
-      prefill("B", true, true, /*in_flight=*/2, /*max=*/8)};
+      prefill("A", true, true, /*inFlight=*/8, /*maxInFlight=*/8),
+      prefill("B", true, true, /*inFlight=*/2, /*maxInFlight=*/8)};
   size_t cursor = 0;
   SelectionResult d = selectPrefill(prefills, 42, std::string{"A"}, cursor);
   EXPECT_EQ(d.reason, SelectionReason::LEAST_INFLIGHT);
@@ -75,8 +74,8 @@ TEST(PrefillSelectorTest, StickyFallsBackWhenTargetOverloaded) {
 
 TEST(PrefillSelectorTest, LeastInflightWinsOverLoaded) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, true, 3),
-                                          prefill("B", true, true, 1),
-                                          prefill("C", true, true, 5)};
+                                           prefill("B", true, true, 1),
+                                           prefill("C", true, true, 5)};
   size_t cursor = 0;
   SelectionResult d = selectPrefill(prefills, 0, std::nullopt, cursor);
   EXPECT_EQ(d.reason, SelectionReason::LEAST_INFLIGHT);
@@ -86,8 +85,8 @@ TEST(PrefillSelectorTest, LeastInflightWinsOverLoaded) {
 
 TEST(PrefillSelectorTest, RoundRobinAmongTiedLeastLoaded) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, true, 0),
-                                          prefill("B", true, true, 0),
-                                          prefill("C", true, true, 0)};
+                                           prefill("B", true, true, 0),
+                                           prefill("C", true, true, 0)};
   size_t cursor = 0;
   SelectionResult d1 = selectPrefill(prefills, 0, std::nullopt, cursor);
   SelectionResult d2 = selectPrefill(prefills, 0, std::nullopt, cursor);
@@ -109,7 +108,7 @@ TEST(PrefillSelectorTest, RoundRobinAmongTiedLeastLoaded) {
 
 TEST(PrefillSelectorTest, HashOfZeroIgnoresSticky) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, true, 5),
-                                          prefill("B", true, true, 0)};
+                                           prefill("B", true, true, 0)};
   size_t cursor = 0;
   SelectionResult d =
       selectPrefill(prefills, /*hash=*/0, std::string{"A"}, cursor);

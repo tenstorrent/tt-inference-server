@@ -12,16 +12,16 @@ std::optional<std::string> AffinityCache::lookup(size_t hash) const {
   return it->second;
 }
 
-void AffinityCache::record(size_t hash, const std::string& server_id) {
+void AffinityCache::record(size_t hash, const std::string& serverId) {
   if (hash == 0) return;
   std::lock_guard<std::mutex> lock(mutex_);
-  hash_to_server_[hash] = server_id;
+  hash_to_server_[hash] = serverId;
 }
 
-void AffinityCache::evictPrefill(const std::string& server_id) {
+void AffinityCache::evictPrefill(const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto it = hash_to_server_.begin(); it != hash_to_server_.end();) {
-    if (it->second == server_id) {
+    if (it->second == serverId) {
       it = hash_to_server_.erase(it);
     } else {
       ++it;

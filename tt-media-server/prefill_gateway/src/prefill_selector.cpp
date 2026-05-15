@@ -18,11 +18,10 @@ bool isEligible(const PrefillSnapshot& p) {
 }
 
 const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
-                                const std::string& server_id) {
-  auto it = std::find_if(prefills.begin(), prefills.end(),
-                         [&](const PrefillSnapshot& p) {
-                           return p.server_id == server_id;
-                         });
+                                const std::string& serverId) {
+  auto it = std::find_if(
+      prefills.begin(), prefills.end(),
+      [&](const PrefillSnapshot& p) { return p.server_id == serverId; });
   return it == prefills.end() ? nullptr : &*it;
 }
 
@@ -45,13 +44,13 @@ const char* reasonLabel(SelectionReason reason) {
 }
 
 SelectionResult selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                              size_t registration_hash,
-                              const std::optional<std::string>& sticky_target,
-                              size_t& round_robin_cursor) {
-  if (registration_hash != 0 && sticky_target.has_value()) {
-    const PrefillSnapshot* hit = findById(prefills, *sticky_target);
+                              size_t registrationHash,
+                              const std::optional<std::string>& stickyTarget,
+                              size_t& roundRobinCursor) {
+  if (registrationHash != 0 && stickyTarget.has_value()) {
+    const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
     if (hit && isEligible(*hit)) {
-      return {*sticky_target, SelectionReason::EQUALITY_MATCH};
+      return {*stickyTarget, SelectionReason::EQUALITY_MATCH};
     }
   }
 
@@ -65,24 +64,24 @@ SelectionResult selectPrefill(const std::vector<PrefillSnapshot>& prefills,
     return {std::nullopt, SelectionReason::NO_PEERS_AVAILABLE};
   }
 
-  uint32_t min_in_flight = std::numeric_limits<uint32_t>::max();
+  uint32_t minInFlight = std::numeric_limits<uint32_t>::max();
   for (const auto* p : eligible) {
-    min_in_flight = std::min(min_in_flight, p->in_flight);
+    minInFlight = std::min(minInFlight, p->in_flight);
   }
 
-  std::vector<const PrefillSnapshot*> least_loaded;
-  least_loaded.reserve(eligible.size());
+  std::vector<const PrefillSnapshot*> leastLoaded;
+  leastLoaded.reserve(eligible.size());
   for (const auto* p : eligible) {
-    if (p->in_flight == min_in_flight) least_loaded.push_back(p);
+    if (p->in_flight == minInFlight) leastLoaded.push_back(p);
   }
 
-  if (least_loaded.size() == 1) {
-    return {least_loaded.front()->server_id, SelectionReason::LEAST_INFLIGHT};
+  if (leastLoaded.size() == 1) {
+    return {leastLoaded.front()->server_id, SelectionReason::LEAST_INFLIGHT};
   }
 
-  const size_t pick_index = round_robin_cursor % least_loaded.size();
-  ++round_robin_cursor;
-  return {least_loaded[pick_index]->server_id, SelectionReason::ROUND_ROBIN};
+  const size_t pickIndex = roundRobinCursor % leastLoaded.size();
+  ++roundRobinCursor;
+  return {leastLoaded[pickIndex]->server_id, SelectionReason::ROUND_ROBIN};
 }
 
 }  // namespace tt::gateway

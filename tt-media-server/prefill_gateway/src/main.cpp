@@ -25,7 +25,7 @@ struct PrefillEndpoint {
 };
 
 struct GatewayConfig {
-  uint16_t decode_port = 0;
+  uint16_t decodePort = 0;
   std::vector<PrefillEndpoint> prefills;
 };
 
@@ -38,19 +38,19 @@ void printUsage(const char* prog) {
       << "  --help               Print this message.\n\n"
       << "Example:\n"
       << "  " << prog
-      << " --decode-port=7100 --prefill=192.168.1.1:7200 --prefill=192.168.1.2:7200\n";
+      << " --decode-port=7100 --prefill=192.168.1.1:7200 "
+         "--prefill=192.168.1.2:7200\n";
 }
 
 std::optional<PrefillEndpoint> parsePrefillArg(const std::string& value) {
   auto colon = value.rfind(':');
-  if (colon == std::string::npos || colon == 0 ||
-      colon == value.size() - 1) {
+  if (colon == std::string::npos || colon == 0 || colon == value.size() - 1) {
     return std::nullopt;
   }
   std::string host = value.substr(0, colon);
-  int port_int = std::stoi(value.substr(colon + 1));
-  if (port_int <= 0 || port_int > 65535) return std::nullopt;
-  return PrefillEndpoint{std::move(host), static_cast<uint16_t>(port_int)};
+  int portInt = std::stoi(value.substr(colon + 1));
+  if (portInt <= 0 || portInt > 65535) return std::nullopt;
+  return PrefillEndpoint{std::move(host), static_cast<uint16_t>(portInt)};
 }
 
 std::optional<std::string_view> flagValue(std::string_view arg,
@@ -73,7 +73,7 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
     }
 
     if (auto v = flagValue(arg, "--decode-port=")) {
-      cfg.decode_port = static_cast<uint16_t>(std::stoi(std::string(*v)));
+      cfg.decodePort = static_cast<uint16_t>(std::stoi(std::string(*v)));
       continue;
     }
 
@@ -93,7 +93,7 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
     return std::nullopt;
   }
 
-  if (cfg.decode_port == 0) {
+  if (cfg.decodePort == 0) {
     std::cerr << "--decode-port is required.\n";
     printUsage(argv[0]);
     return std::nullopt;
@@ -108,36 +108,36 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
   return cfg;
 }
 
-volatile sig_atomic_t g_stop = 0;
+volatile sig_atomic_t gStop = 0;
 
-void signalHandler(int /*sig*/) { g_stop = 1; }
+void signalHandler(int /*sig*/) { gStop = 1; }
 
 }  // namespace
 
 int main(int argc, char** argv) {
   tt::utils::ZeroOverheadLogger::initialize();
 
-  auto cfg_opt = parseArgs(argc, argv);
-  if (!cfg_opt) return 1;
-  const GatewayConfig& cfg = *cfg_opt;
+  auto cfgOpt = parseArgs(argc, argv);
+  if (!cfgOpt) return 1;
+  const GatewayConfig& cfg = *cfgOpt;
 
   TT_LOG_INFO("[Gateway] Starting — decode port={}, prefills={}",
-              cfg.decode_port, cfg.prefills.size());
+              cfg.decodePort, cfg.prefills.size());
 
   tt::gateway::PrefillRegistry registry;
   tt::gateway::AffinityCache affinity;
 
   // Decode-facing: gateway listens, decode dials in (only 1 decode connection).
-  tt::sockets::SocketManager decode_sm;
-  if (!decode_sm.initializeAsServer(cfg.decode_port)) {
-    TT_LOG_ERROR("[Gateway] Failed to bind decode port {}", cfg.decode_port);
+  tt::sockets::SocketManager decodeSm;
+  if (!decodeSm.initializeAsServer(cfg.decodePort)) {
+    TT_LOG_ERROR("[Gateway] Failed to bind decode port {}", cfg.decodePort);
     return 1;
   }
 
   // Per-prefill: one independent SocketManager (CLIENT) per endpoint — the
   // gateway's 1:N fan-out without modifying the underlying 1:1 transport.
-  std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefill_sms;
-  prefill_sms.reserve(cfg.prefills.size());
+  std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefillSms;
+  prefillSms.reserve(cfg.prefills.size());
   for (const auto& ep : cfg.prefills) {
     auto sm = std::make_unique<tt::sockets::SocketManager>();
     sm->setReconnectBackoff(/*initial_ms=*/100, /*max_ms=*/5000);
@@ -146,58 +146,58 @@ int main(int argc, char** argv) {
                    ep.port);
       return 1;
     }
-    prefill_sms.push_back(std::move(sm));
+    prefillSms.push_back(std::move(sm));
   }
 
   // Dispatcher takes Senders by value; lambdas below capture references which
   // stay alive for the rest of main.
-  std::unique_ptr<tt::gateway::Dispatcher> dispatcher_ptr;
+  std::unique_ptr<tt::gateway::Dispatcher> dispatcherPtr;
 
   tt::gateway::Dispatcher::Senders senders;
 
   senders.sendRequestToPrefill =
-      [&registry](const std::string& server_id,
+      [&registry](const std::string& serverId,
                   const tt::sockets::PrefillRequestMessage& msg) -> bool {
-    auto* sm = registry.getSocketManager(server_id);
+    auto* sm = registry.getSocketManager(serverId);
     if (!sm) {
       TT_LOG_WARN("[Gateway] sendRequestToPrefill: no socket for '{}'",
-                  server_id);
+                  serverId);
       return false;
     }
     return sm->sendObject("prefill_request", msg);
   };
 
   senders.sendAssignmentToDecode =
-      [&decode_sm](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
-    return decode_sm.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
+      [&decodeSm](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
+    return decodeSm.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
   };
 
   senders.sendResultToDecode =
-      [&decode_sm](const tt::sockets::PrefillResultMessage& msg) -> bool {
-    return decode_sm.sendObject("prefill_result", msg);
+      [&decodeSm](const tt::sockets::PrefillResultMessage& msg) -> bool {
+    return decodeSm.sendObject("prefill_result", msg);
   };
 
-  dispatcher_ptr = std::make_unique<tt::gateway::Dispatcher>(
-      registry, affinity, std::move(senders));
+  dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(registry, affinity,
+                                                            std::move(senders));
 
-  registry.setOnPrefillDown([&dispatcher_ptr](const std::string& id) {
-    dispatcher_ptr->onPrefillDown(id);
+  registry.setOnPrefillDown([&dispatcherPtr](const std::string& id) {
+    dispatcherPtr->onPrefillDown(id);
   });
 
-  for (auto& sm_ptr : prefill_sms) {
-    tt::sockets::SocketManager* sm = sm_ptr.get();
+  for (auto& smPtr : prefillSms) {
+    tt::sockets::SocketManager* sm = smPtr.get();
 
     // Shared between the registration handler (sets it) and the lost callback
     // (reads it). The id is unknown until the first registration message.
-    auto id_holder = std::make_shared<std::string>();
+    auto idHolder = std::make_shared<std::string>();
 
     sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
         tt::sockets::tags::PREFILL_REGISTRATION,
-        [&registry, sm, id_holder](
-            const tt::sockets::PrefillRegistrationMessage& msg) {
+        [&registry, sm,
+         idHolder](const tt::sockets::PrefillRegistrationMessage& msg) {
           TT_LOG_INFO("[Gateway] Prefill registered: id='{}' max_in_flight={}",
                       msg.server_id, msg.max_in_flight);
-          *id_holder = msg.server_id;
+          *idHolder = msg.server_id;
           registry.preRegister(msg.server_id, sm);
           bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
           if (!ok) {
@@ -207,28 +207,27 @@ int main(int argc, char** argv) {
         });
 
     sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result",
-        [&dispatcher_ptr, id_holder](
-            const tt::sockets::PrefillResultMessage& msg) {
-          dispatcher_ptr->onPrefillResult(*id_holder, msg);
+        "prefill_result", [&dispatcherPtr, idHolder](
+                              const tt::sockets::PrefillResultMessage& msg) {
+          dispatcherPtr->onPrefillResult(*idHolder, msg);
         });
 
     sm->registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
         tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
-        [&dispatcher_ptr](
+        [&dispatcherPtr](
             const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
-          dispatcher_ptr->onCacheBlocksAdded(msg);
+          dispatcherPtr->onCacheBlocksAdded(msg);
         });
 
     sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
         tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-        [&dispatcher_ptr](
+        [&dispatcherPtr](
             const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-          dispatcher_ptr->onCacheBlocksEvicted(msg);
+          dispatcherPtr->onCacheBlocksEvicted(msg);
         });
 
-    sm->setConnectionLostCallback([&registry, id_holder]() {
-      const std::string& sid = *id_holder;
+    sm->setConnectionLostCallback([&registry, idHolder]() {
+      const std::string& sid = *idHolder;
       if (!sid.empty()) {
         TT_LOG_WARN("[Gateway] Prefill '{}' connection lost", sid);
         registry.markDown(sid);  // fires onPrefillDown -> dispatcher
@@ -236,31 +235,31 @@ int main(int argc, char** argv) {
     });
   }
 
-  decode_sm.registerHandler<tt::sockets::PrefillRequestMessage>(
+  decodeSm.registerHandler<tt::sockets::PrefillRequestMessage>(
       "prefill_request",
-      [&dispatcher_ptr](const tt::sockets::PrefillRequestMessage& msg) {
-        dispatcher_ptr->onPrefillRequest(msg);
+      [&dispatcherPtr](const tt::sockets::PrefillRequestMessage& msg) {
+        dispatcherPtr->onPrefillRequest(msg);
       });
 
-  decode_sm.setConnectionLostCallback([]() {
+  decodeSm.setConnectionLostCallback([]() {
     TT_LOG_WARN("[Gateway] Decode disconnected — waiting for reconnect");
   });
 
-  for (auto& sm : prefill_sms) sm->start();
-  decode_sm.start();
+  for (auto& sm : prefillSms) sm->start();
+  decodeSm.start();
 
   TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
 
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
 
-  while (!g_stop) {
+  while (!gStop) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 
   TT_LOG_INFO("[Gateway] Shutting down…");
-  decode_sm.stop();
-  for (auto& sm : prefill_sms) sm->stop();
+  decodeSm.stop();
+  for (auto& sm : prefillSms) sm->stop();
   TT_LOG_INFO("[Gateway] Stopped.");
 
   return 0;

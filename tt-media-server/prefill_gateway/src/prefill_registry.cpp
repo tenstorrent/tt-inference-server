@@ -7,88 +7,86 @@
 
 namespace tt::gateway {
 
-void PrefillRegistry::preRegister(const std::string& server_id,
+void PrefillRegistry::preRegister(const std::string& serverId,
                                   tt::sockets::SocketManager* manager) {
   std::lock_guard<std::mutex> lock(mutex_);
   PrefillPeer peer;
-  peer.server_id = server_id;
+  peer.server_id = serverId;
   peer.socket_manager = manager;
   // healthy stays false until markRegistered() arrives. accepting_tasks
   // stays true so a freshly-registered prefill is eligible immediately.
-  prefills_.emplace(server_id, std::move(peer));
+  prefills_.emplace(serverId, std::move(peer));
 }
 
-bool PrefillRegistry::markRegistered(const std::string& server_id,
-                                     uint32_t max_in_flight) {
-  PrefillStateCallback up_cb;
+bool PrefillRegistry::markRegistered(const std::string& serverId,
+                                     uint32_t maxInFlight) {
+  PrefillStateCallback upCb;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = prefills_.find(server_id);
+    auto it = prefills_.find(serverId);
     if (it == prefills_.end()) return false;
     it->second.healthy = true;
-    it->second.max_in_flight = max_in_flight;
+    it->second.max_in_flight = maxInFlight;
     it->second.last_heartbeat = std::chrono::steady_clock::now();
-    up_cb = on_prefill_up_;
+    upCb = on_prefill_up_;
   }
-  if (up_cb) up_cb(server_id);
+  if (upCb) upCb(serverId);
   return true;
 }
 
-void PrefillRegistry::markDown(const std::string& server_id) {
-  PrefillStateCallback down_cb;
-  bool was_known = false;
+void PrefillRegistry::markDown(const std::string& serverId) {
+  PrefillStateCallback downCb;
+  bool wasKnown = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = prefills_.find(server_id);
+    auto it = prefills_.find(serverId);
     if (it != prefills_.end()) {
-      was_known = true;
+      wasKnown = true;
       it->second.healthy = false;
       // Keep in_flight unchanged: dispatcher's onPrefillDown will fail those
       // tasks and decrement counts via the normal path.
-      down_cb = on_prefill_down_;
+      downCb = on_prefill_down_;
     }
   }
-  if (was_known && down_cb) down_cb(server_id);
+  if (wasKnown && downCb) downCb(serverId);
 }
 
-void PrefillRegistry::updateLoadInfo(const std::string& server_id,
-                                     bool accepting_tasks) {
+void PrefillRegistry::updateLoadInfo(const std::string& serverId,
+                                     bool acceptingTasks) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
-  it->second.accepting_tasks = accepting_tasks;
+  it->second.accepting_tasks = acceptingTasks;
 }
 
-void PrefillRegistry::incrementInflight(const std::string& server_id) {
+void PrefillRegistry::incrementInflight(const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
   ++it->second.in_flight;
 }
 
-void PrefillRegistry::decrementInflight(const std::string& server_id) {
+void PrefillRegistry::decrementInflight(const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
   if (it->second.in_flight > 0) --it->second.in_flight;
 }
 
 void PrefillRegistry::addCachedBlocks(
-    const std::string& server_id,
-    const std::vector<uint64_t>& block_hashes) {
+    const std::string& serverId, const std::vector<uint64_t>& blockHashes) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
-  it->second.cached_blocks.insert(block_hashes.begin(), block_hashes.end());
+  it->second.cached_blocks.insert(blockHashes.begin(), blockHashes.end());
 }
 
 void PrefillRegistry::evictCachedBlocks(
-    const std::string& server_id,
-    const std::vector<uint64_t>& block_hashes) {
+    const std::string& serverId, const std::vector<uint64_t>& blockHashes) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return;
-  for (uint64_t h : block_hashes) {
+  for (uint64_t h : blockHashes) {
     it->second.cached_blocks.erase(h);
   }
 }
@@ -110,9 +108,9 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
 }
 
 tt::sockets::SocketManager* PrefillRegistry::getSocketManager(
-    const std::string& server_id) {
+    const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(server_id);
+  auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return nullptr;
   return it->second.socket_manager;
 }
