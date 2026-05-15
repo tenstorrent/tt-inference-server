@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..parsers.genai_perf import GenAIPerfParser
 from ._subprocess import find_first, load_json, run_command
 from .base import DriverResult, LLMDriver
 
@@ -31,6 +32,7 @@ DEFAULT_RELEASE = "25.11"
 
 class GenAIPerfDriver(LLMDriver):
     name = "genai_perf"
+    _parser = GenAIPerfParser()
 
     def __init__(
         self,

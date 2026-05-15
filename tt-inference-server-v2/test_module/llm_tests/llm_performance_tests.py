@@ -5,13 +5,14 @@
 """LLM performance test caller.
 
 Bridges ``test_module`` to ``llm_module``: builds an
-``LLMPerformanceRunner`` from a (driver, parser, server_controller)
-triple, executes the sweep defined by ``configs``, and forwards the
-resulting ``list[Block]`` to ``workflow_module`` for downstream
-processing (report rendering, artifact upload, etc.).
+``LLMPerformanceRunner`` from a (driver, server_controller) pair,
+executes the sweep defined by ``configs``, and forwards the resulting
+``list[Block]`` to ``workflow_module`` for downstream processing
+(report rendering, artifact upload, etc.). The driver carries its own
+parser, so command-build, execute, and parse stay selected as one unit.
 
 The caller is the only place in test_module that knows about
-llm_module's internals; everything else (drivers, parsers, runner
+llm_module's internals; everything else (drivers, runner
 orchestration) stays inside llm_module.
 """
 
@@ -26,7 +27,6 @@ from llm_module import (
     DriverContext,
     LLMDriver,
     LLMPerformanceRunner,
-    LLMResultParser,
     LLMRunConfig,
     ServerConnection,
     ServerController,
@@ -43,7 +43,6 @@ def run_llm_performance(
     ctx: MediaContext,
     *,
     driver: LLMDriver,
-    parser: LLMResultParser,
     configs: Sequence[LLMRunConfig],
     server_controller: Optional[ServerController] = None,
     output_subdir: str = "llm",
@@ -66,7 +65,6 @@ def run_llm_performance(
 
     runner = LLMPerformanceRunner(
         driver=driver,
-        parser=parser,
         server_controller=server_controller,
     )
     result = runner.run(configs, server, context)
