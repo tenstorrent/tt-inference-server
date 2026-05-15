@@ -39,6 +39,18 @@ def _apply_chat_template(messages: list[dict]) -> str:
     )
 
 
+def _normalize_message_content(content) -> str:
+    """Per OpenAI spec, chat message content is `str | list[ChatContentPart]`.
+    For text-only models, flatten the list form by joining text-type parts."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            p.text for p in content if getattr(p, "type", None) == "text" and p.text
+        )
+    return ""
+
+
 def _count_tokens(text: str) -> int:
     tokenizer = _get_tokenizer()
     return len(tokenizer.encode(text))
@@ -87,7 +99,10 @@ async def chat_completions(
     )
 
     # Convert chat messages to a prompt using the model's chat template
-    messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
+    messages = [
+        {"role": m.role, "content": _normalize_message_content(m.content)}
+        for m in chat_request.messages
+    ]
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
 
