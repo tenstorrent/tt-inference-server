@@ -10,34 +10,60 @@
         }
       }
     },
-    "Llama-3.1-8B-Instruct": {
-      "inference_engine": "vLLM",
+    "Falcon3-7B-Instruct": {
+      "inference_engine": "FORGE",
       "ci": {
         "nightly": {
           "devices": [
-            "GALAXY",
             "N150",
-            "N300",
-            "P100",
-            "P150X4",
-            "P150X8",
-            "P300X2",
-            "T3K"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
+            "N300"
           ]
         }
       }
+    },
+    "Llama-3.1-8B-Instruct": {
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "N150",
+                "N300",
+                "P100",
+                "P150X4",
+                "P150X8",
+                "P300X2",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
+            "release": {
+              "devices": [
+                "GALAXY",
+                "P150X8",
+                "P300X2"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
+        }
+      ]
     },
     "Llama-3.2-11B-Vision-Instruct": {
       "inference_engine": "vLLM",
@@ -268,22 +294,37 @@
       }
     },
     "Qwen3-8B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            }
+          }
         },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
