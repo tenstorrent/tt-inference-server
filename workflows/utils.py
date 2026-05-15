@@ -24,6 +24,44 @@ SDXL_LOWER_BOUND_NUM_PROMPTS = 2
 SDXL_UPPER_BOUND_NUM_PROMPTS = 5000
 
 
+# Minimum image version supported by this run.py. The vLLM docker image
+# interface was reshaped in v0.11.0 (commit 50db8ac7 "Simplify and improve
+# vLLM Docker image interface"); main only emits the post-0.11 contract.
+# Older images must be run against an older tt-inference-server release.
+MIN_SUPPORTED_IMAGE_VERSION: Tuple[int, int, int] = (0, 11, 0)
+
+
+_VERSION_PREFIX_RE = re.compile(r"^(\d+(?:\.\d+){1,2})")
+
+
+def parse_version_tuple(s: str) -> Optional[Tuple[int, int, int]]:
+    """Parse a leading semver-style version into a (major, minor, patch) tuple.
+
+    Short forms are padded to three components ("0.9" -> (0, 9, 0)). Returns
+    None if the input is empty, not a string, or doesn't start with a
+    parseable version (e.g. "dev", "latest").
+    """
+    if not isinstance(s, str) or not s:
+        return None
+    match = _VERSION_PREFIX_RE.match(s)
+    if not match:
+        return None
+    parts = [int(p) for p in match.group(1).split(".")]
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
+
+
+def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
+    """Parse the version prefix from a docker image tag (everything after ':').
+
+    Returns None for unparseable tags (`:dev`, `:latest`, no tag).
+    """
+    if not isinstance(image, str) or ":" not in image:
+        return None
+    return parse_version_tuple(image.rsplit(":", 1)[1])
+
+
 def get_repo_root_path(marker: str = ".git") -> Path:
     """Return the root directory of the repository by searching for a marker file or directory."""
     current_path = Path(__file__).resolve().parent  # Start from the script's directory
