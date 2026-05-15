@@ -1642,13 +1642,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, vlm, audio, tts, embedding and cnn for vLLM
+        # Separate text, vlm, asr, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
-        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
-        vllm_tts = [
-            r for r in vllm_release_raw if r.get("task_type") == "text_to_speech"
-        ]
+        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "asr"]
+        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]

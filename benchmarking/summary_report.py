@@ -80,7 +80,7 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.CNN:
         return "cnn"
     if model_type == ModelType.AUDIO:
-        return "audio"
+        return "asr"
     if model_type == ModelType.IMAGE:
         return "image"
     if model_type == ModelType.VLM:
@@ -92,7 +92,7 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.VIDEO:
         return "video"
     if model_type == ModelType.TEXT_TO_SPEECH:
-        return "text_to_speech"
+        return "tts"
 
 
 def _get_task_type(model_id: str) -> str | None:
@@ -460,7 +460,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             }
             return format_metrics(metrics)
 
-    if params.get("task_type") == "text_to_speech":
+    if params.get("task_type") == "tts":
         logger.info(f"Processing TTS benchmark file: {filename}")
         # Producer emits latency in seconds; convert to ms for display.
         benchmarks_data = data.get("benchmarks", {})
@@ -469,12 +469,12 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model": data.get("model", ""),
             "model_name": data.get("model", ""),
             "model_id": data.get("model", ""),
-            "backend": "text_to_speech",
+            "backend": "tts",
             "device": params["device"],
             "num_requests": benchmarks_data.get("num_requests", 0),
             "mean_latency_ms": benchmarks_data.get("latency", 0) * 1000,
             "filename": filename,
-            "task_type": "text_to_speech",
+            "task_type": "tts",
             "rtr": benchmarks_data.get("rtr", 0),
             "throughput_rps": benchmarks_data.get("throughput_rps"),
             "wer": benchmarks_data.get("wer", None),
@@ -483,8 +483,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
-    if params.get("task_type") == "audio":
-        logger.info(f"Processing AUDIO benchmark file: {filename}")
+    if params.get("task_type") == "asr":
+        logger.info(f"Processing ASR benchmark file: {filename}")
         benchmarks_data = data.get("benchmarks: ", data)
         audio_benchmarks = benchmarks_data.get("benchmarks", {})
         ttft_seconds = audio_benchmarks.get("ttft")
@@ -493,13 +493,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model": data.get("model", ""),
             "model_name": data.get("model", ""),
             "model_id": data.get("model", ""),
-            "backend": "audio",
+            "backend": "asr",
             "device": params["device"],
             "num_requests": audio_benchmarks.get("num_requests", 0),
             "mean_latency_ms": audio_benchmarks.get("latency", 0) * 1000,
             "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
-            "task_type": "audio",
+            "task_type": "asr",
             # ``performance_check`` lives at the top level of the report JSON
             # (it's a perf-target check, not an accuracy/quality check).
             "performance_check": data.get("performance_check", ReportCheckTypes.NA),
@@ -1230,12 +1230,12 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, vlm, image, audio, embedding, cnn and video benchmarks
+    # Separate text, vlm, image, asr, embedding, cnn and video benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
-    audio_results = [r for r in results if r.get("task_type") == "audio"]
-    tts_results = [r for r in results if r.get("task_type") == "text_to_speech"]
+    audio_results = [r for r in results if r.get("task_type") == "asr"]
+    tts_results = [r for r in results if r.get("task_type") == "tts"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]

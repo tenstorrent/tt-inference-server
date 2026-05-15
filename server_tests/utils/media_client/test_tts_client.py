@@ -573,7 +573,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "text_to_speech"
+        assert report_data["task_type"] == "tts"
         # accuracy_check stays on the eval report; performance_check is now
         # emitted at the top level of the benchmark JSON for parity with the
         # other media clients.
@@ -653,4 +653,4 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         # other media clients.
         assert "accuracy_check" not in report_data
         assert "performance_check" in report_data
-        assert report_data["task_type"] == "text_to_speech"
+        assert report_data["task_type"] == "tts"
