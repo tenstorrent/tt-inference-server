@@ -3,13 +3,15 @@
 
 #pragma once
 
+#include <sys/types.h>
+
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <vector>
 
-#include "ipc/slot_ring_buffer.hpp"
+#include "ipc/posix/slot_ring_buffer.hpp"
 #include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
 namespace blaze_prefill {
@@ -23,7 +25,8 @@ class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
   BlazePrefillModelRunner& operator=(const BlazePrefillModelRunner&) = delete;
 
   std::optional<tt::domain::llm::TokenResult> forward(
-      uint32_t taskId, const std::vector<int64_t>& tokenIds) override;
+      uint32_t taskId, const std::vector<int64_t>& tokenIds,
+      uint32_t slotId) override;
   void exit() override;
 
  private:
@@ -41,8 +44,8 @@ class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
   };
 
   ShmNames shmNames;
-  tt::ipc::PrefillSlotBuffer deviceInput;
-  tt::ipc::DecodeSlotBuffer deviceOutput;
+  tt::ipc::posix::PrefillSlotBuffer deviceInput;
+  tt::ipc::posix::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
   std::atomic<size_t> consecutiveErrors{0};
 

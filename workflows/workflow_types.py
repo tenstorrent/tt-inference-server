@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
+from typing import List
 
 
 class WorkflowType(IntEnum):
@@ -122,7 +123,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "BH P300",
-            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
+            DeviceTypes.P300X2: "BH QuietBox 2",
             DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
@@ -294,6 +295,24 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }[self]
+
+    @property
+    def required_target_tiers(self) -> List[str]:
+        """Tiers that MUST pass for a model at this status level.
+
+        Tiers not in this list are still computed and reported but
+        treated as informational -- failures are accepted and do not
+        block a release. This enables programmatic masking: e.g. an
+        EXPERIMENTAL model (forge, new bring-up) can fail every
+        performance benchmark and still be released.
+        """
+        tier_map = {
+            ModelStatusTypes.EXPERIMENTAL: [],
+            ModelStatusTypes.FUNCTIONAL: ["functional"],
+            ModelStatusTypes.COMPLETE: ["functional", "complete"],
+            ModelStatusTypes.TOP_PERF: ["functional", "complete", "target"],
+        }
+        return tier_map[self]
 
 
 class EvalLimitMode(IntEnum):

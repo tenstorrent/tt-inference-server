@@ -19,10 +19,14 @@ namespace tt::sockets {
  */
 struct PrefillRequestMessage {
   uint32_t task_id;
-  std::string prompt;
+  size_t registration_hash = 0;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
+  std::optional<float> temperature;
+  std::optional<float> top_p;
+  std::optional<int> top_k;
+  bool fast_mode = false;
 
   explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -30,24 +34,44 @@ struct PrefillRequestMessage {
   void write(Archive& ar) const {
     int mt = max_tokens.has_value() ? max_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
-    ar(task_id, prompt, token_ids, mt, sid);
+    bool hasTemp = temperature.has_value();
+    float tempVal = temperature.value_or(0.0f);
+    bool hasTopP = top_p.has_value();
+    float topPVal = top_p.value_or(0.0f);
+    bool hasTopK = top_k.has_value();
+    int topKVal = top_k.value_or(0);
+    uint64_t hash64 = static_cast<uint64_t>(registration_hash);
+    ar(task_id, hash64, token_ids, mt, sid, hasTemp, tempVal, hasTopP, topPVal,
+       hasTopK, topKVal, fast_mode);
   }
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
     uint32_t tid;
-    std::string p;
+    uint64_t hash64;
     std::vector<int64_t> tids;
     int mt;
     uint32_t sid;
-    ar(tid, p, tids, mt, sid);
+    bool hasTemp;
+    float tempVal;
+    bool hasTopP;
+    float topPVal;
+    bool hasTopK;
+    int topKVal;
+    bool fastMode;
+    ar(tid, hash64, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
+       topKVal, fastMode);
     PrefillRequestMessage msg(tid);
-    msg.prompt = std::move(p);
+    msg.registration_hash = static_cast<size_t>(hash64);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
     msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
+    if (hasTemp) msg.temperature = tempVal;
+    if (hasTopP) msg.top_p = topPVal;
+    if (hasTopK) msg.top_k = topKVal;
+    msg.fast_mode = fastMode;
     return msg;
   }
 };
@@ -69,6 +93,10 @@ struct PrefillResultMessage {
   std::vector<int64_t> token_ids;
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
+  std::optional<float> temperature;
+  std::optional<float> top_p;
+  std::optional<int> top_k;
+  bool fast_mode = false;
 
   explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -76,8 +104,15 @@ struct PrefillResultMessage {
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
+    bool hasTemp = temperature.has_value();
+    float tempVal = temperature.value_or(0.0f);
+    bool hasTopP = top_p.has_value();
+    float topPVal = top_p.value_or(0.0f);
+    bool hasTopK = top_k.has_value();
+    int topKVal = top_k.value_or(0);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
-       token_ids, rt, sid, error);
+       token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
+       topKVal, fast_mode);
   }
 
   template <class Archive>
@@ -91,7 +126,15 @@ struct PrefillResultMessage {
     int rt;
     uint32_t sid;
     bool err;
-    ar(tid, genText, fin, tg, pt, tids, rt, sid, err);
+    bool hasTemp;
+    float tempVal;
+    bool hasTopP;
+    float topPVal;
+    bool hasTopK;
+    int topKVal;
+    bool fastMode;
+    ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
+       topPVal, hasTopK, topKVal, fastMode);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -103,6 +146,10 @@ struct PrefillResultMessage {
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     msg.error = err;
+    if (hasTemp) msg.temperature = tempVal;
+    if (hasTopP) msg.top_p = topPVal;
+    if (hasTopK) msg.top_k = topKVal;
+    msg.fast_mode = fastMode;
     return msg;
   }
 };

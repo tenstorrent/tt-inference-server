@@ -28,11 +28,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Init tt-blaze submodule
+      - name: Init tt-llm-engine submodule
         working-directory: ${{ github.workspace }}
-        run: git submodule update --init tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
       - name: Resolve numeric GitHub job ID
         id: job-id

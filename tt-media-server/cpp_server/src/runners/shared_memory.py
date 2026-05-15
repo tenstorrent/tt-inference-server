@@ -36,7 +36,7 @@ def _detach_from_resource_tracker(shm: _shm.SharedMemory) -> None:
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
 
-# Matches C++ ipc::SlotRingBufferState (slot_ring_buffer.hpp):
+# Matches C++ tt::ipc::posix::SlotRingBufferState (ipc/posix/slot_ring_buffer.hpp):
 #   uint64_t writerIndex (offset 0) + uint64_t readerIndex (offset 8)
 _STATE_SHM_SIZE = 16
 _WRITER_INDEX_OFF = 0
@@ -48,6 +48,7 @@ class PrefillMessage:
     task_id: int  # uint32_t in C++
     token_ids: list[int]
     max_tokens: int
+    slot_id: int  # uint32_t in C++
 
 
 class SharedMemory:
@@ -55,7 +56,7 @@ class SharedMemory:
 
     Layout per slot (must match C++ exactly):
         state(4) + max_tokens(4) + num_token_ids(4) + task_id(4) + fast_mode(4)
-        + padding(4) + token_ids(max_token_ids × 8)
+        + slot_id(4) + token_ids(max_token_ids × 8)
     """
 
     SLOTS = 64
@@ -67,6 +68,7 @@ class SharedMemory:
     _NUM_TOKEN_IDS_OFF = 8
     _TASK_ID_OFF = 12
     _FAST_MODE_OFF = 16
+    _SLOT_ID_OFF = 20
     _TOKEN_IDS_OFF = 24  # With alignas(8), this starts at offset 24
 
     _EMPTY = 0
@@ -196,6 +198,7 @@ class SharedMemory:
         )[0]
 
         task_id = struct.unpack_from("<I", buf, msg_off + self._TASK_ID_OFF)[0]
+        slot_id = struct.unpack_from("<I", buf, msg_off + self._SLOT_ID_OFF)[0]
 
         token_ids_off = msg_off + self._TOKEN_IDS_OFF
         token_ids = list(struct.unpack_from(f"<{num_token_ids}q", buf, token_ids_off))
@@ -209,7 +212,10 @@ class SharedMemory:
         )
 
         return PrefillMessage(
-            task_id=task_id, token_ids=token_ids, max_tokens=max_tokens
+            task_id=task_id,
+            token_ids=token_ids,
+            max_tokens=max_tokens,
+            slot_id=slot_id,
         )
 
     def write_token(self, task_id: int, token_id: int) -> None:
@@ -235,6 +241,7 @@ class SharedMemory:
         struct.pack_into("<I", buf, msg_off + self._NUM_TOKEN_IDS_OFF, 1)
         struct.pack_into("<I", buf, msg_off + self._TASK_ID_OFF, task_id)
         struct.pack_into("<I", buf, msg_off + self._FAST_MODE_OFF, 0)
+        struct.pack_into("<I", buf, msg_off + self._SLOT_ID_OFF, 0)
 
         struct.pack_into("<q", buf, msg_off + self._TOKEN_IDS_OFF, int(token_id))
 

@@ -20,7 +20,7 @@ BlazePrefillModelRunner::BlazePrefillModelRunner()
 BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
 std::optional<tt::domain::llm::TokenResult> BlazePrefillModelRunner::forward(
-    uint32_t taskId, const std::vector<int64_t>& tokenIds) {
+    uint32_t taskId, const std::vector<int64_t>& tokenIds, uint32_t slotId) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
   auto startTime = std::chrono::steady_clock::now();
 
@@ -28,9 +28,9 @@ std::optional<tt::domain::llm::TokenResult> BlazePrefillModelRunner::forward(
       "BlazePrefillModelRunner: Writing into shared memory input task_id={}, "
       "token count={}",
       taskId, tokenIds.size());
-  deviceInput.write(taskId, tokenIds, 1);
+  deviceInput.write(taskId, tokenIds, 1, slotId);
 
-  tt::ipc::ReadResult readBuf;
+  tt::ipc::posix::ReadResult readBuf;
   TT_LOG_DEBUG(
       "BlazePrefillModelRunner: Reading from shared memory output task_id={}",
       taskId);

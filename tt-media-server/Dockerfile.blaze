@@ -17,11 +17,11 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 # WARNING: TT_METAL_COMMIT_SHA_OR_TAG is documentation only — it does NOT pin
-# tt-metal. tt-metal is pulled in as a submodule of tt-blaze (cloned by branch
-# below), so the SHA actually compiled in is whatever the latest tt-blaze
-# branch tip resolves to at build time. Expect this default to drift from
-# reality. /info exposes the real tt-metal SHA from the cloned submodule's
-# .git tree at build time.
+# tt-metal. tt-metal is pulled in as a submodule of tt-llm-engine (cloned by
+# branch below), so the SHA actually compiled in is whatever the latest
+# tt-llm-engine branch tip resolves to at build time. Expect this default to
+# drift from reality. /info exposes the real tt-metal SHA from the cloned
+# submodule's .git tree at build time.
 ARG TT_METAL_COMMIT_SHA_OR_TAG=unknown
 ARG TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=unknown
 
@@ -35,8 +35,13 @@ ENV TT_MM_THROTTLE_PERF=5
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
-# tt-metal build vars
-ENV TT_METAL_HOME=${HOME_DIR}/tt-metal
+ARG APP_DIR="${HOME_DIR}/app"
+ENV APP_DIR=${APP_DIR}
+# tt-metal build vars — tt-metal is a submodule of tt-llm-engine (cloned
+# further below). Its python_env is created by `./create_venv.sh` in that
+# same RUN step, so paths referenced here only have to exist before they
+# are actually used (cpp_server build, runtime).
+ENV TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
@@ -109,8 +114,6 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 WORKDIR ${HOME_DIR}
 
 # install inference server requirements
-ARG APP_DIR="${HOME_DIR}/app"
-ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 # ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${APP_DIR}/server"
@@ -118,7 +121,7 @@ COPY VERSION ${APP_DIR}/VERSION
 
 # Remove any local build artifacts that were copied
 RUN rm -rf ${APP_DIR}/server/cpp_server/build \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine
 
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
@@ -130,27 +133,25 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && . ${HOME_DIR}/.cargo/env \
     && rustup default stable
 
-# add tt-blaze (clone using GitHub token from secret)
+# add tt-llm-engine (clone using GitHub token from secret)
 RUN --mount=type=secret,id=github_token \
-    rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
+    rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/relaxed_acceptance https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
-    && cd ${APP_DIR}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
+    && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && ./install.sh  \
-    && . ./env.sh \
-    && (cd tt-metal && ./build_metal.sh --disable-profiler) \
-    && ./pipeline_manager/setup.sh --pm-full \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
+    && ./setup.sh --ds-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Build C++ server (requires Rust for tokenizers-cpp)
-# Use existing Python venv, temporarily point TT_METAL_HOME to tt-blaze for the build
+# Use existing Python venv, temporarily point TT_METAL_HOME to tt-llm-engine's tt-metal for the build
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
-    && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
+    && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh --blaze"
 
@@ -162,11 +163,11 @@ RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.cpmcache \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/docs \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tests \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tech_reports \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.github \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/.cpmcache \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/docs \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/tests \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/tech_reports \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/.github \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 
@@ -192,14 +193,14 @@ ENV ENVIRONMENT=development \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     APP_DIR=${HOME_DIR}/app \
-    TT_METAL_HOME=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
+    TT_METAL_HOME=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
+    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal/build/lib \
+    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
+    PYTHON_ENV_DIR=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/python_env \
+    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/build/lib \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 # Install runtime dependencies

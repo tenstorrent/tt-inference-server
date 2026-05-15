@@ -9,7 +9,7 @@
 
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runners/runner_interface.hpp"
+#include "runners/ipc_runner.hpp"
 
 namespace tt::runners {
 
@@ -50,7 +50,7 @@ class EmbeddingRunner : public IRunner {
   // IRunner interface implementation
   void run() override;
   void stop() override;
-  const char* runnerType() const { return "EmbeddingRunner"; }
+  const char* runnerType() const override { return "EmbeddingRunner"; }
 
   /**
    * Get the device ID.

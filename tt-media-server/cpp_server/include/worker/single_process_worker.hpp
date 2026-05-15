@@ -8,10 +8,10 @@
 #include <unordered_map>
 
 #include "config/runner_config.hpp"
-#include "ipc/cancel_queue.hpp"
-#include "ipc/result_queue.hpp"
-#include "ipc/task_queue.hpp"
-#include "runners/runner_interface.hpp"
+#include "ipc/interface/cancel_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
+#include "ipc/interface/task_queue.hpp"
+#include "runners/ipc_runner.hpp"
 
 namespace tt::worker {
 

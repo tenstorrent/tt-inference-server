@@ -10,10 +10,10 @@
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
+#include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/ipc_runner_factory.hpp"
 #include "utils/logger.hpp"
-#include "utils/runner_factory.hpp"
 
 namespace tt::worker {
 
@@ -46,11 +46,16 @@ void fatalSignalHandler(int sig) {
   const char* sigName = strsignal(sig);
   if (!sigName) sigName = "unknown";
 
-  write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
-  write(STDERR_FILENO, idBuf, len);
-  write(STDERR_FILENO, mid, sizeof(mid) - 1);
-  write(STDERR_FILENO, sigName, strlen(sigName));
-  write(STDERR_FILENO, suffix, sizeof(suffix) - 1);
+  if (write(STDERR_FILENO, prefix, sizeof(prefix) - 1) < 0) {
+  }
+  if (write(STDERR_FILENO, idBuf, len) < 0) {
+  }
+  if (write(STDERR_FILENO, mid, sizeof(mid) - 1) < 0) {
+  }
+  if (write(STDERR_FILENO, sigName, strlen(sigName)) < 0) {
+  }
+  if (write(STDERR_FILENO, suffix, sizeof(suffix) - 1) < 0) {
+  }
 
   signal(sig, SIG_DFL);
   raise(sig);
@@ -93,7 +98,7 @@ void SingleProcessWorker::start() {
 
   {
     ZoneScopedN("Worker::init");
-    runner_ = tt::utils::runner_factory::createRunner(
+    runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
         tt::config::modelService(), cfg.runner_config, cfg.result_queue.get(),
         cfg.task_queue.get(), cfg.cancel_queue.get());
   }
@@ -104,8 +109,8 @@ void SingleProcessWorker::start() {
   try {
     runner_->start([this]() {
       try {
-        tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
-            tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+        tt::ipc::boost::WarmupSignalQueue warmupQueue(
+            tt::config::ttWarmupSignalsQueueName());
         warmupQueue.sendReady(worker_id);
         TT_LOG_INFO("[SingleProcessWorker] Worker {} signaled warmup complete",
                     worker_id);

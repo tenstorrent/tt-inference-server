@@ -3,7 +3,7 @@
 
 #include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
-#include "ipc/token_push.hpp"
+#include "ipc/helpers/token_push.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -33,8 +33,8 @@ void BlazePrefillRunner::run() {
     TT_LOG_DEBUG("[BlazePrefillRunner] Starting prefill for task {}",
                  sequence->taskId);
 
-    auto result =
-        modelRunner->forward(sequence->taskId, sequence->getTokenIds());
+    auto result = modelRunner->forward(
+        sequence->taskId, sequence->getTokenIds(), sequence->getKVCacheSlot());
 
     if (!result) {
       TT_LOG_DEBUG(
@@ -49,12 +49,13 @@ void BlazePrefillRunner::run() {
     if (result->isError) {
       TT_LOG_WARN("[BlazePrefillRunner] Error token for task {}",
                   result->taskId);
-      ipc::pushErrorToken(*resultQueue, result->taskId);
+      ipc::helpers::pushErrorToken(*resultQueue, result->taskId);
     } else {
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
-      ipc::pushToken(*resultQueue, sequence->taskId, result->tokenId, true);
+      ipc::helpers::pushToken(*resultQueue, sequence->taskId, result->tokenId,
+                              true);
     }
 
     // sequence automatically cleaned up at end of scope
@@ -67,7 +68,8 @@ bool BlazePrefillRunner::warmup() {
 
   TT_LOG_DEBUG("[BlazePrefillRunner] warmup forward task_id={} token_count={}",
                warmupTaskId, warmupTokens.size());
-  auto result = modelRunner->forward(warmupTaskId, warmupTokens);
+  auto result = modelRunner->forward(warmupTaskId, warmupTokens,
+                                     tt::domain::INVALID_SLOT_ID);
   if (!result || result->isError) {
     TT_LOG_ERROR("[BlazePrefillRunner] Warmup failed");
     return false;

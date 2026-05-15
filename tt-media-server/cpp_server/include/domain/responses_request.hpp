@@ -379,8 +379,13 @@ struct ResponsesRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
-        toMessages(), true, std::nullopt, true, false);
+    const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+    auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
+                                                 std::nullopt, true, false);
+    out.full_prompt_tokens_count =
+        static_cast<int>(tokenizer.encode(promptStr).size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
+    out.prompt = std::move(promptStr);
 
     out.max_tokens = max_output_tokens;
     out.presence_penalty = presence_penalty.value_or(0.0f);

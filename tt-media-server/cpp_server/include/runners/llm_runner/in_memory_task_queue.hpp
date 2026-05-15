@@ -8,7 +8,7 @@
 #include <sstream>
 
 #include "domain/llm/sequence.hpp"
-#include "ipc/task_queue.hpp"
+#include "ipc/interface/task_queue.hpp"
 
 namespace tt::runners::llm_engine {
 

@@ -72,18 +72,23 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    uint32_t taskId, const std::string& prompt,
+    uint32_t taskId, size_t registrationHash,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
-    std::optional<uint32_t> slotId) {
+    std::optional<uint32_t> slotId,
+    const tt::domain::llm::SamplingParams& sampling) {
   if (!enabled_) {
     return false;
   }
 
   PrefillRequestMessage message(taskId);
-  message.prompt = prompt;
+  message.registration_hash = registrationHash;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
   message.slot_id = slotId;
+  message.temperature = sampling.temperature;
+  message.top_p = sampling.top_p;
+  message.top_k = sampling.top_k;
+  message.fast_mode = sampling.fast_mode;
 
   return socket_manager_.sendObject("prefill_request", message);
 }

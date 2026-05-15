@@ -7,6 +7,7 @@
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
+#include "utils/mapper.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
@@ -63,13 +64,23 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
+            if (auto* reasoningParser = llmService->getReasoningParser()) {
+              reasoningParser->initializeTask(message.task_id);
+              reasoningParser->processToken(message.task_id,
+                                            message.token_ids.back(),
+                                            /*decodedText=*/"");
+            }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            request.prompt = std::vector<int>(message.token_ids.begin(),
-                                              message.token_ids.end());
+            request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                     message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
-            auto slotId = message.slot_id;
-            request.slotId = slotId;
+            request.slotId = message.slot_id;
+            // Restore the sampling subset echoed back from the prefill server.
+            request.temperature = message.temperature;
+            request.top_p = message.top_p;
+            request.top_k = message.top_k;
+            request.fast_mode = message.fast_mode;
             llmService->submitStreamingRequest(request, callback.value());
           } else {
             auto finalResponse = LLMStreamChunk(message.task_id);
@@ -113,15 +124,17 @@ void DisaggregationService::setupSocketHandlers() {
         [this](const tt::sockets::PrefillRequestMessage& message) {
           auto request = LLMRequest(message.task_id);
           request.max_tokens = 1;
-          auto maxTokens = message.max_tokens;
-          using PromptVariant = std::variant<std::string, std::vector<int>>;
+          request.temperature = message.temperature;
+          request.top_p = message.top_p;
+          request.top_k = message.top_k;
+          request.fast_mode = message.fast_mode;
 
-          request.prompt =
-              message.token_ids.empty()
-                  ? PromptVariant(message.prompt)
-                  : PromptVariant(std::vector<int>(message.token_ids.begin(),
-                                                   message.token_ids.end()));
+          auto maxTokens = message.max_tokens;
+
+          request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                   message.token_ids.end());
           auto slotId = message.slot_id;
+          request.slotId = slotId;
 
           llmService->submitStreamingRequest(
               request, [this, message, maxTokens, slotId](
@@ -129,6 +142,10 @@ void DisaggregationService::setupSocketHandlers() {
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
+                prefillResult.temperature = message.temperature;
+                prefillResult.top_p = message.top_p;
+                prefillResult.top_k = message.top_k;
+                prefillResult.fast_mode = message.fast_mode;
 
                 bool isError = !response.choices.empty() &&
                                response.choices.back().finish_reason == "error";
@@ -171,7 +188,7 @@ void DisaggregationService::start() {
 void DisaggregationService::stop() { socketService->stop(); }
 
 void DisaggregationService::handleStreamingRequest(
-    LLMRequest& request, const StreamCallback& callback) {
+    LLMRequest& request, size_t requestHash, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     streamCallbacks.insert(request.task_id, callback);
 
@@ -179,9 +196,9 @@ void DisaggregationService::handleStreamingRequest(
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
     auto sent = socketService->sendPrefillRequest(
-        request.task_id, "",
+        request.task_id, requestHash,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId);
+        slotId, tt::utils::mapper::mapSamplingParams(request));
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

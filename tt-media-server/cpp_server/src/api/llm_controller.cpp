@@ -5,10 +5,12 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "api/error_response.hpp"
@@ -27,11 +29,12 @@
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::api {
 
 LLMController::LLMController() {
-  if (!tt::config::isLlmServiceEnabled()) {
+  if (!tt::config::isLlmService()) {
     TT_LOG_INFO(
         "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
     return;
@@ -95,9 +98,14 @@ void LLMController::resolveSession(
         req->session = sessionManager->getSession(acquired->sessionId);
         req->continuation = true;
         req->prompt = routingInfo.deltaPrompt;
+        req->prompt_tokens_count =
+            static_cast<int>(tt::utils::tokenizers::activeTokenizer()
+                                 .encode(routingInfo.deltaPrompt)
+                                 .size());
         sessionManager->registerPrefixHash(acquired->sessionId,
                                            routingInfo.registrationHash);
         info.validSessionFound = true;
+        info.registrationHash = routingInfo.registrationHash;
         onResolved(info);
         return;
       }
@@ -182,6 +190,30 @@ void LLMController::chatCompletions(
   }
 
   auto reqPtr = std::make_shared<LLMRequest>(chatReq.toLLMRequest());
+  const size_t maxContextLength = tt::config::maxContextLength();
+  const size_t promptTokens =
+      static_cast<size_t>(std::max(0, reqPtr->full_prompt_tokens_count));
+
+  const size_t requested =
+      promptTokens +
+      (reqPtr->max_tokens.has_value()
+           ? static_cast<size_t>(std::max(0, *reqPtr->max_tokens))
+           : 1);
+  const bool exceedsContext = requested > maxContextLength;
+
+  if (exceedsContext) {
+    std::string detail =
+        "prompt_tokens=" + std::to_string(reqPtr->full_prompt_tokens_count);
+    if (reqPtr->max_tokens.has_value()) {
+      detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
+    }
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Request exceeds maximum context length (" +
+                               std::to_string(maxContextLength) +
+                               " tokens): " + detail,
+                           "invalid_request_error"));
+    return;
+  }
 
   if (reqPtr->stream) {
     const bool includeUsage = !reqPtr->stream_options.has_value() ||
@@ -305,7 +337,14 @@ ResponseWriterParams LLMController::makeWriterParams(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  params.promptTokenCount = request.prompt_tokens_count;
+  params.promptTokenCount = request.full_prompt_tokens_count > 0
+                                ? request.full_prompt_tokens_count
+                                : request.prompt_tokens_count;
+  params.cachedTokenCount =
+      request.continuation
+          ? request.full_prompt_tokens_count - request.prompt_tokens_count
+          : 0;
+  params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
   if (request.session) {
@@ -377,7 +416,7 @@ void LLMController::handleStreaming(
             loop, makeWriterParams(*reqPtr), includeUsage, formatter);
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+          dispatchGeneration(*reqPtr, sessionInfo,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
@@ -442,7 +481,7 @@ void LLMController::handleNonStreaming(
             makeWriterParams(*reqPtr), std::move(*cb), std::move(builder));
 
         try {
-          dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
+          dispatchGeneration(*reqPtr, sessionInfo,
                              makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
@@ -461,7 +500,7 @@ void LLMController::handleNonStreaming(
 }
 
 void LLMController::dispatchGeneration(
-    LLMRequest& request, bool validSessionFound,
+    LLMRequest& request, SessionInfo sessionInfo,
     const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
   if (mode == tt::config::LLMMode::REGULAR) {
@@ -470,7 +509,7 @@ void LLMController::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (shouldDoPrefillOnDecode(request, validSessionFound)) {
+    if (shouldDoPrefillOnDecode(request, sessionInfo.validSessionFound)) {
       TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
       service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -479,7 +518,8 @@ void LLMController::dispatchGeneration(
           "[LLMController] Using disaggregated prefill for request with "
           "sessionId: {}",
           request.sessionId.value_or("none"));
-      disaggregationService->handleStreamingRequest(request, cb);
+      disaggregationService->handleStreamingRequest(
+          request, sessionInfo.registrationHash.value_or(0), cb);
     }
     return;
   }
@@ -490,18 +530,24 @@ void LLMController::dispatchGeneration(
 
 bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,
                                             bool validSessionFound) const {
-  if (validSessionFound) {
-    return true;
-  }
-
-  // In disaggregated decode mode, fall back to running prefill locally if the
-  // prefill server socket is unavailable — otherwise the request would be sent
-  // to a peer that cannot service it.
-  if (!socketService || !socketService->isConnected()) {
+  const bool socketReady = socketService && socketService->isConnected();
+  if (!socketReady) {
     TT_LOG_WARN(
         "[LLMController] Prefill server not connected; falling back to "
         "prefill on decode for taskId={}",
         request.task_id);
+    return true;
+  }
+
+  if (request.disaggregation_override.has_value()) {
+    const bool forceDisagg = *request.disaggregation_override;
+    TT_LOG_INFO(
+        "[LLMController] Honoring disaggregation override={} for taskId={}",
+        forceDisagg, request.task_id);
+    return !forceDisagg;
+  }
+
+  if (validSessionFound) {
     return true;
   }
 

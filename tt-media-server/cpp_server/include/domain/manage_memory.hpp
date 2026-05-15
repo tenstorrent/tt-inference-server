@@ -25,7 +25,7 @@ struct ManageMemoryTask {
   uint32_t taskId;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   KvMemoryLayout memoryLayout{KvMemoryLayout::PAGED};
-  uint32_t slotId;
+  uint32_t slotId{};
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));

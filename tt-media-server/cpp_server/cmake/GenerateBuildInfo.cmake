@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
 # Renders include/config/build_info.hpp.in into ${OUTPUT} with build-time
-# values for tt-inference-server, tt-blaze, and tt-metal versions/commits.
+# values for tt-inference-server, tt-llm-engine, and tt-metal versions/commits.
 #
 # Invoked at build time (not configure time) by an add_custom_target in the
 # top-level CMakeLists.txt so commit SHAs stay accurate across incremental
@@ -58,16 +58,19 @@ if(TT_INFERENCE_SERVER_COMMIT STREQUAL "")
     set(TT_INFERENCE_SERVER_COMMIT "unknown")
 endif()
 
-# tt-blaze commit: git rev-parse on the cloned tt-blaze working tree.
-# Present at this path inside Dockerfile.blaze (cloned at build time);
-# absent in standalone cpp_server builds — falls through to "unknown".
-_resolve_git_commit("${CPP_SERVER_DIR}/tt-blaze" TT_BLAZE_COMMIT)
+# tt-llm-engine commit (exposed in /info as `tt_blaze.commit` for backwards
+# compatibility — keep the C++ var name TT_BLAZE_COMMIT in sync with
+# build_info.hpp.in / kTtBlazeCommit). git rev-parse on the cloned
+# tt-llm-engine working tree. Present at this path inside Dockerfile.blaze
+# (cloned at build time); absent in standalone cpp_server builds — falls
+# through to "unknown".
+_resolve_git_commit("${CPP_SERVER_DIR}/tt-llm-engine" TT_BLAZE_COMMIT)
 
-# tt-metal commit: git rev-parse on tt-blaze's tt-metal submodule working tree.
+# tt-metal commit: git rev-parse on tt-llm-engine's tt-metal submodule working tree.
 # Intentionally NOT reading $ENV{TT_METAL_COMMIT_SHA_OR_TAG} — that ARG in
 # Dockerfile.blaze will be removed; tt-metal is pulled in as a
-# submodule of tt-blaze (cloned by branch).
-_resolve_git_commit("${CPP_SERVER_DIR}/tt-blaze/tt-metal" TT_METAL_COMMIT)
+# submodule of tt-llm-engine (cloned by branch).
+_resolve_git_commit("${CPP_SERVER_DIR}/tt-llm-engine/tt-metal" TT_METAL_COMMIT)
 
 # Render the header. configure_file with @ONLY substitutes only @VAR@ tokens
 # (not bare ${VAR}), keeping the template robust to copy/paste of macro-heavy

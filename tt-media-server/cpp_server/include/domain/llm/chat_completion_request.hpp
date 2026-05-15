@@ -96,6 +96,8 @@ struct ChatCompletionRequest : BaseRequest {
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
+  std::optional<bool> disaggregation_override;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
@@ -225,6 +227,10 @@ struct ChatCompletionRequest : BaseRequest {
       req.skip_apply_chat_template =
           getBool(json["skip_apply_chat_template"], "skip_apply_chat_template");
 
+    if (json.isMember("disaggregation") && !json["disaggregation"].isNull())
+      req.disaggregation_override =
+          getBool(json["disaggregation"], "disaggregation");
+
     validateToolFields(req);
     validateToolMessages(req);
     return req;
@@ -252,7 +258,9 @@ struct ChatCompletionRequest : BaseRequest {
         << " frequency_penalty=" << frequency_penalty << " n=" << n
         << " stop_count=" << stop.size()
         << " enable_reasoning=" << enable_reasoning
-        << " skip_apply_chat_template=" << skip_apply_chat_template;
+        << " skip_apply_chat_template=" << skip_apply_chat_template
+        << " disaggregation_override="
+        << detail::optStr(disaggregation_override);
     return out.str();
   }
 
@@ -263,12 +271,15 @@ struct ChatCompletionRequest : BaseRequest {
     out.model = model;
     out.messages = messages;
     out.skip_apply_chat_template = skip_apply_chat_template;
-    out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
+    const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+    auto promptStr = tokenizer.applyChatTemplate(
         messages, true, tools, enable_reasoning, skip_apply_chat_template);
-    if (auto* promptStr = std::get_if<std::string>(&out.prompt)) {
-      TT_LOG_INFO("Prompt: {}",
-                  detail::truncate(*promptStr, detail::MAX_PROMPT_LOG_LENGTH));
-    }
+    out.full_prompt_tokens_count =
+        static_cast<int>(tokenizer.encode(promptStr).size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
+    TT_LOG_INFO("Prompt: {}",
+                detail::truncate(promptStr, detail::MAX_PROMPT_LOG_LENGTH));
+    out.prompt = std::move(promptStr);
     out.echo = echo;
     out.max_tokens = max_tokens;
     out.n = n;
@@ -304,6 +315,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.enable_reasoning = enable_reasoning;
     out.sessionId = sessionId;
+    out.disaggregation_override = disaggregation_override;
     return out;
   }
 
