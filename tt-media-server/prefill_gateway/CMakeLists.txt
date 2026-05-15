@@ -104,6 +104,7 @@ target_compile_options(prefill_gateway_core PRIVATE -Wall -Wextra -Wpedantic)
 # against it without recompiling the sources.
 add_library(prefill_gateway_io STATIC
     ${CPP_SERVER_DIR}/src/sockets/socket_manager.cpp
+    ${CPP_SERVER_DIR}/src/sockets/socket_transport.cpp
     ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 target_include_directories(prefill_gateway_io PUBLIC

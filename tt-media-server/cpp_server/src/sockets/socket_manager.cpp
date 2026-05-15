@@ -96,13 +96,12 @@ void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
 
 void SocketManager::setConnectionEstablishedCallback(
     std::function<void()> callback) {
-  connection_established_callback_ = std::move(callback);
+  transport_.setConnectionEstablishedCallback(std::move(callback));
 }
 
 void SocketManager::setReconnectBackoff(uint32_t initial_delay_ms,
                                         uint32_t max_delay_ms) {
-  reconnect_initial_delay_ms_ = initial_delay_ms;
-  reconnect_max_delay_ms_ = max_delay_ms;
+  transport_.setReconnectBackoff(initial_delay_ms, max_delay_ms);
 }
 
 }  // namespace tt::sockets

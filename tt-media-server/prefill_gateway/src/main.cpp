@@ -17,8 +17,6 @@
 #include "sockets/socket_messages.hpp"
 #include "utils/logger.hpp"
 
-// ── Config ────────────────────────────────────────────────────────────────────
-
 namespace {
 
 struct PrefillEndpoint {
@@ -110,15 +108,11 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
   return cfg;
 }
 
-// ── Signal handling ───────────────────────────────────────────────────────────
-
 volatile sig_atomic_t g_stop = 0;
 
 void signalHandler(int /*sig*/) { g_stop = 1; }
 
 }  // namespace
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
   tt::utils::ZeroOverheadLogger::initialize();
@@ -130,33 +124,22 @@ int main(int argc, char** argv) {
   TT_LOG_INFO("[Gateway] Starting — decode port={}, prefills={}",
               cfg.decode_port, cfg.prefills.size());
 
-  // ── Core gateway objects ─────────────────────────────────────────────────
   tt::gateway::PrefillRegistry registry;
   tt::gateway::AffinityCache affinity;
 
-  // ── Decode-facing SocketManager (SERVER mode) ─────────────────────────
-  // The gateway listens on decode_port; the single decode server connects
-  // here to submit PrefillRequests and receive PrefillResults /
-  // PrefillAssignments. Only one concurrent decode connection is needed
-  // (1 decode : N prefills); the existing SERVER mode loop already handles
-  // sequential reconnects automatically.
+  // Decode-facing: gateway listens, decode dials in (only 1 decode connection).
   tt::sockets::SocketManager decode_sm;
   if (!decode_sm.initializeAsServer(cfg.decode_port)) {
     TT_LOG_ERROR("[Gateway] Failed to bind decode port {}", cfg.decode_port);
     return 1;
   }
 
-  // ── Per-prefill SocketManagers (CLIENT mode, one per endpoint) ────────
-  // The gateway connects outward to each prefill. Using N independent
-  // SocketManager instances is the gateway's implementation of #3508
-  // (1:N multi-peer): each instance owns its own socket, reconnect loop,
-  // send mutex, and message thread. This avoids changing the existing 1:1
-  // SocketManager contract while giving the gateway full independence per peer.
+  // Per-prefill: one independent SocketManager (CLIENT) per endpoint — the
+  // gateway's 1:N fan-out without modifying the underlying 1:1 transport.
   std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefill_sms;
   prefill_sms.reserve(cfg.prefills.size());
   for (const auto& ep : cfg.prefills) {
     auto sm = std::make_unique<tt::sockets::SocketManager>();
-    // Exponential backoff: 100ms → 200ms → … → 5s (#3509)
     sm->setReconnectBackoff(/*initial_ms=*/100, /*max_ms=*/5000);
     if (!sm->initializeAsClient(ep.host, ep.port)) {
       TT_LOG_ERROR("[Gateway] Failed to init client socket to {}:{}", ep.host,
@@ -166,9 +149,8 @@ int main(int argc, char** argv) {
     prefill_sms.push_back(std::move(sm));
   }
 
-  // ── Dispatcher: built with injectable Senders so it stays socket-free ─
-  // We forward-declare the pointer here; the Senders below capture it by
-  // pointer so they remain valid after the unique_ptr is assigned below.
+  // Dispatcher takes Senders by value; lambdas below capture references which
+  // stay alive for the rest of main.
   std::unique_ptr<tt::gateway::Dispatcher> dispatcher_ptr;
 
   tt::gateway::Dispatcher::Senders senders;
@@ -198,21 +180,15 @@ int main(int argc, char** argv) {
   dispatcher_ptr = std::make_unique<tt::gateway::Dispatcher>(
       registry, affinity, std::move(senders));
 
-  // Wire prefill-down callback: registry notifies dispatcher so in-flight
-  // tasks are failed back to decode when a prefill disappears.
   registry.setOnPrefillDown([&dispatcher_ptr](const std::string& id) {
     dispatcher_ptr->onPrefillDown(id);
   });
 
-  // ── Wire handlers for each prefill SocketManager ─────────────────────
   for (auto& sm_ptr : prefill_sms) {
     tt::sockets::SocketManager* sm = sm_ptr.get();
 
-    // server_id_holder is shared between the registration handler (which sets
-    // it on first connect) and the connection-lost callback (which reads it).
-    // Using a shared_ptr<string> avoids dangling references if the lambda
-    // outlives the stack frame, and allows the lost-callback to see the id
-    // that was learned from the registration message.
+    // Shared between the registration handler (sets it) and the lost callback
+    // (reads it). The id is unknown until the first registration message.
     auto id_holder = std::make_shared<std::string>();
 
     sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
@@ -222,13 +198,11 @@ int main(int argc, char** argv) {
           TT_LOG_INFO("[Gateway] Prefill registered: id='{}' max_in_flight={}",
                       msg.server_id, msg.max_in_flight);
           *id_holder = msg.server_id;
-          // preRegister is a no-op if the entry already exists (reconnect).
           registry.preRegister(msg.server_id, sm);
           bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
           if (!ok) {
-            TT_LOG_ERROR(
-                "[Gateway] markRegistered failed for '{}' — this is a bug",
-                msg.server_id);
+            TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
+                         msg.server_id);
           }
         });
 
@@ -257,14 +231,11 @@ int main(int argc, char** argv) {
       const std::string& sid = *id_holder;
       if (!sid.empty()) {
         TT_LOG_WARN("[Gateway] Prefill '{}' connection lost", sid);
-        registry.markDown(sid);
-        // dispatcher_.onPrefillDown is triggered via the registry callback set
-        // above, so we do not call it directly here.
+        registry.markDown(sid);  // fires onPrefillDown -> dispatcher
       }
     });
   }
 
-  // ── Wire decode SocketManager ─────────────────────────────────────────
   decode_sm.registerHandler<tt::sockets::PrefillRequestMessage>(
       "prefill_request",
       [&dispatcher_ptr](const tt::sockets::PrefillRequestMessage& msg) {
@@ -275,7 +246,6 @@ int main(int argc, char** argv) {
     TT_LOG_WARN("[Gateway] Decode disconnected — waiting for reconnect");
   });
 
-  // ── Start ────────────────────────────────────────────────────────────
   for (auto& sm : prefill_sms) sm->start();
   decode_sm.start();
 
@@ -288,7 +258,6 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 
-  // ── Graceful shutdown ────────────────────────────────────────────────
   TT_LOG_INFO("[Gateway] Shutting down…");
   decode_sm.stop();
   for (auto& sm : prefill_sms) sm->stop();

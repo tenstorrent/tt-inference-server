@@ -94,6 +94,20 @@ class SocketTransport {
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
+  /**
+   * @brief Set callback fired when a TCP connection is established.
+   *
+   * SERVER mode: each accept. CLIENT mode: each (re)connect.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
+   * Delay doubles per failed attempt up to max, resets on success.
+   * Must be called before start().
+   */
+  void setReconnectBackoff(uint32_t initial_delay_ms, uint32_t max_delay_ms);
+
  private:
   void serverLoop();
   void clientLoop();
@@ -114,6 +128,10 @@ class SocketTransport {
   mutable std::mutex sendMutex_;
 
   std::function<void()> connectionLostCallback_;
+  std::function<void()> connectionEstablishedCallback_;
+
+  uint32_t reconnectInitialDelayMs_ = 100;
+  uint32_t reconnectMaxDelayMs_ = 5000;
 };
 
 }  // namespace tt::sockets

@@ -456,7 +456,6 @@ std::string prefillServerId() {
     std::string v =
         envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
     if (!v.empty()) return v;
-    // Fall back to "<hostname>:<port>" for a sensible default.
     char host[256] = {0};
     if (::gethostname(host, sizeof(host) - 1) != 0) {
       std::snprintf(host, sizeof(host), "unknown-host");

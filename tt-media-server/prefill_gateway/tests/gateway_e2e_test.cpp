@@ -1,21 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// End-to-end integration test for the PrefillGateway.
-//
-// Uses *real* SocketManager instances over loopback to validate:
-//   - Prefill registration handshake
-//   - Routing decisions (round-robin + sticky-by-hash)
-//   - Result forwarding back to decode
-//   - PrefillAssignment back-channel reaches decode
-//   - Failover: a prefill drops, in-flight task fails through to decode
-//
-// Topology (all on 127.0.0.1):
-//
-//   FakeDecode (CLIENT) ──► Gateway.decodeSm (SERVER, port D)
-//                            │
-//                            ├─► Gateway.prefillSm[0] (CLIENT) ──► FakePrefill0 (SERVER, port P0)
-//                            └─► Gateway.prefillSm[1] (CLIENT) ──► FakePrefill1 (SERVER, port P1)
+// End-to-end integration test for PrefillGateway over real loopback sockets.
+// Validates registration handshake, routing (round-robin + sticky-by-hash),
+// result/assignment delivery, and prefill-down failover.
 
 #include <gtest/gtest.h>
 
@@ -39,9 +27,6 @@ namespace {
 
 using namespace std::chrono_literals;
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-// Wait up to `timeout` for `pred` to become true. Returns true if it did.
 template <typename Pred>
 bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
   auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -52,7 +37,6 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
   return pred();
 }
 
-// Pick an ephemeral port (bind to 0, ask kernel for the assignment, close).
 uint16_t ephemeralPort() {
   int s = socket(AF_INET, SOCK_STREAM, 0);
   EXPECT_GE(s, 0);
@@ -68,7 +52,7 @@ uint16_t ephemeralPort() {
   return port;
 }
 
-// ── Mock prefill: SERVER mode, advertises itself, replies to requests. ───
+// Mock prefill: SERVER mode, registers on connect, echoes a result per request.
 class FakePrefill {
  public:
   FakePrefill(std::string server_id, uint16_t port, uint32_t max_in_flight = 4)
@@ -131,7 +115,7 @@ class FakePrefill {
   std::optional<tt::sockets::PrefillRequestMessage> last_request_;
 };
 
-// ── Mock decode: CLIENT to gateway, collects results/assignments. ────────
+// Mock decode: CLIENT to gateway, collects results/assignments.
 class FakeDecode {
  public:
   FakeDecode(const std::string& gateway_host, uint16_t gateway_port) {
@@ -192,7 +176,7 @@ class FakeDecode {
   std::vector<tt::sockets::PrefillAssignmentMessage> assignments_;
 };
 
-// ── GatewayHarness: builds a real-sockets gateway exactly like main.cpp ──
+// Real-sockets gateway wired the same way as main.cpp.
 class GatewayHarness {
  public:
   GatewayHarness(uint16_t decode_port,
@@ -231,7 +215,6 @@ class GatewayHarness {
       dispatcher_->onPrefillDown(id);
     });
 
-    // Wire per-prefill handlers identical to main.cpp.
     for (auto& sm_ptr : prefill_sms_) {
       auto* sm = sm_ptr.get();
       auto id_holder = std::make_shared<std::string>();
@@ -257,7 +240,6 @@ class GatewayHarness {
       });
     }
 
-    // Wire decode-facing handler.
     decode_sm_.registerHandler<tt::sockets::PrefillRequestMessage>(
         "prefill_request",
         [this](const tt::sockets::PrefillRequestMessage& msg) {
@@ -287,8 +269,6 @@ class GatewayHarness {
   std::unique_ptr<Dispatcher> dispatcher_;
 };
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 class GatewayE2ETest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -312,7 +292,6 @@ class GatewayE2ETest : public ::testing::Test {
     decode_ = std::make_unique<FakeDecode>("127.0.0.1", decode_port_);
     decode_->start();
 
-    // Wait for both prefills to register, and decode to connect.
     ASSERT_TRUE(waitFor([&] {
       auto snap = gateway_->registry().snapshot();
       int healthy = 0;
@@ -363,14 +342,12 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
 }
 
 TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
-  // Send first request with hash=42, see which prefill takes it.
   decode_->sendRequest(/*task_id=*/1, /*hash=*/42);
   ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
   auto first_assignments = decode_->assignments();
   ASSERT_EQ(first_assignments.size(), 1u);
   const std::string first_server = first_assignments[0].server_id;
 
-  // Now send a second request with the same hash. Should land on the same prefill.
   decode_->sendRequest(/*task_id=*/2, /*hash=*/42);
   ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 2; }));
   auto all_assignments = decode_->assignments();
@@ -381,23 +358,17 @@ TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
 }
 
 TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
-  // Disable auto-reply on A so it leaves a task in flight.
   prefill_a_->setAutoReply(false);
   prefill_b_->setAutoReply(false);
 
-  // Seed affinity so we know which prefill takes the request.
+  // Seed affinity so we know which prefill will take the request.
   gateway_->affinity().record(/*hash=*/77, "prefill-A");
   decode_->sendRequest(/*task_id=*/55, /*hash=*/77);
 
-  // Wait until prefill-A has received the request.
   ASSERT_TRUE(waitFor([&] { return prefill_a_->receivedTaskCount() >= 1; }));
-
-  // Decode got the assignment but no result yet.
   ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
   EXPECT_EQ(decode_->resultCount(), 0u);
 
-  // Kill prefill A. The gateway's CLIENT-side connection_lost callback should
-  // fire, mark A as down, and fail the in-flight task back to decode.
   prefill_a_->stop();
 
   ASSERT_TRUE(waitFor(
@@ -409,8 +380,6 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   EXPECT_EQ(results[0].task_id, 55u);
   EXPECT_TRUE(results[0].error);
   EXPECT_EQ(results[0].generated_text, "prefill_down");
-
-  // Affinity for hash 77 should have been evicted.
   EXPECT_FALSE(gateway_->affinity().lookup(77).has_value());
 }
 

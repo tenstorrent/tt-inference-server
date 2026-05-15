@@ -21,16 +21,12 @@ constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
 
-// PrefillGateway integration. When true, the inter-server socket flips its
-// role to talk to the gateway instead of the peer directly:
-//   - decode mode: connect (CLIENT) to gateway at SOCKET_HOST:SOCKET_PORT.
-//   - prefill mode: listen (SERVER) on SOCKET_PORT for the gateway to dial in.
+// PrefillGateway integration. When true, decode connects as CLIENT to the
+// gateway and prefill listens as SERVER for the gateway to dial in.
 constexpr bool USE_PREFILL_GATEWAY = false;
-// Stable identity advertised to the gateway in PrefillRegistrationMessage.
-// Empty falls back to "<hostname>:<port>". Used only when prefill mode is
-// running behind the gateway.
+// Stable identity sent in PrefillRegistrationMessage; empty -> "<host>:<port>".
 constexpr const char* PREFILL_SERVER_ID = "";
-// Capacity hint the prefill advertises to the gateway. 0 = unlimited.
+// Capacity hint sent to the gateway. 0 = unlimited.
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;

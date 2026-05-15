@@ -199,13 +199,7 @@ struct LoadBalanceMessage {
   }
 };
 
-/**
- * @brief Prefill registers itself with the gateway on connect.
- *
- * Identity is `server_id` (stable across reconnects), not (host, port). The
- * gateway uses this to seed its peer registry and accept routing decisions
- * against the prefill.
- */
+// Prefill -> gateway, sent on connect. `server_id` is stable across reconnects.
 struct PrefillRegistrationMessage {
   std::string server_id;
   uint32_t max_in_flight = 0;
@@ -223,12 +217,8 @@ struct PrefillRegistrationMessage {
   }
 };
 
-/**
- * @brief Gateway notifies decode which prefill server was picked for a task.
- *
- * Informational for v1 (decode logs / metrics). Reusable for KV-transfer
- * routing later.
- */
+// Gateway -> decode. Informs decode which prefill handled a task (for KV
+// transfer / logs).
 struct PrefillAssignmentMessage {
   uint32_t task_id = 0;
   std::string server_id;
@@ -246,12 +236,8 @@ struct PrefillAssignmentMessage {
   }
 };
 
-/**
- * @brief Prefill informs gateway about new cache blocks (after a request).
- *
- * Gateway updates its per-prefill block-cache view used for longest-prefix
- * match routing. Prefill may batch multiple block hashes per message.
- */
+// Prefill -> gateway. Updates the gateway's per-prefill block-cache view
+// used by longest-prefix-match routing.
 struct PrefillCacheBlocksAddedMessage {
   std::string server_id;
   std::vector<uint64_t> block_hashes;
@@ -269,12 +255,7 @@ struct PrefillCacheBlocksAddedMessage {
   }
 };
 
-/**
- * @brief Prefill informs gateway about evicted cache blocks (LRU pressure).
- *
- * Mirror of PrefillCacheBlocksAddedMessage; gateway removes these from the
- * per-prefill view so they don't influence routing.
- */
+// Prefill -> gateway. Mirror of *Added; removes blocks from the routing view.
 struct PrefillCacheBlocksEvictedMessage {
   std::string server_id;
   std::vector<uint64_t> block_hashes;
@@ -292,14 +273,8 @@ struct PrefillCacheBlocksEvictedMessage {
   }
 };
 
-/**
- * @brief Wire-protocol message-type tags shared by gateway, decode, prefill.
- *
- * Tags are short ASCII strings prepended by SocketManager::sendObject and
- * matched by SocketManager::registerHandler. Existing tags
- * ("prefill_request", "prefill_result", "health_check") are NOT redeclared
- * here to keep changes additive; new tags below.
- */
+// Wire-protocol tags for the new gateway messages. Existing tags
+// ("prefill_request", etc.) remain string literals at their call sites.
 namespace tags {
 constexpr const char* PREFILL_REGISTRATION = "prefill_registration";
 constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";

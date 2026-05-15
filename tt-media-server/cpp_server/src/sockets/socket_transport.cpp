@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <netinet/tcp.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "utils/logger.hpp"
@@ -138,6 +139,15 @@ void SocketTransport::stop() {
 
   peerSocket_ = -1;
 
+  // shutdown() unblocks any in-flight accept/connect/recv so the join() below
+  // doesn't deadlock when stop() races with a thread parked in a syscall.
+  if (serverSocket_) {
+    ::shutdown(serverSocket_.get(), SHUT_RDWR);
+  }
+  if (clientSocket_) {
+    ::shutdown(clientSocket_.get(), SHUT_RDWR);
+  }
+
   clientSocket_.reset();
   serverSocket_.reset();
 
@@ -172,14 +182,21 @@ void SocketTransport::serverLoop() {
     TT_LOG_INFO("[SocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
+    if (connectionEstablishedCallback_) {
+      connectionEstablishedCallback_();
+    }
+
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     accepted.reset();
     peerSocket_ = -1;
-    bool wasConnected = connected_.exchange(false);
-    if (wasConnected && connectionLostCallback_) {
+    // We were connected when we entered the spin, so the transition out always
+    // represents a connection loss. Not using exchange() here: send/recv error
+    // paths flip connected_=false too and would race the callback away.
+    connected_ = false;
+    if (connectionLostCallback_) {
       connectionLostCallback_();
     }
 
@@ -188,12 +205,18 @@ void SocketTransport::serverLoop() {
 }
 
 void SocketTransport::clientLoop() {
+  uint32_t delayMs = reconnectInitialDelayMs_;
+  auto backoff = [&]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+    delayMs = std::min(delayMs * 2, reconnectMaxDelayMs_);
+  };
+
   while (running_) {
     clientSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
     if (!clientSocket_) {
       TT_LOG_ERROR("[SocketTransport] Failed to create client socket: {}",
                    strerror(errno));
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      backoff();
       continue;
     }
 
@@ -204,18 +227,18 @@ void SocketTransport::clientLoop() {
     if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
       TT_LOG_ERROR("[SocketTransport] Invalid address: {}", host_);
       clientSocket_.reset();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      backoff();
       continue;
     }
 
-    TT_LOG_INFO("[SocketTransport] Attempting to connect to {}:{}", host_,
-                port_);
+    TT_LOG_INFO("[SocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
+                host_, port_, delayMs);
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[SocketTransport] Connection failed: {}", strerror(errno));
       clientSocket_.reset();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      backoff();
       continue;
     }
 
@@ -223,8 +246,13 @@ void SocketTransport::clientLoop() {
 
     peerSocket_ = clientSocket_.get();
     connected_ = true;
+    delayMs = reconnectInitialDelayMs_;  // reset on success
 
     TT_LOG_INFO("[SocketTransport] Connected to server");
+
+    if (connectionEstablishedCallback_) {
+      connectionEstablishedCallback_();
+    }
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -232,16 +260,13 @@ void SocketTransport::clientLoop() {
 
     peerSocket_ = -1;
     clientSocket_.reset();
-    bool wasConnected = connected_.exchange(false);
-    if (wasConnected && connectionLostCallback_) {
+    // See serverLoop comment: always-fire on exit-from-connected.
+    connected_ = false;
+    if (connectionLostCallback_) {
       connectionLostCallback_();
     }
 
     TT_LOG_INFO("[SocketTransport] Disconnected from server");
-
-    if (running_) {
-      std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
   }
 }
 
@@ -349,6 +374,17 @@ std::string SocketTransport::getStatus() const {
 void SocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
   connectionLostCallback_ = std::move(callback);
+}
+
+void SocketTransport::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  connectionEstablishedCallback_ = std::move(callback);
+}
+
+void SocketTransport::setReconnectBackoff(uint32_t initial_delay_ms,
+                                          uint32_t max_delay_ms) {
+  reconnectInitialDelayMs_ = initial_delay_ms;
+  reconnectMaxDelayMs_ = max_delay_ms;
 }
 
 }  // namespace tt::sockets

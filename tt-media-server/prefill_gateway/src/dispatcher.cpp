@@ -41,8 +41,7 @@ void Dispatcher::onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg)
     in_flight_task_to_hash_[msg.task_id] = msg.registration_hash;
   }
 
-  // Tell decode where the task is going first so KV-transfer setup can
-  // race ahead of the prefill's first-token result.
+  // Send assignment first so decode can prep KV-transfer ahead of the result.
   tt::sockets::PrefillAssignmentMessage assignment;
   assignment.task_id = msg.task_id;
   assignment.server_id = chosen;
@@ -56,8 +55,6 @@ void Dispatcher::onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg)
   }
 
   if (!sent) {
-    // The chosen prefill's send failed synchronously. Treat as immediate
-    // failure: clear inflight state and tell decode.
     registry_.decrementInflight(chosen);
     {
       std::lock_guard<std::mutex> lock(inflight_mutex_);
@@ -88,13 +85,11 @@ void Dispatcher::onPrefillResult(const std::string& from_server_id,
     }
   }
 
-  // Decrement against the prefill that actually replied (defensive: if a
-  // stray result comes in from a different prefill we still decrement that
-  // one's counter rather than the originally-assigned prefill).
+  // Decrement against the responder, not the original assignee, so a stray
+  // result still decrements the right counter.
   registry_.decrementInflight(from_server_id);
 
-  // Only record affinity when the result is successful — caching a failure
-  // would send the next request to the same broken prefill.
+  // Don't cache failures — they'd resend to the same broken prefill.
   if (was_tracked && !msg.error && hash != 0) {
     affinity_cache_.record(hash, from_server_id);
   }

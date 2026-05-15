@@ -30,14 +30,8 @@ bool InterServerService::initializeFromConfig() {
 
   bool success = false;
 
-  // Role mapping:
-  //   direct mode (default)              gateway mode
-  //   ────────────────────────────────  ────────────────────────────────
-  //   decode  → SERVER on SOCKET_PORT   decode  → CLIENT to gateway
-  //   prefill → CLIENT to SOCKET_HOST   prefill → SERVER on SOCKET_PORT
-  //
-  // The gateway sits between decode and prefill, so it listens for decode and
-  // dials each prefill — which is the inverse of the direct 1:1 setup.
+  // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
+  // and the gateway sits between them.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (gateway_mode) {
       TT_LOG_INFO("[InterServerService] Decode (gateway mode): connecting to {}:{}",
@@ -183,9 +177,8 @@ void InterServerService::setupMessageHandlers() {
         }
       });
 
-  // Decode-side: gateway informs us which prefill server was picked for a
-  // task. Informational for v1 (logging only); kept so the wire format is
-  // forward-compatible and decode doesn't log "no handler" warnings.
+  // Decode-side no-op handler so the gateway's PrefillAssignment doesn't log
+  // "no handler" warnings. Useful for KV-transfer routing in a follow-up.
   socket_manager_.registerHandler<PrefillAssignmentMessage>(
       tags::PREFILL_ASSIGNMENT, [](const PrefillAssignmentMessage& message) {
         TT_LOG_DEBUG(
@@ -193,9 +186,6 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.server_id);
       });
 
-  // Prefill-side gateway handshake: send PrefillRegistrationMessage on every
-  // successful connection-established event so the gateway can rebuild its
-  // peer view across restarts and reconnects without restarting the prefill.
   socket_manager_.setConnectionEstablishedCallback(
       [this]() { sendRegistrationIfArmed(); });
 
