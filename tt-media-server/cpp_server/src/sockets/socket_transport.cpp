@@ -137,25 +137,27 @@ void SocketTransport::stop() {
   running_ = false;
   connected_ = false;
 
-  peerSocket_ = -1;
+  peerSocket_.store(-1);
 
-  // shutdown() unblocks any in-flight accept/connect/recv so the join() below
-  // doesn't deadlock when stop() races with a thread parked in a syscall.
   if (serverSocket_) {
     ::shutdown(serverSocket_.get(), SHUT_RDWR);
   }
-  if (clientSocket_) {
-    ::shutdown(clientSocket_.get(), SHUT_RDWR);
-  }
-
-  clientSocket_.reset();
-  serverSocket_.reset();
 
   if (connectionThread_.joinable()) {
     connectionThread_.join();
   }
 
+  clientSocket_.reset();
+  serverSocket_.reset();
+
   TT_LOG_INFO("[SocketTransport] Stopped");
+}
+
+void SocketTransport::shutdownPeer() {
+  int fd = peerSocket_.load();
+  if (fd >= 0) {
+    ::shutdown(fd, SHUT_RDWR);
+  }
 }
 
 void SocketTransport::serverLoop() {
@@ -176,7 +178,7 @@ void SocketTransport::serverLoop() {
 
     configureSocket(accepted.get());
 
-    peerSocket_ = accepted.get();
+    peerSocket_.store(accepted.get());
     connected_ = true;
 
     TT_LOG_INFO("[SocketTransport] Client connected from {}:{}",
@@ -191,7 +193,7 @@ void SocketTransport::serverLoop() {
     }
 
     accepted.reset();
-    peerSocket_ = -1;
+    peerSocket_.store(-1);
     // We were connected when we entered the spin, so the transition out always
     // represents a connection loss. Not using exchange() here: send/recv error
     // paths flip connected_=false too and would race the callback away.
@@ -245,7 +247,7 @@ void SocketTransport::clientLoop() {
 
     configureSocket(clientSocket_.get());
 
-    peerSocket_ = clientSocket_.get();
+    peerSocket_.store(clientSocket_.get());
     connected_ = true;
     delayMs = reconnectInitialDelayMs_;  // reset on success
 
@@ -259,7 +261,7 @@ void SocketTransport::clientLoop() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    peerSocket_ = -1;
+    peerSocket_.store(-1);
     clientSocket_.reset();
     // See serverLoop comment: always-fire on exit-from-connected.
     connected_ = false;
@@ -272,16 +274,17 @@ void SocketTransport::clientLoop() {
 }
 
 bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
-  if (!connected_ || peerSocket_ < 0) {
-    return false;
-  }
+  if (!connected_) return false;
 
   std::lock_guard<std::mutex> lock(sendMutex_);
+
+  int fd = peerSocket_.load();
+  if (fd < 0) return false;
 
   uint32_t size = static_cast<uint32_t>(data.size());
   uint32_t netSize = htonl(size);
 
-  ssize_t sent = send(peerSocket_, &netSize, sizeof(netSize), MSG_NOSIGNAL);
+  ssize_t sent = send(fd, &netSize, sizeof(netSize), MSG_NOSIGNAL);
   if (sent != sizeof(netSize)) {
     connected_ = false;
     return false;
@@ -289,8 +292,8 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 
   size_t totalSent = 0;
   while (totalSent < data.size()) {
-    sent = send(peerSocket_, data.data() + totalSent, data.size() - totalSent,
-                MSG_NOSIGNAL);
+    sent =
+        send(fd, data.data() + totalSent, data.size() - totalSent, MSG_NOSIGNAL);
     if (sent <= 0) {
       connected_ = false;
       return false;
@@ -302,12 +305,13 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> SocketTransport::receiveRawData() {
-  if (!connected_ || peerSocket_ < 0) {
-    return {};
-  }
+  if (!connected_) return {};
+
+  int fd = peerSocket_.load();
+  if (fd < 0) return {};
 
   uint32_t netSize;
-  ssize_t received = recv(peerSocket_, &netSize, sizeof(netSize), MSG_DONTWAIT);
+  ssize_t received = recv(fd, &netSize, sizeof(netSize), MSG_DONTWAIT);
   if (received <= 0) {
     if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
       connected_ = false;
@@ -332,8 +336,7 @@ std::vector<uint8_t> SocketTransport::receiveRawData() {
   const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
 
   while (totalReceived < size) {
-    received =
-        recv(peerSocket_, data.data() + totalReceived, size - totalReceived, 0);
+    received = recv(fd, data.data() + totalReceived, size - totalReceived, 0);
     if (received > 0) {
       totalReceived += received;
       retryCount = 0;

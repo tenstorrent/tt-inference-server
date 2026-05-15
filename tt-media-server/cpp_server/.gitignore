@@ -1,6 +1,5 @@
-# Build output and CMake / FetchContent
-build/
-build-tracy/
+# Build output and CMake / FetchContent (build/, build-tracy/, build_tsan/, …)
+build*/
 .cache/
 
 # Object and dependency files (in-source or stray)

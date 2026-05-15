@@ -66,6 +66,11 @@ class SocketTransport {
   void stop();
 
   /**
+   * @brief Shutdown the active peer socket (SHUT_RDWR) without closing it.
+   */
+  void shutdownPeer();
+
+  /**
    * @brief Check if connected to peer
    */
   bool isConnected() const;
@@ -118,7 +123,7 @@ class SocketTransport {
 
   tt::utils::ScopedFd serverSocket_;
   tt::utils::ScopedFd clientSocket_;
-  int peerSocket_ = -1;  // Non-owning view of active connection FD
+  std::atomic<int> peerSocket_{-1};  // Non-owning view of active connection FD
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};

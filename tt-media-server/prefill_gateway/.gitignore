@@ -1,5 +1,5 @@
-# Build output and CMake / FetchContent
-build/
+# Build output and CMake / FetchContent (build/, build_tsan/, build_asan/, …)
+build*/
 .cache/
 
 # Object and dependency files

@@ -35,11 +35,14 @@ void SocketManager::stop() {
   }
 
   running_ = false;
-  transport_.stop();
+
+  transport_.shutdownPeer();
 
   if (messageThread_.joinable()) {
     messageThread_.join();
   }
+
+  transport_.stop();
 
   TT_LOG_INFO("[SocketManager] Stopped");
 }
