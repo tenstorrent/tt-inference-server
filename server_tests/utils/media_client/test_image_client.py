@@ -457,6 +457,10 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
         assert benchmarks["num_inference_steps"] == 20
         assert benchmarks["latency"] == 1.5
         assert benchmarks["inference_steps_per_second"] == 15.0
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify metadata
         assert report_data["model"] == "test_model"
