@@ -113,6 +113,7 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | VLM | [Llama-3.2-11B-Vision](vlm/Llama-3.2-11B-Vision_t3k.md) |
 | 🟡 Functional | VLM | [Llama-3.2-90B-Vision](vlm/Llama-3.2-90B-Vision_t3k.md) |
 | 🟡 Functional | VLM | [Qwen2.5-VL-72B-Instruct](vlm/Qwen2.5-VL-72B-Instruct_t3k.md) |
+| 🟡 Functional | VLM | [Qwen3-VL-32B-Instruct](vlm/Qwen3-VL-32B-Instruct_t3k.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_t3k.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_t3k.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_t3k.md) |
@@ -122,7 +123,6 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [Qwen2.5-Coder-32B-Instruct](llm/Qwen2.5-Coder-32B-Instruct_t3k.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_t3k.md) |
 | 🛠️ Experimental | VLM | [Qwen2.5-VL-32B-Instruct](vlm/Qwen2.5-VL-32B-Instruct_t3k.md) |
-| 🛠️ Experimental | VLM | [Qwen3-VL-32B-Instruct](vlm/Qwen3-VL-32B-Instruct_t3k.md) |
 
 ## [n300](https://tenstorrent.com/hardware/wormhole)
 
