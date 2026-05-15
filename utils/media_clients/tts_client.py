@@ -80,7 +80,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "text_to_speech",
+            "task_type": "tts",
             "task_name": self.all_params.tasks[0].task_name,
             "tolerance": self.all_params.tasks[0].score.tolerance,
             "published_score": self.all_params.tasks[0].score.published_score,
@@ -189,7 +189,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "text_to_speech",
+            "task_type": "tts",
             "performance_check": performance_check,
         }
 

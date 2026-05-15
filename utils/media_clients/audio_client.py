@@ -92,7 +92,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio",
+            "task_type": "asr",  # Automatic Speech Recognition
             "task_name": self.all_params.tasks[0].task_name,
             "tolerance": self.all_params.tasks[0].score.tolerance,
             "published_score": self.all_params.tasks[0].score.published_score,
@@ -178,7 +178,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio",
+            "task_type": "asr",
             "performance_check": performance_check,
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
             "preprocessing_enabled": is_preprocessing_enabled_for_whisper(self),

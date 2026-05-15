@@ -372,7 +372,7 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
         # Verify metadata from model_spec and all_params
         assert eval_result["model"] == "test_model"
         assert eval_result["device"] == "test_device"
-        assert eval_result["task_type"] == "audio"
+        assert eval_result["task_type"] == "asr"
         assert eval_result["task_name"] == "test_task"
         assert eval_result["tolerance"] == 0.1
         assert eval_result["published_score"] == 0.9
@@ -514,7 +514,7 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         # Verify metadata
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "audio"
+        assert report_data["task_type"] == "asr"
         assert report_data["streaming_enabled"] is True
         assert report_data["preprocessing_enabled"] is True
 
@@ -641,7 +641,7 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         # Verify model/device metadata
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "audio"
+        assert report_data["task_type"] == "asr"
         assert report_data["streaming_enabled"] is False
         assert report_data["preprocessing_enabled"] is False
 
