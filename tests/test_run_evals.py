@@ -312,6 +312,48 @@ def test_configure_openai_api_key_uses_vllm_api_key_for_llm_workflows(monkeypatc
     assert run_evals.os.environ["OPENAI_API_KEY"] == "vllm-api-key"
 
 
+def test_configure_openai_api_key_does_not_use_jwt_secret_for_media_evals(
+    monkeypatch,
+):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("API_KEY", "media-api-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
+
+    args = SimpleNamespace(jwt_secret="jwt-signing-secret")
+
+    resolved = run_evals._configure_openai_api_key(
+        args=args,
+        model_type=run_evals.ModelType.IMAGE,
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+    )
+
+    assert resolved == "media-api-key"
+    assert run_evals.os.environ["OPENAI_API_KEY"] == "media-api-key"
+
+
+def test_configure_openai_api_key_preserves_api_key_for_forge_llm_workflows(
+    monkeypatch,
+):
+    run_evals = _import_run_evals(monkeypatch)
+    monkeypatch.setenv("API_KEY", "forge-api-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
+
+    args = SimpleNamespace(jwt_secret="jwt-signing-secret")
+
+    resolved = run_evals._configure_openai_api_key(
+        args=args,
+        model_type=run_evals.ModelType.LLM,
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        inference_engine=run_evals.InferenceEngine.FORGE.value,
+    )
+
+    assert resolved == "forge-api-key"
+    assert run_evals.os.environ["OPENAI_API_KEY"] == "forge-api-key"
+    assert run_evals.os.environ["VLLM_API_KEY"] == "forge-api-key"
+
+
 def test_configure_openai_api_key_uses_default_only_when_unset(monkeypatch):
     run_evals = _import_run_evals(monkeypatch)
     monkeypatch.delenv("API_KEY", raising=False)
