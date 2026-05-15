@@ -96,8 +96,7 @@ Execution of this script might produce changes in models which are not in the sc
 
 Using the Claude, we need to revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
 
-Prompt example for Claude: `"There are lot of changes in release_model_spec.json file. Please revert all the changes for all the models that are not in the scope for the current releases."`
-List of models can be provided to the prompt or we can instruct agent to determine those dynamically by looking into `models-ci-config.json`
+Prompt example for Claude: `There are lot of changes in release_model_spec.json file. Please revert all the changes to the previous state, for all the models that are not in the scope for the current release. Changes needs to be reverted (back to HEAD) for all other models that are not in scope and their device variants, new models that were added out of scope, new device variants that were added out of scope.  Scope includes: (e.g. Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2,  FLUX.1-dev on p300x2 device, Qwen3-32B on p300x2 and Llama-3.1-8B-Instruct.)`
 
 Afterwards, `git push` the changes for this json file.
 
