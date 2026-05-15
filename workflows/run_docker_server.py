@@ -231,6 +231,10 @@ def generate_docker_run_command(
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
+        # Propagate ModelSpec.env_vars (defaults + template + device-specific)
+        # to the container so per-model declarations like MAX_NUM_SEQS take
+        # effect. Runtime-derived values below override these.
+        docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
         if api_key:
