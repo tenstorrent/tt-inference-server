@@ -381,10 +381,10 @@ void SocketTransport::setConnectionEstablishedCallback(
   connectionEstablishedCallback_ = std::move(callback);
 }
 
-void SocketTransport::setReconnectBackoff(uint32_t initial_delay_ms,
-                                          uint32_t max_delay_ms) {
-  reconnectInitialDelayMs_ = initial_delay_ms;
-  reconnectMaxDelayMs_ = max_delay_ms;
+void SocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
+                                          uint32_t maxDelayMs) {
+  reconnectInitialDelayMs_ = initialDelayMs;
+  reconnectMaxDelayMs_ = maxDelayMs;
 }
 
 }  // namespace tt::sockets

@@ -99,9 +99,9 @@ void SocketManager::setConnectionEstablishedCallback(
   transport_.setConnectionEstablishedCallback(std::move(callback));
 }
 
-void SocketManager::setReconnectBackoff(uint32_t initial_delay_ms,
-                                        uint32_t max_delay_ms) {
-  transport_.setReconnectBackoff(initial_delay_ms, max_delay_ms);
+void SocketManager::setReconnectBackoff(uint32_t initialDelayMs,
+                                        uint32_t maxDelayMs) {
+  transport_.setReconnectBackoff(initialDelayMs, maxDelayMs);
 }
 
 }  // namespace tt::sockets

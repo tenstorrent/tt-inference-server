@@ -106,7 +106,7 @@ class SocketTransport {
    * Delay doubles per failed attempt up to max, resets on success.
    * Must be called before start().
    */
-  void setReconnectBackoff(uint32_t initial_delay_ms, uint32_t max_delay_ms);
+  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
 
  private:
   void serverLoop();

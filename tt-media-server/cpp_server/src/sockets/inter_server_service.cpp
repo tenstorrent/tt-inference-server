@@ -26,14 +26,14 @@ bool InterServerService::initializeFromConfig() {
 
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
-  const bool gateway_mode = tt::config::usePrefillGateway();
+  const bool gatewayMode = tt::config::usePrefillGateway();
 
   bool success = false;
 
   // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
   // and the gateway sits between them.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (gateway_mode) {
+    if (gatewayMode) {
       TT_LOG_INFO("[InterServerService] Decode (gateway mode): connecting to {}:{}",
                   host, port);
       success = socket_manager_.initializeAsClient(host, port);
@@ -43,7 +43,7 @@ bool InterServerService::initializeFromConfig() {
       success = socket_manager_.initializeAsServer(port);
     }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    if (gateway_mode) {
+    if (gatewayMode) {
       TT_LOG_INFO(
           "[InterServerService] Prefill (gateway mode): listening on port {} "
           "for gateway",
