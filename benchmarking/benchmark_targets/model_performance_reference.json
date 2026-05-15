@@ -5869,7 +5869,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5885,7 +5885,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5901,7 +5901,7 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5917,7 +5917,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400.0,
@@ -5935,7 +5935,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5951,7 +5951,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5967,7 +5967,7 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -6618,7 +6618,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 2000,
@@ -6631,7 +6631,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 180,

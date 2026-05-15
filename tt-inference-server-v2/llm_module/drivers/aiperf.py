@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..parsers.aiperf import AIPerfParser
 from ._subprocess import find_first, load_json, run_command
 from .base import DriverResult, LLMDriver
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class AIPerfDriver(LLMDriver):
     name = "aiperf"
+    _parser = AIPerfParser()
 
     def __init__(self, venv_python: Optional[Path] = None) -> None:
         self.venv_python = Path(venv_python) if venv_python else Path(sys.executable)

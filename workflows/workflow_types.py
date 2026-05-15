@@ -44,6 +44,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
+    BENCHMARKS_GUIDELLM = auto()
     HF_SETUP = auto()
     SERVER = auto()
     TT_SMI = auto()
@@ -408,11 +409,11 @@ class ModelType(IntEnum):
         task_types = {
             ModelType.LLM: "text",
             ModelType.VLM: "vlm",
-            ModelType.AUDIO: "audio",
+            ModelType.AUDIO: "asr",  # Automatic Speech Recognition
             ModelType.IMAGE: "image",
             ModelType.CNN: "cnn",
             ModelType.EMBEDDING: "embedding",
-            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
         }
         return task_types[self]

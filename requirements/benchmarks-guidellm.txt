@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_GUIDELLM workflow venv (Python 3.11).
+# Consumed by the BENCHMARKS_GUIDELLM VenvConfig in workflows/workflow_venvs.py.
+#
+# GuideLLM is a benchmarking harness for LLM serving stacks.
+# Repository: https://github.com/neuralmagic/guidellm
+#
+# `guidellm[all]` pulls in every optional extra (perf, tokenizers, vision,
+# audio, ...). The audio extra ships `torchcodec`, which transitively pins
+# its own compatible `torch`, so we deliberately do not pin torch here.
+#
+# Extra runtime deps below are not covered by any guidellm extra:
+#   - requests, pyjwt: used by the wrapper benchmarking/run_guidellm_benchmarks.py
+#     for JWT auth-token generation and PromptClient server health checks
+#     (guidellm itself ships its own httpx client, not requests).
+
+-c constraints.txt
+
+guidellm[all]
+requests
+pyjwt

@@ -595,7 +595,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                         BenchmarkTaskParams(
                             max_concurrency=model_max_concurrency,
                             num_prompts=8,
-                            task_type="text_to_speech",
+                            task_type="tts",
                         )
                     ]
                 }

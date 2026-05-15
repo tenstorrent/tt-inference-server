@@ -92,7 +92,7 @@ class TestServer {
   TestServer() = default;
 
   // Bring up the stack in production order:
-  //   1. start services (forks worker via WorkerManager)
+  //   1. register services, then start them (forks worker via WorkerManager)
   //   2. wait for that worker to signal warmup
   //   3. open the IPC queues — test now plays the worker on those queues
   //   4. start the memory auto-responder so most tests don't have to care
@@ -102,6 +102,7 @@ class TestServer {
   //      during the first real TEST_F
   void init() {
     tt::utils::service_factory::initializeServices();
+    tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
     openIpcQueues();
     startMemoryAutoResponder();

@@ -11,7 +11,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runners/runner_interface.hpp"
+#include "runners/ipc_runner.hpp"
 
 namespace tt::worker {
 

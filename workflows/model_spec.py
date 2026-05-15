@@ -1179,7 +1179,7 @@ llm_templates = [
                 max_context=40960,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 51000000,
+                    "trace_region_size": 65000000,
                 },
             ),
             DeviceModelSpec(
@@ -1423,9 +1423,13 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 384 * 1024 * 1024,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1870,7 +1874,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 143000000,
+                    "trace_region_size": 268435456,
                 },
                 system_requirements=SystemRequirements(
                     firmware=VersionRequirement(
@@ -1931,11 +1935,12 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 58000000,
+                    "trace_region_size": 384 * 1024 * 1024,
                 },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         metadata={
             "meta-llama/Llama-3.3-70B-Instruct": {
                 "tool_call_parser_name": "llama3_json",
@@ -2270,7 +2275,7 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 105000000,
+                    "trace_region_size": 155000000,
                 },
             ),
             DeviceModelSpec(
