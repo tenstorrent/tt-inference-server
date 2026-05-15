@@ -148,7 +148,7 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
       makeMessage("assistant", "reply"),
       makeMessage("user", "newer"),
   };
-  std::string delta = renderLastUserTurn(thread);
+  std::string delta = renderLastUserTurn(thread, /*hasPriorTurn=*/true);
   EXPECT_FALSE(delta.empty());
   // Last user content should appear in the rendered single-turn template
   EXPECT_NE(delta.find("newer"), std::string::npos);
@@ -156,7 +156,25 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
 }
 
 TEST_F(ConversationHasherTest, RenderLastUserTurn_NoUserRoleReturnsEmpty) {
-  EXPECT_EQ(renderLastUserTurn({makeMessage("assistant", "no user")}), "");
+  EXPECT_EQ(renderLastUserTurn({makeMessage("assistant", "no user")},
+                               /*hasPriorTurn=*/false),
+            "");
+}
+
+TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
+  auto cfg = tt::utils::tokenizers::getTokenizerConfig();
+  if (!cfg.add_bos_token || cfg.bos_token.empty()) {
+    GTEST_SKIP() << "Tokenizer config does not add a BOS token";
+  }
+
+  std::vector<ChatMessage> lastUser = {makeMessage("user", "first turn")};
+  std::string freshDelta = renderLastUserTurn(lastUser, /*hasPriorTurn=*/false);
+  EXPECT_EQ(freshDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
+      << "Fresh sessions should keep BOS at the start of the delta";
+
+  std::string contDelta = renderLastUserTurn(lastUser, /*hasPriorTurn=*/true);
+  EXPECT_NE(contDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
+      << "Continuations must not duplicate BOS already in the KV cache";
 }
 
 TEST_F(ConversationHasherTest,
@@ -173,7 +191,7 @@ TEST_F(ConversationHasherTest,
 
   PrefixCachingInfo info = computePrefixCachingInfo(messages);
 
-  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(turns));
+  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(turns, info.hasPriorTurn));
   EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
 
   std::optional<std::vector<ChatMessage>> prior =
@@ -196,7 +214,8 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
   EXPECT_FALSE(info.lookupHash.has_value());
   EXPECT_EQ(info.registrationHash,
             hashConversationPrefix(stripToolMessages(messages)));
-  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages)));
+  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages),
+                                                 /*hasPriorTurn=*/false));
 }
 
 TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
@@ -271,5 +290,6 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StabilitySecondTurn) {
   ASSERT_TRUE(info2.hasPriorTurn);
   ASSERT_TRUE(info2.lookupHash.has_value());
   EXPECT_EQ(*info2.lookupHash, hTurn1);
-  EXPECT_EQ(info2.deltaPrompt, renderLastUserTurn(stripToolMessages(turn2)));
+  EXPECT_EQ(info2.deltaPrompt, renderLastUserTurn(stripToolMessages(turn2),
+                                                  /*hasPriorTurn=*/true));
 }

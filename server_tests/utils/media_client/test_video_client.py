@@ -175,7 +175,7 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 "_run_video_generation_benchmark",
                 return_value=status_list,
             ):
-                strategy.run_benchmark(2)
+                strategy.run_benchmark()
 
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -208,13 +208,17 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
             0.29
         )
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch.object(VideoClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
         strategy = self._create_strategy()
 
         with pytest.raises(Exception):
-            strategy.run_benchmark(2)
+            strategy.run_benchmark()
 
     @patch("utils.media_clients.video_client.get_num_calls", return_value=1)
     def test_run_benchmark_propagates_benchmark_exception(self, mock_num_calls):
@@ -227,7 +231,7 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 side_effect=RuntimeError("Error"),
             ):
                 with pytest.raises(RuntimeError):
-                    strategy.run_benchmark(1)
+                    strategy.run_benchmark()
 
 
 class TestVideoClientStrategyGenerateVideo(unittest.TestCase):
@@ -624,6 +628,10 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
             0.29
         )
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -644,6 +652,11 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
+        assert "throughput_rps" in report_data["benchmarks"]
+        # Empty status list → all percentiles are ``None`` (below threshold).
+        assert report_data["benchmarks"]["latency_p50"] is None
+        assert report_data["benchmarks"]["latency_p90"] is None
+        assert report_data["benchmarks"]["latency_p95"] is None
 
 
 class TestVideoClientStrategyCalculateLatency(unittest.TestCase):

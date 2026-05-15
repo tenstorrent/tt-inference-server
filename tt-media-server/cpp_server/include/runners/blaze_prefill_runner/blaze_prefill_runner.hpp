@@ -10,7 +10,7 @@
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
-#include "runners/runner_interface.hpp"
+#include "runners/ipc_runner.hpp"
 
 namespace tt::runners {
 
