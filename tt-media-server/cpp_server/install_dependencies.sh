@@ -42,6 +42,30 @@ fi
 
 $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends "${APT_PKGS[@]}"
+
+# tt-llm-engine's CMakeLists.txt requires CMake >= 3.24. Ubuntu 22.04 ships
+# 3.22.1, so upgrade via pip when the apt version is too old. Idempotent on
+# newer distros (already-satisfied check below).
+CMAKE_REQUIRED_MAJOR=3
+CMAKE_REQUIRED_MINOR=24
+if command -v cmake >/dev/null 2>&1; then
+    CMAKE_VERSION_RAW=$(cmake --version | head -n1 | awk '{print $3}')
+    CMAKE_MAJOR=${CMAKE_VERSION_RAW%%.*}
+    CMAKE_MINOR=${CMAKE_VERSION_RAW#*.}; CMAKE_MINOR=${CMAKE_MINOR%%.*}
+else
+    CMAKE_MAJOR=0
+    CMAKE_MINOR=0
+fi
+if [ "${CMAKE_MAJOR}" -lt "${CMAKE_REQUIRED_MAJOR}" ] || \
+   { [ "${CMAKE_MAJOR}" -eq "${CMAKE_REQUIRED_MAJOR}" ] && \
+     [ "${CMAKE_MINOR}" -lt "${CMAKE_REQUIRED_MINOR}" ]; }; then
+    echo "Upgrading CMake (have ${CMAKE_VERSION_RAW:-none}, need >= ${CMAKE_REQUIRED_MAJOR}.${CMAKE_REQUIRED_MINOR})"
+    $SUDO apt-get install -y --no-install-recommends python3-pip
+    $SUDO pip3 install --quiet --upgrade 'cmake>=3.24,<4'
+    hash -r
+    cmake --version | head -n1
+fi
+
 if ! command -v clang-format-20 >/dev/null 2>&1; then
     LLVM_SH="/tmp/llvm.sh"
     curl -sSL -o "${LLVM_SH}" https://apt.llvm.org/llvm.sh
