@@ -14,7 +14,8 @@ from utils.media_clients.test_status import VideoGenerationTestStatus
 from workflows.utils import get_num_calls, get_repo_root_path
 from workflows.workflow_types import ReportCheckTypes
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,8 @@ class VideoClientStrategy(BaseMediaStrategy):
             0
         ].score.published_score_ref
 
+        benchmark_data["performance_check"] = self._calculate_performance_check()
+
         # Make benchmark_data inside list as object
         benchmark_data = [benchmark_data]
 
@@ -135,7 +138,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -376,6 +379,9 @@ class VideoClientStrategy(BaseMediaStrategy):
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
         latency_value = self._calculate_latency(status_list)
+        performance_check = self._calculate_performance_check(
+            latency_value=latency_value
+        )
 
         report_data = {
             "benchmarks": {
@@ -395,6 +401,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "video",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
@@ -409,6 +416,25 @@ class VideoClientStrategy(BaseMediaStrategy):
             sum(status.elapsed for status in status_list) / len(status_list)
             if status_list
             else 0
+        )
+
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """Video perf check: compares latency vs configured target."""
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+            ],
+            tolerance=targets.tolerance,
         )
 
     def _run_video_generation_eval(self) -> dict:

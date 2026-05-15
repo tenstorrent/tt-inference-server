@@ -34,7 +34,7 @@
 namespace tt::api {
 
 LLMController::LLMController() {
-  if (!tt::config::isLlmServiceEnabled()) {
+  if (!tt::config::isLlmService()) {
     TT_LOG_INFO(
         "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
     return;
