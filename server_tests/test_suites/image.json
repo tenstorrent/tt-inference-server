@@ -95,7 +95,7 @@
                     "targets": {
                         "batch_size": 10,
                         "num_inference_steps": 20,
-                        "target_time": 150,
+                        "target_time": 130,
                         "lora_configs": [
                             {
                                 "lora_path": "nerijs/pixel-art-xl",
