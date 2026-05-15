@@ -209,14 +209,14 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
 
 
 def _setup_openai_api_key(args, logger):
-    """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
+    """Set OPENAI_API_KEY from the literal API key env vars used by media servers.
+
     Args:
         args: Parsed command line arguments
         logger: Logger instance
     """
     api_key = (
-        args.jwt_secret
-        or os.getenv("OPENAI_API_KEY")
+        os.getenv("OPENAI_API_KEY")
         or os.getenv("VLLM_API_KEY")
         or os.getenv("API_KEY")
         or "your-secret-key"
@@ -225,9 +225,17 @@ def _setup_openai_api_key(args, logger):
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
-def _configure_openai_api_key(args, model_type, logger) -> str:
+def _configure_openai_api_key(
+    args,
+    model_type,
+    logger,
+    inference_engine: str | None = None,
+) -> str:
     if model_type in EVAL_TASK_TYPES:
         _setup_openai_api_key(args, logger)
+    elif inference_engine in (InferenceEngine.MEDIA.value, InferenceEngine.FORGE.value):
+        _setup_openai_api_key(args, logger)
+        os.environ["VLLM_API_KEY"] = os.environ["OPENAI_API_KEY"]
     elif args.jwt_secret:
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
@@ -578,7 +586,12 @@ def main():
     assert device == model_spec.device_type
 
     # Setup authentication based on model type.
-    _configure_openai_api_key(args, model_spec.model_type, logger)
+    _configure_openai_api_key(
+        args,
+        model_spec.model_type,
+        logger,
+        inference_engine=model_spec.inference_engine,
+    )
     env_vars = _build_lm_eval_env()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
@@ -602,7 +615,6 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
-    env_config.vllm_api_key = os.getenv("VLLM_API_KEY") or os.getenv("OPENAI_API_KEY")
     env_config.base_url = os.getenv("BASE_URL")
     env_config.deploy_url = os.getenv("DEPLOY_URL", env_config.deploy_url)
     env_config.service_port = runtime_config.service_port

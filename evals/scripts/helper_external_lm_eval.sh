@@ -354,27 +354,29 @@ else
     EVAL_MODEL="local-completions"
 fi
 
-if [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" && -s "${DEFAULT_TOKEN_FILE}" && -n "${OPENAI_API_KEY:-}" && "${OPENAI_API_KEY}" != sk-tt-* ]]; then
-    echo "OPENAI_API_KEY is set but does not look like a TT Console key; using ${DEFAULT_TOKEN_FILE} for ${DEFAULT_BASE_URL}." >&2
-    export OPENAI_API_KEY="$(read_default_token)"
-elif [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" && -n "${OPENAI_API_KEY:-}" && "${OPENAI_API_KEY}" != sk-tt-* ]]; then
-    print_tt_key_setup "OPENAI_API_KEY is set but does not look like a TT Console key, and ${DEFAULT_TOKEN_FILE} was not found."
-    exit 1
+if [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" ]]; then
+    if [[ -n "${OPENAI_API_KEY:-}" && "${OPENAI_API_KEY}" == sk-tt-* ]]; then
+        export OPENAI_API_KEY
+    elif [[ -n "${VLLM_API_KEY:-}" && "${VLLM_API_KEY}" == sk-tt-* ]]; then
+        export OPENAI_API_KEY="${VLLM_API_KEY}"
+    elif [[ -s "${DEFAULT_TOKEN_FILE}" ]]; then
+        if [[ -n "${OPENAI_API_KEY:-}" && "${OPENAI_API_KEY}" != sk-tt-* ]]; then
+            echo "OPENAI_API_KEY is set but does not look like a TT Console key; using ${DEFAULT_TOKEN_FILE} for ${DEFAULT_BASE_URL}." >&2
+        elif [[ -n "${VLLM_API_KEY:-}" && "${VLLM_API_KEY}" != sk-tt-* ]]; then
+            echo "VLLM_API_KEY is set but does not look like a TT Console key; using ${DEFAULT_TOKEN_FILE} for ${DEFAULT_BASE_URL}." >&2
+        fi
+        export OPENAI_API_KEY="$(read_default_token)"
+    elif [[ -n "${OPENAI_API_KEY:-}" || -n "${VLLM_API_KEY:-}" ]]; then
+        print_tt_key_setup "No valid TT Console API key found. Set OPENAI_API_KEY/VLLM_API_KEY to an sk-tt-* key, or create ${DEFAULT_TOKEN_FILE}."
+        exit 1
+    else
+        print_tt_key_setup "No TT Console API key found. OPENAI_API_KEY/VLLM_API_KEY are unset and ${DEFAULT_TOKEN_FILE} does not exist."
+        exit 1
+    fi
 elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
     export OPENAI_API_KEY
-elif [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" && -s "${DEFAULT_TOKEN_FILE}" && -n "${VLLM_API_KEY:-}" && "${VLLM_API_KEY}" != sk-tt-* ]]; then
-    echo "VLLM_API_KEY is set but does not look like a TT Console key; using ${DEFAULT_TOKEN_FILE} for ${DEFAULT_BASE_URL}." >&2
-    export OPENAI_API_KEY="$(read_default_token)"
-elif [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" && -n "${VLLM_API_KEY:-}" && "${VLLM_API_KEY}" != sk-tt-* ]]; then
-    print_tt_key_setup "VLLM_API_KEY is set but does not look like a TT Console key, and ${DEFAULT_TOKEN_FILE} was not found."
-    exit 1
 elif [[ -n "${VLLM_API_KEY:-}" ]]; then
     export OPENAI_API_KEY="${VLLM_API_KEY}"
-elif [[ -s "${DEFAULT_TOKEN_FILE}" ]]; then
-    export OPENAI_API_KEY="$(read_default_token)"
-elif [[ "${ROOT_URL}" == "${DEFAULT_BASE_URL}" ]]; then
-    print_tt_key_setup "No TT Console API key found. OPENAI_API_KEY/VLLM_API_KEY are unset and ${DEFAULT_TOKEN_FILE} does not exist."
-    exit 1
 else
     export OPENAI_API_KEY="your-secret-key"
 fi
