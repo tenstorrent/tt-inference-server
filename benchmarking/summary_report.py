@@ -17,7 +17,7 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, ReportCheckTypes
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
@@ -415,16 +415,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "num_requests": benchmarks_data.get("benchmarks").get(
                     "num_requests", 0
                 ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
                 "mean_latency_ms": benchmarks_data.get("benchmarks").get("latency", 0)
                 * 1000,
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                    "inference_steps_per_second", 0
-                ),
                 "filename": filename,
                 "task_type": "cnn",
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             }
             return format_metrics(metrics)
         elif params.get("task_type") == "image":
@@ -450,6 +445,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 ),
                 "filename": filename,
                 "task_type": "image",
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             }
             return format_metrics(metrics)
 
@@ -480,6 +476,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 else None
             ),
             "wer": benchmarks_data.get("wer", None),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -500,9 +497,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
             "task_type": "audio",
-            "accuracy_check": benchmarks_data.get("benchmarks").get(
-                "accuracy_check", 0
-            ),
+            # ``performance_check`` lives at the top level of the report JSON
+            # (it's a perf-target check, not an accuracy/quality check).
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
             "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
             "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
@@ -540,6 +537,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "request_throughput": benchmarks_data.get("benchmarks").get(
                 "req_tput", 0.0
             ),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -565,6 +563,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "num_inference_steps": benchmarks_data.get("benchmarks").get(
                 "num_inference_steps", 0
             ),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -780,7 +779,7 @@ def create_audio_display_dict(
         ("mean_ttft_ms", "TTFT (ms)"),
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
-        ("accuracy_check", "Accuracy Check"),
+        ("performance_check", "Performance Check"),
         ("t/s/u", "T/S/U"),
         ("rtr", "RTR"),
     ]
@@ -824,6 +823,7 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("rtr", "RTR"),
         ("p90_latency_ms", "P90 Latency (ms)"),
         ("p95_latency_ms", "P95 Latency (ms)"),
+        ("performance_check", "Performance Check"),
         # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
         # Similar to how image and audio pipelines work
     ]
@@ -856,6 +856,7 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -874,6 +875,7 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
         ("num_inference_steps", "Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
         ("inference_steps_per_second", "Steps/Sec"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -892,9 +894,9 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("num_inference_steps", "Num Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
         ("task_type", "Task Type"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -913,6 +915,7 @@ def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
         ("mean_latency_ms", "Latency (ms)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}

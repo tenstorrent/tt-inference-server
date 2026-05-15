@@ -16,8 +16,9 @@ from workflows.workflow_types import ReportCheckTypes, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 # Local imports
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import AudioTestStatus, EmbeddingTestStatus
+from typing import Optional
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -138,6 +139,40 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
 
         return metrics
 
+    def _calculate_performance_check(
+        self,
+        tput_user_value: Optional[float] = None,
+        tput_prefill_value: Optional[float] = None,
+        e2el_ms_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """Embedding perf check: compares throughput / E2EL vs configured targets.
+
+        ``e2el_ms_value`` is already in milliseconds (vLLM ``Mean E2EL``), and
+        ``targets.e2el_ms`` is also in ms — no unit conversion needed.
+        """
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "tput_user",
+                    tput_user_value,
+                    targets.tput_user,
+                    lower_is_better=False,
+                ),
+                PerfCheck(
+                    "tput_prefill",
+                    tput_prefill_value,
+                    targets.tput_prefill,
+                    lower_is_better=False,
+                ),
+                PerfCheck(
+                    "e2el_ms", e2el_ms_value, targets.e2el_ms, lower_is_better=True
+                ),
+            ],
+            tolerance=targets.tolerance,
+        )
+
     def _generate_benchmarking_report(self, metrics: dict):
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
@@ -157,15 +192,19 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         tput_prefill = (
             total_input_tokens / benchmark_duration if benchmark_duration else 0.0
         )
+        tput_user = tput_prefill / float(self.concurrency) if self.concurrency else 0.0
+        performance_check = self._calculate_performance_check(
+            tput_user_value=tput_user,
+            tput_prefill_value=tput_prefill,
+            e2el_ms_value=mean_e2el,
+        )
 
         report_data = {
             "benchmarks": {
                 "isl": self.isl,
                 "concurrency": self.concurrency,
                 "num_requests": successful_requests + failed_requests,
-                "tput_user": tput_prefill / float(self.concurrency)
-                if self.concurrency
-                else 0.0,
+                "tput_user": tput_user,
                 "tput_prefill": tput_prefill,
                 "e2el": mean_e2el,
                 "req_tput": req_tput,
@@ -174,6 +213,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "embedding",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
@@ -308,6 +348,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             "score": metrics.get("main_score"),
             "published_score_ref": task.score.published_score_ref,
             "accuracy_check": ReportCheckTypes.NA,
+            "performance_check": self._calculate_performance_check(),
         }
         report_data.update(metrics)
 
