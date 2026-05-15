@@ -18,6 +18,10 @@ namespace tt::sockets {
 class InterServerService;
 }
 
+namespace tt::api::resolvers {
+class ChatCompletionsResolver;
+}  // namespace tt::api::resolvers
+
 namespace tt::services {
 
 class ServiceContainer {
@@ -34,7 +38,9 @@ class ServiceContainer {
    *  via `registerService()`. */
   void initialize(std::shared_ptr<sockets::InterServerService> socket,
                   std::shared_ptr<DisaggregationService> disaggregation,
-                  std::shared_ptr<SessionManager> sessionMgr);
+                  std::shared_ptr<SessionManager> sessionMgr,
+                  std::shared_ptr<api::resolvers::ChatCompletionsResolver>
+                      chatCompletionsResolver);
 
   std::shared_ptr<IService> configuredService() const;
 
@@ -46,6 +52,10 @@ class ServiceContainer {
   }
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;
+  }
+  std::shared_ptr<api::resolvers::ChatCompletionsResolver>
+  chatCompletionsResolver() const {
+    return chatCompletionsResolver_;
   }
 
   void registerService(config::ModelService key,
@@ -61,6 +71,8 @@ class ServiceContainer {
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<DisaggregationService> disaggregation_;
   std::shared_ptr<SessionManager> sessionManager_;
+  std::shared_ptr<api::resolvers::ChatCompletionsResolver>
+      chatCompletionsResolver_;
 };
 
 }  // namespace tt::services

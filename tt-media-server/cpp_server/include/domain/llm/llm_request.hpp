@@ -147,6 +147,11 @@ struct LLMRequest : BaseRequest {
       nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
+  uint64_t registrationHash =
+      0;  // xxhash of the full current conversation. Populated by the
+          // chat-completions resolver and consumed by the disaggregation
+          // service to route prefill to a cached slot. 0 means "no prefix
+          // routing was performed".
 
   std::string toString() const {
     std::string promptInfo;
