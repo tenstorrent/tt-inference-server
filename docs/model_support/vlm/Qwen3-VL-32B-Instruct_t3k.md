@@ -22,7 +22,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-VL-32B-Instruct:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-ba32283-4386a82 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-32afcd8-7678b70 \
   --model Qwen3-VL-32B-Instruct \
   --tt-device t3k
 ```
@@ -39,10 +39,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [Qwen/Qwen3-VL-32B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/ba32283/models/tt_transformers) |
-| tt-metal Commit | `ba32283` |
-| vLLM Commit | `4386a82` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-ba32283-4386a82` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/32afcd8/models/tt_transformers) |
+| tt-metal Commit | `32afcd8` |
+| vLLM Commit | `7678b70` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-32afcd8-7678b70` |

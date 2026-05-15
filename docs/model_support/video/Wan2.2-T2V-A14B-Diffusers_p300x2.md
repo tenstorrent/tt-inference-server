@@ -33,6 +33,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [Wan-AI/Wan2.2-T2V-A14B-Diffusers](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
-| tt-metal Commit | `555f240` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/32afcd8/models/tt_transformers) |
+| tt-metal Commit | `32afcd8` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-32afcd8` |
