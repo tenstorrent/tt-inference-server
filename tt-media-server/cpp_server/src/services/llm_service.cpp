@@ -464,7 +464,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
               workerIdx, taskId);
         }
         tt::metrics::ServerMetrics::instance().onRequestCompleted(
-            taskId, finalFinishReason.value_or("stop"));
+            taskId, finalFinishReason.value_or("error"));
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
         toolChoiceMap.take(taskId);  // Clean up tool choice
