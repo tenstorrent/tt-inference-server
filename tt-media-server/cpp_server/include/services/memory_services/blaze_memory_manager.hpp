@@ -27,7 +27,7 @@ class BlazeMemoryManager : public MemoryManager {
   void handleRequest(const domain::ManageMemoryTask& request) override;
 
   void handleResponse(uint32_t taskId, uint32_t slotId) override;
-  
+
   void pushStopSignal(uint32_t taskId);
 
  private:

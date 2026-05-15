@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include <unordered_map>
+#include <memory>
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
@@ -28,10 +28,10 @@ inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
           .tokens = {}};
 }
 
-inline ds::ISRequest makeCancelRequest(uint32_t requestId) {
-  return {.type = ds::RequestType::CANCEL,
+inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
+  return {.type = ds::RequestType::STOP,
           .request_id = requestId,
-          .slot_id = ds::INVALID_SLOT,
+          .slot_id = slotId,
           .tokens = {}};
 }
 
@@ -75,48 +75,19 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
 
 struct SlotContext {
   uint32_t taskId;
-  bool stopped = false;
   bool ignoreEos;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
   uint32_t tokensGenerated = 0;
 };
 
-struct SlotIndex {
-  std::optional<SlotContext> getSlotContextByTaskId(uint32_t taskId) {
-    if (auto it = slotContextByTaskId.find(taskId);
-        it != slotContextByTaskId.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-  std::optional<SlotContext> getSlotContextBySlotId(uint32_t slotId) {
-    if (auto it = slotContextBySlotId.find(slotId);
-        it != slotContextBySlotId.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-
-  void eraseSlotContextByTaskId(uint32_t taskId) {
-    slotContextByTaskId.erase(taskId);
-  }
-  void eraseSlotContextBySlotId(uint32_t slotId) {
-    slotContextBySlotId.erase(slotId);
-  }
-  void addSlotContext(uint32_t slotId, SlotContext context) {
-    slotContextByTaskId.insert_or_assign(context.taskId, context);
-    slotContextBySlotId.insert_or_assign(slotId, context);
-  }
-
-  bool empty() {
-    return slotContextByTaskId.empty() && slotContextBySlotId.empty();
-  }
-
-  size_t size() { return slotContextByTaskId.size(); }
-
-  std::unordered_map<uint32_t, SlotContext> slotContextByTaskId;
-  std::unordered_map<uint32_t, SlotContext> slotContextBySlotId;
+// Buffers a deferred SUBMIT/CONTINUE for a slot that currently has an
+// in-flight STOP. The matching STOP ack carries `request_id ==
+// expectedStopRequestId` (the cancelled sequence's taskId); once it arrives
+// the deferred `sequence` (if any) is re-submitted via handleRequest.
+struct PendingSubmit {
+  uint32_t expectedStopRequestId;
+  std::unique_ptr<tt::domain::llm::Sequence> sequence;
 };
 
 }  // namespace tt::runners::blaze_utils

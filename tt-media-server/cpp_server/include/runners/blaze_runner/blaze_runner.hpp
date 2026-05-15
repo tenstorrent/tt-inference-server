@@ -18,7 +18,6 @@
 #include "ipc/interface/task_queue.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/runner_interface.hpp"
-#include "services/memory_services/blaze_memory_manager.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
@@ -47,9 +46,9 @@ class BlazeRunner : public IRunner {
   void drainAndHandleMemoryResponses();
   void drainAndHandleOutputs();
   void drainAndHandleCancelRequests();
+  inline void handleCancelRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleCancelRequest(uint32_t taskId);
   inline void handleMemoryResponse(const ds::SchedulerResponse& response);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
@@ -63,10 +62,15 @@ class BlazeRunner : public IRunner {
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* cancelQueue;
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
+  // Slots with an outstanding STOP whose ack has not yet arrived. Any new
+  // SUBMIT/CONTINUE for such a slot must be deferred until the ack, because
+  // DecodeScheduler rejects SUBMIT/CONTINUE while a slot has a STOP pending.
+  // On STOP ack (handleMemoryResponse) any deferred sequence is re-submitted.
+  std::unordered_map<uint32_t, blaze_utils::PendingSubmit> pendingSubmits;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
-  blaze_utils::SlotIndex slotIndex;
+  std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
   std::atomic<bool> stopped{false};
-  std::unique_ptr<tt::services::BlazeMemoryManager> memoryManager;
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
 };
