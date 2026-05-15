@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cmath>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,7 +32,8 @@ struct ImageResponse : BaseResponse {
     for (const auto& img : images) imagesArr.append(img);
     json["images"] = std::move(imagesArr);
     if (generation_time_seconds > 0.0) {
-      json["generation_time"] = generation_time_seconds;
+      json["generation_time"] =
+          std::round(generation_time_seconds * 100.0) / 100.0;
     }
     return json;
   }
