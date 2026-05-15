@@ -163,14 +163,8 @@ void LLMService::preProcess(LLMRequest& request) const {
   }
 
   if (std::holds_alternative<std::string>(request.prompt)) {
-    auto text = std::get<std::string>(request.prompt);
-    static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
-    bool hasBos = text.size() >= cfg.bos_token.size() &&
-                  text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
-    if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
-      text = cfg.bos_token + text;
-    }
-    request.prompt = tt::utils::tokenizers::activeTokenizer().encode(text);
+    request.prompt = tt::utils::tokenizers::activeTokenizer().encode(
+        std::get<std::string>(request.prompt));
   }
 }
 
