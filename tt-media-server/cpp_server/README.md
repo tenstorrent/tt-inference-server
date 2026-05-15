@@ -872,7 +872,7 @@ With `LLM_DEVICE_BACKEND=mock`, the stub runner can be used to benchmark server 
 
 ### Prerequisites
 
-1. **CMake** >= 3.19
+1. **CMake** >= 3.24
 2. **Drogon Framework** >= 1.8
 3. **C++20 compatible compiler** (GCC 10+, Clang 12+)
 4. **Boost** (headers; used for Boost.Interprocess in the LLM engine IPC queue).
@@ -1021,7 +1021,7 @@ To compare with the Python server:
   ```
 2. **CMake too old:**
   ```bash
-   cmake --version  # Need 3.19+
+  cmake --version  # Need 3.24+
   ```
 
 ### Server crashes

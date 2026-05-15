@@ -32,7 +32,7 @@ SUDO=""
 [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 
 APT_PKGS=(
-    build-essential cmake g++ pkg-config curl git wget
+    build-essential g++ pkg-config curl git wget
     libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libboost-all-dev
 )
 if [ "${INSTALL_KAFKA}" = 1 ]; then
@@ -42,6 +42,8 @@ fi
 
 $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends "${APT_PKGS[@]}"
+# CMakeLists.txt requires >= 3.24; Ubuntu 22.04 apt ships 3.22, so always pull Kitware's binary.
+curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-$(uname -m).sh" -o /tmp/cmake.sh && $SUDO sh /tmp/cmake.sh --prefix=/usr/local --skip-license --exclude-subdir && rm -f /tmp/cmake.sh
 if ! command -v clang-format-20 >/dev/null 2>&1; then
     LLVM_SH="/tmp/llvm.sh"
     curl -sSL -o "${LLVM_SH}" https://apt.llvm.org/llvm.sh
