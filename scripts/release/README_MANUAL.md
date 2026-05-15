@@ -172,7 +172,11 @@ As a comment, at the top of the HTML body, within the commented section, add met
 ## Step 3: tag stable branch with version value
 
 * we create a new tag for `stable` HEAD value with value `vx.x.x`
+  `git tag vx.x.x`
+  `git push origin vx.x.x`
 * we rename the `stable` branch to `vx.x.x` value
+   git switch -c vx.x.x
+   git push --set-upstream origin vx.x.x
 
 ## Create GitHub RELEASE Object
 
