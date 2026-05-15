@@ -23,7 +23,7 @@
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 namespace tt::services {
 

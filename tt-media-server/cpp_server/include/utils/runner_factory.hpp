@@ -11,7 +11,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runners/runner_interface.hpp"
+#include "runtime/runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {
 

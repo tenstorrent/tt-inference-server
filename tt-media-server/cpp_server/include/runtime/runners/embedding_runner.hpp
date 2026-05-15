@@ -9,7 +9,7 @@
 
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runners/runner_interface.hpp"
+#include "runtime/runners/runner_interface.hpp"
 
 namespace tt::runners {
 

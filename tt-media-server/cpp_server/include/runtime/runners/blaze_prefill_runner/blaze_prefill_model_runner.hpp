@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "ipc/posix/slot_ring_buffer.hpp"
-#include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
+#include "runtime/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
 namespace blaze_prefill {
 

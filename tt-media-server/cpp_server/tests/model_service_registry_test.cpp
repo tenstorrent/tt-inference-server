@@ -11,7 +11,7 @@
 #include "services/base_service.hpp"
 #include "services/service_container.hpp"
 #include "services/service_registry.hpp"
-#include "utils/runner_registry.hpp"
+#include "runtime/runners/runner_registry.hpp"
 
 namespace {
 

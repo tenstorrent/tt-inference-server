@@ -9,17 +9,17 @@
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
-#include "runners/embedding_runner.hpp"
-#include "runners/llm_runner.hpp"
+#include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/embedding_runner.hpp"
+#include "runtime/runners/llm_runner.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
-#include "utils/runner_registry.hpp"
+#include "runtime/runners/runner_registry.hpp"
 
 #ifdef ENABLE_BLAZE
-#include "runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_runner.hpp"
 #endif
 
 namespace tt::services {

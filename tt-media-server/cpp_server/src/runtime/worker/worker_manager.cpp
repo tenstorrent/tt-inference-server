@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 #include <sys/prctl.h>
 #include <sys/wait.h>

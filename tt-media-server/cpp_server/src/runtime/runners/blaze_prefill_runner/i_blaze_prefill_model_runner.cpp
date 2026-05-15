@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
+#include "runtime/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
-#include "runners/blaze_prefill_runner/blaze_prefill_model_runner.hpp"
+#include "runtime/runners/blaze_prefill_runner/blaze_prefill_model_runner.hpp"
 #include "utils/logger.hpp"
 
 namespace blaze_prefill {

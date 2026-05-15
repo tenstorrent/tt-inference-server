@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_runner.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -11,7 +11,7 @@
 #include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "utils/logger.hpp"
-#include "worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/single_process_worker_metrics.hpp"
 
 namespace {
 using namespace tt_llm_engine::scheduler::decode;

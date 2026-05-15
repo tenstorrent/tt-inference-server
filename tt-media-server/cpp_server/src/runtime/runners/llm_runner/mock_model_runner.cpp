@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/model_runner.hpp"
+#include "runtime/runners/llm_runner/model_runner.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 

@@ -16,8 +16,8 @@
 #include "config/settings.hpp"
 #include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "utils/logger.hpp"
-#include "worker/single_process_worker_metrics.hpp"
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::test {
 

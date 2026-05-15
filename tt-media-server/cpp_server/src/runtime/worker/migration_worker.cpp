@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "worker/migration_worker.hpp"
+#include "runtime/worker/migration_worker.hpp"
 
 #include <json/json.h>
 

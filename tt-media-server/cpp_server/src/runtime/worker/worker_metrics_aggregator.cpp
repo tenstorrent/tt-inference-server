@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "worker/worker_metrics_aggregator.hpp"
+#include "runtime/worker/worker_metrics_aggregator.hpp"
 
 #include <sstream>
 #include <vector>
 
 #include "utils/logger.hpp"
-#include "worker/worker_info.hpp"
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_info.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 namespace tt::worker {
 

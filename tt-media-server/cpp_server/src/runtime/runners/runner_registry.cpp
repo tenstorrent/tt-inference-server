@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "utils/runner_registry.hpp"
+#include "runtime/runners/runner_registry.hpp"
 
 #include "utils/logger.hpp"
 

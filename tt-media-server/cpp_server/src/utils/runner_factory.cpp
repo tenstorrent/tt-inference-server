@@ -8,7 +8,7 @@
 
 #include "services/model_service_registration.hpp"
 #include "utils/logger.hpp"
-#include "utils/runner_registry.hpp"
+#include "runtime/runners/runner_registry.hpp"
 
 namespace tt::utils::runner_factory {
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/single_process_worker_metrics.hpp"
 
 #include <unistd.h>
 
@@ -9,8 +9,8 @@
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
-#include "worker/blaze_metrics_layout.hpp"
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/blaze_metrics_layout.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
 

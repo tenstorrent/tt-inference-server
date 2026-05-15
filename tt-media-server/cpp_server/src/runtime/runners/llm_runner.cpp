@@ -1,4 +1,4 @@
-#include "runners/llm_runner.hpp"
+#include "runtime/runners/llm_runner.hpp"
 
 #include <chrono>
 #include <memory>
@@ -8,7 +8,7 @@
 #include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "runners/guided_decoder_manager.hpp"
+#include "runtime/runners/guided_decoder_manager.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"

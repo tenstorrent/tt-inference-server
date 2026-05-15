@@ -14,8 +14,8 @@
 #include <thread>
 #include <vector>
 
-#include "worker/single_process_worker.hpp"
-#include "worker/worker_info.hpp"
+#include "runtime/worker/single_process_worker.hpp"
+#include "runtime/worker/worker_info.hpp"
 
 namespace tt::ipc {
 class IWarmupSignalQueue;

@@ -18,7 +18,7 @@
 #include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tool_call_id_generator.hpp"
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 namespace tt::services {
 

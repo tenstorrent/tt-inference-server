@@ -5,7 +5,7 @@
 
 #include <cstddef>
 
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::worker::sp_pipeline {
 

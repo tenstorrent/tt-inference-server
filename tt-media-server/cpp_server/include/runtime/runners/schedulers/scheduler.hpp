@@ -13,7 +13,7 @@
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runners/llm_runner/block_manager.hpp"
+#include "runtime/runners/llm_runner/block_manager.hpp"
 
 namespace tt::runners::schedulers {
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 #include <fcntl.h>
 #include <sys/mman.h>

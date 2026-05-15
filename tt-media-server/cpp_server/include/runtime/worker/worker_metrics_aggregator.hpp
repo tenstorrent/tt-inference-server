@@ -12,8 +12,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "worker/worker_metrics_renderer.hpp"
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/worker_metrics_renderer.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
 class WorkerManager;

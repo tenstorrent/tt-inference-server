@@ -5,7 +5,7 @@
 
 #include <prometheus/registry.h>
 
-#include "worker/worker_metrics_shm.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
 

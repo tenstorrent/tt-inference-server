@@ -15,9 +15,9 @@
 #include "domain/llm/sequence.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/interface/cancel_queue.hpp"
-#include "runners/llm_runner.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "runtime/runners/llm_runner.hpp"
+#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
 

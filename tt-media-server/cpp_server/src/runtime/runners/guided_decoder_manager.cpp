@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/guided_decoder_manager.hpp"
+#include "runtime/runners/guided_decoder_manager.hpp"
 
 #include <json/json.h>
 #include <xgrammar/xgrammar.h>

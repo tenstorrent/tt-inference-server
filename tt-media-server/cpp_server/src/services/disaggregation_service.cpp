@@ -8,7 +8,7 @@
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 namespace tt::services {
 

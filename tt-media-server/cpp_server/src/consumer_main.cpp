@@ -11,7 +11,7 @@
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
-#include "worker/migration_worker.hpp"
+#include "runtime/worker/migration_worker.hpp"
 
 namespace {
 

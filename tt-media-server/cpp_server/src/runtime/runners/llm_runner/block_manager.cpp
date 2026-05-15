@@ -1,11 +1,11 @@
-#include "runners/llm_runner/block_manager.hpp"
+#include "runtime/runners/llm_runner/block_manager.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/hash.hpp"
+#include "runtime/runners/llm_runner/hash.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::llm_engine {

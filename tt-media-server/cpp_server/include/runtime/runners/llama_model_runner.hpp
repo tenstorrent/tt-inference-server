@@ -6,7 +6,7 @@
 #include <atomic>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/model_runner.hpp"
+#include "runtime/runners/llm_runner/model_runner.hpp"
 
 namespace tt::runners::llm_engine {
 

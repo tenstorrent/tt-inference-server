@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "runners/embedding_runner.hpp"
+#include "runtime/runners/embedding_runner.hpp"
 
 #include <Python.h>
 
