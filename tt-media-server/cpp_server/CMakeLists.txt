@@ -24,7 +24,7 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
-find_package(Jsoncpp REQUIRED)
+find_package(jsoncpp REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Try to find cereal, or fetch it if not available
