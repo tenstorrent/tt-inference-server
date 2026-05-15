@@ -174,6 +174,10 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
             assert report_data["benchmarks"][key] == value
         assert "num_inference_steps" not in report_data["benchmarks"]
         assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
@@ -307,6 +311,10 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
         assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -327,6 +335,11 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
         assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        # Empty status list → all percentiles are ``None`` (below threshold).
+        assert report_data["benchmarks"]["latency_p50"] is None
+        assert report_data["benchmarks"]["latency_p90"] is None
+        assert report_data["benchmarks"]["latency_p95"] is None
 
 
 class TestCnnClientStrategyCalculateLatency(unittest.TestCase):
