@@ -1484,7 +1484,6 @@ jobs:
           find prefill_gateway/src -name '*.cpp' -print0 \
             | xargs -0 clang-tidy-20 \
                 -p prefill_gateway/build \
-                --header-filter='prefill_gateway/include/.*' \
                 --warnings-as-errors='*'
 
       - name: Run prefill_gateway unit tests

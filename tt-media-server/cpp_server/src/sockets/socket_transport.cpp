@@ -292,8 +292,8 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 
   size_t totalSent = 0;
   while (totalSent < data.size()) {
-    sent =
-        send(fd, data.data() + totalSent, data.size() - totalSent, MSG_NOSIGNAL);
+    sent = send(fd, data.data() + totalSent, data.size() - totalSent,
+                MSG_NOSIGNAL);
     if (sent <= 0) {
       connected_ = false;
       return false;
