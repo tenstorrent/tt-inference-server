@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..parsers.vllm import VLLMBenchParser
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class VLLMBenchDriver(LLMDriver):
     name = "vllm"
+    _parser = VLLMBenchParser()
 
     def __init__(self, vllm_binary: Optional[str] = None) -> None:
         self.vllm_binary = vllm_binary or shutil.which("vllm") or "vllm"

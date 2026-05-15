@@ -13,14 +13,8 @@ from workflows.workflow_types import (
 FAIL_CHECK = int(ReportCheckTypes.FAIL)
 TARGET_CHECK_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
+
 BENCHMARK_ACTUAL_FIELDS = {
-    "ttft": ("ttft",),
-    "latency": ("latency",),
-    "tput_user": ("tput_user",),
-    "tput_prefill": ("tput_prefill",),
-    "e2el_ms": ("e2el_ms",),
-    "rtr": ("rtr",),
-    "concurrency": ("concurrency",),
     "tput": ("tput", "tput_user", "inference_steps_per_second"),
 }
 

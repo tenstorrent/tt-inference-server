@@ -2,15 +2,7 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""InferenceMax driver.
-
-No v1 reference — fresh runner that invokes
-``benchmark_serving.py`` from an InferenceMax checkout. The script
-path is configurable so callers can point at their local clone.
-The result file matches v1 ``vllm bench serve``'s flat shape (the
-InferenceMax fork is descended from it), parsed by
-:class:`llm_module.parsers.InferenceMaxParser`.
-"""
+"""InferenceMax driver."""
 
 from __future__ import annotations
 
@@ -21,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..parsers.inferencex import InferenceMaxParser
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
@@ -29,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class InferenceMaxDriver(LLMDriver):
     name = "inferencex"
+    _parser = InferenceMaxParser()
 
     def __init__(
         self,

@@ -70,14 +70,20 @@ std::optional<std::vector<ChatMessage>> extractPriorTurnPrefix(
 uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix);
 
 /**
- * Render the LAST user message on its own, with addGenerationPrompt=true and
- * without any BOS/system wrapper. This is the delta sent to the model when
- * the slot's KV cache already contains the prior-turn prefix.
+ * Render the LAST user message on its own, with addGenerationPrompt=true.
  *
- * @param messages Input chat messages (must end with user message)
+ * BOS handling: when hasPriorTurn is true, the leading BOS produced by the
+ * chat template is stripped because it is already in the slot's KV cache.
+ * When false, BOS is kept so the model sees the start-of-sequence marker on
+ * the fresh conversation.
+ *
+ * @param messages Input chat messages (typically ends with user message)
+ * @param hasPriorTurn True iff the conversation continues a previously-cached
+ *     [assistant, user] turn (see extractPriorTurnPrefix).
  * @return Rendered delta prompt for the last user turn
  */
-std::string renderLastUserTurn(const std::vector<ChatMessage>& messages);
+std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
+                               bool hasPriorTurn);
 
 /**
  * Routing information computed from conversation messages for prefix caching.
