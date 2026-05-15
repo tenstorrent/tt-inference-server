@@ -13,7 +13,8 @@ import requests
 from utils.media_clients.test_status import CnnGenerationTestStatus
 from workflows.workflow_types import ReportCheckTypes
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,8 @@ class CnnClientStrategy(BaseMediaStrategy):
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
+        latency_for_perf_check: Optional[float] = None
+
         if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
             logger.info("Adding eval results from eval spec test to benchmark data")
             benchmark_data["accuracy_check"] = eval_result.get(
@@ -74,6 +77,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             logger.info("No eval results from eval spec test to add to benchmark data")
             latency_value = self._calculate_latency(status_list)
             logger.info(f"Extracted latency value (s): {latency_value}")
+            latency_for_perf_check = latency_value
 
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
@@ -82,6 +86,10 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
+
+        benchmark_data["performance_check"] = self._calculate_performance_check(
+            latency_value=latency_for_perf_check,
+        )
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -100,7 +108,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -251,19 +259,23 @@ class CnnClientStrategy(BaseMediaStrategy):
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
         latency_value = self._calculate_latency(status_list)
+        performance_check = self._calculate_performance_check(
+            latency_value=latency_value
+        )
 
-        # CNN inference is not iterative, so step-based fields are 0.
+        # CNN inference is single-shot, not iterative, so step-based fields
+        # (``num_inference_steps`` / ``inference_steps_per_second``) do not
+        # apply and are intentionally omitted from the CNN benchmark JSON.
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": 0,
                 "latency": latency_value,
-                "inference_steps_per_second": 0,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "cnn",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
@@ -278,6 +290,29 @@ class CnnClientStrategy(BaseMediaStrategy):
             sum(status.elapsed for status in status_list) / len(status_list)
             if status_list
             else 0
+        )
+
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """CNN perf check: compares latency vs configured target.
+
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
+        """
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+            ],
+            tolerance=targets.tolerance,
         )
 
     def _run_mobilenetv2_eval(self) -> dict:

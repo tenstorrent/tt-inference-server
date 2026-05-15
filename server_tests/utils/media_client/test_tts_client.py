@@ -296,7 +296,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
     # `_calculate_performance_check` is computed as
     # ``targets.ttft_ms / 1000 * (1 + tolerance)``.
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_all_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=2.0, tolerance=0.05)
@@ -308,7 +308,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 2  # PASS
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_latency_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=0.05)
@@ -320,7 +320,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 3  # FAIL
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_rtr_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=5.0, tolerance=0.05)
@@ -331,7 +331,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == 3  # FAIL
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_no_targets(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=None, rtr=None, tolerance=None)
@@ -342,7 +342,7 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 
         assert result == ReportCheckTypes.NA
 
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     def test_performance_check_default_tolerance(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(ttft_ms=100, rtr=None, tolerance=None)
@@ -483,7 +483,7 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         return TtsClientStrategy(all_params, model_spec, device, "/tmp", 8000)
 
     @patch("utils.media_clients.tts_client.get_num_calls", return_value=2)
-    @patch("utils.media_clients.tts_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_run_eval_success(
@@ -614,10 +614,11 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
         assert report_data["task_type"] == "text_to_speech"
-        # accuracy_check / performance_check live on the eval report,
-        # not the benchmark JSON.
+        # accuracy_check stays on the eval report; performance_check is now
+        # emitted at the top level of the benchmark JSON for parity with the
+        # other media clients.
         assert "accuracy_check" not in report_data
-        assert "performance_check" not in report_data
+        assert "performance_check" in report_data
 
     @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_benchmark_health_check_failed(self, mock_tokenizer):
@@ -685,8 +686,9 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
 
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        # Benchmark JSON does not carry accuracy_check / performance_check;
-        # those are recomputed downstream in workflows/run_reports.py.
+        # accuracy_check stays on the eval report; performance_check is now
+        # emitted at the top level of the benchmark JSON for parity with the
+        # other media clients.
         assert "accuracy_check" not in report_data
-        assert "performance_check" not in report_data
+        assert "performance_check" in report_data
         assert report_data["task_type"] == "text_to_speech"
