@@ -231,8 +231,9 @@ void SocketTransport::clientLoop() {
       continue;
     }
 
-    TT_LOG_INFO("[SocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
-                host_, port_, delayMs);
+    TT_LOG_INFO(
+        "[SocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
+        host_, port_, delayMs);
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {

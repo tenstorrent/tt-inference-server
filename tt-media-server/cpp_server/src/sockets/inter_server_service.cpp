@@ -34,12 +34,14 @@ bool InterServerService::initializeFromConfig() {
   // and the gateway sits between them.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (gatewayMode) {
-      TT_LOG_INFO("[InterServerService] Decode (gateway mode): connecting to {}:{}",
-                  host, port);
+      TT_LOG_INFO(
+          "[InterServerService] Decode (gateway mode): connecting to {}:{}",
+          host, port);
       success = socket_manager_.initializeAsClient(host, port);
     } else {
-      TT_LOG_INFO("[InterServerService] Decode (direct mode): listening on port {}",
-                  port);
+      TT_LOG_INFO(
+          "[InterServerService] Decode (direct mode): listening on port {}",
+          port);
       success = socket_manager_.initializeAsServer(port);
     }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
@@ -51,8 +53,9 @@ bool InterServerService::initializeFromConfig() {
       success = socket_manager_.initializeAsServer(port);
       gateway_registration_armed_ = success;
     } else {
-      TT_LOG_INFO("[InterServerService] Prefill (direct mode): connecting to {}:{}",
-                  host, port);
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (direct mode): connecting to {}:{}",
+          host, port);
       success = socket_manager_.initializeAsClient(host, port);
     }
   }

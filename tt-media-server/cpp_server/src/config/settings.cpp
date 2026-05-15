@@ -453,8 +453,7 @@ bool usePrefillGateway() {
 
 std::string prefillServerId() {
   static const std::string cached = [] {
-    std::string v =
-        envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
+    std::string v = envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
     if (!v.empty()) return v;
     char host[256] = {0};
     if (::gethostname(host, sizeof(host) - 1) != 0) {
