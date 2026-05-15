@@ -201,9 +201,9 @@ Release Notes must be added describing new supported engine features.
 ## Step 3: Upload assets to Release Object
 
  Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
- Prompt for claude: `From this job https://github.com/tenstorrent/tt-shield/actions/runs/25877704062  take worklfow logs only for the models in scope Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2 and FLUX.1-dev on p300x2 device and create a new zip file named  
-  v0.14.0-release_artifacts.zip that will make the same structure like the file which you can analyze locally in terms of the files and structure how it should be zipped. The file to examine locally: v0.13.0-release_artifacts.zip The file to create:                    
-  v0.14.0-release_artifacts.zip `
+ Prompt for claude: 
+ 
+ `From the following job https://github.com/tenstorrent/tt-shield/actions/runs/25877704062  take worklfow logs only from the models in scope Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2 and FLUX.1-dev on p300x2 device and create a new zip file named v0.14.0-release_artifacts.zip that will make the same structure like the zip which you can analyze locally in terms of the files and structure how they should be packed. The package to examine locally: v0.13.0-release_artifacts.zip; The file to create: v0.14.0-release_artifacts.zip`
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
 
