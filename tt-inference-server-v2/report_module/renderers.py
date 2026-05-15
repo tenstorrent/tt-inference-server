@@ -9,7 +9,12 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
-from report_module.display import DISPLAY_NAMES, decimal_places, display_name
+from report_module.display import (
+    DISPLAY_NAMES,
+    decimal_places,
+    display_name,
+    target_checks_header,
+)
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
@@ -192,16 +197,21 @@ def _pivot_single_record(
     ]
 
 
-def _build_table(records: Sequence[Mapping[str, Any]]) -> str:
+def _build_table(
+    records: Sequence[Mapping[str, Any]],
+    header_fn: Callable[[str], str] = display_name,
+) -> str:
     columns = _ordered_display_columns(records)
     if not columns:
         return ""
     display_rows = [
-        {display_name(col): _format_cell(col, record.get(col)) for col in columns}
+        {header_fn(col): _format_cell(col, record.get(col)) for col in columns}
         for record in records
     ]
     return build_markdown_table(display_rows)
 
+
+_TARGET_CHECKS_KEY = "target_checks"
 
 _SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
 
@@ -274,7 +284,8 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         sub_records = _extract_records(Block(kind=key, data=value))
         if not sub_records:
             continue
-        sub_table = _build_table(sub_records)
+        header_fn = target_checks_header if key == _TARGET_CHECKS_KEY else display_name
+        sub_table = _build_table(sub_records, header_fn=header_fn)
         if not sub_table:
             continue
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")

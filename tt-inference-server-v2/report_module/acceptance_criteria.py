@@ -195,7 +195,12 @@ def _check_evals(schema: ReportSchema) -> CategoryResult:
         elif state == STATUS_NA:
             na += 1
 
-    status = STATUS_FAIL if failed else STATUS_PASS
+    if failed:
+        status = STATUS_FAIL
+    elif na == len(eval_blocks):
+        status = STATUS_NA
+    else:
+        status = STATUS_PASS
     return CategoryResult(
         CATEGORY_EVALS,
         status,

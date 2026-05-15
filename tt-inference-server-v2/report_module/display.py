@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict
 
 # Raw data key → display header. Canonical name per key (no per-task
@@ -189,10 +190,30 @@ def decimal_places(raw_key: str) -> int | None:
     return DECIMAL_PLACES.get(raw_key)
 
 
+_UNIT_SUFFIX = re.compile(r"\s*\([^)]*\)\s*$")
+_CHECK_SUFFIX = "_check"
+_RATIO_SUFFIX = "_ratio"
+
+
+def _base_display(raw_key: str) -> str:
+    return _UNIT_SUFFIX.sub("", display_name(raw_key))
+
+
+def target_checks_header(col: str) -> str:
+    if col == "name":
+        return "Tier"
+    if col.endswith(_CHECK_SUFFIX):
+        return f"{_base_display(col[: -len(_CHECK_SUFFIX)])} Check"
+    if col.endswith(_RATIO_SUFFIX):
+        return f"{_base_display(col[: -len(_RATIO_SUFFIX)])} Ratio"
+    return f"{_base_display(col)} Target"
+
+
 __all__ = [
     "DISPLAY_NAMES",
     "DECIMAL_PLACES",
     "EXPLANATIONS",
     "display_name",
     "decimal_places",
+    "target_checks_header",
 ]
