@@ -50,6 +50,8 @@ void registerLLM() {
                          config::ModelRunnerType::MOCK, llmFactory);
   runners.registerRunner(config::ModelService::LLM,
                          config::ModelRunnerType::LLAMA, llmFactory);
+  runners.registerRunner(config::ModelService::LLM,
+                         config::ModelRunnerType::QWEN, llmFactory);
 
   // Disaggregated prefill is independent of ENABLE_BLAZE.
   runners.registerRunner(

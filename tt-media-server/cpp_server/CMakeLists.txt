@@ -290,6 +290,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
+    src/utils/tokenizers/hf_cpu_tokenizer.cpp
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
@@ -299,6 +300,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
+    src/services/qwen_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/utils/runner_registry.cpp
     src/api/route_registry.cpp
@@ -322,6 +324,12 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
 else()
     message(STATUS "llm_runner_lib: building without tt-metal (tt-metal not found)")
 endif()
+
+# Qwen runner is CPU-only (no tt-metal required)
+list(APPEND LLM_RUNNER_LIB_SOURCES
+    src/runners/qwen_model_runner.cpp
+)
+message(STATUS "llm_runner_lib: building Qwen CPU runner")
 add_library(llm_runner_lib ${LLM_RUNNER_LIB_SOURCES})
 target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
@@ -345,6 +353,9 @@ if(ENABLE_BLAZE)
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
 endif()
+# pybind11 is always needed (Llama runner when tt-metal present, Qwen runner always)
+target_link_libraries(llm_runner_lib PUBLIC pybind11::embed)
+
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
@@ -358,7 +369,6 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_link_directories(llm_runner_lib PUBLIC "${_tt_metal_lib_dir}")
         target_link_libraries(llm_runner_lib PUBLIC tt_metal tt_stl fmt)
     endif()
-    target_link_libraries(llm_runner_lib PUBLIC pybind11::embed)
 endif()
 if(USE_EXTERNAL_FMT)
     target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
@@ -741,6 +751,7 @@ set(SOURCES
     src/services/reasoning_parser.cpp
     src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
+    src/services/qwen_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp

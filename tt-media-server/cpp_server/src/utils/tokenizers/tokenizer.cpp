@@ -12,6 +12,7 @@
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/deepseek_tokenizer.hpp"
+#include "utils/tokenizers/hf_cpu_tokenizer.hpp"
 #include "utils/tokenizers/llama_tokenizer.hpp"
 
 namespace tt::utils::tokenizers {
@@ -199,6 +200,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
+    case config::ModelType::QWEN_2_5_1_5B_INSTRUCT:
+      return "Qwen/Qwen2.5-1.5B-Instruct";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -210,6 +213,8 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
+    case config::ModelType::QWEN_2_5_1_5B_INSTRUCT:
+      return std::make_unique<HFCPUTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return std::make_unique<DeepseekTokenizer>(path);

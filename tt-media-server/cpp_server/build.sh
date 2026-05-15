@@ -236,6 +236,12 @@ download_tokenizer \
     "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
     "true"
 
+# Qwen 2.5 1.5B Instruct (public, CPU-only runner)
+download_tokenizer \
+    "Qwen/Qwen2.5-1.5B-Instruct" \
+    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/raw/main" \
+    "false"
+
 echo ""
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense

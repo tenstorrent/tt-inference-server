@@ -5,8 +5,9 @@
 #ifdef USE_METAL_CPP_LIB
 #include "runners/llama_model_runner.hpp"
 #endif
-
 #include <iostream>
+
+#include "runners/qwen_model_runner.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -19,6 +20,8 @@ std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
                                                    DecodeCallback callback);
 #endif
+std::unique_ptr<IModelRunner> makeQwenModelRunner(const Config& config,
+                                                  DecodeCallback callback);
 
 std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
                                               DecodeCallback callback) {
@@ -33,6 +36,8 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
     case ModelRunnerType::LLAMA:
       return makeLlamaModelRunner(config, std::move(callback));
 #endif
+    case ModelRunnerType::QWEN:
+      return makeQwenModelRunner(config, std::move(callback));
     default:
       throw std::invalid_argument("Invalid model runner type: " +
                                   toString(config.runner_type));
