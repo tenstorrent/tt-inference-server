@@ -106,9 +106,11 @@ Additionally, `git add/commit/push` only untracked/modified docs files in `docs/
 
 - `workflows/model_spec.py`: manual updates as a result of a Models CI runs
 - `release_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs
-- `docs/model_support/`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
-- `README.md`: updates to the `Model Support` section (links to `docs/model_support/`)
+- `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs (THIS WILL NOT BE GENERATED!!!)
+- `README.md` in case that we are adding new group of devices (very rare change)
+- `docs/model_support/models_by_hardware.md` - in case the model/device change its status (for example from `EXPERIMENTAL -> FUNCTIONAL` )
+- `docs/model_support/`: regenerated model support documentation (model type pages, individual model pages)
+- `docs/model_support/{type}/README.md`: model/device STATUS changes are also noted here
 
 
 ## Generate docker images as release artifacts
