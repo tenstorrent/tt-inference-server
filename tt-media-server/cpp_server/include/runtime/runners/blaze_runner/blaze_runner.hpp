@@ -16,7 +16,7 @@
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
-#include "runtime/runners/runner_interface.hpp"
+#include "runtime/runners/ipc_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"

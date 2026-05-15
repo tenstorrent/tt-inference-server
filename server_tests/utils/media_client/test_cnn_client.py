@@ -137,7 +137,7 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
                 "_run_image_analysis_benchmark",
                 return_value=status_list,
             ):
-                strategy.run_benchmark(2)
+                strategy.run_benchmark()
 
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -164,21 +164,27 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
         for key, value in expected_metadata.items():
             assert report_data[key] == value
 
+        # CNN inference is single-shot — step-based fields are intentionally
+        # absent from the benchmark JSON.
         expected_benchmarks = {
             "num_requests": 2,
-            "num_inference_steps": 0,
             "latency": 1.5,
-            "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
+        assert "num_inference_steps" not in report_data["benchmarks"]
+        assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch.object(CnnClientStrategy, "get_health", return_value=(False, None))
     def test_run_benchmark_health_check_failed(self, mock_health):
         strategy = self._create_strategy()
 
         with pytest.raises(Exception):
-            strategy.run_benchmark(2)
+            strategy.run_benchmark()
 
     @patch("utils.media_clients.cnn_client.get_num_calls", return_value=1)
     def test_run_benchmark_propagates_benchmark_exception(self, mock_num_calls):
@@ -191,7 +197,7 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
                 side_effect=RuntimeError("Error"),
             ):
                 with pytest.raises(RuntimeError):
-                    strategy.run_benchmark(1)
+                    strategy.run_benchmark()
 
 
 class TestCnnClientStrategyAnalyzeImage(unittest.TestCase):
@@ -301,10 +307,14 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         expected_benchmarks = {
             "num_requests": 2,
             "latency": 1.5,
-            "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
+        assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        assert "latency_p50" in report_data["benchmarks"]
+        assert "latency_p90" in report_data["benchmarks"]
+        assert "latency_p95" in report_data["benchmarks"]
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -321,10 +331,15 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         expected_benchmarks = {
             "num_requests": 0,
             "latency": 0,
-            "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
+        assert "inference_steps_per_second" not in report_data["benchmarks"]
+        assert "throughput_rps" in report_data["benchmarks"]
+        # Empty status list → all percentiles are ``None`` (below threshold).
+        assert report_data["benchmarks"]["latency_p50"] is None
+        assert report_data["benchmarks"]["latency_p90"] is None
+        assert report_data["benchmarks"]["latency_p95"] is None
 
 
 class TestCnnClientStrategyCalculateLatency(unittest.TestCase):

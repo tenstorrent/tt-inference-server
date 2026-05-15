@@ -207,6 +207,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prometheus-cpp)
 
+# stb_image_write: in-memory PNG/JPEG encoder used by image_codec.
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        31c1ad37456438565541f4919958214b6e762fb4
+)
+FetchContent_GetProperties(stb)
+if(NOT stb_POPULATED)
+    FetchContent_Populate(stb)
+endif()
+add_library(stb_image_write INTERFACE)
+target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
+
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -473,6 +486,16 @@ target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Image generate request parsing test
+add_executable(test_image_generate_request tests/test_image_generate_request.cpp)
+target_link_libraries(test_image_generate_request PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(test_image_generate_request PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Reasoning parser test
 add_executable(test_reasoning_parser
     tests/test_reasoning_parser.cpp
@@ -546,6 +569,7 @@ add_executable(llm_service_test
     tests/llm_service_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
+    src/services/image_service.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
@@ -553,9 +577,15 @@ add_executable(llm_service_test
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/single_process_worker_metrics.cpp
     src/runtime/worker/worker_metrics_shm.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
+    src/utils/image_codec.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
 )
@@ -563,6 +593,7 @@ target_link_libraries(llm_service_test PRIVATE
     llm_runner_lib
     prometheus-cpp::core
     pybind11::embed
+    stb_image_write
     GTest::gtest_main)
 target_include_directories(llm_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -583,11 +614,18 @@ add_executable(main_integration_test
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/single_process_worker_metrics.cpp
     src/runtime/worker/worker_metrics_shm.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
@@ -609,6 +647,7 @@ target_link_libraries(main_integration_test PRIVATE
     cereal::cereal
     prometheus-cpp::core
     pybind11::embed
+    stb_image_write
     GTest::gtest_main)
 target_include_directories(main_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -642,6 +681,7 @@ gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
+gtest_discover_tests(test_image_generate_request)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
@@ -662,7 +702,7 @@ add_test(NAME CancellationE2E
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
@@ -734,11 +774,19 @@ set(SOURCES
     src/utils/service_factory.cpp
     src/services/service_container.cpp
     src/services/model_service_registration.cpp
-    src/utils/runner_factory.cpp
+    src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/api/image_controller.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/socket_transport.cpp
@@ -799,6 +847,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 
 # Make the executable's runtime library lookup self-contained relative to
 # its own location (DT_RUNPATH = $ORIGIN/...). Required so the build

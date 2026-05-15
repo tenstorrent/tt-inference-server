@@ -8,6 +8,7 @@
 
 #include "api/route_registry.hpp"
 #include "config/types.hpp"
+#include "runtime/runners/media_runner.hpp"
 #include "services/base_service.hpp"
 #include "services/service_container.hpp"
 #include "services/service_registry.hpp"
@@ -89,9 +90,9 @@ TEST(ServiceRegistryTest, MissingFactoryReturnsNullptr) {
 
 namespace {
 
-class FakeRunner : public tt::runners::IRunner {
+class FakeIpcRunner : public tt::runners::IRunner {
  public:
-  explicit FakeRunner(std::string tag) : name(std::move(tag)) {}
+  explicit FakeIpcRunner(std::string tag) : name(std::move(tag)) {}
   void stop() override {}
   const char* runnerType() const override { return name.c_str(); }
 
@@ -102,56 +103,112 @@ class FakeRunner : public tt::runners::IRunner {
 
 }  // namespace
 
-TEST(RunnerRegistryTest, ExactMatchPreferredOverFallback) {
+TEST(RunnerRegistryTest, IpcExactMatchPreferredOverFallback) {
   RunnerRegistry::instance().clear();
-  RunnerRegistry::instance().registerRunner(
+  RunnerRegistry::instance().registerIpcRunner(
       ModelService::LLM, ModelRunnerType::MOCK,
       [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
          tt::ipc::ITaskQueue*,
          tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
-        return std::make_unique<FakeRunner>("mock");
+        return std::make_unique<FakeIpcRunner>("mock");
       });
-  RunnerRegistry::instance().registerRunner(
+  RunnerRegistry::instance().registerIpcRunner(
       ModelService::LLM, ModelRunnerType::LLAMA,
       [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
          tt::ipc::ITaskQueue*,
          tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
-        return std::make_unique<FakeRunner>("llama");
+        return std::make_unique<FakeIpcRunner>("llama");
       });
 
   tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
-  auto llama = RunnerRegistry::instance().create(ModelService::LLM,
-                                                 ModelRunnerType::LLAMA, cfg,
-                                                 nullptr, nullptr, nullptr);
+  auto llama = RunnerRegistry::instance().createIpc(ModelService::LLM,
+                                                    ModelRunnerType::LLAMA, cfg,
+                                                    nullptr, nullptr, nullptr);
   ASSERT_NE(llama, nullptr);
   EXPECT_STREQ(llama->runnerType(), "llama");
 }
 
-TEST(RunnerRegistryTest, FallsBackToMockWhenTypeNotRegistered) {
+TEST(RunnerRegistryTest, IpcFallsBackToMockWhenTypeNotRegistered) {
   RunnerRegistry::instance().clear();
-  RunnerRegistry::instance().registerRunner(
+  RunnerRegistry::instance().registerIpcRunner(
       ModelService::LLM, ModelRunnerType::MOCK,
       [](const tt::config::RunnerConfig&, tt::ipc::IResultQueue*,
          tt::ipc::ITaskQueue*,
          tt::ipc::ICancelQueue*) -> std::unique_ptr<tt::runners::IRunner> {
-        return std::make_unique<FakeRunner>("mock");
+        return std::make_unique<FakeIpcRunner>("mock");
       });
 
   tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
-  auto runner = RunnerRegistry::instance().create(
+  auto runner = RunnerRegistry::instance().createIpc(
       ModelService::LLM, ModelRunnerType::PIPELINE_MANAGER, cfg, nullptr,
       nullptr, nullptr);
   ASSERT_NE(runner, nullptr);
   EXPECT_STREQ(runner->runnerType(), "mock");
 }
 
-TEST(RunnerRegistryTest, NoMatchReturnsNullptr) {
+TEST(RunnerRegistryTest, IpcNoMatchReturnsNullptr) {
   RunnerRegistry::instance().clear();
   tt::config::RunnerConfig cfg = tt::config::LLMConfig{};
-  EXPECT_EQ(RunnerRegistry::instance().create(ModelService::LLM,
-                                              ModelRunnerType::MOCK, cfg,
-                                              nullptr, nullptr, nullptr),
+  EXPECT_EQ(RunnerRegistry::instance().createIpc(ModelService::LLM,
+                                                 ModelRunnerType::MOCK, cfg,
+                                                 nullptr, nullptr, nullptr),
             nullptr);
+}
+
+namespace {
+
+class FakeMediaRunner : public tt::runners::IMediaRunner<int, std::string> {
+ public:
+  explicit FakeMediaRunner(std::string tag) : name(std::move(tag)) {}
+  std::string run(const int& request) override {
+    return name + ":" + std::to_string(request);
+  }
+  const char* runnerType() const override { return name.c_str(); }
+
+ private:
+  std::string name;
+};
+
+}  // namespace
+
+TEST(RunnerRegistryTest, MediaExactMatchInstantiatesTypedRunner) {
+  RunnerRegistry::instance().clear();
+  RunnerRegistry::instance().registerMediaRunner(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE,
+      [](const tt::config::RunnerConfig&)
+          -> std::unique_ptr<tt::runners::IRunnerBase> {
+        return std::make_unique<FakeMediaRunner>("sdxl-generate");
+      });
+
+  tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
+  auto runner = RunnerRegistry::instance().createMedia<FakeMediaRunner>(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
+  ASSERT_NE(runner, nullptr);
+  EXPECT_EQ(runner->run(7), "sdxl-generate:7");
+}
+
+TEST(RunnerRegistryTest, MediaWrongRunnerShapeThrows) {
+  RunnerRegistry::instance().clear();
+  RunnerRegistry::instance().registerMediaRunner(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE,
+      [](const tt::config::RunnerConfig&)
+          -> std::unique_ptr<tt::runners::IRunnerBase> {
+        return std::make_unique<FakeMediaRunner>("sdxl-generate");
+      });
+
+  tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
+  using OtherShape = tt::runners::IMediaRunner<std::string, int>;
+  EXPECT_THROW(RunnerRegistry::instance().createMedia<OtherShape>(
+                   ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg),
+               std::runtime_error);
+}
+
+TEST(RunnerRegistryTest, MediaNoMatchReturnsNullptr) {
+  RunnerRegistry::instance().clear();
+  tt::config::RunnerConfig cfg = tt::config::ImageConfig{};
+  auto runner = RunnerRegistry::instance().createMedia<FakeMediaRunner>(
+      ModelService::IMAGE, ModelRunnerType::TT_SDXL_GENERATE, cfg);
+  EXPECT_EQ(runner, nullptr);
 }
 
 // ---------------------------------------------------------------------------
