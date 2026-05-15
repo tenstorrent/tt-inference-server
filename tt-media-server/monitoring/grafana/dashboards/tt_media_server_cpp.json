@@ -1331,7 +1331,7 @@
             "showPoints": "never",
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             }
           },
           "unit": "reqps"
