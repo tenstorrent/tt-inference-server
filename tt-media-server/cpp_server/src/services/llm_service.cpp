@@ -460,7 +460,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         if (!finalFinishReason.has_value()) {
           TT_LOG_WARN(
               "[Consumer-{}] Final token for task {} reached cleanup without "
-              "a finish reason set; defaulting to \"stop\"",
+              "a finish reason set; defaulting to \"error\"",
               workerIdx, taskId);
         }
         tt::metrics::ServerMetrics::instance().onRequestCompleted(

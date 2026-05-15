@@ -34,11 +34,6 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
-      - name: Install newer CMake (>=3.24, runner ships 3.22)
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
-
       - name: Resolve numeric GitHub job ID
         id: job-id
         run: |

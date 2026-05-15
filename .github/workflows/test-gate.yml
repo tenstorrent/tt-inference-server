@@ -545,11 +545,6 @@ jobs:
         working-directory: .
         run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
-      - name: Install newer CMake (>=3.24, runner ships 3.22)
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
-
       - name: Validate OpenAPI spec against registered routes
         run: |
           pip install openapi-spec-validator --quiet
@@ -615,11 +610,6 @@ jobs:
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
         run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Install newer CMake (>=3.24, runner ships 3.22)
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -1431,11 +1421,6 @@ jobs:
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
         run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Install newer CMake (>=3.24, runner ships 3.22)
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
