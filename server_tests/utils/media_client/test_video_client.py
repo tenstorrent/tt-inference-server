@@ -175,7 +175,7 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 "_run_video_generation_benchmark",
                 return_value=status_list,
             ):
-                strategy.run_benchmark(2)
+                strategy.run_benchmark()
 
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
@@ -214,7 +214,7 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
         strategy = self._create_strategy()
 
         with pytest.raises(Exception):
-            strategy.run_benchmark(2)
+            strategy.run_benchmark()
 
     @patch("utils.media_clients.video_client.get_num_calls", return_value=1)
     def test_run_benchmark_propagates_benchmark_exception(self, mock_num_calls):
@@ -227,7 +227,7 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 side_effect=RuntimeError("Error"),
             ):
                 with pytest.raises(RuntimeError):
-                    strategy.run_benchmark(1)
+                    strategy.run_benchmark()
 
 
 class TestVideoClientStrategyGenerateVideo(unittest.TestCase):
