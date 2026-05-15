@@ -288,7 +288,9 @@ def _records_for_merge(block: Block) -> List[Dict[str, Any]]:
 def _flatten_one_level(record: Mapping[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for key, value in record.items():
-        if isinstance(value, Mapping):
+        if isinstance(value, Mapping) and all(
+            not isinstance(v, Mapping) for v in value.values()
+        ):
             for sub_key, sub_value in value.items():
                 out.setdefault(sub_key, sub_value)
         else:

@@ -270,6 +270,8 @@ def _resolve_nested(data: Any, key: str) -> Any:
 def _passes_check(check_value: Any) -> bool:
     if check_value is None:
         return False
+    if isinstance(check_value, bool):
+        return check_value
     try:
         return int(check_value) != FAIL_CHECK_INT
     except (TypeError, ValueError):
@@ -284,6 +286,8 @@ def _check_state(check_value: Any) -> str:
     """
     if check_value is None:
         return STATUS_NA
+    if isinstance(check_value, bool):
+        return STATUS_PASS if check_value else STATUS_FAIL
     try:
         as_int = int(check_value)
     except (TypeError, ValueError):
