@@ -430,12 +430,19 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        default_env_vars = {
-            "VLLM_CONFIGURE_LOGGING": "1",
-            "VLLM_RPC_TIMEOUT": "900000",
-            "VLLM_TARGET_DEVICE": "tt",
-            "TORCHDYNAMO_DISABLE": "1",
-        }
+        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        if self.inference_engine in (
+            InferenceEngine.FORGE.value,
+            InferenceEngine.MEDIA.value,
+        ):
+            default_env_vars = {}
+        else:
+            default_env_vars = {
+                "VLLM_CONFIGURE_LOGGING": "1",
+                "VLLM_RPC_TIMEOUT": "900000",
+                "VLLM_TARGET_DEVICE": "tt",
+                "TORCHDYNAMO_DISABLE": "1",
+            }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
             **default_env_vars,
