@@ -6,8 +6,8 @@
 #include <atomic>
 #include <cstring>
 
-#include "utils/logger.hpp"
 #include "runtime/worker/worker_manager.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::worker {
 

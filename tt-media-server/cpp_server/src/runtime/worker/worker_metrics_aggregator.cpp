@@ -6,9 +6,9 @@
 #include <sstream>
 #include <vector>
 
-#include "utils/logger.hpp"
 #include "runtime/worker/worker_info.hpp"
 #include "runtime/worker/worker_manager.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::worker {
 

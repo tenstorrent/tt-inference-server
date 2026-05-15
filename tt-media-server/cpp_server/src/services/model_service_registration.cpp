@@ -14,6 +14,7 @@
 #include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/llm_runner.hpp"
+#include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_image_to_image_runner.hpp"
@@ -22,7 +23,6 @@
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "utils/logger.hpp"
-#include "runtime/runners/runner_registry.hpp"
 
 #ifdef ENABLE_BLAZE
 #include "runtime/runners/blaze_runner/blaze_runner.hpp"

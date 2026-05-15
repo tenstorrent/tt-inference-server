@@ -25,15 +25,15 @@
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
-#include "services/llm_service.hpp"
-#include "services/service_container.hpp"
-#include "utils/logger.hpp"
-#include "utils/service_factory.hpp"
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "runtime/worker/worker_metrics_aggregator.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
+#include "services/llm_service.hpp"
+#include "services/service_container.hpp"
+#include "utils/logger.hpp"
+#include "utils/service_factory.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon

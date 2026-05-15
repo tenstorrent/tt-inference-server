@@ -10,8 +10,8 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "utils/logger.hpp"
 #include "runtime/worker/migration_worker.hpp"
+#include "utils/logger.hpp"
 
 namespace {
 

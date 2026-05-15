@@ -8,9 +8,9 @@
 #include <chrono>
 
 #include "config/settings.hpp"
-#include "utils/logger.hpp"
 #include "runtime/worker/blaze_metrics_layout.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::worker {
 

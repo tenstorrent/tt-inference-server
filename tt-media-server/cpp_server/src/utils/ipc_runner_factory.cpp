@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <variant>
 
+#include "runtime/runners/runner_registry.hpp"
 #include "services/model_service_registration.hpp"
 #include "utils/logger.hpp"
-#include "runtime/runners/runner_registry.hpp"
 
 namespace tt::utils::ipc_runner_factory {
 

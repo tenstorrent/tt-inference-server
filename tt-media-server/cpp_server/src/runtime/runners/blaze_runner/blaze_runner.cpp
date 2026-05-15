@@ -10,8 +10,8 @@
 
 #include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
-#include "utils/logger.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
+#include "utils/logger.hpp"
 
 namespace {
 using namespace tt_llm_engine::scheduler::decode;
