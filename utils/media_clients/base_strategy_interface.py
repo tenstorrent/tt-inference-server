@@ -11,10 +11,14 @@ from typing import Dict, List, Optional, Sequence
 from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from server_tests.test_classes import TestConfig
 
+# Eager import so the model performance reference JSON is parsed exactly once
+# at module import time. Without this, ``get_performance_targets`` lazily
+# imports ``workflows.model_spec`` on first call, which can collide with tests
+# that monkey-patch ``builtins.open`` and then unexpectedly observe an empty
+# JSON payload.
 import workflows.model_spec  # noqa: F401
 from workflows.utils_report import PerformanceTargets, get_performance_targets
 from workflows.workflow_types import ReportCheckTypes
-
 
 from .test_status import BaseTestStatus
 
@@ -30,7 +34,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PerfCheck:
-    """One measured metric to compare against a performance target."""
+    """One measured metric to compare against a performance target.
+
+    ``measured`` and ``target`` MUST be in the same unit (callers convert at
+    the boundary, e.g. when ``PerformanceTargets`` stores a value in ms but
+    the measurement is in seconds).
+
+    Set ``lower_is_better=True`` for latency-style metrics (smaller is
+    better) and ``False`` for throughput-style metrics (larger is better).
+    """
 
     name: str
     measured: Optional[float]
