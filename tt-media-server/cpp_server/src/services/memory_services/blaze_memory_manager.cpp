@@ -52,11 +52,11 @@ void BlazeMemoryManager::handleRequest(
         pendingRetry = request;
         return;
       }
-      cancelling.insert({request.taskId, slotId});
+      evicting.insert({request.taskId, slotId});
       TT_LOG_DEBUG(
           "[BlazeMemoryManager] DEALLOCATE: taskId={}, slotId={}, "
           "pending cancellations={}",
-          request.taskId, slotId, cancelling.size());
+          request.taskId, slotId, evicting.size());
       break;
     }
     case domain::MemoryManagementAction::MOVE: {
@@ -95,9 +95,9 @@ void BlazeMemoryManager::handleResponse(uint32_t taskId, uint32_t slotId) {
     resultQueue->push(result);
     return;
   }
-  if (auto it = cancelling.find(taskId); it != cancelling.end()) {
+  if (auto it = evicting.find(taskId); it != evicting.end()) {
     auto recordedSlotId = it->second;
-    cancelling.erase(it);
+    evicting.erase(it);
     if (slotId != recordedSlotId) {
       TT_LOG_ERROR(
           "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={} "
@@ -108,13 +108,20 @@ void BlazeMemoryManager::handleResponse(uint32_t taskId, uint32_t slotId) {
     TT_LOG_DEBUG(
         "[BlazeMemoryManager] handleResponse[CANCEL]: taskId={}, "
         "slotId={}, remaining pending cancellations={}",
-        taskId, recordedSlotId, cancelling.size());
+        taskId, recordedSlotId, evicting.size());
     onEvict(recordedSlotId);
     return;
   }
   TT_LOG_WARN(
       "[BlazeMemoryManager] handleResponse: unknown taskId={}, slotId={}",
       taskId, slotId);
+}
+
+void BlazeMemoryManager::pushStopSignal(uint32_t taskId) {
+  domain::ManageMemoryResult result;
+  result.taskId = taskId;
+  result.status = domain::ManageMemoryStatus::STOPPED;
+  resultQueue->push(result);
 }
 
 }  // namespace tt::services

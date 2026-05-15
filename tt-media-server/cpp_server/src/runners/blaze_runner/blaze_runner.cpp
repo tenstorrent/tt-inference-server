@@ -8,6 +8,7 @@
 #include <cstring>
 #include <services/memory_services/blaze_memory_manager.hpp>
 
+#include "blaze_runner/blaze_utils.hpp"
 #include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "utils/logger.hpp"
@@ -219,6 +220,28 @@ void BlazeRunner::drainAndHandleOutputs() {
   }
 }
 
+void BlazeRunner::drainAndHandleCancelRequests() {
+  std::vector<uint32_t> taskIds;
+  cancelQueue->tryPopAll(taskIds);
+  for (const auto& taskId : taskIds) {
+    handleCancelRequest(taskId);
+  }
+}
+
+inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
+  decodeScheduler->push_request(blaze_utils::makeCancelRequest(taskId));
+  auto context = slotIndex.getSlotContextByTaskId(taskId);
+  if (context.has_value()) {
+    context->stopped = true;
+  } else {
+    slotIndex.addSlotContext(taskId, blaze_utils::SlotContext{taskId, true});
+  }
+  if (requestToRetry && requestToRetry->taskId == taskId) {
+    requestToRetry = nullptr;
+    return;
+  }
+}
+
 std::unique_ptr<tt::domain::llm::Sequence> BlazeRunner::getRequest() {
   if (requestToRetry) {
     return std::move(requestToRetry);
@@ -230,6 +253,15 @@ std::unique_ptr<tt::domain::llm::Sequence> BlazeRunner::getRequest() {
 
 inline void BlazeRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
+  if (request.action == tt::domain::MemoryManagementAction::ALLOCATE) {
+    auto context = slotIndex.getSlotContextByTaskId(request.taskId);
+    if (context.has_value() && context->stopped) {
+      TT_LOG_DEBUG("[BlazeRunner] handleMemoryRequest: taskId={} is stopped, skipping allocation", request.taskId);
+      memoryManager->pushStopSignal(request.taskId); // unblock session manager
+      slotIndex.eraseSlotContextByTaskId(request.taskId);
+      return;
+    }
+  }
   memoryManager->handleRequest(request);
 }
 
@@ -246,37 +278,36 @@ BlazeRunner::getMemoryRequest() {
 void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
-  auto it = slotContexts.find(output.slot_id);
-  if (it == slotContexts.end()) {
+  auto context = slotIndex.getSlotContextBySlotId(output.slot_id);
+  if (!context) {
     TT_LOG_ERROR(
         "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
         "token_id={}, is_complete={}",
         output.slot_id, output.token_id, output.is_complete);
     return;
   }
-  auto& context = it->second;
-  bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
+  bool hitStop = !context->ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
-  auto taskId = context.taskId;
+  auto taskId = context->taskId;
 
   uint32_t specAccepts = 0;
   uint32_t specRejects = 0;
 
-  context.tokensGenerated++;
+  context->tokensGenerated++;
   if (finished) {
     specAccepts = decodeScheduler->get_spec_accepts(output.slot_id) -
-                  context.specAcceptsAtStart;
+                  context->specAcceptsAtStart;
     specRejects = decodeScheduler->get_spec_rejects(output.slot_id) -
-                  context.specRejectsAtStart;
+                  context->specRejectsAtStart;
     uint32_t specTotal = specAccepts + specRejects;
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
     TT_LOG_INFO(
         "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
         "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
         output.slot_id, specAccepts, specTotal, acceptRate, taskId,
-        output.token_id, output.is_complete, context.ignoreEos, hitStop,
-        context.tokensGenerated);
-    slotContexts.erase(output.slot_id);
+        output.token_id, output.is_complete, context->ignoreEos, hitStop,
+        context->tokensGenerated);
+    slotIndex.eraseSlotContextBySlotId(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
@@ -286,7 +317,7 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
 }
 
 void BlazeRunner::checkOutputHang() {
-  if (slotContexts.empty()) {
+  if (slotIndex.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
     return;
   }
@@ -299,7 +330,7 @@ void BlazeRunner::checkOutputHang() {
       "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
       "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
       "infrastructure can restart the server.",
-      elapsed.count(), slotContexts.size(), outputHangTimeout.count());
+      elapsed.count(), slotIndex.size(), outputHangTimeout.count());
   // Use abort() so the existing fatalSignalHandler prints a visible
   // "killed by signal SIGABRT" line and the WorkerManager parent logs the
   // worker crash. Skipping destructors is acceptable here: the model/device
@@ -308,11 +339,11 @@ void BlazeRunner::checkOutputHang() {
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
-  auto it = slotContexts.find(slotId);
-  if (it != slotContexts.end()) {
+  auto context = slotIndex.getSlotContextBySlotId(slotId);
+  if (context.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, had taskId={}", slotId,
-                 it->second.taskId);
-    slotContexts.erase(it);
+                 context->taskId);
+    slotIndex.eraseSlotContextBySlotId(slotId);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
     return;
@@ -325,6 +356,13 @@ void BlazeRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::dsMaxUsers());
+  
+  auto context = slotIndex.getSlotContextByTaskId(request->taskId);
+  if (context.has_value() && context->stopped) {
+    TT_LOG_DEBUG("[BlazeRunner] handleRequest: taskId={} is stopped, skipping request", request->taskId);
+    slotIndex.eraseSlotContextByTaskId(request->taskId);
+    return;
+  }
 
   bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {
@@ -340,7 +378,7 @@ void BlazeRunner::handleRequest(
       "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
-      slotContexts.size());
+      slotIndex.size());
   ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
                             : utils::makeContinueRequest(slotId, *request);
   if (!decodeScheduler->push_request(req)) {
@@ -351,12 +389,12 @@ void BlazeRunner::handleRequest(
     requestToRetry = std::move(request);
     return;
   }
-  if (slotContexts.empty()) {
+  if (slotIndex.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
-  slotContexts.insert_or_assign(
+  slotIndex.addSlotContext(
       slotId, blaze_utils::SlotContext{
-                  request->taskId, request->getSamplingParams().ignore_eos,
+                  request->taskId, false, request->getSamplingParams().ignore_eos,
                   decodeScheduler->get_spec_accepts(slotId),
                   decodeScheduler->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();

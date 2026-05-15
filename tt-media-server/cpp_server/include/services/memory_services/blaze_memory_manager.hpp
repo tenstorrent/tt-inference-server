@@ -27,10 +27,12 @@ class BlazeMemoryManager : public MemoryManager {
   void handleRequest(const domain::ManageMemoryTask& request) override;
 
   void handleResponse(uint32_t taskId, uint32_t slotId) override;
+  
+  void pushStopSignal(uint32_t taskId);
 
  private:
   std::unordered_set<uint32_t> allocating;
-  std::unordered_map</*taskId*/ uint32_t, /*slotId*/ uint32_t> cancelling;
+  std::unordered_map</*taskId*/ uint32_t, /*slotId*/ uint32_t> evicting;
   tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler;
   onEvictCb onEvict;
   std::optional<domain::ManageMemoryTask> pendingRetry;

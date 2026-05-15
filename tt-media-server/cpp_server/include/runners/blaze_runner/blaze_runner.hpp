@@ -13,14 +13,15 @@
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/manage_memory.hpp"
+#include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/runner_interface.hpp"
+#include "services/memory_services/blaze_memory_manager.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
-#include "ipc/interface/cancel_queue.hpp"
 
 namespace tt::runners {
 
@@ -31,7 +32,8 @@ namespace ds = tt_llm_engine::scheduler::decode;
 class BlazeRunner : public IRunner {
  public:
   BlazeRunner(const tt::config::LLMConfig& config,
-              ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue);
+              ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
+              tt::ipc::ICancelQueue* cancelQueue);
   ~BlazeRunner() override;
 
   void run() override;
@@ -44,8 +46,10 @@ class BlazeRunner : public IRunner {
 
   void drainAndHandleMemoryResponses();
   void drainAndHandleOutputs();
+  void drainAndHandleCancelRequests();
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
+  inline void handleCancelRequest(uint32_t taskId);
   inline void handleMemoryResponse(const ds::SchedulerResponse& response);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
@@ -60,9 +64,9 @@ class BlazeRunner : public IRunner {
   tt::ipc::ICancelQueue* cancelQueue;
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
-  std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
+  blaze_utils::SlotIndex slotIndex;
   std::atomic<bool> stopped{false};
-  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::unique_ptr<tt::services::BlazeMemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
 };

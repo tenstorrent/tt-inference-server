@@ -54,6 +54,7 @@ enum class ManageMemoryStatus : std::uint8_t {
   SUCCESS = 0,
   FAILURE = 1,
   WAITING = 2,
+  STOPPED = 3,
 };
 
 struct ManageMemoryResult {

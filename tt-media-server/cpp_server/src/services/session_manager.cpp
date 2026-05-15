@@ -465,7 +465,12 @@ void SessionManager::handleMemoryResult(
     pendingAllocation.eventLoop->queueInLoop(
         [onCompletion = std::move(pendingAllocation.onCompletion),
          session = pendingAllocation.session]() { onCompletion(session); });
-  } else if (pendingAllocation.attemptsRemaining > 0) {
+  } 
+  else if (result.status == domain::ManageMemoryStatus::STOPPED) {
+    pendingAllocationsMap.erase(result.taskId);
+    return;
+  }
+  else if (pendingAllocation.attemptsRemaining > 0) {
     int failureCount = computeFailureCount(pendingAllocation.attemptsRemaining);
     pendingAllocation.attemptsRemaining--;
     auto delay = computeAllocationRetryDelay(failureCount);
