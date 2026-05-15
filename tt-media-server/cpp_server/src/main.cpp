@@ -75,6 +75,8 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
       return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
+    case tt::config::ModelService::IMAGE:
+      return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;
 }
@@ -185,6 +187,18 @@ int main(int argc, char* argv[]) {
   auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
   tt::utils::service_factory::initializeServices();
+
+  // Start the configured service on the main thread. Services whose start()
+  // is slow (e.g. image warmup) own their own background thread internally;
+  // services that fork worker processes (LLM, embedding) MUST start on the
+  // main thread, because PR_SET_PDEATHSIG sends SIGTERM to the worker as
+  // soon as the *thread* that called fork() exits.
+  try {
+    tt::utils::service_factory::startConfiguredService();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
+    return 1;
+  }
 
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
