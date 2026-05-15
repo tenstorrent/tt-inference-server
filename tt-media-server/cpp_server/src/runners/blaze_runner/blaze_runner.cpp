@@ -260,6 +260,12 @@ inline void BlazeRunner::handleMemoryResponse(
         "(slotId={}, taskId={}, hasDeferredSequence={})",
         response.slot_id, response.request_id,
         static_cast<bool>(pending.sequence));
+    if (auto sit = slotContexts.find(response.slot_id);
+        sit != slotContexts.end()) {
+      slotContexts.erase(sit);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
+    }
     if (pending.sequence) {
       handleRequest(std::move(pending.sequence));
     }
