@@ -6,7 +6,6 @@
 import asyncio
 import json
 import logging
-import math
 import sys
 import time
 from pathlib import Path
@@ -58,7 +57,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=True)
+            loop_start = time.monotonic()
             status_list = self._run_tts_benchmark(num_calls)
+            wall_clock_seconds = time.monotonic() - loop_start
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -66,10 +67,13 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info("Generating eval report...")
         latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
+        tail = self._calculate_tail_latencies([s.latency for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
         logger.info(
-            f"latency={latency_value:.4f}s, RTR={rtr_value:.2f}, "
-            f"P90={p90_latency:.4f}s, P95={p95_latency:.4f}s"
+            f"latency={latency_value:.4f}s, RTR={rtr_value:.2f}, tail={tail}, "
+            f"throughput_rps={throughput_rps}"
         )
 
         benchmark_data = {
@@ -83,8 +87,8 @@ class TtsClientStrategy(BaseMediaStrategy):
             "score": latency_value,
             "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
             "rtr": rtr_value,
-            "latency_p90": p90_latency,
-            "latency_p95": p95_latency,
+            "throughput_rps": throughput_rps,
+            **tail,
             "performance_check": self._calculate_performance_check(
                 latency_value=latency_value, rtr_value=rtr_value
             ),
@@ -113,8 +117,10 @@ class TtsClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=False)
+            loop_start = time.monotonic()
             status_list = self._run_tts_benchmark(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
             return status_list
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -148,7 +154,11 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         return tts_default
 
-    def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[TtsTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """
         Generate benchmark report for TTS model.
         """
@@ -162,7 +172,10 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
+        tail = self._calculate_tail_latencies([s.latency for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
         performance_check = self._calculate_performance_check(latency_value, rtr_value)
 
         report_data = {
@@ -170,8 +183,8 @@ class TtsClientStrategy(BaseMediaStrategy):
                 "num_requests": len(status_list),
                 "latency": latency_value,
                 "rtr": rtr_value,
-                "latency_p90": p90_latency,
-                "latency_p95": p95_latency,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
@@ -370,31 +383,6 @@ class TtsClientStrategy(BaseMediaStrategy):
             )
 
         return rtr_value
-
-    def _calculate_tail_latency(
-        self, status_list: list[TtsTestStatus]
-    ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency in seconds."""
-        logger.info("Calculating tail latency (P90, P95)")
-
-        if not status_list:
-            return 0.0, 0.0
-
-        valid_values = [
-            status.latency for status in status_list if status.latency is not None
-        ]
-
-        if not valid_values:
-            return 0.0, 0.0
-
-        sorted_values = sorted(valid_values)
-        n = len(sorted_values)
-        p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
-        p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-        p90_latency = sorted_values[p90_index]
-        p95_latency = sorted_values[p95_index]
-
-        return p90_latency, p95_latency
 
     def _calculate_performance_check(
         self,
