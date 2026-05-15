@@ -12,8 +12,8 @@
 #include "config/settings.hpp"
 #include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/ipc_runner_factory.hpp"
 #include "utils/logger.hpp"
-#include "utils/runner_factory.hpp"
 
 namespace tt::worker {
 
@@ -98,7 +98,7 @@ void SingleProcessWorker::start() {
 
   {
     ZoneScopedN("Worker::init");
-    runner_ = tt::utils::runner_factory::createRunner(
+    runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
         tt::config::modelService(), cfg.runner_config, cfg.result_queue.get(),
         cfg.task_queue.get(), cfg.cancel_queue.get());
   }
