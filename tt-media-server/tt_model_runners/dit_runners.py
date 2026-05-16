@@ -707,7 +707,9 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running AniSora inference")
         request = requests[0]
         pipeline_args = _wan22_pipeline_args(
-            request, self.resolution, image_prompt=self._build_image_prompt(request),
+            request,
+            self.resolution,
+            image_prompt=self._build_image_prompt(request),
         )
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: AniSora inference completed")
@@ -847,7 +849,9 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running LoRA inference")
         request = requests[0]
         pipeline_args = _wan22_pipeline_args(
-            request, self.resolution, image_prompt=self._build_image_prompt(request),
+            request,
+            self.resolution,
+            image_prompt=self._build_image_prompt(request),
         )
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: LoRA inference completed")
