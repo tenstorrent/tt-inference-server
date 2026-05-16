@@ -137,7 +137,10 @@ Start by promoting Models CI images if existing for manual models (e.g. if ad ho
 ```bash
 crane copy <src> <dst>
 # e.g.
-# crane copy ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f27288d6da50c0ac7fe8afce3c7e6db3b5f27f-91dddb0-52470823821 ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-f8f2728-91dddb0
+
+# crane copy ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.13.0-80180b9d7d07ea9fcc99f723d4d46fe7a0b233bd-7678b70-76185610710  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70
+
+#crane copy ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.13.0-80180b9d7d07ea9fcc99f723d4d46fe7a0b233bd-e799052-76185610891 ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9
 ```
 
 ## Step 2: verification through the list model images
@@ -177,7 +180,7 @@ As a comment, at the top of the HTML body, within the commented section, add met
   `git tag vx.x.x`
   
   `git push origin vx.x.x`
-* we rename the `stable` branch to `vx.x.x` value
+* we rename the `stable` branch to `vx.x.x` value, and afterwards we can delete the `stable`
   
   `git switch -c vx.x.x`
   
@@ -203,7 +206,7 @@ Release Notes must be added describing new supported engine features.
  Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
  Prompt for claude: 
  
- `From the following job https://github.com/tenstorrent/tt-shield/actions/runs/25877704062  take worklfow logs only from the models in scope Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2 and FLUX.1-dev on p300x2 device and create a new zip file named v0.14.0-release_artifacts.zip that will make the same structure like the zip which you can analyze locally in terms of the files and structure how they should be packed. The package to examine locally: v0.13.0-release_artifacts.zip; The file to create: v0.14.0-release_artifacts.zip`
+ `From the following job https://github.com/tenstorrent/tt-shield/actions/runs/{job_id}  take worklfow logs only from the models in scope {...} and create a new zip file named vx.x.x-release_artifacts.zip with the same structure like the zip from previous release that you can analyze in terms of the files and structure how they should be packed. The package to examine locally: v0.13.0-release_artifacts.zip; The file to create: v0.14.0-release_artifacts.zip`
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
 
