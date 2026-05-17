@@ -2668,7 +2668,11 @@ vlm_templates = [
         impl=tt_transformers_impl,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
-        version="1.0.0",
+        # Aligned with tt-inference-server VERSION file so the default image
+        # lookup matches the tag build_docker_images.py produces. Bumping this
+        # changes the persistent_volume directory name (volume_id_..._-v<X>),
+        # so existing host caches won't carry over and first run will redownload.
+        version="0.12.0",
         # 906289756c = tip of ssinghal/molmo2_new_glx with everything we want:
         #   - image-path support (a4267be5dc0, 4b7842b781c)
         #   - L1 decode path Python files reverted (7d02e7b50b3) so Galaxy's
