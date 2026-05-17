@@ -2669,11 +2669,20 @@ vlm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         version="1.0.0",
-        # 454c9bf7002 = parent of b06ba37bfb5 ("L1 decode path") which introduced
-        # the WIDTH_SHARDED L1 layernorm-sharded multicast hang on Galaxy hardware.
-        # Pinning here so docker server picks up a known-good state.
-        tt_metal_commit="454c9bf7002",
-        vllm_commit="7a07a97",
+        # 906289756c = tip of ssinghal/molmo2_new_glx with everything we want:
+        #   - image-path support (a4267be5dc0, 4b7842b781c)
+        #   - L1 decode path Python files reverted (7d02e7b50b3) so Galaxy's
+        #     sharded LayerNorm multicast hang is avoided
+        #   - per-replica JIT+vision warmup, parallel-dispatch decode_forward
+        # If newer commits land on the branch, bump this pin or use
+        # --override-docker-image at run time.
+        # fa9e266d40 = cherry-pick of 04555abad2f (multi-image _unwrap fix) onto
+        # 906289756c. Fixes multi-image inference by torch.cat-ing per-image
+        # tensors instead of discarding all but the first.
+        tt_metal_commit="fa9e266d40",
+        # b86be08 adds native multi-image support to Molmo2ProcessingInfo /
+        # Molmo2MultiModalProcessor (parent of our _TT_Molmo2ProcessingInfo).
+        vllm_commit="5b6106c4",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -2682,7 +2691,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "trust_remote_code": True,
-                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
+                    "limit-mm-per-prompt": json.dumps({"image": 23, "video": 1}),
                     # Use Molmo2VideoBackend which implements the same uniform_last_frame
                     # sampling as the HF Molmo2VideoProcessor (matches demo exactly).
                     "media_io_kwargs": json.dumps({"video": {
@@ -2721,7 +2730,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "trust_remote_code": True,
-                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
+                    "limit-mm-per-prompt": json.dumps({"image": 23, "video": 1}),
                     "media_io_kwargs": json.dumps({"video": {
                         "video_backend": "molmo2",
                         "frame_sample_mode": "uniform_last_frame",
@@ -2744,7 +2753,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "trust_remote_code": True,
-                    "limit-mm-per-prompt": json.dumps({"image": 1, "video": 1}),
+                    "limit-mm-per-prompt": json.dumps({"image": 23, "video": 1}),
                     "media_io_kwargs": json.dumps({"video": {
                         "video_backend": "molmo2",
                         "frame_sample_mode": "uniform_last_frame",
