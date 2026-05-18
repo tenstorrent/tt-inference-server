@@ -86,7 +86,7 @@ Any field not overridden at the model/device level falls back to `defaults`.
 | `device` | yes | `""` | Device name. Must match a key under `models.<model>`. |
 | `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Skips download at startup. |
-| `cache.hostPath` | no | `""` | Override the host path used for the cache volume. Defaults to `/opt/cache/<model>-<device>`. |
+| `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
 | `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
 | `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
 
