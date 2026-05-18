@@ -5,6 +5,7 @@
 import json
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -790,9 +791,7 @@ class TestEmbeddingClientStrategyRunEmbeddingTranscriptionBenchmark(unittest.Tes
         strategy = self._create_strategy()
 
         mock_venv_config = MagicMock()
-        mock_venv_path = MagicMock()
-        mock_venv_path.__truediv__ = MagicMock(return_value="/fake/vllm-bin")
-        mock_venv_config.venv_path = mock_venv_path
+        mock_venv_config.venv_path = Path("/fake/venv")
         mock_venv_configs.get.return_value = mock_venv_config
 
         mock_result = MagicMock()
