@@ -425,8 +425,9 @@ def build_agentic_eval_command(
 
     if task.swebench_eval_config is not None:
         swebench_config = task.swebench_eval_config
+        safe_model_id = model_spec.model_id.replace("/", "__")
         output_dir = (
-            Path(output_path) / f"eval_{model_spec.model_id}" / "agentic" / task.task_name
+            Path(output_path) / f"eval_{safe_model_id}" / "agentic" / task.task_name
         )
         model_name = swebench_config.model or f"openai/{model_spec.hf_model_repo}"
         cmd = [
@@ -484,7 +485,8 @@ def build_agentic_eval_command(
 
     if task.agentic_eval_config is not None:
         agentic_config = task.agentic_eval_config
-        jobs_dir = Path(output_path) / f"eval_{model_spec.model_id}" / "agentic"
+        safe_model_id = model_spec.model_id.replace("/", "__")
+        jobs_dir = Path(output_path) / f"eval_{safe_model_id}" / "agentic"
         model_name = agentic_config.model or f"openai/{model_spec.hf_model_repo}"
         cmd = [
             str(task_venv_config.venv_python),
