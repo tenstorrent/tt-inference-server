@@ -87,7 +87,7 @@ The commands below use TCP (default). To switch to ZMQ, add
 
 ```bash
 cd tt-media-server/prefill_gateway
-TT_LOG_LEVEL=info ./build/prefill_gateway \
+TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
   --prefill=127.0.0.1:7200 \
   --prefill=127.0.0.1:7201
@@ -98,6 +98,7 @@ TT_LOG_LEVEL=info ./build/prefill_gateway \
 ```bash
 cd tt-media-server/cpp_server
 LLM_MODE=decode \
+SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
 SOCKET_HOST=127.0.0.1 SOCKET_PORT=7100 \
@@ -112,6 +113,7 @@ cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8002 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
 PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=debug \
 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=0.0.0.0 SOCKET_PORT=7200 \
 PREFILL_SERVER_ID=prefill-0 \
@@ -125,6 +127,7 @@ cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8003 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
 PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=debug \
 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 SOCKET_HOST=0.0.0.0 SOCKET_PORT=7201 \
 PREFILL_SERVER_ID=prefill-1 \
