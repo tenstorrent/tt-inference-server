@@ -23,7 +23,7 @@ namespace tt::domain::llm {
 
 namespace detail {
 
-constexpr size_t MAX_PROMPT_LOG_LENGTH = 200;
+constexpr size_t MAX_PROMPT_LOG_LENGTH = 5000;
 
 inline std::string truncate(const std::string& s, size_t maxLen) {
   if (s.size() <= maxLen) return s;
