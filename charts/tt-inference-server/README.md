@@ -2,7 +2,7 @@
 
 Deploys vLLM and media inference backends on Tenstorrent Galaxy hardware.
 
-**Chart version:** 0.2.0 | **App version:** 0.12.0
+**Chart version:** 0.1.0 | **App version:** 0.12.0
 
 ---
 
