@@ -1012,9 +1012,9 @@ class TestImageMatrixExpansion:
         }
         for suite_id, expected in expected_counts.items():
             suite = suite_map[suite_id]
-            assert (
-                len(suite["test_cases"]) == expected
-            ), f"{suite_id}: expected {expected} test cases, got {len(suite['test_cases'])}"
+            assert len(suite["test_cases"]) == expected, (
+                f"{suite_id}: expected {expected} test cases, got {len(suite['test_cases'])}"
+            )
 
     def test_sdxl_reduced_num_devices(self):
         suites = load_suite_files_by_category("image")
