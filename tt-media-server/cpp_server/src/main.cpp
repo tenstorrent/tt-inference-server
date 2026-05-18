@@ -25,15 +25,15 @@
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "runtime/worker/blaze_worker_metrics_renderer.hpp"
+#include "runtime/worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/worker_manager.hpp"
+#include "runtime/worker/worker_metrics_aggregator.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
-#include "worker/blaze_worker_metrics_renderer.hpp"
-#include "worker/single_process_worker_metrics.hpp"
-#include "worker/worker_manager.hpp"
-#include "worker/worker_metrics_aggregator.hpp"
-#include "worker/worker_metrics_shm.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -75,6 +75,8 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
       return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
+    case tt::config::ModelService::IMAGE:
+      return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;
 }
@@ -185,6 +187,18 @@ int main(int argc, char* argv[]) {
   auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
   tt::utils::service_factory::initializeServices();
+
+  // Start the configured service on the main thread. Services whose start()
+  // is slow (e.g. image warmup) own their own background thread internally;
+  // services that fork worker processes (LLM, embedding) MUST start on the
+  // main thread, because PR_SET_PDEATHSIG sends SIGTERM to the worker as
+  // soon as the *thread* that called fork() exits.
+  try {
+    tt::utils::service_factory::startConfiguredService();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
+    return 1;
+  }
 
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.

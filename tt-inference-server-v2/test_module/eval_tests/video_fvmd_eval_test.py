@@ -62,6 +62,9 @@ class VideoFVMDTest(BaseTest):
     Reference: FVMD metric from video generation evaluation literature.
     """
 
+    KIND = "video_fvmd_evals"
+    TASK_TYPE = "video"
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}

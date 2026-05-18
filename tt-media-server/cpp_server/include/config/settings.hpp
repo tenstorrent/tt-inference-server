@@ -24,7 +24,10 @@ ModelService modelService();
 bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool isLlmServiceEnabled();
+bool isLlmService();
+
+/** True when model_service() == IMAGE. */
+bool isImageService();
 
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
@@ -227,6 +230,11 @@ int decodeMaxTokenIds();
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
+
+/** Build ImageConfig from environment variables and runtime settings. Reads
+ * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
+ * src/config/settings.cpp. */
+ImageConfig imageEngineConfig();
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

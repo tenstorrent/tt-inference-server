@@ -9,7 +9,11 @@
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "config/defaults.hpp"
@@ -47,6 +51,19 @@ unsigned long envUlong(const char* name, unsigned long defaultValue) {
   } catch (const std::exception&) {
     return defaultValue;
   }
+}
+
+bool envBool(const char* name, bool defaultValue) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return defaultValue;
+  const std::string lower = toLower(v);
+  if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
+    return true;
+  }
+  if (lower == "0" || lower == "false" || lower == "no" || lower == "off") {
+    return false;
+  }
+  return defaultValue;
 }
 
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
@@ -94,7 +111,9 @@ ModelService modelService() {
 
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
-bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
+bool isLlmService() { return modelService() == ModelService::LLM; }
+
+bool isImageService() { return modelService() == ModelService::IMAGE; }
 
 std::string runnerType() { return toString(modelService()); }
 
@@ -266,6 +285,107 @@ LLMConfig llmEngineConfig() {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
     cfg.scheduling_policy = schedulingPolicy();
+    return cfg;
+  }();
+  return cached;
+}
+
+namespace {
+
+/** Parse "WxH" (case-insensitive 'x'); std::nullopt if malformed or either
+ *  dimension is non-positive. Strict: rejects trailing junk like
+ * "1024x1024foo". */
+std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
+  std::istringstream ss(s);
+  long long w = 0, h = 0;
+  char sep = 0;
+  ss >> w >> sep >> h;
+  if (!ss || w <= 0 || h <= 0 || (sep != 'x' && sep != 'X')) {
+    return std::nullopt;
+  }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    return std::nullopt;
+  }
+  return std::make_pair(static_cast<size_t>(w), static_cast<size_t>(h));
+}
+
+/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}. Rejects
+ *  single-axis input ("8") with a clear error: silently promoting to {8, 1}
+ *  would flip tensor parallelism on without the operator asking for it.
+ *  Rejects more than 2 dims and trailing junk: the rest of the code indexes
+ *  [0]/[1] and treats the mesh as (rows, cols). */
+std::vector<size_t> parseMeshShape(const std::string& s) {
+  std::vector<size_t> out;
+  std::istringstream ss(s);
+  size_t v = 0;
+  while (ss >> v) {
+    out.push_back(v);
+    if (ss.peek() == ',') ss.ignore();
+  }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE has trailing junk after parsing; "
+        "expected 'rows,cols', got '" +
+        s + "'");
+  }
+  if (out.empty()) return {1, 1};
+  if (out.size() == 1) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 'rows,cols' (e.g. '1,1' for "
+        "single device, '2,4' for 2x4 mesh); got '" +
+        s + "'");
+  }
+  if (out.size() > 2) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 2-D 'rows,cols'; got '" + s +
+        "' with " + std::to_string(out.size()) + " dimensions");
+  }
+  if (out[0] == 0 || out[1] == 0) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE dimensions must be >= 1; got '" + s + "'");
+  }
+  return out;
+}
+
+/** Shared reader for every in-process media runner config. */
+void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
+  cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
+  cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+  cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
+  cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
+      envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
+  cfg.visible_devices = visibleDevicesForWorker(0);
+}
+
+}  // namespace
+
+ImageConfig imageEngineConfig() {
+  static const ImageConfig cached = [] {
+    ImageConfig cfg;
+    const std::string runner =
+        envStringLower("MODEL_RUNNER_TYPE", "tt_sdxl_generate");
+    if (runner == "tt_sdxl_generate") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_GENERATE;
+    } else if (runner == "tt_sdxl_image_to_image") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE;
+    } else if (runner == "tt_sdxl_edit") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_EDIT;
+    } else {
+      throw std::runtime_error(
+          "[Config] Unknown image MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_sdxl_generate, tt_sdxl_image_to_image, "
+          "tt_sdxl_edit");
+    }
+
+    readMediaRunnerConfig(cfg);
+
+    if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
+      cfg.image_width = wh->first;
+      cfg.image_height = wh->second;
+    }
     return cfg;
   }();
   return cached;

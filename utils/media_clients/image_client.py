@@ -13,8 +13,9 @@ from typing import Optional
 import aiohttp
 import requests
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import ImageGenerationTestStatus
+from workflows.workflow_types import ReportCheckTypes
 
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -123,6 +124,9 @@ class ImageClientStrategy(BaseMediaStrategy):
             0
         ].score.published_score_ref
 
+        latency_for_perf_check: Optional[float] = None
+        tput_user_for_perf_check: Optional[float] = None
+
         if isinstance(eval_result, dict):
             # ImageGenerationEvalsTest result - metrics already computed by the test
             eval_results = eval_result.get("eval_results", {})
@@ -140,6 +144,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             latency_value = self._calculate_latency(status_list)
             logger.info(f"Extracted latency value (s): {latency_value}")
             benchmark_data["score"] = latency_value
+            latency_for_perf_check = latency_value
 
             logger.info("Running and calculating accuracy and metrics")
             fid_score, average_clip_score, deviation_clip_score = calculate_metrics(
@@ -164,11 +169,17 @@ class ImageClientStrategy(BaseMediaStrategy):
                     total_time * device_spec.max_concurrency
                 )
                 benchmark_data["tput_user"] = tput_user
+                tput_user_for_perf_check = tput_user
                 logger.info(
                     f"Calculated tput_user: {tput_user} (prompts: {len(status_list)}, time: {total_time}s, max_concurrency: {device_spec.max_concurrency})"
                 )
             else:
                 logger.warning(f"No device spec found for device: {self.device}")
+
+        benchmark_data["performance_check"] = self._calculate_performance_check(
+            latency_value=latency_for_perf_check,
+            tput_user_value=tput_user_for_perf_check,
+        )
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -197,7 +208,7 @@ class ImageClientStrategy(BaseMediaStrategy):
             logger.error(f"Eval report written despite failure; raising: {error}")
             raise RuntimeError(error)
 
-    def run_benchmark(self, attempt=0) -> list[ImageGenerationTestStatus]:
+    def run_benchmark(self) -> list[ImageGenerationTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -219,8 +230,10 @@ class ImageClientStrategy(BaseMediaStrategy):
             benchmark_method = self.benchmark_methods.get(
                 self.runner_in_use, self._run_image_generation_benchmark
             )
+            loop_start = time.monotonic()
             status_list = benchmark_method(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -235,9 +248,40 @@ class ImageClientStrategy(BaseMediaStrategy):
             else 0
         )
 
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float] = None,
+        tput_user_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """Image perf check: compares latency and tput_user vs configured targets.
+
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
+        """
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck(
+                    "tput_user",
+                    tput_user_value,
+                    targets.tput_user,
+                    lower_is_better=False,
+                ),
+            ],
+            tolerance=targets.tolerance,
+        )
+
     def _generate_report(
         self,
         status_list: list[ImageGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
     ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
@@ -249,6 +293,17 @@ class ImageClientStrategy(BaseMediaStrategy):
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
         latency_value = self._calculate_latency(status_list)
+        performance_check = self._calculate_performance_check(
+            latency_value=latency_value
+        )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
+        steps_per_second = self._calculate_steps_per_second(
+            total_steps=sum(s.num_inference_steps for s in status_list),
+            total_elapsed_seconds=sum(s.elapsed for s in status_list),
+        )
 
         report_data = {
             "benchmarks": {
@@ -257,17 +312,15 @@ class ImageClientStrategy(BaseMediaStrategy):
                 if status_list
                 else 0,
                 "latency": latency_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "inference_steps_per_second": steps_per_second,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "image",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
