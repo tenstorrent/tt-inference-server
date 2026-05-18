@@ -44,6 +44,7 @@ class AgenticEvalConfig:
     agent_timeout_sec: Optional[float] = None
     quiet: bool = True
     yes: bool = True
+    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class SWEbenchEvalConfig:
     swebench_timeout_sec: Optional[int] = None
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
+    instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -159,11 +161,11 @@ _eval_config_list = [
                 agentic_eval_config=AgenticEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=10,
+                    n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
-                    # override_cpus=16,
-                    # override_memory_mb=48 * 1024,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -181,11 +183,18 @@ _eval_config_list = [
                             },
                         },
                     },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0,
-                    EvalLimitMode.CI_COMMIT: 0,
-                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
             EvalTask(
@@ -224,11 +233,18 @@ _eval_config_list = [
                             "top_k": 20,
                         },
                     },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0,
-                    EvalLimitMode.CI_COMMIT: 0,
-                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],

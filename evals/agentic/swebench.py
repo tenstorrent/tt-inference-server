@@ -9,7 +9,9 @@ import logging
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+import re
+
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -42,6 +44,7 @@ class SWEbenchRunConfig:
     shuffle: bool
     random_delay_multiplier: float
     score_existing_predictions: bool
+    instance_ids: list[str] = field(default_factory=list)
 
 
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> None:
@@ -221,7 +224,10 @@ def build_mini_sweagent_command(
     ]
     if config.shuffle:
         cmd.append("--shuffle")
-    if config.n_tasks is not None:
+    if config.instance_ids:
+        regex = "^(" + "|".join(re.escape(iid) for iid in config.instance_ids) + ")$"
+        cmd.extend(["--filter", regex])
+    elif config.n_tasks is not None:
         cmd.extend(["--slice", f":{config.n_tasks}"])
     return cmd
 

@@ -11,7 +11,7 @@ import logging
 import sys
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,9 @@ def _add_swebench_args(parser: argparse.ArgumentParser) -> None:
         "--shuffle", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument("--random-delay-multiplier", type=float, default=0.3)
+    parser.add_argument(
+        "--instance-id", action="append", default=[], dest="instance_ids"
+    )
     parser.add_argument(
         "--score-existing-predictions",
         action="store_true",
@@ -119,6 +122,7 @@ def main() -> int:
             shuffle=args.shuffle,
             random_delay_multiplier=args.random_delay_multiplier,
             score_existing_predictions=args.score_existing_predictions,
+            instance_ids=args.instance_ids,
         )
         return run(config)
 

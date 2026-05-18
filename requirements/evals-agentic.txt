@@ -9,8 +9,6 @@
 # editable package by the setup_evals_agentic() hook, so that its config
 # directory is available at a known path on disk.
 
--c constraints.txt
-
-harbor
+harbor==0.6.5
 mini-swe-agent
 git+https://github.com/epoch-research/SWE-bench.git

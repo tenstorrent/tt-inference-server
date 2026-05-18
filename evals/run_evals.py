@@ -78,10 +78,14 @@ def _select_eval_config(
 
     # TODO: revert this logic later
     agentic_tasks = [
-        t for t in eval_config.tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        t
+        for t in eval_config.tasks
+        if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]
     non_agentic_tasks = [
-        t for t in eval_config.tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+        t
+        for t in eval_config.tasks
+        if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
     selected_non_agentic = [non_agentic_tasks[0]] if non_agentic_tasks else []
     if selected_non_agentic:
@@ -186,6 +190,30 @@ def _setup_agentic_eval_env(service_port):
     os.environ.setdefault("OPENAI_BASE_URL", base_url)
     os.environ.setdefault("OPENAI_API_BASE", base_url)
     logger.info("OpenAI-compatible environment configured for agentic evals.")
+
+
+def _resolve_task_names(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> List[str]:
+    agentic_config = task.agentic_eval_config
+    if agentic_config is None:
+        return []
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is not None and limit_mode in agentic_config.task_names_map:
+        return agentic_config.task_names_map[limit_mode]
+    return agentic_config.task_names
+
+
+def _resolve_instance_ids(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> List[str]:
+    swebench_config = task.swebench_eval_config
+    if swebench_config is None:
+        return []
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is not None and limit_mode in swebench_config.instance_ids_map:
+        return swebench_config.instance_ids_map[limit_mode]
+    return []
 
 
 def _resolve_n_tasks(
@@ -420,7 +448,9 @@ def build_agentic_eval_command(
     runner_path = project_root / "evals" / "agentic" / "run_agentic_eval.py"
     n_tasks = _resolve_n_tasks(task, runtime_config)
     if n_tasks == 0:
-        logger.info("Skipping agentic task %s: n_tasks=0 for this limit mode", task.task_name)
+        logger.info(
+            "Skipping agentic task %s: n_tasks=0 for this limit mode", task.task_name
+        )
         return []
 
     if task.swebench_eval_config is not None:
@@ -478,9 +508,13 @@ def build_agentic_eval_command(
         if swebench_config.max_output_tokens is not None:
             cmd.extend(["--max-output-tokens", str(swebench_config.max_output_tokens)])
         if swebench_config.swebench_timeout_sec is not None:
-            cmd.extend(["--swebench-timeout-sec", str(swebench_config.swebench_timeout_sec)])
+            cmd.extend(
+                ["--swebench-timeout-sec", str(swebench_config.swebench_timeout_sec)]
+            )
         if not swebench_config.shuffle:
             cmd.append("--no-shuffle")
+        for instance_id in _resolve_instance_ids(task, runtime_config):
+            cmd.extend(["--instance-id", instance_id])
         return cmd
 
     if task.agentic_eval_config is not None:
@@ -523,7 +557,7 @@ def build_agentic_eval_command(
             cmd.extend(["--timeout-multiplier", str(agentic_config.timeout_multiplier)])
         if agentic_config.agent_timeout_sec is not None:
             cmd.extend(["--agent-timeout-sec", str(agentic_config.agent_timeout_sec)])
-        for task_name in agentic_config.task_names:
+        for task_name in _resolve_task_names(task, runtime_config):
             cmd.extend(["--include-task-name", task_name])
         for task_name in agentic_config.exclude_task_names:
             cmd.extend(["--exclude-task-name", task_name])
