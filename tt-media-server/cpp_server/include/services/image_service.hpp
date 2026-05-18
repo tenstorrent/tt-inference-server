@@ -13,7 +13,7 @@
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
-#include "runners/media_runner.hpp"
+#include "runtime/runners/media_runner.hpp"
 #include "services/base_service.hpp"
 
 namespace tt::services {

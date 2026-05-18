@@ -10,7 +10,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runners/ipc_runner.hpp"
+#include "runtime/runners/ipc_runner.hpp"
 
 namespace tt::utils::ipc_runner_factory {
 

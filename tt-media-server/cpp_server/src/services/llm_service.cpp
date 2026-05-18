@@ -14,11 +14,11 @@
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tool_call_id_generator.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
