@@ -36,9 +36,8 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllAtMaxInFlight) {
 }
 
 TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
-  std::vector<PrefillSnapshot> prefills = {
-      prefill("A", true, /*inFlight=*/5),
-      prefill("B", true, /*inFlight=*/0)};
+  std::vector<PrefillSnapshot> prefills = {prefill("A", true, /*inFlight=*/5),
+                                           prefill("B", true, /*inFlight=*/0)};
   size_t cursor = 0;
   // Sticky -> A even though B is less loaded.
   auto chosen = selectPrefill(prefills, /*hash=*/42, std::string{"A"}, cursor);
@@ -66,9 +65,8 @@ TEST(PrefillSelectorTest, StickyFallsBackToLeastLoadedWhenTargetOverloaded) {
 }
 
 TEST(PrefillSelectorTest, LeastInflightWinsOverLoaded) {
-  std::vector<PrefillSnapshot> prefills = {prefill("A", true, 3),
-                                           prefill("B", true, 1),
-                                           prefill("C", true, 5)};
+  std::vector<PrefillSnapshot> prefills = {
+      prefill("A", true, 3), prefill("B", true, 1), prefill("C", true, 5)};
   size_t cursor = 0;
   auto chosen = selectPrefill(prefills, 0, std::nullopt, cursor);
   ASSERT_TRUE(chosen.has_value());
@@ -76,9 +74,8 @@ TEST(PrefillSelectorTest, LeastInflightWinsOverLoaded) {
 }
 
 TEST(PrefillSelectorTest, RoundRobinAmongTiedLeastLoaded) {
-  std::vector<PrefillSnapshot> prefills = {prefill("A", true, 0),
-                                           prefill("B", true, 0),
-                                           prefill("C", true, 0)};
+  std::vector<PrefillSnapshot> prefills = {
+      prefill("A", true, 0), prefill("B", true, 0), prefill("C", true, 0)};
   size_t cursor = 0;
   auto c1 = selectPrefill(prefills, 0, std::nullopt, cursor);
   auto c2 = selectPrefill(prefills, 0, std::nullopt, cursor);
