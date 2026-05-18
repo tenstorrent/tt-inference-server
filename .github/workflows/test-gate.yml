@@ -1125,7 +1125,7 @@ jobs:
           TT_IPC_SHM_P2C=tt_ipc_p2c \
           TT_IPC_SHM_C2P=tt_ipc_c2p \
           LLM_DEVICE_BACKEND=ttrun \
-            python src/runners/mock_prefill_runner.py \
+            python src/runtime/runners/mock_prefill_runner.py \
             > ../mock_prefill_runner.log 2>&1 &
           echo $! > ../mock_prefill_runner.pid
           cd ..

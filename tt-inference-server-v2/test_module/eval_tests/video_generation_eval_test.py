@@ -47,6 +47,9 @@ class VideoGenerationEvalsTestRequest:
 
 
 class VideoGenerationEvalsTest(BaseTest):
+    KIND = "video_generation_evals"
+    TASK_TYPE = "video"
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
