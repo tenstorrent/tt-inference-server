@@ -137,7 +137,7 @@ void SocketTransport::stop() {
   running_ = false;
   connected_ = false;
 
-  peerSocket_.store(-1);
+  peerSocket_.store(-1, std::memory_order_release);
 
   if (serverSocket_) {
     ::shutdown(serverSocket_.get(), SHUT_RDWR);
@@ -154,7 +154,7 @@ void SocketTransport::stop() {
 }
 
 void SocketTransport::shutdownPeer() {
-  int fd = peerSocket_.load();
+  int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd >= 0) {
     ::shutdown(fd, SHUT_RDWR);
   }
@@ -178,7 +178,7 @@ void SocketTransport::serverLoop() {
 
     configureSocket(accepted.get());
 
-    peerSocket_.store(accepted.get());
+    peerSocket_.store(accepted.get(), std::memory_order_release);
     connected_ = true;
 
     TT_LOG_INFO("[SocketTransport] Client connected from {}:{}",
@@ -193,7 +193,7 @@ void SocketTransport::serverLoop() {
     }
 
     accepted.reset();
-    peerSocket_.store(-1);
+    peerSocket_.store(-1, std::memory_order_release);
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();
@@ -244,7 +244,7 @@ void SocketTransport::clientLoop() {
 
     configureSocket(clientSocket_.get());
 
-    peerSocket_.store(clientSocket_.get());
+    peerSocket_.store(clientSocket_.get(), std::memory_order_release);
     connected_ = true;
     delayMs = reconnectInitialDelayMs_;  // reset on success
 
@@ -258,7 +258,7 @@ void SocketTransport::clientLoop() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    peerSocket_.store(-1);
+    peerSocket_.store(-1, std::memory_order_release);
     clientSocket_.reset();
     // See serverLoop comment: always-fire on exit-from-connected.
     connected_ = false;
@@ -275,7 +275,7 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 
   std::lock_guard<std::mutex> lock(sendMutex_);
 
-  int fd = peerSocket_.load();
+  int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return false;
 
   uint32_t size = static_cast<uint32_t>(data.size());
@@ -304,7 +304,7 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 std::vector<uint8_t> SocketTransport::receiveRawData() {
   if (!connected_) return {};
 
-  int fd = peerSocket_.load();
+  int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return {};
 
   uint32_t netSize;

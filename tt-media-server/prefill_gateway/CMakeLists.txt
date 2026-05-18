@@ -83,6 +83,7 @@ set(GATEWAY_CORE_SOURCES
     src/affinity_cache.cpp
     src/prefill_registry.cpp
     src/dispatcher.cpp
+    ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 
 add_library(prefill_gateway_core STATIC ${GATEWAY_CORE_SOURCES})
@@ -105,7 +106,6 @@ target_compile_options(prefill_gateway_core PRIVATE -Wall -Wextra -Wpedantic)
 add_library(prefill_gateway_io STATIC
     ${CPP_SERVER_DIR}/src/sockets/socket_manager.cpp
     ${CPP_SERVER_DIR}/src/sockets/socket_transport.cpp
-    ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 target_include_directories(prefill_gateway_io PUBLIC
     ${CPP_SERVER_DIR}/include

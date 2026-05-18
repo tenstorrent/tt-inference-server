@@ -10,6 +10,7 @@
 #include "gateway/affinity_cache.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/prefill_selector.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::gateway {
 
@@ -29,11 +30,16 @@ void Dispatcher::onPrefillRequest(
   auto chosenOpt = selectPrefill(prefills, msg.registration_hash, sticky,
                                  round_robin_cursor_);
   if (!chosenOpt.has_value()) {
+    TT_LOG_WARN("[Dispatcher] taskId={} no eligible prefill (healthy={})",
+                msg.task_id, prefills.size());
     failTaskToDecode(msg.task_id, "no_prefill_available");
     return;
   }
 
   const std::string& chosen = *chosenOpt;
+  const bool usedSticky = sticky.has_value() && *sticky == chosen;
+  TT_LOG_INFO("[Dispatcher] taskId={} -> prefill='{}' sticky={} hash={}",
+              msg.task_id, chosen, usedSticky, msg.registration_hash);
 
   registry_.incrementInflight(chosen);
   {
@@ -55,6 +61,8 @@ void Dispatcher::onPrefillRequest(
   }
 
   if (!sent) {
+    TT_LOG_ERROR("[Dispatcher] taskId={} send to prefill='{}' failed, failing task",
+                 msg.task_id, chosen);
     registry_.decrementInflight(chosen);
     {
       std::lock_guard<std::mutex> lock(inflight_mutex_);
@@ -83,6 +91,14 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   // Don't cache failures — they'd resend to the same broken prefill.
   if (entry && !msg.error && entry->registration_hash != 0) {
     affinity_cache_.record(entry->registration_hash, fromServerId);
+  }
+
+  if (msg.error) {
+    TT_LOG_ERROR("[Dispatcher] taskId={} result error from prefill='{}'",
+                 msg.task_id, fromServerId);
+  } else {
+    TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}' tokens={}",
+                msg.task_id, fromServerId, msg.tokens_generated);
   }
 
   if (senders_.sendResultToDecode) {
@@ -116,12 +132,19 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
     }
   }
 
+  if (!orphaned.empty()) {
+    TT_LOG_WARN("[Dispatcher] prefill='{}' down, failing {} in-flight tasks",
+                serverId, orphaned.size());
+  }
+
   for (uint32_t taskId : orphaned) {
     failTaskToDecode(taskId, "prefill_down");
   }
 }
 
 void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason) {
+  TT_LOG_ERROR("[Dispatcher] taskId={} failed: {}", taskId, reason);
+
   tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;
   err.finished = true;

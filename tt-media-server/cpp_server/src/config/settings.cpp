@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -451,15 +452,22 @@ bool usePrefillGateway() {
                   defaults::USE_PREFILL_GATEWAY ? 1UL : 0UL) != 0UL;
 }
 
+namespace {
+std::string getHostname() {
+  std::string host(256, '\0');
+  if (::gethostname(host.data(), host.size()) != 0) {
+    return "unknown-host";
+  }
+  host.resize(std::strlen(host.c_str()));
+  return host;
+}
+}  // namespace
+
 std::string prefillServerId() {
   static const std::string cached = [] {
     std::string v = envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
     if (!v.empty()) return v;
-    char host[256] = {0};
-    if (::gethostname(host, sizeof(host) - 1) != 0) {
-      std::snprintf(host, sizeof(host), "unknown-host");
-    }
-    return std::string(host) + ":" + std::to_string(socketPort());
+    return getHostname() + ":" + std::to_string(socketPort());
   }();
   return cached;
 }
