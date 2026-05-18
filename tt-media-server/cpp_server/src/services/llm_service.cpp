@@ -318,6 +318,12 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       uint32_t taskId = token.task_id;
       bool isError = token.isError();
       bool isFinal = token.isFinal();
+      bool isAbort = token.isAbort();
+
+      if (isAbort) {
+        streamDecoders.erase(taskId);
+        continue;
+      }
 
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {

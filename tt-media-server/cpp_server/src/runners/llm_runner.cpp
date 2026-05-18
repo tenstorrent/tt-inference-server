@@ -94,7 +94,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     }
 
     ipc::helpers::pushToken(*this->resultQueue, result.taskId, result.tokenId,
-                            finished);
+                            finished ? tt::ipc::SharedToken::FLAG_FINAL : 0);
 
     if (finished) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);

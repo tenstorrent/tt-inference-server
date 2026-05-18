@@ -8,6 +8,7 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
+#include "domain/manage_memory.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::runners::blaze_utils {
@@ -76,6 +77,7 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
 struct SlotContext {
   uint32_t taskId;
   bool ignoreEos;
+  bool evicting = false;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
   uint32_t tokensGenerated = 0;

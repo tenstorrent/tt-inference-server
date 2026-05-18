@@ -183,7 +183,10 @@ void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   drainAndHandleMemoryResponses();
   drainAndHandleOutputs();
-  drainAndHandleCancelRequests();
+  // Memory requests (notably DEALLOCATE) must be handled before cancel
+  // requests so the `evicting` flag is set in time for handleCancelRequest
+  // to skip a redundant STOP push when an EVICT is already in flight for
+  // the same slot.
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
@@ -191,6 +194,7 @@ void BlazeRunner::step() {
                  static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
+  drainAndHandleCancelRequests();
   auto request = getRequest();
   if (request) {
     TT_LOG_DEBUG(
@@ -243,6 +247,14 @@ inline void BlazeRunner::handleMemoryRequest(
           request.slotId, it->second.expectedStopRequestId,
           static_cast<bool>(it->second.sequence));
       pendingSubmits.erase(it);
+    }
+    if (auto ctxIt = slotContexts.find(request.slotId);
+        ctxIt != slotContexts.end()) {
+      TT_LOG_DEBUG(
+          "[BlazeRunner] handleMemoryRequest: DEALLOCATE for slotId={} "
+          "marking slot as evicting (taskId={})",
+          request.slotId, ctxIt->second.taskId);
+      ctxIt->second.evicting = true;
     }
   }
   memoryManager->handleRequest(request);
@@ -298,6 +310,14 @@ inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
   }
   for (const auto& [slotId, ctx] : slotContexts) {
     if (ctx.taskId != taskId) continue;
+    if (ctx.evicting) {
+      TT_LOG_DEBUG(
+          "[BlazeRunner] handleCancelRequest: skipping STOP for taskId={} "
+          "slotId={} (eviction already in flight; request will be torn "
+          "down by EVICT)",
+          taskId, slotId);
+      return;
+    }
     if (decodeScheduler->push_request(utils::makeStopRequest(taskId, slotId))) {
       TT_LOG_DEBUG(
           "[BlazeRunner] handleCancelRequest: pushed STOP "
@@ -306,11 +326,13 @@ inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
       pendingSubmits.insert_or_assign(
           slotId, blaze_utils::PendingSubmit{.expectedStopRequestId = taskId,
                                              .sequence = nullptr});
+      ipc::helpers::pushToken(*resultQueue, taskId, 0,
+                              ipc::SharedToken::FLAG_ABORT, 0, 0);
     } else {
       TT_LOG_DEBUG(
           "[BlazeRunner] handleCancelRequest: scheduler rejected STOP "
-          "(taskId={}, slotId={}); slot is already being evicted, request "
-          "will be torn down by the eviction",
+          "(taskId={}, slotId={}); slot has a CANCEL already pending, "
+          "request will be torn down by the eviction",
           taskId, slotId);
     }
     return;
@@ -359,8 +381,9 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
         .decrementActiveRequests();
   }
 
-  ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, finished,
-                          specAccepts, specRejects);
+  ipc::helpers::pushToken(*resultQueue, taskId, output.token_id,
+                          ipc::SharedToken::FLAG_FINAL, specAccepts,
+                          specRejects);
 }
 
 void BlazeRunner::checkOutputHang() {
@@ -452,10 +475,12 @@ void BlazeRunner::handleRequest(
     lastOutputTime = std::chrono::steady_clock::now();
   }
   slotContexts.insert_or_assign(
-      slotId, blaze_utils::SlotContext{
-                  request->taskId, request->getSamplingParams().ignore_eos,
-                  decodeScheduler->get_spec_accepts(slotId),
-                  decodeScheduler->get_spec_rejects(slotId)});
+      slotId,
+      blaze_utils::SlotContext{
+          .taskId = request->taskId,
+          .ignoreEos = request->getSamplingParams().ignore_eos,
+          .specAcceptsAtStart = decodeScheduler->get_spec_accepts(slotId),
+          .specRejectsAtStart = decodeScheduler->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 
