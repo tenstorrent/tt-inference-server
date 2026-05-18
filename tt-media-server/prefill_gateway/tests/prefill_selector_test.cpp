@@ -118,7 +118,6 @@ TEST(PrefillSelectorTest, HashOfZeroIgnoresSticky) {
 }
 
 TEST(PrefillSelectorTest, ReasonLabelMatchesEnum) {
-  EXPECT_STREQ(reasonLabel(SelectionReason::PREFIX_MATCH), "prefix_match");
   EXPECT_STREQ(reasonLabel(SelectionReason::EQUALITY_MATCH), "equality_match");
   EXPECT_STREQ(reasonLabel(SelectionReason::LEAST_INFLIGHT), "least_inflight");
   EXPECT_STREQ(reasonLabel(SelectionReason::ROUND_ROBIN), "round_robin");

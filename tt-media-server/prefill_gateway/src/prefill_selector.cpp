@@ -29,8 +29,6 @@ const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
 
 const char* reasonLabel(SelectionReason reason) {
   switch (reason) {
-    case SelectionReason::PREFIX_MATCH:
-      return "prefix_match";
     case SelectionReason::EQUALITY_MATCH:
       return "equality_match";
     case SelectionReason::LEAST_INFLIGHT:

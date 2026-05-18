@@ -12,8 +12,7 @@ namespace tt::gateway {
 
 // Reason a prefill was (not) selected; used for metrics labels.
 enum class SelectionReason : uint8_t {
-  PREFIX_MATCH,    // v1: longest cached-prefix hit (future)
-  EQUALITY_MATCH,  // v0: AffinityCache hit on registration_hash
+  EQUALITY_MATCH,  // AffinityCache hit on registration_hash
   LEAST_INFLIGHT,
   ROUND_ROBIN,  // cold-start tie-breaker
   NO_PEERS_AVAILABLE,
