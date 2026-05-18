@@ -374,6 +374,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
       bool useJsonParser =
           toolChoiceType == "function" || toolChoiceType == "required";
+      std::optional<std::string> finalFinishReason;
+      auto captureFinalFinishReason =
+          [&finalFinishReason](const LLMStreamChunk& response) {
+            if (!response.choices.empty() &&
+                response.choices[0].finish_reason.has_value()) {
+              finalFinishReason = response.choices[0].finish_reason.value();
+            }
+          };
 
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
@@ -408,6 +416,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         auto response = buildToolCallStreamChunk(
             token, toolCallResult->tool_calls_delta, isFinal);
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
 
       } else if (inToolCall) {
         // Inside tool call parsing, suppress regular output
@@ -420,6 +431,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           emptyDelta.append(emptyCall);
           auto response = buildToolCallStreamChunk(token, emptyDelta, true);
           entry->callback(response, isFinal);
+          captureFinalFinishReason(response);
         }
         // else: suppress, don't emit
 
@@ -432,10 +444,21 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
       }
 
       // Cleanup at finalization
       if (isFinal) {
+        if (!finalFinishReason.has_value()) {
+          TT_LOG_WARN(
+              "[Consumer-{}] Final token for task {} reached cleanup without "
+              "a finish reason set; defaulting to \"error\"",
+              workerIdx, taskId);
+        }
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, finalFinishReason.value_or("error"));
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
         toolChoiceMap.take(taskId);  // Clean up tool choice

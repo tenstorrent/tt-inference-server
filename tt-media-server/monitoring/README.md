@@ -25,6 +25,16 @@ SERVER_SERVICE=cpp \
   docker compose -f monitoring/docker-compose.yml up -d
 ```
 
+If you're already inside `tt-media-server/monitoring/`, pass the file as
+`./docker-compose.yml` (the leading `./` is required — a bare
+`docker-compose.yml` is not resolved as a path):
+
+```bash
+SERVER_TARGET=$(hostname):8000 \
+SERVER_SERVICE=cpp \
+  docker compose -f ./docker-compose.yml up -d
+```
+
 `SERVER_TARGET` defaults to `tt-inference-server:8000` if omitted.
 `SERVER_SERVICE` defaults to `python` (kept for backwards compatibility
 with the original setup). Using `$(hostname)` is convenient when the
