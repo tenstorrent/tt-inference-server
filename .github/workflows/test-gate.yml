@@ -1248,6 +1248,12 @@ jobs:
         with:
           version: latest
 
+      - name: Helm lint
+        run: |
+          helm lint charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct \
+            --set device=galaxy
+
       - name: Install kubeconform
         run: |
           KUBECONFORM_VERSION=v0.6.7
@@ -1266,6 +1272,20 @@ jobs:
                   if key != 'serverType':
                       print(f"{model},{key}")
           EOF
+
+      - name: Helm lint per model/device
+        run: |
+          FAILED=0
+          while IFS=',' read -r model device; do
+            echo "--- Linting: $model / $device"
+            if ! helm lint charts/tt-inference-server \
+                --set "model=$model" \
+                --set "device=$device"; then
+              echo "FAILED: $model / $device"
+              FAILED=1
+            fi
+          done < /tmp/helm-matrix.txt
+          exit $FAILED
 
       - name: Helm template validation
         run: |
