@@ -106,5 +106,48 @@ class TestCalculateThroughputRps(unittest.TestCase):
         assert BaseMediaStrategy._calculate_throughput_rps(1, 4.0) == 0.25
 
 
+class TestCalculateStepsPerSecond(unittest.TestCase):
+    """Tests for ``BaseMediaStrategy._calculate_steps_per_second``."""
+
+    def test_basic_division(self):
+        # 40 steps performed over 8 seconds of inference = 5 steps/s.
+        assert BaseMediaStrategy._calculate_steps_per_second(40, 8.0) == 5.0
+
+    def test_returns_zero_for_no_steps(self):
+        assert BaseMediaStrategy._calculate_steps_per_second(0, 5.0) == 0.0
+
+    def test_returns_zero_for_zero_elapsed(self):
+        # Avoid ZeroDivisionError if a producer ever feeds bogus timings.
+        assert BaseMediaStrategy._calculate_steps_per_second(20, 0.0) == 0.0
+
+    def test_returns_zero_for_negative_elapsed(self):
+        assert BaseMediaStrategy._calculate_steps_per_second(20, -1.0) == 0.0
+
+    def test_aggregate_rate_differs_from_mean_of_per_request_rates(self):
+        # Regression for #3243 item 8: aggregate steps/sec must use
+        # total_steps / total_elapsed, not the mean of per-request rates.
+        # Request A: 20 steps in 1.0 s  → per-request rate 20.0
+        # Request B: 20 steps in 2.0 s  → per-request rate 10.0
+        # mean-of-per-request-rates = (20 + 10) / 2 = 15.0   ← old buggy value
+        # total / total              = 40 / 3.0  ≈ 13.333    ← correct value
+        result = BaseMediaStrategy._calculate_steps_per_second(
+            total_steps=40, total_elapsed_seconds=3.0
+        )
+        assert result == 40 / 3.0
+        # And explicitly: it must NOT be the avg-of-rates blend.
+        assert result != (20.0 + 10.0) / 2
+
+    def test_fast_warmup_request_does_not_inflate_rate(self):
+        # A 1-step warm-up that finished in 0.01 s alongside a real
+        # 100-step / 10 s request would, under avg-of-rates, blend to
+        # (100 + 10) / 2 = 55 steps/s and badly mislead. The correct
+        # aggregate is 101 / 10.01 ≈ 10.09 steps/s.
+        result = BaseMediaStrategy._calculate_steps_per_second(
+            total_steps=101, total_elapsed_seconds=10.01
+        )
+        assert result == 101 / 10.01
+        assert result < 11  # Sanity bound: nowhere near the buggy 55.0.
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
