@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Optional
 
 import aiohttp
-import requests
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -49,11 +48,11 @@ def _audio_tsu(status_list: list[AudioTestStatus]) -> float:
     return sum(valid) / len(valid) if valid else 0
 
 
-def _transcribe_audio_streaming_off(
+async def _transcribe_audio_streaming_off(
     ctx: MediaContext, is_preprocessing_enabled: bool
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("Transcribing audio without streaming")
-    with open(f"{ctx.test_payloads_path}/image_client_audio_payload", "r") as f:
+    with open(Path(ctx.test_payloads_path) / "image_client_audio_payload", "r") as f:
         audio_file = json.load(f)
 
     headers = {
@@ -68,20 +67,25 @@ def _transcribe_audio_streaming_off(
     }
 
     start_time = time.time()
-    response = requests.post(
-        f"{ctx.base_url}/v1/audio/transcriptions",
-        json=payload,
-        headers=headers,
-        timeout=90,
-    )
+    status_ok = False
+    response_data = None
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{ctx.base_url}/v1/audio/transcriptions",
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=90),
+        ) as response:
+            status_ok = response.status == 200
+            if status_ok:
+                response_data = await response.json()
     elapsed = time.time() - start_time
     ttft = elapsed
     tsu = None
 
     rtr = None
-    if response.status_code == 200:
+    if status_ok and response_data is not None:
         try:
-            response_data = response.json()
             audio_duration = response_data.get("duration")
             if audio_duration is not None:
                 rtr = audio_duration / elapsed
@@ -94,7 +98,7 @@ def _transcribe_audio_streaming_off(
         except Exception as e:
             logger.error(f"Failed to calculate RTR: {e}")
 
-    return (response.status_code == 200), elapsed, ttft, tsu, rtr
+    return status_ok, elapsed, ttft, tsu, rtr
 
 
 async def _transcribe_audio_streaming_on(
@@ -104,7 +108,7 @@ async def _transcribe_audio_streaming_on(
     logger.info("Transcribing audio with streaming enabled")
 
     with open(
-        f"{ctx.test_payloads_path}/image_client_audio_streaming_payload", "r"
+        Path(ctx.test_payloads_path) / "image_client_audio_streaming_payload", "r"
     ) as f:
         audio_file = json.load(f)
 
@@ -178,11 +182,10 @@ async def _transcribe_audio_streaming_on(
 
                     elapsed = now - start_time
                     tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
-                    tokens_per_user_per_sec = tokens_per_sec / 1
                     logger.info(
                         f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
                         f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} "
-                        f"t/s/u={tokens_per_user_per_sec:.2f} text={text!r}"
+                        f"t/s/u={tokens_per_sec:.2f} text={text!r}"
                     )
 
         end_time = time.monotonic()
@@ -192,7 +195,7 @@ async def _transcribe_audio_streaming_on(
         final_tps = (
             final_tokens / content_streaming_time if content_streaming_time > 0 else 0
         )
-        final_tokens_per_user_per_sec = final_tps / 1
+        final_tokens_per_user_per_sec = final_tps
 
         rtr = None
         if audio_duration is not None:
@@ -224,12 +227,12 @@ async def _transcribe_audio(
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("🔈 Calling whisper")
     is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(ctx)
-    logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
+    logger.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
 
     if is_streaming_enabled_for_whisper(ctx):
         return await _transcribe_audio_streaming_on(ctx, is_preprocessing_enabled)
 
-    return _transcribe_audio_streaming_off(ctx, is_preprocessing_enabled)
+    return await _transcribe_audio_streaming_off(ctx, is_preprocessing_enabled)
 
 
 def _run_audio_transcription_benchmark(
@@ -247,12 +250,140 @@ def _run_audio_transcription_benchmark(
     return status_list
 
 
+def _is_whisper(ctx: MediaContext) -> bool:
+    impl = getattr(ctx.model_spec, "impl", None)
+    return getattr(impl, "impl_name", None) == "whisper"
+
+
+def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
+    """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest."""
+    from .._test_common import TestConfig
+    from .whisper_eval_test import WhisperEvalTest
+
+    task = ctx.all_params.tasks[0]
+    timeout_s = 1800  # full LibriSpeech run on n150 is ~10 min; pad for safety
+
+    test = WhisperEvalTest(
+        config=TestConfig.create_default(timeout=timeout_s),
+        targets={},
+    )
+    test.hf_model_repo = ctx.model_spec.hf_model_repo
+    test.base_url = ctx.base_url
+    test.task_name = task.task_name
+    test.test_limit = None
+    test.debug_mode = False
+    test.mock_mode = False
+
+    logger.info(
+        "Invoking WhisperEvalTest (lmms-eval): task=%s base_url=%s hf_model_repo=%s",
+        test.task_name,
+        test.base_url,
+        test.hf_model_repo,
+    )
+
+    results = asyncio.run(
+        asyncio.wait_for(test._run_specific_test_async(), timeout=timeout_s)
+    )
+
+    wer = None
+    metrics = results.get("metrics") or {}
+    for key in (f"{task.task_name}_wer", "wer"):
+        val = metrics.get(key)
+        if isinstance(val, (int, float)):
+            wer = float(val)
+            break
+
+    if wer is None:
+        detailed = results.get("detailed_results") or {}
+        task_block = detailed.get(task.task_name) or {}
+        raw = task_block.get("wer,none")
+        if isinstance(raw, (int, float)):
+            wer = float(raw)
+
+    if wer is None:
+        logger.error(
+            "Could not parse WER from lmms-eval results; emitting FAIL block. "
+            "results keys=%s",
+            list(results.keys()),
+        )
+        return Block(
+            kind="evals",
+            task_type="audio",
+            title="Audio Eval",
+            id=block_id(ctx) or None,
+            targets={
+                "task_name": task.task_name,
+                "tolerance": task.score.tolerance,
+                "published_score": task.score.published_score,
+                "published_score_ref": task.score.published_score_ref,
+            },
+            data={
+                "task_name": task.task_name,
+                "tolerance": task.score.tolerance,
+                "published_score": task.score.published_score,
+                "score": None,
+                "published_score_ref": task.score.published_score_ref,
+                "accuracy_check": ReportCheckTypes.FAIL,
+                "wer": None,
+                "error": "WER not found in lmms-eval results",
+            },
+        )
+
+    score = 100.0 - wer
+    published = task.score.published_score
+    reference = getattr(task.score, "gpu_reference_score", None) or published
+    tolerance = task.score.tolerance if task.score.tolerance is not None else 0.05
+    if reference:
+        ratio = score / reference
+        accuracy_check = (
+            ReportCheckTypes.PASS
+            if ratio >= (1.0 - tolerance)
+            else ReportCheckTypes.FAIL
+        )
+    else:
+        accuracy_check = ReportCheckTypes.NA
+
+    logger.info(
+        "WhisperEvalTest WER=%.4f score=%.4f published=%s tolerance=%s check=%s",
+        wer,
+        score,
+        published,
+        tolerance,
+        accuracy_check,
+    )
+
+    return Block(
+        kind="evals",
+        task_type="audio",
+        title="Audio Eval",
+        id=block_id(ctx) or None,
+        targets={
+            "task_name": task.task_name,
+            "tolerance": tolerance,
+            "published_score": published,
+            "published_score_ref": task.score.published_score_ref,
+        },
+        data={
+            "task_name": task.task_name,
+            "tolerance": tolerance,
+            "published_score": published,
+            "score": score,
+            "wer": wer,
+            "published_score_ref": task.score.published_score_ref,
+            "accuracy_check": accuracy_check,
+        },
+    )
+
+
 def run_audio_eval(ctx: MediaContext) -> Block:
     """Run evaluations for an audio model (Whisper, etc.)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
     require_health(ctx)
+
+    if _is_whisper(ctx):
+        return _run_whisper_lmms_eval(ctx)
 
     try:
         num_calls = get_num_calls(ctx)
