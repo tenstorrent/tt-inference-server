@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evals.agentic.report import is_harbor_result, process_agentic_eval_files  # noqa: E402
+from evals.agentic.report import process_agentic_eval_files  # noqa: E402
 from workflows.run_reports import separate_files_by_format  # noqa: E402
 
 
