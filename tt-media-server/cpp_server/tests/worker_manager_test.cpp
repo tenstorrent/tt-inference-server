@@ -8,7 +8,7 @@
 // subprocesses requires the full server stack.  The helper isolates the
 // waitpid/transition bookkeeping that the death callback relies on.
 
-#include "worker/worker_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 
 #include <gtest/gtest.h>
 #include <sys/wait.h>

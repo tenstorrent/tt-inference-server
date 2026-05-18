@@ -535,15 +535,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -601,15 +601,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -626,13 +626,16 @@ jobs:
           ctest --output-on-failure
           cd ../..
 
+      - name: Archive C++ build
+        run: |
+          cd cpp_server
+          tar -czf cpp-server-build.tar.gz build tokenizers
+
       - name: Upload C++ build
         uses: actions/upload-artifact@v4
         with:
           name: cpp-server-build
-          path: |
-            tt-media-server/cpp_server/build/
-            tt-media-server/cpp_server/tokenizers/
+          path: tt-media-server/cpp_server/cpp-server-build.tar.gz
           retention-days: 1
 
   cpp-server-benchmarks:
@@ -662,6 +665,12 @@ jobs:
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server
+
+      - name: Extract C++ build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
 
       - name: Make binaries executable
         run: chmod +x cpp_server/build/tt_media_server_cpp
@@ -994,6 +1003,12 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
+      - name: Extract C++ build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
+
       - name: Make binaries executable
         run: chmod +x cpp_server/build/tt_media_server_cpp
 
@@ -1110,7 +1125,7 @@ jobs:
           TT_IPC_SHM_P2C=tt_ipc_p2c \
           TT_IPC_SHM_C2P=tt_ipc_c2p \
           LLM_DEVICE_BACKEND=ttrun \
-            python src/runners/mock_prefill_runner.py \
+            python src/runtime/runners/mock_prefill_runner.py \
             > ../mock_prefill_runner.log 2>&1 &
           echo $! > ../mock_prefill_runner.pid
           cd ..
@@ -1400,6 +1415,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
     # Gating: any TSan race report after suppressions fails this job and the
     # whole pipeline. Known issues are listed in tsan_suppressions.txt with
     # their tracking issue IDs; remove the corresponding suppression line
@@ -1412,15 +1429,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Init tt-blaze submodule (without tt-metal)
+      - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-blaze
+        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -1428,7 +1445,7 @@ jobs:
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan --blaze
+          ./build.sh --tsan
 
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7

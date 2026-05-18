@@ -24,7 +24,7 @@
 #include <string>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/result_queue.hpp"
+#include "ipc/interface/result_queue.hpp"
 #include "support/chat_completion_stream.hpp"
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
@@ -164,11 +164,12 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
   // "y" tokenises to a single token. With the cache hit, the delta prompt
-  // is exactly that token wrapped in the chat-template markers — 4 tokens
-  // for the DeepSeek tokenizer (BOS + user-marker + "y" + assistant-marker).
-  // If the full conversation had been sent, the long prior assistant turn
-  // would have pushed this well into the dozens.
-  EXPECT_EQ(followUpSeq->getNumPromptTokens(), 4u);
+  // is exactly that token wrapped in the chat-template markers — 3 tokens for
+  // continuation for the DeepSeek tokenizer (user-marker + "y" +
+  // assistant-marker, no BOS since it's already in the slot's KV cache). If the
+  // full conversation had been sent, the long prior assistant turn would have
+  // pushed this well into the dozens.
+  EXPECT_EQ(followUpSeq->getNumPromptTokens(), 3u);
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()

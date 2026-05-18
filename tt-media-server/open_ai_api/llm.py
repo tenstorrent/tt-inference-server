@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import asyncio
 import json
 import time
 import uuid
@@ -19,6 +20,19 @@ from open_ai_api.chat import _count_tokens
 
 logger = TTLogger()
 router = APIRouter()
+
+
+def _split_batched_prompts(req: CompletionRequest) -> list[CompletionRequest]:
+    """Split a batched-prompt request into N single-prompt requests.
+
+    OpenAI /v1/completions accepts prompt as List[str] or List[List[int]] for
+    batched submission. The downstream runner accepts only a single prompt
+    per request, so split here and aggregate results into N choices.
+    """
+    p = req.prompt
+    if isinstance(p, list) and p and isinstance(p[0], (list, str)):
+        return [req.model_copy(update={"prompt": item}) for item in p]
+    return [req]
 
 
 @router.post("/completions")
@@ -40,23 +54,29 @@ async def complete_text(
     created = int(time.time())
     model = completion_request.model or "default"
 
-    # Reject prompts that exceed the model's context window
+    sub_requests = _split_batched_prompts(completion_request)
+
+    # Compute prompt token counts (for context-window validation and usage stats).
+    prompt_tokens_total = 0
     try:
-        if isinstance(completion_request.prompt, str):
-            prompt_tokens = _count_tokens(completion_request.prompt)
-        elif isinstance(completion_request.prompt, list):
-            prompt_tokens = len(completion_request.prompt)
-        else:
-            prompt_tokens = 0
         max_model_len = settings.vllm.max_model_length
-        if prompt_tokens > max_model_len:
-            logger.warning(
-                f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
-            )
+        for r in sub_requests:
+            p = r.prompt
+            if isinstance(p, str):
+                prompt_tokens = _count_tokens(p)
+            elif isinstance(p, list):
+                prompt_tokens = len(p)
+            else:
+                prompt_tokens = 0
+            prompt_tokens_total += prompt_tokens
+            if prompt_tokens > max_model_len:
+                logger.warning(
+                    f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+                )
     except HTTPException:
         raise
     except Exception:
@@ -64,7 +84,10 @@ async def complete_text(
 
     try:
         if not completion_request.stream:
-            result = await service.process_request(completion_request)
+            results = await asyncio.gather(
+                *(service.process_request(r) for r in sub_requests)
+            )
+            completion_tokens = sum(_count_tokens(r.text) for r in results if r.text)
             response = {
                 "id": completion_id,
                 "object": "text_completion",
@@ -72,19 +95,29 @@ async def complete_text(
                 "model": model,
                 "choices": [
                     {
-                        "text": result.text,
-                        "index": 0,
+                        "text": r.text,
+                        "index": i,
                         "logprobs": None,
-                        "finish_reason": result.finish_reason or "stop",
+                        "finish_reason": r.finish_reason or "stop",
                     }
+                    for i, r in enumerate(results)
                 ],
                 "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
+                    "prompt_tokens": prompt_tokens_total,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens_total + completion_tokens,
                 },
             }
             return JSONResponse(content=response)
+
+        # Streaming + batched prompts: not implemented. Multiplexing N async
+        # generators into one SSE stream is significant work and no current
+        # client (lm-eval-harness, vllm bench) sends batched + streaming.
+        if len(sub_requests) > 1:
+            raise HTTPException(
+                status_code=501,
+                detail="Streaming responses are not supported for batched prompts.",
+            )
 
         try:
             service.scheduler.check_is_model_ready()
@@ -92,7 +125,7 @@ async def complete_text(
             raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            async for partial in service.process_streaming_request(completion_request):
+            async for partial in service.process_streaming_request(sub_requests[0]):
                 chunk = {
                     "id": completion_id,
                     "object": "text_completion",

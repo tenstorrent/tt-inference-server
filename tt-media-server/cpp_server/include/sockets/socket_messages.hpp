@@ -19,7 +19,7 @@ namespace tt::sockets {
  */
 struct PrefillRequestMessage {
   uint32_t task_id;
-  std::string prompt;
+  size_t registration_hash = 0;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
@@ -40,14 +40,15 @@ struct PrefillRequestMessage {
     float topPVal = top_p.value_or(0.0f);
     bool hasTopK = top_k.has_value();
     int topKVal = top_k.value_or(0);
-    ar(task_id, prompt, token_ids, mt, sid, hasTemp, tempVal, hasTopP, topPVal,
+    uint64_t hash64 = static_cast<uint64_t>(registration_hash);
+    ar(task_id, hash64, token_ids, mt, sid, hasTemp, tempVal, hasTopP, topPVal,
        hasTopK, topKVal, fast_mode);
   }
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
     uint32_t tid;
-    std::string p;
+    uint64_t hash64;
     std::vector<int64_t> tids;
     int mt;
     uint32_t sid;
@@ -58,10 +59,10 @@ struct PrefillRequestMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
-    ar(tid, p, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
+    ar(tid, hash64, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
        topKVal, fastMode);
     PrefillRequestMessage msg(tid);
-    msg.prompt = std::move(p);
+    msg.registration_hash = static_cast<size_t>(hash64);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
     msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)

@@ -287,7 +287,7 @@ def fetch_structured_output_scripts(
         dst.parent.mkdir(parents=True, exist_ok=True)
         url = f"{VLLM_BENCHMARKS_RAW_BASE}/{src_rel}"
         return_code = run_command(
-            f"curl -fSL --retry 3 --retry-delay 5 --retry-all-errors {url} -o {dst}",
+            f"curl -fSL --retry 3 --retry-delay 5 --retry-connrefused {url} -o {dst}",
             logger=logger,
         )
         if return_code != 0:
@@ -371,6 +371,11 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         requirements_file="benchmarks-aiperf.txt",
         extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
+        requirements_file="benchmarks-guidellm.txt",
         python_version="3.11",
     ),
     # No pip; directory and/or runtime check

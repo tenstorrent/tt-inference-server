@@ -3,14 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
-import io
-import os
 import csv
-import urllib.request
-import statistics
+import io
 import json
 import logging
+import os
+import statistics
+import urllib.request
+
 from PIL import Image
+
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
 from workflows.workflow_types import ReportCheckTypes
@@ -137,7 +139,9 @@ def calculate_metrics(status_list: list, image_resolution: tuple = (1024, 1024))
     logger.info(f"Best 5 CLIP scores:  {[(i, f'{s:.2f}') for i, s in best_5]}")
 
     average_clip_score = sum(clip_scores) / len(clip_scores)
-    deviation_clip_score = statistics.stdev(clip_scores)
+    deviation_clip_score = (
+        statistics.stdev(clip_scores) if len(clip_scores) >= 2 else 0.0
+    )
     fid_score = calculate_fid_score(images, str(COCO_STATISTICS_PATH))
 
     logger.info(f"FID score: {fid_score}")

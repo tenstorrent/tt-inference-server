@@ -129,8 +129,6 @@ def run_media_task(
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
     """Return matching expanded suites for ``ctx.model_spec.model_name`` + device."""
-    # Lazy import: TestFilter loads suite JSON at construction time, and we
-    # don't want that cost on plain eval/benchmark runs.
     from .test_categorization_system import TestFilter
 
     return (
@@ -172,16 +170,20 @@ def _instantiate_spec_test(case: dict, ctx: MediaContext):
     BaseTest accepts ``(config, targets, description="", ctx=None)`` but a
     handful of test classes (e.g. ImageGenerationEvalsTest) override
     ``__init__`` with just ``(config, targets)`` — so we try the rich form
-    first and fall back to the minimal one rather than introspecting.
+    first and fall back to the minimal one, patching ``description`` on
+    afterward so the summary block can still surface it.
     """
     config = TestConfig(case.get("test_config") or {})
     targets = case.get("targets") or {}
+    description = case.get("description") or ""
     module = importlib.import_module(case["module"])
     cls = getattr(module, case["name"])
     try:
-        return cls(config, targets, ctx=ctx)
+        return cls(config, targets, description=description, ctx=ctx)
     except TypeError:
-        return cls(config, targets)
+        instance = cls(config, targets)
+        instance.description = description
+        return instance
 
 
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:

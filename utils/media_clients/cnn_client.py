@@ -13,7 +13,8 @@ import requests
 from utils.media_clients.test_status import CnnGenerationTestStatus
 from workflows.workflow_types import ReportCheckTypes
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +41,7 @@ class CnnClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-            # 2026-01-11 11:05:48,031 - utils.media_clients.cnn_client - INFO - Runner in use: tt-xla-mobilenetv2
-
+            runner_in_use = self.require_health()
             eval_result = None
             if runner_in_use == CNN_MOBILENETV2_RUNNER:
                 eval_result = self._run_mobilenetv2_eval()
@@ -71,6 +63,8 @@ class CnnClientStrategy(BaseMediaStrategy):
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
+        latency_for_perf_check: Optional[float] = None
+
         if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
             logger.info("Adding eval results from eval spec test to benchmark data")
             benchmark_data["accuracy_check"] = eval_result.get(
@@ -81,17 +75,21 @@ class CnnClientStrategy(BaseMediaStrategy):
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
         else:
             logger.info("No eval results from eval spec test to add to benchmark data")
-            # Calculate TTFT
-            ttft_value = self._calculate_ttft_value(status_list)
-            logger.info(f"Extracted TTFT value: {ttft_value}")
+            latency_value = self._calculate_latency(status_list)
+            logger.info(f"Extracted latency value (s): {latency_value}")
+            latency_for_perf_check = latency_value
 
             benchmark_data["published_score"] = self.all_params.tasks[
                 0
             ].score.published_score
-            benchmark_data["score"] = ttft_value
+            benchmark_data["score"] = latency_value
             benchmark_data["published_score_ref"] = self.all_params.tasks[
                 0
             ].score.published_score_ref
+
+        benchmark_data["performance_check"] = self._calculate_performance_check(
+            latency_value=latency_for_perf_check,
+        )
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -110,24 +108,18 @@ class CnnClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
+            self.require_health()
+            loop_start = time.monotonic()
             status_list = self._run_image_analysis_benchmark()
+            wall_clock_seconds = time.monotonic() - loop_start
 
-            self._generate_report(status_list)
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -258,7 +250,11 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         return (response.status_code == 200), elapsed
 
-    def _generate_report(self, status_list: list[CnnGenerationTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[CnnGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -268,44 +264,67 @@ class CnnClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
+        performance_check = self._calculate_performance_check(
+            latency_value=latency_value
+        )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
 
-        # Convert ImageGenerationTestStatus objects to dictionaries for JSON serialization
+        # CNN inference is single-shot, not iterative, so step-based fields
+        # (``num_inference_steps`` / ``inference_steps_per_second``) do not
+        # apply and are intentionally omitted from the CNN benchmark JSON.
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": status_list[0].num_inference_steps
-                if status_list
-                else 0,
-                "ttft": ttft_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "latency": latency_value,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "cnn",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
 
-    def _calculate_ttft_value(
-        self, status_list: list[CnnGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[CnnGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
             if status_list
             else 0
+        )
+
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """CNN perf check: compares latency vs configured target.
+
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
+        """
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+            ],
+            tolerance=targets.tolerance,
         )
 
     def _run_mobilenetv2_eval(self) -> dict:

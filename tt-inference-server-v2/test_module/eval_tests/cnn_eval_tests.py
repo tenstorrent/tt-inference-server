@@ -20,7 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from .._test_common import ReportCheckTypes, block_id, block_targets
+from .._test_common import ReportCheckTypes, block_id
 from ..context import MediaContext, require_health
 from ..test_status import CnnGenerationTestStatus
 
@@ -222,9 +222,16 @@ def run_cnn_eval(ctx: MediaContext) -> Block:
         data["published_score_ref"] = task.score.published_score_ref
 
     return Block(
-        kind="cnn_eval",
+        kind="evals",
+        task_type="cnn",
+        title="CNN Eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="cnn"),
+        targets={
+            "task_name": ctx.all_params.tasks[0].task_name,
+            "tolerance": ctx.all_params.tasks[0].score.tolerance,
+            "published_score": ctx.all_params.tasks[0].score.published_score,
+            "published_score_ref": ctx.all_params.tasks[0].score.published_score_ref,
+        },
         data=data,
     )
 

@@ -24,7 +24,10 @@ ModelService modelService();
 bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool isLlmServiceEnabled();
+bool isLlmService();
+
+/** True when model_service() == IMAGE. */
+bool isImageService();
 
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
@@ -150,9 +153,9 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Pipeline manager max users from PM_MAX_USERS. Default:
- * defaults::PM_MAX_USERS. */
-size_t pmMaxUsers();
+/** Decode scheduler max users from DS_MAX_USERS. Default:
+ * defaults::DS_MAX_USERS. */
+size_t dsMaxUsers();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -195,9 +198,39 @@ std::string workerMetricsShmName();
  * defaults::USE_DEEPSEEK_MD_FORMAT. */
 bool useDeepseekMdFormat();
 
+// IPC queue capacities - configurable via environment variables
+/** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
+ * defaults::RESULT_QUEUE_CAPACITY. */
+size_t resultQueueCapacity();
+
+/** Cancel queue capacity from CANCEL_QUEUE_CAPACITY. Default:
+ * defaults::CANCEL_QUEUE_CAPACITY. */
+size_t cancelQueueCapacity();
+
+/** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
+ * defaults::MEMORY_QUEUE_CAPACITY. */
+size_t memoryQueueCapacity();
+
+// Shared memory slot buffer constants
+/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
+int shmSlots();
+
+/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
+ * defaults::PREFILL_MAX_TOKEN_IDS. */
+int prefillMaxTokenIds();
+
+/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
+ * defaults::DECODE_MAX_TOKEN_IDS. */
+int decodeMaxTokenIds();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
+
+/** Build ImageConfig from environment variables and runtime settings. Reads
+ * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
+ * src/config/settings.cpp. */
+ImageConfig imageEngineConfig();
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

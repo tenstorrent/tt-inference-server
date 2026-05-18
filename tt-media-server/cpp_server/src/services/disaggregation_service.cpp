@@ -4,11 +4,11 @@
 #include "services/disaggregation_service.hpp"
 
 #include "domain/llm/llm_request.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -72,8 +72,8 @@ void DisaggregationService::setupSocketHandlers() {
             }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            request.prompt = std::vector<int>(message.token_ids.begin(),
-                                              message.token_ids.end());
+            request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                     message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             request.slotId = message.slot_id;
             // Restore the sampling subset echoed back from the prefill server.
@@ -130,13 +130,9 @@ void DisaggregationService::setupSocketHandlers() {
           request.fast_mode = message.fast_mode;
 
           auto maxTokens = message.max_tokens;
-          using PromptVariant = std::variant<std::string, std::vector<int>>;
 
-          request.prompt =
-              message.token_ids.empty()
-                  ? PromptVariant(message.prompt)
-                  : PromptVariant(std::vector<int>(message.token_ids.begin(),
-                                                   message.token_ids.end()));
+          request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                   message.token_ids.end());
           auto slotId = message.slot_id;
           request.slotId = slotId;
 
@@ -192,7 +188,7 @@ void DisaggregationService::start() {
 void DisaggregationService::stop() { socketService->stop(); }
 
 void DisaggregationService::handleStreamingRequest(
-    LLMRequest& request, const StreamCallback& callback) {
+    LLMRequest& request, size_t requestHash, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     streamCallbacks.insert(request.task_id, callback);
 
@@ -200,7 +196,7 @@ void DisaggregationService::handleStreamingRequest(
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
     auto sent = socketService->sendPrefillRequest(
-        request.task_id, "",
+        request.task_id, requestHash,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
         slotId, tt::utils::mapper::mapSamplingParams(request));
 

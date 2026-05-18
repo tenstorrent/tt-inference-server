@@ -656,15 +656,20 @@ class TestVideoMatrixExpansion:
         assert len(i2v_suites) == len(self.WAN_I2V_TARGETS)
 
         for suite in i2v_suites:
-            assert len(suite["test_cases"]) == 1, (
-                f"Expected 1 test case for {suite['id']}"
+            assert len(suite["test_cases"]) == 2, (
+                f"Expected 2 test cases for {suite['id']}"
             )
-            test_case = suite["test_cases"][0]
-            assert test_case["template"] == "VideoGenerationI2VTest"
+
+            i2v_test = suite["test_cases"][0]
+            assert i2v_test["template"] == "VideoGenerationI2VTest"
             expected_targets = self.WAN_I2V_TARGETS[suite["id"]]
-            assert test_case["targets"] == expected_targets, (
+            assert i2v_test["targets"] == expected_targets, (
                 f"targets mismatch for {suite['id']}"
             )
+
+            param_test = suite["test_cases"][1]
+            assert param_test["template"] == "VideoGenerationI2VParamTest"
+            assert "targets" not in param_test
 
     def test_video_mochi_test_cases(self):
         suites = load_suite_files_by_category("video")
