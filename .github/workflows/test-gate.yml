@@ -1486,10 +1486,15 @@ jobs:
                 -p prefill_gateway/build \
                 --warnings-as-errors='*'
 
-      - name: Run prefill_gateway unit tests
+      - name: Run prefill_gateway unit tests (TCP)
         run: |
           cd prefill_gateway/build
           ctest --output-on-failure
+
+      - name: Run prefill_gateway unit tests (ZMQ)
+        run: |
+          cd prefill_gateway/build
+          SOCKET_TRANSPORT=zmq ctest --output-on-failure
 
       - name: Upload prefill_gateway binary
         uses: actions/upload-artifact@v4
