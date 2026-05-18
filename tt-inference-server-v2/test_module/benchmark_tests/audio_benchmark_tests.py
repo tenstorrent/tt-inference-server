@@ -34,6 +34,12 @@ from .._test_common import (
     run_tiered_check,
 )
 from ..context import MediaContext, count_tokens, require_health
+from ..load_param_tests.test_payloads.audio_payload_30s import (
+    dataset as dataset30s,
+)
+from ..load_param_tests.test_payloads.audio_payload_60s import (
+    dataset as dataset60s,
+)
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
@@ -53,7 +59,9 @@ async def _transcribe_audio_streaming_off(
     if audio_b64 is not None:
         audio_file = {"file": audio_b64}
     else:
-        with open(f"{ctx.test_payloads_path}/image_client_audio_payload", "r") as f:
+        with open(
+            Path(ctx.test_payloads_path) / "image_client_audio_payload", "r"
+        ) as f:
             audio_file = json.load(f)
 
     headers = {
@@ -113,7 +121,7 @@ async def _transcribe_audio_streaming_on(
         audio_file = {"file": audio_b64}
     else:
         with open(
-            f"{ctx.test_payloads_path}/image_client_audio_streaming_payload", "r"
+            Path(ctx.test_payloads_path) / "image_client_audio_streaming_payload", "r"
         ) as f:
             audio_file = json.load(f)
 
@@ -187,11 +195,10 @@ async def _transcribe_audio_streaming_on(
 
                     elapsed = now - start_time
                     tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
-                    tokens_per_user_per_sec = tokens_per_sec / 1
                     logger.info(
                         f"[{elapsed:.2f}s] chunk={chunk_id} chunk_tokens={chunk_tokens} "
                         f"total_tokens={total_tokens} tps={tokens_per_sec:.2f} "
-                        f"t/s/u={tokens_per_user_per_sec:.2f} text={text!r}"
+                        f"t/s/u={tokens_per_sec:.2f} text={text!r}"
                     )
 
         end_time = time.monotonic()
@@ -201,7 +208,7 @@ async def _transcribe_audio_streaming_on(
         final_tps = (
             final_tokens / content_streaming_time if content_streaming_time > 0 else 0
         )
-        final_tokens_per_user_per_sec = final_tps / 1
+        final_tokens_per_user_per_sec = final_tps
 
         rtr = None
         if audio_duration is not None:
@@ -234,7 +241,7 @@ async def _transcribe_audio(
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("🔈 Calling whisper")
     is_preprocessing_enabled = is_preprocessing_enabled_for_whisper(ctx)
-    logging.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
+    logger.info(f"Preprocessing enabled: {is_preprocessing_enabled}")
 
     if is_streaming_enabled_for_whisper(ctx):
         return await _transcribe_audio_streaming_on(
@@ -302,15 +309,13 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
     Target checks are computed from the 60s (heavier) pass and placed at
     the top level of ``data`` so the acceptance gate keeps working.
     """
-    from ..load_param_tests.test_payloads.audio_payload_30s import (
-        dataset as dataset30s,
-    )
-    from ..load_param_tests.test_payloads.audio_payload_60s import (
-        dataset as dataset60s,
-    )
+    GATE_LABEL = "Benchmarks 60s"
+
+    streaming_enabled = is_streaming_enabled_for_whisper(ctx)
+    preprocessing_enabled = is_preprocessing_enabled_for_whisper(ctx)
 
     records = []
-    last_metrics = None
+    metrics_by_label: dict[str, tuple] = {}
     for label, audio_b64 in (
         ("Benchmarks 30s", dataset30s["file"]),
         ("Benchmarks 60s", dataset60s["file"]),
@@ -322,7 +327,7 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
         ttft_value = _audio_avg(status_list, "ttft")
         rtr_value = _audio_avg(status_list, "rtr")
         tsu_value = _audio_avg(status_list, "tsu")
-        last_metrics = (ttft_value, tsu_value, rtr_value)
+        metrics_by_label[label] = (ttft_value, tsu_value, rtr_value)
         records.append(
             {
                 "name": label,
@@ -332,12 +337,16 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
                 "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
-                "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
-                "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+                "streaming_enabled": streaming_enabled,
+                "preprocessing_enabled": preprocessing_enabled,
             }
         )
 
-    ttft_value, tsu_value, rtr_value = last_metrics
+    if GATE_LABEL not in metrics_by_label:
+        raise RuntimeError(
+            f"Whisper sweep must include {GATE_LABEL!r} (got {list(metrics_by_label)})"
+        )
+    ttft_value, tsu_value, rtr_value = metrics_by_label[GATE_LABEL]
     target_checks, _accuracy_check = _audio_target_checks(
         ctx, ttft_value, tsu_value, rtr_value
     )
@@ -349,8 +358,8 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
         id=block_id(ctx) or None,
         targets={
             "num_prompts": num_calls,
-            "streaming_enabled": is_streaming_enabled_for_whisper(ctx),
-            "preprocessing_enabled": is_preprocessing_enabled_for_whisper(ctx),
+            "streaming_enabled": streaming_enabled,
+            "preprocessing_enabled": preprocessing_enabled,
             "sweep_sizes": ["30s", "60s"],
         },
         data={
