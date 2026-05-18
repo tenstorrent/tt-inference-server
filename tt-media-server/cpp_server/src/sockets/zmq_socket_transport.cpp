@@ -68,10 +68,20 @@ void ZmqSocketTransport::start() {
     std::lock_guard<std::mutex> lock(sendMutex_);
     try {
       zmq::message_t hello(0);
-      socket_->send(hello, zmq::send_flags::dontwait);
-    } catch (...) {
+      auto result = socket_->send(hello, zmq::send_flags::dontwait);
+      if (!result.has_value()) {
+        TT_LOG_WARN(
+            "[ZmqSocketTransport] Hello send returned no result (EAGAIN) — "
+            "will retry on next reconnect");
+        connected_ = false;
+      } else {
+        connected_ = true;
+      }
+    } catch (const zmq::error_t& e) {
+      TT_LOG_ERROR("[ZmqSocketTransport] Hello send failed: {} (errno={})",
+                   e.what(), e.num());
+      connected_ = false;
     }
-    connected_ = true;  // Client considers itself connected once socket is up.
   } else {
     // SERVER (ROUTER): we are NOT connected until we receive the first message
     // from a peer, which tells us the peer identity.
