@@ -61,8 +61,9 @@ void Dispatcher::onPrefillRequest(
   }
 
   if (!sent) {
-    TT_LOG_ERROR("[Dispatcher] taskId={} send to prefill='{}' failed, failing task",
-                 msg.task_id, chosen);
+    TT_LOG_ERROR(
+        "[Dispatcher] taskId={} send to prefill='{}' failed, failing task",
+        msg.task_id, chosen);
     registry_.decrementInflight(chosen);
     {
       std::lock_guard<std::mutex> lock(inflight_mutex_);
