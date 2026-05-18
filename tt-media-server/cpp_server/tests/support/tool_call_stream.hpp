@@ -52,17 +52,6 @@ class ToolCallStream {
 
   bool endedWithDone() const { return endedWithDone_; }
 
-  // Role announced in the first delta (usually "assistant")
-  std::optional<std::string> initialRole() const {
-    for (const auto& c : chunks_) {
-      const auto& delta = c["choices"][0]["delta"];
-      if (delta.isMember("role") && !delta["role"].asString().empty()) {
-        return delta["role"].asString();
-      }
-    }
-    return std::nullopt;
-  }
-
   // Content deltas (regular text)
   std::vector<std::string> contentDeltas() const {
     std::vector<std::string> out;
@@ -100,8 +89,6 @@ class ToolCallStream {
   }
 
   // Convenience accessors
-  std::string toolCallId(size_t index) const { return toolCalls_.at(index).id; }
-
   std::string toolCallFunctionName(size_t index) const {
     return toolCalls_.at(index).functionName;
   }
@@ -112,11 +99,6 @@ class ToolCallStream {
 
   // Check if any tool calls were streamed
   bool hasToolCalls() const { return !toolCalls_.empty(); }
-
-  // All tool call deltas received (for debugging)
-  const std::vector<Json::Value>& toolCallDeltas() const {
-    return toolCallDeltas_;
-  }
 
   size_t chunkCount() const { return chunks_.size(); }
 
@@ -131,8 +113,6 @@ class ToolCallStream {
     if (!toolCallsArray.isArray()) return;
 
     for (const auto& tc : toolCallsArray) {
-      toolCallDeltas_.push_back(tc);
-
       int index = tc["index"].asInt();
 
       // Ensure we have enough slots
@@ -172,7 +152,6 @@ class ToolCallStream {
   }
 
   std::vector<Json::Value> chunks_;
-  std::vector<Json::Value> toolCallDeltas_;
   std::vector<ParsedToolCall> pendingToolCalls_;
   std::vector<ParsedToolCall> toolCalls_;
   bool endedWithDone_ = false;

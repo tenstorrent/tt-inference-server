@@ -90,12 +90,6 @@ class MockToolCallRunner {
     return *this;
   }
 
-  // Queue regular text (non-tool-call response)
-  MockToolCallRunner& queueText(const std::string& text) {
-    appendEncoded(text);
-    return *this;
-  }
-
   // Queue text followed by a tool call
   MockToolCallRunner& queueTextThenToolCall(const std::string& text,
                                             const std::string& functionName,
@@ -117,12 +111,6 @@ class MockToolCallRunner {
     }
     tokens_.clear();
   }
-
-  // Get the raw token IDs (for debugging)
-  const std::vector<uint64_t>& tokens() const { return tokens_; }
-
-  // Clear any queued tokens
-  void clear() { tokens_.clear(); }
 
   // Debug: print tokens and their decoded text
   void debugPrint() const {

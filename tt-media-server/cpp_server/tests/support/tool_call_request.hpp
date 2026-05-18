@@ -25,14 +25,8 @@ namespace tt::test {
 
 class ToolCallRequest {
  public:
-  ToolCallRequest& system(std::string content) {
-    return addMessage("system", std::move(content));
-  }
   ToolCallRequest& user(std::string content) {
     return addMessage("user", std::move(content));
-  }
-  ToolCallRequest& assistant(std::string content) {
-    return addMessage("assistant", std::move(content));
   }
 
   // Add a tool with the given function schema
@@ -60,26 +54,14 @@ class ToolCallRequest {
     return *this;
   }
 
-  // Set tool_choice to "auto", "none", "required", or "function"
+  // Set tool_choice to "auto", "none", or "required"
   ToolCallRequest& toolChoice(const std::string& choice) {
     if (choice == "auto" || choice == "none" || choice == "required") {
       toolChoiceType_ = choice;
-      toolChoiceFunction_.reset();
     }
     return *this;
   }
 
-  // Set tool_choice to a specific function name
-  ToolCallRequest& toolChoiceFunction(const std::string& functionName) {
-    toolChoiceType_ = "function";
-    toolChoiceFunction_ = functionName;
-    return *this;
-  }
-
-  ToolCallRequest& model(std::string m) {
-    model_ = std::move(m);
-    return *this;
-  }
   ToolCallRequest& maxTokens(int n) {
     maxTokens_ = n;
     return *this;
@@ -111,15 +93,7 @@ class ToolCallRequest {
     }
 
     if (toolChoiceType_.has_value()) {
-      if (toolChoiceType_.value() == "function" &&
-          toolChoiceFunction_.has_value()) {
-        Json::Value tc;
-        tc["type"] = "function";
-        tc["function"]["name"] = toolChoiceFunction_.value();
-        root["tool_choice"] = std::move(tc);
-      } else {
-        root["tool_choice"] = toolChoiceType_.value();
-      }
+      root["tool_choice"] = toolChoiceType_.value();
     }
 
     if (maxTokens_) root["max_tokens"] = *maxTokens_;
@@ -143,7 +117,6 @@ class ToolCallRequest {
   std::vector<Message> messages_;
   std::vector<Json::Value> tools_;
   std::optional<std::string> toolChoiceType_;
-  std::optional<std::string> toolChoiceFunction_;
   std::string model_ = "test";
   std::optional<int> maxTokens_;
   bool stream_ = false;
