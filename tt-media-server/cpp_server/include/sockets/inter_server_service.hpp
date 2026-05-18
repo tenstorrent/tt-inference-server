@@ -142,11 +142,16 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
+  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage on each
+  // (re)connect to the gateway. No-op otherwise.
+  void sendRegistrationIfGatewayModeIsEnabled();
+
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+  bool gateway_mode_ = false;
 };
 
 }  // namespace tt::sockets

@@ -37,10 +37,13 @@ void SocketManager::stop() {
   }
 
   running_ = false;
-  transport_->stop();
 
   if (messageThread_.joinable()) {
     messageThread_.join();
+  }
+
+  if (transport_) {
+    transport_->stop();
   }
 
   TT_LOG_INFO("[SocketManager] Stopped");
@@ -94,6 +97,20 @@ std::string SocketManager::getStatus() const {
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
   if (transport_) {
     transport_->setConnectionLostCallback(std::move(callback));
+  }
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  if (transport_) {
+    transport_->setConnectionEstablishedCallback(std::move(callback));
+  }
+}
+
+void SocketManager::setReconnectBackoff(uint32_t initialDelayMs,
+                                        uint32_t maxDelayMs) {
+  if (transport_) {
+    transport_->setReconnectBackoff(initialDelayMs, maxDelayMs);
   }
 }
 

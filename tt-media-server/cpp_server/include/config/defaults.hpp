@@ -21,6 +21,15 @@ constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
 constexpr const char* SOCKET_TRANSPORT = "zmq";  // "tcp" or "zmq"
+
+// PrefillGateway integration. When true, decode connects as CLIENT to the
+// gateway and prefill listens as SERVER for the gateway to dial in.
+constexpr bool USE_PREFILL_GATEWAY = false;
+// Stable identity sent in PrefillRegistrationMessage; empty -> "<host>:<port>".
+constexpr const char* PREFILL_SERVER_ID = "";
+// Capacity hint sent to the gateway. 0 = unlimited.
+constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
+
 constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"

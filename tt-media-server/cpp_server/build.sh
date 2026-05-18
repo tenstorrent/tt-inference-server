@@ -312,7 +312,7 @@ fi
 
 echo ""
 echo "Configuring CMake..."
-cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
 
 # Symlink compile_commands.json to project root for intellisense (clangd, VSCode C++)
 if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
