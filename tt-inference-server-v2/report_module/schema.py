@@ -11,20 +11,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 @dataclass(frozen=True)
 class Block:
-    """One section of a report.
-
-    ``kind`` selects the renderer. ``data`` and ``targets`` are free-form
-    and only the registered renderer for ``kind`` is expected to
-    understand their shape. ``id`` disambiguates blocks that share a
-    ``kind`` (e.g. two ``benchmarks`` blocks for different tools).
-    """
+    """One section of a report."""
 
     kind: str
     data: Any
     title: Optional[str] = None
+    task_type: Optional[str] = None
     id: Optional[str] = None
     targets: Dict[str, Any] = field(default_factory=dict)
-    checks: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def slug(self) -> str:
@@ -39,21 +33,21 @@ class Block:
             kind=str(payload["kind"]),
             data=payload.get("data"),
             title=payload.get("title"),
+            task_type=payload.get("task_type"),
             id=payload.get("id"),
             targets=dict(payload.get("targets") or {}),
-            checks=dict(payload.get("checks") or {}),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"kind": self.kind, "data": self.data}
         if self.title is not None:
             out["title"] = self.title
+        if self.task_type is not None:
+            out["task_type"] = self.task_type
         if self.id is not None:
             out["id"] = self.id
         if self.targets:
             out["targets"] = dict(self.targets)
-        if self.checks:
-            out["checks"] = dict(self.checks)
         return out
 
 

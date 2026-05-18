@@ -60,7 +60,9 @@ class AudioClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = get_num_calls(self)
+            loop_start = time.monotonic()
             status_list = self._run_audio_transcription_benchmark(num_calls)
+            wall_clock_seconds = time.monotonic() - loop_start
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -70,6 +72,10 @@ class AudioClientStrategy(BaseMediaStrategy):
         ttft_value = self._calculate_ttft_value(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
         tsu_value = self._calculate_tsu_value(status_list)
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
         logger.info(
             f"Extracted latency={latency_value}, TTFT={ttft_value} "
             f"(streaming-only), RTR={rtr_value}, T/S/U={tsu_value}"
@@ -86,7 +92,7 @@ class AudioClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio",
+            "task_type": "asr",  # Automatic Speech Recognition
             "task_name": self.all_params.tasks[0].task_name,
             "tolerance": self.all_params.tasks[0].score.tolerance,
             "published_score": self.all_params.tasks[0].score.published_score,
@@ -97,6 +103,8 @@ class AudioClientStrategy(BaseMediaStrategy):
             "ttft": ttft_value,
             "t/s/u": tsu_value,
             "rtr": rtr_value,
+            "throughput_rps": throughput_rps,
+            **tail,
         }
 
         # Make benchmark_data is inside of list as an object
@@ -124,13 +132,19 @@ class AudioClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = get_num_calls(self)
+            loop_start = time.monotonic()
             status_list = self._run_audio_transcription_benchmark(num_calls)
-            return self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            return self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[AudioTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         logger.info("Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
@@ -146,6 +160,10 @@ class AudioClientStrategy(BaseMediaStrategy):
         performance_check = self._calculate_performance_check(
             latency_value, tsu_value, rtr_value
         )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
 
         report_data = {
             "benchmarks": {
@@ -154,11 +172,13 @@ class AudioClientStrategy(BaseMediaStrategy):
                 "ttft": ttft_value,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio",
+            "task_type": "asr",
             "performance_check": performance_check,
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
             "preprocessing_enabled": is_preprocessing_enabled_for_whisper(self),

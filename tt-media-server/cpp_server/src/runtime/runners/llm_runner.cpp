@@ -1,0 +1,179 @@
+#include "runtime/runners/llm_runner.hpp"
+
+#include <chrono>
+#include <memory>
+#include <thread>
+#include <vector>
+
+#include "config/settings.hpp"
+#include "ipc/helpers/token_push.hpp"
+#include "profiling/tracy.hpp"
+#include "runtime/runners/guided_decoder_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
+#include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
+
+namespace tt::runners {
+using namespace tt::runners::llm_engine;
+using namespace tt::runners::schedulers;
+using Config = tt::config::LLMConfig;
+using Sequence = tt::domain::llm::Sequence;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
+
+LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
+                     tt::ipc::ITaskQueue* taskQueue,
+                     ipc::ICancelQueue* cancelQueue)
+    : config(config), resultQueue(resultQueue), cancelQueue(cancelQueue) {
+  scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
+
+  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+    memoryManager = std::make_unique<services::MemoryManager>();
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
+
+  try {
+    const auto& tok = tt::utils::tokenizers::activeTokenizer();
+    auto encodedVocab = tok.getEncodedVocab();
+    int vocabSize = static_cast<int>(encodedVocab.size());
+    std::vector<int32_t> stopIds;
+    for (int64_t id : tok.stopTokenIds()) {
+      stopIds.push_back(static_cast<int32_t>(id));
+    }
+    guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
+                                                           vocabSize, stopIds);
+    TT_LOG_INFO(
+        "[LLMRunner] Guided decoder initialized (vocab_size={}, "
+        "stop_tokens={})",
+        vocabSize, stopIds.size());
+  } catch (const std::exception& e) {
+    TT_LOG_WARN(
+        "[LLMRunner] Failed to init guided decoder, structured outputs "
+        "disabled: {}",
+        e.what());
+  }
+
+  auto decodeCb = [this](const TokenResult& result) {
+    ZoneScopedN("LLMRunner::process_token_result");
+    Sequence* seq = scheduler->findSequence(result.taskId);
+
+    if (!seq || seq->isAborted()) return;
+
+    if (result.isError) {
+      if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
+      scheduler->removeSequence(result.taskId);
+      ipc::helpers::pushErrorToken(*this->resultQueue, result.taskId);
+      return;
+    }
+
+    bool grammarFinished = false;
+    if (guidedDecoder && guidedDecoder->hasGuidedDecoding(result.taskId)) {
+      auto grammarResult = guidedDecoder->acceptToken(
+          result.taskId, static_cast<int32_t>(result.tokenId));
+      if (!grammarResult.accepted) {
+        TT_LOG_WARN(
+            "[LLMRunner] Grammar rejected token {} for task {} - "
+            "aborting sequence",
+            result.tokenId, result.taskId);
+        guidedDecoder->removeRequest(result.taskId);
+        seq->setStatus(SequenceStatus::ABORTED);
+        ipc::helpers::pushErrorToken(*this->resultQueue, result.taskId);
+        scheduler->removeSequence(result.taskId);
+        return;
+      }
+      grammarFinished = grammarResult.completed;
+    }
+
+    std::vector<Sequence*> seqs = {seq};
+    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.tokenId)};
+    scheduler->postprocess(seqs, tokenIds);
+
+    bool finished = seq->isFinished();
+    if (!finished && grammarFinished) {
+      finished = true;
+      seq->setStatus(SequenceStatus::FINISHED);
+    }
+
+    ipc::helpers::pushToken(*this->resultQueue, result.taskId, result.tokenId,
+                            finished);
+
+    if (finished) {
+      if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
+      scheduler->removeSequence(result.taskId);
+    }
+  };
+
+  modelRunner = makeModelRunner(config, std::move(decodeCb));
+}
+
+LLMRunner::~LLMRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
+  exit();
+}
+
+void LLMRunner::exit() {
+  if (modelRunner) {
+    modelRunner->exit();
+  }
+}
+
+void LLMRunner::run() {
+  while (!stopped.load(std::memory_order_relaxed)) {
+    step();
+  }
+}
+
+void LLMRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
+
+void LLMRunner::memoryLoop() {
+  while (!stopped.load(std::memory_order_relaxed)) {
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
+void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
+                                         bool isPrefill) {
+  if (!guidedDecoder) return;
+
+  for (Sequence* seq : seqs) {
+    if (isPrefill && seq->getSamplingParams().hasGuidedDecoding()) {
+      guidedDecoder->initRequest(seq->taskId, seq->getSamplingParams());
+    }
+  }
+
+  int vocabSize = guidedDecoder->vocabSize();
+  for (Sequence* seq : seqs) {
+    if (!guidedDecoder->hasGuidedDecoding(seq->taskId)) continue;
+    auto& sp = seq->getMutableSamplingParams();
+    std::vector<int32_t> bitmask;
+    guidedDecoder->fillNextBitmask(seq->taskId, bitmask);
+    sp.token_bitmask = std::move(bitmask);
+    sp.bitmask_vocab_size = vocabSize;
+  }
+}
+
+void LLMRunner::step() {
+  if (cancelQueue) {
+    std::vector<uint32_t> cancelled;
+    cancelQueue->tryPopAll(cancelled);
+    for (const auto& taskId : cancelled) {
+      if (guidedDecoder) guidedDecoder->removeRequest(taskId);
+      scheduler->abortRequest(taskId);
+    }
+  }
+
+  auto [seqs, is_prefill] = scheduler->schedule();
+  if (seqs.empty()) return;
+  ZoneScopedN("LLMRunner::step");
+
+  applyGuidedDecodingMasks(seqs, is_prefill);
+  modelRunner->run(seqs, is_prefill);
+}
+}  // namespace tt::runners

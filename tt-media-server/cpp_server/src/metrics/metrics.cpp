@@ -5,6 +5,7 @@
 
 #include <prometheus/text_serializer.h>
 
+#include <array>
 #include <sstream>
 
 #include "config/settings.hpp"
@@ -32,6 +33,9 @@ static const prometheus::Histogram::BucketBoundaries K_PROMPT_TOKEN_BUCKETS{
 static const prometheus::Histogram::BucketBoundaries K_GEN_TOKEN_BUCKETS{
     1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 4096};
 
+static const std::array<std::string, 5> K_PRECREATED_FINISH_REASONS = {
+    "stop", "length", "tool_calls", "abort", "error"};
+
 ServerMetrics::ServerMetrics() {
   model_name_ = tt::config::runnerType();
   registry_ = std::make_shared<prometheus::Registry>();
@@ -58,6 +62,11 @@ ServerMetrics::ServerMetrics() {
            .Name("tt_request_success_total")
            .Help("Number of completed requests labelled by finish reason")
            .Register(*registry_);
+  for (const auto& reason : K_PRECREATED_FINISH_REASONS) {
+    request_success_by_reason_.emplace(
+        reason, &request_success_family_->Add({{"model_name", model_name_},
+                                               {"finished_reason", reason}}));
+  }
 
   http_requests_family_ =
       &prometheus::BuildCounter()
@@ -344,9 +353,14 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
   request_generation_tokens_->Observe(
       static_cast<double>(ctx.generation_tokens));
 
-  request_success_family_
-      ->Add({{"model_name", model_name_}, {"finished_reason", e.finish_reason}})
-      .Increment();
+  auto reasonIt = request_success_by_reason_.find(e.finish_reason);
+  if (reasonIt == request_success_by_reason_.end()) {
+    auto* counter = &request_success_family_->Add(
+        {{"model_name", model_name_}, {"finished_reason", e.finish_reason}});
+    reasonIt =
+        request_success_by_reason_.emplace(e.finish_reason, counter).first;
+  }
+  reasonIt->second->Increment();
 }
 
 // -----------------------------------------------------------------------------

@@ -15,7 +15,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from .._test_common import ReportCheckTypes, block_id, block_targets
+from .._test_common import ReportCheckTypes, block_id
 from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -180,9 +180,16 @@ def run_video_eval(ctx: MediaContext) -> Block:
         logger.error(f"Error running video FVD and FVMD eval: {e}")
 
     return Block(
-        kind="video_eval",
+        kind="evals",
+        task_type="video",
+        title="Video Eval",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="video"),
+        targets={
+            "task_name": ctx.all_params.tasks[0].task_name,
+            "tolerance": ctx.all_params.tasks[0].score.tolerance,
+            "published_score": ctx.all_params.tasks[0].score.published_score,
+            "published_score_ref": ctx.all_params.tasks[0].score.published_score_ref,
+        },
         data=data,
     )
 

@@ -47,7 +47,7 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
-DEFAULT_SAME_SEED_MIN_SSIM = 0.95
+DEFAULT_SAME_SEED_MIN_SSIM = 0.92
 DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.98
 
 

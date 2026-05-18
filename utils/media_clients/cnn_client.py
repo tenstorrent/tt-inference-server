@@ -115,9 +115,11 @@ class CnnClientStrategy(BaseMediaStrategy):
         )
         try:
             self.require_health()
+            loop_start = time.monotonic()
             status_list = self._run_image_analysis_benchmark()
+            wall_clock_seconds = time.monotonic() - loop_start
 
-            self._generate_report(status_list)
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -248,7 +250,11 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         return (response.status_code == 200), elapsed
 
-    def _generate_report(self, status_list: list[CnnGenerationTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[CnnGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -262,6 +268,10 @@ class CnnClientStrategy(BaseMediaStrategy):
         performance_check = self._calculate_performance_check(
             latency_value=latency_value
         )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
 
         # CNN inference is single-shot, not iterative, so step-based fields
         # (``num_inference_steps`` / ``inference_steps_per_second``) do not
@@ -270,6 +280,8 @@ class CnnClientStrategy(BaseMediaStrategy):
             "benchmarks": {
                 "num_requests": len(status_list),
                 "latency": latency_value,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),

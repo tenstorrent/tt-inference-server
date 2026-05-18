@@ -203,13 +203,14 @@ class WorkflowExecution(ABC):
         return self.accumulator.build_schema()
 
     def apply_acceptance_criteria(self, schema: ReportSchema) -> Tuple[bool, list]:
-        accepted, blockers = acceptance_criteria_check(schema)
+        accepted, blockers, categories = acceptance_criteria_check(schema)
         schema.metadata["acceptance_summary_markdown"] = (
-            format_acceptance_summary_markdown(accepted, blockers)
+            format_acceptance_summary_markdown(accepted, blockers, categories)
         )
         schema.metadata["acceptance_criteria"] = {
             "accepted": accepted,
             "blockers": blockers,
+            "categories": [c.to_dict() for c in categories],
         }
         self.logger.info(
             "Acceptance: %s (%d blocker(s))",

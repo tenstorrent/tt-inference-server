@@ -146,8 +146,10 @@ class VideoClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = get_num_calls(self)
+            loop_start = time.monotonic()
             status_list = self._run_video_generation_benchmark(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -200,7 +202,6 @@ class VideoClientStrategy(BaseMediaStrategy):
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,
-                    prompt=prompt,
                 )
             )
 
@@ -368,7 +369,11 @@ class VideoClientStrategy(BaseMediaStrategy):
             logger.error(f"Error downloading video: {e}")
             return ""
 
-    def _generate_report(self, status_list: list[VideoGenerationTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[VideoGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -382,6 +387,14 @@ class VideoClientStrategy(BaseMediaStrategy):
         performance_check = self._calculate_performance_check(
             latency_value=latency_value
         )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
+        steps_per_second = self._calculate_steps_per_second(
+            total_steps=sum(s.num_inference_steps for s in status_list),
+            total_elapsed_seconds=sum(s.elapsed for s in status_list),
+        )
 
         report_data = {
             "benchmarks": {
@@ -390,12 +403,9 @@ class VideoClientStrategy(BaseMediaStrategy):
                 if status_list
                 else 0,
                 "latency": latency_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "inference_steps_per_second": steps_per_second,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),

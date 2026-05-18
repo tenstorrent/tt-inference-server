@@ -17,3 +17,4 @@ pytest==8.3.5
 pytest-asyncio==1.3.0
 requests==2.32.5
 pyjwt
+open-clip-torch

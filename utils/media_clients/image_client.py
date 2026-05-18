@@ -230,8 +230,10 @@ class ImageClientStrategy(BaseMediaStrategy):
             benchmark_method = self.benchmark_methods.get(
                 self.runner_in_use, self._run_image_generation_benchmark
             )
+            loop_start = time.monotonic()
             status_list = benchmark_method(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
@@ -279,6 +281,7 @@ class ImageClientStrategy(BaseMediaStrategy):
     def _generate_report(
         self,
         status_list: list[ImageGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
     ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
@@ -293,6 +296,14 @@ class ImageClientStrategy(BaseMediaStrategy):
         performance_check = self._calculate_performance_check(
             latency_value=latency_value
         )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
+        steps_per_second = self._calculate_steps_per_second(
+            total_steps=sum(s.num_inference_steps for s in status_list),
+            total_elapsed_seconds=sum(s.elapsed for s in status_list),
+        )
 
         report_data = {
             "benchmarks": {
@@ -301,12 +312,9 @@ class ImageClientStrategy(BaseMediaStrategy):
                 if status_list
                 else 0,
                 "latency": latency_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "inference_steps_per_second": steps_per_second,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),

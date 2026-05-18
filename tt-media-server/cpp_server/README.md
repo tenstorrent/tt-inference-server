@@ -90,8 +90,8 @@ Available log levels (from most to least verbose):
 
 ## LLM engine
 
-Inference engine code lives under `include/runners/llm_runner/` and
-`src/runners/llm_runner/`. Public C++ API types are in namespace
+Inference engine code lives under `include/runtime/runners/llm_runner/` and
+`src/runtime/runners/llm_runner/`. Public C++ API types are in namespace
 `tt::runners::llm_engine`. The engine uses the standard `TT_LOG_*` macros
 (see **Logging** above). The static library CMake target is `llm_runner_lib`.
 
@@ -748,9 +748,11 @@ cpp_server/
 │   │   │   └── ...
 │   │   ├── llama_model_runner.hpp   # LlamaModelRunner (pybind11 in-process)
 │   │   ├── embedding_runner.hpp
-│   │   └── runner_interface.hpp
+│   │   ├── runner_base.hpp          # IRunnerBase (shared)
+│   │   ├── ipc_runner.hpp           # IRunner (IPC-loop runner interface)
+│   │   └── media_runner.hpp         # IMediaRunner<R, S> (direct-call interface)
 │   ├── utils/
-│   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
+│   │   ├── ipc_runner_factory.hpp   # createIpcRunner() (env-based selection)
 │   │   └── tokenizer_strategy.hpp  # LLM_DEVICE_BACKEND → tokenizer
 │   ├── services/
 │   │   ├── llm_service.hpp
@@ -766,7 +768,7 @@ cpp_server/
 │   │   ├── llama_model_runner.cpp
 │   │   └── embedding_runner.cpp
 │   ├── utils/
-│   │   └── runner_factory.cpp       # create_runner() → LLMRunner or EmbeddingRunner
+│   │   └── ipc_runner_factory.cpp   # createIpcRunner() → LLMRunner / EmbeddingRunner / ...
 │   ├── services/
 │   └── main.cpp
 └── CMakeLists.txt
@@ -793,7 +795,7 @@ cpp_server/
 
 ### Runners
 
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
+- **IPC runner factory** (`utils/ipc_runner_factory.cpp`): Worker-process entry point for IPC runners. Reads `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`), and delegates to `RunnerRegistry::createIpc` to construct the runner; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runtime/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`). Direct-call media runners (image, audio, ...) don't go through this factory; they're constructed inline at registration time.
 
 ### API
 
@@ -809,10 +811,10 @@ via the existing `/metrics` endpoint, alongside the server-side metrics.
 ### Adding a new worker type
 
 1. Pick a `MetricsLayout` enum value in
-  `include/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
+  `include/runtime/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
    new runner produces the same metric semantics; otherwise append a new
    value (never renumber).
-2. Create `include/worker/<runner>_metrics_layout.hpp` with `SCRATCH_`*
+2. Create `include/runtime/worker/<runner>_metrics_layout.hpp` with `SCRATCH_`*
   index constants. Append-only.
 3. Create `<Runner>WorkerMetricsRenderer` implementing
   `IWorkerMetricsRenderer`. Pre-build the Prometheus gauges in

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner.hpp"
+#include "runtime/runners/llm_runner.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,7 +17,7 @@
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
