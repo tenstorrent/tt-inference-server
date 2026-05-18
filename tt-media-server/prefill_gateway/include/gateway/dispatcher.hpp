@@ -63,9 +63,16 @@ class Dispatcher {
   AffinityCache& affinity_cache_;
   Senders senders_;
 
+  // Tracked per in-flight task so the dispatcher can route results back, roll
+  // back inflight counters on send failure, and fail orphaned tasks when a
+  // prefill drops.
+  struct InFlightEntry {
+    std::string prefill_id;
+    size_t registration_hash = 0;
+  };
+
   std::mutex inflight_mutex_;
-  std::unordered_map<uint32_t, std::string> in_flight_task_to_prefill_;
-  std::unordered_map<uint32_t, size_t> in_flight_task_to_hash_;
+  std::unordered_map<uint32_t, InFlightEntry> in_flight_;
   size_t round_robin_cursor_ = 0;
 };
 

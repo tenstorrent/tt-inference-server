@@ -51,7 +51,7 @@ bool InterServerService::initializeFromConfig() {
           "for gateway",
           port);
       success = socket_manager_.initializeAsServer(port);
-      gateway_registration_armed_ = success;
+      gateway_mode_ = success;
     } else {
       TT_LOG_INFO(
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
@@ -190,7 +190,7 @@ void InterServerService::setupMessageHandlers() {
       });
 
   socket_manager_.setConnectionEstablishedCallback(
-      [this]() { sendRegistrationIfArmed(); });
+      [this]() { sendRegistrationIfGatewayModeIsEnabled(); });
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
@@ -229,8 +229,8 @@ void InterServerService::setupMessageHandlers() {
       });
 }
 
-void InterServerService::sendRegistrationIfArmed() {
-  if (!gateway_registration_armed_) {
+void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
+  if (!gateway_mode_) {
     return;
   }
   PrefillRegistrationMessage msg;

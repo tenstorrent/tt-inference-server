@@ -194,9 +194,6 @@ void SocketTransport::serverLoop() {
 
     accepted.reset();
     peerSocket_.store(-1);
-    // We were connected when we entered the spin, so the transition out always
-    // represents a connection loss. Not using exchange() here: send/recv error
-    // paths flip connected_=false too and would race the callback away.
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();

@@ -3,6 +3,7 @@
 
 #include "gateway/dispatcher.hpp"
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -38,8 +39,7 @@ void Dispatcher::onPrefillRequest(
   registry_.incrementInflight(chosen);
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    in_flight_task_to_prefill_[msg.task_id] = chosen;
-    in_flight_task_to_hash_[msg.task_id] = msg.registration_hash;
+    in_flight_[msg.task_id] = {chosen, msg.registration_hash};
   }
 
   // Send assignment first so decode can prep KV-transfer ahead of the result.
@@ -59,8 +59,7 @@ void Dispatcher::onPrefillRequest(
     registry_.decrementInflight(chosen);
     {
       std::lock_guard<std::mutex> lock(inflight_mutex_);
-      in_flight_task_to_prefill_.erase(msg.task_id);
-      in_flight_task_to_hash_.erase(msg.task_id);
+      in_flight_.erase(msg.task_id);
     }
     failTaskToDecode(msg.task_id, "prefill_send_failed");
   }
@@ -68,21 +67,13 @@ void Dispatcher::onPrefillRequest(
 
 void Dispatcher::onPrefillResult(const std::string& fromServerId,
                                  const tt::sockets::PrefillResultMessage& msg) {
-  std::string assigned;
-  size_t hash = 0;
-  bool wasTracked = false;
+  std::optional<InFlightEntry> entry;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    auto it = in_flight_task_to_prefill_.find(msg.task_id);
-    if (it != in_flight_task_to_prefill_.end()) {
-      assigned = it->second;
-      in_flight_task_to_prefill_.erase(it);
-      wasTracked = true;
-    }
-    auto hit = in_flight_task_to_hash_.find(msg.task_id);
-    if (hit != in_flight_task_to_hash_.end()) {
-      hash = hit->second;
-      in_flight_task_to_hash_.erase(hit);
+    auto it = in_flight_.find(msg.task_id);
+    if (it != in_flight_.end()) {
+      entry = std::move(it->second);
+      in_flight_.erase(it);
     }
   }
 
@@ -91,14 +82,13 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   registry_.decrementInflight(fromServerId);
 
   // Don't cache failures — they'd resend to the same broken prefill.
-  if (wasTracked && !msg.error && hash != 0) {
-    affinity_cache_.record(hash, fromServerId);
+  if (entry && !msg.error && entry->registration_hash != 0) {
+    affinity_cache_.record(entry->registration_hash, fromServerId);
   }
 
   if (senders_.sendResultToDecode) {
     senders_.sendResultToDecode(msg);
   }
-  (void)assigned;
 }
 
 void Dispatcher::onCacheBlocksAdded(
@@ -117,12 +107,10 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
   std::vector<uint32_t> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    for (auto it = in_flight_task_to_prefill_.begin();
-         it != in_flight_task_to_prefill_.end();) {
-      if (it->second == serverId) {
+    for (auto it = in_flight_.begin(); it != in_flight_.end();) {
+      if (it->second.prefill_id == serverId) {
         orphaned.push_back(it->first);
-        in_flight_task_to_hash_.erase(it->first);
-        it = in_flight_task_to_prefill_.erase(it);
+        it = in_flight_.erase(it);
       } else {
         ++it;
       }
