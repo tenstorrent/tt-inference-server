@@ -44,7 +44,7 @@ BODY=$(jq -n \
   --arg prompt "$PROMPT" \
   --argjson max_tokens "$MAX_TOKENS" \
   '{
-    model: "qwen",
+    model: "deepseek-ai/DeepSeek-R1-0528",
     messages: [{role: "user", content: $prompt}],
     max_tokens: $max_tokens,
     stream: true,
