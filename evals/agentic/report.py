@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 # this is currently not
 def generate_agentic_report_data(model_spec: Any, eval_run_id: str) -> str:
     return f"eval_{eval_run_id}/agentic/*/result.json"
