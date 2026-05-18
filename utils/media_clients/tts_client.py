@@ -203,23 +203,10 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info(f"Running TTS benchmark with {num_calls} calls.")
         status_list = []
 
-        test_text = DEFAULT_TTS_TEXT
-        if (
-            not isinstance(self.all_params, (list, tuple))
-            and hasattr(self.all_params, "tasks")
-            and len(self.all_params.tasks) > 0
-        ):
-            if hasattr(self.all_params.tasks[0], "text"):
-                test_text = self.all_params.tasks[0].text
-            elif hasattr(self.all_params.tasks[0], "task_name"):
-                test_text = self.all_params.tasks[0].task_name
-
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            status, elapsed, latency, rtr, audio_duration = asyncio.run(
-                self._generate_speech()
-            )
+            status, elapsed, latency, rtr, _ = asyncio.run(self._generate_speech())
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
 
             status_list.append(
@@ -228,8 +215,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                     elapsed=elapsed,
                     latency=latency,
                     rtr=rtr,
-                    text=test_text,
-                    audio_duration=audio_duration,
                 )
             )
 

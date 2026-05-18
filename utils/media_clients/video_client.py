@@ -202,7 +202,6 @@ class VideoClientStrategy(BaseMediaStrategy):
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,
-                    prompt=prompt,
                 )
             )
 
@@ -392,6 +391,10 @@ class VideoClientStrategy(BaseMediaStrategy):
         throughput_rps = self._calculate_throughput_rps(
             len(status_list), wall_clock_seconds
         )
+        steps_per_second = self._calculate_steps_per_second(
+            total_steps=sum(s.num_inference_steps for s in status_list),
+            total_elapsed_seconds=sum(s.elapsed for s in status_list),
+        )
 
         report_data = {
             "benchmarks": {
@@ -400,12 +403,7 @@ class VideoClientStrategy(BaseMediaStrategy):
                 if status_list
                 else 0,
                 "latency": latency_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "inference_steps_per_second": steps_per_second,
                 "throughput_rps": throughput_rps,
                 **tail,
             },
