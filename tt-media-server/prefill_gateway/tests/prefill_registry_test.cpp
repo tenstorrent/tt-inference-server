@@ -5,19 +5,10 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
 #include <string>
 
 namespace tt::gateway {
 namespace {
-
-const PrefillSnapshot* findSnap(const std::vector<PrefillSnapshot>& snaps,
-                                const std::string& id) {
-  auto it =
-      std::find_if(snaps.begin(), snaps.end(),
-                   [&](const PrefillSnapshot& s) { return s.server_id == id; });
-  return it == snaps.end() ? nullptr : &*it;
-}
 
 TEST(PrefillRegistryTest, PreRegisteredPrefillIsUnhealthyUntilMarked) {
   PrefillRegistry reg;
@@ -27,7 +18,6 @@ TEST(PrefillRegistryTest, PreRegisteredPrefillIsUnhealthyUntilMarked) {
   ASSERT_EQ(snaps.size(), 1u);
   EXPECT_EQ(snaps[0].server_id, "A");
   EXPECT_FALSE(snaps[0].healthy);
-  EXPECT_TRUE(snaps[0].accepting_tasks);
 }
 
 TEST(PrefillRegistryTest, MarkRegisteredTurnsPrefillHealthy) {
@@ -96,20 +86,6 @@ TEST(PrefillRegistryTest, IncrementDecrementInflightUpdatesSnapshot) {
   auto snaps = reg.snapshot();
   ASSERT_EQ(snaps.size(), 1u);
   EXPECT_EQ(snaps[0].in_flight, 2u);
-}
-
-TEST(PrefillRegistryTest, UpdateLoadInfoTogglesAcceptingTasks) {
-  PrefillRegistry reg;
-  reg.preRegister("A", nullptr);
-  reg.markRegistered("A", 4);
-
-  reg.updateLoadInfo("A", /*accepting_tasks=*/false);
-  auto snaps = reg.snapshot();
-  EXPECT_FALSE(findSnap(snaps, "A")->accepting_tasks);
-
-  reg.updateLoadInfo("A", true);
-  snaps = reg.snapshot();
-  EXPECT_TRUE(findSnap(snaps, "A")->accepting_tasks);
 }
 
 TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {

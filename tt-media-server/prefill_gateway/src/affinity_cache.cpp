@@ -20,23 +20,8 @@ void AffinityCache::record(size_t hash, const std::string& serverId) {
 
 void AffinityCache::evictPrefill(const std::string& serverId) {
   std::lock_guard<std::mutex> lock(mutex_);
-  for (auto it = hash_to_server_.begin(); it != hash_to_server_.end();) {
-    if (it->second == serverId) {
-      it = hash_to_server_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-}
-
-void AffinityCache::evictHash(size_t hash) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  hash_to_server_.erase(hash);
-}
-
-size_t AffinityCache::size() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return hash_to_server_.size();
+  std::erase_if(hash_to_server_,
+                [&](const auto& kv) { return kv.second == serverId; });
 }
 
 }  // namespace tt::gateway

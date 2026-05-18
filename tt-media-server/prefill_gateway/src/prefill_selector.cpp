@@ -12,7 +12,6 @@ namespace {
 
 bool isEligible(const PrefillSnapshot& p) {
   if (!p.healthy) return false;
-  if (!p.accepting_tasks) return false;
   if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
   return true;
 }
@@ -27,28 +26,13 @@ const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
 
 }  // namespace
 
-const char* reasonLabel(SelectionReason reason) {
-  switch (reason) {
-    case SelectionReason::EQUALITY_MATCH:
-      return "equality_match";
-    case SelectionReason::LEAST_INFLIGHT:
-      return "least_inflight";
-    case SelectionReason::ROUND_ROBIN:
-      return "round_robin";
-    case SelectionReason::NO_PEERS_AVAILABLE:
-      return "no_peers_available";
-  }
-  return "unknown";
-}
-
-SelectionResult selectPrefill(const std::vector<PrefillSnapshot>& prefills,
-                              size_t registrationHash,
-                              const std::optional<std::string>& stickyTarget,
-                              size_t& roundRobinCursor) {
+std::optional<std::string> selectPrefill(
+    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
+    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
   if (registrationHash != 0 && stickyTarget.has_value()) {
     const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
     if (hit && isEligible(*hit)) {
-      return {*stickyTarget, SelectionReason::EQUALITY_MATCH};
+      return *stickyTarget;
     }
   }
 
@@ -59,7 +43,7 @@ SelectionResult selectPrefill(const std::vector<PrefillSnapshot>& prefills,
   }
 
   if (eligible.empty()) {
-    return {std::nullopt, SelectionReason::NO_PEERS_AVAILABLE};
+    return std::nullopt;
   }
 
   uint32_t minInFlight = std::numeric_limits<uint32_t>::max();
@@ -74,12 +58,12 @@ SelectionResult selectPrefill(const std::vector<PrefillSnapshot>& prefills,
   }
 
   if (leastLoaded.size() == 1) {
-    return {leastLoaded.front()->server_id, SelectionReason::LEAST_INFLIGHT};
+    return leastLoaded.front()->server_id;
   }
 
   const size_t pickIndex = roundRobinCursor % leastLoaded.size();
   ++roundRobinCursor;
-  return {leastLoaded[pickIndex]->server_id, SelectionReason::ROUND_ROBIN};
+  return leastLoaded[pickIndex]->server_id;
 }
 
 }  // namespace tt::gateway

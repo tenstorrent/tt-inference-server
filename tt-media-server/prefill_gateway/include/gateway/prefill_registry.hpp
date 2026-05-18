@@ -26,7 +26,6 @@ struct PrefillPeer {
   tt::sockets::SocketManager* socket_manager = nullptr;
 
   bool healthy = false;
-  bool accepting_tasks = true;
   uint32_t in_flight = 0;
   uint32_t max_in_flight = 0;
 
@@ -57,8 +56,6 @@ class PrefillRegistry {
 
   // Mark a prefill down; caller should re-route in-flight tasks.
   void markDown(const std::string& server_id);
-
-  void updateLoadInfo(const std::string& server_id, bool accepting_tasks);
 
   void incrementInflight(const std::string& server_id);
   void decrementInflight(const std::string& server_id);  // saturates at 0

@@ -13,8 +13,7 @@ void PrefillRegistry::preRegister(const std::string& serverId,
   PrefillPeer peer;
   peer.server_id = serverId;
   peer.socket_manager = manager;
-  // healthy stays false until markRegistered() arrives. accepting_tasks
-  // stays true so a freshly-registered prefill is eligible immediately.
+  // healthy stays false until markRegistered() arrives.
   prefills_.emplace(serverId, std::move(peer));
 }
 
@@ -44,14 +43,6 @@ void PrefillRegistry::markDown(const std::string& serverId) {
     }
   }
   if (wasKnown && downCb) downCb(serverId);
-}
-
-void PrefillRegistry::updateLoadInfo(const std::string& serverId,
-                                     bool acceptingTasks) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = prefills_.find(serverId);
-  if (it == prefills_.end()) return;
-  it->second.accepting_tasks = acceptingTasks;
 }
 
 void PrefillRegistry::incrementInflight(const std::string& serverId) {
@@ -94,7 +85,6 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
     PrefillSnapshot snap;
     snap.server_id = peer.server_id;
     snap.healthy = peer.healthy;
-    snap.accepting_tasks = peer.accepting_tasks;
     snap.in_flight = peer.in_flight;
     snap.max_in_flight = peer.max_in_flight;
     out.push_back(std::move(snap));

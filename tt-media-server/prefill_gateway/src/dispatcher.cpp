@@ -26,15 +26,14 @@ void Dispatcher::onPrefillRequest(
                     ? affinity_cache_.lookup(msg.registration_hash)
                     : std::nullopt;
 
-  SelectionResult decision = selectPrefill(prefills, msg.registration_hash,
-                                           sticky, round_robin_cursor_);
-
-  if (!decision.server_id.has_value()) {
+  auto chosenOpt = selectPrefill(prefills, msg.registration_hash, sticky,
+                                 round_robin_cursor_);
+  if (!chosenOpt.has_value()) {
     failTaskToDecode(msg.task_id, "no_prefill_available");
     return;
   }
 
-  const std::string& chosen = *decision.server_id;
+  const std::string& chosen = *chosenOpt;
 
   registry_.incrementInflight(chosen);
   {
