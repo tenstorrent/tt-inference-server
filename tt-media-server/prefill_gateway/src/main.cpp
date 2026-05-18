@@ -198,8 +198,8 @@ int main(int argc, char** argv) {
         tt::sockets::tags::PREFILL_REGISTRATION,
         [&registry, sm,
          idHolder](const tt::sockets::PrefillRegistrationMessage& msg) {
-          TT_LOG_INFO("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                      msg.server_id, msg.max_in_flight);
+          TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
+                       msg.server_id, msg.max_in_flight);
           *idHolder = msg.server_id;
           registry.preRegister(msg.server_id, sm);
           bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
