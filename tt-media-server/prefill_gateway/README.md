@@ -4,6 +4,8 @@
 # PrefillGateway
 
 Stateless service that lets a single decode server fan requests out across N
+prefill servers. The gateway manages prefill liveness and routes each request
+using sticky-hash → least-in-flight → round-robin order.
 
 ## Build
 
@@ -48,11 +50,12 @@ The gateway runs side-by-side with one decode `tt_media_server_cpp` and N
 prefill `tt_media_server_cpp` instances. Two new env vars on `cpp_server`
 flip the inter-server socket roles to talk through the gateway:
 
-| Env var                  | Effect                                                                                          |
-| ------------------------ | ----------------------------------------------------------------------------------------------- |
-| `USE_PREFILL_GATEWAY=1`  | Decode dials gateway as CLIENT. Prefill listens on `SOCKET_PORT` for the gateway as SERVER.     |
-| `PREFILL_SERVER_ID=...`  | Identity the prefill advertises in `PrefillRegistrationMessage`. Default: `<hostname>:<port>`.  |
-| `PREFILL_MAX_IN_FLIGHT`  | Capacity hint sent to the gateway (0 = unlimited).                                              |
+| Env var                         | Set on  | Effect                                                                                         |
+| ------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `USE_PREFILL_GATEWAY=1`         | both    | Decode dials gateway as CLIENT. Prefill listens on `SOCKET_PORT` for the gateway as SERVER.    |
+| `PREFILL_SERVER_ID=...`         | prefill | Identity advertised in `PrefillRegistrationMessage`. Default: `<hostname>:<port>`.             |
+| `PREFILL_MAX_IN_FLIGHT=N`       | prefill | Capacity hint sent to the gateway (0 = unlimited).                                             |
+| `MAX_TOKENS_TO_PREFILL_ON_DECODE=0` | decode  | Set to 0 to force all requests through the gateway. Default 1000 keeps short prompts local. |
 
 The default (`USE_PREFILL_GATEWAY=0`) keeps the existing direct 1:1 wiring.
 
