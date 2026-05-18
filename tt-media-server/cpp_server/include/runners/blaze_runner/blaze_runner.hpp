@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
@@ -16,7 +15,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runners/blaze_runner/blaze_utils.hpp"
+#include "runners/blaze_runner/blaze_types.hpp"
 #include "runners/ipc_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
@@ -66,9 +65,9 @@ class BlazeRunner : public IRunner {
   // SUBMIT/CONTINUE for such a slot must be deferred until the ack, because
   // DecodeScheduler rejects SUBMIT/CONTINUE while a slot has a STOP pending.
   // On STOP ack (handleMemoryResponse) any deferred sequence is re-submitted.
-  std::unordered_map<uint32_t, blaze_utils::PendingSubmit> pendingSubmits;
+  std::unordered_map<uint32_t, blaze_types::PendingSubmit> pendingSubmits;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
-  std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
+  std::unordered_map<uint32_t, blaze_types::SlotContext> slotContexts;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;

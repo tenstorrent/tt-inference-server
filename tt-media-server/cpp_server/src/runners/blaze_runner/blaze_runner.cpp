@@ -10,6 +10,7 @@
 
 #include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
+#include "runners/blaze_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 
@@ -48,6 +49,7 @@ PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
 
 namespace tt::runners {
 namespace utils = blaze_utils;
+namespace types = blaze_types;
 
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
@@ -324,8 +326,8 @@ inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
           "(taskId={}, slotId={})",
           taskId, slotId);
       pendingSubmits.insert_or_assign(
-          slotId, blaze_utils::PendingSubmit{.expectedStopRequestId = taskId,
-                                             .sequence = nullptr});
+          slotId, types::PendingSubmit{.expectedStopRequestId = taskId,
+                                       .sequence = nullptr});
       ipc::helpers::pushToken(*resultQueue, taskId, 0,
                               ipc::SharedToken::FLAG_ABORT, 0, 0);
     } else {
@@ -476,7 +478,7 @@ void BlazeRunner::handleRequest(
   }
   slotContexts.insert_or_assign(
       slotId,
-      blaze_utils::SlotContext{
+      types::SlotContext{
           .taskId = request->taskId,
           .ignoreEos = request->getSamplingParams().ignore_eos,
           .specAcceptsAtStart = decodeScheduler->get_spec_accepts(slotId),

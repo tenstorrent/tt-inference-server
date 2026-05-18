@@ -74,22 +74,4 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
   return req;
 }
 
-struct SlotContext {
-  uint32_t taskId;
-  bool ignoreEos;
-  bool evicting = false;
-  uint32_t specAcceptsAtStart = 0;
-  uint32_t specRejectsAtStart = 0;
-  uint32_t tokensGenerated = 0;
-};
-
-// Buffers a deferred SUBMIT/CONTINUE for a slot that currently has an
-// in-flight STOP. The matching STOP ack carries `request_id ==
-// expectedStopRequestId` (the cancelled sequence's taskId); once it arrives
-// the deferred `sequence` (if any) is re-submitted via handleRequest.
-struct PendingSubmit {
-  uint32_t expectedStopRequestId;
-  std::unique_ptr<tt::domain::llm::Sequence> sequence;
-};
-
 }  // namespace tt::runners::blaze_utils
