@@ -14,10 +14,10 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/llm/sequence.hpp"
 #include "ipc/queue_manager.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace {
 

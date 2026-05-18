@@ -1436,9 +1436,9 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2286,9 +2286,9 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2551,9 +2551,9 @@ vlm_templates = [
         impl=tt_transformers_impl,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
-        version="0.10.0",
-        tt_metal_commit="ba32283",
-        vllm_commit="4386a82",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -2565,7 +2565,7 @@ vlm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -2821,8 +2821,8 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        version="0.10.0",
-        tt_metal_commit="555f240",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -3085,8 +3085,8 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        version="0.10.0",
-        tt_metal_commit="555f240",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -4117,13 +4117,13 @@ def get_runtime_model_spec(
         (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
         None,
     )
-    selected_spec = default_spec or (candidate_specs[0] if impl else None)
+    selected_spec = default_spec or (candidate_specs[0] if (impl or engine) else None)
 
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
             f"device:={device}, engine:={engine}; "
-            f"you must pass --impl"
+            f"you must pass --impl or --engine"
         )
 
     resolved_impl = selected_spec.impl.impl_name

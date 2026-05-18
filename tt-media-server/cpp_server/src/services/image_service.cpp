@@ -11,8 +11,8 @@
 #include <utility>
 
 #include "config/settings.hpp"
+#include "runtime/worker/worker_info.hpp"
 #include "utils/logger.hpp"
-#include "worker/worker_info.hpp"
 
 namespace tt::services {
 

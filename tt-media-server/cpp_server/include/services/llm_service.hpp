@@ -17,13 +17,13 @@
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 

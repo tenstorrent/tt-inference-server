@@ -25,7 +25,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -171,9 +170,15 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
     )
 
     return Block(
-        kind="embedding_benchmark",
+        kind="benchmarks",
+        task_type="embedding",
+        title="Embedding Benchmark",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="embedding"),
+        targets={
+            "num_prompts": successful_requests + failed_requests,
+            "isl": isl,
+            "concurrency": concurrency,
+        },
         data={
             "Benchmarks": {
                 "isl": isl,

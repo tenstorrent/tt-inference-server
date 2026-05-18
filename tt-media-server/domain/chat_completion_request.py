@@ -7,11 +7,22 @@ from typing import Union
 from pydantic import BaseModel
 
 
+class ChatContentPart(BaseModel):
+    """A single content part. Per OpenAI spec chat message content can be a
+    string OR a list of these parts (multi-modal inputs). For text-only LLMs
+    we consume only `type=="text"` parts; other types are accepted but ignored."""
+
+    type: str
+    text: str | None = None
+
+
 class ChatMessage(BaseModel):
     """A single message in a chat conversation."""
 
     role: str
-    content: str
+    # Per OpenAI spec, content can be a string OR a list of content parts.
+    # vllm bench / openai-python / lm-eval all send the list form by default.
+    content: str | list[ChatContentPart]
 
 
 class ChatCompletionRequest(BaseModel):

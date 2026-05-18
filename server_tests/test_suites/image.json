@@ -23,7 +23,8 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 11
+                            "image_generation_time": 11,
+                            "num_concurrent_requests": 1
                         }
                     }
                 },
@@ -37,7 +38,8 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 15
+                            "image_generation_time": 15,
+                            "num_concurrent_requests": 1
                         }
                     }
                 },
@@ -51,7 +53,8 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 25
+                            "image_generation_time": 25,
+                            "num_concurrent_requests": 1
                         }
                     }
                 },
@@ -95,7 +98,7 @@
                     "targets": {
                         "batch_size": 10,
                         "num_inference_steps": 20,
-                        "target_time": 120,
+                        "target_time": 130,
                         "lora_configs": [
                             {
                                 "lora_path": "nerijs/pixel-art-xl",

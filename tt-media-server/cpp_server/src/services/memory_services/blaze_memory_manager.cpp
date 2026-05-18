@@ -1,6 +1,6 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
 
-#include "blaze_runner/blaze_utils.hpp"
+#include "runtime/runners/blaze_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
