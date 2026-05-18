@@ -73,16 +73,12 @@ class PrefillRegistry {
   // Non-owning. Valid until the next markDown() for `server_id`.
   tt::sockets::SocketManager* getSocketManager(const std::string& server_id);
 
-  std::vector<std::string> healthyPrefillIds() const;
-
-  void setOnPrefillUp(PrefillStateCallback callback);
   void setOnPrefillDown(PrefillStateCallback callback);
 
  private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, PrefillPeer> prefills_;
 
-  PrefillStateCallback on_prefill_up_;
   PrefillStateCallback on_prefill_down_;
 };
 

@@ -20,17 +20,12 @@ void PrefillRegistry::preRegister(const std::string& serverId,
 
 bool PrefillRegistry::markRegistered(const std::string& serverId,
                                      uint32_t maxInFlight) {
-  PrefillStateCallback upCb;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = prefills_.find(serverId);
-    if (it == prefills_.end()) return false;
-    it->second.healthy = true;
-    it->second.max_in_flight = maxInFlight;
-    it->second.last_heartbeat = std::chrono::steady_clock::now();
-    upCb = on_prefill_up_;
-  }
-  if (upCb) upCb(serverId);
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = prefills_.find(serverId);
+  if (it == prefills_.end()) return false;
+  it->second.healthy = true;
+  it->second.max_in_flight = maxInFlight;
+  it->second.last_heartbeat = std::chrono::steady_clock::now();
   return true;
 }
 
@@ -113,21 +108,6 @@ tt::sockets::SocketManager* PrefillRegistry::getSocketManager(
   auto it = prefills_.find(serverId);
   if (it == prefills_.end()) return nullptr;
   return it->second.socket_manager;
-}
-
-std::vector<std::string> PrefillRegistry::healthyPrefillIds() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  std::vector<std::string> out;
-  out.reserve(prefills_.size());
-  for (const auto& [id, peer] : prefills_) {
-    if (peer.healthy) out.push_back(id);
-  }
-  return out;
-}
-
-void PrefillRegistry::setOnPrefillUp(PrefillStateCallback callback) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  on_prefill_up_ = std::move(callback);
 }
 
 void PrefillRegistry::setOnPrefillDown(PrefillStateCallback callback) {

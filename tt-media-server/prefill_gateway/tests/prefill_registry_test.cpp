@@ -47,17 +47,6 @@ TEST(PrefillRegistryTest, MarkRegisteredReturnsFalseForUnknownPrefill) {
   EXPECT_FALSE(reg.markRegistered("UNKNOWN", 4));
 }
 
-TEST(PrefillRegistryTest, MarkRegisteredFiresOnPrefillUpCallback) {
-  PrefillRegistry reg;
-  reg.preRegister("A", nullptr);
-
-  std::string seenId;
-  reg.setOnPrefillUp([&](const std::string& id) { seenId = id; });
-
-  reg.markRegistered("A", 4);
-  EXPECT_EQ(seenId, "A");
-}
-
 TEST(PrefillRegistryTest, MarkDownTurnsPrefillUnhealthyAndFiresCallback) {
   PrefillRegistry reg;
   reg.preRegister("A", nullptr);
@@ -121,21 +110,6 @@ TEST(PrefillRegistryTest, UpdateLoadInfoTogglesAcceptingTasks) {
   reg.updateLoadInfo("A", true);
   snaps = reg.snapshot();
   EXPECT_TRUE(findSnap(snaps, "A")->accepting_tasks);
-}
-
-TEST(PrefillRegistryTest, HealthyPrefillIdsExcludesDownPrefills) {
-  PrefillRegistry reg;
-  reg.preRegister("A", nullptr);
-  reg.preRegister("B", nullptr);
-  reg.preRegister("C", nullptr);
-  reg.markRegistered("A", 4);
-  reg.markRegistered("C", 4);
-
-  auto ids = reg.healthyPrefillIds();
-  std::sort(ids.begin(), ids.end());
-  ASSERT_EQ(ids.size(), 2u);
-  EXPECT_EQ(ids[0], "A");
-  EXPECT_EQ(ids[1], "C");
 }
 
 TEST(PrefillRegistryTest, GetSocketManagerReturnsNullptrForUnknown) {
