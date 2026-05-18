@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Optional
 
 import aiohttp
-import requests
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -49,7 +48,7 @@ def _audio_tsu(status_list: list[AudioTestStatus]) -> float:
     return sum(valid) / len(valid) if valid else 0
 
 
-def _transcribe_audio_streaming_off(
+async def _transcribe_audio_streaming_off(
     ctx: MediaContext, is_preprocessing_enabled: bool
 ) -> tuple[bool, float, Optional[float], Optional[float], Optional[float]]:
     logger.info("Transcribing audio without streaming")
@@ -68,20 +67,25 @@ def _transcribe_audio_streaming_off(
     }
 
     start_time = time.time()
-    response = requests.post(
-        f"{ctx.base_url}/v1/audio/transcriptions",
-        json=payload,
-        headers=headers,
-        timeout=90,
-    )
+    status_ok = False
+    response_data = None
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{ctx.base_url}/v1/audio/transcriptions",
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=90),
+        ) as response:
+            status_ok = response.status == 200
+            if status_ok:
+                response_data = await response.json()
     elapsed = time.time() - start_time
     ttft = elapsed
     tsu = None
 
     rtr = None
-    if response.status_code == 200:
+    if status_ok and response_data is not None:
         try:
-            response_data = response.json()
             audio_duration = response_data.get("duration")
             if audio_duration is not None:
                 rtr = audio_duration / elapsed
@@ -94,7 +98,7 @@ def _transcribe_audio_streaming_off(
         except Exception as e:
             logger.error(f"Failed to calculate RTR: {e}")
 
-    return (response.status_code == 200), elapsed, ttft, tsu, rtr
+    return status_ok, elapsed, ttft, tsu, rtr
 
 
 async def _transcribe_audio_streaming_on(
@@ -229,7 +233,7 @@ async def _transcribe_audio(
     if is_streaming_enabled_for_whisper(ctx):
         return await _transcribe_audio_streaming_on(ctx, is_preprocessing_enabled)
 
-    return _transcribe_audio_streaming_off(ctx, is_preprocessing_enabled)
+    return await _transcribe_audio_streaming_off(ctx, is_preprocessing_enabled)
 
 
 def _run_audio_transcription_benchmark(
