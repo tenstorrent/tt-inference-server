@@ -156,7 +156,6 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -165,7 +164,6 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
             ),
         ]
 
@@ -592,7 +590,6 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -601,7 +598,6 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
             ),
         ]
 
@@ -677,7 +673,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -686,7 +681,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test 2",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -695,7 +689,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.29,
                 job_id="job3",
                 video_path="/tmp/job3.mp4",
-                prompt="Test 3",
             ),
         ]
         result = strategy._calculate_latency(status_list)
@@ -716,7 +709,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.22,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test",
             )
         ]
         result = strategy._calculate_latency(status_list)

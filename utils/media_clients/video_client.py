@@ -202,7 +202,6 @@ class VideoClientStrategy(BaseMediaStrategy):
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,
-                    prompt=prompt,
                 )
             )
 
