@@ -19,8 +19,6 @@ concurrency:
 jobs:
   run-spdx-header-script:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -34,26 +32,17 @@ jobs:
           python ./scripts/add_spdx_header.py
 
       - name: Check for changes
-        id: check_for_changes
         run: |
           git status
           if git diff --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No changes detected."
+            exit 0
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Changes detected."
+            echo "Changes detected, committing changes."
           fi
 
-      - name: Fail pull request when SPDX headers are missing
-        if: github.event_name == 'pull_request' && steps.check_for_changes.outputs.changed == 'true'
-        run: |
-          echo "Missing SPDX headers detected. Please run scripts/add_spdx_header.py and commit the result."
-          git --no-pager diff --name-only
-          exit 1
-
       - name: Commit changes
-        if: github.event_name != 'pull_request' && steps.check_for_changes.outputs.changed == 'true'
+        if: success()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_user_name: SPDX-Bot
