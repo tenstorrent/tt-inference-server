@@ -4117,13 +4117,13 @@ def get_runtime_model_spec(
         (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
         None,
     )
-    selected_spec = default_spec or (candidate_specs[0] if impl else None)
+    selected_spec = default_spec or (candidate_specs[0] if (impl or engine) else None)
 
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
             f"device:={device}, engine:={engine}; "
-            f"you must pass --impl"
+            f"you must pass --impl or --engine"
         )
 
     resolved_impl = selected_spec.impl.impl_name
