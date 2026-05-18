@@ -14,6 +14,22 @@
 
 namespace tt::sockets {
 
+template <class Derived>
+struct SerializableMessage {
+  template <class Archive>
+  void write(Archive& ar) const {
+    static_cast<const Derived&>(*this).fields(
+        [&](const auto&... xs) { ar(xs...); });
+  }
+
+  template <class Archive>
+  static Derived read(Archive& ar) {
+    Derived msg;
+    msg.fields([&](auto&... xs) { ar(xs...); });
+    return msg;
+  }
+};
+
 /**
  * @brief Prefill request message - sent from decode server to prefill server
  */
@@ -157,119 +173,104 @@ struct PrefillResultMessage {
 /**
  * @brief Health check message
  */
-struct HealthCheckMessage {
+struct HealthCheckMessage : SerializableMessage<HealthCheckMessage> {
   std::string server_id;
   double cpu_usage = 0.0;
   double memory_usage = 0.0;
   int active_tasks = 0;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(server_id, cpu_usage, memory_usage, active_tasks);
+  template <class F>
+  void fields(F&& f) {
+    f(server_id, cpu_usage, memory_usage, active_tasks);
   }
-
-  template <class Archive>
-  static HealthCheckMessage read(Archive& ar) {
-    HealthCheckMessage msg;
-    ar(msg.server_id, msg.cpu_usage, msg.memory_usage, msg.active_tasks);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(server_id, cpu_usage, memory_usage, active_tasks);
   }
 };
 
 /**
  * @brief Load balancing info message
  */
-struct LoadBalanceMessage {
+struct LoadBalanceMessage : SerializableMessage<LoadBalanceMessage> {
   std::string server_id;
   int queue_size = 0;
   double avg_processing_time = 0.0;
   bool accepting_tasks = false;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(server_id, queue_size, avg_processing_time, accepting_tasks);
+  template <class F>
+  void fields(F&& f) {
+    f(server_id, queue_size, avg_processing_time, accepting_tasks);
   }
-
-  template <class Archive>
-  static LoadBalanceMessage read(Archive& ar) {
-    LoadBalanceMessage msg;
-    ar(msg.server_id, msg.queue_size, msg.avg_processing_time,
-       msg.accepting_tasks);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(server_id, queue_size, avg_processing_time, accepting_tasks);
   }
 };
 
 // Prefill -> gateway, sent on connect. `server_id` is stable across reconnects.
-struct PrefillRegistrationMessage {
+struct PrefillRegistrationMessage
+    : SerializableMessage<PrefillRegistrationMessage> {
   std::string server_id;
   uint32_t max_in_flight = 0;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(server_id, max_in_flight);
+  template <class F>
+  void fields(F&& f) {
+    f(server_id, max_in_flight);
   }
-
-  template <class Archive>
-  static PrefillRegistrationMessage read(Archive& ar) {
-    PrefillRegistrationMessage msg;
-    ar(msg.server_id, msg.max_in_flight);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(server_id, max_in_flight);
   }
 };
 
 // Gateway -> decode. Informs decode which prefill handled a task (for KV
 // transfer / logs).
-struct PrefillAssignmentMessage {
+struct PrefillAssignmentMessage
+    : SerializableMessage<PrefillAssignmentMessage> {
   uint32_t task_id = 0;
   std::string server_id;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(task_id, server_id);
+  template <class F>
+  void fields(F&& f) {
+    f(task_id, server_id);
   }
-
-  template <class Archive>
-  static PrefillAssignmentMessage read(Archive& ar) {
-    PrefillAssignmentMessage msg;
-    ar(msg.task_id, msg.server_id);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(task_id, server_id);
   }
 };
 
 // Prefill -> gateway. Updates the gateway's per-prefill block-cache view
 // used by longest-prefix-match routing.
-struct PrefillCacheBlocksAddedMessage {
+struct PrefillCacheBlocksAddedMessage
+    : SerializableMessage<PrefillCacheBlocksAddedMessage> {
   std::string server_id;
   std::vector<uint64_t> block_hashes;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(server_id, block_hashes);
+  template <class F>
+  void fields(F&& f) {
+    f(server_id, block_hashes);
   }
-
-  template <class Archive>
-  static PrefillCacheBlocksAddedMessage read(Archive& ar) {
-    PrefillCacheBlocksAddedMessage msg;
-    ar(msg.server_id, msg.block_hashes);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(server_id, block_hashes);
   }
 };
 
 // Prefill -> gateway. Mirror of *Added; removes blocks from the routing view.
-struct PrefillCacheBlocksEvictedMessage {
+struct PrefillCacheBlocksEvictedMessage
+    : SerializableMessage<PrefillCacheBlocksEvictedMessage> {
   std::string server_id;
   std::vector<uint64_t> block_hashes;
 
-  template <class Archive>
-  void write(Archive& ar) const {
-    ar(server_id, block_hashes);
+  template <class F>
+  void fields(F&& f) {
+    f(server_id, block_hashes);
   }
-
-  template <class Archive>
-  static PrefillCacheBlocksEvictedMessage read(Archive& ar) {
-    PrefillCacheBlocksEvictedMessage msg;
-    ar(msg.server_id, msg.block_hashes);
-    return msg;
+  template <class F>
+  void fields(F&& f) const {
+    f(server_id, block_hashes);
   }
 };
 
