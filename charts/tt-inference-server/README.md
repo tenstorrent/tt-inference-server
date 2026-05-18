@@ -13,7 +13,7 @@ This chart creates a single `Deployment`, `Service`, `ConfigMap`, and `Secret` f
 Two server types are supported:
 
 - **vllm** — large language models served via the vLLM OpenAI-compatible API
-- **media** — image/audio/video models served via the tt-media-inference-server API
+- **media** — image/audio/video/embedding models served via the tt-media-inference-server API
 
 ---
 
