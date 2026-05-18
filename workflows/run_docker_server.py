@@ -21,7 +21,6 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
-from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -29,6 +28,7 @@ from workflows.utils import (
     get_repo_root_path,
     run_command,
 )
+from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -43,8 +43,103 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
+# cpp_server backend opt-in for selected MEDIA models.
+#
+# The tt-media-server image bundles both the Python uvicorn server and the C++
+# binary; its CMD picks one based on SERVER_MODE (`cpp` -> run_cpp.sh).
+#
+# Unlike the Python server, the C++ binary doesn't derive per-model settings
+# from MODEL+DEVICE — it expects each as its own env var. The tables below
+# mirror tt-media-server/config/constants.py::ModelConfigs and must be kept
+# in sync until the C++ binary learns to derive them itself.
+
+_SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
+
+_CPP_SDXL_RUNNER_BY_MODEL_NAME = {
+    "stable-diffusion-xl-base-1.0": "tt_sdxl_generate",
+    "stable-diffusion-xl-base-1.0-img-2-img": "tt_sdxl_image_to_image",
+    "stable-diffusion-xl-1.0-inpainting-0.1": "tt_sdxl_edit",
+}
+
+# device.name.lower() -> (device_mesh_shape_csv, is_galaxy, device_ids)
+_CPP_SDXL_DEVICE_DEFAULTS = {
+    "n150": ("1,1", False, "(0)"),
+    "n300": ("2,1", False, "(0)"),
+    "t3k": ("2,1", False, "(0),(1),(2),(3)"),
+    "galaxy": ("1,1", True, _SDXL_DEVICE_IDS_32),
+    "p150": ("1,1", False, "(0)"),
+    "p300": ("2,1", False, "(0,1)"),
+    "p300x2": ("2,1", False, "(0,1),(2,3)"),
+    "p150x4": ("2,1", False, "(0,1),(2,3)"),
+    "p150x8": ("2,1", False, "(0,1),(2,3),(4,5),(6,7)"),
+    "blackhole_galaxy": ("1,1", False, _SDXL_DEVICE_IDS_32),
+}
+
+
+def _is_cpp_media_spec(model_spec) -> bool:
+    """True if this MEDIA spec should run on the cpp_server backend."""
+    return (
+        model_spec.inference_engine == InferenceEngine.MEDIA.value
+        and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+    )
+
+
+def _get_cpp_media_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server binary needs at startup."""
+    device = model_spec.device_type.name.lower()
+    model_name = model_spec.model_name
+    runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME[model_name]
+    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(device)
+    if defaults is None:
+        raise ValueError(
+            f"cpp_server backend requested for model={model_name!r} on "
+            f"device={device!r}, but no entry in _CPP_SDXL_DEVICE_DEFAULTS."
+        )
+    mesh_shape, is_galaxy, device_ids = defaults
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "image",
+        "MODEL_RUNNER_TYPE": runner,
+        "DEVICE_MESH_SHAPE": mesh_shape,
+        "IS_GALAXY": "true" if is_galaxy else "false",
+        "DEVICE_IDS": device_ids,
+        "MAX_BATCH_SIZE": "1",
+        "SDXL_IMAGE_RESOLUTION": "1024x1024",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=image, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE_MESH_SHAPE={mesh_shape}, "
+        f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
+def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
+    src_root = Path(repo_root_path) / "tt-media-server"
+    dst_root = f"{user_home_path}/tt-metal/server"
+    if not _is_cpp_media_spec(model_spec):
+        return [
+            "--mount",
+            f"type=bind,src={src_root},dst={dst_root}",
+        ]
+
+    mounts: List[str] = []
+    for entry in sorted(src_root.iterdir()):
+        if entry.name == "cpp_server":
+            continue
+        mounts += [
+            "--mount",
+            f"type=bind,src={entry},dst={dst_root}/{entry.name}",
+        ]
+    return mounts
+
+
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
+    if _is_cpp_media_spec(model_spec):
+        return _get_cpp_media_server_docker_env_vars(model_spec)
+
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
@@ -169,10 +264,25 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
-        "--publish", f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
+
+    if model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+    ):
+        # media/forge containers (run_uvicorn.sh and cpp_server) bind 8000.
+        docker_command += [
+            "--publish",
+            f"{runtime_config.bind_host}:{runtime_config.service_port}:8000",
+        ]
+    else:
+        # vLLM listens on service_port (set via vllm_args.port in apply_overrides)
+        docker_command += [
+            "--publish",
+            f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
+        ]
 
     # setup_config-dependent mounts (cache_root volume)
     if setup_config:
@@ -216,10 +326,26 @@ def generate_docker_run_command(
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
+        # Propagate ModelSpec.env_vars (defaults + template + device-specific)
+        # to the container so per-model declarations like MAX_NUM_SEQS take
+        # effect. Runtime-derived values below override these.
+        docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
         api_key = os.getenv("API_KEY")
-        if api_key:
+        if runtime_config.no_auth:
+            docker_env_vars["NO_AUTH"] = "1"
+        elif api_key:
             docker_env_vars["API_KEY"] = api_key
+        if _is_cpp_media_spec(model_spec):
+            openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
+            if openai_api_key:
+                docker_env_vars["OPENAI_API_KEY"] = openai_api_key
+            else:
+                logger.warning(
+                    "Neither OPENAI_API_KEY nor API_KEY is set; cpp_server will "
+                    "fall back to its default bearer token. Set OPENAI_API_KEY "
+                    "(preferred) or API_KEY to override."
+                )
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
@@ -253,9 +379,9 @@ def generate_docker_run_command(
                 ModelType.AUDIO,
             )
         ):
-            docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/tt-media-server,dst={user_home_path}/tt-metal/server",
-            ]
+            docker_command += _media_server_dev_mounts(
+                repo_root_path, user_home_path, model_spec
+            )
         else:
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",

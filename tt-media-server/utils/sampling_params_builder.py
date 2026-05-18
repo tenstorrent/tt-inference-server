@@ -97,6 +97,11 @@ def build_sampling_params(
         max_tokens=max_tokens,
         skip_special_tokens=request.skip_special_tokens,
         spaces_between_special_tokens=request.spaces_between_special_tokens,
-        truncate_prompt_tokens=request.truncate_prompt_tokens,
+        # truncate_prompt_tokens not supported in vLLM 0.19.x
+        **(
+            {"truncate_prompt_tokens": request.truncate_prompt_tokens}
+            if hasattr(SamplingParams, "truncate_prompt_tokens")
+            else {}
+        ),
         output_kind=RequestOutputKind.DELTA,
     )

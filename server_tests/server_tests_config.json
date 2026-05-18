@@ -35,6 +35,7 @@
         ],
         "VIDEO": [
             "Wan2.2-T2V-A14B-Diffusers",
+            "Wan2.2-I2V-A14B-Diffusers",
             "mochi-1-preview"
         ]
     },
@@ -84,6 +85,7 @@
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
             "wan": "Wan video generation model tests",
+            "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests"
@@ -182,6 +184,20 @@
         "wan": {
             "weights": [
                 "Wan2.2-T2V-A14B-Diffusers"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "wan_i2v": {
+            "id_name": "wan-i2v",
+            "weights": [
+                "Wan2.2-I2V-A14B-Diffusers"
             ],
             "category": "VIDEO",
             "compatible_devices": [
@@ -310,7 +326,8 @@
         "qwen3_emb": {
             "id_name": "qwen3-emb-8b",
             "weights": [
-                "Qwen3-Embedding-8B"
+                "Qwen3-Embedding-8B",
+                "Qwen3-Embedding-4B"
             ],
             "category": "EMBEDDING",
             "compatible_devices": [
@@ -690,6 +707,36 @@
         },
         "VideoGenerationParamTest": {
             "module": "server_tests.test_cases.video_generation_param_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VideoGenerationI2VTest": {
+            "module": "server_tests.test_cases.video_generation_i2v_test",
+            "markers": [
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VideoGenerationI2VParamTest": {
+            "module": "server_tests.test_cases.video_generation_i2v_param_test",
             "markers": [
                 "param",
                 "e2e",

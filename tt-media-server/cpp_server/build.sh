@@ -35,6 +35,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --tracy)
             ENABLE_TRACY="ON"
+            BUILD_TYPE="Debug"
             shift
             ;;
         --blaze)
@@ -94,9 +95,6 @@ echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
-echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
-echo "  Tracy profiling: ${ENABLE_TRACY}"
-echo "  Clang-tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "=============================================="
 

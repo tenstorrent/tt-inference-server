@@ -953,9 +953,26 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 106.0,
-                        "tput": 3435.0
+                        "ttft_ms": 2,
+                        "tput_user": 27.5,
+                        "tput": 27.5
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 256,
+                        "tput_user": 27.5,
+                        "tput": 3520
                     }
                 }
             }
@@ -5852,7 +5869,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5868,7 +5885,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5884,7 +5901,7 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5900,7 +5917,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400.0,
@@ -5918,7 +5935,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5934,7 +5951,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5950,7 +5967,7 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -6031,6 +6048,83 @@
         ]
     },
     "Wan2.2-T2V-A14B-Diffusers": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
+                    }
+                }
+            }
+        ]
+    },
+    "Wan2.2-I2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6499,8 +6593,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
@@ -6512,8 +6606,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
@@ -6524,7 +6618,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 2000,
@@ -6537,7 +6631,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 180,

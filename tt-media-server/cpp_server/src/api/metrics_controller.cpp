@@ -4,7 +4,7 @@
 #include "api/metrics_controller.hpp"
 
 #include "metrics/metrics.hpp"
-#include "worker/worker_metrics_aggregator.hpp"
+#include "runtime/worker/worker_metrics_aggregator.hpp"
 
 namespace tt::api {
 

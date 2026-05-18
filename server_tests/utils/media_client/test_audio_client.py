@@ -10,6 +10,7 @@ import pytest
 
 from utils.media_clients.audio_client import AudioClientStrategy
 from utils.media_clients.test_status import AudioTestStatus
+from workflows.workflow_types import ReportCheckTypes
 
 
 class MockAsyncResponse:
@@ -108,7 +109,7 @@ class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
     def test_calculate_ttft_empty_list(self):
         strategy = self._create_strategy()
         result = strategy._calculate_ttft_value([])
-        assert result == 0
+        assert result is None
 
     def test_calculate_ttft_with_none_values(self):
         strategy = self._create_strategy()
@@ -127,7 +128,7 @@ class TestAudioClientStrategyCalculateTtft(unittest.TestCase):
             MagicMock(ttft=None),
         ]
         result = strategy._calculate_ttft_value(status_list)
-        assert result == 0
+        assert result is None
 
 
 class TestAudioClientStrategyCalculateRtr(unittest.TestCase):
@@ -340,7 +341,6 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
         assert len(report_data) == 1
         eval_result = report_data[0]
 
-        # Verify all required keys exist
         required_keys = [
             "model",
             "device",
@@ -352,15 +352,18 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
             "score",
             "published_score_ref",
             "accuracy_check",
+            "ttft",
             "t/s/u",
             "rtr",
         ]
         for key in required_keys:
             assert key in eval_result, f"Missing required key: {key}"
 
-        # Verify calculated averages (TTFT, RTR, TSU)
-        # TTFT: (0.4 + 0.6) / 2 = 0.5
-        assert eval_result["score"] == 0.5
+        # Verify calculated averages.
+        # latency (mean elapsed): (1.0 + 1.5) / 2 = 1.25
+        assert eval_result["score"] == pytest.approx(1.25)
+        # TTFT (mean status.ttft, streaming-on): (0.4 + 0.6) / 2 = 0.5
+        assert eval_result["ttft"] == pytest.approx(0.5)
         # TSU: (8.0 + 12.0) / 2 = 10.0
         assert eval_result["t/s/u"] == 10.0
         # RTR: (1.5 + 2.5) / 2 = 2.0
@@ -369,12 +372,12 @@ class TestAudioClientStrategyRunEval(unittest.TestCase):
         # Verify metadata from model_spec and all_params
         assert eval_result["model"] == "test_model"
         assert eval_result["device"] == "test_device"
-        assert eval_result["task_type"] == "audio"
+        assert eval_result["task_type"] == "asr"
         assert eval_result["task_name"] == "test_task"
         assert eval_result["tolerance"] == 0.1
         assert eval_result["published_score"] == 0.9
         assert eval_result["published_score_ref"] == "ref"
-        assert eval_result["accuracy_check"] == 2
+        assert eval_result["accuracy_check"] == 1
 
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
@@ -443,7 +446,7 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
         return_value=True,
     )
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(
@@ -496,21 +499,22 @@ class TestAudioClientStrategyRunBenchmark(unittest.TestCase):
         assert "streaming_enabled" in report_data
         assert "preprocessing_enabled" in report_data
 
-        # Verify benchmarks structure and computed averages
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 2
-        # TTFT: (0.4 + 0.6) / 2 = 0.5
-        assert benchmarks["ttft"] == 0.5
-        # TSU: (8.0 + 12.0) / 2 = 10.0
+        assert benchmarks["latency"] == pytest.approx(1.25)
+        assert benchmarks["ttft"] == pytest.approx(0.5)
         assert benchmarks["t/s/u"] == 10.0
-        # RTR: (1.5 + 2.5) / 2 = 2.0
         assert benchmarks["rtr"] == 2.0
-        assert "accuracy_check" in benchmarks
+        assert "performance_check" in report_data
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify metadata
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "audio"
+        assert report_data["task_type"] == "asr"
         assert report_data["streaming_enabled"] is True
         assert report_data["preprocessing_enabled"] is True
 
@@ -562,7 +566,7 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         "utils.media_clients.audio_client.is_preprocessing_enabled_for_whisper",
         return_value=False,
     )
-    @patch("utils.media_clients.audio_client.get_performance_targets")
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     @patch("builtins.open", new_callable=mock_open)
     @patch("pathlib.Path.mkdir")
@@ -590,8 +594,9 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         device.name = "test_device"
         strategy = AudioClientStrategy({}, model_spec, device, "/tmp/output", 8000)
 
+        # Streaming-off: producer leaves ttft=None.
         status_list = [
-            AudioTestStatus(status=True, elapsed=1.0, ttft=0.5, tsu=10.0, rtr=2.0)
+            AudioTestStatus(status=True, elapsed=1.0, ttft=None, tsu=10.0, rtr=2.0)
         ]
 
         result = strategy._generate_report(status_list)
@@ -618,18 +623,25 @@ class TestAudioClientStrategyGenerateReport(unittest.TestCase):
         assert "streaming_enabled" in report_data
         assert "preprocessing_enabled" in report_data
 
-        # Verify benchmarks structure and computed values
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 1
-        assert benchmarks["ttft"] == 0.5
+        assert benchmarks["latency"] == pytest.approx(1.0)
+        # streaming-off: TTFT is not measured, so the producer must emit
+        # ``None`` (serialised as JSON ``null``) rather than 0 — otherwise
+        # 0 looks like a real first-token timing.
+        assert benchmarks["ttft"] is None
         assert benchmarks["t/s/u"] == 10.0
         assert benchmarks["rtr"] == 2.0
-        assert "accuracy_check" in benchmarks
+        assert "performance_check" in report_data
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify model/device metadata
         assert report_data["model"] == "test_model"
         assert report_data["device"] == "test_device"
-        assert report_data["task_type"] == "audio"
+        assert report_data["task_type"] == "asr"
         assert report_data["streaming_enabled"] is False
         assert report_data["preprocessing_enabled"] is False
 
@@ -721,8 +733,9 @@ class TestAudioClientStrategyStreamingOff(unittest.TestCase):
             False
         )
 
+        # Streaming-off has no real first-token timestamp.
         assert status is True
-        assert ttft == elapsed
+        assert ttft is None
         assert tsu is None
         assert rtr is not None
 
@@ -1011,8 +1024,8 @@ class TestAudioClientStrategyRunAudioTranscriptionBenchmark(unittest.TestCase):
         assert all(isinstance(s, AudioTestStatus) for s in result)
 
 
-class TestAudioClientStrategyCalculateAccuracyCheck(unittest.TestCase):
-    """Tests for _calculate_accuracy_check method."""
+class TestAudioClientStrategyCalculatePerformanceCheck(unittest.TestCase):
+    """Tests for _calculate_performance_check method."""
 
     @patch("utils.media_clients.audio_client.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
@@ -1026,108 +1039,112 @@ class TestAudioClientStrategyCalculateAccuracyCheck(unittest.TestCase):
         device = MagicMock()
         return AudioClientStrategy({}, model_spec, device, "/tmp", 8000)
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_all_pass(self, mock_targets):
+    # PerformanceTargets.ttft_ms is in ms; latency_value is in seconds.
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_all_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=10.0, rtr=2.0, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=11.0, rtr_value=2.5
+        # 0.090 s < 0.100 s * 1.05 → PASS
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=11.0, rtr_value=2.5
         )
 
         assert result == 2  # PASS
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_ttft_fail(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_latency_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=None, rtr=None, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=200, tsu_value=None, rtr_value=None
+        # 0.200 s > 0.100 s * 1.05 → FAIL
+        result = strategy._calculate_performance_check(
+            latency_value=0.200, tsu_value=None, rtr_value=None
         )
 
         assert result == 3  # FAIL
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_no_ttft_target(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_no_latency_target(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=None, tput_user=None, rtr=None, tolerance=None
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=100, tsu_value=10.0, rtr_value=2.0
+        result = strategy._calculate_performance_check(
+            latency_value=0.100, tsu_value=10.0, rtr_value=2.0
         )
 
-        assert result == 0  # UNDEFINED
+        assert result == ReportCheckTypes.NA
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_tsu_fail(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_tsu_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=20.0, rtr=None, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=5.0, rtr_value=None
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=5.0, rtr_value=None
         )
 
         assert result == 3  # FAIL (TSU failed)
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_rtr_fail(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_rtr_fail(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=None, rtr=5.0, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=None, rtr_value=1.0
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=None, rtr_value=1.0
         )
 
         assert result == 3  # FAIL (RTR failed)
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_default_tolerance(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_default_tolerance(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=None, rtr=None, tolerance=None
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=None, rtr_value=None
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=None, rtr_value=None
         )
 
         assert result == 2  # PASS with default tolerance
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_tsu_and_rtr_pass(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_tsu_and_rtr_pass(self, mock_targets):
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=10.0, rtr=2.0, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=15.0, rtr_value=3.0
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=15.0, rtr_value=3.0
         )
 
         assert result == 2  # PASS
 
-    @patch("utils.media_clients.audio_client.get_performance_targets")
-    def test_accuracy_check_tpu_target_but_tsu_none(self, mock_targets):
+    @patch("utils.media_clients.base_strategy_interface.get_performance_targets")
+    def test_performance_check_tpu_target_but_tsu_none(self, mock_targets):
         """Test branch where tput_user target exists but measured tsu_value is None."""
         strategy = self._create_strategy()
         mock_targets.return_value = MagicMock(
             ttft_ms=100, tput_user=10.0, rtr=None, tolerance=0.05
         )
 
-        result = strategy._calculate_accuracy_check(
-            ttft_value=90, tsu_value=None, rtr_value=None
+        result = strategy._calculate_performance_check(
+            latency_value=0.090, tsu_value=None, rtr_value=None
         )
 
-        # Should pass because only TTFT is checked (tsu_value is None so TSU check skipped)
+        # Should pass because only latency is checked (tsu_value is
+        # None so TSU check is skipped).
         assert result == 2  # PASS

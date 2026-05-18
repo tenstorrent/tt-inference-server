@@ -60,7 +60,9 @@ class VideoService(BaseJobService):
 
     @log_execution_time("Video postprocessing", TelemetryEvent.POST_PROCESSING, None)
     async def post_process(self, result, input_request: VideoGenerateRequest):
-        """Asynchronous postprocessing using queue-based workers"""
+        """Asynchronous postprocessing using queue-based workers."""
+        if isinstance(result, str):
+            return result
         try:
             video_file = await self._cpu_workload_handler.execute_task(result, False)
         except Exception as e:

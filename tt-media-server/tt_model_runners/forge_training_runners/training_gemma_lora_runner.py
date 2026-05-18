@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
 import os
 import time
 import traceback
@@ -76,7 +77,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         if request._start_event:
             request._start_event.set()
-            self.logger.info(f"Device {self.device_id}: Start event set")
+            self.logger.debug(f"Device {self.device_id}: Start event set")
 
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
@@ -246,7 +247,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.compiled_model.train()
 
                     # Checkpoint saving
-                    if global_step > 0 and global_step % request.save_interval == 0:
+                    if (
+                        request.save_interval > 0
+                        and global_step > 0
+                        and global_step % request.save_interval == 0
+                    ):
                         checkpoint_path = os.path.join(
                             request._output_model_path, f"ckpt-step-{global_step}"
                         )
@@ -258,6 +263,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                     for k, v in self._peft_model.state_dict().items()
                                 },
                             )
+                            with open(
+                                os.path.join(checkpoint_path, "dataset_metadata.json"),
+                                "w",
+                            ) as f:
+                                json.dump(
+                                    {"dataset_loader": request.dataset_loader},
+                                    f,
+                                    indent=2,
+                                )
                             self.logger.info(
                                 f"Model checkpoint saved to {checkpoint_path}.",
                                 extra={"log_type": "checkpoint", "step": global_step},
@@ -276,7 +290,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                     {
                                         "id": f"ckpt-step-{global_step}",
                                         "step": global_step,
-                                        "epoch": epoch,
+                                        "epoch": epoch + 1,
                                         "metrics": checkpoint_metrics,
                                         "created_at": time.time(),
                                     }

@@ -15,6 +15,7 @@ from workflows.utils import (
     get_repo_root_path,
     get_version,
     parse_commits_from_docker_image,
+    parse_image_version,
 )
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import (
@@ -23,6 +24,7 @@ from workflows.workflow_types import (
     ModelStatusTypes,
     ModelType,
     VersionMode,
+    WorkflowType,
 )
 
 if TYPE_CHECKING:
@@ -161,8 +163,8 @@ def scale_llm_perf_targets(
 
 
 def get_perf_reference(device_model_spec, perf_reference_map):
-    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
-    data_parallel = device_model_spec.override_tt_config.get("data_parallel")
+    # Migrated to vLLM API for data parallelism
+    data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
 
     if data_parallel:
         # need to adjust perf target device for data_parallel factor
@@ -281,6 +283,25 @@ class SystemRequirements:
 
 
 @dataclass(frozen=True)
+class KnownIssue:
+    workflow_type: WorkflowType
+    reason: str
+    task_name: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.workflow_type, WorkflowType):
+            coerced = WorkflowType.from_string(str(self.workflow_type))
+            object.__setattr__(self, "workflow_type", coerced)
+
+    def matches(self, workflow_type: WorkflowType, task_name: Optional[str]) -> bool:
+        if self.workflow_type != workflow_type:
+            return False
+        if self.task_name is None:
+            return True
+        return task_name is not None and self.task_name == task_name
+
+
+@dataclass(frozen=True)
 class DeviceModelSpec:
     """
     Model-specific specification for a specific device.
@@ -297,6 +318,7 @@ class DeviceModelSpec:
     env_vars: Dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
+    known_issues: List[KnownIssue] = field(default_factory=list)
 
     def __post_init__(self):
         self.validate_data()
@@ -333,6 +355,14 @@ class DeviceModelSpec:
         object.__setattr__(self, "vllm_args", merged_vllm_args)
 
         self._infer_env_vars()
+
+    def find_known_issue(
+        self, workflow_type: WorkflowType, task_name: Optional[str] = None
+    ) -> Optional[KnownIssue]:
+        for issue in self.known_issues:
+            if issue.matches(workflow_type, task_name):
+                return issue
+        return None
 
     def _infer_env_vars(self):
         inferred_env_vars = {}
@@ -400,12 +430,19 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        default_env_vars = {
-            "VLLM_CONFIGURE_LOGGING": "1",
-            "VLLM_RPC_TIMEOUT": "900000",
-            "VLLM_TARGET_DEVICE": "tt",
-            "TORCHDYNAMO_DISABLE": "1",
-        }
+        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        if self.inference_engine in (
+            InferenceEngine.FORGE.value,
+            InferenceEngine.MEDIA.value,
+        ):
+            default_env_vars = {}
+        else:
+            default_env_vars = {
+                "VLLM_CONFIGURE_LOGGING": "1",
+                "VLLM_RPC_TIMEOUT": "900000",
+                "VLLM_TARGET_DEVICE": "tt",
+                "TORCHDYNAMO_DISABLE": "1",
+            }
         # order of precedence: default, env_vars, device_model_spec
         merged_env_vars = {
             **default_env_vars,
@@ -489,8 +526,8 @@ class ModelSpec:
                 f"{self.impl.repo_url}/tree/{self.tt_metal_commit}/{self.impl.code_path}",
             )
 
-        if self.override_tt_config and "data_parallel" in self.override_tt_config:
-            data_parallel = self.override_tt_config["data_parallel"]
+        data_parallel = self.device_model_spec.vllm_args.get("data_parallel_size")
+        if data_parallel:
             object.__setattr__(
                 self,
                 "subdevice_type",
@@ -664,6 +701,12 @@ class ModelSpec:
                         else:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
+                known_issues = value.get("known_issues", [])
+                if known_issues:
+                    value["known_issues"] = [
+                        KnownIssue(**ki) if isinstance(ki, dict) else ki
+                        for ki in known_issues
+                    ]
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, dict):
                 for requirement_name, requirement_spec in value.items():
@@ -758,6 +801,22 @@ class ModelSpec:
 
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
+            # Mirror overridden vllm_args into env_vars so forge/media containers,
+            # which read bare env vars (not vllm CLI args), pick up the override.
+            VLLM_ARG_TO_ENV = {
+                "max_num_seqs": "MAX_NUM_SEQS",
+                "max_model_len": "MAX_MODEL_LENGTH",
+            }
+            overridden_env = {
+                env_key: str(vllm_override_args_from_cli[vllm_key])
+                for vllm_key, env_key in VLLM_ARG_TO_ENV.items()
+                if vllm_override_args_from_cli.get(vllm_key) is not None
+            }
+            if overridden_env:
+                object.__setattr__(
+                    self, "env_vars", {**self.env_vars, **overridden_env}
+                )
+
         if runtime_config.service_port:
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
@@ -779,6 +838,15 @@ class ModelSpec:
             )
             object.__setattr__(self, "tt_metal_commit", tt_metal_commit)
             object.__setattr__(self, "vllm_commit", vllm_commit)
+            # Re-parse `version` from the override tag so the pre-0.11
+            # support check (validate_runtime_args) sees the actual image
+            # being run, not the template default. Unparseable override
+            # tags (`:dev`, `:latest`) leave version untouched.
+            parsed_version = parse_image_version(runtime_config.override_docker_image)
+            if parsed_version is not None:
+                object.__setattr__(
+                    self, "version", ".".join(str(p) for p in parsed_version)
+                )
 
 
 @dataclass(frozen=True)
@@ -886,6 +954,7 @@ class ModelSpecTemplate:
                     env_vars=device_model_spec.env_vars,
                     tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
                     system_requirements=device_model_spec.system_requirements,
+                    known_issues=device_model_spec.known_issues,
                 )
                 spec = ModelSpec(
                     # Core identity
@@ -1005,6 +1074,9 @@ llm_templates = [
                 max_context=16 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
+                override_tt_config={
+                    "trace_region_size": 134217728,  # 128 MB; vLLM default 50 MB is too small for long prefill
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1023,6 +1095,7 @@ llm_templates = [
                 },
                 override_tt_config={
                     "sample_on_device_mode": "all",
+                    "trace_region_size": 134217728,  # 128 MB; vLLM default 50 MB is too small for long prefill
                 },
             ),
         ],
@@ -1117,14 +1190,20 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=40960,
+                max_context=32 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 51000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 65000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1150,8 +1229,8 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=40960,
                 default_impl=True,
-                override_tt_config={
-                    "data_parallel": 4,
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1260,6 +1339,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 54000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -1354,9 +1436,9 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1364,9 +1446,13 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 384 * 1024 * 1024,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1426,7 +1512,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
             ),
         ],
@@ -1457,9 +1543,11 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "trace_region_size": 27381760,
-                    "data_parallel": 4,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1505,7 +1593,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 66000000,
                 },
             ),
             DeviceModelSpec(
@@ -1514,9 +1602,11 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
-                    "trace_region_size": 30712832,
-                    "data_parallel": 4,
+                    "trace_region_size": 66000000,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1529,7 +1619,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 40000000,
                     "fabric_config": "FABRIC_1D",
                 },
                 env_vars={
@@ -1562,9 +1652,12 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=32,
-                max_context=128 * 1024,
+                max_concurrency=16,
+                max_context=32 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N150X4,
@@ -1613,7 +1706,7 @@ llm_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 184915840,
+                    "trace_region_size": 215000000,
                 },
             ),
         ],
@@ -1804,7 +1897,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 51453952,
+                    "trace_region_size": 268435456,
                 },
                 system_requirements=SystemRequirements(
                     firmware=VersionRequirement(
@@ -1865,11 +1958,12 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 58000000,
+                    "trace_region_size": 384 * 1024 * 1024,
                 },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
         metadata={
             "meta-llama/Llama-3.3-70B-Instruct": {
                 "tool_call_parser_name": "llama3_json",
@@ -2031,16 +2125,19 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.N150,
                 max_concurrency=32,
-                max_context=64 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 52000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
-                max_context=128 * 1024,
+                max_context=32 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 36410368,
+                    "trace_region_size": 70000000,
                 },
             ),
             DeviceModelSpec(
@@ -2049,7 +2146,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 50000000,
+                    "trace_region_size": 117000000,
                 },
             ),
             DeviceModelSpec(
@@ -2083,7 +2180,7 @@ llm_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30000000,
+                    "trace_region_size": 90000000,
                 },
             ),
             DeviceModelSpec(
@@ -2116,10 +2213,12 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
-                    "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 33000000,
+                    "trace_region_size": 70000000,
                 },
             ),
         ],
@@ -2187,9 +2286,9 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2199,7 +2298,7 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 56000000,
+                    "trace_region_size": 155000000,
                 },
             ),
             DeviceModelSpec(
@@ -2296,6 +2395,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 56000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -2345,7 +2447,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2359,7 +2461,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2390,7 +2492,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2409,7 +2511,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2428,7 +2530,7 @@ vlm_templates = [
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "data_parallel_size": 4,
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2449,9 +2551,9 @@ vlm_templates = [
         impl=tt_transformers_impl,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
-        version="0.10.0",
-        tt_metal_commit="ba32283",
-        vllm_commit="4386a82",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        vllm_commit="7678b70",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -2459,11 +2561,11 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm-processor-cache-gb": 0,
                 },
             ),
         ],
-        status=ModelStatusTypes.EXPERIMENTAL,
+        status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -2516,16 +2618,13 @@ vlm_templates = [
         model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=32,
-                max_context=32 * 1024,
-                default_impl=True,
-            ),
-            DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-cache-gb": 0,
+                },
                 override_tt_config={
                     "trace_region_size": 10000000,
                 },
@@ -2558,6 +2657,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-cache-gb": 0,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2587,6 +2689,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm-processor-cache-gb": 0,
+                },
                 override_tt_config={
                     "trace_region_size": 28467200,
                 },
@@ -2716,6 +2821,58 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
+        version="0.14.0",
+        tt_metal_commit="80180b9",
+        impl=tt_transformers_impl,
+        min_disk_gb=60,
+        min_ram_gb=32,
+        model_type=ModelType.VIDEO,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 30000000,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["Wan-AI/Wan2.2-I2V-A14B-Diffusers"],
         version="0.10.0",
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
@@ -2928,8 +3085,8 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        version="0.10.0",
-        tt_metal_commit="555f240",
+        version="0.14.0",
+        tt_metal_commit="80180b9",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3475,65 +3632,172 @@ cnn_templates = [
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=1,
-                max_context=2048,
+                max_concurrency=2,
+                max_context=4096,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
-                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=1,
-                max_context=2048,
+                max_concurrency=2,
+                max_context=4096,
                 default_impl=True,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
-                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
                 },
             ),
         ],
     ),
     ModelSpecTemplate(
-        weights=["meta-llama/Llama-3.2-3B"],
+        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         tt_metal_commit="2496be4",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
-        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=1,
-                max_context=2048,
+                max_concurrency=2,
+                max_context=4096,
                 default_impl=False,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
-                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "2",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "2",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B-Instruct"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=20,
+        min_ram_gb=12,
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        model_type=ModelType.LLM,
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
                 },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=1,
-                max_context=2048,
+                max_concurrency=2,
+                max_context=4096,
                 default_impl=False,
                 env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
-                    "VLLM__MAX_MODEL_LENGTH": "2048",
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-8B"],
+        impl=forge_vllm_plugin_impl,
+        tt_metal_commit="2496be4",
+        min_disk_gb=20,
+        min_ram_gb=12,
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        model_type=ModelType.LLM,
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["tiiuae/Falcon3-7B-Instruct"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=20,
+        min_ram_gb=12,
+        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        model_type=ModelType.LLM,
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=2,
+                max_context=4096,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
                 },
             ),

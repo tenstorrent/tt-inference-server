@@ -50,6 +50,50 @@
         },
         {
             "models": [
+                "wan_i2v"
+            ],
+            "devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "VideoGenerationI2VTest",
+                    "enabled": true,
+                    "description": "Wan2.2 I2V end-to-end happy path",
+                    "targets": {
+                        "num_inference_steps": 40,
+                        "poll_timeout": 1200,
+                        "poll_interval": 5
+                    },
+                    "model_targets": {
+                        "wan_i2v+t3k": {
+                            "poll_timeout": 1500
+                        },
+                        "wan_i2v+galaxy": {
+                            "poll_timeout": 550
+                        },
+                        "wan_i2v+p150x8": {
+                            "poll_timeout": 900
+                        },
+                        "wan_i2v+p300x2": {
+                            "poll_timeout": 800
+                        }
+                    }
+                },
+                {
+                    "template": "VideoGenerationI2VParamTest",
+                    "enabled": true,
+                    "description": "Wan2.2 I2V parameter sweep"
+                }
+            ]
+        },
+        {
+            "models": [
                 "mochi"
             ],
             "devices": [

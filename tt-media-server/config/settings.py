@@ -8,7 +8,7 @@ from typing import Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
@@ -49,6 +49,7 @@ class Settings(BaseSettings):
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
@@ -111,6 +112,10 @@ class Settings(BaseSettings):
         True  # If False, video is generated synchronously and returned directly
     )
 
+    # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
+    # Currently only supported in LoraSingleChipRunner
+    lora_adapter: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
@@ -163,7 +168,9 @@ class Settings(BaseSettings):
             model_runner_enum = ModelRunners(self.model_runner)
 
             # Use dictionary key access
-            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                model_runner_enum
+            )
 
             if model_names_set:
                 # Get first model name from the set
@@ -197,6 +204,15 @@ class Settings(BaseSettings):
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
             self.max_batch_size = self.vllm.max_num_seqs
+
+        # Without this the scheduler picks the serial device_worker even though
+        # max_num_seqs > 1 advertises concurrent capacity; explicit env still wins.
+        if self.vllm.max_num_seqs > 1 and os.getenv("USE_DYNAMIC_BATCHER") is None:
+            logger.info(
+                f"Auto-enabling use_dynamic_batcher because max_num_seqs={self.vllm.max_num_seqs} > 1 "
+                f"(set USE_DYNAMIC_BATCHER=false to override)"
+            )
+            self.use_dynamic_batcher = True
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
@@ -263,6 +279,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
+            ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
         ]:
             self.default_throttle_level = None
 
@@ -301,7 +319,7 @@ class Settings(BaseSettings):
                 f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
             )
 
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+        for runner, model_names in INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
                 if not model_runner_enum:
                     model_runner_enum = runner

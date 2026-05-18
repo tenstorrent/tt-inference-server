@@ -4,31 +4,36 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
-#include "pipeline_manager/pipeline_manager.hpp"
-#include "services/memory_services/async_memory_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 
 namespace tt::services {
 
-class BlazeMemoryManager : public AsyncMemoryManager {
+class BlazeMemoryManager : public MemoryManager {
   using onEvictCb = std::function<void(uint32_t slotId)>;
 
  public:
   BlazeMemoryManager(
-      tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+      tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler,
       onEvictCb onEvict);
   ~BlazeMemoryManager() = default;
 
+  std::optional<domain::ManageMemoryTask> getRequest() override;
+
   void handleRequest(const domain::ManageMemoryTask& request) override;
 
-  void handleResponse(uint32_t requestId, uint32_t slotId) override;
+  void handleResponse(uint32_t taskId, uint32_t slotId) override;
 
  private:
-  tt_blaze::pipeline_manager::PipelineManager& pipelineManager;
-  std::unordered_map<uint32_t, uint32_t> allocating;
-  uint32_t nextRequestID{0};
+  std::unordered_set<uint32_t> allocating;
+  std::unordered_map</*taskId*/ uint32_t, /*slotId*/ uint32_t> cancelling;
+  tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler;
   onEvictCb onEvict;
+  std::optional<domain::ManageMemoryTask> pendingRetry;
 };
 
 }  // namespace tt::services

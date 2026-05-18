@@ -5,11 +5,12 @@
 
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
-#include "worker/worker_info.hpp"
+#include "runtime/worker/worker_info.hpp"
 
 namespace tt::services {
 
@@ -33,6 +34,7 @@ class IService {
   virtual void stop() = 0;
   virtual bool isModelReady() const = 0;
   virtual SystemStatus getSystemStatus() const = 0;
+  virtual std::string runnerInUse() const { return ""; }
 };
 
 template <std::derived_from<domain::BaseRequest> RequestType,
@@ -64,8 +66,10 @@ class BaseService : public IService {
   virtual void preProcess(RequestType& /*request*/) const {
     if (currentQueueSize() >= maxQueueSize) throw QueueFullException{};
   }
-  virtual void postProcess(ResponseType& response) const = 0;
-  virtual size_t currentQueueSize() const = 0;
+  virtual void postProcess(ResponseType& /*response*/) const {}
+  /** Override when the service has its own queue; default is no back-pressure.
+   */
+  virtual size_t currentQueueSize() const { return 0; }
 
   virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
     return {};
