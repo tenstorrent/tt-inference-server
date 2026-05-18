@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
 # Small helper to stream a chat completion against a running tt_media_server_cpp.
 #
 # Usage (flags accepted in any position):
