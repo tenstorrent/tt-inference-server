@@ -252,14 +252,14 @@ int main(int argc, char** argv) {
   decodeSm.start();
 
   std::atomic<bool> proberStop{false};
-  constexpr auto PROBE_INTERVAL_MS = std::chrono::milliseconds(1000);
-  std::thread proberThread([&prefillSms, &proberStop, PROBE_INTERVAL_MS]() {
+  constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
+  std::thread proberThread([&prefillSms, &proberStop, probeIntervalMs]() {
     while (!proberStop.load()) {
       for (auto& sm : prefillSms) {
         sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
                        tt::sockets::RegistrationProbeMessage{});
       }
-      std::this_thread::sleep_for(PROBE_INTERVAL_MS);
+      std::this_thread::sleep_for(probeIntervalMs);
     }
   });
 

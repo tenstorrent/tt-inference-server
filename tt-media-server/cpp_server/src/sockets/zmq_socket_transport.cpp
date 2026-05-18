@@ -157,14 +157,14 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
       if (eventId == ZMQ_EVENT_CONNECTED || eventId == ZMQ_EVENT_ACCEPTED) {
         bool wasConnected = connected_.exchange(true);
         if (!wasConnected) {
-          TT_LOG_INFO("[ZmqSocketTransport] Peer connected ({})",
-                      mode_ == Mode::SERVER ? "server" : "client");
+          TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})",
+                       mode_ == Mode::SERVER ? "server" : "client");
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
         bool wasConnected = connected_.exchange(false);
         if (wasConnected) {
-          TT_LOG_INFO("[ZmqSocketTransport] Peer disconnected ({})",
-                      mode_ == Mode::SERVER ? "server" : "client");
+          TT_LOG_DEBUG("[ZmqSocketTransport] Peer disconnected ({})",
+                       mode_ == Mode::SERVER ? "server" : "client");
           if (connectionLostCallback_) {
             connectionLostCallback_();
           }
