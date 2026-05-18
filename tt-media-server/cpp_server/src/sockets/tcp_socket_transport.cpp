@@ -181,10 +181,6 @@ void TcpSocketTransport::serverLoop() {
     TT_LOG_INFO("[TcpSocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
-    if (connectionEstablishedCallback_) {
-      connectionEstablishedCallback_();
-    }
-
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -247,10 +243,6 @@ void TcpSocketTransport::clientLoop() {
     delayMs = reconnectInitialDelayMs_;  // reset on success
 
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
-
-    if (connectionEstablishedCallback_) {
-      connectionEstablishedCallback_();
-    }
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -372,11 +364,6 @@ std::string TcpSocketTransport::getStatus() const {
 void TcpSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
   connectionLostCallback_ = std::move(callback);
-}
-
-void TcpSocketTransport::setConnectionEstablishedCallback(
-    std::function<void()> callback) {
-  connectionEstablishedCallback_ = std::move(callback);
 }
 
 void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,

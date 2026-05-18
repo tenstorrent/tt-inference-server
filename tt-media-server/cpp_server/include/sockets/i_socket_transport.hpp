@@ -37,6 +37,9 @@ class ISocketTransport {
   virtual std::vector<uint8_t> receiveRawData() = 0;
 
   virtual void setConnectionLostCallback(std::function<void()> callback) = 0;
+
+  virtual void setReconnectBackoff(uint32_t /*initialDelayMs*/,
+                                   uint32_t /*maxDelayMs*/) {}
 };
 
 /**

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
@@ -8,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "gateway/affinity_cache.hpp"
@@ -248,6 +251,18 @@ int main(int argc, char** argv) {
   for (auto& sm : prefillSms) sm->start();
   decodeSm.start();
 
+  std::atomic<bool> proberStop{false};
+  constexpr auto PROBE_INTERVAL_MS = std::chrono::milliseconds(1000);
+  std::thread proberThread([&prefillSms, &proberStop, PROBE_INTERVAL_MS]() {
+    while (!proberStop.load()) {
+      for (auto& sm : prefillSms) {
+        sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                       tt::sockets::RegistrationProbeMessage{});
+      }
+      std::this_thread::sleep_for(PROBE_INTERVAL_MS);
+    }
+  });
+
   TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
 
   std::signal(SIGINT, signalHandler);
@@ -258,6 +273,8 @@ int main(int argc, char** argv) {
   }
 
   TT_LOG_INFO("[Gateway] Shutting down…");
+  proberStop = true;
+  if (proberThread.joinable()) proberThread.join();
   decodeSm.stop();
   for (auto& sm : prefillSms) sm->stop();
   TT_LOG_INFO("[Gateway] Stopped.");

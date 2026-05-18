@@ -11,13 +11,27 @@ namespace tt::sockets {
 
 SocketManager::~SocketManager() { stop(); }
 
+void SocketManager::applyPendingSettings() {
+  if (!transport_) return;
+  if (pendingConnectionLostCallback_) {
+    transport_->setConnectionLostCallback(
+        std::move(pendingConnectionLostCallback_));
+  }
+  if (reconnectBackoffSet_) {
+    transport_->setReconnectBackoff(reconnectInitialDelayMs_,
+                                    reconnectMaxDelayMs_);
+  }
+}
+
 bool SocketManager::initializeAsServer(uint16_t port) {
   transport_ = createSocketTransport();
+  applyPendingSettings();
   return transport_->initializeAsServer(port);
 }
 
 bool SocketManager::initializeAsClient(const std::string& host, uint16_t port) {
   transport_ = createSocketTransport();
+  applyPendingSettings();
   return transport_->initializeAsClient(host, port);
 }
 
@@ -97,13 +111,8 @@ std::string SocketManager::getStatus() const {
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
   if (transport_) {
     transport_->setConnectionLostCallback(std::move(callback));
-  }
-}
-
-void SocketManager::setConnectionEstablishedCallback(
-    std::function<void()> callback) {
-  if (transport_) {
-    transport_->setConnectionEstablishedCallback(std::move(callback));
+  } else {
+    pendingConnectionLostCallback_ = std::move(callback);
   }
 }
 
@@ -111,6 +120,10 @@ void SocketManager::setReconnectBackoff(uint32_t initialDelayMs,
                                         uint32_t maxDelayMs) {
   if (transport_) {
     transport_->setReconnectBackoff(initialDelayMs, maxDelayMs);
+  } else {
+    reconnectBackoffSet_ = true;
+    reconnectInitialDelayMs_ = initialDelayMs;
+    reconnectMaxDelayMs_ = maxDelayMs;
   }
 }
 

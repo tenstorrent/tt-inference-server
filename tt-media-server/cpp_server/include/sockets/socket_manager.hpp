@@ -93,12 +93,6 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
   /**
-   * @brief Set callback fired when a TCP connection is established.
-   * Server: each accept. Client: each (re)connect.
-   */
-  void setConnectionEstablishedCallback(std::function<void()> callback);
-
-  /**
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
@@ -116,13 +110,20 @@ class SocketManager {
   mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
       handlers_;
+
+  std::function<void()> pendingConnectionLostCallback_;
+  bool reconnectBackoffSet_{false};
+  uint32_t reconnectInitialDelayMs_{0};
+  uint32_t reconnectMaxDelayMs_{0};
+
+  void applyPendingSettings();
 };
 
 // Template implementations
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!transport_ || !transport_->isConnected()) {
+  if (!transport_) {
     return false;
   }
 

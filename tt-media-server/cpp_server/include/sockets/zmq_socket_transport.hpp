@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -48,12 +49,14 @@ class ZmqSocketTransport : public ISocketTransport {
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
+  void setReconnectBackoff(uint32_t initialDelayMs,
+                           uint32_t maxDelayMs) override;
 
  private:
   enum class Mode { SERVER, CLIENT };
 
-  void pollLoop();
-  void monitorLoop();
+  void setupMonitor();
+  void monitorLoop(std::promise<void> ready);
 
   Mode mode_ = Mode::CLIENT;
   std::string endpoint_;
@@ -63,8 +66,8 @@ class ZmqSocketTransport : public ISocketTransport {
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
+  std::atomic<bool> monitorActive_{false};
 
-  std::thread pollThread_;
   std::thread monitorThread_;
 
   mutable std::mutex sendMutex_;
@@ -73,6 +76,10 @@ class ZmqSocketTransport : public ISocketTransport {
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
   std::function<void()> connectionLostCallback_;
+
+  // ZMQ_RECONNECT_IVL / ZMQ_RECONNECT_IVL_MAX, applied at initializeAsClient.
+  uint32_t reconnectInitialDelayMs_{1000};
+  uint32_t reconnectMaxDelayMs_{5000};
 };
 
 }  // namespace tt::sockets

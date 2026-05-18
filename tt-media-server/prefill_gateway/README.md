@@ -31,6 +31,12 @@ Run them all with:
 ctest --test-dir build --output-on-failure
 ```
 
+To run against the ZMQ transport instead of TCP:
+
+```bash
+SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
+```
+
 ## Run the gateway
 
 ```bash
@@ -53,6 +59,7 @@ flip the inter-server socket roles to talk through the gateway:
 | Env var                         | Set on  | Effect                                                                                         |
 | ------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
 | `USE_PREFILL_GATEWAY=1`         | both    | Decode dials gateway as CLIENT. Prefill listens on `SOCKET_PORT` for the gateway as SERVER.    |
+| `SOCKET_TRANSPORT`              | all     | `tcp` (default) or `zmq`. Must be the same on all three processes.                             |
 | `PREFILL_SERVER_ID=...`         | prefill | Identity advertised in `PrefillRegistrationMessage`. Default: `<hostname>:<port>`.             |
 | `PREFILL_MAX_IN_FLIGHT=N`       | prefill | Capacity hint sent to the gateway (0 = unlimited).                                             |
 | `MAX_TOKENS_TO_PREFILL_ON_DECODE=0` | decode  | Set to 0 to force all requests through the gateway. Default 1000 keeps short prompts local. |
@@ -72,6 +79,9 @@ The default (`USE_PREFILL_GATEWAY=0`) keeps the existing direct 1:1 wiring.
                                └──────────────────┘               │ (8003)    │
                                                                   └───────────┘
 ```
+
+The commands below use TCP (default). To switch to ZMQ, add
+`SOCKET_TRANSPORT=zmq` to **all four** processes (gateway + decode + both prefills).
 
 ### Terminal A — gateway
 

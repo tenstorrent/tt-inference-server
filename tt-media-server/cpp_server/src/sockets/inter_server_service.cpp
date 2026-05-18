@@ -189,8 +189,10 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.server_id);
       });
 
-  socket_manager_.setConnectionEstablishedCallback(
-      [this]() { sendRegistrationIfGatewayModeIsEnabled(); });
+  socket_manager_.registerHandler<RegistrationProbeMessage>(
+      tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
+        sendRegistrationIfGatewayModeIsEnabled();
+      });
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(

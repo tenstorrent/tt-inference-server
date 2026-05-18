@@ -48,6 +48,8 @@ class TcpSocketTransport : public ISocketTransport {
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
+  void setReconnectBackoff(uint32_t initialDelayMs,
+                           uint32_t maxDelayMs) override;
 
  private:
   enum class Mode { SERVER, CLIENT };
@@ -71,6 +73,9 @@ class TcpSocketTransport : public ISocketTransport {
   mutable std::mutex sendMutex_;
 
   std::function<void()> connectionLostCallback_;
+
+  uint32_t reconnectInitialDelayMs_{100};
+  uint32_t reconnectMaxDelayMs_{5000};
 };
 
 }  // namespace tt::sockets
