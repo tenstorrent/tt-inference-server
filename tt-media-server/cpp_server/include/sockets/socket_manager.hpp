@@ -88,10 +88,21 @@ class SocketManager {
   std::string getStatus() const;
 
   /**
-   * @brief Set callback for connection lost events
-   * @param callback Function to call when connection is lost
+   * @brief Set callback for connection lost events.
    */
   void setConnectionLostCallback(std::function<void()> callback);
+
+  /**
+   * @brief Set callback fired when a TCP connection is established.
+   * Server: each accept. Client: each (re)connect.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
+   * Must be called before start().
+   */
+  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
 
  private:
   void messageLoop();

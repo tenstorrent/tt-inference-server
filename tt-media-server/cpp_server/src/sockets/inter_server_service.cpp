@@ -26,16 +26,38 @@ bool InterServerService::initializeFromConfig() {
 
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
+  const bool gatewayMode = tt::config::usePrefillGateway();
 
   bool success = false;
 
+  // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
+  // and the gateway sits between them.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as server on port {}", port);
-    success = socket_manager_.initializeAsServer(port);
+    if (gatewayMode) {
+      TT_LOG_INFO(
+          "[InterServerService] Decode (gateway mode): connecting to {}:{}",
+          host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+    } else {
+      TT_LOG_INFO(
+          "[InterServerService] Decode (direct mode): listening on port {}",
+          port);
+      success = socket_manager_.initializeAsServer(port);
+    }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as client to {}:{}", host,
-                port);
-    success = socket_manager_.initializeAsClient(host, port);
+    if (gatewayMode) {
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (gateway mode): listening on port {} "
+          "for gateway",
+          port);
+      success = socket_manager_.initializeAsServer(port);
+      gateway_mode_ = success;
+    } else {
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (direct mode): connecting to {}:{}",
+          host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+    }
   }
 
   if (success) {
@@ -158,6 +180,18 @@ void InterServerService::setupMessageHandlers() {
         }
       });
 
+  // Decode-side no-op handler so the gateway's PrefillAssignment doesn't log
+  // "no handler" warnings. Useful for KV-transfer routing in a follow-up.
+  socket_manager_.registerHandler<PrefillAssignmentMessage>(
+      tags::PREFILL_ASSIGNMENT, [](const PrefillAssignmentMessage& message) {
+        TT_LOG_DEBUG(
+            "[InterServerService] PrefillAssignment for task {} → prefill '{}'",
+            message.task_id, message.server_id);
+      });
+
+  socket_manager_.setConnectionEstablishedCallback(
+      [this]() { sendRegistrationIfGatewayModeIsEnabled(); });
+
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
@@ -193,6 +227,26 @@ void InterServerService::setupMessageHandlers() {
                                  message.memory_usage, message.active_tasks);
         }
       });
+}
+
+void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
+  if (!gateway_mode_) {
+    return;
+  }
+  PrefillRegistrationMessage msg;
+  msg.server_id = tt::config::prefillServerId();
+  msg.max_in_flight = tt::config::prefillMaxInFlight();
+
+  bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
+  if (ok) {
+    TT_LOG_INFO(
+        "[InterServerService] Sent PrefillRegistration: id='{}' "
+        "max_in_flight={}",
+        msg.server_id, msg.max_in_flight);
+  } else {
+    TT_LOG_WARN(
+        "[InterServerService] Failed to send PrefillRegistration to gateway");
+  }
 }
 
 }  // namespace tt::sockets

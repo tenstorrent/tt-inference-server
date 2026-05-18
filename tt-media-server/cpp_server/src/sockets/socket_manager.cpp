@@ -35,11 +35,14 @@ void SocketManager::stop() {
   }
 
   running_ = false;
-  transport_.stop();
+
+  transport_.shutdownPeer();
 
   if (messageThread_.joinable()) {
     messageThread_.join();
   }
+
+  transport_.stop();
 
   TT_LOG_INFO("[SocketManager] Stopped");
 }
@@ -92,6 +95,16 @@ std::string SocketManager::getStatus() const { return transport_.getStatus(); }
 
 void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
   transport_.setConnectionLostCallback(std::move(callback));
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  transport_.setConnectionEstablishedCallback(std::move(callback));
+}
+
+void SocketManager::setReconnectBackoff(uint32_t initialDelayMs,
+                                        uint32_t maxDelayMs) {
+  transport_.setReconnectBackoff(initialDelayMs, maxDelayMs);
 }
 
 }  // namespace tt::sockets

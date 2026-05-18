@@ -20,6 +20,8 @@ endif()
 # Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
 option(CLANG_TIDY "Run clang-tidy during build" OFF)
 
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
