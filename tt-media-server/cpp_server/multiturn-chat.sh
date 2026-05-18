@@ -41,10 +41,20 @@ URL="http://localhost:${PORT}/v1/chat/completions"
 MESSAGES_JSON=$(jq -n --arg prompt "$PROMPT" '[{role: "user", content: $prompt}]')
 
 echo "Starting chat session. Type 'exit' or 'quit' to end."
+echo "Press Ctrl+C during the assistant's reply to cancel that turn"
+echo "  (partial reply is still saved to history)."
+echo "Prefix a user line with '-n NUM' to override max_tokens for that turn"
+echo "  (sticks for subsequent turns; current: $MAX_TOKENS)."
 echo "--------------------------------------------------"
 
 # pipefail so a curl/jq failure inside the $(...) capture below shows up in $?.
 set -o pipefail
+
+# Ctrl+C during the streaming pipeline cancels the current turn instead of
+# killing the script. The handler just sets a flag; SIGINT also reaches the
+# subshell's curl/jq/tee, which die normally and end the pipeline.
+CANCELLED=0
+on_cancel() { CANCELLED=1; }
 
 while true; do
   BODY=$(jq -n \
@@ -59,6 +69,9 @@ while true; do
     }')
 
   echo -n "Assistant: "
+
+  CANCELLED=0
+  trap on_cancel INT
 
   # Stream SSE, decode delta.content, mirror tokens to the controlling
   # terminal via /dev/tty so the user sees them live, and capture the
@@ -81,15 +94,25 @@ while true; do
     ' | tee /dev/tty)
   pipeline_status=$?
 
+  trap - INT
   echo
 
-  if [ "$pipeline_status" -ne 0 ]; then
+  if [ "$CANCELLED" -eq 1 ] && [ -z "$ASSISTANT_RESPONSE" ]; then
+    # Cancelled before any token arrived -- drop the user turn entirely so the
+    # next request doesn't include the abandoned prompt.
+    echo "[cancelled before first token — discarding last user turn]"
+    MESSAGES_JSON=$(jq '.[:-1]' <<< "$MESSAGES_JSON")
+  elif [ "$CANCELLED" -eq 1 ]; then
+    echo "[cancelled — saving partial reply to history]"
+    MESSAGES_JSON=$(jq --arg reply "$ASSISTANT_RESPONSE" \
+      '. += [{role: "assistant", content: $reply}]' <<< "$MESSAGES_JSON")
+  elif [ "$pipeline_status" -ne 0 ]; then
     echo "[multiturn-chat.sh] Error: request pipeline exited with status $pipeline_status." >&2
     exit "$pipeline_status"
+  else
+    MESSAGES_JSON=$(jq --arg reply "$ASSISTANT_RESPONSE" \
+      '. += [{role: "assistant", content: $reply}]' <<< "$MESSAGES_JSON")
   fi
-
-  MESSAGES_JSON=$(jq --arg reply "$ASSISTANT_RESPONSE" \
-    '. += [{role: "assistant", content: $reply}]' <<< "$MESSAGES_JSON")
 
   echo "--------------------------------------------------"
 
@@ -102,6 +125,15 @@ while true; do
     echo "Goodbye!"
     break
   fi
+
+  # Allow per-turn `-n NUM` override of MAX_TOKENS at the start of the line.
+  # The rest of the line (if any) becomes the actual user prompt.
+  if [[ "$NEXT_PROMPT" =~ ^-n[[:space:]]+([0-9]+)([[:space:]]+(.*))?$ ]]; then
+    MAX_TOKENS="${BASH_REMATCH[1]}"
+    NEXT_PROMPT="${BASH_REMATCH[3]:-}"
+    echo "[max_tokens = $MAX_TOKENS]"
+  fi
+
   if [ -z "$NEXT_PROMPT" ]; then
     continue
   fi
