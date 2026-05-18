@@ -1,10 +1,10 @@
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Required at install time:
 #   helm install my-model ./charts/tt-inference-server-v2 \
 #     --set model="Llama-3.1-8B-Instruct" \
 #     --set device=galaxy \
 #     --set hfToken="hf_xxx"
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 # -- Model name. Must match a key under `models`. Required at install time.
 model: ""
@@ -22,9 +22,9 @@ cache:
   # -- Override the host path used for the cache volume. Defaults to `/opt/cache/<model>-<device>` when empty.
   hostPath: ""
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Defaults — merged with (and overridden by) per-model config below.
-# ---------------------------------------------------------------------------
+# ===========================================================================
 defaults:
   # -- Server backend. `vllm` for LLMs, `media` for tt-media-server. Overridden per model.
   serverType: vllm
@@ -100,12 +100,13 @@ defaults:
   # -- Additional environment variables. Items take the form `{name, value}` or `{name, valueFrom}`.
   extraEnv: []
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Per-model configuration — keyed by model name then device.
 # Only fields that differ from defaults need to be specified.
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 # -- Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section in the README for the full list.
+# @default -- See the Supported Models section below.
 models:
 
   # ── vLLM models ────────────────────────────────────────────────────────
