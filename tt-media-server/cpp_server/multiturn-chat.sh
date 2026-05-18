@@ -43,9 +43,14 @@ MESSAGES_JSON=$(jq -n --arg prompt "$PROMPT" '[{role: "user", content: $prompt}]
 echo "Starting chat session. Type 'exit' or 'quit' to end."
 echo "Press Ctrl+C during the assistant's reply to cancel that turn"
 echo "  (partial reply is still saved to history)."
-echo "Prefix a user line with '-n NUM' to override max_tokens for that turn"
-echo "  (sticks for subsequent turns; current: $MAX_TOKENS)."
+echo "Prefix a user line with '-n NUM' to override max_tokens for that turn only"
+echo "  (default stays at $MAX_TOKENS)."
 echo "--------------------------------------------------"
+
+# Per-turn override of MAX_TOKENS. Empty string means "use the launch default".
+# Set by parsing `-n NUM` at the start of a user line; consumed and cleared on
+# the next request so the default ($MAX_TOKENS) sticks again afterwards.
+turn_max_tokens=""
 
 # pipefail so a curl/jq failure inside the $(...) capture below shows up in $?.
 set -o pipefail
@@ -57,9 +62,12 @@ CANCELLED=0
 on_cancel() { CANCELLED=1; }
 
 while true; do
+  effective_max_tokens="${turn_max_tokens:-$MAX_TOKENS}"
+  turn_max_tokens=""
+
   BODY=$(jq -n \
     --argjson messages "$MESSAGES_JSON" \
-    --argjson max_tokens "$MAX_TOKENS" \
+    --argjson max_tokens "$effective_max_tokens" \
     '{
       model: "deepseek-ai/DeepSeek-R1-0528",
       messages: $messages,
@@ -126,12 +134,14 @@ while true; do
     break
   fi
 
-  # Allow per-turn `-n NUM` override of MAX_TOKENS at the start of the line.
-  # The rest of the line (if any) becomes the actual user prompt.
+  # Allow per-turn `-n NUM` override at the start of the line. This is a
+  # one-shot: it applies only to the very next request, then $MAX_TOKENS (the
+  # launch default) takes over again. The rest of the line, if any, is the
+  # actual user prompt.
   if [[ "$NEXT_PROMPT" =~ ^-n[[:space:]]+([0-9]+)([[:space:]]+(.*))?$ ]]; then
-    MAX_TOKENS="${BASH_REMATCH[1]}"
+    turn_max_tokens="${BASH_REMATCH[1]}"
     NEXT_PROMPT="${BASH_REMATCH[3]:-}"
-    echo "[max_tokens = $MAX_TOKENS]"
+    echo "[max_tokens (this turn only) = $turn_max_tokens]"
   fi
 
   if [ -z "$NEXT_PROMPT" ]; then
