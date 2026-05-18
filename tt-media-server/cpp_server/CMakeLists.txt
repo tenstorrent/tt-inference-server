@@ -601,7 +601,7 @@ target_include_directories(llm_service_test PRIVATE
 )
 
 add_executable(main_integration_test
-    tests/main_integration_test.cpp
+    tests/integration/main_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -656,7 +656,7 @@ target_include_directories(main_integration_test PRIVATE
 )
 
 add_executable(tool_calling_integration_test
-    tests/tool_calling_integration_test.cpp
+    tests/integration/tool_calling_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp

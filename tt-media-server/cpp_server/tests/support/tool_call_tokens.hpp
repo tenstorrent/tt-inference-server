@@ -45,8 +45,8 @@ class ToolCallTokens {
     ToolCallTokens builder(taskId);
     builder.beginToolCalls();
     builder.beginToolCall();
-    builder.functionType();     // "function"
-    builder.toolSeparator();    // <tool_sep>
+    builder.functionType();   // "function"
+    builder.toolSeparator();  // <tool_sep>
     builder.text(functionName + "\n");
     builder.text("```json\n");
     builder.text(arguments + "\n");
@@ -149,9 +149,7 @@ class ToolCallTokens {
   }
 
   // Get text segments for custom encoding
-  const std::vector<std::string>& textSegments() const {
-    return textSegments_;
-  }
+  const std::vector<std::string>& textSegments() const { return textSegments_; }
 
  private:
   uint32_t taskId_;

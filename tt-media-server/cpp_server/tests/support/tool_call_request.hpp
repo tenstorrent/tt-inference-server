@@ -36,9 +36,9 @@ class ToolCallRequest {
   }
 
   // Add a tool with the given function schema
-  ToolCallRequest& tool(const std::string& name, const std::string& description,
-                        std::initializer_list<std::pair<std::string, std::string>>
-                            properties) {
+  ToolCallRequest& tool(
+      const std::string& name, const std::string& description,
+      std::initializer_list<std::pair<std::string, std::string>> properties) {
     Json::Value tool;
     tool["type"] = "function";
     tool["function"]["name"] = name;

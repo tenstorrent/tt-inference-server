@@ -91,8 +91,10 @@ void printTokenSequence(tt::test::MockToolCallRunner& runner) {
 
 void printParsedResponse(const tt::test::ToolCallStream& stream) {
   std::cout << "\n--- 4. FINAL PARSED MESSAGE ---\n";
-  std::cout << "  ended_with_done: " << (stream.endedWithDone() ? "true" : "false") << "\n";
-  std::cout << "  finish_reason: " << stream.finishReason().value_or("(none)") << "\n";
+  std::cout << "  ended_with_done: "
+            << (stream.endedWithDone() ? "true" : "false") << "\n";
+  std::cout << "  finish_reason: " << stream.finishReason().value_or("(none)")
+            << "\n";
   std::cout << "  content: \"" << stream.content() << "\"\n";
   std::cout << "  tool_call_count: " << stream.toolCallCount() << "\n";
   for (size_t i = 0; i < stream.toolCallCount(); ++i) {
@@ -240,17 +242,16 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
   printDebugHeader("TextBeforeToolCall_BothParsed");
 
   tt::test::MockToolCallRunner runner(server->resultQueue());
-  runner.queueTextThenToolCall(
-      "Let me check the weather for you.\n",
-      "get_weather",
-      R"({"location":"Boston"})");
+  runner.queueTextThenToolCall("Let me check the weather for you.\n",
+                               "get_weather", R"({"location":"Boston"})");
 
-  auto request = tt::test::ToolCallRequest()
-                     .user("What's the weather in Boston?")
-                     .tool("get_weather", "Get weather", {{"location", "string"}})
-                     .toolChoice("auto")
-                     .maxTokens(128)
-                     .stream();
+  auto request =
+      tt::test::ToolCallRequest()
+          .user("What's the weather in Boston?")
+          .tool("get_weather", "Get weather", {{"location", "string"}})
+          .toolChoice("auto")
+          .maxTokens(128)
+          .stream();
 
   printRequestBody(request);
 
@@ -275,8 +276,7 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
   EXPECT_TRUE(stream.endedWithDone());
 
   // Should have both content and tool call
-  EXPECT_FALSE(stream.content().empty())
-      << "Expected content before tool call";
+  EXPECT_FALSE(stream.content().empty()) << "Expected content before tool call";
   EXPECT_NE(stream.content().find("check the weather"), std::string::npos);
 
   ASSERT_TRUE(stream.hasToolCalls());
@@ -293,17 +293,16 @@ TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
       "search_files",
       R"({"path":"/src","pattern":"*.cpp","recursive":true,"max_results":10})");
 
-  auto request =
-      tt::test::ToolCallRequest()
-          .user("Find all cpp files in src")
-          .tool("search_files", "Search for files",
-                {{"path", "string"},
-                 {"pattern", "string"},
-                 {"recursive", "boolean"},
-                 {"max_results", "integer"}})
-          .toolChoice("auto")
-          .maxTokens(128)
-          .stream();
+  auto request = tt::test::ToolCallRequest()
+                     .user("Find all cpp files in src")
+                     .tool("search_files", "Search for files",
+                           {{"path", "string"},
+                            {"pattern", "string"},
+                            {"recursive", "boolean"},
+                            {"max_results", "integer"}})
+                     .toolChoice("auto")
+                     .maxTokens(128)
+                     .stream();
 
   printRequestBody(request);
 
