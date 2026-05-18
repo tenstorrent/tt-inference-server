@@ -38,13 +38,9 @@ HIDDEN_COLUMNS = frozenset(
 
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",
-    "benchmarks_summary",
     "evals",
-    "percentile_benchmarks",
-    "parameter_support_tests",
+    "server_tests",
     "stress_tests",
-    "server_test_results",
-    "results_details",
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
