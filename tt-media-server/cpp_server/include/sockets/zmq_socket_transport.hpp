@@ -82,6 +82,7 @@ class ZmqSocketTransport : public ISocketTransport {
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
+  mutable std::mutex callbackMutex_;
   std::function<void()> connectionLostCallback_;
 
   // ZMQ_RECONNECT_IVL / ZMQ_RECONNECT_IVL_MAX, applied at initializeAsClient.

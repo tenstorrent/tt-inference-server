@@ -166,8 +166,13 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
         if (wasConnected) {
           TT_LOG_DEBUG("[ZmqSocketTransport] Peer disconnected ({})",
                        mode_ == Mode::SERVER ? "server" : "client");
-          if (connectionLostCallback_) {
-            connectionLostCallback_();
+          std::function<void()> callback;
+          {
+            std::lock_guard<std::mutex> callbackLock(callbackMutex_);
+            callback = connectionLostCallback_;
+          }
+          if (callback) {
+            callback();
           }
         }
       }
@@ -245,9 +250,8 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
 
   {
     std::lock_guard<std::mutex> idLock(peerIdMutex_);
-    peerId_.assign(
-        static_cast<uint8_t*>(identity.data()),
-        static_cast<uint8_t*>(identity.data()) + identity.size());
+    peerId_.assign(static_cast<uint8_t*>(identity.data()),
+                   static_cast<uint8_t*>(identity.data()) + identity.size());
   }
 
   if (!identity.more()) return {};
@@ -271,6 +275,7 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsDealer() {
 
 void ZmqSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
+  std::lock_guard<std::mutex> lock(callbackMutex_);
   connectionLostCallback_ = std::move(callback);
 }
 
