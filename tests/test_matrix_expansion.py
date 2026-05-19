@@ -1001,13 +1001,20 @@ class TestImageMatrixExpansion:
         assert times == [10, 14, 23]
 
     def test_sdxl_reduced_suites(self):
-        """n300, p150x8, p300x2 should have 4 test cases (no LoRA)."""
+        """n300 has 4 test cases (no LoRA); p150x8/p300x2 have 5 (LoRA eval enabled by Forge LoRA support)."""
         suites = load_suite_files_by_category("image")
         suite_map = {s["id"]: s for s in suites}
 
-        for suite_id in ["sdxl-n300", "sdxl-p150x8", "sdxl-p300x2"]:
+        expected_counts = {
+            "sdxl-n300": 4,
+            "sdxl-p150x8": 5,
+            "sdxl-p300x2": 5,
+        }
+        for suite_id, expected in expected_counts.items():
             suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 4, f"{suite_id}: expected 4 test cases"
+            assert len(suite["test_cases"]) == expected, (
+                f"{suite_id}: expected {expected} test cases, got {len(suite['test_cases'])}"
+            )
 
     def test_sdxl_reduced_num_devices(self):
         suites = load_suite_files_by_category("image")

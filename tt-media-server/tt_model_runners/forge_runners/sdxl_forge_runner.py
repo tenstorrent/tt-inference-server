@@ -40,6 +40,14 @@ class SDXLForgeRunner(BaseDeviceRunner):
         self.tokenizer_2 = None
         self.scheduler = None
 
+        # LoRA state — set by _ensure_lora_state on each request. _model_id and
+        # _variant are stashed at _load_pipeline so we can reload the base
+        # components from HF on each LoRA switch (Strategy A: recompile-on-change).
+        self._model_id: str | None = None
+        self._variant: str | None = None
+        self._current_lora_path: str | None = None
+        self._current_lora_scale: float | None = None
+
         env_resolution = os.getenv("TTXLA_SDXL_RESOLUTION")
         if env_resolution is not None:
             assert env_resolution in ("1024", "512"), (
@@ -222,6 +230,11 @@ class SDXLForgeRunner(BaseDeviceRunner):
             model_id, subfolder="scheduler"
         )
 
+        # Stash for _rebuild_components: each LoRA switch reloads base UNet (and
+        # text encoders, since some adapters target them) from HF using these.
+        self._model_id = model_id
+        self._variant = variant
+
     def _warmup_inference_pass(self):
         """Run a short inference pass to trigger JIT compilation."""
         self.logger.info(f"Device {self.device_id}: Running warmup inference")
@@ -233,6 +246,116 @@ class SDXLForgeRunner(BaseDeviceRunner):
             seed=42,
         )
         self.logger.info(f"Device {self.device_id}: Warmup inference done")
+
+    def _ensure_lora_state(self, request: ImageGenerateRequest) -> None:
+        """Apply request.lora_path / request.lora_scale, recompiling on change.
+
+        Strategy A (recompile-on-change): each LoRA switch reloads UNet and
+        the two text encoders from HF, applies the adapter via diffusers'
+        StableDiffusionXLPipeline.fuse_lora, then recompiles UNet for TT.
+        Costs one UNet compile per switch; safe but slow.
+        """
+        requested_path = request.lora_path
+        requested_scale = request.lora_scale
+
+        needs_change = requested_path != self._current_lora_path or (
+            requested_path is not None and requested_scale != self._current_lora_scale
+        )
+        if not needs_change:
+            return
+
+        try:
+            self._rebuild_components(
+                lora_path=requested_path, lora_scale=requested_scale
+            )
+            self._current_lora_path = requested_path
+            self._current_lora_scale = requested_scale
+        except Exception as e:
+            self._current_lora_path = None
+            self._current_lora_scale = None
+            raise RuntimeError(
+                f"Failed to apply LoRA state '{requested_path}': {e}"
+            ) from e
+
+    def _rebuild_components(
+        self, lora_path: str | None, lora_scale: float | None
+    ) -> None:
+        """Reload UNet + text encoders from HF, optionally apply LoRA, recompile.
+
+        UNet is the only on-device component in the UNet-only configuration,
+        so only UNet needs recompile. Text encoders are CPU-resident; we
+        still rebuild them because some SDXL adapters mutate TE weights via
+        fuse_lora, and the trace runner's contract is that a fresh
+        unload+load returns to base state.
+        """
+        from diffusers import StableDiffusionXLPipeline, UNet2DConditionModel
+        from transformers import CLIPTextModel, CLIPTextModelWithProjection
+        from utils.lora_utils import resolve_lora_path
+
+        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+
+        self.logger.info(
+            f"Device {self.device_id}: Rebuilding components "
+            f"(lora_path={lora_path!r}, lora_scale={lora_scale})"
+        )
+
+        # Free old components. The old UNet is on the XLA device; deleting the
+        # reference lets the device-side allocation be reclaimed.
+        del self.unet
+        del self.text_encoder
+        del self.text_encoder_2
+
+        # Reload on CPU (uncompiled)
+        new_unet = UNet2DConditionModel.from_pretrained(
+            self._model_id,
+            subfolder="unet",
+            variant=self._variant,
+            torch_dtype=torch.bfloat16,
+        )
+        new_te = CLIPTextModel.from_pretrained(
+            self._model_id,
+            subfolder="text_encoder",
+            variant=self._variant,
+            torch_dtype=torch.float16,
+        )
+        new_te2 = CLIPTextModelWithProjection.from_pretrained(
+            self._model_id,
+            subfolder="text_encoder_2",
+            variant=self._variant,
+            torch_dtype=torch.float16,
+        )
+
+        if lora_path is not None:
+            local_path = resolve_lora_path(lora_path)
+            self.logger.info(
+                f"Device {self.device_id}: Loading LoRA from {local_path} "
+                f"(scale={lora_scale})"
+            )
+            # Diffusers' SDXL LoRA loader needs a pipeline-shaped object so it
+            # can dispatch adapter weights into UNet and (optionally) the text
+            # encoders. We assemble a transient pipeline from the freshly
+            # loaded components; load_lora_weights + fuse_lora mutate them
+            # in place, after which the pipeline object is discarded.
+            pipe = StableDiffusionXLPipeline(
+                vae=self.vae,
+                text_encoder=new_te,
+                text_encoder_2=new_te2,
+                tokenizer=self.tokenizer,
+                tokenizer_2=self.tokenizer_2,
+                unet=new_unet,
+                scheduler=self.scheduler,
+            )
+            pipe.load_lora_weights(local_path)
+            pipe.fuse_lora(lora_scale=lora_scale)
+
+        # Recompile UNet for TT and move to device
+        if not runs_on_cpu:
+            new_unet.compile(backend="tt")
+        new_unet = new_unet.to(self.device)
+
+        self.unet = new_unet
+        self.text_encoder = new_te
+        self.text_encoder_2 = new_te2
 
     def _encode_prompts(self, prompt: str, negative_prompt: str, cpu_cast):
         """Encode prompts through both CLIP encoders. Returns hidden_states and pooled_embeds."""
@@ -412,7 +535,15 @@ class SDXLForgeRunner(BaseDeviceRunner):
         # We process one request at a time (batch_size=1)
         request = requests[0]
 
+        # Apply LoRA changes before encoding. Recompiles UNet on switch.
+        self._ensure_lora_state(request)
+
         prompt = request.prompt
+        if request.lora_path:
+            from utils.lora_utils import prepare_prompt_with_lora
+
+            prompt = prepare_prompt_with_lora(prompt, request.lora_path)
+
         negative_prompt = request.negative_prompt or ""
         cfg_scale = request.guidance_scale
         num_inference_steps = request.num_inference_steps
