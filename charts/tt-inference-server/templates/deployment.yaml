@@ -13,8 +13,14 @@ spec:
   selector:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
+  # Must be Recreate (not RollingUpdate): hugepages mmap'd by the terminating
+  # pod are not freed until it fully exits; a replacement pod would fail to
+  # allocate hugepages (see issue #2801). Trade-off: causes brief downtime
+  # during upgrades — acceptable because the chart's hardcoded podAntiAffinity
+  # already requires the only eligible node to be free. Hardcoded here (not
+  # values-driven) so a future maintainer cannot revert it inadvertently.
   strategy:
-    {{- toYaml $cfg.updateStrategy | nindent 4 }}
+    type: Recreate
   template:
     metadata:
       labels:
@@ -130,17 +136,10 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if not (empty $cfg.affinity) }}
+      {{- $aff := include "tt-inference-server.affinity" . | fromYaml }}
+      {{- if not (empty $aff) }}
       affinity:
-        {{- toYaml $cfg.affinity | nindent 8 }}
-      {{- else if $cfg.podAntiAffinity.enabled }}
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/name: {{ include "tt-inference-server.name" . }}
-              topologyKey: {{ $cfg.podAntiAffinity.topologyKey }}
+        {{- toYaml $aff | nindent 8 }}
       {{- end }}
       {{- with $cfg.tolerations }}
       tolerations:

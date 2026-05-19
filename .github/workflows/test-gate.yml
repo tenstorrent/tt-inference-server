@@ -1282,6 +1282,16 @@ jobs:
           done < /tmp/helm-matrix.txt
           exit $FAILED
 
+      - name: Verify safety invariants
+        run: |
+          set -e
+          RENDERED=$(helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=galaxy)
+          echo "$RENDERED" | grep -qE '^[[:space:]]*type: Recreate$' \
+            || { echo "::error::Deployment must use 'strategy: type: Recreate' (see issue #2801)"; exit 1; }
+          echo "$RENDERED" | grep -qE 'topologyKey: kubernetes.io/hostname' \
+            || { echo "::error::Chart's podAntiAffinity term missing — device-collision protection broken (see #2801)"; exit 1; }
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
