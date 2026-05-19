@@ -17,12 +17,25 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, ReportCheckTypes
 
 DATE_STR_FORMAT = "%Y-%m-%d_%H-%M-%S"
 NOT_MEASURED_STR = "n/a"
 
 logger = logging.getLogger(__name__)
+
+
+def _seconds_to_ms_or_none(value: Any) -> Any:
+    return value * 1000 if value is not None else None
+
+
+def _extract_tail_latencies_ms(benchmarks_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Pull ``latency_p50/p90/p95`` (seconds) and surface them in ms for display."""
+    return {
+        "p50_latency_ms": _seconds_to_ms_or_none(benchmarks_data.get("latency_p50")),
+        "p90_latency_ms": _seconds_to_ms_or_none(benchmarks_data.get("latency_p90")),
+        "p95_latency_ms": _seconds_to_ms_or_none(benchmarks_data.get("latency_p95")),
+    }
 
 
 def format_backend_value(backend: str) -> str:
@@ -67,7 +80,7 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.CNN:
         return "cnn"
     if model_type == ModelType.AUDIO:
-        return "audio"
+        return "asr"
     if model_type == ModelType.IMAGE:
         return "image"
     if model_type == ModelType.VLM:
@@ -79,7 +92,7 @@ def _map_model_type_to_task_type(model_type: ModelType) -> str | None:
     if model_type == ModelType.VIDEO:
         return "video"
     if model_type == ModelType.TEXT_TO_SPEECH:
-        return "text_to_speech"
+        return "tts"
 
 
 def _get_task_type(model_id: str) -> str | None:
@@ -162,6 +175,82 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "num_requests": int(match.group("n")),
             "task_type": "text",
             "backend": "aiperf",
+        }
+
+    # GuideLLM image benchmark pattern (kept symmetric with AIPerf so omni-modal
+    # image runs are categorized as VLM in the reports). The optional
+    # `_sweep-<idx>` suffix appears when GuideLLM ran a sweep profile (one
+    # source benchmarks.json -> multiple normalized files, one per strategy).
+    guidellm_image_pattern = r"""
+        ^guidellm_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        _images-(?P<images_per_prompt>\d+)
+        _height-(?P<image_height>\d+)
+        _width-(?P<image_width>\d+)
+        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
+        \.json$
+    """
+    match = re.search(guidellm_image_pattern, filename, re.VERBOSE)
+    if match:
+        model_name = match.group("model")
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+        sweep_idx = match.group("sweep_index")
+        return {
+            "model_name": model_name,
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "images_per_prompt": int(match.group("images_per_prompt")),
+            "image_height": int(match.group("image_height")),
+            "image_width": int(match.group("image_width")),
+            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
+            "task_type": task_type,
+            "backend": "guidellm",
+        }
+
+    # GuideLLM text benchmark pattern (multi_turn_chat / custom_dataset /
+    # omni_modal_text scenarios all flatten to the same vLLM-compatible
+    # filename produced by run_guidellm_benchmarks.emit_normalized_guidellm_result).
+    # The optional `_sweep-<idx>` suffix is present only for sweep profiles.
+    guidellm_text_pattern = r"""
+        ^guidellm_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
+        \.json$
+    """
+    match = re.search(guidellm_text_pattern, filename, re.VERBOSE)
+    if match:
+        sweep_idx = match.group("sweep_index")
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
+            "task_type": "text",
+            "backend": "guidellm",
         }
 
     # Try the image benchmark pattern
@@ -339,10 +428,16 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
-    # Handle aiperf benchmark files
-    if params.get("backend") == "aiperf":
-        logger.info(f"Processing AIPerf benchmark file: {filepath}")
-        # AIPerf files already contain metrics in vLLM-compatible format
+    # Handle aiperf and guidellm benchmark files. GuideLLM results are
+    # normalized into the same flat vLLM-compatible schema as AIPerf by
+    # benchmarking/run_guidellm_benchmarks.py::adapt_guidellm_to_vllm_metrics,
+    # so they share the processing branch and only differ in the `backend`
+    # tag carried through to the report.
+    backend_tag = params.get("backend")
+    if backend_tag in ("aiperf", "guidellm"):
+        logger.info(
+            f"Processing {backend_tag} benchmark file (vLLM-compatible schema): {filepath}"
+        )
         mean_tpot_ms = data.get("mean_tpot_ms", 0)
         if mean_tpot_ms and mean_tpot_ms > 0:
             mean_tps = 1000.0 / mean_tpot_ms
@@ -365,7 +460,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "timestamp": params["timestamp"],
             "model_name": params["model_name"],
             "model_id": data.get("model_id", ""),
-            "backend": "aiperf",
+            "backend": backend_tag,
             "device": params.get("device", ""),
             "input_sequence_length": params["input_sequence_length"],
             "output_sequence_length": params["output_sequence_length"],
@@ -405,6 +500,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         # This is a CNN/SDXL-style benchmark
         if params.get("task_type") == "cnn":
             logger.info(f"Processing CNN benchmark file: {filename}")
+            cnn_benchmarks = benchmarks_data.get("benchmarks", {})
             metrics = {
                 "timestamp": params["timestamp"],
                 "model": data.get("model", ""),
@@ -412,24 +508,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "cnn",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get(
-                    "num_requests", 0
-                ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
-                    "inference_steps_per_second", 0
-                ),
+                "num_requests": cnn_benchmarks.get("num_requests", 0),
+                "mean_latency_ms": cnn_benchmarks.get("latency", 0) * 1000,
+                "throughput_rps": cnn_benchmarks.get("throughput_rps"),
                 "filename": filename,
                 "task_type": "cnn",
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
+                **_extract_tail_latencies_ms(cnn_benchmarks),
             }
             return format_metrics(metrics)
         elif params.get("task_type") == "image":
             logger.info(f"Processing IMAGE benchmark file: {filename}")
             # SDXL-style image benchmark
+            image_benchmarks = benchmarks_data.get("benchmarks", {})
             metrics = {
                 "timestamp": params["timestamp"],
                 "model": data.get("model", ""),
@@ -437,72 +528,69 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "image",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get(
-                    "num_requests", 0
-                ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-                * 1000,  # ttft is already in seconds, convert to ms
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "num_requests": image_benchmarks.get("num_requests", 0),
+                "num_inference_steps": image_benchmarks.get("num_inference_steps", 0),
+                "mean_latency_ms": image_benchmarks.get("latency", 0) * 1000,
+                "inference_steps_per_second": image_benchmarks.get(
                     "inference_steps_per_second", 0
                 ),
+                "throughput_rps": image_benchmarks.get("throughput_rps"),
                 "filename": filename,
                 "task_type": "image",
+                "performance_check": data.get("performance_check", ReportCheckTypes.NA),
+                **_extract_tail_latencies_ms(image_benchmarks),
             }
             return format_metrics(metrics)
 
-    if params.get("task_type") == "text_to_speech":
+    if params.get("task_type") == "tts":
         logger.info(f"Processing TTS benchmark file: {filename}")
-        # For TTS benchmarks, extract data from JSON content
+        # Producer emits latency in seconds; convert to ms for display.
         benchmarks_data = data.get("benchmarks", {})
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
             "model_name": data.get("model", ""),
             "model_id": data.get("model", ""),
-            "backend": "text_to_speech",
+            "backend": "tts",
             "device": params["device"],
             "num_requests": benchmarks_data.get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("ttft", 0)
-            * 1000,  # ttft is in seconds, convert to ms
+            "mean_latency_ms": benchmarks_data.get("latency", 0) * 1000,
             "filename": filename,
-            "task_type": "text_to_speech",
+            "task_type": "tts",
             "rtr": benchmarks_data.get("rtr", 0),
-            "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
-            if benchmarks_data.get("ttft_p90")
-            else None,
-            "p95_ttft": benchmarks_data.get("ttft_p95", 0) * 1000
-            if benchmarks_data.get("ttft_p95")
-            else None,
+            "throughput_rps": benchmarks_data.get("throughput_rps"),
             "wer": benchmarks_data.get("wer", None),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
+            **_extract_tail_latencies_ms(benchmarks_data),
         }
         return format_metrics(metrics)
 
-    if params.get("task_type") == "audio":
-        logger.info(f"Processing AUDIO benchmark file: {filename}")
-        # For audio benchmarks, extract data from JSON content
+    if params.get("task_type") == "asr":
+        logger.info(f"Processing ASR benchmark file: {filename}")
         benchmarks_data = data.get("benchmarks: ", data)
+        audio_benchmarks = benchmarks_data.get("benchmarks", {})
+        ttft_seconds = audio_benchmarks.get("ttft")
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
             "model_name": data.get("model", ""),
             "model_id": data.get("model", ""),
-            "backend": "audio",
+            "backend": "asr",
             "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
+            "num_requests": audio_benchmarks.get("num_requests", 0),
+            "mean_latency_ms": audio_benchmarks.get("latency", 0) * 1000,
+            "mean_ttft_ms": ttft_seconds * 1000 if ttft_seconds is not None else None,
             "filename": filename,
-            "task_type": "audio",
-            "accuracy_check": benchmarks_data.get("benchmarks").get(
-                "accuracy_check", 0
-            ),
-            "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
-            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
+            "task_type": "asr",
+            # ``performance_check`` lives at the top level of the report JSON
+            # (it's a perf-target check, not an accuracy/quality check).
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
+            "t/s/u": audio_benchmarks.get("t/s/u", 0),
+            "rtr": audio_benchmarks.get("rtr", 0),
+            "throughput_rps": audio_benchmarks.get("throughput_rps"),
             "streaming_enabled": data.get("streaming_enabled", False),
             "preprocessing_enabled": data.get("preprocessing_enabled", False),
+            **_extract_tail_latencies_ms(audio_benchmarks),
         }
         return format_metrics(metrics)
 
@@ -536,6 +624,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "request_throughput": benchmarks_data.get("benchmarks").get(
                 "req_tput", 0.0
             ),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
         }
         return format_metrics(metrics)
 
@@ -543,6 +632,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         # For VIDEO benchmarks, extract data from JSON content
         logger.info(f"Processing VIDEO benchmark file: {filename}")
         benchmarks_data = data.get("benchmarks: ", data)
+        video_benchmarks = benchmarks_data.get("benchmarks", {})
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -552,15 +642,15 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "device": params["device"],
             "filename": filename,
             "task_type": "video",
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0)
-            * 1000,  # ttft is already in seconds, convert to ms
-            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+            "num_requests": video_benchmarks.get("num_requests", 0),
+            "mean_latency_ms": video_benchmarks.get("latency", 0) * 1000,
+            "inference_steps_per_second": video_benchmarks.get(
                 "inference_steps_per_second", 0
             ),
-            "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                "num_inference_steps", 0
-            ),
+            "num_inference_steps": video_benchmarks.get("num_inference_steps", 0),
+            "throughput_rps": video_benchmarks.get("throughput_rps"),
+            "performance_check": data.get("performance_check", ReportCheckTypes.NA),
+            **_extract_tail_latencies_ms(video_benchmarks),
         }
         return format_metrics(metrics)
 
@@ -772,10 +862,15 @@ def create_audio_display_dict(
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("mean_ttft_ms", "TTFT (ms)"),
+        ("p50_latency_ms", "P50 Latency (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
+        ("throughput_rps", "Tput (RPS)"),
         ("streaming_enabled", "Streaming enabled"),
         ("preprocessing_enabled", "Preprocessing enabled"),
-        ("accuracy_check", "Accuracy Check"),
+        ("performance_check", "Performance Check"),
         ("t/s/u", "T/S/U"),
         ("rtr", "RTR"),
     ]
@@ -815,10 +910,13 @@ def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("rtr", "RTR"),
-        ("p90_ttft", "P90 TTFT (ms)"),
-        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p50_latency_ms", "P50 Latency (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
+        ("throughput_rps", "Tput (RPS)"),
+        ("performance_check", "Performance Check"),
         # accuracy_check is calculated in run_reports.py via add_target_checks_tts()
         # Similar to how image and audio pipelines work
     ]
@@ -851,6 +949,7 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("tps_prefill_throughput", "Tput Prefill (TPS)"),
         ("mean_e2el_ms", "E2EL (ms)"),
         ("request_throughput", "Req Tput (RPS)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -867,8 +966,13 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
         ("inference_steps_per_second", "Steps/Sec"),
+        ("p50_latency_ms", "P50 Latency (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
+        ("throughput_rps", "Tput (RPS)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -883,13 +987,17 @@ def create_image_generation_display_dict(result: Dict[str, Any]) -> Dict[str, st
 
 
 def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for cnn benchmarks
+    """Create display dictionary for CNN benchmarks."""
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
-        ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
+        ("p50_latency_ms", "P50 Latency (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
+        ("throughput_rps", "Tput (RPS)"),
         ("task_type", "Task Type"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -901,13 +1009,18 @@ def create_cnn_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 
 
 def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
-    # Define display columns mapping for video benchmarks
+    """Create display dictionary for video benchmarks."""
     logger.info(f"Video result: {json.dumps(result, indent=2)}")
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
         ("num_inference_steps", "Num Inference Steps"),
-        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_latency_ms", "Latency (ms)"),
+        ("p50_latency_ms", "P50 Latency (ms)"),
+        ("p90_latency_ms", "P90 Latency (ms)"),
+        ("p95_latency_ms", "P95 Latency (ms)"),
+        ("throughput_rps", "Tput (RPS)"),
+        ("performance_check", "Performance Check"),
     ]
 
     display_dict = {}
@@ -1199,12 +1312,12 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     data_file_path.parent.mkdir(parents=True, exist_ok=True)
     save_to_csv(results, data_file_path)
 
-    # Separate text, vlm, image, audio, embedding, cnn and video benchmarks
+    # Separate text, vlm, image, asr, embedding, cnn and video benchmarks
     text_results = [r for r in results if r.get("task_type") == "text"]
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
-    audio_results = [r for r in results if r.get("task_type") == "audio"]
-    tts_results = [r for r in results if r.get("task_type") == "text_to_speech"]
+    audio_results = [r for r in results if r.get("task_type") == "asr"]
+    tts_results = [r for r in results if r.get("task_type") == "tts"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]

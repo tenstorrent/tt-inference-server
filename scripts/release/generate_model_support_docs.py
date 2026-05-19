@@ -81,6 +81,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
+    DeviceTypes.P300X2: "https://tenstorrent.com/hardware/tt-quietbox",
     DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
     DeviceTypes.BLACKHOLE_GALAXY: "https://tenstorrent.com/hardware/galaxy",
 }
@@ -115,6 +116,7 @@ DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     ),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
+    DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
@@ -919,7 +921,9 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         for model_name, status_enum, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
-            filename = get_model_device_filename(model_name, device)
+            filename = get_model_page_group_filename(
+                model_name, DEVICE_HARDWARE_PAGE_GROUPS_MAPPING[device]
+            )
 
             model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name

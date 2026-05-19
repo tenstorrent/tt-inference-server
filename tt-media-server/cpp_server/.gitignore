@@ -1,6 +1,5 @@
-# Build output and CMake / FetchContent
-build/
-build-tracy/
+# Build output and CMake / FetchContent (build/, build-tracy/, build_tsan/, …)
+build*/
 .cache/
 
 # Object and dependency files (in-source or stray)
@@ -13,7 +12,7 @@ build-tracy/
 # In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
 CMakeFiles/
 
-tt-blaze/
+tt-llm-engine/
 
 # Runtime logs (Drogon setLogPath)
 logs/
@@ -24,3 +23,4 @@ deps/
 
 # Override root-level *.json ignore
 !resources/openapi.json
+!.mcp.json

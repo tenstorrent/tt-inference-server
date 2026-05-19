@@ -118,7 +118,12 @@ class SDXLForgeRunner(BaseDeviceRunner):
         return True
 
     def _load_pipeline(self):
-        """Download weights, instantiate models, compile UNet for TT device."""
+        """Download weights, instantiate models, compile UNet for TT device.
+
+        When TTXLA_SDXL_FULL_ON_DEVICE=true (and not running on CPU), the two
+        CLIP text encoders and the VAE are also compiled with backend="tt" and
+        moved to the device. Scheduler always stays on CPU. Default is UNet-only.
+        """
         from diffusers import (
             AutoencoderKL,
             EulerDiscreteScheduler,
@@ -156,38 +161,54 @@ class SDXLForgeRunner(BaseDeviceRunner):
             else None
         )
 
-        self.logger.info(
-            f"Device {self.device_id}: Loading models from {model_id} "
-            f"(resolution={self.resolution}, variant={variant})"
+        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+        full_on_device = (
+            os.getenv("TTXLA_SDXL_FULL_ON_DEVICE", "false").lower() == "true"
+            and not runs_on_cpu
         )
 
-        # VAE — float32, stays on CPU
-        self.vae = AutoencoderKL.from_pretrained(
-            model_id, subfolder="vae", torch_dtype=torch.float32
+        self.logger.info(
+            f"Device {self.device_id}: Loading models from {model_id} "
+            f"(resolution={self.resolution}, variant={variant}, "
+            f"full_on_device={full_on_device})"
         )
+
+        # VAE — on device as bf16 when full_on_device; otherwise CPU fp32.
+        vae_dtype = torch.bfloat16 if full_on_device else torch.float32
+        self.vae = AutoencoderKL.from_pretrained(
+            model_id, subfolder="vae", torch_dtype=vae_dtype
+        )
+        if full_on_device:
+            self.vae.compile(backend="tt")
+            self.vae = self.vae.to(self.device)
 
         # UNet — bfloat16, compiled for TT
         self.unet = UNet2DConditionModel.from_pretrained(
             model_id, subfolder="unet", variant=variant, torch_dtype=torch.bfloat16
         )
-        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
         if not runs_on_cpu:
             self.unet.compile(backend="tt")
         self.unet = self.unet.to(self.device)
 
-        # Text encoders — float16, stay on CPU
+        # Text encoders — on device as bf16 when full_on_device; otherwise CPU fp16.
+        te_dtype = torch.bfloat16 if full_on_device else torch.float16
         self.text_encoder = CLIPTextModel.from_pretrained(
             model_id,
             subfolder="text_encoder",
             variant=variant,
-            torch_dtype=torch.float16,
+            torch_dtype=te_dtype,
         )
         self.text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(
             model_id,
             subfolder="text_encoder_2",
             variant=variant,
-            torch_dtype=torch.float16,
+            torch_dtype=te_dtype,
         )
+        if full_on_device:
+            self.text_encoder.compile(backend="tt")
+            self.text_encoder = self.text_encoder.to(self.device)
+            self.text_encoder_2.compile(backend="tt")
+            self.text_encoder_2 = self.text_encoder_2.to(self.device)
 
         # Tokenizers
         self.tokenizer = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer")
@@ -195,7 +216,8 @@ class SDXLForgeRunner(BaseDeviceRunner):
             model_id, subfolder="tokenizer_2"
         )
 
-        # Scheduler
+        # Scheduler stays on CPU; EulerDiscreteScheduler.step is stateful Python
+        # and isn't compile-friendly. Per-step latents are moved CPU-ward inside _generate.
         self.scheduler = EulerDiscreteScheduler.from_pretrained(
             model_id, subfolder="scheduler"
         )
@@ -217,6 +239,12 @@ class SDXLForgeRunner(BaseDeviceRunner):
         encoder_hidden_states = []
         pooled_text_embeds = None
 
+        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+        full_on_device = (
+            os.getenv("TTXLA_SDXL_FULL_ON_DEVICE", "false").lower() == "true"
+            and not runs_on_cpu
+        )
+
         for tokenizer, text_encoder in [
             (self.tokenizer, self.text_encoder),
             (self.tokenizer_2, self.text_encoder_2),
@@ -233,6 +261,10 @@ class SDXLForgeRunner(BaseDeviceRunner):
                 ).input_ids,
                 dtype=torch.long,
             )
+
+            if full_on_device:
+                cond_tokens = cond_tokens.to(self.device)
+                uncond_tokens = uncond_tokens.to(self.device)
 
             cond_output = text_encoder(cond_tokens, output_hidden_states=True)
             uncond_output = text_encoder(uncond_tokens, output_hidden_states=True)
@@ -350,13 +382,23 @@ class SDXLForgeRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: UNet diffusion ({num_inference_steps} steps) took {time.time() - t0:.4f}s"
             )
 
-            # --- VAE Decode (CPU) ---
+            # --- VAE Decode ---
+            full_on_device = (
+                os.getenv("TTXLA_SDXL_FULL_ON_DEVICE", "false").lower() == "true"
+                and not runs_on_cpu
+            )
             t0 = time.time()
             latents = latents / self.vae.config.scaling_factor
-            latents = latents.to(dtype=torch.float32)
-            images = self.vae.decode(latents).sample  # (1, 3, H, W)
+            if full_on_device:
+                vae_in = latents.to(dtype=torch.bfloat16).to(self.device)
+                images = self.vae.decode(vae_in).sample  # (1, 3, H, W)
+                images = images.to("cpu").to(dtype=torch.float32)
+            else:
+                latents = latents.to(dtype=torch.float32)
+                images = self.vae.decode(latents).sample  # (1, 3, H, W)
             self.logger.info(
-                f"Device {self.device_id}: VAE decode took {time.time() - t0:.4f}s"
+                f"Device {self.device_id}: VAE decode took {time.time() - t0:.4f}s "
+                f"(full_on_device={full_on_device})"
             )
 
             return images

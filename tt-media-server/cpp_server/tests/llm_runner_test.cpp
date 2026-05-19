@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner.hpp"
+#include "runtime/runners/llm_runner.hpp"
 
 #include <gtest/gtest.h>
 
@@ -12,11 +12,12 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
@@ -56,8 +57,8 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   int totalRequests = static_cast<int>(requests.size());
   auto taskQueue = makeQueue();
 
-  tt::ipc::BoostIpcResultQueue resultQueue("test_llm_runner_tokens",
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue("test_llm_runner_tokens",
+                                          tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
@@ -129,8 +130,8 @@ TEST(LLMRunnerTest, StructuredOutputCompletesBeforeMaxTokens) {
     config.stop_token_ids.push_back(id);
   }
   auto taskQueue = makeQueue();
-  tt::ipc::BoostIpcResultQueue resultQueue("test_structured_output",
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue("test_structured_output",
+                                          tt::config::resultQueueCapacity());
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
   tt::domain::llm::SamplingParams sp;

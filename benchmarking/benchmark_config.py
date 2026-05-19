@@ -56,6 +56,24 @@ class BenchmarkTaskTTS(BenchmarkTask):
 
 
 @dataclass(frozen=True)
+class BenchmarkTaskImage(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
+    workflow_venv_type: WorkflowVenvType = (
+        None  # no workflow venv needed for image generation benchmarks
+    )
+
+
+@dataclass(frozen=True)
+class BenchmarkTaskAudio(BenchmarkTask):
+    param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
+    task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
+    workflow_venv_type: WorkflowVenvType = (
+        None  # no workflow venv needed for audio transcription benchmarks
+    )
+
+
+@dataclass(frozen=True)
 class BenchmarkTaskStructuredOutput(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = (
@@ -543,6 +561,10 @@ for model_id, model_spec in MODEL_SPECS.items():
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
     elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
         perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
+    elif model_spec.model_type == ModelType.IMAGE:
+        perf_ref_task = BenchmarkTaskImage(param_map={device: capped_perf_reference})
+    elif model_spec.model_type == ModelType.AUDIO:
+        perf_ref_task = BenchmarkTaskAudio(param_map={device: capped_perf_reference})
     else:
         perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
 
@@ -573,10 +595,18 @@ for model_id, model_spec in MODEL_SPECS.items():
                         BenchmarkTaskParams(
                             max_concurrency=model_max_concurrency,
                             num_prompts=8,
-                            task_type="text_to_speech",
+                            task_type="tts",
                         )
                     ]
                 }
+            )
+        elif model_spec.model_type == ModelType.IMAGE:
+            benchmark_task_runs = BenchmarkTaskImage(
+                param_map={device: [BenchmarkTaskParams()]}
+            )
+        elif model_spec.model_type == ModelType.AUDIO:
+            benchmark_task_runs = BenchmarkTaskAudio(
+                param_map={device: [BenchmarkTaskParams()]}
             )
         else:
             benchmark_task_runs = BenchmarkTask(

@@ -4,11 +4,11 @@
 #include "services/disaggregation_service.hpp"
 
 #include "domain/llm/llm_request.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -72,8 +72,8 @@ void DisaggregationService::setupSocketHandlers() {
             }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            request.prompt = std::vector<int>(message.token_ids.begin(),
-                                              message.token_ids.end());
+            request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                     message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             request.slotId = message.slot_id;
             // Restore the sampling subset echoed back from the prefill server.
@@ -131,8 +131,8 @@ void DisaggregationService::setupSocketHandlers() {
 
           auto maxTokens = message.max_tokens;
 
-          request.prompt = std::vector<int>(message.token_ids.begin(),
-                                            message.token_ids.end());
+          request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                   message.token_ids.end());
           auto slotId = message.slot_id;
           request.slotId = slotId;
 

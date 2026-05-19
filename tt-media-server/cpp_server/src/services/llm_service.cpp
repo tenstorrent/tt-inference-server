@@ -14,11 +14,11 @@
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tool_call_id_generator.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -163,14 +163,8 @@ void LLMService::preProcess(LLMRequest& request) const {
   }
 
   if (std::holds_alternative<std::string>(request.prompt)) {
-    auto text = std::get<std::string>(request.prompt);
-    static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
-    bool hasBos = text.size() >= cfg.bos_token.size() &&
-                  text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
-    if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
-      text = cfg.bos_token + text;
-    }
-    request.prompt = tt::utils::tokenizers::activeTokenizer().encode(text);
+    request.prompt = tt::utils::tokenizers::activeTokenizer().encode(
+        std::get<std::string>(request.prompt));
   }
 }
 
@@ -380,6 +374,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolChoiceOpt.has_value() ? toolChoiceOpt.value().type : "";
       bool useJsonParser =
           toolChoiceType == "function" || toolChoiceType == "required";
+      std::optional<std::string> finalFinishReason;
+      auto captureFinalFinishReason =
+          [&finalFinishReason](const LLMStreamChunk& response) {
+            if (!response.choices.empty() &&
+                response.choices[0].finish_reason.has_value()) {
+              finalFinishReason = response.choices[0].finish_reason.value();
+            }
+          };
 
       std::optional<ToolCallTokenResult> toolCallResult;
       bool inToolCall = false;
@@ -414,6 +416,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         auto response = buildToolCallStreamChunk(
             token, toolCallResult->tool_calls_delta, isFinal);
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
 
       } else if (inToolCall) {
         // Inside tool call parsing, suppress regular output
@@ -426,6 +431,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           emptyDelta.append(emptyCall);
           auto response = buildToolCallStreamChunk(token, emptyDelta, true);
           entry->callback(response, isFinal);
+          captureFinalFinishReason(response);
         }
         // else: suppress, don't emit
 
@@ -438,10 +444,21 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
+        if (isFinal) {
+          captureFinalFinishReason(response);
+        }
       }
 
       // Cleanup at finalization
       if (isFinal) {
+        if (!finalFinishReason.has_value()) {
+          TT_LOG_WARN(
+              "[Consumer-{}] Final token for task {} reached cleanup without "
+              "a finish reason set; defaulting to \"error\"",
+              workerIdx, taskId);
+        }
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, finalFinishReason.value_or("error"));
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
         toolChoiceMap.take(taskId);  // Clean up tool choice

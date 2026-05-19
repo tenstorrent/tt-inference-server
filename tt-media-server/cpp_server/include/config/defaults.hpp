@@ -20,6 +20,15 @@ constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
+
+// PrefillGateway integration. When true, decode connects as CLIENT to the
+// gateway and prefill listens as SERVER for the gateway to dial in.
+constexpr bool USE_PREFILL_GATEWAY = false;
+// Stable identity sent in PrefillRegistrationMessage; empty -> "<host>:<port>".
+constexpr const char* PREFILL_SERVER_ID = "";
+// Capacity hint sent to the gateway. 0 = unlimited.
+constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
+
 constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
@@ -66,7 +75,7 @@ constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
 constexpr size_t MAX_CONNECTIONS = 100000;
-constexpr size_t IDLE_CONNECTION_TIMEOUT_S = 300;
+constexpr size_t IDLE_CONNECTION_TIMEOUT_S = 3600;
 constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
@@ -74,5 +83,22 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr int CALLBACK_POOL_THREADS = 16;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
+
+// IPC queue capacities
+constexpr size_t RESULT_QUEUE_CAPACITY = 65536;
+constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
+constexpr size_t MEMORY_QUEUE_CAPACITY = 128;
+
+// IPC message sizes
+constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
+constexpr size_t TASK_QUEUE_MAX_MSG_SIZE =
+    MAX_CONTEXT_LENGTH * sizeof(int64_t) + MAX_SEQUENCE_NON_TOKEN_BYTES;
+constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
+constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
+
+// Shared memory slot buffer constants
+constexpr int SHM_SLOTS = 64;
+constexpr int PREFILL_MAX_TOKEN_IDS = 131072;  // upper bound for prefill prompt
+constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
 }  // namespace tt::config::defaults

@@ -9,10 +9,10 @@
 #include "config/runner_config.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/schedulers/max_occupancy_scheduler.hpp"
-#include "runners/schedulers/prefill_first_scheduler.hpp"
-#include "runners/schedulers/scheduler.hpp"
+#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "runtime/runners/schedulers/max_occupancy_scheduler.hpp"
+#include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
+#include "runtime/runners/schedulers/scheduler.hpp"
 
 namespace tt::runners::schedulers {
 

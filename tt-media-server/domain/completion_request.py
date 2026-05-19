@@ -27,8 +27,9 @@ class CompletionRequest(BaseRequest):
     # Model identifier
     model: str | None = None
 
-    # prompt can be a string or a list of token ids
-    prompt: str | list[int]
+    # Per OpenAI /v1/completions spec, prompt can be a string, list of strings,
+    # flat list of token ids, or list of token-id lists (batched).
+    prompt: str | list[str] | list[int] | list[list[int]]
 
     # Response configuration
     echo: bool | None = False

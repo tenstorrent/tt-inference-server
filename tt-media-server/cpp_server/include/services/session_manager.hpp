@@ -17,7 +17,7 @@
 #include <thread>
 
 #include "domain/session.hpp"
-#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 
@@ -141,8 +141,8 @@ class SessionManager {
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;
 
-  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
-  std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;
+  std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
+  std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
 
   utils::ConcurrentMap<uint32_t, PendingAllocation> pendingAllocationsMap;
   utils::ConcurrentQueue<PendingAllocation> pendingAllocationsRetryQueue;

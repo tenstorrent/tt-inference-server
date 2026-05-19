@@ -264,5 +264,20 @@
         "extra_args": {
             "output_type": "pil"
         }
+    },
+    "Wan2.2-I2V-A14B-Diffusers": {
+        "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+        "num_inference_steps": 40,
+        "accuracy": {
+            "5": {
+                "clip_valid_range": [
+                    28.25276,
+                    30.54000
+                ]
+            }
+        },
+        "extra_args": {
+            "output_type": "pil"
+        }
     }
 }
