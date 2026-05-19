@@ -32,6 +32,36 @@
 # Requires:
 #   JWT_SECRET and HF_TOKEN already exported in the environment.
 #   A clean Galaxy chassis (run `tt-smi -glx_reset` first if you're not sure).
+#
+# Sample curl commands (default --no-auth — no Authorization header needed):
+#
+#   # text-only
+#   curl http://localhost:8000/v1/chat/completions \
+#       -H "Content-Type: application/json" \
+#       -d '{"model":"allenai/Molmo2-8B","max_tokens":32,"temperature":0,
+#            "messages":[{"role":"user","content":[
+#              {"type":"text","text":"What is 2+2?"}]}]}'
+#
+#   # single image (URL)
+#   curl http://localhost:8000/v1/chat/completions \
+#       -H "Content-Type: application/json" \
+#       -d '{"model":"allenai/Molmo2-8B","max_tokens":64,"temperature":0,
+#            "messages":[{"role":"user","content":[
+#              {"type":"image_url","image_url":{"url":"https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg"}},
+#              {"type":"text","text":"Describe this image."}]}]}'
+#
+#   # video (local file)
+#   curl http://localhost:8000/v1/chat/completions \
+#       -H "Content-Type: application/json" \
+#       -d '{"model":"allenai/Molmo2-8B","max_tokens":64,"temperature":0,
+#            "messages":[{"role":"user","content":[
+#              {"type":"video_url","video_url":{"url":"file:///abs/path/to/video.mp4"}},
+#              {"type":"text","text":"Describe what is happening."}]}]}'
+#
+#   # health (always open)
+#   curl http://localhost:8000/health
+#
+#   # for 4× setup, change the port: 8000 / 8001 / 8002 / 8003.
 
 set -uo pipefail
 
