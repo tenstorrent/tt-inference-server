@@ -12,7 +12,7 @@
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "utils/logger.hpp"
 
-namespace tt::runners::blaze_types {
+namespace tt::runners::blaze_slot_manager {
 namespace ds = tt_llm_engine::scheduler::decode;
 
 enum class SlotState {
@@ -30,7 +30,7 @@ inline const char* toString(SlotState state) {
     case SlotState::IDLE:
       return "IDLE";
     case SlotState::RUNNING:
-      return "RUNNING";
+    return "RUNNING";
     case SlotState::AWAITING_STOP_ACK:
       return "AWAITING_STOP_ACK";
     case SlotState::AWAITING_EVICT_ACK:

@@ -15,7 +15,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
-#include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
@@ -26,7 +26,7 @@ namespace tt::runners {
 using namespace tt::domain::llm;
 
 namespace ds = tt_llm_engine::scheduler::decode;
-
+namespace sm = blaze_slot_manager;
 class BlazeRunner : public IRunner {
  public:
   BlazeRunner(const tt::config::LLMConfig& config,
@@ -53,9 +53,9 @@ class BlazeRunner : public IRunner {
   inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleMemoryResponse(const ds::SchedulerResponse& response);
   inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
-  inline void handleStopAck(blaze_types::SlotContext& slot);
-  inline void handleEvictAck(blaze_types::SlotContext& slot);
-  inline void handleDeferred(blaze_types::SlotContext& slot);
+  inline void handleStopAck(sm::SlotContext& slot);
+  inline void handleEvictAck(sm::SlotContext& slot);
+  inline void handleDeferred(sm::SlotContext& slot);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
   void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
@@ -68,8 +68,7 @@ class BlazeRunner : public IRunner {
   tt::ipc::ICancelQueue* cancelQueue;
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
-  blaze_types::SlotManager slotManager;
-  std::unordered_set<uint32_t> pendingAllocates;
+  sm::SlotManager slotManager;
   std::optional<tt::domain::ManageMemoryTask> pendingMemoryRetry;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::BlazeMemoryManager> memoryManager;
