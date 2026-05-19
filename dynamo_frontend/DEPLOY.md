@@ -21,33 +21,54 @@ On Ctrl+C the script tears everything down.
 ## Usage
 
 ```bash
-./deploy.sh <etcd-image> <cpp-server-image> <frontend-image>
+./deploy.sh \
+  --etcd-image <img> \
+  --worker-image <img> \
+  --frontend-image <img> \
+  [options]
 ```
 
 Example:
 
 ```bash
-./deploy.sh quay.io/coreos/etcd:v3.5.13 tt-media-server-cpp:blaze dynamo-frontend
+./deploy.sh \
+  --etcd-image quay.io/coreos/etcd:v3.5.13 \
+  --worker-image tt-media-server-cpp:blaze \
+  --frontend-image dynamo-frontend
+```
+
+Show all options:
+
+```bash
+./deploy.sh --help
 ```
 
 The script runs in the foreground, tailing the frontend's logs. Hit Ctrl+C
 to stop and remove all three containers.
 
-## Environment overrides
+## Flags
 
-All have sensible defaults; override by exporting before running.
+Required:
 
-| Variable | Default | Purpose |
+| Flag | Purpose |
+|---|---|
+| `--etcd-image <img>` | etcd Docker image (e.g. `quay.io/coreos/etcd:v3.5.13`) |
+| `--worker-image <img>` | cpp_server Docker image (e.g. `tt-media-server-cpp:blaze`) |
+| `--frontend-image <img>` | Dynamo frontend Docker image (e.g. `dynamo-frontend`) |
+
+Optional:
+
+| Flag | Default | Purpose |
 |---|---|---|
-| `NETWORK_NAME` | `dynamo-net` | Docker network the three containers share |
-| `ETCD_NAME` | `etcd` | Container + DNS name for etcd |
-| `WORKER_NAME` | `tt-cpp-worker` | Container + DNS name for the worker (also embedded into the instance JSON as `transport.tcp`) |
-| `FRONTEND_NAME` | `dynamo-frontend` | Container name for the frontend |
-| `FRONTEND_HOST_PORT` | `8080` | Host port mapped to the frontend's `:8000` |
-| `MODEL_NAME` | `tt-cpp-server` | `id` reported on `GET /v1/models` |
-| `HF_MODEL_ID` | `meta-llama/Llama-3.1-8B-Instruct` | Tokenizer repo the frontend pulls at boot |
-| `HF_TOKEN` | _(empty)_ | HuggingFace token for gated models |
-| `LLM_DEVICE_BACKEND` | `mock_pipeline` | Backend the cpp_server runner selects |
+| `--network-name <name>` | `dynamo-net` | Docker network the three containers share |
+| `--etcd-name <name>` | `etcd` | Container + DNS name for etcd |
+| `--worker-name <name>` | `tt-cpp-worker` | Container + DNS name for the worker (also embedded into the instance JSON as `transport.tcp`) |
+| `--frontend-name <name>` | `dynamo-frontend` | Container name for the frontend |
+| `--frontend-host-port <port>` | `8080` | Host port mapped to the frontend's `:8000` |
+| `--model-name <name>` | `tt-cpp-server` | `id` reported on `GET /v1/models` |
+| `--hf-model-id <id>` | `meta-llama/Llama-3.1-8B-Instruct` | Tokenizer repo the frontend pulls at boot |
+| `--hf-token <token>` | _(empty)_ | HuggingFace token for gated models |
+| `--llm-device-backend <name>` | `mock_pipeline` | Backend the cpp_server runner selects |
 
 ## What the script does, step by step
 
