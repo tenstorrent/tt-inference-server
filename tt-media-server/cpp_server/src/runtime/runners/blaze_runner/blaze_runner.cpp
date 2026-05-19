@@ -8,13 +8,13 @@
 #include <cstring>
 #include <services/memory_services/blaze_memory_manager.hpp>
 
-#include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/helpers/token_push.hpp"
+#include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
-#include "utils/logger.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
+#include "utils/logger.hpp"
 
 namespace {
 using namespace tt_llm_engine::scheduler::decode;
@@ -269,8 +269,7 @@ inline void BlazeRunner::handleEvictRequest(
         TT_LOG_WARN(
             "[BlazeRunner] handleEvictRequest: scheduler queue full, deferring "
             "EVICT for taskId={}, slotId={} (state={})",
-            request.taskId, request.slotId,
-            types::toString(slotContext.state));
+            request.taskId, request.slotId, types::toString(slotContext.state));
         pendingMemoryRetry = request;
         return;
       }
