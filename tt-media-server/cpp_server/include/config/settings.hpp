@@ -234,6 +234,34 @@ int prefillMaxTokenIds();
  * defaults::DECODE_MAX_TOKEN_IDS. */
 int decodeMaxTokenIds();
 
+// ---------------------------------------------------------------------------
+// Dynamo TCP backend (NVIDIA Dynamo frontend integration)
+// ---------------------------------------------------------------------------
+
+/** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
+ * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+bool dynamoEndpointEnabled();
+
+/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
+ * defaults::DYNAMO_BIND_HOST. */
+std::string dynamoBindHost();
+
+/** Path to the file-based discovery store the Dynamo frontend watches. From
+ * DYNAMO_DISCOVERY_PATH. Default: defaults::DYNAMO_DISCOVERY_PATH. */
+std::string dynamoDiscoveryPath();
+
+/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
+ * defaults::DYNAMO_NAMESPACE. */
+std::string dynamoNamespace();
+
+/** Discovery component key. From DYNAMO_COMPONENT. Default:
+ * defaults::DYNAMO_COMPONENT. */
+std::string dynamoComponent();
+
+/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
+ * defaults::DYNAMO_ENDPOINT_NAME. */
+std::string dynamoEndpointName();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

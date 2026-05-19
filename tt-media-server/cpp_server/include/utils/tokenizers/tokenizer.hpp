@@ -98,6 +98,17 @@ class Tokenizer {
   virtual std::vector<int64_t> stopTokenIds() const = 0;
 
   /**
+   * Token id that marks the end of an assistant turn in the model's chat
+   * template (e.g. Llama-3 `<|eot_id|>`, DeepSeek `<｜end▁of▁sentence｜>`).
+   *
+   * Used by `extractPriorTurnPrefixTokens` to split a pre-tokenized prompt
+   * into "prior conversation" and "new user turn" without round-tripping
+   * through text. Returns -1 when the tokenizer does not expose a stable
+   * boundary token; callers must then treat every request as fresh.
+   */
+  virtual int turnBoundaryTokenId() const { return -1; }
+
+  /**
    * Apply the model-specific chat template to a list of messages.
    * @param enableReasoning When false, reasoning models (e.g. DeepSeek-R1)
    *   inject a closed think block to suppress chain-of-thought output.

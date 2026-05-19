@@ -126,4 +126,63 @@ PrefixCachingInfo computePrefixCachingInfo(
   return info;
 }
 
+uint64_t hashTokenPrefix(std::span<const int> tokens) {
+  if (tokens.empty()) {
+    return 0;
+  }
+  return XXH64(tokens.data(), tokens.size_bytes(), 0);
+}
+
+std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
+    std::span<const int> tokens, int boundaryTokenId) {
+  if (boundaryTokenId < 0 || tokens.size() < 2) {
+    return std::nullopt;
+  }
+
+  // Find the second-to-last occurrence of the boundary token; the LAST
+  // occurrence (if any) closes the new user turn, the one before that closes
+  // the prior assistant turn — exactly the "[assistant, user] strip" the
+  // message-level helper does, but on token ids.
+  size_t found = 0;
+  size_t secondLastIdx = 0;
+  for (size_t i = tokens.size(); i-- > 0;) {
+    if (tokens[i] == boundaryTokenId) {
+      ++found;
+      if (found == 2) {
+        secondLastIdx = i;
+        break;
+      }
+    }
+  }
+  if (found < 2) {
+    return std::nullopt;
+  }
+
+  // Prefix is everything up to and INCLUDING the prior assistant boundary.
+  // Anything after (header-id of the new user turn, the user content, and
+  // the trailing boundary) is the delta to prefill on a cache hit.
+  std::vector<int> prefix(tokens.begin(), tokens.begin() + secondLastIdx + 1);
+  return prefix;
+}
+
+PrefixCachingInfo computePrefixCachingInfoFromTokens(
+    std::span<const int> tokens) {
+  PrefixCachingInfo info;
+
+  const int boundary = tokenizers::activeTokenizer().turnBoundaryTokenId();
+  auto priorPrefix = extractPriorTurnPrefixTokens(tokens, boundary);
+
+  info.hasPriorTurn = priorPrefix.has_value();
+  if (info.hasPriorTurn) {
+    info.lookupHash = hashTokenPrefix(*priorPrefix);
+    info.deltaPrompt = std::vector<int>(
+        tokens.begin() + priorPrefix->size(), tokens.end());
+  } else {
+    info.deltaPrompt = std::vector<int>{};
+  }
+
+  info.registrationHash = hashTokenPrefix(tokens);
+  return info;
+}
+
 }  // namespace tt::utils

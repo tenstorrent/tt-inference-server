@@ -549,4 +549,29 @@ unsigned prefillTimeoutMs() {
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
+bool dynamoEndpointEnabled() {
+  return envBool("DYNAMO_ENDPOINT_ENABLED",
+                 defaults::DYNAMO_ENDPOINT_ENABLED);
+}
+
+std::string dynamoBindHost() {
+  return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+std::string dynamoDiscoveryPath() {
+  return envString("DYNAMO_DISCOVERY_PATH", defaults::DYNAMO_DISCOVERY_PATH);
+}
+
+std::string dynamoNamespace() {
+  return envString("DYNAMO_NAMESPACE", defaults::DYNAMO_NAMESPACE);
+}
+
+std::string dynamoComponent() {
+  return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
+}
+
+std::string dynamoEndpointName() {
+  return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
 }  // namespace tt::config

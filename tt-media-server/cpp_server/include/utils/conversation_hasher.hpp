@@ -5,7 +5,9 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "domain/llm/chat_message.hpp"
@@ -88,15 +90,22 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
 /**
  * Routing information computed from conversation messages for prefix caching.
  * Used by the controller to determine session lookup and registration.
+ *
+ * `deltaPrompt` is a variant so the same struct serves both inputs:
+ *   - message-path (HTTP /v1/chat/completions, /v1/responses): a rendered
+ *     string ready for tokenization.
+ *   - tokens-path (Dynamo `generate`): the suffix of pre-tokenized ids that
+ *     the worker still needs to prefill on a continuation.
  */
 struct PrefixCachingInfo {
   std::optional<uint64_t>
       lookupHash;  // Hash of prior-turn prefix (for session lookup)
   uint64_t registrationHash =
       0;  // Hash of current conversation (for next turn's lookup)
-  std::string deltaPrompt;  // Last user turn rendered (for continuations)
+  std::variant<std::string, std::vector<int>>
+      deltaPrompt;  // Last user turn rendered (string) or delta token ids
   bool hasPriorTurn =
-      false;  // True if assistant messages exist (enables lookup)
+      false;  // True if a prior assistant turn exists (enables lookup)
 };
 
 /**
@@ -109,5 +118,56 @@ struct PrefixCachingInfo {
  */
 PrefixCachingInfo computePrefixCachingInfo(
     const std::vector<ChatMessage>& messages);
+
+// ---------------------------------------------------------------------------
+// Token-level helpers (used by the Dynamo backend, where the frontend has
+// already applied the chat template and we receive only token ids).
+//
+// Conceptually these mirror the message-level helpers above:
+//   stripToolMessages    -> N/A (tool turns are already templated into tokens)
+//   extractPriorTurnPrefix -> extractPriorTurnPrefixTokens
+//   hashConversationPrefix -> hashTokenPrefix
+//   computePrefixCachingInfo -> computePrefixCachingInfoFromTokens
+// ---------------------------------------------------------------------------
+
+/**
+ * Stable 64-bit hash over a sequence of token ids. Computed from the byte
+ * representation of the int sequence so two callers produce matching hashes
+ * iff the underlying token ids are identical.
+ */
+uint64_t hashTokenPrefix(std::span<const int> tokens);
+
+/**
+ * Return the prefix used to LOOK UP a continuing session for a tokenized
+ * prompt: tokens up to and including the SECOND-TO-LAST occurrence of the
+ * tokenizer's end-of-turn boundary token id (e.g. Llama-3 `<|eot_id|>` =
+ * 128009). That position marks the end of the prior assistant turn; the
+ * remaining tokens are the new user turn (and any leading turn-start tokens),
+ * which become the "delta" to prefill on a cache hit.
+ *
+ * Returns std::nullopt when:
+ *   - boundaryTokenId is < 0 (tokenizer doesn't expose a stable boundary), or
+ *   - there are fewer than two boundary occurrences (no prior turn), or
+ *   - the second-to-last occurrence is at the very end (malformed input).
+ *
+ * @param tokens          Full token-id sequence from the request.
+ * @param boundaryTokenId End-of-turn token id from the active tokenizer.
+ * @return Prior-turn prefix token ids, or nullopt.
+ */
+std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
+    std::span<const int> tokens, int boundaryTokenId);
+
+/**
+ * Compute prefix caching routing information from a tokenized prompt. Mirrors
+ * `computePrefixCachingInfo` but operates on token ids: the boundary token id
+ * is read from the active tokenizer strategy.
+ *
+ * @param tokens Full token-id sequence from the request.
+ * @return Complete routing information for prefix caching. `deltaPrompt`
+ *         holds the suffix tokens (vector<int> variant) on a continuation,
+ *         or an empty vector<int> when there is no prior turn.
+ */
+PrefixCachingInfo computePrefixCachingInfoFromTokens(
+    std::span<const int> tokens);
 
 }  // namespace tt::utils
