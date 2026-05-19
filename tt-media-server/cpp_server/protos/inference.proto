@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+syntax = "proto3";
+
+package inference;
+
+service Inference {
+  rpc Generate(GenerateRequest) returns (stream TokenChunk);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SamplingParams {
+  float temperature = 1;
+  float top_p = 2;
+  uint32 top_k = 3;
+  uint32 max_tokens = 4;
+}
+
+message GenerateRequest {
+  string model = 1;
+  repeated uint32 token_ids = 2;
+  uint32 max_tokens = 3;
+  SamplingParams sampling_params = 4;
+}
+
+message TokenChunk {
+  repeated uint32 token_ids = 1;
+  optional string finish_reason = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+}
