@@ -60,6 +60,7 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       cancelQueue(cancelQueue),
+      slotManager(tt::config::dsMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
