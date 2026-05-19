@@ -2472,6 +2472,48 @@ vlm_templates = [
     ),
     ModelSpecTemplate(
         weights=[
+            "google/gemma-4-31b-it",
+        ],
+        impl=tt_transformers_impl,
+        version="0.13.0",
+        tt_metal_commit="82bb4e5",
+        vllm_commit="fbbcc6f",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    # The HF config for google/gemma-4-31b-it declares
+                    # architectures=["Gemma4ForConditionalGeneration"] (the
+                    # multi-modal class). vLLM's `_get_transformers_backend_cls`
+                    # tags the model multimodal whenever the HF config has a
+                    # nested text_config, which is true for Gemma-4 even when
+                    # we narrow `architectures` to the plain causal-LM name.
+                    # We override `architectures` to the TT-prefixed name we
+                    # register in run_vllm_api_server.py so vLLM's arch
+                    # resolution finds the text-only adapter directly. The TT
+                    # adapter class does NOT declare `SupportsMultiModal`, so
+                    # vLLM skips MM config init and the `_processor_factory`
+                    # assertion in mm_registry never fires.
+                    "hf-overrides": '{"architectures": ["TTGemma4ForCausalLM"]}',
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "trace_region_size": 500000000,
+                },
+                env_vars={
+                    "GEMMA4_PAGE_BLOCK_SIZE": "64",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+    ),
+    ModelSpecTemplate(
+        weights=[
             "Qwen/Qwen3-VL-32B-Instruct",
         ],
         impl=tt_transformers_impl,

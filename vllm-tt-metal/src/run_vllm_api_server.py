@@ -368,6 +368,23 @@ def register_tt_models(impl_id=None):
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
+    # Gemma-4 - Text-only paged-attention adapter (models/demos/gemma4)
+    # NOTE: HF config.json for google/gemma-4-31b-it declares
+    # architectures=["Gemma4ForConditionalGeneration"] (the multi-modal arch),
+    # so the vllm-tt plugin looks up "TTGemma4ForConditionalGeneration". The
+    # adapter on hand is text-only (`Gemma4ForCausalLM`); we expose it under
+    # both arch names so a text-only client lookup succeeds. Multi-modal
+    # capabilities are NOT actually supported by this adapter and image inputs
+    # will fail at request time.
+    ModelRegistry.register_model(
+        "TTGemma4ForCausalLM",
+        "models.demos.gemma4.tt.generator_vllm:Gemma4ForCausalLM",
+    )
+    ModelRegistry.register_model(
+        "TTGemma4ForConditionalGeneration",
+        "models.demos.gemma4.tt.generator_vllm:Gemma4ForCausalLM",
+    )
+
 
 def model_setup(model_spec_json):
     # step 1: validate env vars passed in

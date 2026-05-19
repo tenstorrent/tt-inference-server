@@ -385,6 +385,98 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        # NOTE: Gemma-4 31B is still in development. Tasks and scores below are
+        # placeholders copied from google/gemma-3-27b-it; they are NOT validated
+        # Gemma-4 numbers and should be re-baselined once the model stabilises.
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=84.3,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=76.8,
+                    published_score_ref="https://gemma4-ai.com/blog/gemma4-benchmark",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=91.1,  # placeholder from gemma-3-27b-it
+                    published_score_ref="https://arxiv.org/html/2503.19786v1",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 65536,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256,
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,
+                },
+                custom_dataset_kwargs={
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536],
+                    "pretrained": "google/gemma-4-31b-it",  # Provide model name for RULER tokenizer
+                    "num_samples_per_length": 30,
+                    "limit_factor": 0.1,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-VL-32B-Instruct",
         tasks=[
             EvalTask(

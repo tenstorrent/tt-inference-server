@@ -4837,6 +4837,27 @@
             }
         ]
     },
+    "gemma-4-31b-it": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 828.0,
+                        "tput_user": 50.0,
+                        "tput": 773.0
+                    }
+                }
+            }
+        ]
+    },
     "Qwen2.5-72B": {
         "t3k": [
             {
