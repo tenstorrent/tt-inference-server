@@ -48,14 +48,17 @@ class BlazeRunner : public IRunner {
   inline void handleCancelRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
-  inline void handleMemoryResponse(const ds::SchedulerResponse& response);
-  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleAllocateRequest(
       const tt::domain::ManageMemoryTask& request);
+  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
+  inline void handleMemoryResponse(const ds::SchedulerResponse& response);
+  inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
+  inline void handleStopAck(blaze_types::SlotContext& slot);
+  inline void handleEvictAck(blaze_types::SlotContext& slot);
+  inline void handleDeferred(blaze_types::SlotContext& slot);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
   void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
-  void evictSlot(uint32_t slotId);
   void checkOutputHang();
 
   tt::config::LLMConfig config;

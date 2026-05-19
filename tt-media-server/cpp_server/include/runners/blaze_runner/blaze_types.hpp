@@ -36,6 +36,7 @@ inline const char* toString(SlotState state) {
     case SlotState::AWAITING_EVICT_ACK:
       return "AWAITING_EVICT_ACK";
   }
+  return "UNKNOWN";
 }
 
 struct SlotContext {
