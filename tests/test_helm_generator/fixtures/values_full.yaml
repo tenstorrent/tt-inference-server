@@ -4159,8 +4159,6 @@ models:
                 value: '16'
               - name: MESH_DEVICE
                 value: T3K
-              - name: NEW_ENV_VAR
-                value: value
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING
@@ -4197,8 +4195,6 @@ models:
                 value: '16'
               - name: MESH_DEVICE
                 value: T3K
-              - name: NEW_ENV_VAR
-                value: value
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING

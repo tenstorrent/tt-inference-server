@@ -2606,6 +2606,7 @@ vlm_templates = [
                 default_impl=True,
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": 16,
+                    "NEW_ENV_VAR": "value",
                 },
             ),
         ],
