@@ -94,8 +94,7 @@ TwoPartMessage decode_two_part(const std::vector<uint8_t>& data) {
 
   msg.header.assign(data.begin() + headerStart,
                     data.begin() + headerStart + headerLen);
-  msg.body.assign(data.begin() + bodyStart,
-                  data.begin() + bodyStart + bodyLen);
+  msg.body.assign(data.begin() + bodyStart, data.begin() + bodyStart + bodyLen);
   return msg;
 }
 
@@ -364,8 +363,7 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
     TwoPartMessage tp;
     tp.header.assign(hs.begin(), hs.end());
     if (!writeAll(sock, encode_two_part(tp))) {
-      TT_LOG_WARN("[DynamoServer] Failed to send handshake (id={})",
-                  requestId);
+      TT_LOG_WARN("[DynamoServer] Failed to send handshake (id={})", requestId);
       ::close(sock);
       return;
     }
