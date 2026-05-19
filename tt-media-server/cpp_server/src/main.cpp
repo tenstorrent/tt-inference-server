@@ -216,7 +216,7 @@ int main(int argc, char* argv[]) {
       mgr = llm->getWorkerManager();
     }
 
-    #ifdef ENABLE_GRPC
+#ifdef ENABLE_GRPC
     std::unique_ptr<tt::api::grpc::GrpcServerHandle> grpcServer;
     const char* grpcListenEnv = std::getenv("GRPC_LISTEN");
     if (grpcListenEnv && grpcListenEnv[0] != '\0') {
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]) {
         TT_LOG_WARN("[gRPC] GRPC_LISTEN set but LLM service not available");
       }
     }
-  #endif
+#endif
 
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());
@@ -244,8 +244,6 @@ int main(int argc, char* argv[]) {
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
     agg.prebuildAll();
   }
-
-
 
   const char* envToken = std::getenv("OPENAI_API_KEY");
   std::string apiKey =
