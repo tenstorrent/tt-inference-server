@@ -1226,8 +1226,10 @@ jobs:
             --set model=Llama-3.1-8B-Instruct --set device=galaxy)
           echo "$RENDERED" | grep -qE '^[[:space:]]*type: Recreate$' \
             || { echo "::error::Deployment must use 'strategy: type: Recreate' (see issue #2801)"; exit 1; }
+          echo "$RENDERED" | grep -qE '^[[:space:]]*podAntiAffinity:[[:space:]]*$' \
+            || { echo "::error::podAntiAffinity block missing — device-collision protection broken (see #2801)"; exit 1; }
           echo "$RENDERED" | grep -qE 'topologyKey: kubernetes.io/hostname' \
-            || { echo "::error::Chart's podAntiAffinity term missing — device-collision protection broken (see #2801)"; exit 1; }
+            || { echo "::error::Chart's podAntiAffinity term has wrong topologyKey — device-collision scope broken (see #2801)"; exit 1; }
 
   ci-gate:
     name: CI Gate
