@@ -2436,8 +2436,8 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="aecd1d7",
-        vllm_commit="0da90eb",
+        tt_metal_commit="097517c",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2481,8 +2481,8 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="aecd1d7",
-        vllm_commit="0da90eb",
+        tt_metal_commit="097517c",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
