@@ -88,6 +88,8 @@ class EvalConfig:
 # Note: meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
 # Note: meta_math_hard for Llama 3.1 models has a bug: see https://github.com/tenstorrent/tt-inference-server/issues/155
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
+DEEPSEEK_R1_CONTEXT_LENGTH = 64 * 1024
+DEEPSEEK_R1_MAX_GEN_TOKS = DEEPSEEK_R1_CONTEXT_LENGTH - 1
 
 
 _eval_config_list = [
@@ -1456,9 +1458,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    "max_length": DEEPSEEK_R1_CONTEXT_LENGTH,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": DEEPSEEK_R1_MAX_GEN_TOKS,
+                },
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -1485,9 +1490,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,
+                    "max_length": DEEPSEEK_R1_CONTEXT_LENGTH,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": DEEPSEEK_R1_MAX_GEN_TOKS,
+                },
                 seed=42,
             ),
         ],
@@ -1510,16 +1518,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 32768,
+                    "max_length": DEEPSEEK_R1_CONTEXT_LENGTH,
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                    "max_gen_toks": DEEPSEEK_R1_MAX_GEN_TOKS,
                 },
                 seed=42,
                 limit_samples_map={
@@ -1542,16 +1551,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 32768,
+                    "max_length": DEEPSEEK_R1_CONTEXT_LENGTH,
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                    "max_gen_toks": DEEPSEEK_R1_MAX_GEN_TOKS,
                 },
                 seed=42,
                 limit_samples_map={

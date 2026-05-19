@@ -9,7 +9,11 @@ from types import SimpleNamespace
 
 import utils.prompt_client as prompt_client_module
 from utils.prompt_client import PromptClient
-from utils.prompt_configs import EnvironmentConfig
+from utils.prompt_configs import (
+    EnvironmentConfig,
+    resolve_api_base_url,
+    resolve_server_root_url,
+)
 
 
 class _StalledCacheMonitor:
@@ -112,4 +116,53 @@ def test_wait_for_healthy_logs_existing_tensor_cache_details(monkeypatch, caplog
     assert (
         "Existing tensor cache detected - tracking 4 file(s), 8.0 KB; "
         "using standard timeout:=1200.0s" in caplog.text
+    )
+
+
+def test_prompt_client_uses_base_url_without_appending_service_port():
+    env_config = EnvironmentConfig()
+    env_config.base_url = "https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com"
+    env_config.deploy_url = "http://127.0.0.1"
+    env_config.service_port = "8000"
+
+    prompt_client = PromptClient(env_config)
+
+    assert (
+        prompt_client.health_url
+        == "https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com/health"
+    )
+    assert (
+        prompt_client.completions_url
+        == "https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com/v1/completions"
+    )
+
+
+def test_resolve_api_base_url_accepts_full_completions_endpoint():
+    assert (
+        resolve_api_base_url(
+            service_port="8000",
+            base_url="https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com/v1/completions",
+            include_v1=True,
+        )
+        == "https://cpp-server-mock-b0b73cbb.workload.tenstorrent.com/v1"
+    )
+
+
+def test_resolve_server_root_url_keeps_existing_deploy_port():
+    assert (
+        resolve_server_root_url(
+            service_port="443",
+            deploy_url="http://localhost:8000",
+        )
+        == "http://localhost:8000"
+    )
+
+
+def test_resolve_server_root_url_strips_deploy_api_suffix_before_adding_port():
+    assert (
+        resolve_server_root_url(
+            service_port="443",
+            deploy_url="https://example.test/v1/chat/completions",
+        )
+        == "https://example.test:443"
     )

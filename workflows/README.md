@@ -403,7 +403,24 @@ To use `run.py` with an external vLLM server, you need to configure the server e
    export SERVICE_PORT=8000  # Replace with your server's port
    ```
 
-2. **[optional] Set the server JWT secret** for authorization (if set on server):
+2. **[optional] Set BASE_URL** when the server is not running on `http://127.0.0.1`:
+   ```bash
+   export BASE_URL=https://console.tenstorrent.com
+   ```
+
+3. **[optional] Set an API token** for authorization:
+   ```bash
+   export OPENAI_API_KEY=sk-...
+   # or
+   export VLLM_API_KEY=sk-...
+   ```
+
+4. **[optional] Set VLLM_MODEL** when the deployed API model name differs from the HuggingFace tokenizer repo:
+   ```bash
+   export VLLM_MODEL=deepseek-ai/DeepSeek-R1-0528
+   ```
+
+5. **[optional] Set the server JWT secret** for authorization (if set on server):
    ```bash
    export JWT_SECRET=my-string-secret
    ```
@@ -440,6 +457,8 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 
 - **Use `--disable-trace-capture`**: When running against an external server, it's recommended to use the `--disable-trace-capture` flag to speed up execution, especially if the server is already running and traces have been captured previously.
 
 - **Model Configuration**: The `--model` parameter must match a model defined in `MODEL_SPECS`, and the external server must be serving that exact model or a compatible variant.
+
+- **Deployed Model Override**: If the external OpenAI-compatible server exposes a different deployed model ID than the repo's HuggingFace model repo, set `VLLM_MODEL` to the deployed API model name.
 
 - **Device Parameter**: `--tt-device` selects the target hardware profile. If omitted, `run.py` infers a default from available host hardware. The legacy alias `--device` is still accepted.
 
