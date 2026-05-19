@@ -505,10 +505,6 @@ void LLMController::dispatchGeneration(
     LLMRequest& request, SessionInfo sessionInfo,
     const std::function<void(const LLMStreamChunk&, bool)>& cb) const {
   const auto mode = tt::config::llmMode();
-  if (mode == tt::config::LLMMode::REGULAR) {
-    service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
-    return;
-  }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (shouldDoPrefillOnDecode(request, sessionInfo.validSessionFound)) {
@@ -525,10 +521,8 @@ void LLMController::dispatchGeneration(
     }
     return;
   }
-
-  TT_LOG_ERROR("[LLMController] Invalid LLM mode: {}", toString(mode));
-  throw std::runtime_error(
-      "LLM Mode must be regular or decode only for chat completions");
+  
+  service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
 }
 
 bool LLMController::shouldDoPrefillOnDecode(const LLMRequest& request,

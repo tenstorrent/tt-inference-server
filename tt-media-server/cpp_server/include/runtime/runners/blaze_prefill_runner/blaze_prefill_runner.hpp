@@ -12,6 +12,10 @@
 #include "runtime/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 
+namespace tt::services {
+class MemoryManager;
+}  // namespace tt::services
+
 namespace tt::runners {
 
 class BlazePrefillRunner : public IRunner {
@@ -30,6 +34,7 @@ class BlazePrefillRunner : public IRunner {
   tt::config::LLMConfig config;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::unique_ptr<blaze_prefill::IBlazePrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};
 };

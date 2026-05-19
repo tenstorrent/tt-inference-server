@@ -34,6 +34,7 @@ import sys
 import time
 from typing import Optional
 
+from mooncake.store import MooncakeDistributedStore  # pyright: ignore[reportMissingImports]
 from shared_memory import PREFILL_MAX_TOKEN_IDS, PrefillMessage, SharedMemory
 
 _shutdown = False
@@ -59,6 +60,20 @@ RANK_CONFIG = {
     2: {"ip": "127.0.0.1", "port": 10002},
     3: {"ip": "127.0.0.1", "port": 10003},
 }
+
+
+def _create_mooncake_store() -> MooncakeDistributedStore:
+    store = MooncakeDistributedStore()
+    store.setup(
+        os.environ.get("MOONCAKE_LOCAL_HOST", "localhost"),
+        os.environ.get("MOONCAKE_METADATA_SERVER", "http://localhost:8080/metadata"),
+        int(os.environ.get("MOONCAKE_SEGMENT_SIZE", 512 * 1024 * 1024)),
+        int(os.environ.get("MOONCAKE_LOCAL_BUFFER_SIZE", 128 * 1024 * 1024)),
+        os.environ.get("MOONCAKE_PROTOCOL", "tcp"),
+        os.environ.get("MOONCAKE_DEVICE_NAME", ""),
+        os.environ.get("MOONCAKE_MASTER", "localhost:50051"),
+    )
+    return store
 
 
 def _send_via_socket(sock: socket.socket, msg: PrefillMessage) -> None:
@@ -120,6 +135,8 @@ def run_rank0_coordinator() -> None:
     """Rank 0: Read from input SHM, send to workers, return one token to output SHM."""
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
+    store: Optional[MooncakeDistributedStore] = None
+    worker_sockets: dict[int, socket.socket] = {}
 
     if not (c2p_name and p2c_name):
         print(
@@ -134,6 +151,9 @@ def run_rank0_coordinator() -> None:
     )
 
     try:
+        store = _create_mooncake_store()
+        print("Rank 0: Mooncake store initialized", file=sys.stderr)
+
         with SharedMemory(
             c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=_is_shutdown
         ) as c2p, SharedMemory(
@@ -145,7 +165,7 @@ def run_rank0_coordinator() -> None:
 
             print("Rank 0: Waiting 2s for workers to start...", file=sys.stderr)
             time.sleep(2)
-            worker_sockets = _connect_to_workers()
+            worker_sockets.update(_connect_to_workers())
 
             print("Rank 0: Waiting for prefill requests...", file=sys.stderr)
 
@@ -155,6 +175,9 @@ def run_rank0_coordinator() -> None:
                     break
 
                 task_id = msg.task_id  # Now an int (uint32_t)
+
+                kv_cache = store.get(f"{task_id}/kv")
+                print(f"Rank 0: No KV cache found for task {kv_cache}", file=sys.stderr)
 
                 print(
                     f"Rank 0: Received prefill request task_id={task_id}, "
@@ -178,6 +201,15 @@ def run_rank0_coordinator() -> None:
                 # Return exactly one token (first token from reasoning sequence)
                 prefill_token = "12345" + str(task_id)
 
+                print(
+                    f"Rank 0: Putting KV cache for task {task_id}: {prefill_token}",
+                    file=sys.stderr,
+                )
+                kv_cache = bytes(
+                    prefill_token, "utf-8"
+                )  # Just a simluation of the KV cache
+                store.put(f"{task_id}/kv", kv_cache)
+
                 p2c.write_token(task_id, prefill_token)
 
                 print(
@@ -190,6 +222,9 @@ def run_rank0_coordinator() -> None:
     finally:
         for rank, sock in worker_sockets.items():
             sock.close()
+        if store is not None:
+            store.close()
+            print("Rank 0: Mooncake store closed", file=sys.stderr)
 
     print("Rank 0: Shutdown complete", file=sys.stderr)
 
