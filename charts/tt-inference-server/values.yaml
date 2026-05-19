@@ -54,6 +54,12 @@ defaults:
       initialDelaySeconds: 2400
   nodeSelector: {}
   tolerations: []
+  # User-supplied affinity. MERGED with the chart's hardcoded device-collision
+  # podAntiAffinity term (see tt-inference-server.affinity in _helpers.tpl) —
+  # nodeAffinity / podAffinity / extra podAntiAffinity terms all apply, but
+  # the 1:1 Pod-to-Node guarantee from issue #2801 is unconditional and cannot
+  # be disabled from values. replicaCount must not exceed the number of nodes
+  # matching nodeSelector/tolerations or pods will sit Pending.
   affinity: {}
   extraEnv: []
 
