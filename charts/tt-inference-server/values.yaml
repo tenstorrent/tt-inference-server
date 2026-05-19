@@ -24,14 +24,8 @@ defaults:
   serverType: vllm
   replicaCount: 1
   progressDeadlineSeconds: 3600
-  # Single-node clusters with required podAntiAffinity must terminate the old
-  # pod before scheduling the new one; maxSurge: 0 prevents the upgrade from
-  # hanging on a pending replacement that cannot share the only node.
   updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+    type: Recreate
   podAnnotations: {}
   podSecurityContext: {}
   image:
