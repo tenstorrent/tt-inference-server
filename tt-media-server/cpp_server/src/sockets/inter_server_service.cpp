@@ -4,6 +4,7 @@
 #include "sockets/inter_server_service.hpp"
 
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -93,7 +94,11 @@ void InterServerService::stop() {
     return;
   }
 
-  registration_running_ = false;
+  {
+    std::lock_guard<std::mutex> lock(registration_mutex_);
+    registration_running_ = false;
+  }
+  registration_cv_.notify_all();
   if (registration_thread_.joinable()) {
     registration_thread_.join();
   }
@@ -274,9 +279,13 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
 void InterServerService::startDirectModeRegistrationThread() {
   registration_running_ = true;
   registration_thread_ = std::thread([this] {
+    constexpr auto registrationInterval = std::chrono::seconds(1);
     while (registration_running_) {
       sendRegistration();
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+
+      std::unique_lock<std::mutex> lock(registration_mutex_);
+      registration_cv_.wait_for(lock, registrationInterval,
+                                [this] { return !registration_running_; });
     }
   });
 }

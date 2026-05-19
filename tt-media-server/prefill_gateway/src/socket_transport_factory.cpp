@@ -11,12 +11,24 @@
 
 namespace tt::sockets {
 
+namespace {
+std::string socketTransportFromEnv() {
+  const char* v = std::getenv("SOCKET_TRANSPORT");
+  return v ? std::string(v) : transport_names::TCP;
+}
+}  // namespace
+
 std::unique_ptr<ISocketTransport> createSocketTransport() {
-  const char* envVal = std::getenv("SOCKET_TRANSPORT");
-  std::string type = envVal ? envVal : "tcp";
-  if (type == "zmq") {
+  const std::string type = socketTransportFromEnv();
+  if (type == transport_names::ZMQ) {
     TT_LOG_INFO("[Gateway] Using ZMQ transport");
     return std::make_unique<ZmqSocketTransport>();
+  }
+  if (type != transport_names::TCP) {
+    TT_LOG_WARN(
+        "[Gateway] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or '{}'. "
+        "Falling back to TCP.",
+        type, transport_names::TCP, transport_names::ZMQ);
   }
   TT_LOG_INFO("[Gateway] Using TCP transport");
   return std::make_unique<TcpSocketTransport>();

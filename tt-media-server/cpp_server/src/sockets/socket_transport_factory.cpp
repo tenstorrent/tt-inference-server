@@ -10,10 +10,16 @@
 namespace tt::sockets {
 
 std::unique_ptr<ISocketTransport> createSocketTransport() {
-  auto type = tt::config::socketTransport();
-  if (type == "zmq") {
+  const std::string type = tt::config::socketTransport();
+  if (type == transport_names::ZMQ) {
     TT_LOG_INFO("[SocketTransport] Using ZMQ transport");
     return std::make_unique<ZmqSocketTransport>();
+  }
+  if (type != transport_names::TCP) {
+    TT_LOG_WARN(
+        "[SocketTransport] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or "
+        "'{}'. Falling back to TCP.",
+        type, transport_names::TCP, transport_names::ZMQ);
   }
   TT_LOG_INFO("[SocketTransport] Using TCP transport");
   return std::make_unique<TcpSocketTransport>();

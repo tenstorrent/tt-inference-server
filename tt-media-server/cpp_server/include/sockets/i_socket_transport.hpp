@@ -12,6 +12,14 @@
 namespace tt::sockets {
 
 /**
+ * @brief Wire-format names for SOCKET_TRANSPORT.
+ */
+namespace transport_names {
+constexpr const char* TCP = "tcp";
+constexpr const char* ZMQ = "zmq";
+}  // namespace transport_names
+
+/**
  * @brief Abstract interface for inter-server socket transports.
  *
  * Concrete implementations:

@@ -58,6 +58,13 @@ class ZmqSocketTransport : public ISocketTransport {
   void setupMonitor();
   void monitorLoop(std::promise<void> ready);
 
+  // Transport-specific send/receive halves. Each is called with socketMutex_
+  // already held by the caller so they only touch socket_/peerId_ safely.
+  bool sendAsRouter(const std::vector<uint8_t>& data);
+  bool sendAsDealer(const std::vector<uint8_t>& data);
+  std::vector<uint8_t> receiveAsRouter();
+  std::vector<uint8_t> receiveAsDealer();
+
   Mode mode_ = Mode::CLIENT;
   std::string endpoint_;
 

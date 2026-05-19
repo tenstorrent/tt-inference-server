@@ -4,8 +4,10 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -147,8 +149,8 @@ class InterServerService {
   // Send PrefillRegistrationMessage to the peer (gateway or decode).
   void sendRegistration();
 
-  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage on each
-  // probe from the gateway. No-op if not in gateway mode.
+  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in
+  // response to a RegistrationProbeMessage from the gateway. No-op otherwise.
   void sendRegistrationIfGatewayModeIsEnabled();
 
   // Prefill-side, direct-mode only: background thread that periodically sends
@@ -162,8 +164,13 @@ class InterServerService {
   bool enabled_ = false;
   bool gateway_mode_ = false;
   bool direct_prefill_mode_ = false;
+
+  // Direct-mode registration loop: condition_variable lets stop() wake the
+  // thread immediately instead of waiting for the 1s timer to elapse.
   std::atomic<bool> registration_running_{false};
   std::thread registration_thread_;
+  std::mutex registration_mutex_;
+  std::condition_variable registration_cv_;
 };
 
 }  // namespace tt::sockets

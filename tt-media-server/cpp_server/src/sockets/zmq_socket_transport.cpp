@@ -193,24 +193,33 @@ bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 
   std::lock_guard<std::mutex> lock(socketMutex_);
   try {
-    if (mode_ == Mode::SERVER) {
-      // ROUTER must prefix every outgoing message with the peer's identity.
-      std::lock_guard<std::mutex> idLock(peerIdMutex_);
-      if (peerId_.empty()) {
-        TT_LOG_ERROR(
-            "[ZmqSocketTransport] Cannot send — no peer identity known yet");
-        return false;
-      }
-      zmq::message_t idFrame(peerId_.data(), peerId_.size());
-      socket_->send(idFrame, zmq::send_flags::sndmore);
-    }
-    zmq::message_t msg(data.data(), data.size());
-    auto result = socket_->send(msg, zmq::send_flags::dontwait);
-    return result.has_value();
+    return mode_ == Mode::SERVER ? sendAsRouter(data) : sendAsDealer(data);
   } catch (const zmq::error_t& e) {
     TT_LOG_ERROR("[ZmqSocketTransport] Send failed: {}", e.what());
     return false;
   }
+}
+
+bool ZmqSocketTransport::sendAsRouter(const std::vector<uint8_t>& data) {
+  // ROUTER must prefix every outgoing message with the peer's identity.
+  std::lock_guard<std::mutex> idLock(peerIdMutex_);
+  if (peerId_.empty()) {
+    TT_LOG_ERROR(
+        "[ZmqSocketTransport] Cannot send — no peer identity known yet");
+    return false;
+  }
+  zmq::message_t idFrame(peerId_.data(), peerId_.size());
+  socket_->send(idFrame, zmq::send_flags::sndmore);
+
+  zmq::message_t msg(data.data(), data.size());
+  auto result = socket_->send(msg, zmq::send_flags::dontwait);
+  return result.has_value();
+}
+
+bool ZmqSocketTransport::sendAsDealer(const std::vector<uint8_t>& data) {
+  zmq::message_t msg(data.data(), data.size());
+  auto result = socket_->send(msg, zmq::send_flags::dontwait);
+  return result.has_value();
 }
 
 std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
@@ -218,36 +227,46 @@ std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
 
   std::lock_guard<std::mutex> lock(socketMutex_);
   try {
-    if (mode_ == Mode::SERVER) {
-      // ROUTER: first frame is peer identity — store it for future sends.
-      // Connection state itself is tracked by the monitor thread.
-      zmq::message_t identity;
-      auto idResult = socket_->recv(identity, zmq::recv_flags::dontwait);
-      if (!idResult.has_value()) return {};
-
-      {
-        std::lock_guard<std::mutex> idLock(peerIdMutex_);
-        peerId_.assign(
-            static_cast<uint8_t*>(identity.data()),
-            static_cast<uint8_t*>(identity.data()) + identity.size());
-      }
-
-      if (!identity.more()) return {};
-    }
-
-    zmq::message_t msg;
-    auto result = socket_->recv(msg, zmq::recv_flags::dontwait);
-    if (!result.has_value()) return {};
-    if (msg.size() == 0) return {};
-
-    auto* ptr = static_cast<uint8_t*>(msg.data());
-    return {ptr, ptr + msg.size()};
+    return mode_ == Mode::SERVER ? receiveAsRouter() : receiveAsDealer();
   } catch (const zmq::error_t& e) {
     if (e.num() != EAGAIN) {
       TT_LOG_ERROR("[ZmqSocketTransport] Recv failed: {}", e.what());
     }
     return {};
   }
+}
+
+std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
+  // ROUTER: first frame is peer identity — store it for future sends.
+  // Connection state itself is tracked by the monitor thread.
+  zmq::message_t identity;
+  auto idResult = socket_->recv(identity, zmq::recv_flags::dontwait);
+  if (!idResult.has_value()) return {};
+
+  {
+    std::lock_guard<std::mutex> idLock(peerIdMutex_);
+    peerId_.assign(
+        static_cast<uint8_t*>(identity.data()),
+        static_cast<uint8_t*>(identity.data()) + identity.size());
+  }
+
+  if (!identity.more()) return {};
+
+  zmq::message_t msg;
+  auto result = socket_->recv(msg, zmq::recv_flags::dontwait);
+  if (!result.has_value() || msg.size() == 0) return {};
+
+  auto* ptr = static_cast<uint8_t*>(msg.data());
+  return {ptr, ptr + msg.size()};
+}
+
+std::vector<uint8_t> ZmqSocketTransport::receiveAsDealer() {
+  zmq::message_t msg;
+  auto result = socket_->recv(msg, zmq::recv_flags::dontwait);
+  if (!result.has_value() || msg.size() == 0) return {};
+
+  auto* ptr = static_cast<uint8_t*>(msg.data());
+  return {ptr, ptr + msg.size()};
 }
 
 void ZmqSocketTransport::setConnectionLostCallback(

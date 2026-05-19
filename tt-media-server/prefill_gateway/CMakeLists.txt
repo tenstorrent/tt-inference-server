@@ -127,7 +127,8 @@ endif()
 FetchContent_Declare(
     cppzmq
     GIT_REPOSITORY https://github.com/zeromq/cppzmq.git
-    GIT_TAG v4.10.0
+    GIT_TAG v4.11.0
+    GIT_SHALLOW TRUE
 )
 set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cppzmq)
