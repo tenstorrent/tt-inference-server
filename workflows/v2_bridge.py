@@ -65,9 +65,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
             "The tt-inference-server-v2/ directory is required for image-model workflows."
         )
 
-    output_dir = (
-        get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
-    )
+    output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
     ensure_readwriteable_dir(output_dir)
 
     cmd = [
@@ -97,9 +95,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     env = os.environ.copy()
     env["TT_V1_RUN_COMMAND"] = "python " + shlex.join(sys.argv)
 
-    logger.info(
-        "Delegating image-model workflow %r to v2 engine.", v2_workflow
-    )
+    logger.info("Delegating image-model workflow %r to v2 engine.", v2_workflow)
     return_code = run_command(cmd, logger=logger, env=env)
     if return_code != 0:
         logger.error(

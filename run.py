@@ -710,9 +710,7 @@ def main():
                 model_spec.model_name,
                 model_spec.model_type.name,
             )
-            workflow_results = run_v2_workflows(
-                model_spec, runtime_config, json_fpath
-            )
+            workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
         else:
             workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
         if all(result.return_code == 0 for result in workflow_results):
