@@ -7,12 +7,16 @@
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
+#include <chrono>
 #include <future>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
+#include "config/settings.hpp"
+#include "domain/manage_memory.hpp"
 #include "domain/session.hpp"
-#include "domain/slot_types.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 
 namespace {
 
@@ -42,8 +46,8 @@ struct LoopFixture {
   }
 };
 
-std::string createSessionWithSlot(tt::services::SessionManager& manager,
-                                  trantor::EventLoop* loop, uint32_t slotId) {
+std::string createAllocatedSession(tt::services::SessionManager& manager,
+                                   trantor::EventLoop* loop, uint32_t slotId) {
   std::promise<std::string> promise;
   auto future = promise.get_future();
 
@@ -55,8 +59,39 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
         promise.set_exception(
             std::make_exception_ptr(std::runtime_error(std::string(err))));
       },
-      loop, 0, slotId);
+      loop);
 
+  auto requestQueue = tt::ipc::boost::MemoryRequestQueue::openExisting(
+      tt::config::ttMemoryRequestQueueName());
+  auto resultQueue = tt::ipc::boost::MemoryResultQueue::openExisting(
+      tt::config::ttMemoryResultQueueName());
+
+  tt::domain::ManageMemoryTask request{};
+  bool foundAllocation = false;
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (requestQueue->tryPop(request)) {
+      if (request.action != tt::domain::MemoryManagementAction::ALLOCATE) {
+        continue;
+      }
+      foundAllocation = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  if (!foundAllocation) {
+    throw std::runtime_error("Timed out waiting for allocation request");
+  }
+
+  tt::domain::ManageMemoryResult result{};
+  result.taskId = request.taskId;
+  result.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  result.slotId = slotId;
+  resultQueue->push(result);
+
+  if (future.wait_for(std::chrono::seconds{2}) != std::future_status::ready) {
+    throw std::runtime_error("Timed out waiting for session completion");
+  }
   return future.get();
 }
 
@@ -74,7 +109,7 @@ TEST(SessionManagerLifecycle, CloseIdleSession_ReturnsSuccess) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 10u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 10u);
   ASSERT_FALSE(sessionId.empty());
 
   EXPECT_EQ(manager.closeSession(sessionId),
@@ -89,11 +124,11 @@ TEST(SessionManagerLifecycle, CloseNonExistentSession_ReturnsNotFound) {
             tt::services::CloseSessionResult::NOT_FOUND);
 }
 
-TEST(SessionManagerLifecycle, AcquireInFlight_ReturnsPreAssignedSlotId) {
+TEST(SessionManagerLifecycle, AcquireInFlight_ReturnsAllocatedSlotId) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 7u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 7u);
   ASSERT_FALSE(sessionId.empty());
 
   EXPECT_EQ(acquireInFlight(manager, sessionId), 7u);
@@ -106,7 +141,7 @@ TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 8u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 8u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -125,7 +160,7 @@ TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 9u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 9u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -139,10 +174,10 @@ TEST(SessionManagerLifecycle, GetActiveSessionCount_ReflectsLifecycle) {
 
   EXPECT_EQ(manager.getActiveSessionCount(), 0u);
 
-  auto s1 = createSessionWithSlot(manager, lf.loop, 20u);
+  auto s1 = createAllocatedSession(manager, lf.loop, 20u);
   EXPECT_EQ(manager.getActiveSessionCount(), 1u);
 
-  auto s2 = createSessionWithSlot(manager, lf.loop, 21u);
+  auto s2 = createAllocatedSession(manager, lf.loop, 21u);
   EXPECT_EQ(manager.getActiveSessionCount(), 2u);
 
   manager.closeSession(s1);
@@ -156,7 +191,7 @@ TEST(SessionManagerLifecycle, AcquireAfterRelease_Succeeds) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 11u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 11u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -174,45 +209,13 @@ TEST(SessionManagerLifecycle, GetSession_ReturnsCorrectData) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 12u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 12u);
   ASSERT_FALSE(sessionId.empty());
 
   auto session = manager.getSession(sessionId);
   ASSERT_TRUE(session);
   EXPECT_EQ(session->getSessionId(), sessionId);
   EXPECT_EQ(session->getSlotId(), 12u);
-}
-
-TEST(SessionManagerLifecycle, AssignSlotId_UpdatesSession) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 30u);
-  ASSERT_FALSE(sessionId.empty());
-
-  EXPECT_TRUE(manager.assignSlotId(sessionId, 99u));
-
-  auto session = manager.getSession(sessionId);
-  ASSERT_TRUE(session);
-  EXPECT_EQ(session->getSlotId(), 99u);
-}
-
-TEST(SessionManagerLifecycle, GetSlotIdBySessionId_ReturnsSlotId) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 13u);
-  ASSERT_FALSE(sessionId.empty());
-
-  EXPECT_EQ(manager.getSlotIdBySessionId(sessionId), 13u);
-}
-
-TEST(SessionManagerLifecycle,
-     GetSlotIdBySessionId_NotFound_ReturnsInvalidSlot) {
-  tt::services::SessionManager manager;
-
-  EXPECT_EQ(manager.getSlotIdBySessionId("no-such-id"),
-            tt::domain::INVALID_SLOT_ID);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +226,7 @@ TEST(SessionManagerClose, CloseInFlight_RemovesSessionImmediately) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 42u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 42u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -239,7 +242,7 @@ TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 45u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 45u);
   ASSERT_FALSE(sessionId.empty());
 
   std::atomic<bool> cancelCalled{false};
@@ -258,7 +261,7 @@ TEST(SessionManagerClose, CloseIdle_NoCancelFired) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 46u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 46u);
   ASSERT_FALSE(sessionId.empty());
 
   // Close without ever calling acquireInFlight — no cancel should be needed.
@@ -275,7 +278,7 @@ TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 43u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 43u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -292,7 +295,7 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 44u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 44u);
   ASSERT_FALSE(sessionId.empty());
 
   std::atomic<bool> cancelCalled{false};
@@ -311,7 +314,7 @@ TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 47u);
+  auto sessionId = createAllocatedSession(manager, lf.loop, 47u);
   ASSERT_FALSE(sessionId.empty());
 
   acquireInFlight(manager, sessionId);
@@ -357,7 +360,7 @@ TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 100u);
+    auto sessionId = createAllocatedSession(manager, lf.loop, 100u);
 
     std::atomic<int> successCount{0};
     runConcurrently([&] {
@@ -379,7 +382,7 @@ TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 101u);
+    auto sessionId = createAllocatedSession(manager, lf.loop, 101u);
 
     std::atomic<int> acquireCount{0};
     runConcurrently([&] {
@@ -407,7 +410,7 @@ TEST(SessionManagerConcurrency,
   for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
-    auto sessionId = createSessionWithSlot(manager, lf.loop, 102u);
+    auto sessionId = createAllocatedSession(manager, lf.loop, 102u);
 
     std::atomic<int> cancelCount{0};
     std::atomic<bool> ready{false};

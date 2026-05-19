@@ -83,6 +83,7 @@ void LLMController::resolveSession(
 
   // Layer 1: Prefix-cache routing. Requires a prior [assistant, user] pair
   if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
+    TT_LOG_INFO("[LLMController] Trying to acquire session by prefix hash");
     try {
       auto acquired = sessionManager->tryAcquireByPrefixHash(
           *routingInfo.lookupHash, cancelFn);
@@ -123,6 +124,7 @@ void LLMController::resolveSession(
   }
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on loop.
+  TT_LOG_INFO("[LLMController] Creating new session");
   sessionManager->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
        mgr = sessionManager](const domain::Session& session) mutable {
@@ -524,6 +526,7 @@ void LLMController::dispatchGeneration(
     return;
   }
 
+  TT_LOG_ERROR("[LLMController] Invalid LLM mode: {}", toString(mode));
   throw std::runtime_error(
       "LLM Mode must be regular or decode only for chat completions");
 }

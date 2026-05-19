@@ -129,35 +129,6 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   return CloseSessionResult::SUCCESS;
 }
 
-bool SessionManager::assignSlotId(const std::string& sessionId,
-                                  uint32_t slotId) {
-  bool found = sessions.modify(
-      sessionId, [slotId](domain::Session& s) { s.setSlotId(slotId); });
-
-  if (!found) {
-    TT_LOG_WARN("[SessionManager] Session not found for slot assignment: {}",
-                sessionId);
-  } else {
-    TT_LOG_INFO("[SessionManager] Assigned slot {} to session {}", slotId,
-                sessionId);
-  }
-
-  return found;
-}
-
-uint32_t SessionManager::getSlotIdBySessionId(
-    const std::string& sessionId) const {
-  uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId, [&result](domain::Session& s) {
-    s.updateActivityTime();
-    result = s.getSlotId();
-  });
-  TT_LOG_DEBUG(
-      "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
-      sessionId, result);
-  return result;
-}
-
 uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
                                          std::function<void()> cancelFn) {
   uint32_t result = domain::INVALID_SLOT_ID;
@@ -291,29 +262,10 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
 void SessionManager::createSession(
     std::function<void(const tt::domain::Session&)> onCompletion,
     std::function<void(std::string_view errorMessage)> onError,
-    trantor::EventLoop* callerEventLoop, size_t initialHash,
-    std::optional<uint32_t> slotId) {
-  TT_LOG_DEBUG(
-      "[SessionManager] createSession called, slotId={}, activeSessions={}",
-      slotId.has_value() ? std::to_string(slotId.value()) : "none",
-      getActiveSessionCount());
+    trantor::EventLoop* callerEventLoop, size_t initialHash) {
+  TT_LOG_DEBUG("[SessionManager] createSession called, activeSessions={}",
+               getActiveSessionCount());
   evictOldSessions();
-
-  // Fast path: caller supplied a pre-assigned slot. Skip IPC allocation and
-  // insert the session synchronously.
-  if (slotId.has_value()) {
-    domain::Session session(slotId.value(), initialHash);
-    sessions.insert(session.getSessionId(), session);
-    if (initialHash != 0) {
-      addToPrefixIndex(session.getSessionId(), initialHash);
-    }
-    TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
-                slotId.value());
-    updateSessionCountMetric();
-    callerEventLoop->queueInLoop([onCompletion = std::move(onCompletion),
-                                  session]() { onCompletion(session); });
-    return;
-  }
 
   if (!memoryRequestQueue || !memoryResultQueue) {
     callerEventLoop->queueInLoop([onError = std::move(onError)]() {
