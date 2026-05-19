@@ -105,16 +105,10 @@ class TtsTestStatus(BaseTestStatus):
         elapsed: float,
         latency: Optional[float] = None,
         rtr: Optional[float] = None,
-        text: Optional[str] = None,
-        audio_duration: Optional[float] = None,
-        reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
         self.latency = latency
         self.rtr = rtr
-        self.text = text
-        self.audio_duration = audio_duration
-        self.reference_text = reference_text
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -122,9 +116,6 @@ class TtsTestStatus(BaseTestStatus):
             "elapsed": self.elapsed,
             "latency": self.latency,
             "rtr": self.rtr,
-            "text": self.text,
-            "audio_duration": self.audio_duration,
-            "reference_text": self.reference_text,
         }
 
 
@@ -139,14 +130,12 @@ class VideoGenerationTestStatus(BaseTestStatus):
         inference_steps_per_second: float = 0,
         job_id: Optional[str] = None,
         video_path: Optional[str] = None,
-        prompt: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
         self.job_id = job_id
         self.video_path = video_path
-        self.prompt = prompt
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -156,5 +145,4 @@ class VideoGenerationTestStatus(BaseTestStatus):
             "inference_steps_per_second": self.inference_steps_per_second,
             "job_id": self.job_id,
             "video_path": self.video_path,
-            "prompt": self.prompt,
         }

@@ -1,6 +1,6 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
 
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
 namespace tt::services {
 namespace ds = tt_llm_engine::scheduler::decode;

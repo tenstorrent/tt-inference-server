@@ -55,6 +55,9 @@ class VisionEvalsTestRequest:
 
 
 class VisionEvalsTest(BaseTest):
+    KIND = "vision_evals"
+    TASK_TYPE = "image"
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}

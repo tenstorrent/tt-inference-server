@@ -27,7 +27,6 @@ from .._test_common import (
     MetricSpec,
     ReportCheckTypes,
     block_id,
-    block_targets,
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
@@ -237,9 +236,11 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
     target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
     return Block(
-        kind="tts_benchmark",
+        kind="benchmarks",
+        task_type="text_to_speech",
+        title="Text-to-Speech Benchmark",
         id=block_id(ctx) or None,
-        targets=block_targets(ctx, task_type="tts"),
+        targets={"num_prompts": len(status_list)},
         data={
             "Benchmarks": {
                 "num_requests": len(status_list),

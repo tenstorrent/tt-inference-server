@@ -66,6 +66,11 @@ class SocketTransport {
   void stop();
 
   /**
+   * @brief Shutdown the active peer socket (SHUT_RDWR) without closing it.
+   */
+  void shutdownPeer();
+
+  /**
    * @brief Check if connected to peer
    */
   bool isConnected() const;
@@ -94,6 +99,20 @@ class SocketTransport {
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
+  /**
+   * @brief Set callback fired when a TCP connection is established.
+   *
+   * SERVER mode: each accept. CLIENT mode: each (re)connect.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
+   * Delay doubles per failed attempt up to max, resets on success.
+   * Must be called before start().
+   */
+  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
+
  private:
   void serverLoop();
   void clientLoop();
@@ -104,7 +123,7 @@ class SocketTransport {
 
   tt::utils::ScopedFd serverSocket_;
   tt::utils::ScopedFd clientSocket_;
-  int peerSocket_ = -1;  // Non-owning view of active connection FD
+  std::atomic<int> peerSocket_{-1};  // Non-owning view of active connection FD
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
@@ -114,6 +133,10 @@ class SocketTransport {
   mutable std::mutex sendMutex_;
 
   std::function<void()> connectionLostCallback_;
+  std::function<void()> connectionEstablishedCallback_;
+
+  uint32_t reconnectInitialDelayMs_ = 100;
+  uint32_t reconnectMaxDelayMs_ = 5000;
 };
 
 }  // namespace tt::sockets

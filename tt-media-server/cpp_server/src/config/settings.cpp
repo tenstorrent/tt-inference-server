@@ -3,11 +3,15 @@
 
 #include "config/settings.hpp"
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -441,6 +445,36 @@ uint16_t socketPort() {
   static const uint16_t cached =
       static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
   return cached;
+}
+
+bool usePrefillGateway() {
+  return envUlong("USE_PREFILL_GATEWAY",
+                  defaults::USE_PREFILL_GATEWAY ? 1UL : 0UL) != 0UL;
+}
+
+namespace {
+std::string getHostname() {
+  std::string host(256, '\0');
+  if (::gethostname(host.data(), host.size()) != 0) {
+    return "unknown-host";
+  }
+  host.resize(std::strlen(host.c_str()));
+  return host;
+}
+}  // namespace
+
+std::string prefillServerId() {
+  static const std::string cached = [] {
+    std::string v = envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
+    if (!v.empty()) return v;
+    return getHostname() + ":" + std::to_string(socketPort());
+  }();
+  return cached;
+}
+
+uint32_t prefillMaxInFlight() {
+  return static_cast<uint32_t>(
+      envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));
 }
 
 size_t maxQueueSize() {

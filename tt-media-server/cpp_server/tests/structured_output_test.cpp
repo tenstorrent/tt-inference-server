@@ -12,7 +12,7 @@
 #include "domain/llm/chat_completion_request.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/response_format.hpp"
-#include "runners/guided_decoder_manager.hpp"
+#include "runtime/runners/guided_decoder_manager.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace {
