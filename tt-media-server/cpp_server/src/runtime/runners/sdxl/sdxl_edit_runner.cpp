@@ -25,7 +25,7 @@ py::object SDXLEditRunner::loadDiffusersPipeline() {
                          ? std::string(SDXL_INPAINTING_REPO)
                          : config_.model_weights_path;
   py::dict kwargs;
-  kwargs["torch_dtype"] = torch_module_.attr("float32");
+  kwargs["torch_dtype"] = torch_module().attr("float32");
   kwargs["use_safetensors"] = py::bool_(true);
   return diffusers.attr("DiffusionPipeline")
       .attr("from_pretrained")(repo, **kwargs);
@@ -44,10 +44,10 @@ void SDXLEditRunner::distributeBlock() {
   py::object cfg = cfgClass(**cfgKwargs);
 
   py::dict pipelineKwargs;
-  pipelineKwargs["ttnn_device"] = ttnn_device_;
-  pipelineKwargs["torch_pipeline"] = pipeline_;
+  pipelineKwargs["ttnn_device"] = ttnn_device();
+  pipelineKwargs["torch_pipeline"] = pipeline();
   pipelineKwargs["pipeline_config"] = cfg;
-  tt_sdxl_ = pipelineMod.attr("TtSDXLInpaintingPipeline")(**pipelineKwargs);
+  tt_sdxl() = pipelineMod.attr("TtSDXLInpaintingPipeline")(**pipelineKwargs);
 }
 
 py::object SDXLEditRunner::preprocessMask(const std::string& base64Mask) const {
@@ -69,14 +69,14 @@ py::object SDXLEditRunner::preprocessMask(const std::string& base64Mask) const {
       pil.attr("Resampling").attr("LANCZOS"));
 
   py::object maskProcessor =
-      tt_sdxl_.attr("torch_pipeline").attr("mask_processor");
+      tt_sdxl().attr("torch_pipeline").attr("mask_processor");
   py::dict kwargs;
   kwargs["height"] = config_.image_height;
   kwargs["width"] = config_.image_width;
   kwargs["crops_coords"] = py::none();
   kwargs["resize_mode"] = py::str("default");
   py::object tensor = maskProcessor.attr("preprocess")(converted, **kwargs);
-  return torch_module_.attr("cat")(py::make_tuple(tensor), py::arg("dim") = 0);
+  return torch_module().attr("cat")(py::make_tuple(tensor), py::arg("dim") = 0);
 }
 
 void SDXLEditRunner::prepareInputTensorsForIteration(py::object tensors) {
@@ -86,7 +86,7 @@ void SDXLEditRunner::prepareInputTensorsForIteration(py::object tensors) {
   args.append(tensors[py::int_(2)]);
   args.append(tensors[py::int_(3)][py::int_(0)]);
   args.append(tensors[py::int_(4)][py::int_(0)]);
-  tt_sdxl_.attr("prepare_input_tensors")(args);
+  tt_sdxl().attr("prepare_input_tensors")(args);
 }
 
 py::object SDXLEditRunner::stackMaskBatch(
@@ -101,7 +101,7 @@ py::object SDXLEditRunner::stackMaskBatch(
     py::object padRow = preprocessMask(requests.front().mask.value_or(""));
     for (size_t i = 0; i < pad; ++i) rows.append(padRow);
   }
-  return torch_module_.attr("cat")(rows, py::arg("dim") = 0);
+  return torch_module().attr("cat")(rows, py::arg("dim") = 0);
 }
 
 py::object SDXLEditRunner::generateInputTensors(
@@ -124,7 +124,7 @@ py::object SDXLEditRunner::generateInputTensors(
       head.timesteps.has_value() ? py::cast(*head.timesteps) : py::none();
   kwargs["sigmas"] =
       head.sigmas.has_value() ? py::cast(*head.sigmas) : py::none();
-  return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
+  return tt_sdxl().attr("generate_input_tensors")(**kwargs);
 }
 
 domain::ImageGenerateRequest SDXLEditRunner::warmupRequest() const {

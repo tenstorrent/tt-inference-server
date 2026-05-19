@@ -10,6 +10,7 @@
 #include <deque>
 #include <functional>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -94,16 +95,24 @@ class SDXLBaseRunner : public IMediaRunner<domain::ImageGenerateRequest,
   bool is_tensor_parallel_ = false;
   bool initialized_ = false;
 
-  py::object ttnn_device_;
-  py::object pipeline_;
-  py::object tt_sdxl_;
-  py::object torch_module_;
-  py::object ttnn_module_;
+  py::object& ttnn_device();
+  py::object& pipeline();
+  py::object& tt_sdxl();
+  py::object& torch_module();
+  py::object& ttnn_module();
+  const py::object& ttnn_device() const;
+  const py::object& pipeline() const;
+  const py::object& tt_sdxl() const;
+  const py::object& torch_module() const;
+  const py::object& ttnn_module() const;
 
   std::optional<std::string> current_lora_path_;
   std::optional<float> current_lora_scale_;
 
  private:
+  struct PythonState;
+  std::unique_ptr<PythonState> python_;
+
   struct BatchSlot {
     explicit BatchSlot(const domain::ImageGenerateRequest& req)
         : request(req) {}
