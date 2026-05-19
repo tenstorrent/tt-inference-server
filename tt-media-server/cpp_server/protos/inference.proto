@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-syntax = "proto3";
+syntax = "proto2";
 
 package inference;
 
@@ -11,17 +11,17 @@ service Inference {
 }
 
 message SamplingParams {
-  float temperature = 1;
-  float top_p = 2;
-  uint32 top_k = 3;
-  uint32 max_tokens = 4;
+  optional float temperature = 1;
+  optional float top_p = 2;
+  optional uint32 top_k = 3;
+  optional uint32 max_tokens = 4;
 }
 
 message GenerateRequest {
-  string model = 1;
+  required string model = 1;
   repeated uint32 token_ids = 2;
-  uint32 max_tokens = 3;
-  SamplingParams sampling_params = 4;
+  optional uint32 max_tokens = 3;
+  optional SamplingParams sampling_params = 4;
 }
 
 message TokenChunk {
@@ -32,5 +32,5 @@ message TokenChunk {
 message HealthRequest {}
 
 message HealthResponse {
-  bool ready = 1;
+  required bool ready = 1;
 }
