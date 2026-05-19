@@ -17,36 +17,42 @@ namespace ds = tt_llm_engine::scheduler::decode;
 
 enum class SlotState {
   FREE,
-  IDLE,       // allocated, no request running (slot retained for prefix cache)
-  SUBMITTED,  // SUBMIT/CONTINUE in flight, tokens flowing
+  IDLE,     // allocated, no request running (slot retained for prefix cache)
+  RUNNING,  // SUBMIT/CONTINUE in flight, tokens flowing
   AWAITING_STOP_ACK,   // STOP in flight; deferred actions latched
   AWAITING_EVICT_ACK,  // CANCEL/EVICT in flight; terminal-ish
 };
 
 inline const char* toString(SlotState state) {
   switch (state) {
-    case SlotState::FREE: return "FREE";
-    case SlotState::IDLE: return "IDLE";
-    case SlotState::SUBMITTED: return "SUBMITTED";
-    case SlotState::AWAITING_STOP_ACK: return "AWAITING_STOP_ACK";
-    case SlotState::AWAITING_EVICT_ACK: return "AWAITING_EVICT_ACK";
+    case SlotState::FREE:
+      return "FREE";
+    case SlotState::IDLE:
+      return "IDLE";
+    case SlotState::RUNNING:
+      return "RUNNING";
+    case SlotState::AWAITING_STOP_ACK:
+      return "AWAITING_STOP_ACK";
+    case SlotState::AWAITING_EVICT_ACK:
+      return "AWAITING_EVICT_ACK";
   }
 }
 
 struct SlotContext {
   SlotState state = SlotState::FREE;
   std::optional<uint32_t> taskId;
+  uint32_t slotId;
   bool ignoreEos = false;
   uint32_t specAcceptsAtStart = 0;
   uint32_t specRejectsAtStart = 0;
   uint32_t tokensGenerated = 0;
   std::optional<uint32_t> pendingAckRequestId = std::nullopt;
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
-  std::optional<tt::domain::llm::Sequence> deferredSubmit = std::nullopt;
-  
+  std::unique_ptr<tt::domain::llm::Sequence> deferredSubmit = nullptr;
+
   void setState(SlotState newState) {
-    if (newState == state) return;   // idempotent self-loops are fine
-  
+    if (newState == state) return;
+
     bool legal = false;
     switch (state) {
       case SlotState::FREE:
@@ -55,29 +61,31 @@ struct SlotContext {
         break;
       case SlotState::IDLE:
         // if we are idle, we can either submit or evict
-        legal = (newState == SlotState::SUBMITTED ||
+        legal = (newState == SlotState::RUNNING ||
                  newState == SlotState::AWAITING_EVICT_ACK);
         break;
-      case SlotState::SUBMITTED:
-        // if we are submitted , we can go to waiting for stop, idle(if we finish)
-        // in theory, we can also evict a running sequence, that that is impossible right now
+      case SlotState::RUNNING:
+        // if we are submitted , we can go to waiting for stop, idle or awaiting
+        // evict ack
         legal = (newState == SlotState::IDLE ||
-                 newState == SlotState::AWAITING_STOP_ACK);
+                 newState == SlotState::AWAITING_STOP_ACK ||
+                 newState == SlotState::AWAITING_EVICT_ACK);
         break;
       case SlotState::AWAITING_STOP_ACK:
-        // if we are waiting for stop ack, we can become idle by just stopping naturally
-        // we can also jump to awaiting evict ack if we are deferred evict
-        // we can also jump to submitted if we are deferred submit/continue
-        legal = (newState == SlotState::IDLE ||
-                 newState == SlotState::SUBMITTED ||
-                 newState == SlotState::AWAITING_EVICT_ACK);
+        // if we are waiting for stop ack, we can become idle by just stopping
+        // naturally we can also jump to awaiting evict ack if we are deferred
+        // evict we can also jump to submitted if we are deferred
+        // submit/continue
+        legal =
+            (newState == SlotState::IDLE || newState == SlotState::RUNNING ||
+             newState == SlotState::AWAITING_EVICT_ACK);
         break;
       case SlotState::AWAITING_EVICT_ACK:
         // if we are waiting for evict ack, we can only become free
         legal = (newState == SlotState::FREE);
         break;
     }
-  
+
     if (!legal) {
       TT_LOG_ERROR("[SlotContext] illegal transition: {} -> {} (taskId={})",
                    toString(state), toString(newState),
@@ -90,23 +98,32 @@ struct SlotContext {
 
 class SlotManager {
  public:
-  SlotManager(int numSlots) { slots.resize(numSlots); }
+  SlotManager(int numSlots) {
+    slots.resize(numSlots);
+    for (size_t i = 0; i < slots.size(); ++i) {
+      slots[i].slotId = i;
+    }
+  }
   ~SlotManager() = default;
 
   SlotContext& getSlotContext(uint32_t slotId) { return slots[slotId]; }
 
   void clearSlotContext(uint32_t slotId) {
-    if (slots[slotId].taskId.has_value()) {
-      taskToSlot.erase(slots[slotId].taskId.value());
-    }
-    slots[slotId] = SlotContext{};
+    auto& slot = slots[slotId];
+    if (slot.taskId) taskToSlot.erase(*slot.taskId);
+    slot.taskId.reset();
+    slot.ignoreEos = false;
+    slot.specAcceptsAtStart = 0;
+    slot.specRejectsAtStart = 0;
+    slot.tokensGenerated = 0;
+    slot.pendingAckRequestId.reset();
+    slot.deferredEvict.reset();
+    slot.deferredSubmit.reset();
+    setSlotState(slotId, SlotState::FREE);
   }
   void clearAllSlotContexts() {
-    for (auto& slot : slots) {
-      if (slot.taskId.has_value()) {
-        taskToSlot.erase(slot.taskId.value());
-      }
-      slot = SlotContext{};
+    for (size_t i = 0; i < slots.size(); ++i) {
+      clearSlotContext(i);
     }
   }
 
@@ -118,9 +135,48 @@ class SlotManager {
     return &getSlotContext(it->second);
   }
 
+  void bindTaskToSlot(uint32_t taskId, uint32_t slotId) {
+    if (taskToSlot.count(taskId) > 0) {
+      TT_LOG_ERROR("[SlotManager] taskId={} already bound to slotId={}", taskId,
+                   taskToSlot[taskId]);
+      assert(false && "taskId already bound to slotId");
+    }
+    taskToSlot[taskId] = slotId;
+  }
+
+  void unbindTaskFromSlot(uint32_t taskId) {
+    auto it = taskToSlot.find(taskId);
+    if (it == taskToSlot.end()) {
+      TT_LOG_ERROR("[SlotManager] taskId={} not bound to any slot", taskId);
+      assert(false && "taskId not bound to any slot");
+    }
+    taskToSlot.erase(it);
+  }
+
+  uint32_t activeRunningCount() const { return runningCount; }
+
+  void setSlotState(uint32_t slotId, SlotState state) {
+    if (state == SlotState::RUNNING) runningCount++;
+    if (slots[slotId].state == SlotState::RUNNING) runningCount--;
+    slots[slotId].setState(state);
+  }
+
+  void setSlotAsIdle(uint32_t slotId) {
+    auto& slotContext = slots[slotId];
+    if (slotContext.taskId) taskToSlot.erase(*slotContext.taskId);
+    slotContext.taskId.reset();
+    slotContext.ignoreEos = false;
+    slotContext.specAcceptsAtStart = 0;
+    slotContext.specRejectsAtStart = 0;
+    slotContext.tokensGenerated = 0;
+    slotContext.pendingAckRequestId.reset();
+    setSlotState(slotId, SlotState::IDLE);
+  }
+
  private:
   std::vector<SlotContext> slots;
   std::unordered_map</*taskId*/ uint32_t, /*slotId*/ uint32_t> taskToSlot;
+  uint32_t runningCount = 0;
 };
 
 }  // namespace tt::runners::blaze_types

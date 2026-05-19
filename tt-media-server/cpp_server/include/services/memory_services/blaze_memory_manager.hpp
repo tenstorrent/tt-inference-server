@@ -4,38 +4,18 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "services/memory_services/memory_manager.hpp"
-#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 
 namespace tt::services {
 
 class BlazeMemoryManager : public MemoryManager {
-  using onEvictCb = std::function<void(uint32_t slotId)>;
-
  public:
-  BlazeMemoryManager(
-      tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler,
-      onEvictCb onEvict);
+  BlazeMemoryManager() = default;
   ~BlazeMemoryManager() = default;
-
   std::optional<domain::ManageMemoryTask> getRequest() override;
-
-  void handleRequest(const domain::ManageMemoryTask& request) override;
-
-  void handleResponse(uint32_t taskId, uint32_t slotId) override;
-
-  void pushStopSignal(uint32_t taskId);
-
- private:
-  std::unordered_set<uint32_t> allocating;
-  std::unordered_map</*taskId*/ uint32_t, /*slotId*/ uint32_t> evicting;
-  tt_llm_engine::scheduler::decode::DecodeScheduler& decodeScheduler;
-  onEvictCb onEvict;
-  std::optional<domain::ManageMemoryTask> pendingRetry;
+  void replyAllocateSuccess(uint32_t taskId, uint32_t slotId);
+  void replyAllocateFailure(uint32_t taskId);
 };
 
 }  // namespace tt::services

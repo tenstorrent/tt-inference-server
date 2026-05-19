@@ -17,7 +17,7 @@
 #include "ipc/interface/task_queue.hpp"
 #include "runners/blaze_runner/blaze_types.hpp"
 #include "runners/ipc_runner.hpp"
-#include "services/memory_services/memory_manager.hpp"
+#include "services/memory_services/blaze_memory_manager.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
@@ -49,6 +49,9 @@ class BlazeRunner : public IRunner {
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleMemoryResponse(const ds::SchedulerResponse& response);
+  inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
+  inline void handleAllocateRequest(
+      const tt::domain::ManageMemoryTask& request);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
   void handleRequest(std::unique_ptr<tt::domain::llm::Sequence> request);
@@ -63,8 +66,10 @@ class BlazeRunner : public IRunner {
   std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
   blaze_types::SlotManager slotManager;
+  std::unordered_set<uint32_t> pendingAllocates;
+  std::optional<tt::domain::ManageMemoryTask> pendingMemoryRetry;
   std::atomic<bool> stopped{false};
-  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::unique_ptr<tt::services::BlazeMemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
 };
