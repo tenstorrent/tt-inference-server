@@ -28,7 +28,7 @@ This produces:
 Run them all with:
 
 ```bash
-ctest --test-dir build --output-on-failure
+SOCKET_TRANSPORT=tcp ctest --test-dir build --output-on-failure
 ```
 
 To run against the ZMQ transport instead of TCP:
