@@ -277,8 +277,8 @@ bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
     int retries = 0;
     const int maxRetries = 100;
     while (sent < len) {
-      ssize_t n = send(fd, static_cast<const uint8_t*>(buf) + sent,
-                       len - sent, MSG_NOSIGNAL);
+      ssize_t n = send(fd, static_cast<const uint8_t*>(buf) + sent, len - sent,
+                       MSG_NOSIGNAL);
       if (n > 0) {
         sent += static_cast<size_t>(n);
         retries = 0;
@@ -323,8 +323,7 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
   const int maxHeaderRetries = 100;  // 100ms timeout (100 * 1ms)
 
   while (headerReceived < sizeof(netSize)) {
-    ssize_t n = recv(fd,
-                     reinterpret_cast<uint8_t*>(&netSize) + headerReceived,
+    ssize_t n = recv(fd, reinterpret_cast<uint8_t*>(&netSize) + headerReceived,
                      sizeof(netSize) - headerReceived,
                      headerReceived == 0 ? MSG_DONTWAIT : 0);
     if (n > 0) {

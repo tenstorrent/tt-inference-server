@@ -163,3 +163,54 @@ If a prefill goes down mid-request, the gateway emits a
 `PrefillResultMessage` with `error=true` and `generated_text="prefill_down"`
 to the decode for any task that was on that prefill, plus evicts the
 affected affinity entries.
+
+---
+
+## Direct prefill/decode split (no gateway)
+
+Without the gateway the decode server is the socket **server** and the prefill
+is the socket **client** that dials into it. Two terminals suffice.
+
+### TCP
+
+#### Terminal A — decode (listens on :9000)
+
+```bash
+cd tt-media-server/cpp_server
+LLM_MODE=decode \
+SOCKET_TRANSPORT=tcp \
+MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
+SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+TT_LOG_LEVEL=debug \
+./build/tt_media_server_cpp -p 8001
+```
+
+#### Terminal B — prefill (connects to decode on :9000)
+
+```bash
+cd tt-media-server/cpp_server
+LLM_MODE=prefill \
+SOCKET_TRANSPORT=tcp \
+SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+LLM_DEVICE_BACKEND=mock \
+TT_LOG_LEVEL=debug \
+./build/tt_media_server_cpp -p 8002
+```
+
+For ZMQ — just swap `SOCKET_TRANSPORT=tcp` → `SOCKET_TRANSPORT=zmq` on
+**both** processes.
+
+#### Terminal C — drive a request
+
+```bash
+curl -N http://localhost:8001/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -d '{
+    "model":"deepseek-r1",
+    "messages":[{"role":"user","content":"Hello"}],
+    "max_tokens":1,
+    "stream":true,
+    "skip_special_tokens":false
+  }'
+```

@@ -143,7 +143,7 @@ int main(int argc, char** argv) {
   prefillSms.reserve(cfg.prefills.size());
   for (const auto& ep : cfg.prefills) {
     auto sm = std::make_unique<tt::sockets::SocketManager>();
-    sm->setReconnectBackoff(/*initial_ms=*/100, /*max_ms=*/5000);
+    sm->setReconnectBackoff(/*initial_ms=*/1000, /*max_ms=*/5000);
     if (!sm->initializeAsClient(ep.host, ep.port)) {
       TT_LOG_ERROR("[Gateway] Failed to init client socket to {}:{}", ep.host,
                    ep.port);

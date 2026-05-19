@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
@@ -142,9 +144,16 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
+  // Send PrefillRegistrationMessage to the peer (gateway or decode).
+  void sendRegistration();
+
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage on each
-  // (re)connect to the gateway. No-op otherwise.
+  // probe from the gateway. No-op if not in gateway mode.
   void sendRegistrationIfGatewayModeIsEnabled();
+
+  // Prefill-side, direct-mode only: background thread that periodically sends
+  // PrefillRegistrationMessage so the decode ROUTER learns the peer identity.
+  void startDirectModeRegistrationThread();
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -152,6 +161,9 @@ class InterServerService {
   HealthCallback health_check_callback_;
   bool enabled_ = false;
   bool gateway_mode_ = false;
+  bool direct_prefill_mode_ = false;
+  std::atomic<bool> registration_running_{false};
+  std::thread registration_thread_;
 };
 
 }  // namespace tt::sockets
