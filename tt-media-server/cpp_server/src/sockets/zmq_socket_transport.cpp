@@ -189,9 +189,9 @@ std::string ZmqSocketTransport::getStatus() const {
 }
 
 bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!running_ || !socket_) return false;
 
-  std::lock_guard<std::mutex> lock(socketMutex_);
   try {
     return mode_ == Mode::SERVER ? sendAsRouter(data) : sendAsDealer(data);
   } catch (const zmq::error_t& e) {
@@ -223,9 +223,9 @@ bool ZmqSocketTransport::sendAsDealer(const std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!running_ || !socket_) return {};
 
-  std::lock_guard<std::mutex> lock(socketMutex_);
   try {
     return mode_ == Mode::SERVER ? receiveAsRouter() : receiveAsDealer();
   } catch (const zmq::error_t& e) {
