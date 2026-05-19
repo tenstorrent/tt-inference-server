@@ -4,6 +4,7 @@
 #include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
 #include "ipc/helpers/token_push.hpp"
+#include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -11,7 +12,10 @@ namespace tt::runners {
 BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
                                        ipc::IResultQueue* resultQueue,
                                        tt::ipc::ITaskQueue* taskQueue)
-    : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
+    : config(config),
+      resultQueue(resultQueue),
+      taskQueue(taskQueue),
+      memoryManager(std::make_unique<tt::services::MemoryManager>()) {
   modelRunner = blaze_prefill::makeModelRunner(config);
 }
 
@@ -24,6 +28,14 @@ BlazePrefillRunner::~BlazePrefillRunner() {
 
 void BlazePrefillRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
+    auto memoryRequest = memoryManager->getRequest();
+    if (memoryRequest.has_value()) {
+      TT_LOG_DEBUG(
+          "[BlazePrefillRunner] Handling memory request taskId={}, action={}",
+          memoryRequest->taskId, static_cast<int>(memoryRequest->action));
+      memoryManager->handleRequest(*memoryRequest);
+    }
+
     // Get next sequence from task queue
     auto sequence = taskQueue->tryPop();
     if (!sequence) {
