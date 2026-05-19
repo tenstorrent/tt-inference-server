@@ -38,6 +38,9 @@ fi
 
 echo "[entrypoint] Starting Dynamo frontend on port $HTTP_PORT..."
 echo "  DYN_DISCOVERY_BACKEND=$DYN_DISCOVERY_BACKEND"
+if [ "$DYN_DISCOVERY_BACKEND" = "etcd" ]; then
+    echo "  ETCD_ENDPOINTS=$ETCD_ENDPOINTS"
+fi
 echo "  DYN_REQUEST_PLANE=$DYN_REQUEST_PLANE"
 echo "  DYN_EVENT_PLANE=$DYN_EVENT_PLANE"
 echo "  MODEL_NAME=$MODEL_NAME"

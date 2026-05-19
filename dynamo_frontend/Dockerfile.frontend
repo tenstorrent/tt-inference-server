@@ -36,8 +36,11 @@ RUN chmod +x /app/patch_owned_by.sh && /app/patch_owned_by.sh
 # Install huggingface_hub for model downloads
 RUN . .venv/bin/activate && uv pip install huggingface_hub
 
-# Environment for Dynamo (all overridable at runtime via -e)
-ENV DYN_DISCOVERY_BACKEND=file \
+# Environment for Dynamo (all overridable at runtime via -e).
+# Defaults to etcd-backed discovery; ETCD_ENDPOINTS is the var Dynamo's
+# Python frontend reads (see cpp_server/scripts/start_dynamo.sh).
+ENV DYN_DISCOVERY_BACKEND=etcd \
+    ETCD_ENDPOINTS=http://etcd:2379 \
     DYN_REQUEST_PLANE=tcp \
     DYN_EVENT_PLANE=zmq \
     MODEL_NAME=mock-model \
