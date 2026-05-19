@@ -270,22 +270,39 @@ bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
   uint32_t size = static_cast<uint32_t>(data.size());
   uint32_t netSize = htonl(size);
 
-  ssize_t sent = send(fd, &netSize, sizeof(netSize), MSG_NOSIGNAL);
-  if (sent != sizeof(netSize)) {
-    connected_ = false;
-    return false;
-  }
-
-  size_t totalSent = 0;
-  while (totalSent < data.size()) {
-    sent = send(fd, data.data() + totalSent, data.size() - totalSent,
-                MSG_NOSIGNAL);
-    if (sent <= 0) {
-      connected_ = false;
-      return false;
+  // Send with retry on EAGAIN — the socket is non-blocking, so a transient
+  // "would block" on the header should not disconnect the peer.
+  auto sendAll = [&](const void* buf, size_t len) -> bool {
+    size_t sent = 0;
+    int retries = 0;
+    const int maxRetries = 100;
+    while (sent < len) {
+      ssize_t n = send(fd, static_cast<const uint8_t*>(buf) + sent,
+                       len - sent, MSG_NOSIGNAL);
+      if (n > 0) {
+        sent += static_cast<size_t>(n);
+        retries = 0;
+      } else if (n == 0) {
+        connected_ = false;
+        return false;
+      } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          if (++retries > maxRetries) {
+            connected_ = false;
+            return false;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } else {
+          connected_ = false;
+          return false;
+        }
+      }
     }
-    totalSent += sent;
-  }
+    return true;
+  };
+
+  if (!sendAll(&netSize, sizeof(netSize))) return false;
+  if (!sendAll(data.data(), data.size())) return false;
 
   return true;
 }
@@ -296,18 +313,43 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
   int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return {};
 
-  uint32_t netSize;
-  ssize_t received = recv(fd, &netSize, sizeof(netSize), MSG_DONTWAIT);
-  if (received <= 0) {
-    if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-      connected_ = false;
-    }
-    return {};
-  }
+  // Read the 4-byte length header. The first recv uses MSG_DONTWAIT so the
+  // call returns immediately when no data is available (EAGAIN). If a partial
+  // header arrives, retry with a short timeout rather than treating it as a
+  // disconnect — partial reads are possible on non-blocking sockets.
+  uint32_t netSize = 0;
+  size_t headerReceived = 0;
+  int headerRetries = 0;
+  const int maxHeaderRetries = 100;  // 100ms timeout (100 * 1ms)
 
-  if (received != sizeof(netSize)) {
-    connected_ = false;
-    return {};
+  while (headerReceived < sizeof(netSize)) {
+    ssize_t n = recv(fd,
+                     reinterpret_cast<uint8_t*>(&netSize) + headerReceived,
+                     sizeof(netSize) - headerReceived,
+                     headerReceived == 0 ? MSG_DONTWAIT : 0);
+    if (n > 0) {
+      headerReceived += static_cast<size_t>(n);
+      headerRetries = 0;
+    } else if (n == 0) {
+      connected_ = false;
+      return {};
+    } else {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        if (headerReceived == 0) {
+          // No data available yet — normal, just return empty.
+          return {};
+        }
+        // Partial header: wait briefly for the rest.
+        if (++headerRetries > maxHeaderRetries) {
+          connected_ = false;
+          return {};
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        connected_ = false;
+        return {};
+      }
+    }
   }
 
   uint32_t size = ntohl(netSize);
@@ -322,9 +364,10 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
   const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
 
   while (totalReceived < size) {
-    received = recv(fd, data.data() + totalReceived, size - totalReceived, 0);
+    ssize_t received =
+        recv(fd, data.data() + totalReceived, size - totalReceived, 0);
     if (received > 0) {
-      totalReceived += received;
+      totalReceived += static_cast<size_t>(received);
       retryCount = 0;
     } else if (received == 0) {
       connected_ = false;
