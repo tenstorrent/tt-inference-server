@@ -3068,6 +3068,123 @@ _eval_config_list = [
             ),
         ],
     ),
+    # ----------------------------------------------------------------------
+    # Molmo2-8B: VLM with text + image + video. One eval per modality, all
+    # supported by lm-evaluation-harness (text) and lmms-eval (image, video).
+    # Reference scores from
+    # https://huggingface.co/allenai/Molmo2-8B and the Molmo2 tech report.
+    # ----------------------------------------------------------------------
+    EvalConfig(
+        hf_model_repo="allenai/Molmo2-8B",
+        tasks=[
+            # Text — MMLU-Pro. Not a Molmo2-reported benchmark; included to
+            # exercise the text-only path through the chat-completions API.
+            # Published score not available for Molmo2 (VLM not optimised for
+            # pure-text reasoning); the gpu_reference_score below will be
+            # populated after first run.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    # Molmo2-8B does not publish a pure-text benchmark score;
+                    # use 0.0 as a placeholder. gpu_reference_score will be set
+                    # from the first GPU baseline run.
+                    published_score=0.0,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B (no pure-text benchmark reported)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "allenai/Molmo2-8B",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 36864,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 1024,
+                    "do_sample": "false",
+                    "temperature": 0.0,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.005,
+                },
+            ),
+            # Image — ChartQA. Molmo2-8B reports 86.0 on the HF page.
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=86.0,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["relaxed_overall,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Video — Video-MME (no subtitles). Molmo2-8B reports 69.9 on HF.
+            # lmms-eval ≥ 0.4 ships the `videomme` task; it issues video_url
+            # OpenAI-style chat requests which our generator_vllm.py supports.
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="videomme",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=69.9,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["videomme_perception_test_score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "99999",
+                    "eos_string": "<|end_of_text|>",
+                    "max_frames_num": "32",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.005,
+                },
+            ),
+        ],
+    ),
 ]
 
 
