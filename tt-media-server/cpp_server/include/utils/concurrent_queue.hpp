@@ -4,8 +4,11 @@
 
 #include <atomic>
 #include <bit>
+#include <condition_variable>
 #include <cstddef>
 #include <mutex>
+#include <optional>
+#include <queue>
 #include <vector>
 
 #include "profiling/tracy.hpp"
@@ -144,6 +147,62 @@ class LockFreeSPSCQueue {
   std::vector<T> buffer;
   alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> head{0};
   alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
+};
+
+/**
+ * Thread-safe queue with blocking pop semantics.
+ *
+ * ConcurrentQueue and LockFreeSPSCQueue above are non-blocking: if the queue
+ * is empty, pop/drain returns immediately with nothing. This is fine when the
+ * consumer can poll or has other work to do, but some patterns (like bridging
+ * an async callback to a synchronous gRPC stream) need the consumer to block
+ * until data arrives.
+ *
+ * BlockingQueue adds a condition variable so `pop()` waits efficiently until
+ * an item is available or the queue is marked done.
+ */
+template <typename T>
+class BlockingQueue {
+ public:
+  void push(T item) {
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      queue.push(std::move(item));
+    }
+    cv.notify_one();
+  }
+
+  void markDone() {
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      done = true;
+    }
+    cv.notify_all();
+  }
+
+  std::optional<T> pop() {
+    std::unique_lock<std::mutex> lock(mu);
+    cv.wait(lock, [this] { return !queue.empty() || done; });
+
+    if (queue.empty()) {
+      return std::nullopt;
+    }
+
+    T item = std::move(queue.front());
+    queue.pop();
+    return item;
+  }
+
+  BlockingQueue() = default;
+  ~BlockingQueue() = default;
+  BlockingQueue(const BlockingQueue&) = delete;
+  BlockingQueue& operator=(const BlockingQueue&) = delete;
+
+ private:
+  std::queue<T> queue;
+  std::mutex mu;
+  std::condition_variable cv;
+  bool done = false;
 };
 
 }  // namespace tt::utils
