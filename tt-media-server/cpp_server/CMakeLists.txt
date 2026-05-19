@@ -218,32 +218,59 @@ endif()
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
 # Option for gRPC server
-option(ENABLE_GRPC "Build gRPC server" ON)
+option(ENABLE_GRPC "Build gRPC server" OFF)
 
 if(ENABLE_GRPC)
-    find_package(Protobuf CONFIG REQUIRED)
-    find_package(gRPC CONFIG REQUIRED)
+    find_package(absl REQUIRED)
+    find_package(utf8_range REQUIRED)
+    find_package(Protobuf REQUIRED)
+    find_package(gRPC REQUIRED)
 
-    add_library(tt_inference_proto STATIC)
-    target_sources(tt_inference_proto PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/protos/inference.proto
-    )
-    target_include_directories(tt_inference_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-    target_link_libraries(tt_inference_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
+    # Locate the code generation executables
+    # Prefer /usr/local/bin to match protobuf 25.x headers
+    find_program(PROTOC_PROG protoc HINTS /usr/local/bin REQUIRED)
+    find_program(GRPC_CPP_PLUGIN_PROG grpc_cpp_plugin HINTS /usr/local/bin REQUIRED)
 
-    protobuf_generate(
-        TARGET tt_inference_proto
-        LANGUAGE cpp
-        IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/protos
-        PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    # Define proto file and where generated files should go
+    set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/protos/inference.proto")
+    set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    file(MAKE_DIRECTORY ${GEN_DIR})
+
+    # Extract the base name of the proto (e.g., "inference")
+    get_filename_component(PROTO_NAME ${PROTO_FILE} NAME_WE)
+
+    # Define the expected generated file paths
+    set(GEN_SOURCES
+        "${GEN_DIR}/${PROTO_NAME}.pb.cc"
+        "${GEN_DIR}/${PROTO_NAME}.pb.h"
+        "${GEN_DIR}/${PROTO_NAME}.grpc.pb.cc"
+        "${GEN_DIR}/${PROTO_NAME}.grpc.pb.h"
     )
-    protobuf_generate(
-        TARGET tt_inference_proto
-        LANGUAGE grpc
-        GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
-        PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
-        IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/protos
-        PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
+
+    # Create a custom command to run protoc during the build phase
+    add_custom_command(
+        OUTPUT ${GEN_SOURCES}
+        COMMAND ${PROTOC_PROG}
+        ARGS --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/protos
+             --cpp_out=${GEN_DIR}
+             --grpc_out=${GEN_DIR}
+             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_PROG}
+             ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Generating C++ source files from ${PROTO_NAME}.proto"
+    )
+
+    # Create library with generated sources
+    add_library(tt_inference_proto STATIC ${GEN_SOURCES})
+    target_include_directories(tt_inference_proto PUBLIC ${GEN_DIR})
+    target_link_libraries(tt_inference_proto PUBLIC
+        gRPC::grpc++
+        protobuf::libprotobuf
+        absl::log
+        absl::log_internal_message
+        absl::log_internal_check_op
+        absl::cord
+        utf8_range::utf8_validity
     )
 
     message(STATUS "gRPC server: ENABLED")
@@ -296,13 +323,29 @@ add_library(stb_image_write INTERFACE)
 target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
-set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    tokenizers_cpp
-    GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
-    GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
-    GIT_SUBMODULES "msgpack" "sentencepiece"
-)
+if(ENABLE_GRPC)
+    # gRPC uses /usr/local libprotobuf; sentencepiece embeds protobuf-lite and
+    # causes duplicate symbols. HF tokenizer.json paths do not need SentencePiece.
+    set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tokenizers_cpp
+        GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+        GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
+        GIT_SUBMODULES msgpack
+        PATCH_COMMAND ${CMAKE_COMMAND} -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchTokenizersForGrpc.cmake
+    )
+else()
+    set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
+    set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+    set(SPM_USE_BUILTIN_PROTOBUF ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tokenizers_cpp
+        GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp.git
+        GIT_TAG        55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66
+        GIT_SUBMODULES "msgpack" "sentencepiece"
+    )
+endif()
 FetchContent_MakeAvailable(tokenizers_cpp)
 
 # Enable clang-tidy only for our code (not _deps). Must be after FetchContent.
@@ -978,6 +1021,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${TT_METAL_INCLUDE_DIRS}
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
+if(ENABLE_GRPC)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${GEN_DIR})
+endif()
 
 # Build-time codegen for config/build_info.hpp (build-identity constants
 # consumed by InfoController and any future caller that wants to label a
@@ -1021,6 +1067,7 @@ endif()
 # Link gRPC if enabled
 if(ENABLE_GRPC)
     target_link_libraries(${PROJECT_NAME} PRIVATE tt_inference_proto gRPC::grpc++)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_GRPC)
 endif()
 
 if(ENABLE_TRACY)

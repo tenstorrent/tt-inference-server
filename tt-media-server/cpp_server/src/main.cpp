@@ -206,6 +206,10 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+#ifdef ENABLE_GRPC
+  std::unique_ptr<tt::api::grpc::GrpcServerHandle> grpcServer;
+#endif
+
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
   if (shm != nullptr) {
@@ -219,7 +223,6 @@ int main(int argc, char* argv[]) {
     }
 
 #ifdef ENABLE_GRPC
-    std::unique_ptr<tt::api::grpc::GrpcServerHandle> grpcServer;
     const char* grpcListenEnv = std::getenv("GRPC_LISTEN");
     if (grpcListenEnv && grpcListenEnv[0] != '\0') {
       auto llmForGrpc = std::dynamic_pointer_cast<tt::services::LLMService>(
@@ -402,7 +405,7 @@ int main(int argc, char* argv[]) {
   drogon::app().run();
 
 #ifdef ENABLE_GRPC
-  grpcServer.reset();
+   grpcServer.reset();
 #endif
   if (dynamoEndpoint) {
     dynamoEndpoint->stop();
