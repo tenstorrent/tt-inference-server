@@ -66,6 +66,18 @@
                 {
                     "template": "ImageGenerationEvalsTest",
                     "enabled": true,
+                    "description": "Accuracy eval: 100 COCO prompts (FID + CLIP)",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
                     "description": "LoRA eval: pixel-art-xl",
                     "targets": {
                         "request": {
@@ -109,6 +121,18 @@
                                 "lora_scale": 0.6
                             }
                         ]
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoraRollbackTest",
+                    "enabled": true,
+                    "description": "LoRA rollback: baseline-pre == baseline-post after unload",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "lora": {
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        }
                     }
                 }
             ]
@@ -362,6 +386,7 @@
             ]
         },
         {
+            "_comment": "Blackhole uses the Forge (tt-xla) SDXL runner. LoRA is not yet supported on Forge, so LoRA evals are intentionally omitted; non-LoRA accuracy eval is included to provide quality coverage.",
             "id": "sdxl-p150x8",
             "weights": [
                 "stable-diffusion-xl-base-1.0"
@@ -401,10 +426,23 @@
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
                     "description": "Param validation"
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "Accuracy eval: 100 COCO prompts (FID + CLIP)",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20
+                        }
+                    }
                 }
             ]
         },
         {
+            "_comment": "Blackhole uses the Forge (tt-xla) SDXL runner. LoRA is not yet supported on Forge, so LoRA evals are intentionally omitted; non-LoRA accuracy eval is included to provide quality coverage.",
             "id": "sdxl-p300x2",
             "weights": [
                 "stable-diffusion-xl-base-1.0"
@@ -444,6 +482,18 @@
                     "template": "ImageGenerationParamTest",
                     "enabled": true,
                     "description": "Param validation"
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "Accuracy eval: 100 COCO prompts (FID + CLIP)",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20
+                        }
+                    }
                 }
             ]
         }

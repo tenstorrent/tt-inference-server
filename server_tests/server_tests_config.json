@@ -513,6 +513,21 @@
                 "mock_mode": false
             }
         },
+        "ImageGenerationLoraRollbackTest": {
+            "module": "server_tests.test_cases.image_generation_lora_rollback_test",
+            "markers": [
+                "lora",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
         "AudioTranscriptionLoadTest": {
             "module": "server_tests.test_cases.audio_transcription_load_test",
             "markers": [
