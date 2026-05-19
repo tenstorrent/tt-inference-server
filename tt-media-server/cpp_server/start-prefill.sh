@@ -8,6 +8,7 @@ export LLM_MODE=prefill
 export LLM_DEVICE_BACKEND=prefill
 export TT_IPC_SHM_C2P=tt_ipc_c2p
 export TT_IPC_SHM_P2C=tt_ipc_p2c
+export TT_LOG_LEVEL=debug
 
 SERVER_PID=""
 RUNNER_PID=""
