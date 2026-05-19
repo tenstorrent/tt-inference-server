@@ -41,6 +41,24 @@ std::string blake3_placeholder() {
          "000000";
 }
 
+/// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
+/// model ids have `/` and uppercase, so map them to `-` and lowercase.
+std::string sanitize_slug(const std::string& s) {
+  std::string out;
+  out.reserve(s.size());
+  for (char c : s) {
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+        c == '_') {
+      out += c;
+    } else if (c >= 'A' && c <= 'Z') {
+      out += static_cast<char>(c + ('a' - 'A'));
+    } else {
+      out += '-';
+    }
+  }
+  return out;
+}
+
 std::string write_json(const Json::Value& v) {
   Json::StreamWriterBuilder b;
   b["indentation"] = "";
@@ -102,7 +120,7 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
 
     Json::Value card(Json::objectValue);
     card["display_name"] = config.model_name;
-    card["slug"] = config.model_name;
+    card["slug"] = sanitize_slug(config.model_name);
     card["source_path"] = config.model_path;
 
     Json::Value model_info(Json::objectValue);

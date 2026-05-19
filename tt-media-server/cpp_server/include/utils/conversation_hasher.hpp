@@ -139,28 +139,32 @@ uint64_t hashTokenPrefix(std::span<const int> tokens);
 
 /**
  * Return the prefix used to LOOK UP a continuing session for a tokenized
- * prompt: tokens up to and including the SECOND-TO-LAST occurrence of the
- * tokenizer's end-of-turn boundary token id (e.g. Llama-3 `<|eot_id|>` =
- * 128009). That position marks the end of the prior assistant turn; the
- * remaining tokens are the new user turn (and any leading turn-start tokens),
- * which become the "delta" to prefill on a cache hit.
+ * prompt. The "assistant header sequence" is the multi-token marker that
+ * ends every assistant generation prompt in the chat template (e.g.
+ * `<|start_header_id|>assistant<|end_header_id|>\n\n` for Llama-3,
+ * `<｜Assistant｜>` for DeepSeek). The PROMPT contains:
+ *
+ *   [...prior turns...] <asst> {a_{n-1}} <user> {u_n} <asst>
+ *                       ^^^^^^                       ^^^^^^
+ *                       second-to-last               last (current gen prompt)
+ *
+ * The prior-turn prefix is everything up to and INCLUDING the second-to-last
+ * occurrence of the assistant-header sequence. That hash matches what the
+ * previous turn registered (its sole `<asst>` becomes the second-to-last
+ * here).
  *
  * Returns std::nullopt when:
- *   - boundaryTokenId is < 0 (tokenizer doesn't expose a stable boundary), or
- *   - there are fewer than two boundary occurrences (no prior turn), or
- *   - the second-to-last occurrence is at the very end (malformed input).
- *
- * @param tokens          Full token-id sequence from the request.
- * @param boundaryTokenId End-of-turn token id from the active tokenizer.
- * @return Prior-turn prefix token ids, or nullopt.
+ *   - assistantHeaderSequence is empty (tokenizer doesn't expose it), or
+ *   - the prompt contains fewer than two assistant-header occurrences (no
+ *     prior turn).
  */
 std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
-    std::span<const int> tokens, int boundaryTokenId);
+    std::span<const int> tokens, std::span<const int> assistantHeaderSequence);
 
 /**
  * Compute prefix caching routing information from a tokenized prompt. Mirrors
- * `computePrefixCachingInfo` but operates on token ids: the boundary token id
- * is read from the active tokenizer strategy.
+ * `computePrefixCachingInfo` but operates on token ids: the assistant-header
+ * sequence is read from the active tokenizer strategy.
  *
  * @param tokens Full token-id sequence from the request.
  * @return Complete routing information for prefix caching. `deltaPrompt`

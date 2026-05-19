@@ -14,10 +14,11 @@ class LlamaTokenizer final : public Tokenizer {
   std::string modelName() const { return "meta-llama/Llama-3.1-8B-Instruct"; }
   std::vector<int64_t> stopTokenIds() const { return {128001, 128008, 128009}; }
 
-  // <|eot_id|> = 128009 marks the end of every header-id block, including
-  // assistant turns; that is the prior-turn boundary used by token-level
-  // prefix caching.
-  int turnBoundaryTokenId() const override { return 128009; }
+  // The assistant generation prompt is the multi-token sequence
+  // `<|start_header_id|>assistant<|end_header_id|>\n\n`. Encoding it once
+  // and matching the resulting id sequence in inbound prompts is what
+  // anchors token-level prefix caching for Llama-3 chat templates.
+  std::vector<int> assistantHeaderSequence() const override;
 
   std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,

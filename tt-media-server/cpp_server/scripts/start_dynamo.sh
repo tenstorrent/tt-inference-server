@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/build}"
-BIN="${BUILD_DIR}/cpp_server"
+BIN="${BUILD_DIR}/tt_media_server_cpp"
 
 # --- venv -------------------------------------------------------------------
 # Default to dynamo-mock-backend's venv if it exists; users can override with
@@ -42,13 +42,14 @@ export DYNAMO_ENDPOINT_NAME="${DYNAMO_ENDPOINT_NAME:-generate}"
 
 # Resolve the model path the cpp_server's tokenizers/ tree exposes for the
 # active backend so the frontend ends up tokenizing against the same files
-# the backend uses. Falls back to user-supplied MODEL_PATH.
+# the backend uses. Mirrors `tokenizerDirForModel` in src/utils/tokenizers/
+# tokenizer.cpp. Falls back to user-supplied MODEL_PATH.
 LLM_BACKEND="${LLM_DEVICE_BACKEND:-mock_pipeline}"
 case "${LLM_BACKEND}" in
-    llama*|*llama*) MODEL_DIR="meta-llama-Llama-3.1-8B-Instruct" ;;
-    *)              MODEL_DIR="deepseek-ai-DeepSeek-R1-0528" ;;
+    llama*|*llama*) MODEL_DIR="meta-llama/Llama-3.1-8B-Instruct" ;;
+    *)              MODEL_DIR="deepseek-ai/DeepSeek-R1-0528" ;;
 esac
-DEFAULT_MODEL_PATH="${BUILD_DIR}/tokenizers/${MODEL_DIR}"
+DEFAULT_MODEL_PATH="${SCRIPT_DIR}/tokenizers/${MODEL_DIR}"
 MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_PATH}}"
 
 # --- build ------------------------------------------------------------------

@@ -98,15 +98,21 @@ class Tokenizer {
   virtual std::vector<int64_t> stopTokenIds() const = 0;
 
   /**
-   * Token id that marks the end of an assistant turn in the model's chat
-   * template (e.g. Llama-3 `<|eot_id|>`, DeepSeek `<｜end▁of▁sentence｜>`).
+   * Token id sequence that ends an assistant generation prompt in the
+   * model's chat template (e.g. Llama-3
+   * `<|start_header_id|>assistant<|end_header_id|>\n\n`, DeepSeek
+   * `<｜Assistant｜>`).
    *
-   * Used by `extractPriorTurnPrefixTokens` to split a pre-tokenized prompt
-   * into "prior conversation" and "new user turn" without round-tripping
-   * through text. Returns -1 when the tokenizer does not expose a stable
-   * boundary token; callers must then treat every request as fresh.
+   * Used by `computePrefixCachingInfoFromTokens` to locate turn boundaries
+   * in a pre-tokenized prompt without round-tripping through text. The
+   * count of occurrences in the prompt equals the number of assistant
+   * turns (including the trailing one we are about to generate); the
+   * second-to-last occurrence marks the cache-lookup boundary.
+   *
+   * Returns an empty vector when the tokenizer does not expose a stable
+   * assistant marker; callers must then treat every request as fresh.
    */
-  virtual int turnBoundaryTokenId() const { return -1; }
+  virtual std::vector<int> assistantHeaderSequence() const { return {}; }
 
   /**
    * Apply the model-specific chat template to a list of messages.

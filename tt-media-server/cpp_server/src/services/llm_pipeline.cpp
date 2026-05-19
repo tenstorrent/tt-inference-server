@@ -40,12 +40,58 @@ namespace {
 tt::utils::PrefixCachingInfo computeRoutingInfo(
     const tt::domain::llm::LLMRequest& req) {
   if (!req.messages.empty()) {
+    TT_LOG_INFO("[LLMPipeline] Hashing path=messages messages={} taskId={}",
+                req.messages.size(), req.task_id);
     return tt::utils::computePrefixCachingInfo(req.messages);
   }
   if (auto* tokens = std::get_if<std::vector<int>>(&req.prompt)) {
+    // Full token-id dump: capped so we don't blow up the log line on long
+    // prompts but keeps the head/tail context that matters for diagnosing
+    // boundary detection. Set DYNAMO_LOG_FULL_TOKENS=1 to disable the cap.
+    const bool fullDump = []() {
+      const char* v = std::getenv("DYNAMO_LOG_FULL_TOKENS");
+      return v && (*v == '1' || *v == 't' || *v == 'T');
+    }();
+    constexpr size_t kHeadTail = 32;
+    auto dump = [&]() {
+      const size_t n = tokens->size();
+      std::string s;
+      s.reserve(n * 6);
+      auto append = [&](size_t i) {
+        if (!s.empty()) s += ",";
+        s += std::to_string((*tokens)[i]);
+      };
+      if (fullDump || n <= 2 * kHeadTail) {
+        for (size_t i = 0; i < n; ++i) append(i);
+      } else {
+        for (size_t i = 0; i < kHeadTail; ++i) append(i);
+        s += ",...,";
+        for (size_t i = n - kHeadTail; i < n; ++i) append(i);
+      }
+      return s;
+    };
+
+    const auto header =
+        tt::utils::tokenizers::activeTokenizer().assistantHeaderSequence();
+    std::string headerStr;
+    for (int t : header) {
+      if (!headerStr.empty()) headerStr += ",";
+      headerStr += std::to_string(t);
+    }
+    TT_LOG_INFO(
+        "[LLMPipeline] Hashing path=tokens taskId={} tokens={} "
+        "asstHeaderSequence=[{}]",
+        req.task_id, tokens->size(), headerStr);
+    TT_LOG_INFO("[LLMPipeline] Token dump taskId={} ids=[{}]", req.task_id,
+                dump());
+
     return tt::utils::computePrefixCachingInfoFromTokens(*tokens);
   }
-  return {};  // No messages and prompt is a string; skip prefix-cache lookup.
+  TT_LOG_INFO(
+      "[LLMPipeline] Hashing path=none (string prompt, no messages) "
+      "taskId={}",
+      req.task_id);
+  return {};
 }
 
 /**
@@ -82,10 +128,10 @@ void LLMPipeline::resolveSession(
   }
 
   auto routingInfo = computeRoutingInfo(*req);
-  TT_LOG_DEBUG(
-      "[LLMPipeline] Routing: hasPriorTurn={}, lookupHash={}, "
+  TT_LOG_INFO(
+      "[LLMPipeline] Routing taskId={} hasPriorTurn={} lookupHash={} "
       "registrationHash={}",
-      routingInfo.hasPriorTurn,
+      req->task_id, routingInfo.hasPriorTurn,
       routingInfo.lookupHash.has_value()
           ? std::to_string(*routingInfo.lookupHash)
           : "none",
@@ -99,10 +145,11 @@ void LLMPipeline::resolveSession(
 
       if (acquired.has_value()) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
-        TT_LOG_DEBUG(
-            "[LLMPipeline] Prefix cache HIT: hash={}, sessionId={}, "
+        TT_LOG_INFO(
+            "[LLMPipeline] Prefix cache HIT taskId={} hash={} sessionId={} "
             "slotId={}",
-            *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
+            req->task_id, *routingInfo.lookupHash, acquired->sessionId,
+            acquired->slotId);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
@@ -116,15 +163,23 @@ void LLMPipeline::resolveSession(
       }
 
       tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
-      TT_LOG_DEBUG(
-          "[LLMPipeline] Prefix cache MISS: hash={}, allocating new session",
-          *routingInfo.lookupHash);
+      TT_LOG_INFO(
+          "[LLMPipeline] Prefix cache MISS taskId={} hash={} → allocating "
+          "new session",
+          req->task_id, *routingInfo.lookupHash);
     } catch (const services::SessionInFlightException& e) {
       TT_LOG_WARN("[LLMPipeline] All sessions busy for hash={}: {}",
                   *routingInfo.lookupHash, e.what());
       onError({SessionErrorType::RATE_LIMIT, e.what()});
       return;
     }
+  }
+
+  if (!routingInfo.hasPriorTurn || !routingInfo.lookupHash.has_value()) {
+    TT_LOG_INFO(
+        "[LLMPipeline] No prior turn detected taskId={} → allocating new "
+        "session (registrationHash={})",
+        req->task_id, routingInfo.registrationHash);
   }
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
