@@ -39,7 +39,7 @@ HIDDEN_COLUMNS = frozenset(
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",
     "evals",
-    "server_tests",
+    "spec_tests",
     "stress_tests",
 )
 

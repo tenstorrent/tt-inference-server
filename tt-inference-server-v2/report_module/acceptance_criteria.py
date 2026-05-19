@@ -13,7 +13,7 @@ from .schema import Block, ReportSchema
 # this field alone — no substring matching, no frozensets, no regex.
 KIND_BENCHMARKS = "benchmarks"
 KIND_EVALS = "evals"
-KIND_SERVER_TESTS = "server_tests"
+KIND_SPEC_TESTS = "spec_tests"
 
 TARGET_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
@@ -25,7 +25,7 @@ STATUS_NA = "NA"
 
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
-CATEGORY_SERVER_TESTS = "Server Tests"
+CATEGORY_SPEC_TESTS = "Spec Tests"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
 
@@ -215,12 +215,12 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
     spec_blocks = [
         b
         for b in schema.sections
-        if b.kind == KIND_SERVER_TESTS
+        if b.kind == KIND_SPEC_TESTS
         and (b.task_type or "") not in INFRA_TASK_TYPES
         and isinstance(b.data, Mapping)
     ]
     if not spec_blocks:
-        return CategoryResult(CATEGORY_SERVER_TESTS, STATUS_NA, 0, 0)
+        return CategoryResult(CATEGORY_SPEC_TESTS, STATUS_NA, 0, 0)
 
     blockers: Dict[str, str] = {}
     failed = 0
@@ -235,7 +235,7 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
 
     status = STATUS_FAIL if failed else STATUS_PASS
     return CategoryResult(
-        CATEGORY_SERVER_TESTS,
+        CATEGORY_SPEC_TESTS,
         status,
         len(spec_blocks),
         failed,
@@ -310,12 +310,12 @@ __all__ = [
     "CategoryResult",
     "KIND_BENCHMARKS",
     "KIND_EVALS",
-    "KIND_SERVER_TESTS",
+    "KIND_SPEC_TESTS",
     "STATUS_PASS",
     "STATUS_FAIL",
     "STATUS_NA",
     "CATEGORY_BENCHMARKS",
     "CATEGORY_EVALS",
-    "CATEGORY_SERVER_TESTS",
+    "CATEGORY_SPEC_TESTS",
     "INFRA_TASK_TYPES",
 ]

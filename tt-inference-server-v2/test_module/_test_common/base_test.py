@@ -113,10 +113,10 @@ class BaseTest(ABC):
         return value
 
     def _block(self, data: Dict[str, Any]) -> Block:
-        """Wrap ``data`` in a Block tagged kind="server_tests"."""
+        """Wrap ``data`` in a Block tagged kind="spec_tests"."""
         bid = block_id(self.ctx) or None if self.ctx is not None else None
         return Block(
-            kind="server_tests",
+            kind="spec_tests",
             id=bid,
             title=self.KIND.replace("_", " ").title(),
             task_type=self.TASK_TYPE,
