@@ -322,9 +322,9 @@ def normalize_swebench_report(
 ) -> dict[str, Any]:
     """
     Normalize the SWE-bench harness report into a consistent format expected
-    by our evaluation reporting system. This involves parsing the harness 
-    report, extracting relevant metrics, and reformatting them into a 
-    standardized structure (following harbor conventions). The normalized 
+    by our evaluation reporting system. This involves parsing the harness
+    report, extracting relevant metrics, and reformatting them into a
+    standardized structure (following harbor conventions). The normalized
     report is then written to the specified result path.
     """
     report = json.loads(harness_report_path.read_text(encoding="utf-8"))
