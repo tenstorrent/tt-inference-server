@@ -15,11 +15,19 @@
 #   LOG_DIR               Where to write per-instance run.py logs (default: /tmp)
 #   OVERRIDE_DOCKER_IMAGE If set, passed as --override-docker-image
 #   EXTRA_RUN_ARGS        Additional flags passed verbatim to run.py
+#   AUTH                  Set to "1" to enable JWT auth (default: disabled).
+#                         Disabled by default since each instance generates its
+#                         own VLLM_API_KEY at boot, and the local-pyjwt-vs-
+#                         container-pyjwt header-ordering mismatch makes simple
+#                         shell-side token generation flaky. Production
+#                         deployments should set AUTH=1 and read each container's
+#                         actual VLLM_API_KEY from inside the container.
 #
 # Usage:
 #   ./scripts/launch_4x_galaxy_t3k.sh
 #   MODEL=Qwen3-8B ./scripts/launch_4x_galaxy_t3k.sh
 #   OVERRIDE_DOCKER_IMAGE=ghcr.io/.../foo:bar ./scripts/launch_4x_galaxy_t3k.sh
+#   AUTH=1 ./scripts/launch_4x_galaxy_t3k.sh
 #
 # Requires:
 #   JWT_SECRET and HF_TOKEN already exported in the environment.
@@ -32,6 +40,12 @@ DELAY=${STAGGER_DELAY:-30}
 LOG_DIR=${LOG_DIR:-/tmp}
 IMG=${OVERRIDE_DOCKER_IMAGE:-}
 EXTRA_ARGS=${EXTRA_RUN_ARGS:-}
+AUTH=${AUTH:-0}
+
+NO_AUTH_FLAG=""
+if [ "${AUTH}" != "1" ]; then
+    NO_AUTH_FLAG="--no-auth"
+fi
 
 # Resolve repo root so the script works regardless of where it's invoked from.
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -57,6 +71,7 @@ for idx in 0 1 2 3; do
         --service-port "${port}" \
         --skip-system-sw-validation \
         --dev-mode \
+        ${NO_AUTH_FLAG} \
         ${IMG:+--override-docker-image "${IMG}"} \
         ${EXTRA_ARGS} \
         > "${log}" 2>&1 &
