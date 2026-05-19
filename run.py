@@ -45,6 +45,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
+from workflows.v2_bridge import can_route_to_v2, run_v2_workflows
 from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
@@ -716,7 +717,15 @@ def main():
     # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
+        if can_route_to_v2(model_spec, runtime_config):
+            logger.info(
+                "Model %s (model_type=%s) routes through v2 engine.",
+                model_spec.model_name,
+                model_spec.model_type.name,
+            )
+            workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
+        else:
+            workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
         if all(result.return_code == 0 for result in workflow_results):
             logger.info("Completed run.py.")
         else:
