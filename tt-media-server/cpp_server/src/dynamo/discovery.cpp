@@ -17,11 +17,11 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr int kContextLength = 131072;
-constexpr int kKvCacheBlockSize = 16;
+constexpr int K_CONTEXT_LENGTH = 131072;
+constexpr int K_KV_CACHE_BLOCK_SIZE = 16;
 
 /// URL-encode a path component (only `/` needs to be escaped for our keys).
-std::string url_encode_path(const std::string& s) {
+std::string urlEncodePath(const std::string& s) {
   std::string out;
   out.reserve(s.size());
   for (char c : s) {
@@ -36,14 +36,14 @@ std::string url_encode_path(const std::string& s) {
 
 /// Frontend reads the checksum but doesn't validate it for routing — it's
 /// used only for cache invalidation.
-std::string blake3_placeholder() {
+std::string blake3Placeholder() {
   return "blake3:0000000000000000000000000000000000000000000000000000000000"
          "000000";
 }
 
 /// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
 /// model ids have `/` and uppercase, so map them to `-` and lowercase.
-std::string sanitize_slug(const std::string& s) {
+std::string sanitizeSlug(const std::string& s) {
   std::string out;
   out.reserve(s.size());
   for (char c : s) {
@@ -59,7 +59,7 @@ std::string sanitize_slug(const std::string& s) {
   return out;
 }
 
-std::string write_json(const Json::Value& v) {
+std::string writeJson(const Json::Value& v) {
   Json::StreamWriterBuilder b;
   b["indentation"] = "";
   b["emitUTF8"] = true;
@@ -72,7 +72,7 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
   // Key = "namespace/component/endpoint/instance_id_hex" (URL-encoded).
   const std::string key = config.namespace_name + "/" + config.component + "/" +
                           config.endpoint + "/" + config.instance_id_hex;
-  const std::string encoded_key = url_encode_path(key);
+  const std::string encodedKey = urlEncodePath(key);
 
   // ---- instance JSON ----
   {
@@ -91,13 +91,13 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
     instance["transport"] = std::move(transport);
     instance["device_type"] = "cuda";
 
-    const std::string filepath = dir + "/" + encoded_key;
-    std::ofstream f(filepath);
-    f << write_json(instance);
+    const std::string filePath = dir + "/" + encodedKey;
+    std::ofstream f(filePath);
+    f << writeJson(instance);
     f.close();
 
     if (!quiet) {
-      TT_LOG_INFO("[DynamoDiscovery] Registered instance at {}", filepath);
+      TT_LOG_INFO("[DynamoDiscovery] Registered instance at {}", filePath);
     }
   }
 
@@ -106,9 +106,9 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
     const std::string dir = config.store_path + "/v1/mdc";
     fs::create_directories(dir);
 
-    const std::string config_path = config.model_path + "/config.json";
-    const std::string tokenizer_path = config.model_path + "/tokenizer.json";
-    const std::string tokenizer_config_path =
+    const std::string configPath = config.model_path + "/config.json";
+    const std::string tokenizerPath = config.model_path + "/tokenizer.json";
+    const std::string tokenizerConfigPath =
         config.model_path + "/tokenizer_config.json";
 
     Json::Value mdc(Json::objectValue);
@@ -120,32 +120,32 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
 
     Json::Value card(Json::objectValue);
     card["display_name"] = config.model_name;
-    card["slug"] = sanitize_slug(config.model_name);
+    card["slug"] = sanitizeSlug(config.model_name);
     card["source_path"] = config.model_path;
 
-    Json::Value model_info(Json::objectValue);
-    Json::Value hf_config(Json::objectValue);
-    hf_config["path"] = config_path;
-    hf_config["checksum"] = blake3_placeholder();
-    model_info["hf_config_json"] = std::move(hf_config);
-    card["model_info"] = std::move(model_info);
+    Json::Value modelInfo(Json::objectValue);
+    Json::Value hfConfig(Json::objectValue);
+    hfConfig["path"] = configPath;
+    hfConfig["checksum"] = blake3Placeholder();
+    modelInfo["hf_config_json"] = std::move(hfConfig);
+    card["model_info"] = std::move(modelInfo);
 
     Json::Value tokenizer(Json::objectValue);
-    Json::Value hf_tok(Json::objectValue);
-    hf_tok["path"] = tokenizer_path;
-    hf_tok["checksum"] = blake3_placeholder();
-    tokenizer["hf_tokenizer_json"] = std::move(hf_tok);
+    Json::Value hfTok(Json::objectValue);
+    hfTok["path"] = tokenizerPath;
+    hfTok["checksum"] = blake3Placeholder();
+    tokenizer["hf_tokenizer_json"] = std::move(hfTok);
     card["tokenizer"] = std::move(tokenizer);
 
-    Json::Value prompt_formatter(Json::objectValue);
-    Json::Value hf_tok_cfg(Json::objectValue);
-    hf_tok_cfg["path"] = tokenizer_config_path;
-    hf_tok_cfg["checksum"] = blake3_placeholder();
-    prompt_formatter["hf_tokenizer_config_json"] = std::move(hf_tok_cfg);
-    card["prompt_formatter"] = std::move(prompt_formatter);
+    Json::Value promptFormatter(Json::objectValue);
+    Json::Value hfTokCfg(Json::objectValue);
+    hfTokCfg["path"] = tokenizerConfigPath;
+    hfTokCfg["checksum"] = blake3Placeholder();
+    promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
+    card["prompt_formatter"] = std::move(promptFormatter);
 
-    card["context_length"] = kContextLength;
-    card["kv_cache_block_size"] = kKvCacheBlockSize;
+    card["context_length"] = K_CONTEXT_LENGTH;
+    card["kv_cache_block_size"] = K_KV_CACHE_BLOCK_SIZE;
     card["migration_limit"] = 0;
     card["model_type"] = "Chat";
     card["model_input"] = "Tokens";
@@ -168,13 +168,13 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
 
     mdc["card_json"] = std::move(card);
 
-    const std::string filepath = dir + "/" + encoded_key;
-    std::ofstream f(filepath);
-    f << write_json(mdc);
+    const std::string filePath = dir + "/" + encodedKey;
+    std::ofstream f(filePath);
+    f << writeJson(mdc);
     f.close();
 
     if (!quiet) {
-      TT_LOG_INFO("[DynamoDiscovery] Registered MDC at {} (model={})", filepath,
+      TT_LOG_INFO("[DynamoDiscovery] Registered MDC at {} (model={})", filePath,
                   config.model_name);
     }
   }
@@ -183,10 +183,10 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
 void unregister_discovery(const DiscoveryConfig& config) {
   const std::string key = config.namespace_name + "/" + config.component + "/" +
                           config.endpoint + "/" + config.instance_id_hex;
-  const std::string encoded_key = url_encode_path(key);
+  const std::string encodedKey = urlEncodePath(key);
 
-  fs::remove(config.store_path + "/v1/instances/" + encoded_key);
-  fs::remove(config.store_path + "/v1/mdc/" + encoded_key);
+  fs::remove(config.store_path + "/v1/instances/" + encodedKey);
+  fs::remove(config.store_path + "/v1/mdc/" + encodedKey);
   TT_LOG_INFO("[DynamoDiscovery] Unregistered {}", key);
 }
 

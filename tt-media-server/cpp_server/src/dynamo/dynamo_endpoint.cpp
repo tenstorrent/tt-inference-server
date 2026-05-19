@@ -36,7 +36,7 @@ namespace tt::dynamo {
 
 namespace {
 
-constexpr int kKeepAliveIntervalSec = 5;
+constexpr int K_KEEP_ALIVE_INTERVAL_SEC = 5;
 
 /// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
 /// already applied the chat template, so we forward token ids directly and
@@ -300,7 +300,7 @@ void DynamoEndpoint::start() {
   // entries keeps seeing this worker.
   keepalive_thread_ = std::thread([this]() {
     while (running_) {
-      for (int i = 0; i < kKeepAliveIntervalSec * 10 && running_; ++i) {
+      for (int i = 0; i < K_KEEP_ALIVE_INTERVAL_SEC * 10 && running_; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
       if (running_) register_discovery(discovery_, /*quiet=*/true);

@@ -22,7 +22,7 @@ namespace {
 
 /// Parse JSON bytes into a Json::Value. Returns an empty value on parse error
 /// (callers treat that as "skip").
-Json::Value parse_json_bytes(const uint8_t* data, size_t len) {
+Json::Value parseJsonBytes(const uint8_t* data, size_t len) {
   Json::Value out;
   if (len == 0) return out;
   Json::CharReaderBuilder builder;
@@ -36,14 +36,14 @@ Json::Value parse_json_bytes(const uint8_t* data, size_t len) {
   return out;
 }
 
-std::string dump_json_compact(const Json::Value& v) {
+std::string dumpJsonCompact(const Json::Value& v) {
   Json::StreamWriterBuilder writer;
   writer["indentation"] = "";
   writer["emitUTF8"] = true;
   return Json::writeString(writer, v);
 }
 
-bool write_all(int fd, const uint8_t* data, size_t len) {
+bool writeAll(int fd, const uint8_t* data, size_t len) {
   size_t written = 0;
   while (written < len) {
     ssize_t w = ::write(fd, data + written, len - written);
@@ -53,8 +53,8 @@ bool write_all(int fd, const uint8_t* data, size_t len) {
   return true;
 }
 
-bool write_all(int fd, const std::vector<uint8_t>& data) {
-  return write_all(fd, data.data(), data.size());
+bool writeAll(int fd, const std::vector<uint8_t>& data) {
+  return writeAll(fd, data.data(), data.size());
 }
 
 }  // namespace
@@ -84,25 +84,25 @@ TwoPartMessage decode_two_part(const std::vector<uint8_t>& data) {
   TwoPartMessage msg;
   if (data.size() < 24) return msg;
 
-  uint64_t header_len = get_u64_be(data.data());
-  uint64_t body_len = get_u64_be(data.data() + 8);
+  uint64_t headerLen = get_u64_be(data.data());
+  uint64_t bodyLen = get_u64_be(data.data() + 8);
   // Checksum at offset 16 is ignored.
 
-  size_t header_start = 24;
-  size_t body_start = 24 + header_len;
-  if (data.size() < 24 + header_len + body_len) return msg;
+  size_t headerStart = 24;
+  size_t bodyStart = 24 + headerLen;
+  if (data.size() < 24 + headerLen + bodyLen) return msg;
 
-  msg.header.assign(data.begin() + header_start,
-                    data.begin() + header_start + header_len);
-  msg.body.assign(data.begin() + body_start,
-                  data.begin() + body_start + body_len);
+  msg.header.assign(data.begin() + headerStart,
+                    data.begin() + headerStart + headerLen);
+  msg.body.assign(data.begin() + bodyStart,
+                  data.begin() + bodyStart + bodyLen);
   return msg;
 }
 
 RequestControlMessage parse_control_message(
-    const std::vector<uint8_t>& header_bytes) {
+    const std::vector<uint8_t>& headerBytes) {
   RequestControlMessage ctrl;
-  Json::Value j = parse_json_bytes(header_bytes.data(), header_bytes.size());
+  Json::Value j = parseJsonBytes(headerBytes.data(), headerBytes.size());
   if (!j.isObject()) return ctrl;
 
   ctrl.id = j.get("id", "").asString();
@@ -135,9 +135,9 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info) {
   return tci;
 }
 
-GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes) {
+GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
   GenerateRequest req;
-  Json::Value j = parse_json_bytes(body_bytes.data(), body_bytes.size());
+  Json::Value j = parseJsonBytes(bodyBytes.data(), bodyBytes.size());
   if (!j.isObject()) return req;
 
   req.raw = j;
@@ -215,7 +215,7 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
   wrapper["data"] = std::move(annotated);
   wrapper["complete_final"] = false;
 
-  std::string s = dump_json_compact(wrapper);
+  std::string s = dumpJsonCompact(wrapper);
   return std::vector<uint8_t>(s.begin(), s.end());
 }
 
@@ -223,7 +223,7 @@ std::vector<uint8_t> encode_stream_final() {
   Json::Value wrapper(Json::objectValue);
   wrapper["data"] = Json::Value::null;
   wrapper["complete_final"] = true;
-  std::string s = dump_json_compact(wrapper);
+  std::string s = dumpJsonCompact(wrapper);
   return std::vector<uint8_t>(s.begin(), s.end());
 }
 
@@ -248,14 +248,14 @@ DynamoServer::DynamoServer(ServerConfig config, GenerateHandler handler)
 DynamoServer::~DynamoServer() { shutdown(); }
 
 void DynamoServer::shutdown() {
-  bool was_running = running_.exchange(false);
+  bool wasRunning = running_.exchange(false);
   if (listen_fd_ >= 0) {
     int fd = listen_fd_;
     listen_fd_ = -1;
     ::shutdown(fd, SHUT_RDWR);
     ::close(fd);
   }
-  (void)was_running;
+  (void)wasRunning;
 }
 
 bool DynamoServer::read_exact(int fd, std::vector<uint8_t>& buf, size_t n) {
@@ -272,17 +272,17 @@ bool DynamoServer::read_exact(int fd, std::vector<uint8_t>& buf, size_t n) {
 bool DynamoServer::read_request(int fd, TcpRequestMessage& msg) {
   std::vector<uint8_t> tmp;
   if (!read_exact(fd, tmp, 2)) return false;
-  uint16_t path_len = get_u16_be(tmp.data());
+  uint16_t pathLen = get_u16_be(tmp.data());
 
-  if (!read_exact(fd, tmp, path_len)) return false;
+  if (!read_exact(fd, tmp, pathLen)) return false;
   msg.endpoint_path.assign(tmp.begin(), tmp.end());
 
   if (!read_exact(fd, tmp, 2)) return false;
-  uint16_t headers_len = get_u16_be(tmp.data());
+  uint16_t headersLen = get_u16_be(tmp.data());
 
-  if (headers_len > 0) {
-    if (!read_exact(fd, tmp, headers_len)) return false;
-    Json::Value j = parse_json_bytes(tmp.data(), tmp.size());
+  if (headersLen > 0) {
+    if (!read_exact(fd, tmp, headersLen)) return false;
+    Json::Value j = parseJsonBytes(tmp.data(), tmp.size());
     if (j.isObject()) {
       for (auto it = j.begin(); it != j.end(); ++it) {
         msg.headers[it.name()] = (*it).asString();
@@ -291,47 +291,47 @@ bool DynamoServer::read_request(int fd, TcpRequestMessage& msg) {
   }
 
   if (!read_exact(fd, tmp, 4)) return false;
-  uint32_t payload_len = get_u32_be(tmp.data());
+  uint32_t payloadLen = get_u32_be(tmp.data());
 
-  if (!read_exact(fd, tmp, payload_len)) return false;
+  if (!read_exact(fd, tmp, payloadLen)) return false;
   msg.payload = std::move(tmp);
   return true;
 }
 
 void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
-  TwoPartMessage two_part = decode_two_part(msg.payload);
-  auto ctrl = parse_control_message(two_part.header);
-  auto gen_req = parse_generate_request(two_part.body);
-  auto conn_info = parse_connection_info(ctrl.connection_info);
+  TwoPartMessage twoPart = decode_two_part(msg.payload);
+  auto ctrl = parse_control_message(twoPart.header);
+  auto genReq = parse_generate_request(twoPart.body);
+  auto connInfo = parse_connection_info(ctrl.connection_info);
 
   TT_LOG_DEBUG(
       "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
-      ctrl.id, gen_req.token_ids.size(), gen_req.max_tokens, conn_info.address);
+      ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
 
   // ACK on the inbound connection.
   auto ack = encode_tcp_response();
-  if (!write_all(fd, ack)) {
+  if (!writeAll(fd, ack)) {
     TT_LOG_WARN("[DynamoServer] Failed to send ACK for id={}", ctrl.id);
     return;
   }
 
   // Stream tokens via the call-home connection (separate TCP socket back to
   // the frontend's stream server).
-  stream_response(conn_info, ctrl.id, gen_req);
+  stream_response(connInfo, ctrl.id, genReq);
 }
 
-void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
-                                   const std::string& request_id,
-                                   const GenerateRequest& gen_req) {
-  auto colon_pos = conn_info.address.rfind(':');
-  if (colon_pos == std::string::npos) {
+void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
+                                   const std::string& requestId,
+                                   const GenerateRequest& genReq) {
+  auto colonPos = connInfo.address.rfind(':');
+  if (colonPos == std::string::npos) {
     TT_LOG_ERROR("[DynamoServer] Invalid response address: {}",
-                 conn_info.address);
+                 connInfo.address);
     return;
   }
-  std::string host = conn_info.address.substr(0, colon_pos);
+  std::string host = connInfo.address.substr(0, colonPos);
   uint16_t port =
-      static_cast<uint16_t>(std::stoi(conn_info.address.substr(colon_pos + 1)));
+      static_cast<uint16_t>(std::stoi(connInfo.address.substr(colonPos + 1)));
 
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   if (sock < 0) {
@@ -349,7 +349,7 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
   if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
       0) {
     TT_LOG_ERROR("[DynamoServer] Failed to connect to response stream at {}",
-                 conn_info.address);
+                 connInfo.address);
     ::close(sock);
     return;
   }
@@ -357,15 +357,15 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
   // 1. CallHomeHandshake (header-only TwoPartMessage).
   {
     Json::Value handshake(Json::objectValue);
-    handshake["subject"] = conn_info.subject;
+    handshake["subject"] = connInfo.subject;
     handshake["stream_type"] = "response";
-    std::string hs = dump_json_compact(handshake);
+    std::string hs = dumpJsonCompact(handshake);
 
     TwoPartMessage tp;
     tp.header.assign(hs.begin(), hs.end());
-    if (!write_all(sock, encode_two_part(tp))) {
+    if (!writeAll(sock, encode_two_part(tp))) {
       TT_LOG_WARN("[DynamoServer] Failed to send handshake (id={})",
-                  request_id);
+                  requestId);
       ::close(sock);
       return;
     }
@@ -375,12 +375,12 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
   {
     Json::Value prologue(Json::objectValue);
     prologue["error"] = Json::Value::null;
-    std::string ps = dump_json_compact(prologue);
+    std::string ps = dumpJsonCompact(prologue);
 
     TwoPartMessage tp;
     tp.header.assign(ps.begin(), ps.end());
-    if (!write_all(sock, encode_two_part(tp))) {
-      TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})", request_id);
+    if (!writeAll(sock, encode_two_part(tp))) {
+      TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})", requestId);
       ::close(sock);
       return;
     }
@@ -388,41 +388,41 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
 
   // 3. User-supplied generate handler streams chunks back as data-only
   //    TwoPartMessages.
-  handler_(gen_req, [&](const TokenChunk& chunk) -> bool {
-    auto chunk_bytes = encode_stream_chunk(chunk);
+  handler_(genReq, [&](const TokenChunk& chunk) -> bool {
+    auto chunkBytes = encode_stream_chunk(chunk);
     TwoPartMessage tp;
-    tp.body = std::move(chunk_bytes);
-    return write_all(sock, encode_two_part(tp));
+    tp.body = std::move(chunkBytes);
+    return writeAll(sock, encode_two_part(tp));
   });
 
   // 4. complete_final sentinel.
   {
-    auto final_bytes = encode_stream_final();
+    auto finalBytes = encode_stream_final();
     TwoPartMessage tp;
-    tp.body = std::move(final_bytes);
-    write_all(sock, encode_two_part(tp));
+    tp.body = std::move(finalBytes);
+    writeAll(sock, encode_two_part(tp));
   }
 
   // 5. End-of-stream sentinel (empty TwoPartMessage).
   {
     TwoPartMessage tp;
-    write_all(sock, encode_two_part(tp));
+    writeAll(sock, encode_two_part(tp));
   }
 
   ::close(sock);
 }
 
-void DynamoServer::handle_connection(int client_fd) {
+void DynamoServer::handle_connection(int clientFd) {
   int flag = 1;
-  ::setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+  ::setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 
   while (running_) {
     TcpRequestMessage msg;
-    if (!read_request(client_fd, msg)) break;
-    process_request(client_fd, msg);
+    if (!read_request(clientFd, msg)) break;
+    process_request(clientFd, msg);
   }
 
-  ::close(client_fd);
+  ::close(clientFd);
 }
 
 void DynamoServer::run() {
@@ -434,13 +434,13 @@ void DynamoServer::run() {
   int opt = 1;
   ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-  struct sockaddr_in bind_addr{};
-  bind_addr.sin_family = AF_INET;
-  bind_addr.sin_port = htons(config_.bind_port);
-  ::inet_pton(AF_INET, config_.bind_host.c_str(), &bind_addr.sin_addr);
+  struct sockaddr_in bindAddr{};
+  bindAddr.sin_family = AF_INET;
+  bindAddr.sin_port = htons(config_.bind_port);
+  ::inet_pton(AF_INET, config_.bind_host.c_str(), &bindAddr.sin_addr);
 
-  if (::bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&bind_addr),
-             sizeof(bind_addr)) < 0) {
+  if (::bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&bindAddr),
+             sizeof(bindAddr)) < 0) {
     throw std::runtime_error("DynamoServer: failed to bind");
   }
 
@@ -459,12 +459,12 @@ void DynamoServer::run() {
               config_.component, config_.endpoint, config_.instance_id_hex);
 
   while (running_) {
-    int client_fd = ::accept(listen_fd_, nullptr, nullptr);
-    if (client_fd < 0) {
+    int clientFd = ::accept(listen_fd_, nullptr, nullptr);
+    if (clientFd < 0) {
       if (!running_) break;
       continue;
     }
-    std::thread([this, client_fd]() { handle_connection(client_fd); }).detach();
+    std::thread([this, clientFd]() { handle_connection(clientFd); }).detach();
   }
 }
 
