@@ -43,7 +43,17 @@ class DynamoEndpoint {
     std::string namespace_name = "default";
     std::string component = "backend";
     std::string endpoint = "generate";
+
+    /// Discovery backend ("file" or "etcd"). Must match the frontend's
+    /// DYN_DISCOVERY_BACKEND.
+    DiscoveryBackendKind discovery_backend = DiscoveryBackendKind::File;
+    /// File backend: store directory.
     std::string discovery_path = "/tmp/dynamo_store_kv";
+    /// Etcd backend: endpoint URL (or comma-separated list).
+    std::string etcd_endpoints = "http://localhost:2379";
+    /// Etcd backend: lease TTL in seconds (keep-alive runs at half this).
+    int64_t etcd_lease_ttl_secs = 10;
+
     /// Slug shown in /v1/models. When empty, the active tokenizer's
     /// modelName() is used.
     std::string model_name;
@@ -79,7 +89,7 @@ class DynamoEndpoint {
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThread> loop_thread_;
   std::atomic<bool> running_{false};
-  DiscoveryConfig discovery_;
+  std::unique_ptr<DiscoveryRegistration> discovery_;
 };
 
 }  // namespace tt::dynamo

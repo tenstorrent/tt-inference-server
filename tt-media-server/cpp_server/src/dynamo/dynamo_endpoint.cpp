@@ -36,8 +36,6 @@ namespace tt::dynamo {
 
 namespace {
 
-constexpr int K_KEEP_ALIVE_INTERVAL_SEC = 5;
-
 /// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
 /// already applied the chat template, so we forward token ids directly and
 /// leave `messages` empty — the pipeline picks up that signal and routes
@@ -276,34 +274,45 @@ void DynamoEndpoint::start() {
         "DynamoEndpoint: server failed to bind within timeout");
   }
 
-  discovery_.store_path = options_.discovery_path;
-  discovery_.namespace_name = options_.namespace_name;
-  discovery_.component = options_.component;
-  discovery_.endpoint = options_.endpoint;
-  discovery_.instance_id = server_->config().instance_id;
-  discovery_.instance_id_hex = server_->config().instance_id_hex;
-  discovery_.tcp_address = options_.advertise_host + ":" +
-                           std::to_string(server_->port()) + "/" +
-                           discovery_.instance_id_hex + "/" + options_.endpoint;
-  discovery_.model_name = options_.model_name;
-  discovery_.model_path = options_.model_path;
+  DiscoveryConfig dc;
+  dc.backend = options_.discovery_backend;
+  dc.store_path = options_.discovery_path;
+  dc.etcd_endpoints = options_.etcd_endpoints;
+  dc.etcd_lease_ttl_secs = options_.etcd_lease_ttl_secs;
+  dc.namespace_name = options_.namespace_name;
+  dc.component = options_.component;
+  dc.endpoint = options_.endpoint;
+  dc.instance_id = server_->config().instance_id;
+  dc.instance_id_hex = server_->config().instance_id_hex;
+  dc.tcp_address = options_.advertise_host + ":" +
+                   std::to_string(server_->port()) + "/" + dc.instance_id_hex +
+                   "/" + options_.endpoint;
+  dc.model_name = options_.model_name;
+  dc.model_path = options_.model_path;
 
-  register_discovery(discovery_);
+  discovery_ = DiscoveryRegistration::create(dc);
+  discovery_->registerSelf();
 
+  const char* backendStr =
+      (dc.backend == DiscoveryBackendKind::Etcd) ? "etcd" : "file";
+  const std::string& backendTarget = (dc.backend == DiscoveryBackendKind::Etcd)
+                                         ? dc.etcd_endpoints
+                                         : dc.store_path;
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery={}",
-      options_.bind_host, server_->port(), discovery_.tcp_address,
-      discovery_.model_name, discovery_.store_path);
+      "discovery={}({})",
+      options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
+      backendStr, backendTarget);
 
-  // Refresh discovery files periodically so a frontend that prunes stale
-  // entries keeps seeing this worker.
-  keepalive_thread_ = std::thread([this]() {
+  // Refresh the registration periodically so a frontend that prunes stale
+  // entries (file mtime) or expires unleased keys (etcd) keeps seeing us.
+  const int interval = discovery_->keepAliveIntervalSecs();
+  keepalive_thread_ = std::thread([this, interval]() {
     while (running_) {
-      for (int i = 0; i < K_KEEP_ALIVE_INTERVAL_SEC * 10 && running_; ++i) {
+      for (int i = 0; i < interval * 10 && running_; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
       }
-      if (running_) register_discovery(discovery_, /*quiet=*/true);
+      if (running_) discovery_->keepAlive();
     }
   });
 }
@@ -317,7 +326,9 @@ void DynamoEndpoint::stop() {
   if (server_) {
     server_->shutdown();
   }
-  unregister_discovery(discovery_);
+  if (discovery_) {
+    discovery_->unregisterSelf();
+  }
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
   if (server_thread_.joinable()) server_thread_.join();
@@ -325,6 +336,7 @@ void DynamoEndpoint::stop() {
     loop_thread_.reset();
   }
   server_.reset();
+  discovery_.reset();
 }
 
 }  // namespace tt::dynamo

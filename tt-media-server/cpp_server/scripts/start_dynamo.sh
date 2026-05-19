@@ -9,7 +9,8 @@
 #   sibling dynamo-mock-backend `setup.sh` or any Dynamo install).
 #
 # Usage:
-#   ./scripts/start_dynamo.sh                 # build (if needed) + run
+#   ./scripts/start_dynamo.sh                              # default file store
+#   DYN_DISCOVERY_BACKEND=etcd ./scripts/start_dynamo.sh   # use etcd
 #   DYNAMO_DISCOVERY_PATH=/tmp/dyn HTTP_PORT=9000 ./scripts/start_dynamo.sh
 
 set -euo pipefail
@@ -30,15 +31,38 @@ if [[ ! -d "${DYN_VENV}" ]]; then
 fi
 
 # --- discovery + endpoint ---------------------------------------------------
+# DYN_DISCOVERY_BACKEND: "file" (default) or "etcd".
+#   - file: writes JSON under DYN_FILE_STORE; both processes mount the same path.
+#   - etcd: requires a reachable etcd at ETCD_ENDPOINTS (default
+#           http://localhost:2379). The frontend reads the same env var.
 export DYN_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND:-file}"
 export DYN_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}"
 export DYN_EVENT_PLANE="${DYN_EVENT_PLANE:-zmq}"
 export DYN_FILE_STORE="${DYN_FILE_STORE:-/tmp/dynamo_store_kv}"
+export ETCD_ENDPOINTS="${ETCD_ENDPOINTS:-http://localhost:2379}"
 export DYNAMO_ENDPOINT_ENABLED=1
+# Mirror the Dynamo-side env into cpp_server's namespace so the C++ accessors
+# (which key off DYNAMO_*) see the same values without duplicating exports.
+export DYNAMO_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND}"
 export DYNAMO_DISCOVERY_PATH="${DYNAMO_DISCOVERY_PATH:-${DYN_FILE_STORE}}"
+export DYNAMO_ETCD_ENDPOINTS="${DYNAMO_ETCD_ENDPOINTS:-${ETCD_ENDPOINTS}}"
 export DYNAMO_NAMESPACE="${DYNAMO_NAMESPACE:-default}"
 export DYNAMO_COMPONENT="${DYNAMO_COMPONENT:-backend}"
 export DYNAMO_ENDPOINT_NAME="${DYNAMO_ENDPOINT_NAME:-generate}"
+
+# Quick sanity check: when running with etcd, fail fast if the gateway isn't
+# reachable so we don't waste a minute booting cpp_server only to crash on
+# first lease grant.
+if [[ "${DYN_DISCOVERY_BACKEND}" == "etcd" ]]; then
+    ETCD_HOST_PORT="${ETCD_ENDPOINTS#http://}"
+    ETCD_HOST_PORT="${ETCD_HOST_PORT%%/*}"
+    if ! (echo > "/dev/tcp/${ETCD_HOST_PORT/:/\/}") 2>/dev/null; then
+        echo "etcd not reachable at ${ETCD_ENDPOINTS}." >&2
+        echo "Start one with:  docker run --rm -d -p 2379:2379 --name etcd quay.io/coreos/etcd:v3.5.13 \\" >&2
+        echo "    /usr/local/bin/etcd --advertise-client-urls=http://0.0.0.0:2379 --listen-client-urls=http://0.0.0.0:2379" >&2
+        exit 1
+    fi
+fi
 
 # Resolve the model path the cpp_server's tokenizers/ tree exposes for the
 # active backend so the frontend ends up tokenizing against the same files
@@ -64,7 +88,12 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dynamo-bypass}"
 
-rm -rf "${DYN_FILE_STORE}"
+if [[ "${DYN_DISCOVERY_BACKEND}" == "file" ]]; then
+    rm -rf "${DYN_FILE_STORE}"
+    DISCOVERY_LABEL="file://${DYN_FILE_STORE}"
+else
+    DISCOVERY_LABEL="${DYN_DISCOVERY_BACKEND}://${ETCD_ENDPOINTS}"
+fi
 
 cleanup() {
     echo "" >&2
@@ -78,7 +107,7 @@ trap cleanup EXIT INT TERM
 echo "=== Dynamo + cpp_server ==="
 echo "  Frontend HTTP : ${HTTP_PORT}"
 echo "  cpp_server    : http://0.0.0.0:${SERVER_PORT}"
-echo "  Discovery     : ${DYN_FILE_STORE}"
+echo "  Discovery     : ${DISCOVERY_LABEL}"
 echo "  Model name    : ${MODEL_NAME}"
 echo "  Model path    : ${MODEL_PATH}"
 echo "  LLM backend   : ${LLM_BACKEND}"

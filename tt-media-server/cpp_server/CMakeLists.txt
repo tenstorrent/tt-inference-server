@@ -803,6 +803,7 @@ set(SOURCES
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
     src/dynamo/dynamo_protocol.cpp
     src/dynamo/discovery.cpp
+    src/dynamo/etcd_client.cpp
     src/dynamo/dynamo_endpoint.cpp
 )
 
