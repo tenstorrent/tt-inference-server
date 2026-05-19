@@ -1629,8 +1629,7 @@ jobs:
       # Startup order: prefill-1 → prefill-2 → gateway → decode.
       # In gateway mode the prefill is a server (listens) and the gateway
       # dials each prefill.  Decode dials the gateway's decode-facing port.
-      # All components must use the same SOCKET_TRANSPORT; TCP is explicit here
-      # to avoid a mismatch with cpp_server's ZMQ default.
+      # All components must use the same SOCKET_TRANSPORT;
       - name: "[TCP] Start Prefill server 1 (gateway mode)"
         run: |
           cd cpp_server/build
