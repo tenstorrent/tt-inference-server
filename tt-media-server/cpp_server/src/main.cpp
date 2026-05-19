@@ -35,6 +35,10 @@
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 
+#ifdef ENABLE_GRPC
+#include "api/grpc/grpc_server.hpp"
+#endif
+
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
 namespace {
@@ -211,6 +215,27 @@ int main(int argc, char* argv[]) {
     if (llm) {
       mgr = llm->getWorkerManager();
     }
+
+    #ifdef ENABLE_GRPC
+    std::unique_ptr<tt::api::grpc::GrpcServerHandle> grpcServer;
+    const char* grpcListenEnv = std::getenv("GRPC_LISTEN");
+    if (grpcListenEnv && grpcListenEnv[0] != '\0') {
+      auto llmForGrpc = std::dynamic_pointer_cast<tt::services::LLMService>(
+          tt::services::ServiceContainer::instance().getService(
+              tt::config::ModelService::LLM));
+      if (llmForGrpc) {
+        grpcServer = tt::api::grpc::startGrpcServer(llmForGrpc, grpcListenEnv);
+        if (grpcServer) {
+          TT_LOG_INFO("[gRPC] Listening on {}", grpcListenEnv);
+        } else {
+          TT_LOG_ERROR("[gRPC] Failed to start server on {}", grpcListenEnv);
+        }
+      } else {
+        TT_LOG_WARN("[gRPC] GRPC_LISTEN set but LLM service not available");
+      }
+    }
+  #endif
+
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());
     agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
@@ -219,6 +244,8 @@ int main(int argc, char* argv[]) {
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
     agg.prebuildAll();
   }
+
+
 
   const char* envToken = std::getenv("OPENAI_API_KEY");
   std::string apiKey =
@@ -334,6 +361,10 @@ int main(int argc, char* argv[]) {
 
   // Run the server
   drogon::app().run();
+
+#ifdef ENABLE_GRPC
+  grpcServer.reset();
+#endif
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
