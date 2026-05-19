@@ -226,8 +226,8 @@ int main(int argc, char** argv) {
         });
 
     sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result", [&dispatcherPtr, state](
-                              const tt::sockets::PrefillResultMessage& msg) {
+        "prefill_result",
+        [&dispatcherPtr, state](const tt::sockets::PrefillResultMessage& msg) {
           dispatcherPtr->onPrefillResult(state->getServerId(), msg);
         });
 

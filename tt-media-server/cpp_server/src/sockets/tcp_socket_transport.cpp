@@ -185,8 +185,11 @@ void TcpSocketTransport::serverLoop() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    accepted.reset();
-    peerSocket_.store(-1, std::memory_order_release);
+    {
+      std::lock_guard<std::mutex> lock(socketMutex_);
+      peerSocket_.store(-1, std::memory_order_release);
+      accepted.reset();
+    }
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();
@@ -248,8 +251,11 @@ void TcpSocketTransport::clientLoop() {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    peerSocket_.store(-1, std::memory_order_release);
-    clientSocket_.reset();
+    {
+      std::lock_guard<std::mutex> lock(socketMutex_);
+      peerSocket_.store(-1, std::memory_order_release);
+      clientSocket_.reset();
+    }
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();
@@ -260,9 +266,8 @@ void TcpSocketTransport::clientLoop() {
 }
 
 bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return false;
-
-  std::lock_guard<std::mutex> lock(sendMutex_);
 
   int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return false;
@@ -308,6 +313,7 @@ bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return {};
 
   int fd = peerSocket_.load(std::memory_order_acquire);

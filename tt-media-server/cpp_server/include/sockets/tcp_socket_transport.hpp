@@ -70,7 +70,7 @@ class TcpSocketTransport : public ISocketTransport {
 
   std::thread connectionThread_;
 
-  mutable std::mutex sendMutex_;
+  mutable std::mutex socketMutex_;
 
   std::function<void()> connectionLostCallback_;
 
