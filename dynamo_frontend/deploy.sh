@@ -18,9 +18,11 @@ Optional:
   --frontend-host-port <port> (default: 8080)
   --model-name <name>         (default: tt-cpp-server)
   --hf-model-id <id>          (default: meta-llama/Llama-3.1-8B-Instruct)
-  --hf-token <token>          (default: empty)
   --llm-device-backend <name> (default: mock_pipeline)
   -h, --help                  show this help and exit
+
+The HF_TOKEN environment variable, if set in the calling shell, is
+forwarded to the frontend container for gated HuggingFace models.
 
 Example:
   $0 \\
@@ -41,7 +43,6 @@ FRONTEND_NAME="dynamo-frontend"
 FRONTEND_HOST_PORT="8080"
 MODEL_NAME="tt-cpp-server"
 HF_MODEL_ID="meta-llama/Llama-3.1-8B-Instruct"
-HF_TOKEN=""
 LLM_DEVICE_BACKEND="mock_pipeline"
 
 while [[ $# -gt 0 ]]; do
@@ -56,7 +57,6 @@ while [[ $# -gt 0 ]]; do
         --frontend-host-port) FRONTEND_HOST_PORT="$2"; shift 2 ;;
         --model-name)         MODEL_NAME="$2";         shift 2 ;;
         --hf-model-id)        HF_MODEL_ID="$2";        shift 2 ;;
-        --hf-token)           HF_TOKEN="$2";           shift 2 ;;
         --llm-device-backend) LLM_DEVICE_BACKEND="$2"; shift 2 ;;
         -h|--help)            usage ;;
         *) echo "Unknown argument: $1" >&2; usage ;;

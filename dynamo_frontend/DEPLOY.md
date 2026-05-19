@@ -67,8 +67,15 @@ Optional:
 | `--frontend-host-port <port>` | `8080` | Host port mapped to the frontend's `:8000` |
 | `--model-name <name>` | `tt-cpp-server` | `id` reported on `GET /v1/models` |
 | `--hf-model-id <id>` | `meta-llama/Llama-3.1-8B-Instruct` | Tokenizer repo the frontend pulls at boot |
-| `--hf-token <token>` | _(empty)_ | HuggingFace token for gated models |
 | `--llm-device-backend <name>` | `mock_pipeline` | Backend the cpp_server runner selects |
+
+For gated HuggingFace models, export `HF_TOKEN` in the calling shell — it is
+forwarded into the frontend container as an env var:
+
+```bash
+export HF_TOKEN=hf_xxxxxxxxxxxx
+./deploy.sh --etcd-image ... --worker-image ... --frontend-image ...
+```
 
 ## What the script does, step by step
 
