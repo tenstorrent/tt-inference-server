@@ -178,6 +178,40 @@ endif()
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
+# Option for gRPC server
+option(ENABLE_GRPC "Build gRPC server" ON)
+
+if(ENABLE_GRPC)
+    find_package(Protobuf CONFIG REQUIRED)
+    find_package(gRPC CONFIG REQUIRED)
+
+    add_library(tt_inference_proto STATIC)
+    target_sources(tt_inference_proto PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/protos/inference.proto
+    )
+    target_include_directories(tt_inference_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(tt_inference_proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
+
+    protobuf_generate(
+        TARGET tt_inference_proto
+        LANGUAGE cpp
+        IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/protos
+        PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    protobuf_generate(
+        TARGET tt_inference_proto
+        LANGUAGE grpc
+        GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
+        PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
+        IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/protos
+        PROTOC_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    message(STATUS "gRPC server: ENABLED")
+else()
+    message(STATUS "gRPC server: DISABLED (use -DENABLE_GRPC=ON to enable)")
+endif()
+
 if(ENABLE_TRACY)
     FetchContent_Declare(
         tracy
@@ -801,6 +835,13 @@ set(SOURCES
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
 )
 
+if(ENABLE_GRPC)
+    list(APPEND SOURCES
+        src/api/grpc/grpc_server.cpp
+        src/api/grpc/grpc_inference_service.cpp
+    )
+endif()
+
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
@@ -841,6 +882,12 @@ endif()
 if(KAFKA_ENABLED)
     target_link_libraries(${PROJECT_NAME} PRIVATE messaging)
 endif()
+
+# Link gRPC if enabled
+if(ENABLE_GRPC)
+    target_link_libraries(${PROJECT_NAME} PRIVATE tt_inference_proto gRPC::grpc++)
+endif()
+
 if(ENABLE_TRACY)
     target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TT_ENABLE_TRACY)
