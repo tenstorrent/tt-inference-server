@@ -320,6 +320,13 @@ def normalize_swebench_report(
     config: SWEbenchRunConfig,
     predictions_path: Path,
 ) -> dict[str, Any]:
+    """
+    Normalize the SWE-bench harness report into a consistent format expected
+    by our evaluation reporting system. This involves parsing the harness 
+    report, extracting relevant metrics, and reformatting them into a 
+    standardized structure (following harbor conventions). The normalized 
+    report is then written to the specified result path.
+    """
     report = json.loads(harness_report_path.read_text(encoding="utf-8"))
     submitted_ids = set(report.get("submitted_ids", []))
     resolved_ids = set(report.get("resolved_ids", []))

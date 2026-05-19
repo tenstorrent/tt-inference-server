@@ -12,12 +12,16 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-# this is currently not
 def generate_agentic_report_data(model_spec: Any, eval_run_id: str) -> str:
+    """Generate a file path pattern to locate agentic eval result files for the
+    given evaluation run ID."""
+    # TODO: discuss this -> should we enforce similar structure to other evals
+    #  from llms-eval for example?
     return f"eval_{eval_run_id}/agentic/*/result.json"
 
 
 def is_harbor_result(data: Any) -> bool:
+    ## is this future proof though?
     if not isinstance(data, dict):
         return False
     stats = data.get("stats")

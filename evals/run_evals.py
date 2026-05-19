@@ -195,6 +195,15 @@ def _setup_agentic_eval_env(service_port):
 def _resolve_task_names(
     task: EvalTask, runtime_config: Optional[RuntimeConfig]
 ) -> List[str]:
+    """
+    Determine the task names to run for an agentic evaluation based on the 
+    evaluation task configuration and runtime evaluation limit mode. 
+    This function checks the agentic_eval_config for the task, retrieves 
+    the appropriate list of task names based on the current limit mode, and 
+    returns it. If no specific list of task names is set for the limit mode, 
+    it falls back to a default list of task names defined in the config or 
+    returns an empty list if not specified.
+    """
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
@@ -207,6 +216,13 @@ def _resolve_task_names(
 def _resolve_instance_ids(
     task: EvalTask, runtime_config: Optional[RuntimeConfig]
 ) -> List[str]:
+    """Determine the instance IDs to run for a SWE-bench agentic evaluation based on
+    the evaluation task configuration and runtime evaluation limit mode. This function
+    checks the swebench_eval_config for the task, retrieves the appropriate list of
+    instance IDs based on the current limit mode, and returns it. If no specific list
+    of instance IDs is set for the limit mode, it falls back to a default list of
+    instance IDs defined in the config or returns an empty list if not specified.
+    """
     swebench_config = task.swebench_eval_config
     if swebench_config is None:
         return []
@@ -219,6 +235,16 @@ def _resolve_instance_ids(
 def _resolve_n_tasks(
     task: EvalTask, runtime_config: Optional[RuntimeConfig]
 ) -> Optional[int]:
+    """Determine the number of tasks to run for an agentic evaluation based on
+    the evaluation task configuration and runtime evaluation limit mode. 
+    This function checks the agentic_eval_config for the task, retrieves the 
+    appropriate n_tasks value based on the current limit mode, and returns it.
+    If no specific n_tasks is set for the limit mode, it falls back to a 
+    default n_tasks defined in the config or returns None (None=full dataset) 
+    if not specified. 
+    A return value of 0 indicates that the task should be skipped under 
+    the current limit mode.
+    """
     agentic_config = task.agentic_eval_config or task.swebench_eval_config
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is None:
@@ -444,6 +470,10 @@ def build_agentic_eval_command(
     service_port,
     runtime_config=None,
 ) -> List[str]:
+    """
+    Build the command for agentic evals by templating command-line arguments 
+    using properties from the given evaluation task and model configuration.
+    """
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     runner_path = project_root / "evals" / "agentic" / "run_agentic_eval.py"
     n_tasks = _resolve_n_tasks(task, runtime_config)
