@@ -1,3 +1,4 @@
+{{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 apiVersion: v1
 kind: Service
