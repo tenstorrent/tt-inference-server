@@ -114,6 +114,7 @@ void ZmqSocketTransport::stop() {
     monitorThread_.join();
   }
 
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (socket_) {
     socket_->close();
     socket_.reset();
@@ -190,7 +191,7 @@ std::string ZmqSocketTransport::getStatus() const {
 bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
   if (!running_ || !socket_) return false;
 
-  std::lock_guard<std::mutex> lock(sendMutex_);
+  std::lock_guard<std::mutex> lock(socketMutex_);
   try {
     if (mode_ == Mode::SERVER) {
       // ROUTER must prefix every outgoing message with the peer's identity.
@@ -215,6 +216,7 @@ bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
 std::vector<uint8_t> ZmqSocketTransport::receiveRawData() {
   if (!running_ || !socket_) return {};
 
+  std::lock_guard<std::mutex> lock(socketMutex_);
   try {
     if (mode_ == Mode::SERVER) {
       // ROUTER: first frame is peer identity — store it for future sends.
