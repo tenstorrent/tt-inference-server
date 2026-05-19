@@ -27,6 +27,12 @@ class GrpcInferenceService final : public inference::Inference::Service {
  public:
   explicit GrpcInferenceService(
       std::shared_ptr<tt::services::LLMService> service);
+  ~GrpcInferenceService() override = default;
+
+  GrpcInferenceService(const GrpcInferenceService&) = delete;
+  GrpcInferenceService& operator=(const GrpcInferenceService&) = delete;
+  GrpcInferenceService(GrpcInferenceService&&) = delete;
+  GrpcInferenceService& operator=(GrpcInferenceService&&) = delete;
 
   ::grpc::Status Generate(
       ::grpc::ServerContext* ctx, const inference::GenerateRequest* request,
