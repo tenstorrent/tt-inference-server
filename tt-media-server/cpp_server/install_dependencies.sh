@@ -34,6 +34,7 @@ SUDO=""
 APT_PKGS=(
     build-essential cmake g++ pkg-config curl git wget
     libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libboost-all-dev
+    libgrpc++-dev protobuf-compiler-grpc libprotobuf-dev
 )
 if [ "${INSTALL_KAFKA}" = 1 ]; then
     APT_PKGS+=(librdkafka-dev)
