@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -30,6 +31,21 @@ struct PrefillEndpoint {
 struct GatewayConfig {
   uint16_t decodePort = 0;
   std::vector<PrefillEndpoint> prefills;
+};
+
+struct PrefillConnectionState {
+  void setServerId(const std::string& serverId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    this->serverId = serverId;
+  }
+
+  std::string getServerId() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return serverId;
+  }
+
+  mutable std::mutex mutex;
+  std::string serverId;
 };
 
 void printUsage(const char* prog) {
@@ -190,17 +206,17 @@ int main(int argc, char** argv) {
   for (auto& smPtr : prefillSms) {
     tt::sockets::SocketManager* sm = smPtr.get();
 
-    // Shared between the registration handler (sets it) and the lost callback
-    // (reads it). The id is unknown until the first registration message.
-    auto idHolder = std::make_shared<std::string>();
+    // Shared between callbacks that may run on different threads. The id is
+    // unknown until the first registration message.
+    auto state = std::make_shared<PrefillConnectionState>();
 
     sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
         tt::sockets::tags::PREFILL_REGISTRATION,
         [&registry, sm,
-         idHolder](const tt::sockets::PrefillRegistrationMessage& msg) {
+         state](const tt::sockets::PrefillRegistrationMessage& msg) {
           TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
                        msg.server_id, msg.max_in_flight);
-          *idHolder = msg.server_id;
+          state->setServerId(msg.server_id);
           registry.preRegister(msg.server_id, sm);
           bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
           if (!ok) {
@@ -210,9 +226,9 @@ int main(int argc, char** argv) {
         });
 
     sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result", [&dispatcherPtr, idHolder](
+        "prefill_result", [&dispatcherPtr, state](
                               const tt::sockets::PrefillResultMessage& msg) {
-          dispatcherPtr->onPrefillResult(*idHolder, msg);
+          dispatcherPtr->onPrefillResult(state->getServerId(), msg);
         });
 
     sm->registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
@@ -229,8 +245,8 @@ int main(int argc, char** argv) {
           dispatcherPtr->onCacheBlocksEvicted(msg);
         });
 
-    sm->setConnectionLostCallback([&registry, idHolder]() {
-      const std::string& sid = *idHolder;
+    sm->setConnectionLostCallback([&registry, state]() {
+      const std::string sid = state->getServerId();
       if (!sid.empty()) {
         TT_LOG_WARN("[Gateway] Prefill '{}' connection lost", sid);
         registry.markDown(sid);  // fires onPrefillDown -> dispatcher

@@ -56,6 +56,21 @@ uint16_t ephemeralPort() {
   return port;
 }
 
+struct PrefillConnectionState {
+  void setServerId(const std::string& serverId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    this->serverId = serverId;
+  }
+
+  std::string getServerId() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return serverId;
+  }
+
+  mutable std::mutex mutex;
+  std::string serverId;
+};
+
 // Mock prefill: SERVER mode, registers on connect, echoes a result per request.
 class FakePrefill {
  public:
@@ -216,25 +231,25 @@ class GatewayHarness {
 
     for (auto& smPtr : prefillSms_) {
       auto* sm = smPtr.get();
-      auto idHolder = std::make_shared<std::string>();
+      auto state = std::make_shared<PrefillConnectionState>();
 
       sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
           tt::sockets::tags::PREFILL_REGISTRATION,
           [this, sm,
-           idHolder](const tt::sockets::PrefillRegistrationMessage& msg) {
-            *idHolder = msg.server_id;
+           state](const tt::sockets::PrefillRegistrationMessage& msg) {
+            state->setServerId(msg.server_id);
             registry_.preRegister(msg.server_id, sm);
             registry_.markRegistered(msg.server_id, msg.max_in_flight);
           });
 
       sm->registerHandler<tt::sockets::PrefillResultMessage>(
           "prefill_result",
-          [this, idHolder](const tt::sockets::PrefillResultMessage& msg) {
-            dispatcher_->onPrefillResult(*idHolder, msg);
+          [this, state](const tt::sockets::PrefillResultMessage& msg) {
+            dispatcher_->onPrefillResult(state->getServerId(), msg);
           });
 
-      sm->setConnectionLostCallback([this, idHolder] {
-        const std::string& sid = *idHolder;
+      sm->setConnectionLostCallback([this, state] {
+        const std::string sid = state->getServerId();
         if (!sid.empty()) registry_.markDown(sid);
       });
     }
