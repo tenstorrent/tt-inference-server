@@ -5,8 +5,9 @@
 
 namespace tt::api::grpc {
 
-GrpcServerHandle::GrpcServerHandle(std::unique_ptr<::grpc::Server> serverArg,
-                                   std::unique_ptr<GrpcInferenceService> serviceArg)
+GrpcServerHandle::GrpcServerHandle(
+    std::unique_ptr<::grpc::Server> serverArg,
+    std::unique_ptr<GrpcInferenceService> serviceArg)
     : service(std::move(serviceArg)),
       server(std::move(serverArg)),
       waitThread([this] { server->Wait(); }) {}
