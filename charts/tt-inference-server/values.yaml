@@ -24,8 +24,6 @@ defaults:
   serverType: vllm
   replicaCount: 1
   progressDeadlineSeconds: 3600
-  updateStrategy:
-    type: Recreate
   podAnnotations: {}
   podSecurityContext: {}
   image:
@@ -56,13 +54,13 @@ defaults:
       initialDelaySeconds: 2400
   nodeSelector: {}
   tolerations: []
-  # Escape hatch: when set, replaces the auto-generated podAntiAffinity entirely.
+  # User-supplied affinity. MERGED with the chart's hardcoded device-collision
+  # podAntiAffinity term (see tt-inference-server.affinity in _helpers.tpl) —
+  # nodeAffinity / podAffinity / extra podAntiAffinity terms all apply, but
+  # the 1:1 Pod-to-Node guarantee from issue #2801 is unconditional and cannot
+  # be disabled from values. replicaCount must not exceed the number of nodes
+  # matching nodeSelector/tolerations or pods will sit Pending.
   affinity: {}
-  # Enforces 1:1 Pod-to-Node allocation so pods do not collide on /dev/tenstorrent.
-  # Disable for multi-pod-per-node once a device plugin or DRA driver is in place.
-  podAntiAffinity:
-    enabled: true
-    topologyKey: kubernetes.io/hostname
   extraEnv: []
 
 # ---------------------------------------------------------------------------
