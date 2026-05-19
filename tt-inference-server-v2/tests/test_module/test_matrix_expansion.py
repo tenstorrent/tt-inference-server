@@ -2,11 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Validate SDXL matrix expansion in v2's image.json.
-
-Ported from v1's tests/test_matrix_expansion.py when SDXL ownership
-moved to v2.
-"""
+"""Validate SDXL matrix expansion in v2's image.json."""
 
 from __future__ import annotations
 
