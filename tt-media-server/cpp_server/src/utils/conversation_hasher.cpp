@@ -175,8 +175,8 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
   info.hasPriorTurn = priorPrefix.has_value();
   if (info.hasPriorTurn) {
     info.lookupHash = hashTokenPrefix(*priorPrefix);
-    info.deltaPrompt = std::vector<int>(
-        tokens.begin() + priorPrefix->size(), tokens.end());
+    info.deltaPrompt =
+        std::vector<int>(tokens.begin() + priorPrefix->size(), tokens.end());
   } else {
     info.deltaPrompt = std::vector<int>{};
   }

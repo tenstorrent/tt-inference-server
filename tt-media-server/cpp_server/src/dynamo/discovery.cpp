@@ -52,9 +52,8 @@ std::string write_json(const Json::Value& v) {
 
 void register_discovery(const DiscoveryConfig& config, bool quiet) {
   // Key = "namespace/component/endpoint/instance_id_hex" (URL-encoded).
-  const std::string key = config.namespace_name + "/" + config.component +
-                          "/" + config.endpoint + "/" +
-                          config.instance_id_hex;
+  const std::string key = config.namespace_name + "/" + config.component + "/" +
+                          config.endpoint + "/" + config.instance_id_hex;
   const std::string encoded_key = url_encode_path(key);
 
   // ---- instance JSON ----
@@ -157,16 +156,15 @@ void register_discovery(const DiscoveryConfig& config, bool quiet) {
     f.close();
 
     if (!quiet) {
-      TT_LOG_INFO("[DynamoDiscovery] Registered MDC at {} (model={})",
-                  filepath, config.model_name);
+      TT_LOG_INFO("[DynamoDiscovery] Registered MDC at {} (model={})", filepath,
+                  config.model_name);
     }
   }
 }
 
 void unregister_discovery(const DiscoveryConfig& config) {
-  const std::string key = config.namespace_name + "/" + config.component +
-                          "/" + config.endpoint + "/" +
-                          config.instance_id_hex;
+  const std::string key = config.namespace_name + "/" + config.component + "/" +
+                          config.endpoint + "/" + config.instance_id_hex;
   const std::string encoded_key = url_encode_path(key);
 
   fs::remove(config.store_path + "/v1/instances/" + encoded_key);

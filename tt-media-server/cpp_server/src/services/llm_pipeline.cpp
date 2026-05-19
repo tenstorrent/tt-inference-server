@@ -69,8 +69,8 @@ void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
 }  // namespace
 
 void LLMPipeline::resolveSession(
-    std::shared_ptr<tt::domain::llm::LLMRequest> req,
-    trantor::EventLoop* loop, std::function<void(SessionInfo)> onResolved,
+    std::shared_ptr<tt::domain::llm::LLMRequest> req, trantor::EventLoop* loop,
+    std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
   SessionInfo info;

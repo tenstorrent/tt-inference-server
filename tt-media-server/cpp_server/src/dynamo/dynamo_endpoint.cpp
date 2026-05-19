@@ -8,6 +8,8 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <trantor/net/EventLoop.h>
+#include <trantor/net/EventLoopThread.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -19,9 +21,6 @@
 #include <string>
 #include <utility>
 #include <variant>
-
-#include <trantor/net/EventLoop.h>
-#include <trantor/net/EventLoopThread.h>
 
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
@@ -85,8 +84,7 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
   }
   if (isFinal) {
     if (!chunk.choices.empty()) {
-      out.finish_reason =
-          chunk.choices.front().finish_reason.value_or("stop");
+      out.finish_reason = chunk.choices.front().finish_reason.value_or("stop");
     } else {
       out.finish_reason = "stop";
     }
@@ -105,8 +103,8 @@ std::string detectModelPath() {
 
 }  // namespace
 
-DynamoEndpoint::DynamoEndpoint(
-    std::shared_ptr<services::LLMPipeline> pipeline, Options options)
+DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
+                               Options options)
     : pipeline_(std::move(pipeline)), options_(std::move(options)) {
   if (!pipeline_) {
     throw std::invalid_argument("DynamoEndpoint: pipeline must not be null");
@@ -115,8 +113,7 @@ DynamoEndpoint::DynamoEndpoint(
     options_.advertise_host = detectAdvertiseHost();
   }
   if (options_.model_name.empty()) {
-    options_.model_name =
-        tt::utils::tokenizers::activeTokenizer().modelName();
+    options_.model_name = tt::utils::tokenizers::activeTokenizer().modelName();
   }
   if (options_.model_path.empty()) {
     options_.model_path = detectModelPath();
@@ -160,9 +157,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
   auto pipeline = pipeline_;
   trantor::EventLoop* loop = loop_thread_->getLoop();
 
-  return [pipeline, loop](
-             const GenerateRequest& dynReq,
-             std::function<bool(const TokenChunk&)> sendChunk) {
+  return [pipeline, loop](const GenerateRequest& dynReq,
+                          std::function<bool(const TokenChunk&)> sendChunk) {
     auto req = buildLLMRequest(dynReq);
     auto svc = pipeline->service();
 
@@ -186,8 +182,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     pipeline->resolveSession(
         req, loop,
-        [pipeline, req, sendChunk, signalDone](
-            services::LLMPipeline::SessionInfo info) {
+        [pipeline, req, sendChunk,
+         signalDone](services::LLMPipeline::SessionInfo info) {
           auto svc = pipeline->service();
           try {
             svc->preProcess(*req);
@@ -223,8 +219,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             signalDone();
           }
         },
-        [sendChunk, signalDone](
-            const services::LLMPipeline::SessionError& err) {
+        [sendChunk,
+         signalDone](const services::LLMPipeline::SessionError& err) {
           TT_LOG_WARN("[DynamoEndpoint] Session resolution failed: {}",
                       err.message);
           TokenChunk e;
@@ -243,8 +239,8 @@ void DynamoEndpoint::start() {
     return;
   }
 
-  loop_thread_ = std::make_unique<trantor::EventLoopThread>(
-      "DynamoEndpointLoop");
+  loop_thread_ =
+      std::make_unique<trantor::EventLoopThread>("DynamoEndpointLoop");
   loop_thread_->run();
 
   ServerConfig sc;
@@ -288,8 +284,7 @@ void DynamoEndpoint::start() {
   discovery_.instance_id_hex = server_->config().instance_id_hex;
   discovery_.tcp_address = options_.advertise_host + ":" +
                            std::to_string(server_->port()) + "/" +
-                           discovery_.instance_id_hex + "/" +
-                           options_.endpoint;
+                           discovery_.instance_id_hex + "/" + options_.endpoint;
   discovery_.model_name = options_.model_name;
   discovery_.model_path = options_.model_path;
 

@@ -135,8 +135,7 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info) {
   return tci;
 }
 
-GenerateRequest parse_generate_request(
-    const std::vector<uint8_t>& body_bytes) {
+GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes) {
   GenerateRequest req;
   Json::Value j = parse_json_bytes(body_bytes.data(), body_bytes.size());
   if (!j.isObject()) return req;
@@ -307,8 +306,7 @@ void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
 
   TT_LOG_DEBUG(
       "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
-      ctrl.id, gen_req.token_ids.size(), gen_req.max_tokens,
-      conn_info.address);
+      ctrl.id, gen_req.token_ids.size(), gen_req.max_tokens, conn_info.address);
 
   // ACK on the inbound connection.
   auto ack = encode_tcp_response();
@@ -322,9 +320,9 @@ void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
   stream_response(conn_info, ctrl.id, gen_req);
 }
 
-void DynamoServer::stream_response(
-    const TcpStreamConnectionInfo& conn_info, const std::string& request_id,
-    const GenerateRequest& gen_req) {
+void DynamoServer::stream_response(const TcpStreamConnectionInfo& conn_info,
+                                   const std::string& request_id,
+                                   const GenerateRequest& gen_req) {
   auto colon_pos = conn_info.address.rfind(':');
   if (colon_pos == std::string::npos) {
     TT_LOG_ERROR("[DynamoServer] Invalid response address: {}",
@@ -348,8 +346,8 @@ void DynamoServer::stream_response(
   addr.sin_port = htons(port);
   ::inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
 
-  if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
-                sizeof(addr)) < 0) {
+  if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) <
+      0) {
     TT_LOG_ERROR("[DynamoServer] Failed to connect to response stream at {}",
                  conn_info.address);
     ::close(sock);
@@ -382,8 +380,7 @@ void DynamoServer::stream_response(
     TwoPartMessage tp;
     tp.header.assign(ps.begin(), ps.end());
     if (!write_all(sock, encode_two_part(tp))) {
-      TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})",
-                  request_id);
+      TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})", request_id);
       ::close(sock);
       return;
     }

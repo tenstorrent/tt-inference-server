@@ -550,8 +550,7 @@ unsigned prefillTimeoutMs() {
 }
 
 bool dynamoEndpointEnabled() {
-  return envBool("DYNAMO_ENDPOINT_ENABLED",
-                 defaults::DYNAMO_ENDPOINT_ENABLED);
+  return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
 
 std::string dynamoBindHost() {

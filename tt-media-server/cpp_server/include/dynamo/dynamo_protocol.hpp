@@ -18,6 +18,8 @@
  *   - Call-home response stream (streaming tokens back to the frontend)
  */
 
+#include <json/json.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -25,8 +27,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <json/json.h>
 
 namespace tt::dynamo {
 
@@ -88,8 +88,7 @@ struct TcpRequestMessage {
 // Wire: [length:u32][data]   (empty data = success ACK)
 // ---------------------------------------------------------------------------
 
-std::vector<uint8_t> encode_tcp_response(
-    const std::vector<uint8_t>& data = {});
+std::vector<uint8_t> encode_tcp_response(const std::vector<uint8_t>& data = {});
 
 // ---------------------------------------------------------------------------
 // TwoPartCodec
@@ -181,8 +180,7 @@ struct GenerateRequest {
   Json::Value raw;  // Full parsed JSON body, for any field we don't yet map.
 };
 
-GenerateRequest parse_generate_request(
-    const std::vector<uint8_t>& body_bytes);
+GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes);
 
 // ---------------------------------------------------------------------------
 // High-level server
@@ -193,9 +191,9 @@ GenerateRequest parse_generate_request(
  * `send_chunk`; the server framework calls the call-home response stream and
  * the trailing sentinels for you.
  */
-using GenerateHandler = std::function<void(
-    const GenerateRequest& request,
-    std::function<bool(const TokenChunk&)> send_chunk)>;
+using GenerateHandler =
+    std::function<void(const GenerateRequest& request,
+                       std::function<bool(const TokenChunk&)> send_chunk)>;
 
 struct ServerConfig {
   std::string bind_host = "0.0.0.0";
