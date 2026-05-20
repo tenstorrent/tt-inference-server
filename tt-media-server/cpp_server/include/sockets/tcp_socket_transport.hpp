@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_transport_state.hpp"
 #include "utils/scoped_fd.hpp"
 
 namespace tt::sockets {
@@ -26,7 +27,8 @@ namespace tt::sockets {
  * Original transport implementation — length-prefixed framing over a single
  * TCP connection with keepalive and automatic reconnect.
  */
-class TcpSocketTransport : public ISocketTransport {
+class TcpSocketTransport : public ISocketTransport,
+                           protected SocketTransportState {
  public:
   TcpSocketTransport() = default;
   TcpSocketTransport(const TcpSocketTransport&) = delete;
@@ -52,12 +54,14 @@ class TcpSocketTransport : public ISocketTransport {
                            uint32_t maxDelayMs) override;
 
  private:
-  enum class Mode { SERVER, CLIENT };
+  enum class ReceiveResult { COMPLETE, NO_DATA, DISCONNECTED };
 
   void serverLoop();
   void clientLoop();
+  bool sendAll(int fd, const void* buffer, size_t size);
+  ReceiveResult receiveExact(int fd, uint8_t* buffer, size_t size,
+                             int maxRetries, bool returnIfNoInitialData);
 
-  Mode mode_;
   std::string host_;
   uint16_t port_;
 
@@ -65,17 +69,9 @@ class TcpSocketTransport : public ISocketTransport {
   tt::utils::ScopedFd clientSocket_;
   std::atomic<int> peerSocket_{-1};
 
-  std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
-
   std::thread connectionThread_;
 
   mutable std::mutex socketMutex_;
-
-  std::function<void()> connectionLostCallback_;
-
-  uint32_t reconnectInitialDelayMs_{100};
-  uint32_t reconnectMaxDelayMs_{5000};
 };
 
 }  // namespace tt::sockets
