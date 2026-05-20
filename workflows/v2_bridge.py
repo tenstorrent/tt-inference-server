@@ -17,7 +17,8 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     run_command,
 )
-from workflows.workflow_types import WorkflowType
+from workflows.workflow_types import WorkflowType, WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -68,8 +69,11 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
     ensure_readwriteable_dir(output_dir)
 
+    venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_RUN_SCRIPT]
+    venv_config.setup(model_spec)
+
     cmd = [
-        sys.executable,
+        str(venv_config.venv_python),
         str(v2_run_py),
         "--model",
         model_spec.model_name,
