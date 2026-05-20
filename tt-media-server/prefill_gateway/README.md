@@ -102,7 +102,7 @@ SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
 SOCKET_HOST=127.0.0.1 SOCKET_PORT=7100 \
-TT_LOG_LEVEL=debug \
+TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8001
 ```
 
@@ -111,7 +111,7 @@ TT_LOG_LEVEL=debug \
 ```bash
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8002 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=debug \
+PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
@@ -125,7 +125,7 @@ PREFILL_SERVER_ID=prefill-0 \
 ```bash
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8003 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=debug \
+PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
 LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
@@ -181,7 +181,7 @@ LLM_MODE=decode \
 SOCKET_TRANSPORT=tcp \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-TT_LOG_LEVEL=debug \
+TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8001
 ```
 
@@ -193,7 +193,7 @@ LLM_MODE=prefill \
 SOCKET_TRANSPORT=tcp \
 SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
 LLM_DEVICE_BACKEND=mock \
-TT_LOG_LEVEL=debug \
+TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8002
 ```
 
