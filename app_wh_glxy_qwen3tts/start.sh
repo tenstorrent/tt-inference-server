@@ -9,7 +9,8 @@
 # Device allocation:
 #   Llama 3.1-8B:       N150 (1 chip, device 0)
 #   Whisper distil-v3:  N150 (1 chip, device 2) - traced
-#   Qwen3 TTS:          N150 (1 chip, device 4) - traced, 24kHz output
+#   Qwen3 TTS (GUEST):  N150 (1 chip, device 4) - Jim voice
+#   Qwen3 TTS (HOST):   N150 (1 chip, device 6) - Riata voice (podcast)
 #
 # TTS Backend: Qwen3-TTS (TTNN, voice cloning via reference audio)
 # ==============================
@@ -27,10 +28,13 @@ N150_MESH_DESC="/home/container_app_user/tt-metal/tt_metal/fabric/mesh_graph_des
 LLAMA_DEVICES="0"
 WHISPER_DEVICES="2"
 TTS_DEVICES="4"
+TTS_HOST_DEVICES="6"
 
-# Reference audio for voice cloning
+# Reference audio for voice cloning (GUEST = Jim, HOST = Riata)
 REF_AUDIO="/home/container_app_user/tt-metal/models/demos/qwen3_tts/demo/jim_reference.wav"
 REF_TEXT_FILE="/home/container_app_user/tt-metal/models/demos/qwen3_tts/demo/jim_reference.txt"
+HOST_REF_AUDIO="/home/container_app_user/tt-metal/models/demos/qwen3_tts/demo/female_reference_24k.wav"
+HOST_REF_TEXT_FILE="/home/container_app_user/tt-metal/models/demos/qwen3_tts/demo/female_reference.txt"
 
 echo "=========================================="
 echo "  TT-HOME Voice Assistant (Wormhole Galaxy)"
@@ -84,8 +88,8 @@ sg docker -c "docker exec $CONTAINER mkdir -p /home/container_app_user/voice-ass
 echo "[4/6] Copying Qwen3 TTS model code..."
 sg docker -c "docker exec $CONTAINER rm -rf /home/container_app_user/tt-metal/models/demos/qwen3_tts"
 sg docker -c "docker exec $CONTAINER mkdir -p /home/container_app_user/tt-metal/models/demos/qwen3_tts"
-sg docker -c "docker cp $TT_METAL_SRC/models/demos/qwen3_tts/. $CONTAINER:/home/container_app_user/tt-metal/models/demos/qwen3_tts/"
-echo "    Qwen3 TTS model code copied"
+sg docker -c "docker cp $LOCAL_APP/qwen3_tts_model/. $CONTAINER:/home/container_app_user/tt-metal/models/demos/qwen3_tts/"
+echo "    Qwen3 TTS model code copied (from app folder)"
 
 # 5. Start Whisper + Qwen3 TTS servers
 echo "[5/6] Starting model servers..."
@@ -115,6 +119,21 @@ python /home/container_app_user/voice-assistant/servers/qwen3_tts_server.py \
     --device-id 0 > /tmp/tts_server.log 2>&1
 '"
 
+echo "       Qwen3 TTS HOST (Device $TTS_HOST_DEVICES, N150, Riata voice)..."
+sg docker -c "docker exec -d $CONTAINER bash -c '
+source /home/container_app_user/tt-metal/python_env/bin/activate
+export PYTHONPATH=\"/usr/local/lib/python3.10/dist-packages:/home/container_app_user/tt-metal:\$PYTHONPATH\"
+export TT_MESH_GRAPH_DESC_PATH=$N150_MESH_DESC
+export TT_VISIBLE_DEVICES=$TTS_HOST_DEVICES
+cd /home/container_app_user/tt-metal
+HOST_TEXT=\$(cat $HOST_REF_TEXT_FILE)
+python /home/container_app_user/voice-assistant/servers/qwen3_tts_server.py \
+    --ref-audio $HOST_REF_AUDIO \
+    --ref-text \"\$HOST_TEXT\" \
+    --socket /tmp/tts_server_guest.sock \
+    --device-id 0 > /tmp/tts_server_guest.log 2>&1
+'"
+
 echo "       Waiting for servers to initialize..."
 sleep 15
 
@@ -139,7 +158,8 @@ echo ""
 echo "  Device layout (Wormhole Galaxy):"
 echo "    Device 0: Llama 3.1-8B (N150)"
 echo "    Device 2: Whisper distil-large-v3 (N150, traced)"
-echo "    Device 4: Qwen3-TTS (N150, traced, 24kHz)"
+echo "    Device 4: Qwen3-TTS GUEST - Jim voice (N150, traced)"
+echo "    Device 6: Qwen3-TTS HOST  - Riata voice (N150, traced)"
 echo ""
 
 # Health check loop
@@ -150,6 +170,7 @@ ALL_READY=false
 
 WHISPER_UP=false
 TTS_UP=false
+TTS_HOST_UP=false
 LLAMA_UP=false
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
@@ -160,8 +181,10 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         sg docker -c "docker exec $CONTAINER test -S /tmp/whisper_server.sock" 2>/dev/null && WHISPER_UP=true
     fi
     if ! $TTS_UP; then
-        sg docker -c "docker exec $CONTAINER grep -q 'READY - Listening' /tmp/tts_server.log" 2>/dev/null && TTS_UP=true
         sg docker -c "docker exec $CONTAINER test -S /tmp/tts_server.sock" 2>/dev/null && TTS_UP=true
+    fi
+    if ! $TTS_HOST_UP; then
+        sg docker -c "docker exec $CONTAINER test -S /tmp/tts_server_guest.sock" 2>/dev/null && TTS_HOST_UP=true
     fi
     if ! $LLAMA_UP; then
         sg docker -c "docker exec $CONTAINER grep -q 'All services ready' /tmp/main_app.log" 2>/dev/null && LLAMA_UP=true
@@ -169,11 +192,12 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
 
     WHISPER_S=$($WHISPER_UP && echo "UP" || echo "...")
     TTS_S=$($TTS_UP && echo "UP" || echo "...")
+    TTS_H=$($TTS_HOST_UP && echo "UP" || echo "...")
     LLAMA_S=$($LLAMA_UP && echo "UP" || echo "...")
 
-    echo "  [${ELAPSED}s] Whisper:${WHISPER_S}  Qwen3-TTS:${TTS_S}  Llama:${LLAMA_S}"
+    echo "  [${ELAPSED}s] Whisper:${WHISPER_S}  TTS-Jim:${TTS_S}  TTS-Riata:${TTS_H}  Llama:${LLAMA_S}"
 
-    if $WHISPER_UP && $TTS_UP && $LLAMA_UP; then
+    if $WHISPER_UP && $TTS_UP && $TTS_HOST_UP && $LLAMA_UP; then
         ALL_READY=true
         break
     fi
@@ -191,8 +215,9 @@ else
     echo "=========================================="
     echo "  SOME SERVICES NOT READY (after ${ELAPSED}s)"
     echo "=========================================="
-    $WHISPER_UP  || echo "  Whisper FAILED   - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/whisper_server.log'"
-    $TTS_UP      || echo "  Qwen3-TTS FAILED - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/tts_server.log'"
-    $LLAMA_UP    || echo "  Llama FAILED     - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/main_app.log'"
+    $WHISPER_UP   || echo "  Whisper FAILED     - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/whisper_server.log'"
+    $TTS_UP       || echo "  TTS-Jim FAILED     - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/tts_server.log'"
+    $TTS_HOST_UP  || echo "  TTS-Riata FAILED   - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/tts_server_guest.log'"
+    $LLAMA_UP     || echo "  Llama FAILED       - sg docker -c 'docker exec $CONTAINER tail -30 /tmp/main_app.log'"
 fi
 echo ""

@@ -57,24 +57,37 @@ class TTSService:
         logger.info(f"TTS service initialized (host: {self.socket_path}, guest: {self.guest_socket_path})")
     
     def _send_request_to(self, sock_path: str, request: dict) -> dict:
-        """Send a request to a specific TTS server socket and get response (raw JSON protocol)."""
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(120)
-        try:
-            sock.connect(sock_path)
-            data = json.dumps(request).encode('utf-8')
-            sock.sendall(data)
-            
-            response_data = b""
-            while True:
-                chunk = sock.recv(65536)
-                if not chunk:
-                    break
-                response_data += chunk
-            
-            return json.loads(response_data.decode('utf-8'))
-        finally:
-            sock.close()
+        """Send a request to a specific TTS server socket and get response (raw JSON protocol).
+        Retries on connection refused/busy (server processing another request)."""
+        import time
+        max_retries = 30
+        for attempt in range(max_retries):
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(120)
+            try:
+                sock.connect(sock_path)
+                data = json.dumps(request).encode('utf-8')
+                sock.sendall(data)
+
+                response_data = b""
+                while True:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    response_data += chunk
+
+                return json.loads(response_data.decode('utf-8'))
+            except (ConnectionRefusedError, OSError) as e:
+                sock.close()
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                raise
+            finally:
+                try:
+                    sock.close()
+                except:
+                    pass
     
     def _send_request(self, request: dict) -> dict:
         """Send request to the host TTS server."""

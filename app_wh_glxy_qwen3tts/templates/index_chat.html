@@ -2846,7 +2846,7 @@
             try {
                 const streamAbort = new AbortController();
                 _activeStreamAbort = streamAbort;
-                const streamTimeout = setTimeout(() => streamAbort.abort(), 120000);
+                const streamTimeout = setTimeout(() => streamAbort.abort(), 600000);
 
                 const response = await fetch('/api/chat-stream', {
                     method: 'POST',

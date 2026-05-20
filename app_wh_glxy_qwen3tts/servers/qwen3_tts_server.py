@@ -222,7 +222,7 @@ class Qwen3TTSServer:
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(socket_path)
-        server.listen(1)
+        server.listen(16)
 
         print(f"\n{'='*60}")
         print(f"READY - Listening on {socket_path}")

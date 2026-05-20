@@ -371,10 +371,7 @@ async def chat_stream(request: Request):
             history.append({"role": "user", "content": user_message[:200]})
             chat_history = history[:-1]
 
-        if TTS_BACKEND == "lv2":
-            PODCAST_SPEAKERS = {"host": "Emma", "guest": "MyVoice"}
-        else:
-            PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
+        # Podcast: HOST=female voice (device 6, guest socket), GUEST=Jim (device 4, main socket)
 
         async def generate_stream():
             """Parallel LLM text + TTS audio streaming.
@@ -389,15 +386,20 @@ async def chat_stream(request: Request):
 
             async def tts_worker():
                 """Background worker: pull sentences from queue, generate TTS, push audio events."""
-                current_speaker = PODCAST_SPEAKERS.get("host") if mode == "podcast" else None
                 current_role = "host"
                 first_podcast_tag_seen = False
                 TAG_PAT = re.compile(r'(?:\*\*)?[\[\(]?(HOST|GUEST)[\]\)]?(?:\*\*)?:\s*', re.IGNORECASE)
 
-                async def _synth_one(text, speaker, s_num):
-                    result = await asyncio.wait_for(
-                        tts_service.synthesize(text, speaker_id=speaker), timeout=60.0
-                    )
+                async def _synth_for_role(text, role, s_num):
+                    """Route TTS: host=Riata(device6, guest socket), guest=Jim(device4, main socket)."""
+                    if role == "host":
+                        result = await asyncio.wait_for(
+                            tts_service.synthesize_guest(text), timeout=60.0
+                        )
+                    else:
+                        result = await asyncio.wait_for(
+                            tts_service.synthesize(text), timeout=60.0
+                        )
                     audio_path = result.get("audio_path")
                     audio_b64 = ""
                     if audio_path and os.path.exists(audio_path):
@@ -419,23 +421,22 @@ async def chat_stream(request: Request):
                                 if m:
                                     before = remaining[:m.start()].strip()
                                     if before:
-                                        segments.append((before, current_speaker))
+                                        segments.append((before, current_role))
                                     current_role = m.group(1).lower()
-                                    current_speaker = PODCAST_SPEAKERS.get(current_role)
                                     first_podcast_tag_seen = True
                                     remaining = remaining[m.end():]
                                 else:
                                     text_clean = remaining.strip()
                                     if text_clean:
-                                        segments.append((text_clean, current_speaker))
+                                        segments.append((text_clean, current_role))
                                     break
                             if not segments or not first_podcast_tag_seen:
                                 if not first_podcast_tag_seen:
                                     logger.info(f"Skipping podcast preamble: {s_text[:60]}...")
                                 await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': '', 'sentence_num': s_num})}\n\n")
                                 continue
-                            for chunk_text, chunk_speaker in segments:
-                                await _synth_one(chunk_text, chunk_speaker, s_num)
+                            for chunk_text, chunk_role in segments:
+                                await _synth_for_role(chunk_text, chunk_role, s_num)
                             continue
                         speaker_val = None
                         tts_result = await asyncio.wait_for(
@@ -596,11 +597,6 @@ async def text_to_speech_stream(request: Request):
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    if TTS_BACKEND == "lv2":
-        PODCAST_SPEAKERS = {"host": "Emma", "guest": "MyVoice"}
-    else:
-        PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
-
     is_podcast = mode == "podcast" and (
         re.search(r'(?:\*\*)?[\[\(]?(?:HOST|GUEST)[\]\)]?(?:\*\*)?:', text, re.IGNORECASE)
         or re.search(r'\[[A-Za-z .]+\]:', text)
@@ -641,9 +637,10 @@ async def text_to_speech_stream(request: Request):
     async def generate_chunks():
         for i, seg in enumerate(segments):
             try:
-                speaker_val = PODCAST_SPEAKERS.get(seg["role"]) if seg["role"] else None
-                tts_kwargs = {"speaker": speaker_val} if TTS_BACKEND == "lv2" else {"speaker_id": speaker_val}
-                result = await tts_service.synthesize(seg["text"], **tts_kwargs)
+                if seg["role"] == "host":
+                    result = await tts_service.synthesize_guest(seg["text"])
+                else:
+                    result = await tts_service.synthesize(seg["text"])
                 audio_path = result.get("audio_path")
                 if audio_path and os.path.exists(audio_path):
                     with open(audio_path, "rb") as f:

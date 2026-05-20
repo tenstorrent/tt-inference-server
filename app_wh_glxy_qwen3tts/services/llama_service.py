@@ -353,9 +353,9 @@ class LlamaService:
                         should_flush = True
                         self._first_chunk_sent = True
                 else:
-                    if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 150:
+                    if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 50:
                         should_flush = True
-                    elif len(sentence_buffer.strip()) > 300:
+                    elif len(sentence_buffer.strip()) > 120:
                         should_flush = True
 
                 if should_flush:
