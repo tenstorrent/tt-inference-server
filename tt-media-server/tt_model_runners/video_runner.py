@@ -150,6 +150,9 @@ def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import (
         TTMochi1Runner,
+        TTWan22I2VAniSoraRunner,
+        TTWan22I2VDistillRunner,
+        TTWan22I2VLoRARunner,
         TTWan22I2VProdiaRunner,
         TTWan22I2VRunner,
         TTWan22Runner,
@@ -160,6 +163,9 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
         ModelRunners.TT_WAN_2_2_I2V.value: TTWan22I2VRunner,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: TTWan22I2VProdiaRunner,
+        ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: TTWan22I2VAniSoraRunner,
+        ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: TTWan22I2VDistillRunner,
+        ModelRunners.TT_WAN_2_2_I2V_LORA.value: TTWan22I2VLoRARunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:
