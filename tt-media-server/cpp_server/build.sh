@@ -221,6 +221,35 @@ download_tokenizer() {
     fi
 }
 
+# Kimi K2.6 ships tiktoken.model + chat_template.jinja instead of tokenizer.json.
+# KimiTokenizer loads them directly via Python tiktoken + jinja2. Anything LFS-tracked
+# (tiktoken.model) needs the /resolve/main URL so HF redirects to its LFS CDN.
+download_kimi_tokenizer() {
+    local model_name="moonshotai/Kimi-K2.6"
+    local hf_base="https://huggingface.co/${model_name}/resolve/main"
+    local model_dir="${TOKENIZER_DIR}/${model_name}"
+    local tiktoken_file="${model_dir}/tiktoken.model"
+    local tok_config="${model_dir}/tokenizer_config.json"
+    local tok_jinja="${model_dir}/chat_template.jinja"
+
+    if [ -f "${tiktoken_file}" ] && [ -f "${tok_config}" ] && [ -f "${tok_jinja}" ]; then
+        echo "  Using existing ${model_name} tokenizer."
+        return 0
+    fi
+
+    mkdir -p "${model_dir}"
+    echo "Downloading ${model_name} tokenizer..."
+    for f in tiktoken.model tokenizer_config.json chat_template.jinja; do
+        local dest="${model_dir}/${f}"
+        if ! curl -sL --fail -o "${dest}" "${hf_base}/${f}"; then
+            rm -f "${dest}"
+            echo "  ERROR: Failed to download ${f} from ${hf_base}"
+            return 1
+        fi
+    done
+    echo "  ${model_name} tokenizer downloaded."
+}
+
 echo ""
 echo "Pre-fetching tokenizer files for supported models..."
 
@@ -235,6 +264,9 @@ download_tokenizer \
     "meta-llama/Llama-3.1-8B-Instruct" \
     "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
     "true"
+
+# Kimi K2.6 (public; tiktoken format, custom download path)
+download_kimi_tokenizer
 
 echo ""
 

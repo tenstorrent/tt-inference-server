@@ -345,6 +345,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
     src/utils/tokenizers/llama_tokenizer.cpp
+    src/utils/tokenizers/kimi_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/runtime/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
@@ -381,8 +382,9 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), xxhash (stable hashing),
+# and pybind11::embed for KimiTokenizer's Python-backed tiktoken + jinja2.
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib pybind11::embed)
 
 # Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).

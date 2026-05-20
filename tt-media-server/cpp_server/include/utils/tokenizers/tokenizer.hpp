@@ -79,7 +79,7 @@ class Tokenizer {
    * Encode text to token IDs.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::vector<int> encode(const std::string& text) const;
+  virtual std::vector<int> encode(const std::string& text) const;
 
   /**
    * Decode token IDs to text.
@@ -88,11 +88,11 @@ class Tokenizer {
    *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& tokenIds,
-                     bool skipSpecialTokens = true) const;
+  virtual std::string decode(const std::vector<int>& tokenIds,
+                             bool skipSpecialTokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
-  bool isLoaded() const;
+  virtual bool isLoaded() const;
 
   virtual std::string modelName() const = 0;
   virtual std::vector<int64_t> stopTokenIds() const = 0;
@@ -147,6 +147,14 @@ class Tokenizer {
   std::vector<std::string> getEncodedVocab() const;
 
  protected:
+  /**
+   * Default constructor for subclasses that don't load via the .json / .model
+   * code path (e.g. KimiTokenizer wraps Python tiktoken instead of
+   * mlc-ai/tokenizers-cpp). Such subclasses must populate their own state and
+   * override encode/decode/isLoaded.
+   */
+  Tokenizer() = default;
+
   std::unique_ptr<::tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
   std::unordered_set<int> specialTokenIds_;

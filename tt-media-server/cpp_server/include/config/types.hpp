@@ -45,12 +45,15 @@ inline ModelService modelServiceFromString(const std::string& v) {
 enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  KIMI_K2_6,
 };
 
 /** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" ->
- * LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. Expects lowercase input. */
+ * LLAMA_3_1_8B_INSTRUCT, "kimi" -> KIMI_K2_6, else DEEPSEEK_R1_0528.
+ * Expects lowercase input. */
 inline ModelType modelTypeFromDeviceBackend(const std::string& v) {
   if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
+  if (v == "kimi") return ModelType::KIMI_K2_6;
   return ModelType::DEEPSEEK_R1_0528;
 }
 

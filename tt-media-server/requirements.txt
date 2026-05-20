@@ -23,5 +23,10 @@ torchaudio==2.7.1+cpu
 requests
 num2words
 
+# Required by cpp_server/src/utils/tokenizers/kimi_tokenizer.cpp at runtime
+# (Python tiktoken + jinja2 invoked via pybind11::embed for Kimi K2.6).
+tiktoken
+jinja2
+
 
 --extra-index-url https://download.pytorch.org/whl/cpu

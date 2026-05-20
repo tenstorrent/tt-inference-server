@@ -150,7 +150,11 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
+  // Kimi K2.6 ships tiktoken.model instead of tokenizer.json; KimiTokenizer
+  // loads the raw tiktoken format via Python.
+  const char* filename = (model == ModelType::KIMI_K2_6) ? "tiktoken.model"
+                                                         : "tokenizer.json";
+  std::filesystem::path p = base / modelDir / filename;
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
   }

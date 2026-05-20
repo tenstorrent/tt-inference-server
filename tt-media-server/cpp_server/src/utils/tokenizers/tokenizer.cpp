@@ -12,6 +12,7 @@
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/deepseek_tokenizer.hpp"
+#include "utils/tokenizers/kimi_tokenizer.hpp"
 #include "utils/tokenizers/llama_tokenizer.hpp"
 
 namespace tt::utils::tokenizers {
@@ -199,6 +200,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
+    case config::ModelType::KIMI_K2_6:
+      return "moonshotai/Kimi-K2.6";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -210,6 +213,8 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
+    case config::ModelType::KIMI_K2_6:
+      return std::make_unique<KimiTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return std::make_unique<DeepseekTokenizer>(path);
