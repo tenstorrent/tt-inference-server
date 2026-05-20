@@ -72,8 +72,9 @@ tt::utils::ScopedFd createTcpSocket() {
   return socketFd;
 }
 
-tt::utils::ScopedFd acceptClient(int serverSocket, struct sockaddr_in* clientAddr,
-                                socklen_t* clientLen) {
+tt::utils::ScopedFd acceptClient(int serverSocket,
+                                 struct sockaddr_in* clientAddr,
+                                 socklen_t* clientLen) {
   tt::utils::ScopedFd accepted(
       accept4(serverSocket, reinterpret_cast<struct sockaddr*>(clientAddr),
               clientLen, SOCK_CLOEXEC));
