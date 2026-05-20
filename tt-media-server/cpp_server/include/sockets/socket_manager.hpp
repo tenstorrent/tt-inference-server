@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-#include "sockets/socket_transport.hpp"
+#include "sockets/i_socket_transport.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -93,12 +93,6 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
   /**
-   * @brief Set callback fired when a TCP connection is established.
-   * Server: each accept. Client: each (re)connect.
-   */
-  void setConnectionEstablishedCallback(std::function<void()> callback);
-
-  /**
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
@@ -107,8 +101,10 @@ class SocketManager {
  private:
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
+  std::function<void(const std::vector<uint8_t>&)> getHandler(
+      const std::string& messageType) const;
 
-  SocketTransport transport_;
+  std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
   std::thread messageThread_;
@@ -116,13 +112,20 @@ class SocketManager {
   mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
       handlers_;
+
+  std::function<void()> pendingConnectionLostCallback_;
+  bool reconnectBackoffSet_{false};
+  uint32_t reconnectInitialDelayMs_{0};
+  uint32_t reconnectMaxDelayMs_{0};
+
+  void applyPendingSettings();
 };
 
 // Template implementations
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!transport_.isConnected()) {
+  if (!transport_) {
     return false;
   }
 
@@ -137,7 +140,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
     std::string serialized = oss.str();
     std::vector<uint8_t> data(serialized.begin(), serialized.end());
 
-    return transport_.sendRawData(data);
+    return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
