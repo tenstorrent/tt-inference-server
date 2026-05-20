@@ -82,40 +82,40 @@ Any field not overridden at the model/device level falls back to `defaults`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| cache.hostPath | string | `""` |  |
-| defaults.affinity | object | `{}` |  |
-| defaults.extraEnv | list | `[]` |  |
-| defaults.image.pullPolicy | string | `"IfNotPresent"` |  |
-| defaults.image.pullSecrets | list | `[]` |  |
-| defaults.nodeSelector | object | `{}` |  |
+| cache.hostPath | string | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
+| defaults.affinity | object | `{}` | Affinity rules applied to the pod. |
+| defaults.extraEnv | list | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| defaults.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
+| defaults.image.pullSecrets | list | `[]` | Image pull secrets. |
+| defaults.nodeSelector | object | `{}` | Node selector applied to the pod. |
 | defaults.podAnnotations | object | `{}` |  |
 | defaults.podSecurityContext | object | `{}` |  |
-| defaults.probes.liveness.enabled | bool | `true` |  |
-| defaults.probes.liveness.initialDelaySeconds | int | `2400` |  |
-| defaults.probes.liveness.path | string | `"/v1/models"` |  |
-| defaults.probes.readiness.enabled | bool | `true` |  |
-| defaults.probes.readiness.initialDelaySeconds | int | `2400` |  |
-| defaults.probes.readiness.path | string | `"/health"` |  |
-| defaults.progressDeadlineSeconds | int | `3600` |  |
-| defaults.replicaCount | int | `1` |  |
-| defaults.resources.limits.cpu | string | `"8"` |  |
-| defaults.resources.limits.hugepages-1Gi | string | `"32Gi"` |  |
-| defaults.resources.limits.memory | string | `"128Gi"` |  |
-| defaults.resources.requests.cpu | string | `"6"` |  |
-| defaults.resources.requests.hugepages-1Gi | string | `"32Gi"` |  |
-| defaults.resources.requests.memory | string | `"64Gi"` |  |
-| defaults.serverType | string | `"vllm"` |  |
-| defaults.service.annotations | object | `{}` |  |
-| defaults.service.port | int | `8000` |  |
-| defaults.service.targetPort | int | `8000` |  |
-| defaults.service.type | string | `"ClusterIP"` |  |
-| defaults.tolerations | list | `[]` |  |
-| device | string | `""` |  |
-| fullnameOverride | string | `""` |  |
-| hfToken | string | `""` |  |
-| model | string | `""` |  |
+| defaults.probes.liveness.enabled | bool | `true` | Enable liveness probe. |
+| defaults.probes.liveness.initialDelaySeconds | int | `2400` | Liveness probe initial delay. Set high due to model load times. |
+| defaults.probes.liveness.path | string | `"/v1/models"` | Liveness probe HTTP path. |
+| defaults.probes.readiness.enabled | bool | `true` | Enable readiness probe. |
+| defaults.probes.readiness.initialDelaySeconds | int | `2400` | Readiness probe initial delay. |
+| defaults.probes.readiness.path | string | `"/health"` | Readiness probe HTTP path. |
+| defaults.progressDeadlineSeconds | int | `3600` | Deployment progress deadline. Set high due to long model load times. |
+| defaults.replicaCount | int | `1` | Number of Deployment replicas. |
+| defaults.resources.limits.cpu | string | `"8"` | CPU limit. |
+| defaults.resources.limits.hugepages-1Gi | string | `"32Gi"` | Hugepage limit. |
+| defaults.resources.limits.memory | string | `"128Gi"` | Memory limit (overridden per model). |
+| defaults.resources.requests.cpu | string | `"6"` | CPU request. |
+| defaults.resources.requests.hugepages-1Gi | string | `"32Gi"` | Hugepage request. |
+| defaults.resources.requests.memory | string | `"64Gi"` | Memory request (overridden per model). |
+| defaults.serverType | string | `"vllm"` | Server backend: `vllm` or `media`. |
+| defaults.service.annotations | object | `{}` | Annotations applied to the Service. |
+| defaults.service.port | int | `8000` | Service port. |
+| defaults.service.targetPort | int | `8000` | Container target port. |
+| defaults.service.type | string | `"ClusterIP"` | Kubernetes Service type. |
+| defaults.tolerations | list | `[]` | Tolerations applied to the pod. |
+| device | string | `""` | Device name. Must match a key under `models.<model>`. |
+| fullnameOverride | string | `""` | Fully overrides the resource name prefix. |
+| hfToken | string | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
+| model | string | `""` | Model name. Must match a key in `models`. |
 | models | object | See the Supported Models section below. | Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list. |
-| nameOverride | string | `""` |  |
+| nameOverride | string | `""` | Overrides the chart name component in resource names. |
 
 ---
 
