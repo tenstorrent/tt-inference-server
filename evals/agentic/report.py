@@ -23,8 +23,6 @@ def get_agentic_result_file_pattern(model_spec: Any, eval_run_id: str) -> str:
 def is_harbor_result(data: Any) -> bool:
     if not isinstance(data, dict):
         return False
-    # Prefer the explicit marker written by our eval runners after the eval completes.
-    # Fall back to structural detection for result files written before this field existed.
     return data.get("_result_format") == "harbor"
 
 
