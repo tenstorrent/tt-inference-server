@@ -101,6 +101,8 @@ class SocketManager {
  private:
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
+  std::function<void(const std::vector<uint8_t>&)> getHandler(
+      const std::string& messageType) const;
 
   std::unique_ptr<ISocketTransport> transport_;
 

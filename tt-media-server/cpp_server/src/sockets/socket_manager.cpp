@@ -9,6 +9,10 @@
 
 namespace tt::sockets {
 
+namespace {
+constexpr auto MESSAGE_LOOP_SLEEP = std::chrono::milliseconds(10);
+}
+
 SocketManager::~SocketManager() { stop(); }
 
 void SocketManager::applyPendingSettings() {
@@ -74,7 +78,7 @@ void SocketManager::messageLoop() {
       TT_LOG_ERROR("[SocketManager] Message loop error: {}", e.what());
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(MESSAGE_LOOP_SLEEP);
   }
 }
 
@@ -87,17 +91,27 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
     std::string messageType;
     archive(messageType);
 
-    std::lock_guard<std::mutex> lock(handlersMutex_);
-    auto it = handlers_.find(messageType);
-    if (it != handlers_.end()) {
-      it->second(data);
-    } else {
+    auto handler = getHandler(messageType);
+    if (!handler) {
       TT_LOG_DEBUG("[SocketManager] No handler for message type: {}",
                    messageType);
+      return;
     }
+
+    handler(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Message handling error: {}", e.what());
   }
+}
+
+std::function<void(const std::vector<uint8_t>&)> SocketManager::getHandler(
+    const std::string& messageType) const {
+  std::lock_guard<std::mutex> lock(handlersMutex_);
+  auto it = handlers_.find(messageType);
+  if (it == handlers_.end()) {
+    return {};
+  }
+  return it->second;
 }
 
 bool SocketManager::isConnected() const {
