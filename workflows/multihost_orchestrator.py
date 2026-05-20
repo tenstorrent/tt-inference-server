@@ -516,6 +516,8 @@ class MultiHostOrchestrator:
             "-e", f"MESH_DEVICE={mesh_device}",
             "-e", "VLLM_TARGET_DEVICE=tt",
             "-e", f"NCCL_SOCKET_IFNAME={self.mpi_interface}",
+            "-e", f"GLOO_SOCKET_IFNAME={self.mpi_interface}",
+            "-e", f"TP_SOCKET_IFNAME={self.mpi_interface}",
             "-e", f"ETH={self.mpi_interface}",
             "-e", f"HOSTS={','.join(self.hosts)}",
             "-e", f"RUNTIME_MODEL_SPEC_JSON_PATH={container_model_spec_path}",
