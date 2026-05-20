@@ -393,7 +393,17 @@ fi
 # ── CMake configure ──────────────────────────────────────────────────────
 mkdir -p "${BUILD_DIR}"
 
-# Clear any cached cargo path from a previous broken configure
+# If the previous configure aborted (e.g. missing Boost, malformed cache),
+# CMakeCache.txt may be left with truncated/malformed entries that produce
+# misleading downstream errors like "jsoncpp lib is too old.....stop" because
+# stale find_path() results never got refreshed. CMake writes
+# cmake_install.cmake only on a successful end-of-configure, so its absence
+# next to CMakeCache.txt reliably means "prior configure failed" → wipe.
+if [ -f "${BUILD_DIR}/CMakeCache.txt" ] && [ ! -f "${BUILD_DIR}/cmake_install.cmake" ]; then
+    echo "Previous CMake configure did not complete — clearing ${BUILD_DIR}."
+    rm -rf "${BUILD_DIR}"
+    mkdir -p "${BUILD_DIR}"
+fi
 if [ -f "${BUILD_DIR}/CMakeCache.txt" ]; then
     sed -i '/CARGO_EXECUTABLE/d' "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null || true
 fi
