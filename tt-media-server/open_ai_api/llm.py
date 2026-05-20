@@ -31,7 +31,16 @@ def _split_batched_prompts(req: CompletionRequest) -> list[CompletionRequest]:
     """
     p = req.prompt
     if isinstance(p, list) and p and isinstance(p[0], (list, str)):
-        return [req.model_copy(update={"prompt": item}) for item in p]
+        sub_reqs = [req.model_copy(update={"prompt": item}) for item in p]
+        # Pydantic's model_copy(update=...) preserves PrivateAttr values, so
+        # every sub-request would otherwise share the original request's
+        # _task_id. That collides in the scheduler's per-task result_queues
+        # map — only one sub-request's await sees its result, the rest hang
+        # until request_processing_timeout_seconds. Re-key each sub-request
+        # with a fresh UUID so the per-task queues stay distinct.
+        for sr in sub_reqs:
+            sr._task_id = str(uuid.uuid4())
+        return sub_reqs
     return [req]
 
 
