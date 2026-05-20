@@ -62,6 +62,7 @@ def test_process_agentic_eval_files_extracts_harbor_summary_metrics(tmp_path):
     result_path.write_text(
         json.dumps(
             {
+                "_result_format": "harbor",
                 "stats": {
                     "evals": {
                         "terminus-2__Qwen/Qwen3.6-27B__terminal-bench/terminal-bench-2": {
@@ -103,6 +104,7 @@ def test_process_agentic_eval_files_extracts_swebench_metrics(tmp_path):
     result_path.write_text(
         json.dumps(
             {
+                "_result_format": "harbor",
                 "config": {
                     "datasets": [
                         {
