@@ -14,10 +14,6 @@ namespace tt::sockets {
 
 /**
  * @brief Shared state for concrete socket transports.
- *
- * The byte-level transport logic stays in
- * TcpSocketTransport/ZmqSocketTransport; this helper only owns common
- * lifecycle/status/callback state.
  */
 class SocketTransportState {
  protected:
