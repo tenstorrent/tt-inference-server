@@ -100,7 +100,6 @@ class ZmqSocketTransport : public ISocketTransport,
 
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;
-
 };
 
 }  // namespace tt::sockets

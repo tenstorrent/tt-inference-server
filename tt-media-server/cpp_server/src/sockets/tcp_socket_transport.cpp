@@ -349,9 +349,9 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
   }
 
   std::vector<uint8_t> data(size);
-  auto payloadStatus = receiveExact(fd, data.data(), data.size(),
-                                    MAX_PAYLOAD_RETRIES,
-                                    /*returnIfNoInitialData=*/false);
+  auto payloadStatus =
+      receiveExact(fd, data.data(), data.size(), MAX_PAYLOAD_RETRIES,
+                   /*returnIfNoInitialData=*/false);
   if (payloadStatus != ReceiveResult::COMPLETE) {
     markDisconnected();
     return {};

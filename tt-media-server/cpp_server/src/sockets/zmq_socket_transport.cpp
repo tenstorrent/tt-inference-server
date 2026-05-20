@@ -208,8 +208,7 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
       if (eventId == ZMQ_EVENT_CONNECTED || eventId == ZMQ_EVENT_ACCEPTED) {
         bool wasConnected = connected_.exchange(true);
         if (!wasConnected) {
-          TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})",
-                       modeName());
+          TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})", modeName());
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
         bool wasConnected = connected_.exchange(false);
