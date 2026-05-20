@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -150,6 +150,45 @@ FetchContent_MakeAvailable(spdlog)
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)
+
+# ZeroMQ for optional inter-server transport (alternative to raw TCP sockets)
+# First try to find system-installed libzmq; if not found, build from source.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(ZMQ IMPORTED_TARGET libzmq)
+endif()
+if(NOT ZMQ_FOUND)
+    find_package(ZeroMQ QUIET)
+    if(ZeroMQ_FOUND)
+        set(ZMQ_FOUND TRUE)
+    endif()
+endif()
+if(NOT ZMQ_FOUND)
+    message(STATUS "libzmq not found on system; building from source via FetchContent")
+    FetchContent_Declare(
+        libzmq
+        GIT_REPOSITORY https://github.com/zeromq/libzmq.git
+        GIT_TAG        v4.3.5
+        GIT_SHALLOW    TRUE
+    )
+    set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(WITH_DOCS OFF CACHE BOOL "" FORCE)
+    set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(libzmq)
+    set(ZMQ_FROM_SOURCE TRUE)
+endif()
+# cppzmq (header-only C++ bindings for libzmq)
+FetchContent_Declare(
+    cppzmq
+    GIT_REPOSITORY https://github.com/zeromq/cppzmq.git
+    GIT_TAG        v4.11.0
+    GIT_SHALLOW    TRUE
+)
+set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
@@ -650,7 +689,9 @@ add_executable(main_integration_test
     src/services/disaggregation_service.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/socket_transport.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
 )
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
@@ -660,8 +701,16 @@ target_link_libraries(main_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(main_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(main_integration_test PRIVATE libzmq)
+endif()
 target_include_directories(main_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
@@ -801,7 +850,9 @@ set(SOURCES
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/socket_transport.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
@@ -846,6 +897,16 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
+
+# Link ZeroMQ
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libzmq)
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE ${cppzmq_SOURCE_DIR})
 
 # Link Kafka messaging if enabled
 if(KAFKA_ENABLED)

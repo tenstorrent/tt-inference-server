@@ -5,7 +5,11 @@
 // Validates registration handshake, routing (round-robin + sticky-by-hash),
 // result/assignment delivery, and prefill-down failover.
 
+#include <arpa/inet.h>
 #include <gtest/gtest.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
@@ -52,6 +56,21 @@ uint16_t ephemeralPort() {
   return port;
 }
 
+struct PrefillConnectionState {
+  void setServerId(const std::string& serverId) {
+    std::lock_guard<std::mutex> lock(mutex);
+    this->serverId = serverId;
+  }
+
+  std::string getServerId() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return serverId;
+  }
+
+  mutable std::mutex mutex;
+  std::string serverId;
+};
+
 // Mock prefill: SERVER mode, registers on connect, echoes a result per request.
 class FakePrefill {
  public:
@@ -59,15 +78,14 @@ class FakePrefill {
       : serverId_(std::move(serverId)), port_(port), maxInFlight_(maxInFlight) {
     sm_.initializeAsServer(port_);
 
-    sm_.setConnectionEstablishedCallback([this] {
-      tt::sockets::PrefillRegistrationMessage msg;
-      msg.server_id = serverId_;
-      msg.max_in_flight = maxInFlight_;
-      // Brief sleep — the gateway-side SERVER socket needs a moment to wire
-      // its read loop before the registration message arrives.
-      std::this_thread::sleep_for(50ms);
-      sm_.sendObject(tt::sockets::tags::PREFILL_REGISTRATION, msg);
-    });
+    sm_.registerHandler<tt::sockets::RegistrationProbeMessage>(
+        tt::sockets::tags::REGISTRATION_PROBE,
+        [this](const tt::sockets::RegistrationProbeMessage&) {
+          tt::sockets::PrefillRegistrationMessage msg;
+          msg.server_id = serverId_;
+          msg.max_in_flight = maxInFlight_;
+          sm_.sendObject(tt::sockets::tags::PREFILL_REGISTRATION, msg);
+        });
 
     sm_.registerHandler<tt::sockets::PrefillRequestMessage>(
         "prefill_request",
@@ -213,25 +231,25 @@ class GatewayHarness {
 
     for (auto& smPtr : prefillSms_) {
       auto* sm = smPtr.get();
-      auto idHolder = std::make_shared<std::string>();
+      auto state = std::make_shared<PrefillConnectionState>();
 
       sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
           tt::sockets::tags::PREFILL_REGISTRATION,
           [this, sm,
-           idHolder](const tt::sockets::PrefillRegistrationMessage& msg) {
-            *idHolder = msg.server_id;
+           state](const tt::sockets::PrefillRegistrationMessage& msg) {
+            state->setServerId(msg.server_id);
             registry_.preRegister(msg.server_id, sm);
             registry_.markRegistered(msg.server_id, msg.max_in_flight);
           });
 
       sm->registerHandler<tt::sockets::PrefillResultMessage>(
           "prefill_result",
-          [this, idHolder](const tt::sockets::PrefillResultMessage& msg) {
-            dispatcher_->onPrefillResult(*idHolder, msg);
+          [this, state](const tt::sockets::PrefillResultMessage& msg) {
+            dispatcher_->onPrefillResult(state->getServerId(), msg);
           });
 
-      sm->setConnectionLostCallback([this, idHolder] {
-        const std::string& sid = *idHolder;
+      sm->setConnectionLostCallback([this, state] {
+        const std::string sid = state->getServerId();
         if (!sid.empty()) registry_.markDown(sid);
       });
     }
@@ -244,6 +262,8 @@ class GatewayHarness {
   }
 
   ~GatewayHarness() {
+    proberStop_ = true;
+    if (proberThread_.joinable()) proberThread_.join();
     decodeSm_.stop();
     for (auto& sm : prefillSms_) sm->stop();
   }
@@ -251,6 +271,15 @@ class GatewayHarness {
   void start() {
     for (auto& sm : prefillSms_) sm->start();
     decodeSm_.start();
+    proberThread_ = std::thread([this] {
+      while (!proberStop_.load()) {
+        for (auto& sm : prefillSms_) {
+          sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                         tt::sockets::RegistrationProbeMessage{});
+        }
+        std::this_thread::sleep_for(50ms);
+      }
+    });
   }
 
   PrefillRegistry& registry() { return registry_; }
@@ -263,6 +292,8 @@ class GatewayHarness {
   tt::sockets::SocketManager decodeSm_;
   std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefillSms_;
   std::unique_ptr<Dispatcher> dispatcher_;
+  std::thread proberThread_;
+  std::atomic<bool> proberStop_{false};
 };
 
 class GatewayE2ETest : public ::testing::Test {

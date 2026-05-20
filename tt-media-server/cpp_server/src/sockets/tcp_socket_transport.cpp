@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "sockets/socket_transport.hpp"
+#include "sockets/tcp_socket_transport.hpp"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -19,28 +19,28 @@ void setSocketKeepAlive(int socketFd) {
   int enable = 1;
   if (setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) <
       0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set SO_KEEPALIVE: {}",
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set SO_KEEPALIVE: {}",
                 strerror(errno));
   }
 
   int idle = 10;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) <
       0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set TCP_KEEPIDLE: {}",
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPIDLE: {}",
                 strerror(errno));
   }
 
   int interval = 5;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
                  sizeof(interval)) < 0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set TCP_KEEPINTVL: {}",
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPINTVL: {}",
                 strerror(errno));
   }
 
   int maxProbes = 3;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes,
                  sizeof(maxProbes)) < 0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set TCP_KEEPCNT: {}",
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPCNT: {}",
                 strerror(errno));
   }
 }
@@ -48,7 +48,7 @@ void setSocketKeepAlive(int socketFd) {
 void setNonBlocking(int socketFd) {
   int flags = fcntl(socketFd, F_GETFL, 0);
   if (flags < 0 || fcntl(socketFd, F_SETFL, flags | O_NONBLOCK) < 0) {
-    TT_LOG_WARN("[SocketTransport] Failed to set non-blocking: {}",
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set non-blocking: {}",
                 strerror(errno));
   }
 }
@@ -59,15 +59,15 @@ void configureSocket(int socketFd) {
 }
 }  // namespace
 
-SocketTransport::~SocketTransport() { stop(); }
+TcpSocketTransport::~TcpSocketTransport() { stop(); }
 
-bool SocketTransport::initializeAsServer(uint16_t port) {
+bool TcpSocketTransport::initializeAsServer(uint16_t port) {
   mode_ = Mode::SERVER;
   port_ = port;
 
   serverSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
   if (!serverSocket_) {
-    TT_LOG_ERROR("[SocketTransport] Failed to create server socket: {}",
+    TT_LOG_ERROR("[TcpSocketTransport] Failed to create server socket: {}",
                  strerror(errno));
     return false;
   }
@@ -75,7 +75,7 @@ bool SocketTransport::initializeAsServer(uint16_t port) {
   int opt = 1;
   if (setsockopt(serverSocket_.get(), SOL_SOCKET, SO_REUSEADDR, &opt,
                  sizeof(opt)) < 0) {
-    TT_LOG_ERROR("[SocketTransport] Failed to set SO_REUSEADDR: {}",
+    TT_LOG_ERROR("[TcpSocketTransport] Failed to set SO_REUSEADDR: {}",
                  strerror(errno));
     serverSocket_.reset();
     return false;
@@ -88,34 +88,34 @@ bool SocketTransport::initializeAsServer(uint16_t port) {
 
   if (bind(serverSocket_.get(), (struct sockaddr*)&address, sizeof(address)) <
       0) {
-    TT_LOG_ERROR("[SocketTransport] Failed to bind to port {}: {}", port_,
+    TT_LOG_ERROR("[TcpSocketTransport] Failed to bind to port {}: {}", port_,
                  strerror(errno));
     serverSocket_.reset();
     return false;
   }
 
   if (listen(serverSocket_.get(), 1) < 0) {
-    TT_LOG_ERROR("[SocketTransport] Failed to listen: {}", strerror(errno));
+    TT_LOG_ERROR("[TcpSocketTransport] Failed to listen: {}", strerror(errno));
     serverSocket_.reset();
     return false;
   }
 
-  TT_LOG_INFO("[SocketTransport] Server initialized on port {}", port_);
+  TT_LOG_INFO("[TcpSocketTransport] Server initialized on port {}", port_);
   return true;
 }
 
-bool SocketTransport::initializeAsClient(const std::string& host,
-                                         uint16_t port) {
+bool TcpSocketTransport::initializeAsClient(const std::string& host,
+                                            uint16_t port) {
   mode_ = Mode::CLIENT;
   host_ = host;
   port_ = port;
 
-  TT_LOG_INFO("[SocketTransport] Client initialized to connect to {}:{}", host_,
-              port_);
+  TT_LOG_INFO("[TcpSocketTransport] Client initialized to connect to {}:{}",
+              host_, port_);
   return true;
 }
 
-void SocketTransport::start() {
+void TcpSocketTransport::start() {
   if (running_) {
     return;
   }
@@ -123,13 +123,13 @@ void SocketTransport::start() {
   running_ = true;
 
   if (mode_ == Mode::SERVER) {
-    connectionThread_ = std::thread(&SocketTransport::serverLoop, this);
+    connectionThread_ = std::thread(&TcpSocketTransport::serverLoop, this);
   } else {
-    connectionThread_ = std::thread(&SocketTransport::clientLoop, this);
+    connectionThread_ = std::thread(&TcpSocketTransport::clientLoop, this);
   }
 }
 
-void SocketTransport::stop() {
+void TcpSocketTransport::stop() {
   if (!running_) {
     return;
   }
@@ -137,6 +137,10 @@ void SocketTransport::stop() {
   running_ = false;
   connected_ = false;
 
+  int fd = peerSocket_.load(std::memory_order_acquire);
+  if (fd >= 0) {
+    ::shutdown(fd, SHUT_RDWR);
+  }
   peerSocket_.store(-1, std::memory_order_release);
 
   if (serverSocket_) {
@@ -150,19 +154,12 @@ void SocketTransport::stop() {
   clientSocket_.reset();
   serverSocket_.reset();
 
-  TT_LOG_INFO("[SocketTransport] Stopped");
+  TT_LOG_INFO("[TcpSocketTransport] Stopped");
 }
 
-void SocketTransport::shutdownPeer() {
-  int fd = peerSocket_.load(std::memory_order_acquire);
-  if (fd >= 0) {
-    ::shutdown(fd, SHUT_RDWR);
-  }
-}
-
-void SocketTransport::serverLoop() {
+void TcpSocketTransport::serverLoop() {
   while (running_) {
-    TT_LOG_INFO("[SocketTransport] Waiting for client connection...");
+    TT_LOG_INFO("[TcpSocketTransport] Waiting for client connection...");
 
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
@@ -171,7 +168,7 @@ void SocketTransport::serverLoop() {
         accept(serverSocket_.get(), (struct sockaddr*)&clientAddr, &clientLen));
     if (!accepted) {
       if (running_) {
-        TT_LOG_ERROR("[SocketTransport] Accept failed: {}", strerror(errno));
+        TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
       }
       break;
     }
@@ -181,29 +178,28 @@ void SocketTransport::serverLoop() {
     peerSocket_.store(accepted.get(), std::memory_order_release);
     connected_ = true;
 
-    TT_LOG_INFO("[SocketTransport] Client connected from {}:{}",
+    TT_LOG_INFO("[TcpSocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-
-    if (connectionEstablishedCallback_) {
-      connectionEstablishedCallback_();
-    }
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    accepted.reset();
-    peerSocket_.store(-1, std::memory_order_release);
+    {
+      std::lock_guard<std::mutex> lock(socketMutex_);
+      peerSocket_.store(-1, std::memory_order_release);
+      accepted.reset();
+    }
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();
     }
 
-    TT_LOG_INFO("[SocketTransport] Client disconnected");
+    TT_LOG_INFO("[TcpSocketTransport] Client disconnected");
   }
 }
 
-void SocketTransport::clientLoop() {
+void TcpSocketTransport::clientLoop() {
   uint32_t delayMs = reconnectInitialDelayMs_;
   auto backoff = [&]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
@@ -213,7 +209,7 @@ void SocketTransport::clientLoop() {
   while (running_) {
     clientSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
     if (!clientSocket_) {
-      TT_LOG_ERROR("[SocketTransport] Failed to create client socket: {}",
+      TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
                    strerror(errno));
       backoff();
       continue;
@@ -224,19 +220,20 @@ void SocketTransport::clientLoop() {
     serverAddr.sin_port = htons(port_);
 
     if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
-      TT_LOG_ERROR("[SocketTransport] Invalid address: {}", host_);
+      TT_LOG_ERROR("[TcpSocketTransport] Invalid address: {}", host_);
       clientSocket_.reset();
       backoff();
       continue;
     }
 
     TT_LOG_INFO(
-        "[SocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
+        "[TcpSocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
         host_, port_, delayMs);
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
-      TT_LOG_ERROR("[SocketTransport] Connection failed: {}", strerror(errno));
+      TT_LOG_ERROR("[TcpSocketTransport] Connection failed: {}",
+                   strerror(errno));
       clientSocket_.reset();
       backoff();
       continue;
@@ -248,32 +245,29 @@ void SocketTransport::clientLoop() {
     connected_ = true;
     delayMs = reconnectInitialDelayMs_;  // reset on success
 
-    TT_LOG_INFO("[SocketTransport] Connected to server");
-
-    if (connectionEstablishedCallback_) {
-      connectionEstablishedCallback_();
-    }
+    TT_LOG_INFO("[TcpSocketTransport] Connected to server");
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    peerSocket_.store(-1, std::memory_order_release);
-    clientSocket_.reset();
-    // See serverLoop comment: always-fire on exit-from-connected.
+    {
+      std::lock_guard<std::mutex> lock(socketMutex_);
+      peerSocket_.store(-1, std::memory_order_release);
+      clientSocket_.reset();
+    }
     connected_ = false;
     if (connectionLostCallback_) {
       connectionLostCallback_();
     }
 
-    TT_LOG_INFO("[SocketTransport] Disconnected from server");
+    TT_LOG_INFO("[TcpSocketTransport] Disconnected from server");
   }
 }
 
-bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return false;
-
-  std::lock_guard<std::mutex> lock(sendMutex_);
 
   int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return false;
@@ -281,44 +275,86 @@ bool SocketTransport::sendRawData(const std::vector<uint8_t>& data) {
   uint32_t size = static_cast<uint32_t>(data.size());
   uint32_t netSize = htonl(size);
 
-  ssize_t sent = send(fd, &netSize, sizeof(netSize), MSG_NOSIGNAL);
-  if (sent != sizeof(netSize)) {
-    connected_ = false;
-    return false;
-  }
-
-  size_t totalSent = 0;
-  while (totalSent < data.size()) {
-    sent = send(fd, data.data() + totalSent, data.size() - totalSent,
-                MSG_NOSIGNAL);
-    if (sent <= 0) {
-      connected_ = false;
-      return false;
+  // Send with retry on EAGAIN — the socket is non-blocking, so a transient
+  // "would block" on the header should not disconnect the peer.
+  auto sendAll = [&](const void* buf, size_t len) -> bool {
+    size_t sent = 0;
+    int retries = 0;
+    const int maxRetries = 100;
+    while (sent < len) {
+      ssize_t n = send(fd, static_cast<const uint8_t*>(buf) + sent, len - sent,
+                       MSG_NOSIGNAL);
+      if (n > 0) {
+        sent += static_cast<size_t>(n);
+        retries = 0;
+      } else if (n == 0) {
+        connected_ = false;
+        return false;
+      } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          if (++retries > maxRetries) {
+            connected_ = false;
+            return false;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } else {
+          connected_ = false;
+          return false;
+        }
+      }
     }
-    totalSent += sent;
-  }
+    return true;
+  };
+
+  if (!sendAll(&netSize, sizeof(netSize))) return false;
+  if (!sendAll(data.data(), data.size())) return false;
 
   return true;
 }
 
-std::vector<uint8_t> SocketTransport::receiveRawData() {
+std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
+  std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return {};
 
   int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return {};
 
-  uint32_t netSize;
-  ssize_t received = recv(fd, &netSize, sizeof(netSize), MSG_DONTWAIT);
-  if (received <= 0) {
-    if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
-      connected_ = false;
-    }
-    return {};
-  }
+  // Read the 4-byte length header. The first recv uses MSG_DONTWAIT so the
+  // call returns immediately when no data is available (EAGAIN). If a partial
+  // header arrives, retry with a short timeout rather than treating it as a
+  // disconnect — partial reads are possible on non-blocking sockets.
+  uint32_t netSize = 0;
+  size_t headerReceived = 0;
+  int headerRetries = 0;
+  const int maxHeaderRetries = 100;  // 100ms timeout (100 * 1ms)
 
-  if (received != sizeof(netSize)) {
-    connected_ = false;
-    return {};
+  while (headerReceived < sizeof(netSize)) {
+    ssize_t n = recv(fd, reinterpret_cast<uint8_t*>(&netSize) + headerReceived,
+                     sizeof(netSize) - headerReceived,
+                     headerReceived == 0 ? MSG_DONTWAIT : 0);
+    if (n > 0) {
+      headerReceived += static_cast<size_t>(n);
+      headerRetries = 0;
+    } else if (n == 0) {
+      connected_ = false;
+      return {};
+    } else {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        if (headerReceived == 0) {
+          // No data available yet — normal, just return empty.
+          return {};
+        }
+        // Partial header: wait briefly for the rest.
+        if (++headerRetries > maxHeaderRetries) {
+          connected_ = false;
+          return {};
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } else {
+        connected_ = false;
+        return {};
+      }
+    }
   }
 
   uint32_t size = ntohl(netSize);
@@ -333,9 +369,10 @@ std::vector<uint8_t> SocketTransport::receiveRawData() {
   const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
 
   while (totalReceived < size) {
-    received = recv(fd, data.data() + totalReceived, size - totalReceived, 0);
+    ssize_t received =
+        recv(fd, data.data() + totalReceived, size - totalReceived, 0);
     if (received > 0) {
-      totalReceived += received;
+      totalReceived += static_cast<size_t>(received);
       retryCount = 0;
     } else if (received == 0) {
       connected_ = false;
@@ -343,7 +380,7 @@ std::vector<uint8_t> SocketTransport::receiveRawData() {
     } else {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         if (++retryCount > maxRetries) {
-          TT_LOG_ERROR("[SocketTransport] Timeout waiting for message data");
+          TT_LOG_ERROR("[TcpSocketTransport] Timeout waiting for message data");
           connected_ = false;
           return {};
         }
@@ -358,9 +395,9 @@ std::vector<uint8_t> SocketTransport::receiveRawData() {
   return data;
 }
 
-bool SocketTransport::isConnected() const { return connected_; }
+bool TcpSocketTransport::isConnected() const { return connected_; }
 
-std::string SocketTransport::getStatus() const {
+std::string TcpSocketTransport::getStatus() const {
   if (!running_) {
     return "stopped";
   }
@@ -372,18 +409,13 @@ std::string SocketTransport::getStatus() const {
   return mode_ == Mode::SERVER ? "server:waiting" : "client:connecting";
 }
 
-void SocketTransport::setConnectionLostCallback(
+void TcpSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
   connectionLostCallback_ = std::move(callback);
 }
 
-void SocketTransport::setConnectionEstablishedCallback(
-    std::function<void()> callback) {
-  connectionEstablishedCallback_ = std::move(callback);
-}
-
-void SocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
-                                          uint32_t maxDelayMs) {
+void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
+                                             uint32_t maxDelayMs) {
   reconnectInitialDelayMs_ = initialDelayMs;
   reconnectMaxDelayMs_ = maxDelayMs;
 }
