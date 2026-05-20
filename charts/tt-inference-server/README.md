@@ -78,54 +78,18 @@ Any field not overridden at the model/device level falls back to `defaults`.
 
 ---
 
-## Values Reference
+## Values
 
-| Value | Required | Default | Description |
-|---|---|---|---|
-| `model` | yes | `""` | Model name. Must match a key in `models`. |
-| `device` | yes | `""` | Device name. Must match a key under `models.<model>`. |
-| `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
-| `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Skips download at startup. |
-| `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
-| `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
-| `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
-
----
-
-## Defaults Reference
-
-All fields under `defaults` apply to every model/device unless overridden in the `models` map.
-
-| Field | Default | Description |
-|---|---|---|
-| `defaults.serverType` | `vllm` | Server backend: `vllm` or `media`. |
-| `defaults.replicaCount` | `1` | Number of Deployment replicas. |
-| `defaults.progressDeadlineSeconds` | `3600` | Deployment progress deadline. Set high due to long model load times. |
-| `defaults.hostIPC` | `true` | Enables host IPC namespace, required for Tenstorrent device communication. |
-| `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
-| `defaults.image.pullSecrets` | `[]` | Image pull secrets. |
-| `defaults.service.type` | `ClusterIP` | Kubernetes Service type. |
-| `defaults.service.port` | `8000` | Service port. |
-| `defaults.service.targetPort` | `8000` | Container target port. |
-| `defaults.service.protocol` | `TCP` | Service protocol. |
-| `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.cpu` | `8` | CPU limit. |
-| `defaults.resources.limits.memory` | `128Gi` | Memory limit (overridden per model). |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. |
-| `defaults.resources.requests.cpu` | `6` | CPU request. |
-| `defaults.resources.requests.memory` | `64Gi` | Memory request (overridden per model). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
-| `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
-| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path. |
-| `defaults.probes.liveness.initialDelaySeconds` | `2400` | Liveness probe initial delay. Set high due to model load times. |
-| `defaults.probes.readiness.enabled` | `true` | Enable readiness probe. |
-| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path. |
-| `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
-| `defaults.securityContext.privileged` | `true` | Required for access to Tenstorrent device files. |
-| `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
-| `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
-| `defaults.affinity` | `{}` | Affinity rules applied to the pod. |
-| `defaults.extraEnv` | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| cache.hostPath | string | `""` |  |
+| defaults | object | `{"affinity":{},"extraEnv":[],"image":{"pullPolicy":"IfNotPresent","pullSecrets":[]},"nodeSelector":{},"podAnnotations":{},"podSecurityContext":{},"probes":{"liveness":{"enabled":true,"initialDelaySeconds":2400,"path":"/v1/models"},"readiness":{"enabled":true,"initialDelaySeconds":2400,"path":"/health"}},"progressDeadlineSeconds":3600,"replicaCount":1,"resources":{"limits":{"cpu":"8","hugepages-1Gi":"32Gi","memory":"128Gi"},"requests":{"cpu":"6","hugepages-1Gi":"32Gi","memory":"64Gi"}},"serverType":"vllm","service":{"annotations":{},"port":8000,"targetPort":8000,"type":"ClusterIP"},"tolerations":[]}` | ------------------------------------------------------------------------- |
+| device | string | `""` |  |
+| fullnameOverride | string | `""` |  |
+| hfToken | string | `""` |  |
+| model | string | `""` |  |
+| models | object | `{"DeepSeek-R1-Distill-Llama-70B":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.10.0-e867533-8f36910"},"probes":{"liveness":{"initialDelaySeconds":5400},"readiness":{"initialDelaySeconds":5400}},"progressDeadlineSeconds":6000,"resources":{"limits":{"memory":"256Gi"},"requests":{"memory":"175Gi"}}},"serverType":"vllm"},"FLUX.1-dev":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.10.0-555f240"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"6Gi"}}},"serverType":"media"},"FLUX.1-schnell":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.10.0-555f240"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"6Gi"}}},"serverType":"media"},"Llama-3.1-70B":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.10.0-e867533-8f36910"},"probes":{"liveness":{"initialDelaySeconds":5400},"readiness":{"initialDelaySeconds":5400}},"progressDeadlineSeconds":6000,"resources":{"limits":{"memory":"256Gi"},"requests":{"memory":"175Gi"}}},"serverType":"vllm"},"Llama-3.1-70B-Instruct":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.10.0-e867533-8f36910"},"probes":{"liveness":{"initialDelaySeconds":5400},"readiness":{"initialDelaySeconds":5400}},"progressDeadlineSeconds":6000,"resources":{"limits":{"memory":"256Gi"},"requests":{"memory":"175Gi"}}},"serverType":"vllm"},"Llama-3.1-8B":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.11.1-bac8b34-7c6685a"},"probes":{"liveness":{"initialDelaySeconds":2400},"readiness":{"initialDelaySeconds":2400}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"20Gi"}}},"serverType":"vllm"},"Llama-3.1-8B-Instruct":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.11.1-bac8b34-7c6685a"},"probes":{"liveness":{"initialDelaySeconds":2400},"readiness":{"initialDelaySeconds":2400}},"resources":{"limits":{"memory":"150Gi"},"requests":{"memory":"50Gi"}}},"serverType":"vllm"},"Llama-3.3-70B-Instruct":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.10.0-e867533-8f36910"},"probes":{"liveness":{"initialDelaySeconds":5400},"readiness":{"initialDelaySeconds":5400}},"progressDeadlineSeconds":6000,"resources":{"limits":{"memory":"256Gi"},"requests":{"memory":"175Gi"}}},"serverType":"vllm"},"Qwen3-32B":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.11.1-bac8b34-7c6685a"},"probes":{"liveness":{"initialDelaySeconds":3600},"readiness":{"initialDelaySeconds":3600}},"progressDeadlineSeconds":4200,"resources":{"limits":{"memory":"256Gi"},"requests":{"memory":"128Gi"}}},"serverType":"vllm"},"Qwen3-8B":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.10.0-e0e0500-409b1cd"},"probes":{"liveness":{"initialDelaySeconds":2400},"readiness":{"initialDelaySeconds":2400}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"20Gi"}}},"serverType":"vllm"},"Wan2.2-T2V-A14B-Diffusers":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.10.0-555f240"},"probes":{"liveness":{"enabled":false},"readiness":{"enabled":false}},"resources":{"limits":{"memory":"200Gi"},"requests":{"memory":"100Gi"}}},"serverType":"media"},"distil-large-v3":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.11.1-bac8b34"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"6Gi"}}},"serverType":"media"},"gpt-oss-120b":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64","tag":"0.11.1-bac8b34-7c6685a"},"probes":{"liveness":{"initialDelaySeconds":7200},"readiness":{"initialDelaySeconds":7200}},"progressDeadlineSeconds":7800,"resources":{"limits":{"memory":"512Gi"},"requests":{"memory":"300Gi"}}},"serverType":"vllm"},"mochi-1-preview":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.10.0-555f240"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"64Gi"},"requests":{"memory":"32Gi"}}},"serverType":"media"},"stable-diffusion-xl-base-1.0":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.10.0-555f240"},"probes":{"liveness":{"enabled":false},"readiness":{"enabled":false}},"resources":{"limits":{"memory":"480Gi"},"requests":{"memory":"200Gi"}}},"serverType":"media"},"stable-diffusion-xl-base-1.0-img-2-img":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.11.1-bac8b34"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"6Gi"}}},"serverType":"media"},"whisper-large-v3":{"galaxy":{"image":{"repository":"ghcr.io/tenstorrent/tt-media-inference-server","tag":"0.11.1-bac8b34"},"probes":{"liveness":{"initialDelaySeconds":600,"path":"/tt-liveness"},"readiness":{"initialDelaySeconds":600}},"resources":{"limits":{"memory":"32Gi"},"requests":{"memory":"6Gi"}}},"serverType":"media"}}` | ------------------------------------------------------------------------- |
+| nameOverride | string | `""` |  |
 
 ---
 
