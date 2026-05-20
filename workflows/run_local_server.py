@@ -240,6 +240,51 @@ def generate_local_run_command(
     return command, env, process_name
 
 
+def vllm_tt_plugin_source_path(vllm_dir: Path) -> Path:
+    """Return the on-disk location of the vllm-tt-plugin source tree inside a vLLM checkout.
+
+    The plugin package was introduced by tenstorrent/vllm commit a072e40a6
+    ("Extract TT backend into plugin package (Phase 1)", 2026-05-04). Older
+    vLLM checkouts do not contain this directory and continue to ship the TT
+    platform inside vllm core.
+    """
+    return Path(vllm_dir) / "plugins" / "vllm-tt-plugin"
+
+
+def install_vllm_tt_plugin_if_present(runtime_config, repo_root=None) -> bool:
+    """Editable-install the vllm-tt-plugin package into the tt-metal venv if it
+    exists in the user's vLLM checkout.
+
+    Mirrors the conditional install added to
+    vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile by PR #3370. The plugin owns
+    the ``tt`` entry in ``vllm.platform_plugins`` since tenstorrent/vllm
+    commit a072e40a6 ("Extract TT backend into plugin package (Phase 1)").
+
+    Returns True when the plugin source was found and an install command was
+    invoked, False when the plugin directory does not exist (older vLLM
+    checkouts that still bundle the TT platform inside vllm core).
+    """
+    paths = get_local_server_paths(runtime_config, repo_root=repo_root)
+    vllm_dir = paths["vllm_dir"]
+    plugin_path = vllm_tt_plugin_source_path(vllm_dir)
+    if not (plugin_path / "pyproject.toml").exists():
+        logger.info(
+            f"Skipping vllm-tt-plugin install: source not present at {plugin_path}"
+        )
+        return False
+
+    install_command = (
+        f"{shlex.quote(str(UV_EXEC))} pip install "
+        f"--python {shlex.quote(str(paths['venv_python']))} "
+        f"--no-deps -e {shlex.quote(str(plugin_path))}"
+    )
+    logger.info(
+        f"Installing vllm-tt-plugin into tt-metal venv from: {plugin_path}"
+    )
+    run_command(install_command, logger=logger, check=True)
+    return True
+
+
 def install_local_server_requirements(runtime_config, repo_root=None):
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
     requirements_path = paths["requirements_path"]
@@ -257,6 +302,8 @@ def install_local_server_requirements(runtime_config, repo_root=None):
         f"Installing local server requirements into tt-metal venv from: {requirements_path}"
     )
     run_command(install_command, logger=logger, check=True)
+
+    install_vllm_tt_plugin_if_present(runtime_config, repo_root=repo_root)
 
 
 def _terminate_process_group(process: subprocess.Popen, process_name: str):
