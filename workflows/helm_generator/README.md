@@ -68,7 +68,6 @@ Flags:
 
 | Flag | Effect |
 |---|---|
-| `--values-path PATH` | Override the default `charts/tt-inference-server/values.yaml`. |
 | `--model NAME`, repeatable | Only emit specs whose `model_name` matches. |
 | `--device NAME`, repeatable | Only emit specs whose lowercased device matches. |
 | `--engine {vllm,media,forge}`, repeatable | Only emit specs for the given engine(s). |
