@@ -57,6 +57,10 @@ async def complete_text(
     sub_requests = _split_batched_prompts(completion_request)
 
     # Compute prompt token counts (for context-window validation and usage stats).
+    # vLLM requires `prompt + max_tokens <= max_model_len`; a prompt that fits
+    # the context window exactly (prompt == max_model_len) leaves zero room for
+    # output and fails deep in the engine as an HTTP 500. Validate the combined
+    # length up front so the failure mode is a clean 400 from the handler.
     prompt_tokens_total = 0
     try:
         max_model_len = settings.vllm.max_model_length
@@ -69,13 +73,21 @@ async def complete_text(
             else:
                 prompt_tokens = 0
             prompt_tokens_total += prompt_tokens
-            if prompt_tokens > max_model_len:
+            # Default to 1 when max_tokens is unset; vLLM needs >= 1 output token.
+            # Pass explicit values through (incl. 0) so the check matches what the
+            # engine will actually try to allocate.
+            output_tokens_needed = r.max_tokens if r.max_tokens is not None else 1
+            if prompt_tokens + output_tokens_needed > max_model_len:
                 logger.warning(
-                    f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+                    f"Rejected prompt: length ({prompt_tokens}) + max_tokens "
+                    f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
                 )
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+                    detail=(
+                        f"Prompt length ({prompt_tokens}) + max_tokens "
+                        f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
+                    ),
                 )
     except HTTPException:
         raise

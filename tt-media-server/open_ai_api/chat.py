@@ -106,15 +106,26 @@ async def chat_completions(
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
 
-    # Reject prompts that exceed the model's context window
+    # Reject prompts that won't leave room for the requested output. vLLM requires
+    # `prompt + max_tokens <= max_model_len`; an exact-fit prompt (== max_model_len)
+    # would otherwise fail deeper in the engine as an HTTP 500.
     max_model_len = settings.vllm.max_model_length
-    if prompt_tokens > max_model_len:
+    # Default to 1 when max_tokens is unset; vLLM needs >= 1 output token. Pass
+    # explicit values through (incl. 0) so the check matches what the engine sees.
+    output_tokens_needed = (
+        chat_request.max_tokens if chat_request.max_tokens is not None else 1
+    )
+    if prompt_tokens + output_tokens_needed > max_model_len:
         logger.warning(
-            f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+            f"Rejected prompt: length ({prompt_tokens}) + max_tokens "
+            f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
         )
         raise HTTPException(
             status_code=400,
-            detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+            detail=(
+                f"Prompt length ({prompt_tokens}) + max_tokens "
+                f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
+            ),
         )
 
     # Build an internal CompletionRequest to reuse the existing inference pipeline
