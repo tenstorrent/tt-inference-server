@@ -35,7 +35,8 @@ ImageService::ImageService(config::ImageConfig config, RunnerList runners)
       runners_(std::move(runners)),
       runner_in_flight_(runners_.size()) {
   if (runners_.empty()) {
-    throw std::invalid_argument("[ImageService] at least one runner is required");
+    throw std::invalid_argument(
+        "[ImageService] at least one runner is required");
   }
   for (const auto& runner : runners_) {
     if (!runner) {

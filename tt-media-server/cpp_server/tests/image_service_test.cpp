@@ -107,4 +107,3 @@ TEST(ImageServiceTest, DispatchesConcurrentRequestsAcrossRunners) {
   EXPECT_EQ(state0->calls.load(std::memory_order_relaxed), 1u);
   EXPECT_EQ(state1->calls.load(std::memory_order_relaxed), 1u);
 }
-
