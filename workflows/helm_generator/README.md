@@ -98,20 +98,22 @@ a unique `default_impl=True`).
 
 ## Running tests
 
-The test suite lives in [tests/test_helm_generator/](../../tests/test_helm_generator).
+The Python test suite lives in [tests/test_helm_generator/](../../tests/test_helm_generator).
+Chart-side tests (which invoke `helm template`) live separately in
+[tests/test_chart/](../../tests/test_chart).
 
 ```bash
-# from repo root
+# Helm generator tests
 python -m pytest tests/test_helm_generator/ -v
+
+# Helm chart template tests
+python -m pytest tests/test_chart/ -v
 ```
 
 Coverage:
 
-- Unit tests per module (schema, device, yaml_io, merge, each mapper).
-- CLI integration: end-to-end mapping + merge, idempotency, dry-run.
-- `tests/test_helm_generator/test_helpers_tpl.py` invokes `helm template`
-  against the live chart for resolution / error scenarios; skipped
-  automatically if `helm` is not on `PATH`.
+- `tests/test_helm_generator/` — unit tests per module (schema, device, yaml_io, merge, each mapper) and CLI integration (mapping + merge, idempotency, dry-run, uniqueness checks).
+- `tests/test_chart/` — `helm template` against the live chart for the resolver / error scenarios. Skipped automatically if `helm` isn't on PATH.
 
 ## Trying the chart locally
 
@@ -152,20 +154,3 @@ helm template charts/tt-inference-server \
   --set hfToken=fake \
   --set hfCacheDir=/data/weights
 ```
-
-## Adding a new engine
-
-1. Add the value to `InferenceEngine` in
-   [workflows/workflow_types.py](../workflow_types.py).
-2. Create a new subpackage `<engine>/mapper.py` with a subclass of
-   `HelmValuesMapper` that declares `engine`, `liveness_path`,
-   `readiness_path`, and `owned_leaf_paths()`. Use
-   [vllm/mapper.py](vllm/mapper.py) as a template.
-3. Register the mapper in [`__init__.py`](__init__.py)'s `MAPPERS` dict.
-4. If the engine needs different branching, update
-   [`charts/tt-inference-server/templates/configmap.yaml`](../../charts/tt-inference-server/templates/configmap.yaml)
-   and
-   [`charts/tt-inference-server/templates/deployment.yaml`](../../charts/tt-inference-server/templates/deployment.yaml)
-   — both already read the engine via `tt-inference-server.resolvedEngine`.
-5. Add an entry to `ENGINE_PRECEDENCE` so `defaultEngine` resolution stays
-   deterministic.

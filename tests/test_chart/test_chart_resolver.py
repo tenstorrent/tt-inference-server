@@ -2,8 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 #
-# Smoke tests that exercise the chart's _helpers.tpl resolution by invoking
-# `helm template` against the live values.yaml. Skipped if helm isn't on PATH.
+# Chart-side tests: these exercise the chart's _helpers.tpl resolver
+# (engine + impl lookup, error messaging, hfCacheDir wiring) by invoking
+# `helm template` against the live values.yaml.
+#
+# TODO: investigate replacing these with the `helm unittest` plugin
+# (https://github.com/helm-unittest/helm-unittest)
 
 import shutil
 import subprocess
