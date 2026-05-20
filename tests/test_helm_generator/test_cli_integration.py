@@ -14,7 +14,7 @@ from workflows.helm_generator.yaml_io import load_values
 
 def test_inserts_new_model_and_idempotent_rerun(tmp_path, fixtures_dir, vllm_spec):
     work = tmp_path / "values.yaml"
-    work.write_text((fixtures_dir / "values_full.yaml").read_text())
+    work.write_text((fixtures_dir / "test_values.yaml").read_text())
 
     changed = generate(values_path=work, specs=[vllm_spec])
     assert changed == 1
@@ -37,7 +37,7 @@ def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
     work = tmp_path / "values.yaml"
-    work.write_text((fixtures_dir / "values_full.yaml").read_text())
+    work.write_text((fixtures_dir / "test_values.yaml").read_text())
 
     other = ImplSpec(
         impl_id="other_impl",
@@ -81,7 +81,7 @@ def test_multi_engine_same_model(tmp_path, fixtures_dir, sample_impl):
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
     work = tmp_path / "values.yaml"
-    work.write_text((fixtures_dir / "values_full.yaml").read_text())
+    work.write_text((fixtures_dir / "test_values.yaml").read_text())
 
     def make(engine):
         return ModelSpecTemplate(
@@ -114,7 +114,7 @@ def test_multi_engine_same_model(tmp_path, fixtures_dir, sample_impl):
 
 def test_dry_run_does_not_modify_file(tmp_path, fixtures_dir, vllm_spec):
     work = tmp_path / "values.yaml"
-    work.write_text((fixtures_dir / "values_full.yaml").read_text())
+    work.write_text((fixtures_dir / "test_values.yaml").read_text())
     before = work.read_text()
 
     changed = generate(values_path=work, specs=[vllm_spec], dry_run=True)

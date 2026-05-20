@@ -10,7 +10,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_roundtrip_preserves_top_level_comments(tmp_path):
-    src = FIXTURES / "values_full.yaml"
+    src = FIXTURES / "test_values.yaml"
     doc = load_values(src)
     out = tmp_path / "values.yaml"
     dump_values(doc, out)
@@ -21,7 +21,7 @@ def test_roundtrip_preserves_top_level_comments(tmp_path):
 
 
 def test_load_returns_mutable_mapping():
-    src = FIXTURES / "values_full.yaml"
+    src = FIXTURES / "test_values.yaml"
     doc = load_values(src)
     assert "models" in doc
     entry = doc["models"]["Llama-3.1-8B-Instruct"]
@@ -34,7 +34,7 @@ def test_load_returns_mutable_mapping():
 
 
 def test_dumps_emits_yaml_string():
-    doc = load_values(FIXTURES / "values_full.yaml")
+    doc = load_values(FIXTURES / "test_values.yaml")
     text = dumps_values(doc)
     assert text.startswith("#") or text.startswith("model")
     assert "Llama-3.1-8B-Instruct" in text
