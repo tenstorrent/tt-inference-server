@@ -23,8 +23,10 @@
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
 #include "gateway/prefill_registry.hpp"
+#include "gateway/zmq_prefill_router.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
+#include "sockets/zmq_socket_transport.hpp"
 
 namespace tt::gateway {
 namespace {
@@ -54,6 +56,38 @@ uint16_t ephemeralPort() {
   uint16_t port = ntohs(addr.sin_port);
   close(s);
   return port;
+}
+
+template <typename T>
+std::vector<uint8_t> serializeMessage(const std::string& messageType,
+                                      const T& message) {
+  std::ostringstream oss;
+  {
+    cereal::BinaryOutputArchive archive(oss);
+    archive(messageType);
+    message.write(archive);
+  }
+  const std::string serialized = oss.str();
+  return {serialized.begin(), serialized.end()};
+}
+
+std::string messageTypeOf(const std::vector<uint8_t>& data) {
+  std::string serialized(data.begin(), data.end());
+  std::istringstream iss(serialized);
+  cereal::BinaryInputArchive archive(iss);
+  std::string messageType;
+  archive(messageType);
+  return messageType;
+}
+
+template <typename T>
+T deserializeMessage(const std::vector<uint8_t>& data) {
+  std::string serialized(data.begin(), data.end());
+  std::istringstream iss(serialized);
+  cereal::BinaryInputArchive archive(iss);
+  std::string messageType;
+  archive(messageType);
+  return T::read(archive);
 }
 
 struct PrefillConnectionState {
@@ -296,6 +330,154 @@ class GatewayHarness {
   std::atomic<bool> proberStop_{false};
 };
 
+class FakeZmqPrefill {
+ public:
+  FakeZmqPrefill(std::string serverId, const std::string& routerHost,
+                 uint16_t routerPort, uint32_t maxInFlight = 4)
+      : serverId_(std::move(serverId)),
+        routerHost_(routerHost),
+        routerPort_(routerPort),
+        maxInFlight_(maxInFlight) {
+    sm_.initializeAsClient(routerHost_, routerPort_);
+    sm_.setReconnectBackoff(50, 500);
+  }
+
+  ~FakeZmqPrefill() { stop(); }
+
+  void start() {
+    sm_.start();
+    running_ = true;
+    registrationThread_ = std::thread([this] {
+      while (running_.load()) {
+        tt::sockets::PrefillRegistrationMessage msg;
+        msg.server_id = serverId_;
+        msg.max_in_flight = maxInFlight_;
+        sm_.sendRawData(
+            serializeMessage(tt::sockets::tags::PREFILL_REGISTRATION, msg));
+        std::this_thread::sleep_for(50ms);
+      }
+    });
+    receiveThread_ = std::thread([this] {
+      while (running_.load()) {
+        auto data = sm_.receiveRawData();
+        if (data.empty()) {
+          std::this_thread::sleep_for(10ms);
+          continue;
+        }
+        if (messageTypeOf(data) != "prefill_request") {
+          continue;
+        }
+
+        auto request =
+            deserializeMessage<tt::sockets::PrefillRequestMessage>(data);
+        receivedTaskIds_.fetch_add(1);
+        tt::sockets::PrefillResultMessage result(request.task_id);
+        result.finished = true;
+        result.generated_text = "ok-from-" + serverId_;
+        sm_.sendRawData(serializeMessage("prefill_result", result));
+      }
+    });
+  }
+
+  void stop() {
+    running_ = false;
+    if (registrationThread_.joinable()) {
+      registrationThread_.join();
+    }
+    if (receiveThread_.joinable()) {
+      receiveThread_.join();
+    }
+    sm_.stop();
+  }
+
+  uint32_t receivedTaskCount() const { return receivedTaskIds_.load(); }
+
+ private:
+  std::string serverId_;
+  std::string routerHost_;
+  uint16_t routerPort_;
+  uint32_t maxInFlight_;
+  std::atomic<bool> running_{false};
+  std::atomic<uint32_t> receivedTaskIds_{0};
+  tt::sockets::ZmqSocketTransport sm_;
+  std::thread registrationThread_;
+  std::thread receiveThread_;
+};
+
+class ZmqRouterGatewayHarness {
+ public:
+  ZmqRouterGatewayHarness(uint16_t decodePort, uint16_t prefillRouterPort)
+      : decodePort_(decodePort), prefillRouterPort_(prefillRouterPort) {
+    decodeSm_.initializeAsServer(decodePort_);
+
+    Dispatcher::Senders senders;
+    senders.sendRequestToPrefill =
+        [this](const std::string& serverId,
+               const tt::sockets::PrefillRequestMessage& msg) -> bool {
+      return prefillRouter_.sendObject(serverId, "prefill_request", msg);
+    };
+    senders.sendAssignmentToDecode =
+        [this](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
+      return decodeSm_.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
+    };
+    senders.sendResultToDecode =
+        [this](const tt::sockets::PrefillResultMessage& msg) -> bool {
+      return decodeSm_.sendObject("prefill_result", msg);
+    };
+
+    dispatcher_ =
+        std::make_unique<Dispatcher>(registry_, affinity_, std::move(senders));
+
+    registry_.setOnPrefillDown(
+        [this](const std::string& id) { dispatcher_->onPrefillDown(id); });
+
+    prefillRouter_.registerHandler<tt::sockets::PrefillRegistrationMessage>(
+        tt::sockets::tags::PREFILL_REGISTRATION,
+        [this](const ZmqPrefillRouter::PeerIdentity& peerId,
+               const tt::sockets::PrefillRegistrationMessage& msg) {
+          prefillRouter_.rememberRegistration(msg.server_id, peerId);
+          registry_.preRegister(msg.server_id, nullptr);
+          registry_.markRegistered(msg.server_id, msg.max_in_flight);
+        });
+
+    prefillRouter_.registerHandler<tt::sockets::PrefillResultMessage>(
+        "prefill_result", [this](const ZmqPrefillRouter::PeerIdentity& peerId,
+                                 const tt::sockets::PrefillResultMessage& msg) {
+          auto serverId = prefillRouter_.serverIdForPeer(peerId);
+          if (serverId.has_value()) {
+            dispatcher_->onPrefillResult(*serverId, msg);
+          }
+        });
+
+    decodeSm_.registerHandler<tt::sockets::PrefillRequestMessage>(
+        "prefill_request",
+        [this](const tt::sockets::PrefillRequestMessage& msg) {
+          dispatcher_->onPrefillRequest(msg);
+        });
+  }
+
+  ~ZmqRouterGatewayHarness() {
+    decodeSm_.stop();
+    prefillRouter_.stop();
+  }
+
+  void start() {
+    ASSERT_TRUE(prefillRouter_.start("127.0.0.1", prefillRouterPort_));
+    decodeSm_.start();
+  }
+
+  PrefillRegistry& registry() { return registry_; }
+
+ private:
+  uint16_t decodePort_;
+  uint16_t prefillRouterPort_;
+  PrefillRegistry registry_;
+  AffinityCache affinity_;
+  tt::sockets::SocketManager decodeSm_;
+  ZmqPrefillRouter prefillRouter_;
+  std::unique_ptr<Dispatcher> dispatcher_;
+};
+
 class GatewayE2ETest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -407,6 +589,138 @@ TEST_F(GatewayE2ETest, PrefillDownFailsInFlightTaskToDecode) {
   EXPECT_TRUE(results[0].error);
   EXPECT_EQ(results[0].generated_text, "prefill_down");
   EXPECT_FALSE(gateway_->affinity().lookup(77).has_value());
+}
+
+TEST(ZmqRouterGatewayE2ETest, PrefillsCanStartBeforeGateway) {
+  const uint16_t decodePort = ephemeralPort();
+  const uint16_t prefillRouterPort = ephemeralPort();
+
+  FakeZmqPrefill prefillA("prefill-A", "127.0.0.1", prefillRouterPort);
+  FakeZmqPrefill prefillB("prefill-B", "127.0.0.1", prefillRouterPort);
+  prefillA.start();
+  prefillB.start();
+
+  ZmqRouterGatewayHarness gateway(decodePort, prefillRouterPort);
+  gateway.start();
+
+  FakeDecode decode("127.0.0.1", decodePort);
+  decode.start();
+
+  ASSERT_TRUE(waitFor([&] {
+    auto snap = gateway.registry().snapshot();
+    int healthy = 0;
+    for (const auto& s : snap) {
+      if (s.healthy) ++healthy;
+    }
+    return healthy == 2 && decode.isConnected();
+  })) << "Timed out waiting for prefills to register after gateway start";
+
+  decode.sendRequest(/*task_id=*/101, /*hash=*/0);
+  decode.sendRequest(/*task_id=*/102, /*hash=*/0);
+
+  ASSERT_TRUE(waitFor([&] { return decode.resultCount() >= 2; }))
+      << "No results received through ZMQ prefill ROUTER";
+
+  auto assignments = decode.assignments();
+  ASSERT_EQ(assignments.size(), 2u);
+  EXPECT_NE(assignments[0].server_id, assignments[1].server_id);
+
+  EXPECT_EQ(prefillA.receivedTaskCount() + prefillB.receivedTaskCount(), 2u);
+  EXPECT_EQ(prefillA.receivedTaskCount(), 1u);
+  EXPECT_EQ(prefillB.receivedTaskCount(), 1u);
+}
+
+TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
+  const uint16_t port = ephemeralPort();
+
+  ZmqPrefillRouter router;
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool registered = false;
+  bool requestReceived = false;
+  bool resultReceived = false;
+
+  router.registerHandler<tt::sockets::PrefillRegistrationMessage>(
+      tt::sockets::tags::PREFILL_REGISTRATION,
+      [&router, &mutex, &cv, &registered](
+          const ZmqPrefillRouter::PeerIdentity& peerId,
+          const tt::sockets::PrefillRegistrationMessage& msg) {
+        router.rememberRegistration(msg.server_id, peerId);
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          registered = true;
+        }
+        cv.notify_all();
+      });
+
+  router.registerHandler<tt::sockets::PrefillResultMessage>(
+      "prefill_result", [&mutex, &cv, &resultReceived](
+                            const ZmqPrefillRouter::PeerIdentity&,
+                            const tt::sockets::PrefillResultMessage& msg) {
+        EXPECT_EQ(msg.task_id, 7u);
+        std::lock_guard<std::mutex> lock(mutex);
+        resultReceived = true;
+        cv.notify_all();
+      });
+
+  ASSERT_TRUE(router.start("127.0.0.1", port));
+
+  tt::sockets::ZmqSocketTransport client;
+  ASSERT_TRUE(client.initializeAsClient("127.0.0.1", port));
+  client.start();
+
+  std::atomic<bool> clientRunning{true};
+  std::thread clientThread([&] {
+    while (clientRunning.load()) {
+      auto data = client.receiveRawData();
+      if (data.empty()) {
+        std::this_thread::sleep_for(10ms);
+        continue;
+      }
+
+      if (messageTypeOf(data) != "prefill_request") {
+        continue;
+      }
+
+      auto request =
+          deserializeMessage<tt::sockets::PrefillRequestMessage>(data);
+      EXPECT_EQ(request.task_id, 7u);
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        requestReceived = true;
+      }
+      cv.notify_all();
+
+      tt::sockets::PrefillResultMessage result(request.task_id);
+      result.finished = true;
+      result.generated_text = "ok";
+      client.sendRawData(serializeMessage("prefill_result", result));
+    }
+  });
+
+  tt::sockets::PrefillRegistrationMessage registration;
+  registration.server_id = "prefill-A";
+  registration.max_in_flight = 4;
+  ASSERT_TRUE(client.sendRawData(
+      serializeMessage(tt::sockets::tags::PREFILL_REGISTRATION, registration)));
+  ASSERT_TRUE(waitFor([&] {
+    std::lock_guard<std::mutex> lock(mutex);
+    return registered;
+  }));
+
+  tt::sockets::PrefillRequestMessage request(7);
+  ASSERT_TRUE(router.sendObject("prefill-A", "prefill_request", request));
+  ASSERT_TRUE(waitFor([&] {
+    std::lock_guard<std::mutex> lock(mutex);
+    return requestReceived && resultReceived;
+  }));
+
+  clientRunning = false;
+  if (clientThread.joinable()) {
+    clientThread.join();
+  }
+  client.stop();
+  router.stop();
 }
 
 }  // namespace
