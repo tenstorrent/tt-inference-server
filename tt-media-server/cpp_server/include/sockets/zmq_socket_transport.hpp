@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_transport_state.hpp"
 
 // Forward-declare ZMQ types to avoid leaking zmq.hpp into every TU.
 namespace zmq {
@@ -31,7 +32,8 @@ namespace tt::sockets {
  * messaging over tcp://. ZMQ handles framing, reconnection, and keepalive
  * internally — no manual length-prefix or retry logic needed.
  */
-class ZmqSocketTransport : public ISocketTransport {
+class ZmqSocketTransport : public ISocketTransport,
+                           protected SocketTransportState {
  public:
   ZmqSocketTransport();
   ZmqSocketTransport(const ZmqSocketTransport&) = delete;
@@ -55,8 +57,6 @@ class ZmqSocketTransport : public ISocketTransport {
                            uint32_t maxDelayMs) override;
 
  private:
-  enum class Mode { SERVER, CLIENT };
-
   struct SendRequest {
     std::vector<uint8_t> data;
     std::promise<bool> result;
@@ -64,9 +64,12 @@ class ZmqSocketTransport : public ISocketTransport {
 
   bool startIoThread();
   void ioLoop(std::promise<bool> initialized);
+  bool initializeSocket();
   void setupMonitor();
   void monitorLoop(std::promise<void> ready);
   bool processPendingSends();
+  bool receiveAvailableMessages();
+  void waitForIoWork();
   void failPendingSends();
   void enqueueReceivedMessage(std::vector<uint8_t> data);
 
@@ -77,15 +80,12 @@ class ZmqSocketTransport : public ISocketTransport {
   std::vector<uint8_t> receiveAsRouter();
   std::vector<uint8_t> receiveAsDealer();
 
-  Mode mode_ = Mode::CLIENT;
   std::string endpoint_;
 
   std::unique_ptr<zmq::context_t> context_;
   std::unique_ptr<zmq::socket_t> socket_;
 
-  std::atomic<bool> running_{false};
   std::atomic<bool> ioActive_{false};
-  std::atomic<bool> connected_{false};
   std::atomic<bool> monitorActive_{false};
 
   std::thread ioThread_;
@@ -101,12 +101,6 @@ class ZmqSocketTransport : public ISocketTransport {
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;
 
-  mutable std::mutex callbackMutex_;
-  std::function<void()> connectionLostCallback_;
-
-  // ZMQ_RECONNECT_IVL / ZMQ_RECONNECT_IVL_MAX, applied at initializeAsClient.
-  uint32_t reconnectInitialDelayMs_{1000};
-  uint32_t reconnectMaxDelayMs_{5000};
 };
 
 }  // namespace tt::sockets
