@@ -263,12 +263,7 @@ void ZmqPrefillRouter::failPendingSends() {
 void ZmqPrefillRouter::handleIncomingMessage(const PeerIdentity& peerId,
                                              const std::vector<uint8_t>& data) {
   try {
-    std::string serialized(data.begin(), data.end());
-    std::istringstream iss(serialized);
-    cereal::BinaryInputArchive archive(iss);
-    std::string messageType;
-    archive(messageType);
-
+    std::string messageType = tt::sockets::wire::readMessageType(data);
     RawHandler handler;
     {
       std::lock_guard<std::mutex> lock(handlers_mutex_);

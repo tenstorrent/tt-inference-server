@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -16,6 +16,7 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/prefill_connection_wiring.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/zmq_prefill_router.hpp"
 #include "sockets/socket_manager.hpp"
@@ -34,21 +35,7 @@ struct GatewayConfig {
   std::vector<PrefillEndpoint> prefills;
   std::string prefillBindHost = "*";
   uint16_t prefillBindPort = 0;
-};
-
-struct PrefillConnectionState {
-  void setServerId(const std::string& serverId) {
-    std::lock_guard<std::mutex> lock(mutex);
-    this->serverId = serverId;
-  }
-
-  std::string getServerId() const {
-    std::lock_guard<std::mutex> lock(mutex);
-    return serverId;
-  }
-
-  mutable std::mutex mutex;
-  std::string serverId;
+  uint32_t prefillStaleTimeoutMs = 3000;
 };
 
 void printUsage(const char* prog) {
@@ -60,6 +47,9 @@ void printUsage(const char* prog) {
          "(repeatable).\n"
       << "  --prefill-bind=HOST:PORT\n"
       << "                        ZMQ ROUTER bind endpoint for prefills.\n"
+      << "  --prefill-stale-timeout-ms=MS\n"
+      << "                        ZMQ prefill registration timeout. Default: "
+         "3000.\n"
       << "  --help               Print this message.\n\n"
       << "Example:\n"
       << "  " << prog
@@ -99,6 +89,17 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
 
     if (auto v = flagValue(arg, "--decode-port=")) {
       cfg.decodePort = static_cast<uint16_t>(std::stoi(std::string(*v)));
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--prefill-stale-timeout-ms=")) {
+      int timeoutMs = std::stoi(std::string(*v));
+      if (timeoutMs <= 0) {
+        std::cerr << "Invalid --prefill-stale-timeout-ms value: " << *v
+                  << " (expected positive milliseconds)\n";
+        return std::nullopt;
+      }
+      cfg.prefillStaleTimeoutMs = static_cast<uint32_t>(timeoutMs);
       continue;
     }
 
@@ -195,7 +196,7 @@ int main(int argc, char** argv) {
   }
 
   // TCP keeps one independent SocketManager (CLIENT) per endpoint.
-  std::vector<std::unique_ptr<tt::sockets::SocketManager>> prefillSms;
+  tt::gateway::PrefillSocketManagers prefillSms;
   prefillSms.reserve(cfg.prefills.size());
   if (!useZmqPrefillRouter) {
     for (const auto& ep : cfg.prefills) {
@@ -250,104 +251,12 @@ int main(int argc, char** argv) {
     dispatcherPtr->onPrefillDown(id);
   });
 
-  for (auto& smPtr : prefillSms) {
-    tt::sockets::SocketManager* sm = smPtr.get();
-
-    // Shared between callbacks that may run on different threads. The id is
-    // unknown until the first registration message.
-    auto state = std::make_shared<PrefillConnectionState>();
-
-    sm->registerHandler<tt::sockets::PrefillRegistrationMessage>(
-        tt::sockets::tags::PREFILL_REGISTRATION,
-        [&registry, sm,
-         state](const tt::sockets::PrefillRegistrationMessage& msg) {
-          TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                       msg.server_id, msg.max_in_flight);
-          state->setServerId(msg.server_id);
-          registry.preRegister(msg.server_id, sm);
-          bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
-          if (!ok) {
-            TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
-                         msg.server_id);
-          }
-        });
-
-    sm->registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result",
-        [&dispatcherPtr, state](const tt::sockets::PrefillResultMessage& msg) {
-          dispatcherPtr->onPrefillResult(state->getServerId(), msg);
-        });
-
-    sm->registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
-        tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
-        [&dispatcherPtr](
-            const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
-          dispatcherPtr->onCacheBlocksAdded(msg);
-        });
-
-    sm->registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-        tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-        [&dispatcherPtr](
-            const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-          dispatcherPtr->onCacheBlocksEvicted(msg);
-        });
-
-    sm->setConnectionLostCallback([&registry, state]() {
-      const std::string sid = state->getServerId();
-      if (!sid.empty()) {
-        TT_LOG_WARN("[Gateway] Prefill '{}' connection lost", sid);
-        registry.markDown(sid);  // fires onPrefillDown -> dispatcher
-      }
-    });
-  }
-
   if (useZmqPrefillRouter) {
-    zmqPrefillRouter.registerHandler<tt::sockets::PrefillRegistrationMessage>(
-        tt::sockets::tags::PREFILL_REGISTRATION,
-        [&registry, &zmqPrefillRouter](
-            const tt::gateway::ZmqPrefillRouter::PeerIdentity& peerId,
-            const tt::sockets::PrefillRegistrationMessage& msg) {
-          TT_LOG_DEBUG("[Gateway] Prefill registered: id='{}' max_in_flight={}",
-                       msg.server_id, msg.max_in_flight);
-          zmqPrefillRouter.rememberRegistration(msg.server_id, peerId);
-          registry.preRegister(msg.server_id, nullptr);
-          bool ok = registry.markRegistered(msg.server_id, msg.max_in_flight);
-          if (!ok) {
-            TT_LOG_ERROR("[Gateway] markRegistered failed for '{}'",
-                         msg.server_id);
-          }
-        });
-
-    zmqPrefillRouter.registerHandler<tt::sockets::PrefillResultMessage>(
-        "prefill_result",
-        [&dispatcherPtr, &zmqPrefillRouter](
-            const tt::gateway::ZmqPrefillRouter::PeerIdentity& peerId,
-            const tt::sockets::PrefillResultMessage& msg) {
-          auto serverId = zmqPrefillRouter.serverIdForPeer(peerId);
-          if (!serverId.has_value()) {
-            TT_LOG_WARN("[Gateway] Ignoring result from unregistered prefill");
-            return;
-          }
-          dispatcherPtr->onPrefillResult(*serverId, msg);
-        });
-
-    zmqPrefillRouter
-        .registerHandler<tt::sockets::PrefillCacheBlocksAddedMessage>(
-            tt::sockets::tags::PREFILL_CACHE_BLOCKS_ADDED,
-            [&dispatcherPtr](
-                const tt::gateway::ZmqPrefillRouter::PeerIdentity&,
-                const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
-              dispatcherPtr->onCacheBlocksAdded(msg);
-            });
-
-    zmqPrefillRouter
-        .registerHandler<tt::sockets::PrefillCacheBlocksEvictedMessage>(
-            tt::sockets::tags::PREFILL_CACHE_BLOCKS_EVICTED,
-            [&dispatcherPtr](
-                const tt::gateway::ZmqPrefillRouter::PeerIdentity&,
-                const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
-              dispatcherPtr->onCacheBlocksEvicted(msg);
-            });
+    tt::gateway::registerZmqPrefillHandlers(zmqPrefillRouter, registry,
+                                            *dispatcherPtr);
+  } else {
+    tt::gateway::registerTcpPrefillHandlers(prefillSms, registry,
+                                            *dispatcherPtr);
   }
 
   decodeSm.registerHandler<tt::sockets::PrefillRequestMessage>(
@@ -376,7 +285,8 @@ int main(int argc, char** argv) {
   });
 
   std::atomic<bool> watchdogStop{false};
-  constexpr auto prefillStaleTimeout = std::chrono::milliseconds(3000);
+  const auto prefillStaleTimeout =
+      std::chrono::milliseconds(cfg.prefillStaleTimeoutMs);
   std::thread watchdogThread;
   if (useZmqPrefillRouter) {
     watchdogThread = std::thread(

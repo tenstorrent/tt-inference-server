@@ -4,7 +4,6 @@
 #pragma once
 
 #include <atomic>
-#include <cereal/archives/binary.hpp>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -14,13 +13,12 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include "sockets/socket_messages.hpp"
+#include "sockets/socket_serialization.hpp"
 
 namespace tt::gateway {
 
@@ -106,17 +104,9 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
   }
 
   try {
-    std::ostringstream oss;
-    {
-      cereal::BinaryOutputArchive archive(oss);
-      archive(messageType);
-      obj.write(archive);
-    }
-
-    std::string serialized = oss.str();
     auto request = std::make_shared<SendRequest>();
     request->peerKey = peerKey(*peerId);
-    request->data.assign(serialized.begin(), serialized.end());
+    request->data = tt::sockets::wire::serializeMessage(messageType, obj);
     auto result = request->result.get_future();
 
     {
@@ -140,12 +130,7 @@ void ZmqPrefillRouter::registerHandler(
   std::lock_guard<std::mutex> lock(handlers_mutex_);
   handlers_[messageType] = [handler](const PeerIdentity& peerId,
                                      const std::vector<uint8_t>& data) {
-    std::string serialized(data.begin(), data.end());
-    std::istringstream iss(serialized);
-    cereal::BinaryInputArchive archive(iss);
-    std::string ignoredMessageType;
-    archive(ignoredMessageType);
-    T payload = T::read(archive);
+    T payload = tt::sockets::wire::deserializePayload<T>(data);
     handler(peerId, payload);
   };
 }

@@ -26,6 +26,7 @@
 #include "gateway/zmq_prefill_router.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "sockets/zmq_socket_transport.hpp"
 
 namespace tt::gateway {
@@ -56,38 +57,6 @@ uint16_t ephemeralPort() {
   uint16_t port = ntohs(addr.sin_port);
   close(s);
   return port;
-}
-
-template <typename T>
-std::vector<uint8_t> serializeMessage(const std::string& messageType,
-                                      const T& message) {
-  std::ostringstream oss;
-  {
-    cereal::BinaryOutputArchive archive(oss);
-    archive(messageType);
-    message.write(archive);
-  }
-  const std::string serialized = oss.str();
-  return {serialized.begin(), serialized.end()};
-}
-
-std::string messageTypeOf(const std::vector<uint8_t>& data) {
-  std::string serialized(data.begin(), data.end());
-  std::istringstream iss(serialized);
-  cereal::BinaryInputArchive archive(iss);
-  std::string messageType;
-  archive(messageType);
-  return messageType;
-}
-
-template <typename T>
-T deserializeMessage(const std::vector<uint8_t>& data) {
-  std::string serialized(data.begin(), data.end());
-  std::istringstream iss(serialized);
-  cereal::BinaryInputArchive archive(iss);
-  std::string messageType;
-  archive(messageType);
-  return T::read(archive);
 }
 
 struct PrefillConnectionState {
@@ -352,8 +321,8 @@ class FakeZmqPrefill {
         tt::sockets::PrefillRegistrationMessage msg;
         msg.server_id = serverId_;
         msg.max_in_flight = maxInFlight_;
-        sm_.sendRawData(
-            serializeMessage(tt::sockets::tags::PREFILL_REGISTRATION, msg));
+        sm_.sendRawData(tt::sockets::wire::serializeMessage(
+            tt::sockets::tags::PREFILL_REGISTRATION, msg));
         std::this_thread::sleep_for(50ms);
       }
     });
@@ -364,17 +333,18 @@ class FakeZmqPrefill {
           std::this_thread::sleep_for(10ms);
           continue;
         }
-        if (messageTypeOf(data) != "prefill_request") {
+        if (tt::sockets::wire::readMessageType(data) != "prefill_request") {
           continue;
         }
 
-        auto request =
-            deserializeMessage<tt::sockets::PrefillRequestMessage>(data);
+        auto request = tt::sockets::wire::deserializePayload<
+            tt::sockets::PrefillRequestMessage>(data);
         receivedTaskIds_.fetch_add(1);
         tt::sockets::PrefillResultMessage result(request.task_id);
         result.finished = true;
         result.generated_text = "ok-from-" + serverId_;
-        sm_.sendRawData(serializeMessage("prefill_result", result));
+        sm_.sendRawData(
+            tt::sockets::wire::serializeMessage("prefill_result", result));
       }
     });
   }
@@ -678,12 +648,12 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
         continue;
       }
 
-      if (messageTypeOf(data) != "prefill_request") {
+      if (tt::sockets::wire::readMessageType(data) != "prefill_request") {
         continue;
       }
 
-      auto request =
-          deserializeMessage<tt::sockets::PrefillRequestMessage>(data);
+      auto request = tt::sockets::wire::deserializePayload<
+          tt::sockets::PrefillRequestMessage>(data);
       EXPECT_EQ(request.task_id, 7u);
       {
         std::lock_guard<std::mutex> lock(mutex);
@@ -694,15 +664,16 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
       tt::sockets::PrefillResultMessage result(request.task_id);
       result.finished = true;
       result.generated_text = "ok";
-      client.sendRawData(serializeMessage("prefill_result", result));
+      client.sendRawData(
+          tt::sockets::wire::serializeMessage("prefill_result", result));
     }
   });
 
   tt::sockets::PrefillRegistrationMessage registration;
   registration.server_id = "prefill-A";
   registration.max_in_flight = 4;
-  ASSERT_TRUE(client.sendRawData(
-      serializeMessage(tt::sockets::tags::PREFILL_REGISTRATION, registration)));
+  ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
+      tt::sockets::tags::PREFILL_REGISTRATION, registration)));
   ASSERT_TRUE(waitFor([&] {
     std::lock_guard<std::mutex> lock(mutex);
     return registered;

@@ -35,8 +35,8 @@ bool InterServerService::initializeFromConfig() {
 
   bool success = false;
 
-  // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
-  // and the gateway sits between them.
+  // Gateway mode always makes decode dial the gateway. TCP prefills listen for
+  // the gateway, while ZMQ prefills dial the gateway's shared ROUTER socket.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (gatewayMode) {
       TT_LOG_INFO(

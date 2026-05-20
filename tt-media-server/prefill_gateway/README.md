@@ -51,6 +51,9 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   flag for each prefill.
 - `--prefill-bind=HOST:PORT` is the ZMQ prefill-side ROUTER bind endpoint.
   ZMQ prefills dial this single endpoint and register themselves.
+- `--prefill-stale-timeout-ms=MS` controls how long the ZMQ gateway waits
+  without a prefill registration before marking that prefill down. Default:
+  `3000`.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
