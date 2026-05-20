@@ -32,7 +32,7 @@ def test_inserts_new_model_and_idempotent_rerun(tmp_path, fixtures_dir, vllm_spe
 
 
 def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
-    """Two impls under one (model, engine, device) → one defaultImpl chosen."""
+    """Two impls under one (model, engine, device) -> one defaultImpl chosen."""
     from workflows.model_spec import DeviceModelSpec, ImplSpec, ModelSpecTemplate
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -76,7 +76,7 @@ def test_multi_impl_same_device(tmp_path, fixtures_dir, sample_impl):
 
 
 def test_multi_engine_same_model(tmp_path, fixtures_dir, sample_impl):
-    """Two engines on the same model → defaultEngine picked by precedence."""
+    """Two engines on the same model -> defaultEngine picked by precedence."""
     from workflows.model_spec import DeviceModelSpec, ModelSpecTemplate
     from workflows.workflow_types import DeviceTypes, InferenceEngine
 
