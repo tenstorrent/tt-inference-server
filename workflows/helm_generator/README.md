@@ -47,6 +47,23 @@ models:
 | [cli.py](cli.py) | `argparse` entry point; uniqueness + default-impl validation; defaultEngine computation. |
 | [errors.py](errors.py) | `GenerateHelmValuesError` raised when upstream data can't be turned into a valid values.yaml. |
 
+## Setup
+
+Recommended Python: **3.10 or newer** (tested on 3.13). From the repo root:
+
+```bash
+# 1. Create and activate a venv
+python -m venv .venv
+source .venv/bin/activate
+
+# 2. Install dev dependencies (pulls in ruamel.yaml, pytest, etc.)
+pip install -r requirements-dev.txt
+```
+
+The generator itself only needs `ruamel.yaml`; the rest of
+[requirements-dev.txt](../../requirements-dev.txt) is for running the test suite and tooling. 
+Re-activate the venv (`source .venv/bin/activate`) in any new shell before invoking the CLI.
+
 ## How to run
 
 The chart's [values.yaml](../../charts/tt-inference-server/values.yaml) is the
