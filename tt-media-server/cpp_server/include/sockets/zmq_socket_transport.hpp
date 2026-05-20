@@ -4,6 +4,8 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <future>
 #include <memory>
@@ -55,11 +57,21 @@ class ZmqSocketTransport : public ISocketTransport {
  private:
   enum class Mode { SERVER, CLIENT };
 
+  struct SendRequest {
+    std::vector<uint8_t> data;
+    std::promise<bool> result;
+  };
+
+  bool startIoThread();
+  void ioLoop(std::promise<bool> initialized);
   void setupMonitor();
   void monitorLoop(std::promise<void> ready);
+  bool processPendingSends();
+  void failPendingSends();
+  void enqueueReceivedMessage(std::vector<uint8_t> data);
 
-  // Transport-specific send/receive halves. Each is called with socketMutex_
-  // already held by the caller so they only touch socket_/peerId_ safely.
+  // Transport-specific send/receive halves. Only ioThread_ calls these methods;
+  // no other thread touches socket_.
   bool sendAsRouter(const std::vector<uint8_t>& data);
   bool sendAsDealer(const std::vector<uint8_t>& data);
   std::vector<uint8_t> receiveAsRouter();
@@ -72,15 +84,22 @@ class ZmqSocketTransport : public ISocketTransport {
   std::unique_ptr<zmq::socket_t> socket_;
 
   std::atomic<bool> running_{false};
+  std::atomic<bool> ioActive_{false};
   std::atomic<bool> connected_{false};
   std::atomic<bool> monitorActive_{false};
 
+  std::thread ioThread_;
   std::thread monitorThread_;
 
-  mutable std::mutex socketMutex_;
-  mutable std::mutex peerIdMutex_;
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
+
+  std::mutex sendMutex_;
+  std::condition_variable sendCv_;
+  std::deque<std::shared_ptr<SendRequest>> pendingSends_;
+
+  std::mutex receiveMutex_;
+  std::deque<std::vector<uint8_t>> receivedMessages_;
 
   mutable std::mutex callbackMutex_;
   std::function<void()> connectionLostCallback_;
