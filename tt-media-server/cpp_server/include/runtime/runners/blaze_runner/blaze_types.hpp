@@ -75,11 +75,9 @@ struct SlotContext {
       case SlotState::AWAITING_STOP_ACK:
         // if we are waiting for stop ack, we can become idle by just stopping
         // naturally we can also jump to awaiting evict ack if we are deferred
-        // evict we can also jump to submitted if we are deferred
-        // submit/continue
-        legal =
-            (newState == SlotState::IDLE || newState == SlotState::RUNNING ||
-             newState == SlotState::AWAITING_EVICT_ACK);
+        // evict
+        legal = (newState == SlotState::IDLE ||
+                 newState == SlotState::AWAITING_EVICT_ACK);
         break;
       case SlotState::AWAITING_EVICT_ACK:
         // if we are waiting for evict ack, we can only become free

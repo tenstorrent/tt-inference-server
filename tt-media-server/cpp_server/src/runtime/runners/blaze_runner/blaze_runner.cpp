@@ -6,7 +6,6 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
-#include "services/memory_services/memory_manager.hpp"
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
@@ -14,6 +13,7 @@
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
+#include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 namespace tt::runners::blaze {
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
@@ -244,8 +244,7 @@ inline void BlazeRunner::handleEvictRequest(
             .decrementActiveRequests();
       }
       slotContext.pendingAckRequestId = request.taskId;
-      slotManager.setSlotState(request.slotId,
-                               SlotState::AWAITING_EVICT_ACK);
+      slotManager.setSlotState(request.slotId, SlotState::AWAITING_EVICT_ACK);
       TT_LOG_DEBUG(
           "[BlazeRunner] handleEvictRequest: pushed EVICT taskId={}, slotId={} "
           "(was {})",
