@@ -88,8 +88,8 @@ Any field not overridden at the model/device level falls back to `defaults`.
 | defaults.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | defaults.image.pullSecrets | list | `[]` | Image pull secrets. |
 | defaults.nodeSelector | object | `{}` | Node selector applied to the pod. |
-| defaults.podAnnotations | object | `{}` |  |
-| defaults.podSecurityContext | object | `{}` |  |
+| defaults.podAnnotations | object | `{}` | Annotations applied to the pod template. |
+| defaults.podSecurityContext | object | `{}` | Pod-level `securityContext`. |
 | defaults.probes.liveness.enabled | bool | `true` | Enable liveness probe. |
 | defaults.probes.liveness.initialDelaySeconds | int | `2400` | Liveness probe initial delay. Set high due to model load times. |
 | defaults.probes.liveness.path | string | `"/v1/models"` | Liveness probe HTTP path. |
