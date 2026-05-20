@@ -114,6 +114,7 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     Raises:
         RuntimeError: If media server is not healthy after all retry attempts
     """
+
     # Create a minimal strategy instance just for health check
     class HealthCheckStrategy(BaseMediaStrategy):
         def run_eval(self):

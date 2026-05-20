@@ -2651,7 +2651,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
-        agentic_file_name_pattern = get_agentic_result_file_pattern(model_spec, eval_run_id)
+        agentic_file_name_pattern = get_agentic_result_file_pattern(
+            model_spec, eval_run_id
+        )
         agentic_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}"
         files.extend(glob(agentic_file_path_pattern))
         direct_agentic_file_path_pattern = str(

@@ -139,8 +139,6 @@ class EvalConfig:
 
 
 _eval_config_list = [
-    # Leaving these here for now
-    # TODO: Move to a more appropriate place?
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
@@ -217,7 +215,7 @@ _eval_config_list = [
                     # we will need to specify specific tasks
                     # for CI runs to keep runtime reasonable
                     dataset_split="test",
-                    # mini-swe-agent is preferred: simpler CLI 
+                    # mini-swe-agent is preferred: simpler CLI
                     # The swe-agent backend is kept as a fallback.
                     agent_backend="mini-swe-agent",
                     n_concurrent_trials=5,
