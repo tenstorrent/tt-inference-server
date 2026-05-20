@@ -43,11 +43,10 @@ class SlotManager {
   }
 
   SlotContext* getSlotContextByTaskId(uint32_t taskId) {
-    auto it = taskToSlot.find(taskId);
-    if (it == taskToSlot.end()) {
+    if (!taskToSlot.contains(taskId)) {
       return nullptr;
     }
-    return &getSlotContext(it->second);
+    return &getSlotContext(taskToSlot[taskId]);
   }
 
   void bindTaskToSlot(uint32_t taskId, uint32_t slotId) {
@@ -60,12 +59,11 @@ class SlotManager {
   }
 
   void unbindTaskFromSlot(uint32_t taskId) {
-    auto it = taskToSlot.find(taskId);
-    if (it == taskToSlot.end()) {
+    if (!taskToSlot.contains(taskId)) {
       TT_LOG_ERROR("[SlotManager] taskId={} not bound to any slot", taskId);
       assert(false && "taskId not bound to any slot");
     }
-    taskToSlot.erase(it);
+    taskToSlot.erase(taskId);
   }
 
   uint32_t activeRunningCount() const { return runningCount; }
