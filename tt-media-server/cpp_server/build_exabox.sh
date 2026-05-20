@@ -4,9 +4,10 @@
 #
 # Build cpp_server on exabox (no sudo, ephemeral /home).
 #
-# All local installs (jsoncpp, libuuid, Drogon, Rust) go to
-# /data/$USER/.local so they persist across compute nodes.
-# Only libboost-dev is expected to be a system package.
+# All local installs (jsoncpp, libuuid, Boost headers, Drogon, Rust) go to
+# /data/$USER/.local so they persist across compute nodes. Nothing requires
+# sudo; exabox compute nodes have no system Boost, so we install header-only
+# Boost (Interprocess + its transitive headers) into the local prefix too.
 #
 # Usage:
 #   ./build_exabox.sh [OPTIONS]        # same flags as build.sh
@@ -150,6 +151,38 @@ install_uuid() {
     echo "libuuid installed to ${LOCAL_PREFIX}"
 }
 
+install_boost() {
+    # cpp_server only needs header-only Boost.Interprocess (plus its
+    # transitive headers). We install the full Boost header tree via
+    # `b2 headers`, which is a no-compile step — fast and contained.
+    local boost_version_hpp="${LOCAL_PREFIX}/include/boost/version.hpp"
+    if [ -f "${boost_version_hpp}" ]; then
+        echo "Boost headers already installed at ${LOCAL_PREFIX}/include/boost"
+        return 0
+    fi
+
+    echo ""
+    echo "Installing Boost headers → ${LOCAL_PREFIX} ..."
+    local ver="1.83.0"
+    local ver_us="${ver//./_}"
+    local tarball="${_build_tmp}/boost_${ver_us}.tar.bz2"
+    local src="${_build_tmp}/boost_${ver_us}"
+    mkdir -p "${_build_tmp}"
+
+    # No sha256 pin here: boost.io tarballs are served over HTTPS and we
+    # only consume headers. Add a pin if your threat model needs it.
+    wget -q -O "${tarball}" \
+        "https://archives.boost.io/release/${ver}/source/boost_${ver_us}.tar.bz2"
+    tar -xf "${tarball}" -C "${_build_tmp}"
+    cd "${src}"
+    ./bootstrap.sh --prefix="${LOCAL_PREFIX}" >/dev/null
+    ./b2 headers >/dev/null
+    mkdir -p "${LOCAL_PREFIX}/include"
+    cp -a boost "${LOCAL_PREFIX}/include/"
+    cd "${SCRIPT_DIR}"
+    echo "Boost headers installed to ${LOCAL_PREFIX}/include/boost"
+}
+
 install_drogon() {
     local drogon_cmake="${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake"
     if [ -f "${drogon_cmake}" ]; then
@@ -214,6 +247,7 @@ if [ "${INSTALL_DEPS}" -eq 1 ]; then
     trap 'rm -rf "${_build_tmp}"' EXIT
     install_jsoncpp
     install_uuid
+    install_boost
     install_drogon
     install_rust
     echo ""
@@ -227,6 +261,7 @@ fi
 # ── Verify prerequisites ─────────────────────────────────────────────────
 _missing=()
 [ ! -f "${LOCAL_PREFIX}/lib/cmake/Drogon/DrogonConfig.cmake" ] && _missing+=("Drogon")
+[ ! -f "${LOCAL_PREFIX}/include/boost/version.hpp" ]          && _missing+=("Boost")
 have_lib jsoncpp jsoncpp || _missing+=("jsoncpp")
 have_lib uuid uuid       || _missing+=("libuuid")
 if [ ${#_missing[@]} -gt 0 ]; then
@@ -235,9 +270,12 @@ if [ ${#_missing[@]} -gt 0 ]; then
     exit 1
 fi
 
-# Make local-prefix libs visible to CMake, pkg-config, and the linker
+# Make local-prefix libs visible to CMake, pkg-config, and the linker.
+# BOOST_ROOT steers the (old) FindBoost.cmake module to /data/$USER/.local
+# instead of /usr — exabox compute nodes have no system Boost.
 export PKG_CONFIG_PATH="${LOCAL_PREFIX}/lib/pkgconfig:${LOCAL_PREFIX}/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 export LD_LIBRARY_PATH="${LOCAL_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
+export BOOST_ROOT="${LOCAL_PREFIX}"
 
 # ── Rust: prefer /data paths over ephemeral /home ────────────────────────
 # Rustup proxies in .cargo/bin (both /data and /home) fail unless a default
@@ -365,6 +403,7 @@ CMAKE_ARGS=(
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     -DCMAKE_PREFIX_PATH="${LOCAL_PREFIX}"
+    -DBOOST_ROOT="${LOCAL_PREFIX}"
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
     -DENABLE_TRACY="${ENABLE_TRACY}"
