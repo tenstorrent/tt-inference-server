@@ -32,7 +32,9 @@ defaults:
   replicaCount: 1
   # -- Deployment progress deadline. Set high due to long model load times.
   progressDeadlineSeconds: 3600
+  # -- Annotations applied to the pod template.
   podAnnotations: {}
+  # -- Pod-level `securityContext`.
   podSecurityContext: {}
   image:
     # -- Image pull policy.
