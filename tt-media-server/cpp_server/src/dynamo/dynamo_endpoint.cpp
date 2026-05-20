@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
-#include <trantor/net/EventLoopThread.h>
+#include <trantor/net/EventLoopThreadPool.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -149,14 +149,23 @@ std::string DynamoEndpoint::detectAdvertiseHost() const {
 }
 
 GenerateHandler DynamoEndpoint::makeGenerateHandler() {
-  // `pipeline` and `loop` are captured by value (shared_ptr / raw ptr to a
-  // loop owned by `loop_thread_` whose lifetime exceeds any in-flight
-  // request: we join the loop thread in stop()).
+  // Capture by value: `pipeline` is a shared_ptr, `pool` is a raw pointer
+  // to an EventLoopThreadPool owned by DynamoEndpoint::loop_pool_ whose
+  // lifetime spans every in-flight request (we tear the pool down in
+  // stop() *after* joining the accept + handler threads).
+  //
+  // Each invocation picks the next loop via the pool's built-in atomic
+  // round-robin. Giving each request its own loop matches drogon's
+  // per-IO-thread model so a slow session-resolve or streaming callback
+  // can't head-of-line block other concurrent requests. (Previously a
+  // single shared loop tripped BlazeRunner's 60s output-hang watchdog
+  // under any real concurrency.)
   auto pipeline = pipeline_;
-  trantor::EventLoop* loop = loop_thread_->getLoop();
+  trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
-  return [pipeline, loop](const GenerateRequest& dynReq,
+  return [pipeline, pool](const GenerateRequest& dynReq,
                           std::function<bool(const TokenChunk&)> sendChunk) {
+    trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
     auto svc = pipeline->service();
 
@@ -237,9 +246,22 @@ void DynamoEndpoint::start() {
     return;
   }
 
-  loop_thread_ =
-      std::make_unique<trantor::EventLoopThread>("DynamoEndpointLoop");
-  loop_thread_->run();
+  // Spin up a pool of trantor loops, one per logical CPU by default. Each
+  // inbound Dynamo request is round-robined onto one of these loops by
+  // makeGenerateHandler(), giving us drogon-style per-loop concurrency
+  // instead of a single shared bottleneck. clamp to [4, 64] so very small
+  // boxes still parallelize a bit and large ones don't burn cores.
+  size_t requestedLoops = options_.num_loops;
+  if (requestedLoops == 0) {
+    const auto hw = std::thread::hardware_concurrency();
+    requestedLoops = hw == 0 ? 8u : hw;
+  }
+  requestedLoops = std::min<size_t>(std::max<size_t>(requestedLoops, 4), 64);
+  loop_pool_ = std::make_unique<trantor::EventLoopThreadPool>(
+      static_cast<size_t>(requestedLoops), "DynamoEndpointLoop");
+  loop_pool_->start();
+  TT_LOG_INFO("[DynamoEndpoint] Started {} request-loop threads",
+              requestedLoops);
 
   ServerConfig sc;
   sc.bind_host = options_.bind_host;
@@ -284,9 +306,19 @@ void DynamoEndpoint::start() {
   dc.endpoint = options_.endpoint;
   dc.instance_id = server_->config().instance_id;
   dc.instance_id_hex = server_->config().instance_id_hex;
+  // Dynamo's TCP dialer (lib/runtime/src/pipeline/network/egress/tcp_client.rs)
+  // accepts `host:port[/endpoint_name]`. It split_once's on the *first* '/'
+  // and parses the left half as a numeric `SocketAddr`, so:
+  //   - the host must be an IPv4 (auto-detected via getifaddrs, never a
+  //     hostname — that yields `invalid socket address syntax`),
+  //   - everything after the first slash becomes `x-endpoint-path`. Omit it
+  //     and the egress client bails with `Missing x-endpoint-path header
+  //     for TCP request` before any bytes leave the socket.
+  // We publish just the endpoint name (not instance_id_hex/endpoint): the
+  // instance id is already in the instance JSON, and DynamoServer's wire
+  // codec consumes endpoint_path as a single field anyway.
   dc.tcp_address = options_.advertise_host + ":" +
-                   std::to_string(server_->port()) + "/" + dc.instance_id_hex +
-                   "/" + options_.endpoint;
+                   std::to_string(server_->port()) + "/" + options_.endpoint;
   dc.model_name = options_.model_name;
   dc.model_path = options_.model_path;
 
@@ -332,8 +364,9 @@ void DynamoEndpoint::stop() {
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
   if (server_thread_.joinable()) server_thread_.join();
-  if (loop_thread_) {
-    loop_thread_.reset();
+  if (loop_pool_) {
+    // No public stop(); destruction of EventLoopThreadPool joins all threads.
+    loop_pool_.reset();
   }
   server_.reset();
   discovery_.reset();

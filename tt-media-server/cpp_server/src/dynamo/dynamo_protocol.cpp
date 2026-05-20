@@ -307,16 +307,25 @@ void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
       "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
       ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
 
-  // ACK on the inbound connection.
+  // ACK on the inbound connection (caller is still in the read loop on
+  // `fd`, so ACKs stay in the same order the frontend pipelined the
+  // requests in — Dynamo's reader task on the frontend matches ACKs to
+  // pending requests in FIFO order on a per-connection basis).
   auto ack = encode_tcp_response();
   if (!writeAll(fd, ack)) {
     TT_LOG_WARN("[DynamoServer] Failed to send ACK for id={}", ctrl.id);
     return;
   }
 
-  // Stream tokens via the call-home connection (separate TCP socket back to
-  // the frontend's stream server).
-  stream_response(connInfo, ctrl.id, genReq);
+  // Off-thread the slow path (LLMService dispatch + call-home streaming)
+  // so the read loop on `fd` can immediately consume the next pipelined
+  // request. `stream_response` opens its own outbound socket to the
+  // frontend's stream server and never touches `fd`, so concurrent
+  // streams from this connection don't share state.
+  std::thread([this, connInfo = std::move(connInfo), requestId = ctrl.id,
+               genReq = std::move(genReq)]() {
+    stream_response(connInfo, requestId, genReq);
+  }).detach();
 }
 
 void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
