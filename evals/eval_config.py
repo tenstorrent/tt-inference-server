@@ -27,7 +27,7 @@ class EvalTaskScore:
 
 
 @dataclass(frozen=True)
-class AgenticEvalConfig:
+class TerminalBenchEvalConfig:
     dataset: str
     agent: str
     model: Optional[str] = None
@@ -105,7 +105,7 @@ class EvalTask:
             EvalLimitMode.SMOKE_TEST: 0.01,
         }
     )
-    agentic_eval_config: Optional[AgenticEvalConfig] = None
+    agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
     swebench_eval_config: Optional[SWEbenchEvalConfig] = None
 
     def __post_init__(self):
@@ -158,7 +158,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=AgenticEvalConfig(
+                agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
                     n_concurrent_trials=5,
@@ -217,8 +217,8 @@ _eval_config_list = [
                     # we will need to specify specific tasks
                     # for CI runs to keep runtime reasonable
                     dataset_split="test",
-                    # that is the preferred agent for evaluation,
-                    # but we can also run with the default sweagent
+                    # mini-swe-agent is preferred: simpler CLI 
+                    # The swe-agent backend is kept as a fallback.
                     agent_backend="mini-swe-agent",
                     n_concurrent_trials=5,
                     max_workers=8,
@@ -3302,8 +3302,3 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
-# TODO: remove this when we have eval configs for all model specs, but in the meantime,
-# for dummy testing, we want to include all eval configs
-# even if they don't have a corresponding MODEL_SPEC
-for eval_config in _eval_config_list:
-    EVAL_CONFIGS.setdefault(eval_config.hf_model_repo.split("/")[-1], eval_config)

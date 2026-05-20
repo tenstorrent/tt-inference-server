@@ -16,6 +16,9 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.media_clients.base_strategy_interface import BaseMediaStrategy
+from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
 project_root = Path(__file__).resolve().parent.parent
@@ -76,31 +79,12 @@ def _select_eval_config(
     if limit_mode != EvalLimitMode.SMOKE_TEST or not eval_config.tasks:
         return eval_config
 
-    # TODO: revert this logic later
-    agentic_tasks = [
-        t
-        for t in eval_config.tasks
-        if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
-    ]
-    non_agentic_tasks = [
-        t
-        for t in eval_config.tasks
-        if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
-    ]
-    selected_non_agentic = [non_agentic_tasks[0]] if non_agentic_tasks else []
-    if selected_non_agentic:
-        logger.info(
-            "Smoke-test mode: keeping first non-agentic task: %s",
-            selected_non_agentic[0].task_name,
-        )
-    if agentic_tasks:
-        logger.info(
-            "Smoke-test mode: keeping all %d agentic task(s): %s",
-            len(agentic_tasks),
-            [t.task_name for t in agentic_tasks],
-        )
-    tasks = selected_non_agentic + agentic_tasks
-    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=tasks)
+    selected_task = eval_config.tasks[0]
+    logger.info(
+        "Smoke-test mode enabled; running only first eval task: %s",
+        selected_task.task_name,
+    )
+    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=[selected_task])
 
 
 def _resolve_eval_limit(
@@ -130,8 +114,6 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     Raises:
         RuntimeError: If media server is not healthy after all retry attempts
     """
-    from utils.media_clients.base_strategy_interface import BaseMediaStrategy
-
     # Create a minimal strategy instance just for health check
     class HealthCheckStrategy(BaseMediaStrategy):
         def run_eval(self):
@@ -807,11 +789,6 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
     This function uses ImageClient which can handle both cnn, image and audio transcription
     models via tt-media-server, but in the evals workflow it's only called for cnn and image models.
     """
-    from utils.media_clients.media_client_factory import (
-        MediaClientFactory,
-        MediaTaskType,
-    )
-
     logger.info(
         f"Running media (image and cnn) benchmarks for model: {model_spec.model_name} on device: {device.name}"
     )
@@ -829,11 +806,6 @@ def run_audio_evals(all_params, model_spec, device, output_path, service_port):
     """
     Run audio benchmarks for the given model and device.
     """
-    from utils.media_clients.media_client_factory import (
-        MediaClientFactory,
-        MediaTaskType,
-    )
-
     logger.info(
         f"Running audio evals for model: {model_spec.model_name} on device: {device.name}"
     )

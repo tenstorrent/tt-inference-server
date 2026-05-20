@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from evals.eval_config import (
-    AgenticEvalConfig,
+    TerminalBenchEvalConfig,
     EvalConfig,
     EvalTask,
     SWEbenchEvalConfig,
@@ -97,7 +97,7 @@ def test_build_agentic_eval_command_uses_harbor_and_vllm_base(monkeypatch):
     task = EvalTask(
         task_name="terminal_bench_2",
         workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-        agentic_eval_config=AgenticEvalConfig(
+        agentic_eval_config=TerminalBenchEvalConfig(
             dataset="terminal-bench/terminal-bench-2",
             agent="terminus-2",
             n_tasks=5,
@@ -145,7 +145,7 @@ def test_build_agentic_eval_command_uses_task_smoke_limit(monkeypatch):
     task = EvalTask(
         task_name="terminal_bench_2",
         workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-        agentic_eval_config=AgenticEvalConfig(
+        agentic_eval_config=TerminalBenchEvalConfig(
             dataset="terminal-bench/terminal-bench-2",
             agent="terminus-2",
             n_tasks=5,
@@ -177,7 +177,7 @@ def test_build_agentic_eval_command_writes_harbor_config_for_agent_timeout(
     task = EvalTask(
         task_name="terminal_bench_2",
         workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-        agentic_eval_config=AgenticEvalConfig(
+        agentic_eval_config=TerminalBenchEvalConfig(
             dataset="terminal-bench/terminal-bench-2",
             agent="terminus-2",
             n_attempts=5,

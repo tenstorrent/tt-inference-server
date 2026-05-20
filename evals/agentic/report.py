@@ -12,22 +12,20 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-def generate_agentic_report_data(model_spec: Any, eval_run_id: str) -> str:
-    """Generate a file path pattern to locate agentic eval result files for the
-    given evaluation run ID."""
+def get_agentic_result_file_pattern(model_spec: Any, eval_run_id: str) -> str:
+    """Return a glob pattern to locate agentic eval result files for the given
+    evaluation run ID."""
     # TODO: discuss this -> should we enforce similar structure to other evals
     #  from llms-eval for example?
     return f"eval_{eval_run_id}/agentic/*/result.json"
 
 
 def is_harbor_result(data: Any) -> bool:
-    ## is this future proof though?
     if not isinstance(data, dict):
         return False
-    stats = data.get("stats")
-    return "trial_results" in data or (
-        isinstance(stats, dict) and isinstance(stats.get("evals"), dict)
-    )
+    # Prefer the explicit marker written by our eval runners after the eval completes.
+    # Fall back to structural detection for result files written before this field existed.
+    return data.get("_result_format") == "harbor"
 
 
 def _first_numeric_reward(rewards: Any) -> Optional[float]:

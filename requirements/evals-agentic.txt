@@ -10,5 +10,5 @@
 # directory is available at a known path on disk.
 
 harbor==0.6.5
-mini-swe-agent
-git+https://github.com/epoch-research/SWE-bench.git
+mini-swe-agent==2.2.8
+git+https://github.com/epoch-research/SWE-bench.git@bc2a82af2874e26fa6f206ae0ad9017c4768daa2

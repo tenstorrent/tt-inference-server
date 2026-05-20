@@ -356,6 +356,7 @@ def normalize_swebench_report(
 
     eval_key = f"{config.agent_backend}__{config.model_name}__{config.dataset_name}"
     normalized = {
+        "_result_format": "harbor",
         "config": {
             "datasets": [
                 {

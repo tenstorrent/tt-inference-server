@@ -100,6 +100,18 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
     return config_path
 
 
+def _annotate_result_file(result_file: Path) -> None:
+    try:
+        with result_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "_result_format" not in data:
+            data["_result_format"] = "harbor"
+            with result_file.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning("Could not annotate result file %s: %s", result_file, e)
+
+
 def run(config: TerminalBenchRunConfig) -> int:
     harbor_exec = Path(sys.executable).parent / "harbor"
 
@@ -153,4 +165,5 @@ def run(config: TerminalBenchRunConfig) -> int:
 
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(cmd)
+    _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
     return result.returncode
