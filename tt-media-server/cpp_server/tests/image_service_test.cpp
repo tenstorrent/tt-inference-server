@@ -21,32 +21,33 @@ namespace {
 struct RunnerState {
   std::atomic<size_t> warmups{0};
   std::atomic<size_t> calls{0};
-  std::mutex run_mutex;
+  std::mutex runMutex;
 };
 
 class FakeImageRunner : public tt::services::ImageService::Runner {
  public:
-  FakeImageRunner(std::string name, std::shared_ptr<RunnerState> state)
-      : name_(std::move(name)), state_(std::move(state)) {}
+  FakeImageRunner(std::string runnerName,
+                  std::shared_ptr<RunnerState> runnerState)
+      : name(std::move(runnerName)), state(std::move(runnerState)) {}
 
   bool warmup() override {
-    state_->warmups.fetch_add(1, std::memory_order_relaxed);
+    state->warmups.fetch_add(1, std::memory_order_relaxed);
     return true;
   }
 
   std::vector<std::string> run(
       const tt::domain::ImageGenerateRequest& request) override {
-    std::lock_guard<std::mutex> lock(state_->run_mutex);
-    state_->calls.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(state->runMutex);
+    state->calls.fetch_add(1, std::memory_order_relaxed);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    return {name_ + ":" + std::to_string(request.task_id)};
+    return {name + ":" + std::to_string(request.task_id)};
   }
 
-  const char* runnerType() const override { return name_.c_str(); }
+  const char* runnerType() const override { return name.c_str(); }
 
  private:
-  std::string name_;
-  std::shared_ptr<RunnerState> state_;
+  std::string name;
+  std::shared_ptr<RunnerState> state;
 };
 
 tt::domain::ImageGenerateRequest makeRequest(uint32_t taskId) {
