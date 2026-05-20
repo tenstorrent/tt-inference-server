@@ -207,12 +207,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--values-path",
-        type=Path,
-        default=DEFAULT_VALUES_PATH,
-        help="Path to values.yaml (default: %(default)s)",
-    )
-    p.add_argument(
         "--model",
         action="append",
         default=[],
@@ -270,7 +264,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     try:
         generate(
-            values_path=args.values_path,
+            values_path=DEFAULT_VALUES_PATH,
             specs=specs,
             dry_run=args.dry_run,
         )
