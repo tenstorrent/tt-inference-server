@@ -78,54 +78,44 @@ Any field not overridden at the model/device level falls back to `defaults`.
 
 ---
 
-## Values Reference
+## Values
 
-| Value | Required | Default | Description |
-|---|---|---|---|
-| `model` | yes | `""` | Model name. Must match a key in `models`. |
-| `device` | yes | `""` | Device name. Must match a key under `models.<model>`. |
-| `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
-| `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Skips download at startup. |
-| `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
-| `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
-| `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
-
----
-
-## Defaults Reference
-
-All fields under `defaults` apply to every model/device unless overridden in the `models` map.
-
-| Field | Default | Description |
-|---|---|---|
-| `defaults.serverType` | `vllm` | Server backend: `vllm` or `media`. |
-| `defaults.replicaCount` | `1` | Number of Deployment replicas. |
-| `defaults.progressDeadlineSeconds` | `3600` | Deployment progress deadline. Set high due to long model load times. |
-| `defaults.hostIPC` | `true` | Enables host IPC namespace, required for Tenstorrent device communication. |
-| `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
-| `defaults.image.pullSecrets` | `[]` | Image pull secrets. |
-| `defaults.service.type` | `ClusterIP` | Kubernetes Service type. |
-| `defaults.service.port` | `8000` | Service port. |
-| `defaults.service.targetPort` | `8000` | Container target port. |
-| `defaults.service.protocol` | `TCP` | Service protocol. |
-| `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.cpu` | `8` | CPU limit. |
-| `defaults.resources.limits.memory` | `128Gi` | Memory limit (overridden per model). |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. |
-| `defaults.resources.requests.cpu` | `6` | CPU request. |
-| `defaults.resources.requests.memory` | `64Gi` | Memory request (overridden per model). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
-| `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
-| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path. |
-| `defaults.probes.liveness.initialDelaySeconds` | `2400` | Liveness probe initial delay. Set high due to model load times. |
-| `defaults.probes.readiness.enabled` | `true` | Enable readiness probe. |
-| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path. |
-| `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
-| `defaults.securityContext.privileged` | `true` | Required for access to Tenstorrent device files. |
-| `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
-| `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
-| `defaults.affinity` | `{}` | Affinity rules applied to the pod. |
-| `defaults.extraEnv` | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| cache.hostPath | string | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
+| defaults.affinity | object | `{}` | Affinity rules applied to the pod. |
+| defaults.extraEnv | list | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| defaults.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
+| defaults.image.pullSecrets | list | `[]` | Image pull secrets. |
+| defaults.nodeSelector | object | `{}` | Node selector applied to the pod. |
+| defaults.podAnnotations | object | `{}` | Annotations applied to the pod template. |
+| defaults.podSecurityContext | object | `{}` | Pod-level `securityContext`. |
+| defaults.probes.liveness.enabled | bool | `true` | Enable liveness probe. |
+| defaults.probes.liveness.initialDelaySeconds | int | `2400` | Liveness probe initial delay. Set high due to model load times. |
+| defaults.probes.liveness.path | string | `"/v1/models"` | Liveness probe HTTP path. |
+| defaults.probes.readiness.enabled | bool | `true` | Enable readiness probe. |
+| defaults.probes.readiness.initialDelaySeconds | int | `2400` | Readiness probe initial delay. |
+| defaults.probes.readiness.path | string | `"/health"` | Readiness probe HTTP path. |
+| defaults.progressDeadlineSeconds | int | `3600` | Deployment progress deadline. Set high due to long model load times. |
+| defaults.replicaCount | int | `1` | Number of Deployment replicas. |
+| defaults.resources.limits.cpu | string | `"8"` | CPU limit. |
+| defaults.resources.limits.hugepages-1Gi | string | `"32Gi"` | Hugepage limit. |
+| defaults.resources.limits.memory | string | `"128Gi"` | Memory limit (overridden per model). |
+| defaults.resources.requests.cpu | string | `"6"` | CPU request. |
+| defaults.resources.requests.hugepages-1Gi | string | `"32Gi"` | Hugepage request. |
+| defaults.resources.requests.memory | string | `"64Gi"` | Memory request (overridden per model). |
+| defaults.serverType | string | `"vllm"` | Server backend: `vllm` or `media`. |
+| defaults.service.annotations | object | `{}` | Annotations applied to the Service. |
+| defaults.service.port | int | `8000` | Service port. |
+| defaults.service.targetPort | int | `8000` | Container target port. |
+| defaults.service.type | string | `"ClusterIP"` | Kubernetes Service type. |
+| defaults.tolerations | list | `[]` | Tolerations applied to the pod. |
+| device | string | `""` | Device name. Must match a key under `models.<model>`. |
+| fullnameOverride | string | `""` | Fully overrides the resource name prefix. |
+| hfToken | string | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
+| model | string | `""` | Model name. Must match a key in `models`. |
+| models | object | See the Supported Models section below. | Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list. |
+| nameOverride | string | `""` | Overrides the chart name component in resource names. |
 
 ---
 
@@ -135,30 +125,244 @@ All fields under `defaults` apply to every model/device unless overridden in the
 
 | Model | Device |
 |---|---|
-| `Llama-3.1-8B-Instruct` | galaxy |
-| `Llama-3.1-8B` | galaxy |
-| `Llama-3.1-70B-Instruct` | galaxy |
-| `Llama-3.1-70B` | galaxy |
-| `Llama-3.3-70B-Instruct` | galaxy |
+| `AFM-4.5B` | n300 |
+| `AFM-4.5B` | t3k |
+| `DeepSeek-R1-0528` | galaxy |
 | `DeepSeek-R1-Distill-Llama-70B` | galaxy |
-| `Qwen3-8B` | galaxy |
+| `DeepSeek-R1-Distill-Llama-70B` | galaxy_t3k |
+| `DeepSeek-R1-Distill-Llama-70B` | p150x4 |
+| `DeepSeek-R1-Distill-Llama-70B` | p150x8 |
+| `DeepSeek-R1-Distill-Llama-70B` | p300x2 |
+| `DeepSeek-R1-Distill-Llama-70B` | t3k |
+| `Llama-3.1-70B` | galaxy |
+| `Llama-3.1-70B` | galaxy_t3k |
+| `Llama-3.1-70B` | p150x4 |
+| `Llama-3.1-70B` | p150x8 |
+| `Llama-3.1-70B` | p300x2 |
+| `Llama-3.1-70B` | t3k |
+| `Llama-3.1-70B-Instruct` | galaxy |
+| `Llama-3.1-70B-Instruct` | galaxy_t3k |
+| `Llama-3.1-70B-Instruct` | p150x4 |
+| `Llama-3.1-70B-Instruct` | p150x8 |
+| `Llama-3.1-70B-Instruct` | p300x2 |
+| `Llama-3.1-70B-Instruct` | t3k |
+| `Llama-3.1-8B` | galaxy |
+| `Llama-3.1-8B` | galaxy_t3k |
+| `Llama-3.1-8B` | gpu |
+| `Llama-3.1-8B` | n150 |
+| `Llama-3.1-8B` | n300 |
+| `Llama-3.1-8B` | p100 |
+| `Llama-3.1-8B` | p150 |
+| `Llama-3.1-8B` | p150x4 |
+| `Llama-3.1-8B` | p150x8 |
+| `Llama-3.1-8B` | p300 |
+| `Llama-3.1-8B` | p300x2 |
+| `Llama-3.1-8B` | t3k |
+| `Llama-3.1-8B-Instruct` | galaxy |
+| `Llama-3.1-8B-Instruct` | galaxy_t3k |
+| `Llama-3.1-8B-Instruct` | gpu |
+| `Llama-3.1-8B-Instruct` | n150 |
+| `Llama-3.1-8B-Instruct` | n300 |
+| `Llama-3.1-8B-Instruct` | p100 |
+| `Llama-3.1-8B-Instruct` | p150 |
+| `Llama-3.1-8B-Instruct` | p150x4 |
+| `Llama-3.1-8B-Instruct` | p150x8 |
+| `Llama-3.1-8B-Instruct` | p300 |
+| `Llama-3.1-8B-Instruct` | p300x2 |
+| `Llama-3.1-8B-Instruct` | t3k |
+| `Llama-3.2-11B-Vision` | n300 |
+| `Llama-3.2-11B-Vision` | t3k |
+| `Llama-3.2-11B-Vision-Instruct` | n300 |
+| `Llama-3.2-11B-Vision-Instruct` | t3k |
+| `Llama-3.2-1B` | n150 |
+| `Llama-3.2-1B` | n300 |
+| `Llama-3.2-1B` | t3k |
+| `Llama-3.2-1B-Instruct` | n150 |
+| `Llama-3.2-1B-Instruct` | n300 |
+| `Llama-3.2-1B-Instruct` | t3k |
+| `Llama-3.2-3B` | n150 |
+| `Llama-3.2-3B` | n300 |
+| `Llama-3.2-3B` | t3k |
+| `Llama-3.2-3B-Instruct` | n150 |
+| `Llama-3.2-3B-Instruct` | n300 |
+| `Llama-3.2-3B-Instruct` | t3k |
+| `Llama-3.2-90B-Vision` | t3k |
+| `Llama-3.2-90B-Vision-Instruct` | t3k |
+| `Llama-3.3-70B-Instruct` | galaxy |
+| `Llama-3.3-70B-Instruct` | galaxy_t3k |
+| `Llama-3.3-70B-Instruct` | p150x4 |
+| `Llama-3.3-70B-Instruct` | p150x8 |
+| `Llama-3.3-70B-Instruct` | p300x2 |
+| `Llama-3.3-70B-Instruct` | t3k |
+| `Mistral-7B-Instruct-v0.3` | n150 |
+| `Mistral-7B-Instruct-v0.3` | n300 |
+| `Mistral-7B-Instruct-v0.3` | t3k |
+| `Mistral-Small-3.1-24B-Instruct-2503` | t3k |
+| `QwQ-32B` | galaxy |
+| `QwQ-32B` | galaxy_t3k |
+| `QwQ-32B` | t3k |
+| `Qwen2.5-72B` | galaxy |
+| `Qwen2.5-72B` | galaxy_t3k |
+| `Qwen2.5-72B` | t3k |
+| `Qwen2.5-72B-Instruct` | galaxy |
+| `Qwen2.5-72B-Instruct` | galaxy_t3k |
+| `Qwen2.5-72B-Instruct` | t3k |
+| `Qwen2.5-7B` | n150x4 |
+| `Qwen2.5-7B` | n300 |
+| `Qwen2.5-7B-Instruct` | n150x4 |
+| `Qwen2.5-7B-Instruct` | n300 |
+| `Qwen2.5-Coder-32B-Instruct` | galaxy_t3k |
+| `Qwen2.5-Coder-32B-Instruct` | t3k |
+| `Qwen2.5-VL-32B-Instruct` | t3k |
+| `Qwen2.5-VL-3B-Instruct` | n150 |
+| `Qwen2.5-VL-3B-Instruct` | n300 |
+| `Qwen2.5-VL-72B-Instruct` | t3k |
+| `Qwen2.5-VL-7B-Instruct` | n150 |
+| `Qwen2.5-VL-7B-Instruct` | n300 |
 | `Qwen3-32B` | galaxy |
+| `Qwen3-32B` | galaxy_t3k |
+| `Qwen3-32B` | p150x8 |
+| `Qwen3-32B` | p300x2 |
+| `Qwen3-32B` | t3k |
+| `Qwen3-8B` | galaxy |
+| `Qwen3-8B` | galaxy_t3k |
+| `Qwen3-8B` | n150 |
+| `Qwen3-8B` | n300 |
+| `Qwen3-8B` | p300 |
+| `Qwen3-8B` | t3k |
+| `Qwen3-VL-32B-Instruct` | t3k |
+| `gemma-3-1b-it` | n150 |
+| `gemma-3-27b-it` | galaxy |
+| `gemma-3-27b-it` | galaxy_t3k |
+| `gemma-3-27b-it` | t3k |
+| `gemma-3-4b-it` | n150 |
+| `gemma-3-4b-it` | n300 |
 | `gpt-oss-120b` | galaxy |
+| `gpt-oss-120b` | t3k |
+| `gpt-oss-20b` | galaxy |
+| `gpt-oss-20b` | galaxy_t3k |
+| `gpt-oss-20b` | t3k |
+| `medgemma-27b-it` | galaxy |
+| `medgemma-27b-it` | galaxy_t3k |
+| `medgemma-27b-it` | t3k |
+| `medgemma-4b-it` | n150 |
+| `medgemma-4b-it` | n300 |
 
 ### Media
 
 | Model | Device |
 |---|---|
-| `whisper-large-v3` | galaxy |
-| `distil-large-v3` | galaxy |
-| `stable-diffusion-xl-base-1.0` | galaxy |
-| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy |
 | `FLUX.1-dev` | galaxy |
+| `FLUX.1-dev` | p150x4 |
+| `FLUX.1-dev` | p150x8 |
+| `FLUX.1-dev` | p300 |
+| `FLUX.1-dev` | p300x2 |
+| `FLUX.1-dev` | t3k |
 | `FLUX.1-schnell` | galaxy |
+| `FLUX.1-schnell` | p150x4 |
+| `FLUX.1-schnell` | p150x8 |
+| `FLUX.1-schnell` | p300 |
+| `FLUX.1-schnell` | p300x2 |
+| `FLUX.1-schnell` | t3k |
+| `Llama-3.1-70B` | t3k |
+| `Motif-Image-6B-Preview` | galaxy |
+| `Motif-Image-6B-Preview` | p150x8 |
+| `Motif-Image-6B-Preview` | p300x2 |
+| `Motif-Image-6B-Preview` | t3k |
+| `Qwen-Image` | galaxy |
+| `Qwen-Image` | t3k |
+| `Qwen-Image-2512` | galaxy |
+| `Qwen-Image-2512` | t3k |
+| `Qwen3-Embedding-8B` | galaxy |
+| `Qwen3-Embedding-8B` | n150 |
+| `Qwen3-Embedding-8B` | n300 |
+| `Qwen3-Embedding-8B` | t3k |
 | `Wan2.2-T2V-A14B-Diffusers` | galaxy |
+| `Wan2.2-T2V-A14B-Diffusers` | p150x4 |
+| `Wan2.2-T2V-A14B-Diffusers` | p150x8 |
+| `Wan2.2-T2V-A14B-Diffusers` | p300x2 |
+| `Wan2.2-T2V-A14B-Diffusers` | t3k |
+| `bge-large-en-v1.5` | galaxy |
+| `bge-large-en-v1.5` | n150 |
+| `bge-large-en-v1.5` | n300 |
+| `bge-large-en-v1.5` | t3k |
+| `bge-m3` | galaxy |
+| `bge-m3` | n150 |
+| `bge-m3` | n300 |
+| `bge-m3` | t3k |
+| `distil-large-v3` | galaxy |
+| `distil-large-v3` | n150 |
+| `distil-large-v3` | n300 |
+| `distil-large-v3` | p150 |
+| `distil-large-v3` | p300 |
+| `distil-large-v3` | p300x2 |
+| `distil-large-v3` | t3k |
 | `mochi-1-preview` | galaxy |
+| `mochi-1-preview` | p150x4 |
+| `mochi-1-preview` | p150x8 |
+| `mochi-1-preview` | p300x2 |
+| `mochi-1-preview` | t3k |
+| `speecht5_tts` | n150 |
+| `speecht5_tts` | n300 |
+| `speecht5_tts` | p150 |
+| `speecht5_tts` | p300 |
+| `speecht5_tts` | p300x2 |
+| `stable-diffusion-3.5-large` | galaxy |
+| `stable-diffusion-3.5-large` | t3k |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | galaxy |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | n150 |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | n300 |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | t3k |
+| `stable-diffusion-xl-base-1.0` | galaxy |
+| `stable-diffusion-xl-base-1.0` | n150 |
+| `stable-diffusion-xl-base-1.0` | n300 |
+| `stable-diffusion-xl-base-1.0` | p150x4 |
+| `stable-diffusion-xl-base-1.0` | p150x8 |
+| `stable-diffusion-xl-base-1.0` | p300x2 |
+| `stable-diffusion-xl-base-1.0` | t3k |
+| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy |
+| `stable-diffusion-xl-base-1.0-img-2-img` | n150 |
+| `stable-diffusion-xl-base-1.0-img-2-img` | n300 |
+| `stable-diffusion-xl-base-1.0-img-2-img` | p150x4 |
+| `stable-diffusion-xl-base-1.0-img-2-img` | p150x8 |
+| `stable-diffusion-xl-base-1.0-img-2-img` | p300x2 |
+| `stable-diffusion-xl-base-1.0-img-2-img` | t3k |
+| `whisper-large-v3` | galaxy |
+| `whisper-large-v3` | n150 |
+| `whisper-large-v3` | n300 |
+| `whisper-large-v3` | p150 |
+| `whisper-large-v3` | p300 |
+| `whisper-large-v3` | p300x2 |
+| `whisper-large-v3` | t3k |
 
-To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
+### Forge
+
+| Model | Device |
+|---|---|
+| `Llama-3.2-3B` | n150 |
+| `Llama-3.2-3B` | n300 |
+| `Qwen3-4B` | n150 |
+| `Qwen3-4B` | n300 |
+| `Qwen3-Embedding-4B` | galaxy |
+| `Qwen3-Embedding-4B` | n150 |
+| `Qwen3-Embedding-4B` | n300 |
+| `Qwen3-Embedding-4B` | t3k |
+| `efficientnet` | n150 |
+| `efficientnet` | n300 |
+| `mobilenetv2` | n150 |
+| `mobilenetv2` | n300 |
+| `resnet-50` | n150 |
+| `resnet-50` | n300 |
+| `segformer` | n150 |
+| `segformer` | n300 |
+| `unet` | n150 |
+| `unet` | n300 |
+| `vit` | n150 |
+| `vit` | n300 |
+| `vovnet` | n150 |
+| `vovnet` | n300 |
+
+To add a new model, add an entry under `models` in `values.yaml` with at least one engine sub-key and at least one device under that engine.
 
 ---
 

@@ -1,0 +1,63 @@
+{{- /*
+chart.supportedModelsSection — auto-generated Supported Models tables.
+
+Reads values.yaml via .Files.Get and walks the nested shape:
+    models.<name>.<engine>.<device>.impls.<impl>...
+emitting one Markdown table per engine, with one row per
+(model, device) pair the engine supports. Models that support
+multiple engines appear under each engine's table (Option A layout).
+
+Skipped at the engine level: any non-map value (e.g. the
+`defaultEngine: <name>` marker, which is a string field).
+
+Engines are ordered vllm → media → forge → any others alphabetically.
+Engine display labels are derived from $labels (e.g. "vllm" → "vLLM");
+unmapped engine names fall back to title-cased keys.
+
+Adding a model / engine / device in values.yaml is reflected here on
+the next helm-docs run — no manual edit to this file or README.md.gotmpl.
+*/ -}}
+{{- define "chart.supportedModelsSection" -}}
+{{- $values := .Files.Get "values.yaml" | fromYaml -}}
+{{- $labels := dict "vllm" "vLLM" "media" "Media" "forge" "Forge" -}}
+{{- $engineOrder := list "vllm" "media" "forge" -}}
+{{- $groups := dict -}}
+{{- range $name, $modelCfg := $values.models -}}
+  {{- range $engine, $engineCfg := $modelCfg -}}
+    {{- if and (ne $engine "defaultEngine") (eq (kindOf $engineCfg) "map") -}}
+      {{- range $device, $_ := $engineCfg -}}
+        {{- $entries := default (list) (index $groups $engine) -}}
+        {{- $_ := set $groups $engine (append $entries (dict "name" $name "device" $device)) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+## Supported Models
+{{- range $engineOrder }}
+{{- $engine := . }}
+{{- if hasKey $groups $engine }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range (index $groups $engine) }}
+| `{{ .name }}` | {{ .device }} |
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $engine, $entries := $groups }}
+{{- if not (has $engine $engineOrder) }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range $entries }}
+| `{{ .name }}` | {{ .device }} |
+{{- end }}
+{{- end }}
+{{- end }}
+
+To add a new model, add an entry under `models` in `values.yaml` with at least one engine sub-key and at least one device under that engine.
+{{- end -}}
