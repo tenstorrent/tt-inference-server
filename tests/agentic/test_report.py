@@ -77,7 +77,7 @@ def test_process_agentic_eval_files_extracts_harbor_summary_metrics(tmp_path):
                             },
                         }
                     }
-                }
+                },
             }
         ),
         encoding="utf-8",
