@@ -4,36 +4,36 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
-#include "domain/manage_memory.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 
-namespace tt::runners::blaze_utils {
-
-using namespace tt::domain::llm;
+namespace tt::runners::blaze::utils {
 
 namespace ds = tt_llm_engine::scheduler::decode;
 
 inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {
-      .type = ds::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
+  return {.type = ds::RequestType::ALLOCATE,
+          .request_id = requestId,
+          .tokens = {},
+          .gen = {}};
 }
 
 inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::CANCEL,
           .request_id = requestId,
           .slot_id = slotId,
-          .tokens = {}};
+          .tokens = {},
+          .gen = {}};
 }
 
 inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::STOP,
           .request_id = requestId,
           .slot_id = slotId,
-          .tokens = {}};
+          .tokens = {},
+          .gen = {}};
 }
 
 inline ds::GenerationParams makeGenerationParams(
@@ -74,4 +74,36 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
   return req;
 }
 
-}  // namespace tt::runners::blaze_utils
+namespace pl = tt_llm_engine::pipeline;
+
+inline pl::PipelineConfig makePipelineConfig(
+    const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return pl::SocketConfig{
+          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
+          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+          .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return pl::PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .decode_token_id = 12345,
+      };
+      /* spec decode config
+       return PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .accept_rate = 0.9f,
+          .safe_vocab_base = 1000,    // anything safely above your tokenizer's
+      stop ids .safe_vocab_modulus = 64,   // any size >= 5; bigger = lower
+      coincidental-stop chance
+      };
+       */
+    default:
+      throw std::runtime_error("Invalid blaze runner type");
+  }
+}
+
+}  // namespace tt::runners::blaze::utils

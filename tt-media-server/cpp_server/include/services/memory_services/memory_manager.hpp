@@ -10,36 +10,29 @@
 
 namespace tt::services {
 
+// IPC adapter for memory-management messages exchanged with SessionManager.
+// Owns the boost queues; provides pull (getRequest) and push (replyAllocate*)
+// primitives. Holds no state about what the runner does with the slots/blocks
+// it allocates — that's the runner's concern.
 class MemoryManager {
  public:
   MemoryManager();
-  virtual ~MemoryManager();
+  ~MemoryManager();
 
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
   MemoryManager(MemoryManager&&) = delete;
   MemoryManager& operator=(MemoryManager&&) = delete;
 
-  virtual std::optional<domain::ManageMemoryTask> getRequest();
+  std::optional<domain::ManageMemoryTask> getRequest();
 
-  // Default implementation: ALLOCATE returns SUCCESS with an opaque slotId,
-  // DEALLOCATE is a no-op. The slotId value is not interpreted by the legacy
-  // LLM scheduler (it manages its own block table), so the default acts as a
-  // pure session-creation gate. Async managers (e.g. BlazeMemoryManager)
-  // override to talk to an external scheduler.
-  virtual void handleRequest(const domain::ManageMemoryTask& request);
+  // slotId is an opaque handle from the runner's perspective — for blaze it's
+  // a kv-cache slot index, for future paged runners it may be a block handle,
+  // etc. SessionManager just stores it and echoes it back on the next request.
+  void replyAllocateSuccess(uint32_t taskId, uint32_t slotId);
+  void replyAllocateFailure(uint32_t taskId);
 
-  // Optional method for asynchronous memory managers that receive responses
-  // from an external system. Synchronous managers don't
-  // need to override this. Async managers override to
-  // complete allocation after receiving a response.
-  virtual void handleResponse(uint32_t taskId, uint32_t slotId) {
-    // Default implementation does nothing - only async managers need this
-    (void)taskId;
-    (void)slotId;
-  }
-
- protected:
+ private:
   std::unique_ptr<ipc::boost::MemoryRequestQueue> requestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> resultQueue;
 };

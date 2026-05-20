@@ -323,7 +323,6 @@ set(LLM_RUNNER_LIB_SOURCES
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_runner.cpp
-        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
