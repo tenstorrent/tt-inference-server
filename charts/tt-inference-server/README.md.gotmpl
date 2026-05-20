@@ -82,36 +82,7 @@ Any field not overridden at the model/device level falls back to `defaults`.
 
 ---
 
-## Supported Models
-
-### vLLM
-
-| Model | Device |
-|---|---|
-| `Llama-3.1-8B-Instruct` | galaxy |
-| `Llama-3.1-8B` | galaxy |
-| `Llama-3.1-70B-Instruct` | galaxy |
-| `Llama-3.1-70B` | galaxy |
-| `Llama-3.3-70B-Instruct` | galaxy |
-| `DeepSeek-R1-Distill-Llama-70B` | galaxy |
-| `Qwen3-8B` | galaxy |
-| `Qwen3-32B` | galaxy |
-| `gpt-oss-120b` | galaxy |
-
-### Media
-
-| Model | Device |
-|---|---|
-| `whisper-large-v3` | galaxy |
-| `distil-large-v3` | galaxy |
-| `stable-diffusion-xl-base-1.0` | galaxy |
-| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy |
-| `FLUX.1-dev` | galaxy |
-| `FLUX.1-schnell` | galaxy |
-| `Wan2.2-T2V-A14B-Diffusers` | galaxy |
-| `mochi-1-preview` | galaxy |
-
-To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
+{{ template "chart.supportedModelsSection" . }}
 
 ---
 
