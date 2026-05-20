@@ -53,6 +53,41 @@ void setNonBlocking(int socketFd) {
   }
 }
 
+void setCloseOnExec(int socketFd) {
+  int flags = fcntl(socketFd, F_GETFD, 0);
+  if (flags < 0 || fcntl(socketFd, F_SETFD, flags | FD_CLOEXEC) < 0) {
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set FD_CLOEXEC: {}",
+                strerror(errno));
+  }
+}
+
+tt::utils::ScopedFd createTcpSocket() {
+  tt::utils::ScopedFd socketFd(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+  if (!socketFd) {
+    socketFd.reset(socket(AF_INET, SOCK_STREAM, 0));
+    if (socketFd) {
+      setCloseOnExec(socketFd.get());
+    }
+  }
+  return socketFd;
+}
+
+tt::utils::ScopedFd acceptClient(int serverSocket, struct sockaddr_in* clientAddr,
+                                socklen_t* clientLen) {
+  tt::utils::ScopedFd accepted(
+      accept4(serverSocket, reinterpret_cast<struct sockaddr*>(clientAddr),
+              clientLen, SOCK_CLOEXEC));
+  if (!accepted && (errno == ENOSYS || errno == EINVAL)) {
+    accepted.reset(accept(serverSocket,
+                          reinterpret_cast<struct sockaddr*>(clientAddr),
+                          clientLen));
+    if (accepted) {
+      setCloseOnExec(accepted.get());
+    }
+  }
+  return accepted;
+}
+
 void configureSocket(int socketFd) {
   setNonBlocking(socketFd);
   setSocketKeepAlive(socketFd);
@@ -65,7 +100,7 @@ bool TcpSocketTransport::initializeAsServer(uint16_t port) {
   mode_ = Mode::SERVER;
   port_ = port;
 
-  serverSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+  serverSocket_ = createTcpSocket();
   if (!serverSocket_) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to create server socket: {}",
                  strerror(errno));
@@ -164,8 +199,8 @@ void TcpSocketTransport::serverLoop() {
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
 
-    tt::utils::ScopedFd accepted(
-        accept(serverSocket_.get(), (struct sockaddr*)&clientAddr, &clientLen));
+    tt::utils::ScopedFd accepted =
+        acceptClient(serverSocket_.get(), &clientAddr, &clientLen);
     if (!accepted) {
       if (running_) {
         TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
@@ -207,7 +242,7 @@ void TcpSocketTransport::clientLoop() {
   };
 
   while (running_) {
-    clientSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+    clientSocket_ = createTcpSocket();
     if (!clientSocket_) {
       TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
                    strerror(errno));
