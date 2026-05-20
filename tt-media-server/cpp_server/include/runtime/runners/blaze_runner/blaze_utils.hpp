@@ -14,18 +14,15 @@ using namespace tt::domain::llm;
 namespace ds = tt_llm_engine::scheduler::decode;
 
 inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = ds::RequestType::ALLOCATE,
-          .request_id = requestId,
-          .tokens = {},
-          .gen = {}};
+  return {
+      .type = ds::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
 inline ds::ISRequest makeCancelRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::CANCEL,
           .request_id = requestId,
           .slot_id = slotId,
-          .tokens = {},
-          .gen = {}};
+          .tokens = {}};
 }
 
 inline ds::GenerationParams makeGenerationParams(
