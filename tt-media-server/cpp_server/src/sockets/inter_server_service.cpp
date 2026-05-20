@@ -3,7 +3,10 @@
 
 #include "sockets/inter_server_service.hpp"
 
+#include <chrono>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -57,6 +60,7 @@ bool InterServerService::initializeFromConfig() {
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socket_manager_.initializeAsClient(host, port);
+      direct_prefill_mode_ = success;
     }
   }
 
@@ -79,6 +83,9 @@ void InterServerService::start() {
   }
 
   socket_manager_.start();
+  if (direct_prefill_mode_) {
+    startDirectModeRegistrationThread();
+  }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
 
@@ -87,6 +94,14 @@ void InterServerService::stop() {
     return;
   }
 
+  {
+    std::lock_guard<std::mutex> lock(registration_mutex_);
+    registration_running_ = false;
+  }
+  registration_cv_.notify_all();
+  if (registration_thread_.joinable()) {
+    registration_thread_.join();
+  }
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -189,8 +204,17 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.server_id);
       });
 
-  socket_manager_.setConnectionEstablishedCallback(
-      [this]() { sendRegistrationIfGatewayModeIsEnabled(); });
+  socket_manager_.registerHandler<RegistrationProbeMessage>(
+      tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
+        sendRegistrationIfGatewayModeIsEnabled();
+      });
+
+  socket_manager_.registerHandler<PrefillRegistrationMessage>(
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {
+        TT_LOG_DEBUG(
+            "[InterServerService] Prefill '{}' announced (direct mode)",
+            msg.server_id);
+      });
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
@@ -229,24 +253,41 @@ void InterServerService::setupMessageHandlers() {
       });
 }
 
-void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
-  if (!gateway_mode_) {
-    return;
-  }
+void InterServerService::sendRegistration() {
   PrefillRegistrationMessage msg;
   msg.server_id = tt::config::prefillServerId();
   msg.max_in_flight = tt::config::prefillMaxInFlight();
 
   bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
   if (ok) {
-    TT_LOG_INFO(
+    TT_LOG_DEBUG(
         "[InterServerService] Sent PrefillRegistration: id='{}' "
         "max_in_flight={}",
         msg.server_id, msg.max_in_flight);
   } else {
-    TT_LOG_WARN(
-        "[InterServerService] Failed to send PrefillRegistration to gateway");
+    TT_LOG_WARN("[InterServerService] Failed to send PrefillRegistration");
   }
+}
+
+void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
+  if (!gateway_mode_) {
+    return;
+  }
+  sendRegistration();
+}
+
+void InterServerService::startDirectModeRegistrationThread() {
+  registration_running_ = true;
+  registration_thread_ = std::thread([this] {
+    constexpr auto registrationInterval = std::chrono::seconds(1);
+    while (registration_running_) {
+      sendRegistration();
+
+      std::unique_lock<std::mutex> lock(registration_mutex_);
+      registration_cv_.wait_for(lock, registrationInterval,
+                                [this] { return !registration_running_; });
+    }
+  });
 }
 
 }  // namespace tt::sockets

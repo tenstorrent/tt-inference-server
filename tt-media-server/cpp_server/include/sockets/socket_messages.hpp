@@ -224,6 +224,23 @@ struct PrefillRegistrationMessage
   }
 };
 
+// Gateway -> prefill. Periodically retried until the gateway gets a
+// PrefillRegistrationMessage back. Triggers (re-)registration regardless of
+// transport semantics
+struct RegistrationProbeMessage
+    : SerializableMessage<RegistrationProbeMessage> {
+  uint32_t nonce = 0;
+
+  template <class F>
+  void fields(F&& f) {
+    f(nonce);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(nonce);
+  }
+};
+
 // Gateway -> decode. Informs decode which prefill handled a task (for KV
 // transfer / logs).
 struct PrefillAssignmentMessage
@@ -281,6 +298,7 @@ constexpr const char* PREFILL_REGISTRATION = "prefill_registration";
 constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";
 constexpr const char* PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr const char* PREFILL_CACHE_BLOCKS_EVICTED = "prefill_cache_evicted";
+constexpr const char* REGISTRATION_PROBE = "registration_probe";
 }  // namespace tags
 
 }  // namespace tt::sockets
