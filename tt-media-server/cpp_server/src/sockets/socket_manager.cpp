@@ -84,13 +84,7 @@ void SocketManager::messageLoop() {
 
 void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
   try {
-    std::string serialized(data.begin(), data.end());
-    std::istringstream iss(serialized);
-
-    cereal::BinaryInputArchive archive(iss);
-    std::string messageType;
-    archive(messageType);
-
+    std::string messageType = wire::readMessageType(data);
     auto handler = getHandler(messageType);
     if (!handler) {
       TT_LOG_DEBUG("[SocketManager] No handler for message type: {}",

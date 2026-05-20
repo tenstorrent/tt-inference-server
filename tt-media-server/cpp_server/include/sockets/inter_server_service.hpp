@@ -153,9 +153,9 @@ class InterServerService {
   // response to a RegistrationProbeMessage from the gateway. No-op otherwise.
   void sendRegistrationIfGatewayModeIsEnabled();
 
-  // Prefill-side, direct-mode only: background thread that periodically sends
-  // PrefillRegistrationMessage so the decode ROUTER learns the peer identity.
-  void startDirectModeRegistrationThread();
+  // Prefill-side background thread that periodically sends
+  // PrefillRegistrationMessage so a ROUTER peer learns the DEALER identity.
+  void startRegistrationThread();
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -163,7 +163,7 @@ class InterServerService {
   HealthCallback health_check_callback_;
   bool enabled_ = false;
   bool gateway_mode_ = false;
-  bool direct_prefill_mode_ = false;
+  bool periodic_registration_mode_ = false;
 
   // Direct-mode registration loop: condition_variable lets stop() wake the
   // thread immediately instead of waiting for the 1s timer to elapse.
