@@ -45,8 +45,8 @@ bool ZmqSocketTransport::startIoThread() {
 
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  ioThread_ = std::thread(&ZmqSocketTransport::ioLoop, this,
-                          std::move(initialized));
+  ioThread_ =
+      std::thread(&ZmqSocketTransport::ioLoop, this, std::move(initialized));
 
   bool initializedOk = fut.get();
   if (!initializedOk && ioThread_.joinable()) {
@@ -281,9 +281,8 @@ bool ZmqSocketTransport::processPendingSends() {
 
     bool ok = false;
     try {
-      ok = running_ &&
-           (mode_ == Mode::SERVER ? sendAsRouter(request->data)
-                                  : sendAsDealer(request->data));
+      ok = running_ && (mode_ == Mode::SERVER ? sendAsRouter(request->data)
+                                              : sendAsDealer(request->data));
     } catch (const zmq::error_t& e) {
       TT_LOG_ERROR("[ZmqSocketTransport] Send failed: {}", e.what());
     }
