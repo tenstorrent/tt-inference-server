@@ -944,9 +944,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
@@ -982,9 +979,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1025,9 +1019,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -1062,9 +1053,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1104,9 +1092,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1142,9 +1127,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1181,9 +1163,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
@@ -1356,9 +1335,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1387,9 +1363,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1418,9 +1391,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -1453,9 +1423,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -1482,9 +1449,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -1512,9 +1476,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-0528",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 32768,
                 },
                 gen_kwargs={
@@ -1544,9 +1505,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-0528",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 32768,
                 },
                 gen_kwargs={
