@@ -1608,7 +1608,7 @@ jobs:
           {
             echo "## TCP vs ZMQ Socket Transport Microbenchmark"
             echo ""
-            echo "| Transport | Messages | Payload bytes | Total ms | Mean RTT us | Msg/s | MiB/s |"
+            echo "| Transport | Messages | Payload bytes | Total ms | Mean us/msg | Msg/s | MiB/s |"
             echo "|-----------|----------|---------------|----------|-------------|-------|-------|"
             awk -F, 'NR > 1 {
               printf "| %s | %s | %s | %.2f | %.2f | %.2f | %.2f |\n", $1, $2, $3, $4, $5, $6, $7

@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -19,7 +20,9 @@
 namespace {
 
 constexpr int MESSAGE_COUNT = 1000;
+constexpr int BURST_MESSAGE_COUNT = 10000;
 constexpr size_t PAYLOAD_SIZE_BYTES = 256;
+constexpr timeval SOCKET_TIMEOUT{5, 0};
 constexpr int ZMQ_CONTEXT_IO_THREADS = 1;
 
 struct BenchmarkResult {
@@ -27,7 +30,7 @@ struct BenchmarkResult {
   int messages = 0;
   size_t payloadBytes = 0;
   double totalMs = 0.0;
-  double meanRttUs = 0.0;
+  double meanUsPerMessage = 0.0;
   double messagesPerSecond = 0.0;
   double mibPerSecond = 0.0;
 };
@@ -106,20 +109,30 @@ int connectWithRetry(uint16_t port) {
   throw std::runtime_error("failed to connect client socket");
 }
 
+void configureTcpSocket(int fd) {
+  int flag = 1;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &SOCKET_TIMEOUT,
+             sizeof(SOCKET_TIMEOUT));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &SOCKET_TIMEOUT,
+             sizeof(SOCKET_TIMEOUT));
+}
+
 BenchmarkResult makeResult(const std::string& transport,
-                           std::chrono::steady_clock::duration elapsed) {
+                           std::chrono::steady_clock::duration elapsed,
+                           int messageCount) {
   const double totalMs =
       std::chrono::duration<double, std::milli>(elapsed).count();
   const double seconds = totalMs / 1000.0;
   const double totalBytes =
-      static_cast<double>(MESSAGE_COUNT * PAYLOAD_SIZE_BYTES * 2);
+      static_cast<double>(messageCount * PAYLOAD_SIZE_BYTES * 2);
 
   return BenchmarkResult{transport,
-                         MESSAGE_COUNT,
+                         messageCount,
                          PAYLOAD_SIZE_BYTES,
                          totalMs,
-                         (totalMs * 1000.0) / MESSAGE_COUNT,
-                         MESSAGE_COUNT / seconds,
+                         (totalMs * 1000.0) / messageCount,
+                         messageCount / seconds,
                          totalBytes / (1024.0 * 1024.0) / seconds};
 }
 
@@ -130,7 +143,7 @@ void recvZmq(zmq::socket_t& socket, zmq::message_t& message) {
   }
 }
 
-BenchmarkResult runTcpBenchmark() {
+BenchmarkResult runTcpPingPongBenchmark() {
   const uint16_t port = ephemeralPort();
   std::vector<uint8_t> payload(PAYLOAD_SIZE_BYTES, 0x5A);
   std::atomic<bool> serverOk{true};
@@ -139,6 +152,7 @@ BenchmarkResult runTcpBenchmark() {
   if (serverFd < 0) {
     throw std::runtime_error("failed to create server socket");
   }
+  configureTcpSocket(serverFd);
 
   int opt = 1;
   setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -159,6 +173,7 @@ BenchmarkResult runTcpBenchmark() {
       serverOk = false;
       return;
     }
+    configureTcpSocket(peerFd);
 
     std::vector<uint8_t> buffer(PAYLOAD_SIZE_BYTES);
     try {
@@ -173,6 +188,7 @@ BenchmarkResult runTcpBenchmark() {
   });
 
   int clientFd = connectWithRetry(port);
+  configureTcpSocket(clientFd);
   const auto start = std::chrono::steady_clock::now();
   std::vector<uint8_t> response(PAYLOAD_SIZE_BYTES);
   for (int i = 0; i < MESSAGE_COUNT; ++i) {
@@ -188,10 +204,10 @@ BenchmarkResult runTcpBenchmark() {
     throw std::runtime_error("tcp echo server failed");
   }
 
-  return makeResult("tcp", end - start);
+  return makeResult("tcp_ping_pong", end - start, MESSAGE_COUNT);
 }
 
-BenchmarkResult runZmqBenchmark() {
+BenchmarkResult runZmqPingPongBenchmark() {
   const uint16_t port = ephemeralPort();
   const std::string endpoint = "tcp://127.0.0.1:" + std::to_string(port);
   std::vector<uint8_t> payload(PAYLOAD_SIZE_BYTES, 0x5A);
@@ -241,23 +257,148 @@ BenchmarkResult runZmqBenchmark() {
     throw std::runtime_error("zmq echo server failed");
   }
 
-  return makeResult("zmq", end - start);
+  return makeResult("zmq_ping_pong", end - start, MESSAGE_COUNT);
+}
+
+BenchmarkResult runTcpBurstBenchmark() {
+  const uint16_t port = ephemeralPort();
+  std::vector<uint8_t> payload(PAYLOAD_SIZE_BYTES, 0x5A);
+  std::atomic<bool> serverOk{true};
+
+  int serverFd = socket(AF_INET, SOCK_STREAM, 0);
+  if (serverFd < 0) {
+    throw std::runtime_error("failed to create server socket");
+  }
+  configureTcpSocket(serverFd);
+
+  int opt = 1;
+  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = htons(port);
+  if (bind(serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
+      listen(serverFd, 1) != 0) {
+    close(serverFd);
+    throw std::runtime_error("failed to bind/listen server socket");
+  }
+
+  std::thread echoThread([serverFd, &serverOk] {
+    int peerFd = accept(serverFd, nullptr, nullptr);
+    if (peerFd < 0) {
+      serverOk = false;
+      return;
+    }
+    configureTcpSocket(peerFd);
+
+    std::vector<uint8_t> buffer(PAYLOAD_SIZE_BYTES);
+    try {
+      for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+        recvAll(peerFd, buffer.data(), buffer.size());
+        sendAll(peerFd, buffer.data(), buffer.size());
+      }
+    } catch (const std::exception&) {
+      serverOk = false;
+    }
+    close(peerFd);
+  });
+
+  int clientFd = connectWithRetry(port);
+  configureTcpSocket(clientFd);
+  const auto start = std::chrono::steady_clock::now();
+  for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+    sendAll(clientFd, payload.data(), payload.size());
+  }
+
+  std::vector<uint8_t> response(PAYLOAD_SIZE_BYTES);
+  for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+    recvAll(clientFd, response.data(), response.size());
+  }
+  const auto end = std::chrono::steady_clock::now();
+
+  close(clientFd);
+  close(serverFd);
+  echoThread.join();
+  if (!serverOk) {
+    throw std::runtime_error("tcp burst echo server failed");
+  }
+
+  return makeResult("tcp_burst", end - start, BURST_MESSAGE_COUNT);
+}
+
+BenchmarkResult runZmqBurstBenchmark() {
+  const uint16_t port = ephemeralPort();
+  const std::string endpoint = "tcp://127.0.0.1:" + std::to_string(port);
+  std::vector<uint8_t> payload(PAYLOAD_SIZE_BYTES, 0x5A);
+  std::atomic<bool> serverOk{true};
+
+  zmq::context_t context(ZMQ_CONTEXT_IO_THREADS);
+  zmq::socket_t router(context, zmq::socket_type::router);
+  router.set(zmq::sockopt::linger, 0);
+  router.bind(endpoint);
+
+  std::thread echoThread([&router, &serverOk] {
+    try {
+      for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+        zmq::message_t identity;
+        zmq::message_t request;
+        recvZmq(router, identity);
+        recvZmq(router, request);
+        router.send(identity, zmq::send_flags::sndmore);
+        router.send(request, zmq::send_flags::none);
+      }
+    } catch (const std::exception&) {
+      serverOk = false;
+    }
+  });
+
+  zmq::socket_t dealer(context, zmq::socket_type::dealer);
+  dealer.set(zmq::sockopt::linger, 0);
+  dealer.connect(endpoint);
+
+  const auto start = std::chrono::steady_clock::now();
+  for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+    dealer.send(zmq::buffer(payload), zmq::send_flags::none);
+  }
+
+  for (int i = 0; i < BURST_MESSAGE_COUNT; ++i) {
+    zmq::message_t response;
+    recvZmq(dealer, response);
+    if (response.size() != payload.size()) {
+      serverOk = false;
+      break;
+    }
+  }
+  const auto end = std::chrono::steady_clock::now();
+
+  dealer.close();
+  router.close();
+  context.close();
+  echoThread.join();
+  if (!serverOk) {
+    throw std::runtime_error("zmq burst echo server failed");
+  }
+
+  return makeResult("zmq_burst", end - start, BURST_MESSAGE_COUNT);
 }
 
 void printResult(const BenchmarkResult& result) {
   std::cout << result.transport << "," << result.messages << ","
             << result.payloadBytes << "," << result.totalMs << ","
-            << result.meanRttUs << "," << result.messagesPerSecond << ","
+            << result.meanUsPerMessage << "," << result.messagesPerSecond << ","
             << result.mibPerSecond << "\n";
 }
 
 }  // namespace
 
 int main() {
-  std::cout << "transport,messages,payload_bytes,total_ms,mean_rtt_us,"
+  std::cout << "transport,messages,payload_bytes,total_ms,mean_us_per_message,"
                "messages_per_second,mib_per_second"
             << std::endl;
-  printResult(runTcpBenchmark());
-  printResult(runZmqBenchmark());
+  printResult(runTcpPingPongBenchmark());
+  printResult(runZmqPingPongBenchmark());
+  printResult(runTcpBurstBenchmark());
+  printResult(runZmqBurstBenchmark());
   return 0;
 }
