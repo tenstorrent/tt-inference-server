@@ -92,6 +92,11 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
   /**
+   * @brief Set callback for connection established/reconnected events.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
@@ -113,6 +118,7 @@ class SocketManager {
       handlers_;
 
   std::function<void()> pendingConnectionLostCallback_;
+  std::function<void()> pendingConnectionEstablishedCallback_;
   bool reconnectBackoffSet_{false};
   uint32_t reconnectInitialDelayMs_{0};
   uint32_t reconnectMaxDelayMs_{0};
