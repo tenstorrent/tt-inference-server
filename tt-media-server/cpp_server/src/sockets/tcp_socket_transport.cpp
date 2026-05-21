@@ -208,7 +208,7 @@ void TcpSocketTransport::stop() {
     serverSocket_.reset();
   }
 
-  TT_LOG_INFO("[TcpSocketTransport] Stopped");
+  TT_LOG_INFO("[TcpSocketTransport] Stopped.");
 }
 
 void TcpSocketTransport::serverLoop() {

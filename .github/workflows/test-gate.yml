@@ -1601,6 +1601,29 @@ jobs:
           cd prefill_gateway/build
           SOCKET_TRANSPORT=zmq ctest --output-on-failure
 
+      - name: Run TCP vs ZMQ socket transport microbenchmark
+        run: |
+          cd prefill_gateway/build
+          ./socket_transport_benchmark | tee ../../socket_transport_benchmark.csv
+          {
+            echo "## TCP vs ZMQ Socket Transport Microbenchmark"
+            echo ""
+            echo "| Transport | Messages | Payload bytes | Total ms | Mean us/msg | Msg/s | MiB/s |"
+            echo "|-----------|----------|---------------|----------|-------------|-------|-------|"
+            awk -F, 'NR > 1 {
+              printf "| %s | %s | %s | %.2f | %.2f | %.2f | %.2f |\n", $1, $2, $3, $4, $5, $6, $7
+            }' ../../socket_transport_benchmark.csv
+            echo ""
+            echo "This is informational only and compares raw loopback TCP with a ZMQ ROUTER/DEALER ping-pong."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload socket transport benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: socket-transport-benchmark-result
+          path: tt-media-server/socket_transport_benchmark.csv
+          retention-days: 1
+
       - name: Upload prefill_gateway binary
         uses: actions/upload-artifact@v4
         with:
@@ -1744,11 +1767,13 @@ jobs:
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Round 1: TCP transport ────────────────────────────────────────────
-      # Startup order: prefill-1 → prefill-2 → gateway → decode.
+      # Test-only PR: use one prefill so gateway vs no-gateway benchmark
+      # comparisons have the same number of prefill workers.
+      # Startup order: prefill → gateway → decode.
       # In gateway mode the prefill is a server (listens) and the gateway
-      # dials each prefill.  Decode dials the gateway's decode-facing port.
+      # dials it.  Decode dials the gateway's decode-facing port.
       # All components must use the same SOCKET_TRANSPORT;
-      - name: "[TCP] Start Prefill server 1 (gateway mode)"
+      - name: "[TCP] Start Prefill server (gateway mode)"
         run: |
           cd cpp_server/build
           NS=gw_prefill1
@@ -1767,44 +1792,14 @@ jobs:
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
             if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-1 ready on port 8201"
+              echo "✅ Prefill ready on port 8201"
               break
             fi
             sleep 1
           done
           LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
-            exit 1
-          fi
-
-      - name: "[TCP] Start Prefill server 2 (gateway mode)"
-        run: |
-          cd cpp_server/build
-          NS=gw_prefill2
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_prefill2.log 2>&1 &
-          echo $! > ../../gw_prefill2.pid
-          cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-2 ready on port 8202"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
+            echo "ERROR: Prefill did not become ready within 30 seconds"
             exit 1
           fi
 
@@ -1814,13 +1809,12 @@ jobs:
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill=127.0.0.1:9201 \
-            --prefill=127.0.0.1:9202 \
             > gw.log 2>&1 &
           echo $! > gw.pid
           for i in $(seq 1 30); do
             REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
+            if [ "$REG" -ge 1 ]; then
+              echo "✅ Prefill registered with gateway"
               break
             fi
             if ! kill -0 "$(cat gw.pid)" 2>/dev/null; then
@@ -1830,8 +1824,8 @@ jobs:
             sleep 1
           done
           REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
+          if [ "$REG" -lt 1 ]; then
+            echo "ERROR: Expected 1 prefill registration in gateway log, got $REG"
             exit 1
           fi
 
@@ -1870,31 +1864,23 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
             DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
             if echo "$P1"  | grep -q '"socket_status":"server:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"server:connected"' \
                && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 (server:connected) and Decode (client:connected) all verified"
+              echo "✅ Prefill (server:connected) and Decode (client:connected) verified"
               break
             fi
             sleep 1
           done
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          echo "Prefill-1 liveness: $P1"
-          echo "Prefill-2 liveness: $P2"
-          echo "Decode liveness:    $DEC"
+          echo "Prefill liveness: $P1"
+          echo "Decode liveness:  $DEC"
           FAIL=0
-          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
-            NAME="${VAR_NAME%%:*}"
-            VAL="${VAR_NAME#*:}"
-            if ! echo "$VAL" | grep -q '"socket_status":"server:connected"'; then
-              echo "ERROR: $NAME socket_status is not 'server:connected'"
-              FAIL=1
-            fi
-          done
+          if ! echo "$P1" | grep -q '"socket_status":"server:connected"'; then
+            echo "ERROR: Prefill socket_status is not 'server:connected'"
+            FAIL=1
+          fi
           if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
             echo "ERROR: Decode socket_status is not 'client:connected'"
             FAIL=1
@@ -1926,11 +1912,12 @@ jobs:
           [ -f gw_decode.pid ]   && kill $(cat gw_decode.pid)   2>/dev/null || true
           [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
           [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
-          [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
           sleep 2
 
       # ── Round 2: ZMQ transport ────────────────────────────────────────────
-      - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
+      # Test-only PR: use one prefill so gateway vs no-gateway benchmark
+      # comparisons have the same number of prefill workers.
+      - name: "[ZMQ] Start Prefill server (gateway mode)"
         run: |
           cd cpp_server/build
           NS=gw_zmq_prefill1
@@ -1950,45 +1937,14 @@ jobs:
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
             if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-1 ready on port 8201"
+              echo "✅ Prefill ready on port 8201"
               break
             fi
             sleep 1
           done
           LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
-            exit 1
-          fi
-
-      - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
-        run: |
-          cd cpp_server/build
-          NS=gw_zmq_prefill2
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_zmq_prefill2.log 2>&1 &
-          echo $! > ../../gw_zmq_prefill2.pid
-          cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-2 ready on port 8202"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
+            echo "ERROR: Prefill did not become ready within 30 seconds"
             exit 1
           fi
 
@@ -2002,8 +1958,8 @@ jobs:
           echo $! > gw_zmq.pid
           for i in $(seq 1 30); do
             REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
+            if [ "$REG" -ge 1 ]; then
+              echo "✅ Prefill registered with gateway"
               break
             fi
             if ! kill -0 "$(cat gw_zmq.pid)" 2>/dev/null; then
@@ -2013,8 +1969,8 @@ jobs:
             sleep 1
           done
           REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
+          if [ "$REG" -lt 1 ]; then
+            echo "ERROR: Expected 1 prefill registration in gateway log, got $REG"
             exit 1
           fi
 
@@ -2053,31 +2009,23 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
             DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
             if echo "$P1"  | grep -q '"socket_status":"client:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"client:connected"' \
                && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 and Decode (client:connected) all verified"
+              echo "✅ Prefill and Decode (client:connected) verified"
               break
             fi
             sleep 1
           done
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          echo "Prefill-1 liveness: $P1"
-          echo "Prefill-2 liveness: $P2"
-          echo "Decode liveness:    $DEC"
+          echo "Prefill liveness: $P1"
+          echo "Decode liveness:  $DEC"
           FAIL=0
-          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
-            NAME="${VAR_NAME%%:*}"
-            VAL="${VAR_NAME#*:}"
-            if ! echo "$VAL" | grep -q '"socket_status":"client:connected"'; then
-              echo "ERROR: $NAME socket_status is not 'client:connected'"
-              FAIL=1
-            fi
-          done
+          if ! echo "$P1" | grep -q '"socket_status":"client:connected"'; then
+            echo "ERROR: Prefill socket_status is not 'client:connected'"
+            FAIL=1
+          fi
           if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
             echo "ERROR: Decode socket_status is not 'client:connected'"
             FAIL=1
@@ -2109,7 +2057,6 @@ jobs:
           [ -f gw_zmq_decode.pid ]   && kill $(cat gw_zmq_decode.pid)   2>/dev/null || true
           [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
           [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
-          [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
           sleep 2
 
       - name: Check benchmark thresholds
@@ -2158,8 +2105,8 @@ jobs:
       - name: Show server logs
         if: always()
         run: |
-          for LOG in gw.log gw_prefill1.log gw_prefill2.log gw_decode.log \
-                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_prefill2.log gw_zmq_decode.log; do
+          for LOG in gw.log gw_prefill1.log gw_decode.log \
+                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_decode.log; do
             echo "=== $LOG ==="
             [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
             echo ""
@@ -2184,11 +2131,9 @@ jobs:
           path: |
             tt-media-server/gw.log
             tt-media-server/gw_prefill1.log
-            tt-media-server/gw_prefill2.log
             tt-media-server/gw_decode.log
             tt-media-server/gw_zmq.log
             tt-media-server/gw_zmq_prefill1.log
-            tt-media-server/gw_zmq_prefill2.log
             tt-media-server/gw_zmq_decode.log
           retention-days: 1
           if-no-files-found: warn
