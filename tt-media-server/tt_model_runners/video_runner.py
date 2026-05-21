@@ -119,7 +119,7 @@ def _is_shutdown() -> bool:
 
 
 def _rank() -> int:
-    r = os.environ.get("OMPI_COMM_WORLD_RANK") or os.environ.get("RANK")
+    r = os.environ.get("OMPI_COMM_WORLD_RANK") or os.environ.get("RANK") or os.environ.get("PMIX_RANK")
     return int(r) if r is not None else 0
 
 
