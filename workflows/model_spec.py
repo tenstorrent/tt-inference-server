@@ -1368,9 +1368,7 @@ llm_templates = [
                 vllm_args={
                     "data_parallel_size": 4,
                 },
-                env_vars={
-                    "TT_MM_THROTTLE_PERF": 5,
-                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5, "TEST": "TEST1"},
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
