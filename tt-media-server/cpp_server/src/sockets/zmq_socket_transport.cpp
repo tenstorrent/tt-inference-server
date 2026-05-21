@@ -209,6 +209,7 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
         bool wasConnected = connected_.exchange(true);
         if (!wasConnected) {
           TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})", modeName());
+          notifyConnectionEstablished();
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
         bool wasConnected = connected_.exchange(false);
@@ -380,6 +381,11 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsDealer() {
 void ZmqSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
   setConnectionLostCallbackCommon(std::move(callback));
+}
+
+void ZmqSocketTransport::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
 void ZmqSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,

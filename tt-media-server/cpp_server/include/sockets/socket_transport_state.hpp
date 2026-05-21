@@ -47,11 +47,27 @@ class SocketTransportState {
     connectionLostCallback_ = std::move(callback);
   }
 
+  void setConnectionEstablishedCallbackCommon(std::function<void()> callback) {
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    connectionEstablishedCallback_ = std::move(callback);
+  }
+
   void notifyConnectionLost() {
     std::function<void()> callback;
     {
       std::lock_guard<std::mutex> lock(callbackMutex_);
       callback = connectionLostCallback_;
+    }
+    if (callback) {
+      callback();
+    }
+  }
+
+  void notifyConnectionEstablished() {
+    std::function<void()> callback;
+    {
+      std::lock_guard<std::mutex> lock(callbackMutex_);
+      callback = connectionEstablishedCallback_;
     }
     if (callback) {
       callback();
@@ -72,6 +88,7 @@ class SocketTransportState {
  private:
   mutable std::mutex callbackMutex_;
   std::function<void()> connectionLostCallback_;
+  std::function<void()> connectionEstablishedCallback_;
 };
 
 }  // namespace tt::sockets
