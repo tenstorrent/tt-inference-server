@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from abc import abstractmethod
 
 import ttnn
@@ -249,7 +250,11 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Starting ttnn inference...")
         self._prepare_input_tensors_for_iteration(tensors)
 
+        t0 = time.time()
         imgs = self.tt_sdxl.generate_images()
+        self.logger.info(
+            f"Device {self.device_id}: UNet+VAE inference took {time.time() - t0:.4f}s"
+        )
 
         for idx, img in enumerate(imgs):
             if idx >= self.batch_size - needed_padding:

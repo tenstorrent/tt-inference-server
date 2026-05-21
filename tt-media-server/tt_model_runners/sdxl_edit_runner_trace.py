@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
+import time
 
 import torch
 from config.constants import SupportedModels
@@ -130,8 +131,12 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
+        t0 = time.time()
         all_prompt_embeds_torch, torch_add_text_embeds = self.tt_sdxl.encode_prompts(
             prompts, negative_prompts, prompts_2, negative_prompt_2
+        )
+        self.logger.info(
+            f"Device {self.device_id}: Text encoding took {time.time() - t0:.4f}s"
         )
 
         images, masks, masked_images = self._process_image_and_mask(requests)
