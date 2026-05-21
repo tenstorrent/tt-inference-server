@@ -85,6 +85,7 @@ struct ToolCallTaskState {
   Json::Value tool_calls;         // Array of completed tool calls
   int call_index = 0;             // Tool call counter
   bool in_json_block = false;     // Inside ```json...``` block
+  bool skip_json_marker = false;  // Need to skip "json\n" at start of block
   bool sent_tool_call_start =
       false;  // Whether we've sent TOOL_CALL_START for current call
   std::string current_tool_call_id;  // ID for current tool call being parsed
@@ -115,6 +116,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
     state.tool_calls = Json::Value(Json::arrayValue);
     state.call_index = 0;
     state.in_json_block = false;
+    state.skip_json_marker = false;
     state.sent_tool_call_start = false;
     state.current_tool_call_id.clear();
     state.arguments_buffer.clear();
@@ -150,7 +152,16 @@ class DeepSeekToolCallParser : public IToolCallParser {
     } else if (tokenId == TOOL_CALLS_END_TOKEN) {
       state.state = ParsingState::REGULAR;
       TT_LOG_DEBUG("[ToolCallParser] Task {} exited tool calls block", taskId);
-      return std::nullopt;
+      // Return an empty tool call delta so consumer knows to set finish_reason
+      // to "tool_calls" instead of falling through to regular content handling
+      int lastIdx = state.call_index > 0 ? state.call_index - 1 : 0;
+      return ToolCallTokenResult{
+          ToolCallDeltaType::TOOL_CALL_END,
+          lastIdx,
+          "",
+          "",
+          "",
+          buildToolCallsDelta(lastIdx, ToolCallDeltaType::TOOL_CALL_END)};
 
     } else if (tokenId == TOOL_CALL_BEGIN_TOKEN) {
       state.state = ParsingState::IN_TOOL_CALL;
@@ -241,8 +252,13 @@ class DeepSeekToolCallParser : public IToolCallParser {
           if (backtickPos != std::string::npos) {
             state.in_json_block = true;
             size_t jsonStart = backtickPos + 3;
+            // Check if "json" marker is in the same token as "```"
             if (state.buffer.substr(jsonStart, 4) == "json") {
               jsonStart += 4;
+              state.skip_json_marker = false;
+            } else {
+              // "json" marker may come in subsequent tokens
+              state.skip_json_marker = true;
             }
             while (jsonStart < state.buffer.size() &&
                    (state.buffer[jsonStart] == ' ' ||
@@ -264,21 +280,57 @@ class DeepSeekToolCallParser : public IToolCallParser {
           return std::nullopt;
 
         } else {
+          // Skip "json" marker and leading whitespace if coming after "```"
+          if (state.skip_json_marker) {
+            size_t pos = 0;
+            // Skip "json" marker if present at start
+            if (state.buffer.substr(0, 4) == "json") {
+              pos = 4;
+            }
+            // Skip leading whitespace (newlines, spaces, tabs)
+            while (pos < state.buffer.size() &&
+                   (state.buffer[pos] == ' ' || state.buffer[pos] == '\n' ||
+                    state.buffer[pos] == '\t' || state.buffer[pos] == '\r')) {
+              pos++;
+            }
+            if (pos > 0) {
+              state.buffer = state.buffer.substr(pos);
+              state.arguments_buffer.clear();
+            }
+            // Only stop skipping when we have actual content (not just
+            // whitespace)
+            if (!state.buffer.empty()) {
+              state.skip_json_marker = false;
+            } else {
+              // Buffer is now empty, continue skipping on next token
+              return std::nullopt;
+            }
+          }
+
           size_t backtickPos = state.buffer.find("```");
           if (backtickPos != std::string::npos) {
             std::string finalContent = state.buffer.substr(0, backtickPos);
-            state.current_arguments += finalContent;
+            // Trim trailing whitespace from JSON content
+            auto lastNonWs = finalContent.find_last_not_of(" \n\t\r");
+            if (lastNonWs != std::string::npos) {
+              finalContent.erase(lastNonWs + 1);
+            } else {
+              finalContent.clear();  // All whitespace
+            }
+            // Only add the part that wasn't already accumulated incrementally
+            // After trimming, finalContent may be shorter than arguments_buffer
+            std::string newPart;
+            if (finalContent.size() > state.arguments_buffer.size()) {
+              newPart = finalContent.substr(state.arguments_buffer.size());
+              state.current_arguments += newPart;
+            }
             state.buffer.clear();
             state.in_json_block = false;
             TT_LOG_DEBUG("[ToolCallParser] Completed JSON arguments");
 
-            if (!finalContent.empty()) {
-              std::string newContent =
-                  finalContent.substr(state.arguments_buffer.size());
+            if (!newPart.empty()) {
               state.arguments_buffer = finalContent;
-              if (!newContent.empty()) {
-                return makeArgumentsDelta(state.call_index, newContent);
-              }
+              return makeArgumentsDelta(state.call_index, newPart);
             }
             return std::nullopt;
           }
