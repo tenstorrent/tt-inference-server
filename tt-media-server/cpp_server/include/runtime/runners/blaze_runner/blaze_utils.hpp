@@ -7,7 +7,11 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
+#include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
+#include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::blaze::utils {
 
@@ -72,6 +76,46 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   return req;
+}
+
+// Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
+// counters at this moment so handleOutput can later report per-turn deltas.
+// Does not touch state machine / metrics / task binding — caller's job.
+inline void initSlotForRun(SlotContext& slot,
+                           const tt::domain::llm::Sequence& seq,
+                           ds::DecodeScheduler& sched) {
+  slot.ignoreEos = seq.getSamplingParams().ignore_eos;
+  slot.specAcceptsAtStart = sched.get_spec_accepts(slot.slotId);
+  slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
+  slot.taskId = seq.taskId;
+  slot.tokensGenerated = 0;
+}
+
+struct SpecDelta {
+  uint32_t accepts;
+  uint32_t rejects;
+};
+
+// Computes the (accepts, rejects) deltas relative to slot start and logs the
+// per-turn acceptance summary.
+inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
+                                        const SlotContext& slot,
+                                        const ds::OutputMessage& output,
+                                        uint32_t taskId, bool hitStop) {
+  SpecDelta d{
+      .accepts =
+          sched.get_spec_accepts(output.slot_id) - slot.specAcceptsAtStart,
+      .rejects =
+          sched.get_spec_rejects(output.slot_id) - slot.specRejectsAtStart,
+  };
+  uint32_t total = d.accepts + d.rejects;
+  double acceptRate = total > 0 ? 100.0 * d.accepts / total : 0.0;
+  TT_LOG_INFO(
+      "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
+      "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
+      output.slot_id, d.accepts, total, acceptRate, taskId, output.token_id,
+      output.is_complete, slot.ignoreEos, hitStop, slot.tokensGenerated);
+  return d;
 }
 
 namespace pl = tt_llm_engine::pipeline;

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "domain/llm/sequence.hpp"
+#include "domain/manage_memory.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
 #include "utils/logger.hpp"
 
@@ -94,4 +95,12 @@ struct SlotContext {
     state = newState;
   }
 };
+// These requests are pending due to scheduler queue full and need to be
+// retried on the next step.
+struct PendingRequests {
+  std::unique_ptr<tt::domain::llm::Sequence> pendingTask;
+  std::optional<tt::domain::ManageMemoryTask> pendingMemoryTask;
+  std::optional<uint32_t> pendingCancelTaskId;
+};
+
 }  // namespace tt::runners::blaze

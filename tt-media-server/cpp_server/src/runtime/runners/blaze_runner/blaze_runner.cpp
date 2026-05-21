@@ -4,6 +4,7 @@
 #include "runtime/runners/blaze_runner/blaze_runner.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 
@@ -53,6 +54,7 @@ void BlazeRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
     try {
       step();
+      tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
     } catch (const std::exception& e) {
       TT_LOG_ERROR("BlazeRunner: Exception in run: {}", e.what());
       throw;
@@ -147,7 +149,6 @@ bool BlazeRunner::warmup() {
 void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
-  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   drainAndHandleMemoryResponses();
   drainAndHandleOutputs();
   auto memoryRequest = getMemoryRequest();
@@ -173,8 +174,8 @@ void BlazeRunner::step() {
 void BlazeRunner::drainAndHandleMemoryResponses() {
   ds::SchedulerResponse response;
   size_t drained = 0;
-  while (drained < tt::config::dsMaxUsers() &&
-         decodeScheduler->try_pop_response(response)) {
+  size_t maxUsers = tt::config::dsMaxUsers();
+  while (drained < maxUsers && decodeScheduler->try_pop_response(response)) {
     handleMemoryResponse(response);
     drained++;
   }
@@ -183,16 +184,16 @@ void BlazeRunner::drainAndHandleMemoryResponses() {
 void BlazeRunner::drainAndHandleOutputs() {
   ds::OutputMessage output;
   size_t drained = 0;
-  while (drained < tt::config::dsMaxUsers() &&
-         decodeScheduler->try_pop_output(output)) {
+  size_t maxUsers = tt::config::dsMaxUsers();
+  while (drained < maxUsers && decodeScheduler->try_pop_output(output)) {
     handleOutput(output);
     drained++;
   }
 }
 
 std::unique_ptr<tt::domain::llm::Sequence> BlazeRunner::getRequest() {
-  if (requestToRetry) {
-    return std::move(requestToRetry);
+  if (pendingRequests.pendingTask) {
+    return std::move(pendingRequests.pendingTask);
   }
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
@@ -233,7 +234,7 @@ inline void BlazeRunner::handleEvictRequest(
             "[BlazeRunner] handleEvictRequest: scheduler queue full, deferring "
             "EVICT for taskId={}, slotId={} (state={})",
             request.taskId, request.slotId, toString(slotContext.state));
-        pendingMemoryRetry = request;
+        pendingRequests.pendingMemoryTask = request;
         return;
       }
       // Capture before setSlotState changes the state.
@@ -252,8 +253,12 @@ inline void BlazeRunner::handleEvictRequest(
       break;
     }
     case SlotState::AWAITING_STOP_ACK: {
-      // Eviction supersedes any deferred submit; abort it so the client
+      // Eviction supersedes any deferred submit; terminate it so the client
       // doesn't hang waiting for tokens that will never come.
+      // FINAL|ERROR (not ABORT): ABORT is for client-initiated cancels where
+      // the controller has already set done=true and the stream is being
+      // swallowed. Here the client is innocent — they're still waiting on the
+      // SSE — so the runner has to close the stream itself with an error.
       if (slotContext.deferredSubmit) {
         auto droppedTaskId = slotContext.deferredSubmit->taskId;
         slotContext.deferredSubmit.reset();
@@ -261,8 +266,9 @@ inline void BlazeRunner::handleEvictRequest(
             "[BlazeRunner] handleEvictRequest: superseding deferredSubmit for "
             "taskId={} on slotId={} (DEALLOCATE wins)",
             droppedTaskId, request.slotId);
-        ipc::helpers::pushToken(*resultQueue, droppedTaskId, 0,
-                                ipc::SharedToken::FLAG_ABORT, 0, 0);
+        ipc::helpers::pushToken(
+            *resultQueue, droppedTaskId, 0,
+            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
       }
       TT_LOG_DEBUG(
           "[BlazeRunner] handleEvictRequest: latching deferredEvict on "
@@ -276,6 +282,7 @@ inline void BlazeRunner::handleEvictRequest(
           "[BlazeRunner] handleEvictRequest: duplicate DEALLOCATE for slotId={}"
           " (already AWAITING_EVICT_ACK), ignoring",
           request.slotId);
+      assert(false && "Double DEALLOCATE on same slot");
       break;
     case SlotState::FREE:
       TT_LOG_ERROR(
@@ -295,7 +302,7 @@ inline void BlazeRunner::handleAllocateRequest(
         "[BlazeRunner] handleAllocateRequest: scheduler queue full, deferring "
         "ALLOCATE for taskId={}",
         request.taskId);
-    pendingMemoryRetry = request;
+    pendingRequests.pendingMemoryTask = request;
     return;
   }
   TT_LOG_DEBUG("[BlazeRunner] handleAllocateRequest: pushed ALLOCATE taskId={}",
@@ -306,46 +313,35 @@ inline void BlazeRunner::handleMemoryResponse(
     const ds::SchedulerResponse& response) {
   auto taskId = response.request_id;
   auto slotId = response.slot_id;
+  auto action = response.request_type;
 
-  if (slotId == ds::INVALID_SLOT) {
-    handleAllocateAck(taskId, ds::INVALID_SLOT);
-    return;
-  }
-
-  auto& slot = slotManager.getSlotContext(slotId);
-  switch (slot.state) {
-    case SlotState::FREE:
+  switch (action) {
+    case ds::RequestType::ALLOCATE: {
       handleAllocateAck(taskId, slotId);
-      return;
-    case SlotState::AWAITING_EVICT_ACK:
-    case SlotState::AWAITING_STOP_ACK:
-      if (slot.pendingAckRequestId != taskId) {
-        TT_LOG_ERROR(
-            "[BlazeRunner] handleMemoryResponse: stale ack taskId={} for "
-            "slotId={} (state={}, expected pendingAckRequestId={})",
-            taskId, slotId, toString(slot.state),
-            slot.pendingAckRequestId.has_value()
-                ? std::to_string(*slot.pendingAckRequestId)
-                : "none");
-        return;
-      }
-      if (slot.state == SlotState::AWAITING_EVICT_ACK) {
-        handleEvictAck(slot);
-      } else {
-        handleStopAck(slot);
-      }
-      return;
-    default:
+      break;
+    }
+    case ds::RequestType::CANCEL: {
+      handleEvictAck(taskId, slotId);
+      break;
+    }
+    case ds::RequestType::STOP: {
+      handleStopAck(taskId, slotId);
+      break;
+    }
+    default: {
       TT_LOG_ERROR(
-          "[BlazeRunner] handleMemoryResponse: ack taskId={} for slotId={} in "
-          "unexpected state={}",
-          taskId, slotId, toString(slot.state));
-      assert(false && "ack for slot in unexpected state");
-      return;
+          "[BlazeRunner] handleMemoryResponse: unexpected action for "
+          "taskId={}, "
+          "action={}",
+          taskId, static_cast<int>(action));
+      assert(false && "unexpected action for taskId");
+      break;
+    }
   }
 }
 
 inline void BlazeRunner::handleAllocateAck(uint32_t taskId, uint32_t slotId) {
+  // == Do we gain anything if we add a new state AWAITING_EVICT_ACK? ==
   if (slotId == ds::INVALID_SLOT) {
     TT_LOG_WARN("[BlazeRunner] handleAllocateAck: ALLOCATE failed taskId={}",
                 taskId);
@@ -358,21 +354,43 @@ inline void BlazeRunner::handleAllocateAck(uint32_t taskId, uint32_t slotId) {
   memoryManager->replyAllocateSuccess(taskId, slotId);
 }
 
-inline void BlazeRunner::handleEvictAck(SlotContext& slot) {
-  TT_LOG_DEBUG(
-      "[BlazeRunner] handleEvictAck: taskId={}, slotId={}; clearing slot",
-      slot.pendingAckRequestId.value_or(0), slot.slotId);
-  slotManager.clearSlotContext(slot.slotId);
+inline SlotContext* BlazeRunner::validateAck(uint32_t taskId, uint32_t slotId,
+                                            const char* ackName) {
+  auto& slot = slotManager.getSlotContext(slotId);
+  if (slot.pendingAckRequestId != taskId) {
+    // optional<uint32_t> compares as expected: nullopt != scalar is true,
+    // so this catches both the no-pending-ack and mismatched-id cases.
+    TT_LOG_ERROR(
+        "[BlazeRunner] {}: stale ack taskId={} for slotId={} (state={}, "
+        "expected pendingAckRequestId={})",
+        ackName, taskId, slotId, toString(slot.state),
+        slot.pendingAckRequestId.has_value()
+            ? std::to_string(*slot.pendingAckRequestId)
+            : "none");
+    return nullptr;
+  }
+  return &slot;
 }
 
-inline void BlazeRunner::handleStopAck(SlotContext& slot) {
+inline void BlazeRunner::handleEvictAck(uint32_t taskId, uint32_t slotId) {
+  auto* slot = validateAck(taskId, slotId, "handleEvictAck");
+  if (!slot) return;
+  TT_LOG_DEBUG(
+      "[BlazeRunner] handleEvictAck: taskId={}, slotId={}; clearing slot",
+      taskId, slotId);
+  slotManager.clearSlotContext(slot->slotId);
+}
+
+inline void BlazeRunner::handleStopAck(uint32_t taskId, uint32_t slotId) {
+  auto* slot = validateAck(taskId, slotId, "handleStopAck");
+  if (!slot) return;
   TT_LOG_DEBUG(
       "[BlazeRunner] handleStopAck: taskId={}, slotId={}; draining "
       "(deferredEvict={}, deferredSubmit={})",
-      slot.pendingAckRequestId.value_or(0), slot.slotId,
-      slot.deferredEvict.has_value(), static_cast<bool>(slot.deferredSubmit));
-  slotManager.setSlotAsIdle(slot.slotId);
-  handleDeferred(slot);
+      taskId, slotId, slot->deferredEvict.has_value(),
+      static_cast<bool>(slot->deferredSubmit));
+  slotManager.setSlotAsIdle(slot->slotId);
+  handleDeferred(*slot);
 }
 
 inline void BlazeRunner::handleDeferred(SlotContext& slot) {
@@ -392,8 +410,10 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
           "[BlazeRunner] handleDeferred: dropping deferredSubmit taskId={} on "
           "slotId={} (deferredEvict wins)",
           droppedTaskId, slot.slotId);
-      ipc::helpers::pushToken(*resultQueue, droppedTaskId, 0,
-                              ipc::SharedToken::FLAG_ABORT, 0, 0);
+      // FINAL|ERROR (not ABORT) — see handleEvictRequest's comment.
+      ipc::helpers::pushToken(
+          *resultQueue, droppedTaskId, 0,
+          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
     }
     auto evictReq = std::move(*slot.deferredEvict);
     slot.deferredEvict = std::nullopt;
@@ -410,15 +430,24 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
 
 inline std::optional<tt::domain::ManageMemoryTask>
 BlazeRunner::getMemoryRequest() {
-  if (pendingMemoryRetry.has_value()) {
-    auto task = std::move(*pendingMemoryRetry);
-    pendingMemoryRetry.reset();
+  if (pendingRequests.pendingMemoryTask.has_value()) {
+    auto task = std::move(*pendingRequests.pendingMemoryTask);
+    pendingRequests.pendingMemoryTask = std::nullopt;
     return task;
   }
   return memoryManager->getRequest();
 }
 
 void BlazeRunner::drainAndHandleCancelRequests() {
+  if (pendingRequests.pendingCancelTaskId.has_value()) {
+    auto retryTaskId = *pendingRequests.pendingCancelTaskId;
+    pendingRequests.pendingCancelTaskId = std::nullopt;
+    TT_LOG_DEBUG(
+        "[BlazeRunner] drainAndHandleCancelRequests: retrying deferred cancel "
+        "for taskId={}",
+        retryTaskId);
+    handleCancelRequest(retryTaskId);
+  }
   std::vector<uint32_t> taskIds;
   cancelQueue->tryPopAll(taskIds);
   for (auto taskId : taskIds) {
@@ -427,12 +456,13 @@ void BlazeRunner::drainAndHandleCancelRequests() {
 }
 
 inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
-  if (requestToRetry && requestToRetry->taskId == taskId) {
+  if (pendingRequests.pendingTask &&
+      pendingRequests.pendingTask->taskId == taskId) {
     TT_LOG_DEBUG(
         "[BlazeRunner] handleCancelRequest: dropping queued retry for "
         "taskId={}",
         taskId);
-    requestToRetry.reset();
+    pendingRequests.pendingTask.reset();
     return;
   }
   auto slot = slotManager.getSlotContextByTaskId(taskId);
@@ -457,12 +487,11 @@ inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
   }
   if (!decodeScheduler->push_request(
           utils::makeStopRequest(taskId, slot->slotId))) {
-    // Best effort: leave the slot RUNNING; next user cancel (if any) will
-    // retry. Scheduler back-pressure is rare and self-clearing.
     TT_LOG_WARN(
-        "[BlazeRunner] handleCancelRequest: scheduler queue full, failed to "
-        "push STOP for taskId={}, slotId={}",
+        "[BlazeRunner] handleCancelRequest: scheduler queue full, deferring "
+        "STOP for taskId={}, slotId={}",
         taskId, slot->slotId);
+    pendingRequests.pendingCancelTaskId = taskId;
     return;
   }
   TT_LOG_DEBUG(
@@ -481,23 +510,25 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
   if (slotContext.state != SlotState::RUNNING) {
-    // Common race: scheduler produced a token that crossed paths with a STOP
-    // or EVICT we just sent. Safe to drop. ERROR for truly unexpected states
-    // (FREE/IDLE) since those indicate a bookkeeping bug.
     if (slotContext.state == SlotState::AWAITING_STOP_ACK ||
         slotContext.state == SlotState::AWAITING_EVICT_ACK) {
+      // Legitimate race: scheduler had this token in flight when our STOP /
+      // EVICT got there. Drop and move on.
       TT_LOG_DEBUG(
           "[BlazeRunner] handleOutput: dropping token for slotId={} (state={}, "
           "token_id={}, is_complete={}) — STOP/EVICT in flight",
           output.slot_id, toString(slotContext.state), output.token_id,
           output.is_complete);
-    } else {
-      TT_LOG_ERROR(
-          "[BlazeRunner] handleOutput: unexpected token for slotId={} in "
-          "state={} (token_id={}, is_complete={})",
-          output.slot_id, toString(slotContext.state), output.token_id,
-          output.is_complete);
+      return;
     }
+    // FREE/IDLE: scheduler is emitting tokens for a slot we don't believe is
+    // active. That's a bookkeeping bug, not a race — fail loud.
+    TT_LOG_ERROR(
+        "[BlazeRunner] handleOutput: unexpected token for slotId={} in "
+        "state={} (token_id={}, is_complete={})",
+        output.slot_id, toString(slotContext.state), output.token_id,
+        output.is_complete);
+    assert(false && "scheduler output for slot not RUNNING/AWAITING_*_ACK");
     return;
   }
   bool hitStop =
@@ -505,30 +536,18 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = slotContext.taskId.value();
 
-  uint32_t specAccepts = 0;
-  uint32_t specRejects = 0;
-
   slotContext.tokensGenerated++;
+  utils::SpecDelta spec{};
   if (finished) {
-    specAccepts = decodeScheduler->get_spec_accepts(output.slot_id) -
-                  slotContext.specAcceptsAtStart;
-    specRejects = decodeScheduler->get_spec_rejects(output.slot_id) -
-                  slotContext.specRejectsAtStart;
-    uint32_t specTotal = specAccepts + specRejects;
-    double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
-    TT_LOG_INFO(
-        "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
-        "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
-        output.slot_id, specAccepts, specTotal, acceptRate, taskId,
-        output.token_id, output.is_complete, slotContext.ignoreEos, hitStop,
-        slotContext.tokensGenerated);
+    spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
+                                         taskId, hitStop);
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag,
-                          specAccepts, specRejects);
+                          spec.accepts, spec.rejects);
 }
 
 void BlazeRunner::checkOutputHang() {
@@ -582,19 +601,13 @@ void BlazeRunner::handleRequest(
             "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
             "slotId={}",
             request->taskId, slotId);
-        requestToRetry = std::move(request);
+        pendingRequests.pendingTask = std::move(request);
         return;
       }
       if (slotManager.activeRunningCount() == 0) {
         lastOutputTime = std::chrono::steady_clock::now();
       }
-      slotContext.ignoreEos = request->getSamplingParams().ignore_eos;
-      slotContext.specAcceptsAtStart =
-          decodeScheduler->get_spec_accepts(slotId);
-      slotContext.specRejectsAtStart =
-          decodeScheduler->get_spec_rejects(slotId);
-      slotContext.taskId = request->taskId;
-      slotContext.tokensGenerated = 0;
+      utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       tt::worker::SingleProcessWorkerMetrics::instance()
@@ -602,9 +615,6 @@ void BlazeRunner::handleRequest(
       break;
     }
     case SlotState::AWAITING_STOP_ACK: {
-      // STOP in flight from a prior request that reused this slot. Latch the
-      // SUBMIT; it will be re-driven from handleMemoryResponse once the STOP
-      // ack arrives (unless a deferred EVICT supersedes it there).
       TT_LOG_DEBUG(
           "[BlazeRunner] handleRequest: latching deferredSubmit for taskId={} "
           "on slotId={} (waiting for STOP ack)",
@@ -613,13 +623,13 @@ void BlazeRunner::handleRequest(
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {
-      // EVICT in flight — slot is going away. Reject the SUBMIT.
       TT_LOG_WARN(
           "[BlazeRunner] handleRequest: dropping SUBMIT for taskId={} on "
           "slotId={} (slot is AWAITING_EVICT_ACK)",
           request->taskId, slotId);
-      ipc::helpers::pushToken(*resultQueue, request->taskId, 0,
-                              ipc::SharedToken::FLAG_ABORT, 0, 0);
+      ipc::helpers::pushToken(
+          *resultQueue, request->taskId, 0,
+          ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
       break;
     }
     default: {

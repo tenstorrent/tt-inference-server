@@ -52,8 +52,10 @@ class BlazeRunner : public IRunner {
   inline void handleEvictRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleMemoryResponse(const ds::SchedulerResponse& response);
   inline void handleAllocateAck(uint32_t taskId, uint32_t slotId);
-  inline void handleStopAck(SlotContext& slot);
-  inline void handleEvictAck(SlotContext& slot);
+  inline void handleStopAck(uint32_t taskId, uint32_t slotId);
+  inline void handleEvictAck(uint32_t taskId, uint32_t slotId);
+  inline SlotContext* validateAck(uint32_t taskId, uint32_t slotId,
+                                 const char* ackName);
   inline void handleDeferred(SlotContext& slot);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
@@ -65,10 +67,9 @@ class BlazeRunner : public IRunner {
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* cancelQueue;
-  std::unique_ptr<tt::domain::llm::Sequence> requestToRetry;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
+  PendingRequests pendingRequests;
   SlotManager slotManager;
-  std::optional<tt::domain::ManageMemoryTask> pendingMemoryRetry;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
