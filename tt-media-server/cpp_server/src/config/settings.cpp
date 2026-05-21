@@ -268,7 +268,7 @@ int decodeMaxTokenIds() {
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);

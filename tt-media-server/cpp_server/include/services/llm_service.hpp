@@ -81,6 +81,13 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   struct StreamCallbackEntry {
     std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
+    // When true the consumer loop emits a chunk carrying only `token_id`
+    // + `finish_reason` and skips decodeToken() / reasoning / tool-call
+    // parsing entirely. Used by the Dynamo path because the wire-level
+    // TokenChunk only forwards token_ids — the frontend handles
+    // detokenization. Avoids loading tokenizer.json on the consumer
+    // thread.
+    bool skip_text_decode = false;
   };
 
   void startConsumers();

@@ -140,6 +140,13 @@ struct LLMRequest : BaseRequest {
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
+  // When true, the worker emits chunks carrying only `token_id` (no
+  // decoded text, no reasoning/tool-call parsing). Set by upstream
+  // endpoints whose wire protocol forwards raw token_ids and handles
+  // detokenization themselves (Dynamo). Default false to preserve the
+  // existing HTTP chat-completions semantics.
+  bool skip_text_decode = false;
+
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;

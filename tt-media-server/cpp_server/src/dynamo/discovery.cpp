@@ -218,8 +218,12 @@ class FileDiscoveryRegistration : public DiscoveryRegistration {
 
 class EtcdDiscoveryRegistration : public DiscoveryRegistration {
  public:
-  explicit EtcdDiscoveryRegistration(DiscoveryConfig cfg)
-      : cfg(std::move(cfg)),
+  // NOTE: the parameter is named `config` (not `cfg`) on purpose so it does
+  // not shadow the member `cfg`. With `DiscoveryConfig cfg` the second
+  // initializer `client(... cfg.etcd_endpoints)` would read the
+  // moved-from parameter and pass "" to EtcdClient.
+  explicit EtcdDiscoveryRegistration(DiscoveryConfig config)
+      : cfg(std::move(config)),
         client(std::make_unique<EtcdClient>(cfg.etcd_endpoints)) {}
 
   void registerSelf() override {

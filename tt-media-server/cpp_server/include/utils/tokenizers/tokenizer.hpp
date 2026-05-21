@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -188,7 +189,49 @@ std::string tokenizerDirForModel(config::ModelType model);
  * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
  * instance so encode/decode are race-free without locking. The reference is
  * only valid on the calling thread; do not capture it for cross-thread use.
+ *
+ * WARNING: instantiating a Tokenizer synchronously parses tokenizer.json
+ * (~500ms for DeepSeek-R1's ~129k vocab). Avoid calling this from any hot
+ * path on a Dynamo-style deployment where the frontend already handles
+ * tokenization/detokenization. For model-level constants
+ * (modelName / stopTokenIds / assistantHeaderSequence) prefer
+ * `staticInfoFor()` below — those are hard-coded per ModelType and never
+ * touch the tokenizer.
  */
 const Tokenizer& activeTokenizer();
+
+/**
+ * Model-level constants that are required by the request pipeline but do
+ * NOT need a live Tokenizer instance. Lifted out of the Tokenizer
+ * subclasses so the Dynamo path (which gets prompts pre-tokenized by the
+ * frontend and emits raw token_ids on the wire) can run end-to-end
+ * without ever loading tokenizer.json.
+ *
+ * Each ModelType has a fixed value for these — they're a property of the
+ * chat template / vocab special tokens, not of any per-request state. The
+ * subclasses still inherit Tokenizer::modelName() etc. for HTTP code
+ * paths that need the rest of the tokenizer; staticInfoFor() just lets
+ * the request hot path skip the full load.
+ */
+struct StaticTokenizerInfo {
+  std::string_view modelName;
+  // int64_t to match Tokenizer::stopTokenIds() return type.
+  std::vector<int64_t> stopTokenIds;
+  // int to match Tokenizer::assistantHeaderSequence() return type.
+  std::vector<int> assistantHeaderSequence;
+};
+
+/**
+ * Returns the static constants for `model`. Throws std::invalid_argument
+ * if the model type doesn't have a registered entry. Cheap (O(1)) and safe
+ * to call from any thread — never touches the tokenizer.
+ */
+const StaticTokenizerInfo& staticInfoFor(config::ModelType model);
+
+/**
+ * Shorthand for `staticInfoFor(config::modelType())` — pulls the model
+ * type from runtime config. Use this on the request hot path.
+ */
+const StaticTokenizerInfo& staticInfo();
 
 }  // namespace tt::utils::tokenizers
