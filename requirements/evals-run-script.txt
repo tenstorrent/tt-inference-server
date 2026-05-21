@@ -17,7 +17,6 @@ numpy
 scipy
 torch
 torchvision
-aiohttp
 requests
 transformers
 protobuf
