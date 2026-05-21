@@ -148,7 +148,7 @@ class TTSLoadTest(BaseTest):
         try:
             import itertools
 
-            from datasets import load_dataset
+            from datasets import Audio, load_dataset
 
             # Try with streaming first
             try:
@@ -187,6 +187,8 @@ class TTSLoadTest(BaseTest):
                     logger.debug("Dataset loaded with fallback split")
                 else:
                     raise
+
+            dataset = dataset.cast_column("audio", Audio(decode=False))
 
             # Get samples from stream
             if hasattr(dataset, "__iter__") and not hasattr(dataset, "__len__"):
