@@ -151,6 +151,13 @@ def generate_tts_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
+from evals.agentic.report import (
+    get_agentic_result_file_pattern,
+    is_harbor_result as _is_harbor_result,
+    process_agentic_eval_files,
+)
+
+
 def get_embedding_benchmark_targets(model_spec, device_str, logger):
     """Get embedding-specific benchmark targets.
 
@@ -2504,20 +2511,22 @@ def generate_evals_release_markdown(report_rows):
 
 
 def separate_files_by_format(files):
-    """Separate eval files into dict-format and list-format.
+    """Separate eval files into dict-format, list-format, and agentic-format.
 
     Detects JSON structure to differentiate between:
     - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
     - List format: [{...}] (image_client)
+    - Agentic format: {"trial_results": [...], "stats": {...}} (Harbor)
 
     Args:
         files: List of file paths to eval JSON files
 
     Returns:
-        Tuple of (dict_format_files, list_format_files)
+        Tuple of (dict_format_files, list_format_files, agentic_format_files)
     """
     dict_format_files = []
     list_format_files = []
+    agentic_format_files = []
 
     for filepath in files:
         try:
@@ -2526,12 +2535,14 @@ def separate_files_by_format(files):
 
             if isinstance(data, list):
                 list_format_files.append(filepath)
+            elif _is_harbor_result(data):
+                agentic_format_files.append(filepath)
             elif isinstance(data, dict):
                 dict_format_files.append(filepath)
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not read or parse file {filepath}: {e}")
 
-    return dict_format_files, list_format_files
+    return dict_format_files, list_format_files, agentic_format_files
 
 
 def process_list_format_eval_files(list_files):
@@ -2640,6 +2651,16 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+        agentic_file_name_pattern = get_agentic_result_file_pattern(
+            model_spec, eval_run_id
+        )
+        agentic_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}"
+        files.extend(glob(agentic_file_path_pattern))
+        direct_agentic_file_path_pattern = str(
+            Path(args.output_path) / agentic_file_name_pattern
+        )
+        if direct_agentic_file_path_pattern != agentic_file_path_pattern:
+            files.extend(glob(direct_agentic_file_path_pattern))
 
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
@@ -2685,7 +2706,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
         return release_str, combined_data, summary_fpath, data_fpath
 
-    dict_format_files, list_format_files = separate_files_by_format(files)
+    dict_format_files, list_format_files, agentic_format_files = (
+        separate_files_by_format(files)
+    )
 
     results = {}
     meta_data = {}
@@ -2698,6 +2721,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
         meta_data.update(list_meta_data)
+    if agentic_format_files:
+        agentic_results, agentic_meta_data = process_agentic_eval_files(
+            agentic_format_files
+        )
+        results.update(agentic_results)
+        meta_data.update(agentic_meta_data)
 
     if not results:
         logger.warning("No evaluation files found. Skipping.")
