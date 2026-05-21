@@ -362,7 +362,6 @@ set(LLM_RUNNER_LIB_SOURCES
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_runner.cpp
-        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -456,6 +455,18 @@ target_link_libraries(llm_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(llm_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+if(ENABLE_BLAZE)
+    add_executable(blaze_runner_test
+        tests/blaze_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+endif()
 
 add_executable(sequence_test tests/sequence_test.cpp)
 target_link_libraries(sequence_test PRIVATE llm_runner_lib GTest::gtest_main)
@@ -718,6 +729,9 @@ add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
+if(ENABLE_BLAZE)
+    gtest_discover_tests(blaze_runner_test)
+endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)

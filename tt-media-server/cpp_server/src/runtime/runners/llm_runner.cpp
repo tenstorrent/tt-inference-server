@@ -94,7 +94,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     }
 
     ipc::helpers::pushToken(*this->resultQueue, result.taskId, result.tokenId,
-                            finished);
+                            finished ? tt::ipc::SharedToken::FLAG_FINAL : 0);
 
     if (finished) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
@@ -128,12 +128,26 @@ void LLMRunner::run() {
 void LLMRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::memoryLoop() {
+  // Synchronous gate: ALLOCATE always succeeds (the legacy LLM scheduler
+  // manages its own block table; the returned slotId is opaque and unused).
+  // DEALLOCATE is a no-op for the same reason.
   while (!stopped.load(std::memory_order_relaxed)) {
     auto task = memoryManager->getRequest();
-    if (task) {
-      memoryManager->handleRequest(*task);
-    } else {
+    if (!task) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
+    }
+    switch (task->action) {
+      case tt::domain::MemoryManagementAction::ALLOCATE:
+        memoryManager->replyAllocateSuccess(task->taskId, /*slotId=*/0);
+        break;
+      case tt::domain::MemoryManagementAction::DEALLOCATE:
+        break;
+      default:
+        TT_LOG_WARN("[LLMRunner] Unsupported memory action {} for taskId={}",
+                    static_cast<int>(task->action), task->taskId);
+        memoryManager->replyAllocateFailure(task->taskId);
+        break;
     }
   }
 }

@@ -318,10 +318,36 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       uint32_t taskId = token.task_id;
       bool isError = token.isError();
       bool isFinal = token.isFinal();
+      bool isAbort = token.isAbort();
+
+      if (isAbort && !isFinal) {
+        // Client-initiated abort: LLMService::abortRequest has already taken
+        // the callback, set the controller's done=true, and emitted the final
+        // abort chunk. Just drop our local decoder state and move on.
+        streamDecoders.erase(taskId);
+        continue;
+      }
 
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {
         streamDecoders.erase(taskId);
+        continue;
+      }
+      if (isAbort) {
+        // Runner-initiated preemption (isAbort && isFinal): the request was
+        // dropped server-side (e.g. EVICT superseded an in-flight SUBMIT).
+        // The client never aborted, so we must close the SSE stream ourselves
+        // with a final abort chunk.
+        streamDecoders.erase(taskId);
+        reasoningSuppressedMap.take(taskId);
+        toolChoiceMap.take(taskId);
+        if (reasoningParser) reasoningParser->finalizeTask(taskId);
+        if (jsonToolCallParser) jsonToolCallParser->finalizeTask(taskId);
+        if (toolCallParser) toolCallParser->finalizeTask(taskId);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  "abort");
+        auto abortChunk = makeAbortChunk(taskId);
+        entry->callback(abortChunk, /*isFinal=*/true);
         continue;
       }
       if (isError) {
@@ -592,11 +618,8 @@ void LLMService::abortRequest(uint32_t taskId) {
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {
-    LLMStreamChunk abortResponse{taskId};
-    LLMChoice choice;
-    choice.finish_reason = "abort";
-    abortResponse.choices.push_back(std::move(choice));
-    entry->callback(abortResponse, /*isFinal=*/true);
+    auto abortChunk = makeAbortChunk(taskId);
+    entry->callback(abortChunk, /*isFinal=*/true);
   }
 
   // Clean up parser state so task_states_ maps do not leak.

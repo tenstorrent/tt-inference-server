@@ -74,11 +74,12 @@ void registerLLM() {
 #ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-      -> std::unique_ptr<runners::IRunner> {
+         ipc::ITaskQueue* taskQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
     const auto& llm = std::get<config::LLMConfig>(cfg);
-    return std::make_unique<runners::BlazeRunner>(llm, resultQueue, taskQueue);
+    return std::make_unique<runners::blaze::BlazeRunner>(
+        llm, resultQueue, taskQueue, cancelQueue);
   };
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::PIPELINE_MANAGER,
