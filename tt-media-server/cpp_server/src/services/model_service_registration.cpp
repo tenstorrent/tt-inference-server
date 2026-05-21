@@ -3,6 +3,7 @@
 
 #include "services/model_service_registration.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -152,16 +153,28 @@ void registerImage() {
 
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
-        auto runner =
-            utils::RunnerRegistry::instance().createMedia<ImageService::Runner>(
-                config::ModelService::IMAGE, cfg.runner_type,
-                config::RunnerConfig{cfg});
-        if (!runner) {
-          throw std::runtime_error(
-              "[RegisterImage] No image runner registered for runner_type=" +
-              config::toString(cfg.runner_type));
+        ImageService::RunnerList runners;
+        const size_t workerCount = std::max<size_t>(1, config::numWorkers());
+        runners.reserve(workerCount);
+        for (size_t i = 0; i < workerCount; ++i) {
+          auto workerCfg = cfg;
+          workerCfg.visible_devices = config::visibleDevicesForWorker(i);
+          TT_LOG_INFO(
+              "[RegisterImage] Creating image runner {}/{} for "
+              "TT_VISIBLE_DEVICES='{}'",
+              i + 1, workerCount, workerCfg.visible_devices);
+          auto runner = utils::RunnerRegistry::instance()
+                            .createMedia<ImageService::Runner>(
+                                config::ModelService::IMAGE, cfg.runner_type,
+                                config::RunnerConfig{workerCfg});
+          if (!runner) {
+            throw std::runtime_error(
+                "[RegisterImage] No image runner registered for runner_type=" +
+                config::toString(cfg.runner_type));
+          }
+          runners.push_back(std::move(runner));
         }
-        return std::make_shared<ImageService>(cfg, std::move(runner));
+        return std::make_shared<ImageService>(cfg, std::move(runners));
       });
 
   auto& routes = api::RouteRegistry::instance();

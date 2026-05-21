@@ -18,15 +18,17 @@
 
 namespace tt::services {
 
-/** In-process image service. Owns one runner and dispatches synchronously;
- *  the Drogon controller offloads to a thread pool. */
+/** In-process image service. Owns one or more runners and dispatches
+ *  synchronously; the Drogon controller offloads to a thread pool. */
 class ImageService : public BaseService<domain::ImageGenerateRequest,
                                         domain::image::ImageResponse> {
  public:
   using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
                                        std::vector<std::string>>;
+  using RunnerList = std::vector<std::unique_ptr<Runner>>;
 
   ImageService(config::ImageConfig config, std::unique_ptr<Runner> runner);
+  ImageService(config::ImageConfig config, RunnerList runners);
   ~ImageService() override;
 
   ImageService(const ImageService&) = delete;
@@ -45,8 +47,12 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
+  size_t selectRunnerIndex() const;
+
   config::ImageConfig config_;
-  std::unique_ptr<Runner> runner_;
+  RunnerList runners_;
+  mutable std::atomic<size_t> next_runner_{0};
+  std::vector<std::atomic<size_t>> runner_in_flight_;
   std::atomic<bool> ready_{false};
   mutable std::atomic<size_t> in_flight_{0};
   // Warmup runs here so start() can return immediately and the HTTP listener

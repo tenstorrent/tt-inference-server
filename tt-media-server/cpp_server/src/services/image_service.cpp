@@ -3,7 +3,6 @@
 
 #include "services/image_service.hpp"
 
-#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <stdexcept>
@@ -16,15 +15,39 @@
 
 namespace tt::services {
 
+namespace {
+
+ImageService::RunnerList singleRunner(
+    std::unique_ptr<ImageService::Runner> runner) {
+  ImageService::RunnerList runners;
+  runners.push_back(std::move(runner));
+  return runners;
+}
+
+}  // namespace
+
 ImageService::ImageService(config::ImageConfig config,
                            std::unique_ptr<Runner> runner)
-    : config_(std::move(config)), runner_(std::move(runner)) {
-  if (!runner_) {
-    throw std::invalid_argument("[ImageService] runner must not be null");
+    : ImageService(std::move(config), singleRunner(std::move(runner))) {}
+
+ImageService::ImageService(config::ImageConfig config, RunnerList runners)
+    : config_(std::move(config)),
+      runners_(std::move(runners)),
+      runner_in_flight_(runners_.size()) {
+  if (runners_.empty()) {
+    throw std::invalid_argument(
+        "[ImageService] at least one runner is required");
+  }
+  for (const auto& runner : runners_) {
+    if (!runner) {
+      throw std::invalid_argument("[ImageService] runner must not be null");
+    }
   }
   this->maxQueueSize = tt::config::maxQueueSize();
-  TT_LOG_INFO("[ImageService] Initialized with runner '{}' (max_queue_size={})",
-              runner_->runnerType(), this->maxQueueSize);
+  TT_LOG_INFO(
+      "[ImageService] Initialized with {} runner(s), primary runner '{}' "
+      "(max_queue_size={})",
+      runners_.size(), runners_.front()->runnerType(), this->maxQueueSize);
 }
 
 ImageService::~ImageService() { stop(); }
@@ -32,12 +55,18 @@ ImageService::~ImageService() { stop(); }
 void ImageService::start() {
   std::lock_guard<std::mutex> lock(warmup_mutex_);
   if (warmup_thread_.joinable()) return;
-  TT_LOG_INFO("[ImageService] Starting (runner={})", runner_->runnerType());
+  TT_LOG_INFO("[ImageService] Starting (runners={})", runners_.size());
   warmup_thread_ = std::thread([this] {
     try {
-      if (!runner_->warmup()) {
-        TT_LOG_ERROR("[ImageService] Runner warmup failed");
-        return;
+      for (size_t i = 0; i < runners_.size(); ++i) {
+        TT_LOG_INFO("[ImageService] Warming runner {}/{} ({})", i + 1,
+                    runners_.size(), runners_[i]->runnerType());
+        if (!runners_[i]->warmup()) {
+          TT_LOG_ERROR("[ImageService] Runner {}/{} warmup failed", i + 1,
+                       runners_.size());
+          for (auto& runner : runners_) runner->stop();
+          return;
+        }
       }
       ready_.store(true, std::memory_order_release);
       TT_LOG_INFO("[ImageService] Started");
@@ -57,7 +86,7 @@ void ImageService::stop() {
   }
   if (t.joinable()) t.join();
   const bool wasReady = ready_.exchange(false, std::memory_order_acq_rel);
-  if (runner_) runner_->stop();
+  for (auto& runner : runners_) runner->stop();
   if (wasReady) TT_LOG_INFO("[ImageService] Stopped");
 }
 
@@ -71,7 +100,7 @@ std::string ImageService::runnerInUse() const {
 
 std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
   const bool ready = ready_.load(std::memory_order_acquire);
-  const size_t count = std::max<size_t>(1, tt::config::numWorkers());
+  const size_t count = runners_.size();
   std::vector<tt::worker::WorkerInfo> out;
   out.reserve(count);
   for (size_t i = 0; i < count; ++i) {
@@ -96,6 +125,24 @@ size_t ImageService::currentQueueSize() const {
   return in_flight_.load(std::memory_order_acquire);
 }
 
+size_t ImageService::selectRunnerIndex() const {
+  const size_t count = runners_.size();
+  const size_t start =
+      next_runner_.fetch_add(1, std::memory_order_relaxed) % count;
+  size_t best = start;
+  size_t bestLoad = runner_in_flight_[best].load(std::memory_order_acquire);
+  for (size_t offset = 1; offset < count; ++offset) {
+    const size_t idx = (start + offset) % count;
+    const size_t load = runner_in_flight_[idx].load(std::memory_order_acquire);
+    if (load < bestLoad) {
+      best = idx;
+      bestLoad = load;
+      if (bestLoad == 0) break;
+    }
+  }
+  return best;
+}
+
 domain::image::ImageResponse ImageService::processRequest(
     domain::ImageGenerateRequest request) {
   struct InFlightGuard {
@@ -111,7 +158,10 @@ domain::image::ImageResponse ImageService::processRequest(
 
   const auto t0 = std::chrono::steady_clock::now();
   try {
-    response.images = runner_->run(request);
+    const size_t runnerIndex = selectRunnerIndex();
+    InFlightGuard runnerGuard{runner_in_flight_[runnerIndex]};
+    runner_in_flight_[runnerIndex].fetch_add(1, std::memory_order_acq_rel);
+    response.images = runners_[runnerIndex]->run(request);
   } catch (const std::exception& e) {
     response.error = e.what();
     TT_LOG_ERROR("[ImageService] Runner threw: {}", e.what());
