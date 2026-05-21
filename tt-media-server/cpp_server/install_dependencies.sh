@@ -8,15 +8,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INSTALL_KAFKA=0
+INSTALL_GRPC=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --kafka)
             INSTALL_KAFKA=1
             shift
             ;;
+        --grpc)
+            INSTALL_GRPC=1
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--kafka]"
+            echo "Usage: $0 [--kafka] [--grpc]"
             echo "  --kafka              Also install librdkafka-dev (C + C++ client for CMake KAFKA_ENABLED=ON)"
+            echo "  --grpc               Build and install gRPC from source with abseil (for CMake ENABLE_GRPC=ON)"
             exit 0
             ;;
         *)
@@ -38,6 +44,9 @@ APT_PKGS=(
 if [ "${INSTALL_KAFKA}" = 1 ]; then
     APT_PKGS+=(librdkafka-dev)
     echo "Kafka deps: will install librdkafka-dev (for KAFKA_ENABLED=ON builds)"
+fi
+if [ "${INSTALL_GRPC}" = 1 ]; then
+    echo "gRPC deps: will build gRPC + abseil + protobuf from source (for ENABLE_GRPC=ON builds)"
 fi
 
 $SUDO apt-get update -qq
@@ -108,4 +117,46 @@ if ! drogon_found; then
     $SUDO make install
     [ "$(uname -s)" = "Linux" ] && $SUDO ldconfig
     cd "${SCRIPT_DIR}" && rm -rf "${DROGON_TMP}"
+fi
+
+# gRPC from source (includes abseil, protobuf, utf8_range with CMake configs)
+grpc_found() {
+    [ -f /usr/local/lib/cmake/grpc/gRPCConfig.cmake ] && \
+    [ -f /usr/local/lib/cmake/absl/abslConfig.cmake ] && \
+    [ -f /usr/local/lib/cmake/protobuf/protobuf-config.cmake ]
+}
+if [ "${INSTALL_GRPC}" = 1 ] && ! grpc_found; then
+    # Remove apt protobuf/grpc to avoid header conflicts with source build
+    echo "Removing apt protobuf/grpc packages to avoid version conflicts..."
+    $SUDO apt-get remove -y --purge libprotobuf-dev protobuf-compiler libgrpc++-dev libgrpc-dev \
+        protobuf-compiler-grpc libabsl-dev 2>/dev/null || true
+    $SUDO apt-get autoremove -y 2>/dev/null || true
+
+    GRPC_VERSION="v1.62.0"
+    GRPC_TMP="/tmp/grpc_build"
+    rm -rf "${GRPC_TMP}"
+    echo "Building gRPC ${GRPC_VERSION} from source (includes abseil, protobuf, utf8_range)..."
+    git clone --depth 1 --branch "${GRPC_VERSION}" --recurse-submodules --shallow-submodules \
+        https://github.com/grpc/grpc.git "${GRPC_TMP}"
+    mkdir -p "${GRPC_TMP}/build" && cd "${GRPC_TMP}/build"
+    cmake .. \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DgRPC_INSTALL=ON \
+        -DgRPC_BUILD_TESTS=OFF \
+        -DgRPC_BUILD_CSHARP_EXT=OFF \
+        -DgRPC_BUILD_GRPC_CSHARP_PLUGIN=OFF \
+        -DgRPC_BUILD_GRPC_NODE_PLUGIN=OFF \
+        -DgRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN=OFF \
+        -DgRPC_BUILD_GRPC_PHP_PLUGIN=OFF \
+        -DgRPC_BUILD_GRPC_PYTHON_PLUGIN=OFF \
+        -DgRPC_BUILD_GRPC_RUBY_PLUGIN=OFF \
+        -Dprotobuf_BUILD_LIBPROTOC=ON \
+        -Dprotobuf_INSTALL=ON
+    make -j"$(nproc 2>/dev/null || echo 4)"
+    $SUDO make install
+    [ "$(uname -s)" = "Linux" ] && $SUDO ldconfig
+    cd "${SCRIPT_DIR}" && rm -rf "${GRPC_TMP}"
+    echo "gRPC installation complete."
 fi

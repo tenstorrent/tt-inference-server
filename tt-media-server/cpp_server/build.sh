@@ -17,6 +17,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
+ENABLE_GRPC="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -50,6 +51,14 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
+        --grpc)
+            ENABLE_GRPC="ON"
+            shift
+            ;;
+        --no-grpc)
+            ENABLE_GRPC="OFF"
+            shift
+            ;;
         --toolchain-path)
             TOOLCHAIN_PATH_ARG="$2"
             shift 2
@@ -69,6 +78,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
+            echo "  --grpc               Enable gRPC server (needs ./install_dependencies.sh --grpc first)"
+            echo "  --no-grpc            Disable gRPC server (default)"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -96,6 +107,7 @@ echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
+echo "  gRPC (ENABLE_GRPC): ${ENABLE_GRPC}"
 echo "=============================================="
 
 # Ensure cargo (Rust) is in PATH for tokenizers-cpp
@@ -292,6 +304,7 @@ CMAKE_ARGS=(
     -DENABLE_BLAZE="${ENABLE_BLAZE}"
     -DCLANG_TIDY="${CLANG_TIDY}"
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
+    -DENABLE_GRPC="${ENABLE_GRPC}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 
@@ -335,4 +348,9 @@ echo "Run with: ./build/tt_media_server_cpp [options]"
 echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
 echo "  -p, --port PORT     Listen port (default: 8000)"
 echo "  -t, --threads N     Number of IO threads"
+if [ "${ENABLE_GRPC}" = "ON" ]; then
+    echo ""
+    echo "gRPC: set GRPC_LISTEN (e.g. 0.0.0.0:50051) to enable the inference gRPC server."
+    echo "Smoke test: ./scripts/grpc_smoke_test.sh"
+fi
 echo ""
