@@ -415,6 +415,12 @@ class ModelSpec:
     repacked: int = 0
     version: str = VERSION
     docker_image: Optional[str] = None
+    # When True, tt-shield CI must NOT replace `docker_image` with a freshly-built
+    # image at test time. Use for entries whose image is hand-curated (e.g. built
+    # against a specific wheel / patch set during bring-up) — flip back to False
+    # once the auto-built image is good enough again. Surfaced to tt-shield via
+    # workflows/export_ci_pinned_images.py.
+    ci_pinned_docker_image: bool = False
     status: str = ModelStatusTypes.EXPERIMENTAL
     code_link: Optional[str] = None
     override_tt_config: Dict[str, str] = field(default_factory=dict)
@@ -874,6 +880,7 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
+    ci_pinned_docker_image: bool = False
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -977,6 +984,7 @@ class ModelSpecTemplate:
                     repacked=self.repacked,
                     version=self.version,
                     docker_image=self.docker_image,
+                    ci_pinned_docker_image=self.ci_pinned_docker_image,
                     status=self.status,
                     override_tt_config=device_model_spec.override_tt_config,
                     supported_modalities=self.supported_modalities,
@@ -3674,6 +3682,7 @@ cnn_templates = [
         min_disk_gb=15,
         min_ram_gb=8,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        ci_pinned_docker_image=True,
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
@@ -3711,6 +3720,7 @@ cnn_templates = [
         min_disk_gb=20,
         min_ram_gb=12,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        ci_pinned_docker_image=True,
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
@@ -3746,6 +3756,7 @@ cnn_templates = [
         min_disk_gb=20,
         min_ram_gb=12,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        ci_pinned_docker_image=True,
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
@@ -3781,6 +3792,7 @@ cnn_templates = [
         min_disk_gb=20,
         min_ram_gb=12,
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349",
+        ci_pinned_docker_image=True,
         model_type=ModelType.LLM,
         inference_engine=InferenceEngine.FORGE.value,
         uses_tensor_model_cache=False,
