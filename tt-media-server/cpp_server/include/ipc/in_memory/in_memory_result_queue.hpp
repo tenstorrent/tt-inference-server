@@ -52,7 +52,8 @@ class ResultQueue : public tt::ipc::IResultQueue {
     cv.notify_all();
   }
 
-  bool waitPopFor(tt::ipc::SharedToken& out, std::chrono::milliseconds timeout) {
+  bool waitPopFor(tt::ipc::SharedToken& out,
+                  std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mu);
     if (!cv.wait_for(lock, timeout, [&] { return !queue.empty(); })) {
       return false;

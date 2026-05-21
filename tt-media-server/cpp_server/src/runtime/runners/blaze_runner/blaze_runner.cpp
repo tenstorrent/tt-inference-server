@@ -355,7 +355,7 @@ inline void BlazeRunner::handleAllocateAck(uint32_t taskId, uint32_t slotId) {
 }
 
 inline SlotContext* BlazeRunner::validateAck(uint32_t taskId, uint32_t slotId,
-                                            const char* ackName) {
+                                             const char* ackName) {
   auto& slot = slotManager.getSlotContext(slotId);
   if (slot.pendingAckRequestId != taskId) {
     // optional<uint32_t> compares as expected: nullopt != scalar is true,

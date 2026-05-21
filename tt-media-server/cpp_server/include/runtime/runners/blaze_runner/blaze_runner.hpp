@@ -55,7 +55,7 @@ class BlazeRunner : public IRunner {
   inline void handleStopAck(uint32_t taskId, uint32_t slotId);
   inline void handleEvictAck(uint32_t taskId, uint32_t slotId);
   inline SlotContext* validateAck(uint32_t taskId, uint32_t slotId,
-                                 const char* ackName);
+                                  const char* ackName);
   inline void handleDeferred(SlotContext& slot);
   void handleOutput(const ds::OutputMessage& output);
   std::unique_ptr<tt::domain::llm::Sequence> getRequest();
