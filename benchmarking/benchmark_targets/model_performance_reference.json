@@ -4723,6 +4723,25 @@
             }
         ],
         "p100": [],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180.0,
+                        "tput_user": 48.0,
+                        "tput": 1536.0
+                    }
+                }
+            }
+        ],
         "p150x8": [
             {
                 "isl": 128,
@@ -4832,6 +4851,25 @@
                         "ttft_ms": 828.0,
                         "tput_user": 50.0,
                         "tput": 773.0
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 500.0,
+                        "tput_user": 100.0,
+                        "tput": 1500.0
                     }
                 }
             }
