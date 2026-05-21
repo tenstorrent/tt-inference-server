@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import difflib
-import sys
 
 import pytest
 
@@ -35,7 +34,7 @@ def test_committed_values_yaml_in_sync_with_model_spec(tmp_path):
         "charts/tt-inference-server/values.yaml drifted from "
         "workflows/model_spec.py.\n"
         "\n"
-        f"FIX:  {sys.executable} -m workflows.helm_generator\n"
+        f"FIX: python3 -m workflows.helm_generator\n"
         "      git add charts/tt-inference-server/values.yaml\n"
         "\n"
         f"{diff}"
