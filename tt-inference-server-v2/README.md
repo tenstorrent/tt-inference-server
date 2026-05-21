@@ -1,9 +1,5 @@
 # tt-inference-server-v2
 
-v2 is being built alongside v1; today
-v1's `workflows/v2_bridge.py` routes SDXL traffic here while we close the
-remaining gaps. The end-state is for v2 to be the only entry point.
-
 This document is the onboarding doc for people adding new workflows, runners,
 or test categories to v2. It assumes you already know what v1 does.
 
@@ -21,23 +17,6 @@ This launches the `release` workflow (evals + benchmarks + spec_tests) against
 the inference server on `localhost:8000`, accumulates per-test `Block`s into a
 single `ReportSchema`, applies acceptance criteria, and writes a markdown +
 JSON report into `output/<model>_<device>_<workflow>/`.
-
-## Why a v2
-
-v1 grew per-media branches inside `evals/`, `benchmarks/`, and `server_tests/`
-that each owned their own report generation, retry policy, and config
-plumbing. v2 collapses that into three composable modules with one shared
-report schema:
-
-- One `MediaContext` is built once per run.
-- Every runner returns a `Block` with the same shape.
-- One `BlockAccumulator` collects Blocks across the sweep.
-- One `ReportGenerator` turns the accumulated schema into markdown + JSON.
-
-Adding a new media (e.g. structured-outputs benchmarking, spec-decode
-benchmarking, agentic accuracy) becomes: write a runner that returns a
-`Block`, register it in a dispatch dict, optionally add a test suite JSON.
-No new orchestrator, no new report generator.
 
 ## Architecture at a glance
 
