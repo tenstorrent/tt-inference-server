@@ -348,7 +348,8 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.taskId = request.task_id;
   params.service = service;
   if (disaggregationService) {
-    params.onAbort = [disagg = disaggregationService](uint32_t taskId) {
+    params.onDisaggregatedAbort = [disagg =
+                                       disaggregationService](uint32_t taskId) {
       disagg->abortRequest(taskId);
     };
   }
