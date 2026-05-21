@@ -1875,6 +1875,280 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  dynamo-frontend-integration:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: Test Dynamo Frontend and cpp server integration
+    # Same jammy runner as the cpp-server bench jobs so the artifact built by
+    # cpp-build links against the same glibc / libstdc++ at runtime.
+    runs-on: tt-ubuntu-2204-xlarge-stable
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Extract C++ build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
+
+      - name: Make binary executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      # No-docker etcd: grab the upstream signed binary tarball from the
+      # etcd-io GitHub release. Two cpp_server backends registering under the
+      # same DYNAMO_NAMESPACE/COMPONENT/ENDPOINT need a shared discovery
+      # store; the script's default `file` backend does an unconditional
+      # `rm -rf ${DYN_FILE_STORE}` at startup, so concurrent starts would
+      # race-delete each other's registrations. etcd avoids that.
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+          etcdctl version
+
+      - name: Start etcd
+        run: |
+          # --data-dir under /tmp so it gets wiped between runs; bind to
+          # 127.0.0.1 only — both Dynamo frontends + both cpp_server
+          # backends run on this same runner.
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          for i in $(seq 1 30); do
+            if etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null; then
+              echo "✅ etcd ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
+
+      - name: Set up uv (Python 3.12 for Dynamo)
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + vllm
+        run: |
+          mkdir -p "$HOME/.venvs"
+          uv venv --python 3.12 "$HOME/.venvs/dynamo"
+          # vllm is the bench client. transformers<5.6 mirrors the other
+          # cpp-server bench jobs — 5.6.x regresses tokenizer cost and
+          # inflates client-side TTFT/TPOT independently of the backend.
+          uv pip install --python "$HOME/.venvs/dynamo/bin/python" \
+            ai-dynamo uvloop vllm 'transformers<5.6'
+          # Expose vllm on PATH for subsequent bench step.
+          echo "$HOME/.venvs/dynamo/bin" >> "$GITHUB_PATH"
+
+      - name: Start Dynamo + cpp_server pair 1 (frontend 8000, backend 8001)
+        run: |
+          cd cpp_server
+          # MODEL_NAME aligned with the model the vllm bench client uses so
+          # both sides tokenize against the same vocab (otherwise the client
+          # tokenizes against deepseek-ai/* while the frontend exposes a
+          # different display_name and the request count gets rejected by
+          # model routing).
+          # LLM_DEVICE_BACKEND must be set in the *parent* env (the script
+          # only reads it for the MODEL_DIR pick — the cpp_server binary
+          # inherits it from the environment).
+          DYN_VENV="$HOME/.venvs/dynamo" \
+          DYN_DISCOVERY_BACKEND=etcd \
+          ETCD_ENDPOINTS=http://127.0.0.1:2379 \
+          HTTP_PORT=8000 SERVER_PORT=8001 \
+          MODEL_NAME=deepseek-ai/DeepSeek-R1-0528 \
+          LLM_DEVICE_BACKEND=mock_pipeline \
+            ./scripts/start_dynamo.sh > ../dynamo_pair1.log 2>&1 &
+          echo $! > ../dynamo_pair1.pid
+          cd ..
+          for i in $(seq 1 90); do
+            BACK=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            FRONT=$(curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null || true)
+            if echo "$BACK"  | grep -q '"model_ready":true' \
+               && echo "$FRONT" | grep -q '"data"'; then
+              echo "✅ Pair 1 ready (frontend :8000, backend :8001) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8001/tt-liveness" | grep -q '"model_ready":true' \
+            || { echo "ERROR: pair-1 backend not ready"; cat dynamo_pair1.log; exit 1; }
+          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
+            || { echo "ERROR: pair-1 frontend not ready"; cat dynamo_pair1.log; exit 1; }
+
+      - name: Start Dynamo + cpp_server pair 2 (frontend 8002, backend 8003)
+        run: |
+          cd cpp_server
+          DYN_VENV="$HOME/.venvs/dynamo" \
+          DYN_DISCOVERY_BACKEND=etcd \
+          ETCD_ENDPOINTS=http://127.0.0.1:2379 \
+          HTTP_PORT=8002 SERVER_PORT=8003 \
+          MODEL_NAME=deepseek-ai/DeepSeek-R1-0528 \
+          LLM_DEVICE_BACKEND=mock_pipeline \
+            ./scripts/start_dynamo.sh > ../dynamo_pair2.log 2>&1 &
+          echo $! > ../dynamo_pair2.pid
+          cd ..
+          for i in $(seq 1 90); do
+            BACK=$(curl -sf "http://127.0.0.1:8003/tt-liveness" 2>/dev/null || true)
+            FRONT=$(curl -sf "http://127.0.0.1:8002/v1/models" 2>/dev/null || true)
+            if echo "$BACK"  | grep -q '"model_ready":true' \
+               && echo "$FRONT" | grep -q '"data"'; then
+              echo "✅ Pair 2 ready (frontend :8002, backend :8003) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8003/tt-liveness" | grep -q '"model_ready":true' \
+            || { echo "ERROR: pair-2 backend not ready"; cat dynamo_pair2.log; exit 1; }
+          curl -sf "http://127.0.0.1:8002/v1/models" | grep -q '"data"' \
+            || { echo "ERROR: pair-2 frontend not ready"; cat dynamo_pair2.log; exit 1; }
+
+      - name: Verify both backends registered in etcd
+        # cpp_server's etcd discovery writes one instance + one MDC entry per
+        # backend under v1/instances/<ns>/<component>/<endpoint>/<id_hex>
+        # (see tt-media-server/cpp_server/src/dynamo/discovery.cpp).
+        # With NAMESPACE/COMPONENT/ENDPOINT defaulted to
+        # default/backend/generate, expect ≥2 distinct instance keys.
+        run: |
+          KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/backend/generate/")
+          echo "etcd instance keys:"
+          echo "$KEYS"
+          COUNT=$(printf '%s\n' "$KEYS" | grep -c "v1/instances/default/backend/generate/" || true)
+          if [ "$COUNT" -lt 2 ]; then
+            echo "::error::Expected ≥2 backend registrations in etcd, got $COUNT"
+            exit 1
+          fi
+          echo "✅ $COUNT cpp_server backends registered in etcd"
+
+      - name: Run vllm bench serve against pair-1 Dynamo frontend
+        env:
+          # ai-dynamo/Dynamo's OpenAI surface still requires a bearer; any
+          # non-empty string works for the mock backend.
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8000 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-dynamo.json" \
+            2>&1 | tee bench_dynamo_output.txt
+
+      - name: Stop Dynamo pairs and etcd
+        if: always()
+        run: |
+          # start_dynamo.sh installs a trap that kills its frontend + backend
+          # children on SIGTERM, so killing the wrapper PID cascades.
+          for pidfile in dynamo_pair1.pid dynamo_pair2.pid etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          sleep 2
+          # Belt + suspenders: nuke any leftover frontends/backends still bound.
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+
+      - name: Check benchmark result
+        run: |
+          FILE="vllm-bench-dynamo.json"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Result file not found: $FILE"
+            exit 1
+          fi
+          COMPLETED=$(jq -r '.completed // 0' "$FILE")
+          FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+          {
+            echo "## Dynamo Frontend + cpp_server Integration"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **completed** | $COMPLETED |"
+            echo "| **failed** | $FAILED_REQ |"
+            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS |"
+            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS |"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+          # Integration gate: every request must succeed. Latency is not
+          # asserted here — the backend is a mock and the value of this job
+          # is proving the wiring (Dynamo frontend -> etcd discovery ->
+          # cpp_server TCP transport) works end-to-end.
+          if [ "$FAILED_REQ" -gt 0 ]; then
+            echo "::error::$FAILED_REQ request(s) failed (completed=$COMPLETED)"
+            exit 1
+          fi
+          if [ "$COMPLETED" -lt 1000 ]; then
+            echo "::error::Only $COMPLETED/1000 requests completed"
+            exit 1
+          fi
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in etcd.log dynamo_pair1.log dynamo_pair2.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamo-frontend-integration-result
+          path: tt-media-server/vllm-bench-dynamo.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamo-frontend-integration-logs
+          path: |
+            tt-media-server/etcd.log
+            tt-media-server/dynamo_pair1.log
+            tt-media-server/dynamo_pair2.log
+          retention-days: 1
+          if-no-files-found: warn
+
   cpp-tsan:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -2295,6 +2569,7 @@ jobs:
       - prefill-gateway-build
       - prefill-gateway-tsan
       - cpp-server-gateway-split
+      - dynamo-frontend-integration
       - cpp-tsan
     if: always()
     steps:
@@ -2316,6 +2591,7 @@ jobs:
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
+            [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
