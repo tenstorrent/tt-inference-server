@@ -14,7 +14,7 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/llm/sequence.hpp"
 #include "ipc/queue_manager.hpp"
-#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
@@ -38,7 +38,7 @@ std::shared_ptr<tt::services::LLMService> makeService(
 
 TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   auto taskQueue =
-      std::make_shared<tt::runners::llm_engine::InMemoryTaskQueue>();
+      std::make_shared<tt::ipc::in_memory::TaskQueue>();
 
   auto llmService = makeService(taskQueue);
 
