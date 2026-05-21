@@ -192,6 +192,83 @@ def _validate_local_vllm_installation(runtime_config):
         )
     logger.info(f"✅ validated vLLM Python package import with: {venv_python}")
 
+    _validate_local_vllm_tt_plugin(runtime_config, venv_python)
+
+
+def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
+    """Ensure the vllm-tt-plugin package is installed and registered when the
+    user's vLLM checkout requires it.
+
+    Since tenstorrent/vllm commit a072e40a6 (2026-05-04, "Extract TT backend
+    into plugin package (Phase 1)") the TT platform lives in a separate
+    editable package at ``$VLLM_DIR/plugins/vllm-tt-plugin``. Without that
+    package installed, ``vllm/platforms/tt.py`` raises
+    ``ModuleNotFoundError: No module named 'vllm_tt_plugin'`` when
+    ``vllm serve`` starts up.
+
+    When the plugin source directory exists in the vLLM checkout this helper
+    will:
+
+    1. Editable-install it into the tt-metal venv (idempotent, mirrors the
+       dev Dockerfile behaviour added by tt-inference-server PR #3370).
+    2. Run a strict in-process check that ``import vllm_tt_plugin`` works AND
+       that the ``tt`` entry is registered under the ``vllm.platform_plugins``
+       entry-point group.
+
+    When the plugin source is absent (older vLLM checkouts that still ship
+    TT support inside vllm core) both steps are skipped.
+    """
+    # Local import to avoid a module-level circular dependency:
+    # workflows.run_local_server -> workflows.setup_host -> workflows.validate_setup
+    from workflows.run_local_server import (  # noqa: PLC0415
+        install_vllm_tt_plugin_if_present,
+        vllm_tt_plugin_source_path,
+    )
+
+    plugin_path = vllm_tt_plugin_source_path(_get_local_vllm_dir(runtime_config))
+    if not (plugin_path / "pyproject.toml").exists():
+        logger.info(
+            f"Skipping vllm-tt-plugin validation: source not present at {plugin_path}"
+        )
+        return
+
+    install_vllm_tt_plugin_if_present(runtime_config)
+
+    check_script = (
+        "import vllm_tt_plugin; "
+        "from importlib.metadata import entry_points; "
+        "eps = {ep.name for ep in entry_points(group='vllm.platform_plugins')}; "
+        "assert 'tt' in eps, "
+        "f'tt platform plugin not registered in vllm.platform_plugins entry points, got: {eps}'"
+    )
+    return_code = run_command([str(venv_python), "-c", check_script], logger=logger)
+    if return_code != 0:
+        raise ValueError(
+            "⛔ --local-server with inference engine vLLM requires the "
+            "`vllm_tt_plugin` Python package (the TT platform plugin) "
+            "to be installed in the tt-metal python environment and to register "
+            "the `tt` entry under the `vllm.platform_plugins` entry-point group.\n"
+            f"Plugin source detected at: {plugin_path}\n"
+            "Auto-install via this validator failed or the entry point did not "
+            "register. Re-install the plugin by running the canonical script "
+            f"from the vLLM repo: `cd {_get_local_vllm_dir(runtime_config)} && "
+            "bash tt_metal/install-vllm-tt.sh`\n"
+            "See vllm-tt-metal/README.md for the full local installation steps."
+        )
+    logger.info(
+        f"✅ validated vllm-tt-plugin install and `tt` platform_plugins entry "
+        f"point registration with: {venv_python}"
+    )
+
+
+def _get_local_vllm_dir(runtime_config) -> Path:
+    """Resolve $VLLM_DIR the same way workflows.run_local_server does."""
+    tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
+    vllm_dir = getattr(runtime_config, "vllm_dir", None)
+    if vllm_dir:
+        return Path(vllm_dir).expanduser().resolve()
+    return (tt_metal_home / "vllm").resolve()
+
 
 def validate_local_setup(model_spec, runtime_config, json_fpath):
     logger.info("Starting local setup validation")
