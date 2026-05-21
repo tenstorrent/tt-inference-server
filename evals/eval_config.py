@@ -3165,15 +3165,24 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,
+                # vLLM launches with max_num_seqs=1 on P300x2; serial decode
+                # means parallel client requests time out in the queue.
+                max_concurrent=1,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    # lm-eval-harness' SSE consumer only parses
+                    # /v1/completions chunks, not /v1/chat/completions; keep
+                    # stream=false to avoid empty resps + KeyError: 'message'.
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    # Must stay strictly below max_context (131072); equal
+                    # values leave zero headroom, the Harmony path schedules
+                    # a 1-token prefill, and every response comes back empty.
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3196,15 +3205,16 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                max_concurrent=16,
+                max_concurrent=1,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3232,6 +3242,7 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,

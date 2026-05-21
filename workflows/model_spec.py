@@ -1112,6 +1112,42 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        version="0.12.0",
+        tt_metal_commit="7eff69a",  # handrews's PR merged into main
+        vllm_commit="7678b70",  # stable branch
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=128 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                env_vars={
+                    "MESH_DEVICE": "(1, 4)",
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "trace_region_size": 58000000,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        metadata={
+            "openai/gpt-oss-120b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
+    ),
+    ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
         version="0.3.0",
