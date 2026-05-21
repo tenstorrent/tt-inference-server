@@ -600,7 +600,7 @@ def main():
             runtime_config=runtime_config,
         )
         logger.info(
-            "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
             prompt_client.cache_monitor.get_tensor_cache_timeout(),
         )
         if not prompt_client.wait_for_healthy():
