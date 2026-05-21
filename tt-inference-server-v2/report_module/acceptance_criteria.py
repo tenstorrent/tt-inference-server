@@ -114,6 +114,18 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
     failed = 0
     for block in benchmark_blocks:
         block_key = _block_key(block)
+        data = block.data if isinstance(block.data, Mapping) else None
+
+        success_value = _resolve_nested(block.data, "success")
+        attempts_value = _resolve_nested(block.data, "attempts")
+        if success_value is False:
+            blockers[block_key] = (
+                f"{block.title or block.kind} reported success=False "
+                f"(attempts={attempts_value if attempts_value is not None else '?'})"
+            )
+            failed += 1
+            continue
+
         block_blockers: Dict[str, str] = {}
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):

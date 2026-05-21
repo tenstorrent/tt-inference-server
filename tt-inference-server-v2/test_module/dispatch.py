@@ -121,10 +121,58 @@ def run_media_task(
         block = runner(ctx)
     except Exception as e:
         logger.exception("%s runner raised: %s", task_type.value, e)
-        return 1, None
+        block = _failure_block(ctx, task_type, model_type_name, e)
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 1, block
 
     accept_blocks([block], envelope=sweep_envelope(ctx))
     return 0, block
+
+
+_KIND_BY_TASK = {
+    MediaTaskType.EVALUATION: "evals",
+    MediaTaskType.BENCHMARK: "benchmarks",
+}
+
+_TITLE_SUFFIX_BY_TASK = {
+    MediaTaskType.EVALUATION: "Eval",
+    MediaTaskType.BENCHMARK: "Benchmark",
+}
+
+_TITLE_PREFIX_BY_MODEL_TYPE = {
+    "IMAGE": "Image",
+    "CNN": "CNN",
+    "AUDIO": "Audio",
+    "EMBEDDING": "Embedding",
+    "TEXT_TO_SPEECH": "Text-to-Speech",
+    "VIDEO": "Video",
+}
+
+
+def _failure_block(
+    ctx: MediaContext,
+    task_type: MediaTaskType,
+    model_type_name: str,
+    error: BaseException,
+) -> Block:
+    from ._test_common import block_id
+
+    prefix = _TITLE_PREFIX_BY_MODEL_TYPE.get(
+        model_type_name, model_type_name.replace("_", " ").title()
+    )
+    title = f"{prefix} {_TITLE_SUFFIX_BY_TASK[task_type]}"
+    media_task_type = "image" if model_type_name == "IMAGE" else model_type_name.lower()
+    return Block(
+        kind=_KIND_BY_TASK[task_type],
+        task_type=media_task_type,
+        title=title,
+        id=block_id(ctx) or None,
+        data={
+            "success": False,
+            "attempts": 1,
+            "error": f"{type(error).__name__}: {error}",
+        },
+    )
 
 
 def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:

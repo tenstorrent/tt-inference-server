@@ -10,7 +10,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import requests
 
@@ -194,14 +194,22 @@ def _build_image_status_list(
     inference_steps: int,
     generator: Callable[..., tuple[bool, float]],
     generator_steps_kwarg: bool = False,
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     status_list: list[ImageGenerationTestStatus] = []
+    failed_count = 0
     for i in range(num_calls):
         logger.info(f"Generating image {i + 1}/{num_calls}...")
-        if generator_steps_kwarg:
-            status, elapsed = generator(ctx, inference_steps)
-        else:
-            status, elapsed = generator(ctx)
+        try:
+            if generator_steps_kwarg:
+                status, elapsed = generator(ctx, inference_steps)
+            else:
+                status, elapsed = generator(ctx)
+        except Exception as e:
+            failed_count += 1
+            logger.error(
+                f"❌ Image generation {i + 1}/{num_calls} failed: {e}"
+            )
+            continue
         inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
         logger.info(
             f"Generated image with {inference_steps} steps in {elapsed:.2f} seconds."
@@ -214,12 +222,12 @@ def _build_image_status_list(
                 inference_steps_per_second=inference_steps_per_second,
             )
         )
-    return status_list
+    return status_list, failed_count
 
 
 def _run_sdxl_image_generation_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running image generation benchmark.")
     return _build_image_status_list(
         ctx, num_calls, SDXL_SD35_INFERENCE_STEPS, _generate_image
@@ -228,7 +236,7 @@ def _run_sdxl_image_generation_benchmark(
 
 def _run_img2img_generation_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running image-to-image generation benchmark.")
     return _build_image_status_list(
         ctx, num_calls, SDXL_IMG2IMG_INFERENCE_STEPS, _generate_image_img2img
@@ -237,7 +245,7 @@ def _run_img2img_generation_benchmark(
 
 def _run_inpainting_generation_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running inpainting generation benchmark.")
     return _build_image_status_list(
         ctx, num_calls, SDXL_INPAINTING_INFERENCE_STEPS, _generate_image_inpainting
@@ -246,7 +254,7 @@ def _run_inpainting_generation_benchmark(
 
 def _run_flux_1_dev_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running Flux 1 Dev or Schnell benchmark.")
     return _build_image_status_list(
         ctx,
@@ -259,7 +267,7 @@ def _run_flux_1_dev_benchmark(
 
 def _run_flux_1_schnell_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running Flux 1 Schnell benchmark.")
     return _build_image_status_list(
         ctx,
@@ -272,7 +280,7 @@ def _run_flux_1_schnell_benchmark(
 
 def _run_motif_image_6b_preview_benchmark(
     ctx: MediaContext, num_calls: int
-) -> list[ImageGenerationTestStatus]:
+) -> tuple[list[ImageGenerationTestStatus], int]:
     logger.info("Running Motif Image 6B Preview benchmark.")
     return _build_image_status_list(
         ctx,
@@ -284,7 +292,7 @@ def _run_motif_image_6b_preview_benchmark(
 
 
 IMAGE_BENCHMARK_DISPATCH: dict[
-    str, Callable[[MediaContext, int], list[ImageGenerationTestStatus]]
+    str, Callable[[MediaContext, int], tuple[list[ImageGenerationTestStatus], int]]
 ] = {
     "tt-sdxl-trace": _run_sdxl_image_generation_benchmark,
     "tt-sdxl-image-to-image": _run_img2img_generation_benchmark,
@@ -343,23 +351,48 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
             runner_in_use, _run_sdxl_image_generation_benchmark
         )
-        status_list = benchmark_fn(ctx, num_calls)
+        status_list, failed_count = benchmark_fn(ctx, num_calls)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
 
-    logger.info("Generating benchmark report...")
+    if not status_list:
+        raise RuntimeError(
+            f"Image benchmark produced no successful generations "
+            f"({failed_count}/{num_calls} failed)"
+        )
+
+    logger.info(
+        "Generating benchmark report (succeeded=%d, failed=%d)",
+        len(status_list),
+        failed_count,
+    )
     ttft_value = _image_ttft(status_list)
     inference_steps_per_second = (
         sum(s.inference_steps_per_second for s in status_list) / len(status_list)
-        if status_list
-        else 0
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
     target_checks, accuracy_check = _image_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
-    num_inference_steps_used = status_list[0].num_inference_steps if status_list else 0
+    num_inference_steps_used = status_list[0].num_inference_steps
+    benchmark_payload: dict[str, Any] = {
+        "num_requests": len(status_list),
+        "num_inference_steps": num_inference_steps_used,
+        "ttft": ttft_value,
+        "inference_steps_per_second": inference_steps_per_second,
+        "tput_user": inference_steps_per_second,
+        "accuracy_check": accuracy_check,
+        "target_checks": target_checks,
+    }
+    if failed_count:
+        benchmark_payload["success"] = False
+        benchmark_payload["attempts"] = 1
+        benchmark_payload["num_failed"] = failed_count
+        benchmark_payload["num_attempted"] = num_calls
+        benchmark_payload["error"] = (
+            f"{failed_count}/{num_calls} image generations failed during benchmark"
+        )
     return Block(
         kind="benchmarks",
         task_type="image",
@@ -369,17 +402,7 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
             "num_prompts": len(status_list),
             "num_inference_steps": num_inference_steps_used,
         },
-        data={
-            "Benchmarks": {
-                "num_requests": len(status_list),
-                "num_inference_steps": num_inference_steps_used,
-                "ttft": ttft_value,
-                "inference_steps_per_second": inference_steps_per_second,
-                "tput_user": inference_steps_per_second,
-                "accuracy_check": accuracy_check,
-                "target_checks": target_checks,
-            },
-        },
+        data={"Benchmarks": benchmark_payload},
     )
 
 

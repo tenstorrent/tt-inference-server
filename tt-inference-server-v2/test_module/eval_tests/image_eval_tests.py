@@ -112,7 +112,7 @@ async def _generate_image_eval_async(
 
 async def _run_image_generation_eval(
     ctx: MediaContext, runner: Optional[str] = None
-) -> tuple[list[ImageGenerationTestStatus], float]:
+) -> tuple[list[ImageGenerationTestStatus], float, int]:
     logger.info("Running image generation eval.")
     num_prompts = is_sdxl_num_prompts_enabled(ctx)
     logger.info(f"Number of prompts set to: {num_prompts}")
@@ -161,13 +161,7 @@ async def _run_image_generation_eval(
     logger.info(f"Total failed image generations: {failed_count}")
     logger.info(f"Total successful image generations: {num_prompts - failed_count}")
 
-    if failed_count:
-        logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
-        raise RuntimeError(
-            f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
-        )
-
-    return status_list, total_time
+    return status_list, total_time, failed_count
 
 
 async def _generate_image_img2img_eval_async(
@@ -218,7 +212,7 @@ async def _generate_image_img2img_eval_async(
 
 async def _run_img2img_generation_eval(
     ctx: MediaContext, runner: Optional[str] = None
-) -> tuple[list[ImageGenerationTestStatus], float]:
+) -> tuple[list[ImageGenerationTestStatus], float, int]:
     logger.info("Running image2image generation eval.")
     prompt = "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
     logger.info(f"Using 1 prompt for evaluation: {prompt}")
@@ -261,13 +255,7 @@ async def _run_img2img_generation_eval(
     logger.info(f"Total failed img2img generations: {failed_count}")
     logger.info(f"Total successful img2img generations: {1 - failed_count}")
 
-    if failed_count:
-        logger.warning("⚠️  Img2img generation failed during eval.")
-        raise RuntimeError(
-            "❌ Img2img generation failed - cannot calculate accuracy metrics"
-        )
-
-    return status_list, total_time
+    return status_list, total_time, failed_count
 
 
 async def _generate_image_inpainting_eval_async(
@@ -322,7 +310,7 @@ async def _generate_image_inpainting_eval_async(
 
 async def _run_inpainting_generation_eval(
     ctx: MediaContext, runner: Optional[str] = None
-) -> tuple[list[ImageGenerationTestStatus], float]:
+) -> tuple[list[ImageGenerationTestStatus], float, int]:
     logger.info("Running inpainting generation eval.")
     prompt = "concept art digital painting of an elven castle, inspired by lord of the rings, highly detailed, 8k"
     logger.info(f"Using 1 prompt for evaluation: {prompt}")
@@ -369,13 +357,7 @@ async def _run_inpainting_generation_eval(
     logger.info(f"Total failed inpainting generations: {failed_count}")
     logger.info(f"Total successful inpainting generations: {1 - failed_count}")
 
-    if failed_count:
-        logger.warning("⚠️  Inpainting generation failed during eval.")
-        raise RuntimeError(
-            "❌ Inpainting generation failed - cannot calculate accuracy metrics"
-        )
-
-    return status_list, total_time
+    return status_list, total_time, failed_count
 
 
 async def _run_image_generation_eval_test(
@@ -463,7 +445,21 @@ def run_image_eval(ctx: MediaContext) -> Block:
         data["accuracy_check"] = eval_results.get("accuracy_check")
         data["score"] = None
     else:
-        status_list, total_time = eval_result
+        status_list, total_time, failed_count = eval_result
+        attempted = len(status_list) + failed_count
+
+        if not status_list:
+            raise RuntimeError(
+                f"Image eval produced no successful generations "
+                f"({failed_count}/{attempted} failed) — cannot calculate accuracy metrics"
+            )
+
+        if failed_count:
+            logger.warning(
+                "Computing eval metrics from partial results: %d succeeded, %d failed",
+                len(status_list),
+                failed_count,
+            )
 
         ttft_value = _image_ttft(status_list)
         logger.info(f"Extracted TTFT value: {ttft_value}")
@@ -495,6 +491,15 @@ def run_image_eval(ctx: MediaContext) -> Block:
             )
         else:
             logger.warning(f"No device spec found for device: {ctx.device}")
+
+        if failed_count:
+            data["success"] = False
+            data["attempts"] = 1
+            data["num_failed"] = failed_count
+            data["num_attempted"] = attempted
+            data["error"] = (
+                f"{failed_count}/{attempted} image generations failed during eval"
+            )
 
     return Block(
         kind="evals",
