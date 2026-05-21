@@ -3,18 +3,17 @@
 
 #pragma once
 
-#include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <functional>
 #include <map>
 #include <mutex>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -93,6 +92,11 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
   /**
+   * @brief Set callback for connection established/reconnected events.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
@@ -114,6 +118,7 @@ class SocketManager {
       handlers_;
 
   std::function<void()> pendingConnectionLostCallback_;
+  std::function<void()> pendingConnectionEstablishedCallback_;
   bool reconnectBackoffSet_{false};
   uint32_t reconnectInitialDelayMs_{0};
   uint32_t reconnectMaxDelayMs_{0};
@@ -130,16 +135,7 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
   }
 
   try {
-    std::ostringstream oss;
-    {
-      cereal::BinaryOutputArchive archive(oss);
-      archive(messageType);
-      obj.write(archive);
-    }
-
-    std::string serialized = oss.str();
-    std::vector<uint8_t> data(serialized.begin(), serialized.end());
-
+    std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
     return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
@@ -154,14 +150,7 @@ void SocketManager::registerHandler(const std::string& messageType,
 
   handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {
-      std::string serialized(data.begin(), data.end());
-      std::istringstream iss(serialized);
-
-      cereal::BinaryInputArchive archive(iss);
-      std::string msgType;
-      archive(msgType);
-      T payload = T::read(archive);
-
+      T payload = wire::deserializePayload<T>(data);
       handler(payload);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());

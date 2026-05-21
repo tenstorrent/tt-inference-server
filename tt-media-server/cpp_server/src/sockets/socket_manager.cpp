@@ -21,6 +21,10 @@ void SocketManager::applyPendingSettings() {
     transport_->setConnectionLostCallback(
         std::move(pendingConnectionLostCallback_));
   }
+  if (pendingConnectionEstablishedCallback_) {
+    transport_->setConnectionEstablishedCallback(
+        std::move(pendingConnectionEstablishedCallback_));
+  }
   if (reconnectBackoffSet_) {
     transport_->setReconnectBackoff(reconnectInitialDelayMs_,
                                     reconnectMaxDelayMs_);
@@ -84,13 +88,7 @@ void SocketManager::messageLoop() {
 
 void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
   try {
-    std::string serialized(data.begin(), data.end());
-    std::istringstream iss(serialized);
-
-    cereal::BinaryInputArchive archive(iss);
-    std::string messageType;
-    archive(messageType);
-
+    std::string messageType = wire::readMessageType(data);
     auto handler = getHandler(messageType);
     if (!handler) {
       TT_LOG_DEBUG("[SocketManager] No handler for message type: {}",
@@ -127,6 +125,15 @@ void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
     transport_->setConnectionLostCallback(std::move(callback));
   } else {
     pendingConnectionLostCallback_ = std::move(callback);
+  }
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  if (transport_) {
+    transport_->setConnectionEstablishedCallback(std::move(callback));
+  } else {
+    pendingConnectionEstablishedCallback_ = std::move(callback);
   }
 }
 

@@ -133,6 +133,14 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
 
+    def _teardown_task(self, task_id: str) -> None:
+        """Drop the per-task result queue and signal the worker to abort any
+        in-flight asyncio task for this id. Idempotent — on the success path
+        the worker has already finished and the cancel signal is a no-op.
+        See #3533 (Problem 1)."""
+        self.scheduler.result_queues.pop(task_id, None)
+        self.scheduler.cancel_task(task_id)
+
     async def process(self, request):
         queue = asyncio.Queue()
         self.scheduler.result_queues[request._task_id] = queue
@@ -160,7 +168,7 @@ class BaseService(ABC):
             self.logger.error(f"Error processing request: {e}")
             raise e
         finally:
-            self.scheduler.result_queues.pop(request._task_id, None)
+            self._teardown_task(request._task_id)
 
     def handle_streaming_chunk(self, chunk):
         formatted_chunk = chunk["chunk"]
@@ -226,4 +234,4 @@ class BaseService(ABC):
             )
             raise
         finally:
-            self.scheduler.result_queues.pop(request._task_id, None)
+            self._teardown_task(request._task_id)
