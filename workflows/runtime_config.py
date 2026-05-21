@@ -66,6 +66,17 @@ class RuntimeConfig:
     limit_samples_mode: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
+    # Prefix-caching benchmark (only consumed when tools == "aiperf")
+    prefix_cache: bool = False
+    prefix_cache_preset: str = "full"
+    prefix_cache_scenarios: Optional[str] = None
+    prefix_cache_arrival: Optional[str] = None
+    prefix_cache_request_rate: Optional[float] = None
+    prefix_cache_scenarios_json: Optional[str] = None
+    # Path to a mooncake-format JSONL trace overriding the manifest defaults
+    # for every `mooncake_trace` scenario in the selected preset.
+    prefix_cache_trace: Optional[str] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -138,6 +149,17 @@ class RuntimeConfig:
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
             tt_metal_home=args.tt_metal_home,
             vllm_dir=args.vllm_dir,
+            prefix_cache=getattr(args, "prefix_cache", False),
+            prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
+            prefix_cache_scenarios=getattr(args, "prefix_cache_scenarios", None),
+            prefix_cache_arrival=getattr(args, "prefix_cache_arrival", None),
+            prefix_cache_request_rate=getattr(
+                args, "prefix_cache_request_rate", None
+            ),
+            prefix_cache_scenarios_json=getattr(
+                args, "prefix_cache_scenarios_json", None
+            ),
+            prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
         )
 
     def to_dict(self) -> dict:
