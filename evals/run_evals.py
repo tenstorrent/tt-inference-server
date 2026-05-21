@@ -334,9 +334,39 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
+    # Clamp client concurrency/batch_size to the server's device_model_spec.max_concurrency.
+    # lm-eval / lmms-eval default to num_concurrent=32, which can exceed the server's
+    # max_num_seqs when the (model, device, engine) tuple supports a smaller batch —
+    # e.g. some forge LLMs currently in bring-up run with a smaller max_num_seqs. When
+    # that happens, the client over-subscribes the server, the queue serializes, and
+    # the client's read timeout fires. Source the correct ceiling from ModelSpec.
+    device_max_concurrency = getattr(
+        getattr(model_spec, "device_model_spec", None), "max_concurrency", None
+    )
+
+    effective_max_concurrent = task.max_concurrent
+    if effective_max_concurrent and device_max_concurrency:
+        effective_max_concurrent = min(effective_max_concurrent, device_max_concurrency)
+        if effective_max_concurrent != task.max_concurrent:
+            logger.info(
+                f"Clamping {task.task_name} num_concurrent: "
+                f"{task.max_concurrent} -> {effective_max_concurrent} "
+                f"(device_model_spec.max_concurrency={device_max_concurrency})"
+            )
+
+    effective_batch_size = task.batch_size
+    if effective_batch_size and device_max_concurrency:
+        effective_batch_size = min(effective_batch_size, device_max_concurrency)
+        if effective_batch_size != task.batch_size:
+            logger.info(
+                f"Clamping {task.task_name} batch_size: "
+                f"{task.batch_size} -> {effective_batch_size} "
+                f"(device_model_spec.max_concurrency={device_max_concurrency})"
+            )
+
     optional_model_args = []
-    if task.max_concurrent:
-        optional_model_args.append(f"num_concurrent={task.max_concurrent}")
+    if effective_max_concurrent:
+        optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
 
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
@@ -391,7 +421,7 @@ def build_eval_command(
             "--output_path", output_dir_path,
             "--seed", task.seed,
             "--num_fewshot", task.num_fewshot,
-            "--batch_size", task.batch_size,
+            "--batch_size", effective_batch_size,
             "--log_samples",
             "--show_config",
         ]
@@ -405,7 +435,7 @@ def build_eval_command(
                 f"{model_kwargs_str}"
             ),
             "--tasks", task.task_name,
-            "--batch_size", str(task.batch_size),
+            "--batch_size", str(effective_batch_size),
             "--output_path", str(output_dir_path),
             "--log_samples",
         ]
@@ -424,7 +454,7 @@ def build_eval_command(
             "--output_path", output_dir_path,
             "--seed", task.seed,
             "--num_fewshot", task.num_fewshot,
-            "--batch_size", task.batch_size,
+            "--batch_size", effective_batch_size,
             "--log_samples",
             "--show_config",
         ]
