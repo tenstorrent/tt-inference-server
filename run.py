@@ -306,6 +306,64 @@ def parse_arguments():
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
     parser.add_argument(
+        "--prefix-cache",
+        action="store_true",
+        help="[--tools aiperf only] Switch the aiperf benchmark sweep to the prefix-caching "
+        "scenario set (shared_system, prefix_pool, multi_turn, baseline). "
+        "Captures vLLM prefix_cache_hits/queries via Prometheus and reports "
+        "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate.",
+    )
+    parser.add_argument(
+        "--prefix-cache-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help="Preset for --prefix-cache (default: full). 'ci' is a short regression-friendly "
+        "sweep, 'full' is the comprehensive serving validation sweep.",
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios",
+        type=str,
+        default=None,
+        help="Comma-separated subset of prefix-cache scenarios to run "
+        "(any of: shared_system, prefix_pool, multi_turn, baseline). "
+        "When unset, all four scenarios from the preset are run.",
+    )
+    parser.add_argument(
+        "--prefix-cache-arrival",
+        type=str,
+        choices=["constant", "poisson", "gamma"],
+        default=None,
+        help="Override the arrival pattern for every prefix-cache run "
+        "(constant | poisson | gamma). For bursty/clustered traffic use "
+        "`gamma` and configure --arrival-smoothness < 1.0 in the manifest. "
+        "Default is the per-scenario value from the preset.",
+    )
+    parser.add_argument(
+        "--prefix-cache-request-rate",
+        type=float,
+        default=None,
+        help="Override the target request rate (req/s) for every prefix-cache run.",
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios-json",
+        type=str,
+        default=None,
+        help="Path to a custom prefix-cache scenarios JSON file "
+        "(see benchmarking/benchmark_targets/prefix_cache_scenarios.json for the schema).",
+    )
+    parser.add_argument(
+        "--prefix-cache-trace",
+        type=str,
+        default=None,
+        help="[--prefix-cache only] Path to a mooncake-format JSONL trace file. "
+        "When set, every mooncake_trace scenario in the preset uses this trace "
+        "instead of the manifest's default. Pair this with a production trace "
+        "to exercise AIPerf's prefix-synthesis pipeline against real traffic "
+        "patterns (see docs/benchmarking_tools.md and "
+        "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md).",
+    )
+    parser.add_argument(
         "--print-docker-cmd",
         action="store_true",
         help="Print simplified Docker run command and exit (does not start server)",
@@ -407,6 +465,13 @@ def parse_arguments():
     )
 
     args = parser.parse_args()
+
+    if args.prefix_cache and args.tools != "aiperf":
+        parser.error(
+            "--prefix-cache currently requires --tools aiperf "
+            f"(got --tools {args.tools}). AIPerf is the only integrated tool "
+            "with first-class prefix-pool, multi-turn, and Prometheus prefix-cache scraping."
+        )
 
     if args.tt_device and args.device and args.tt_device != args.device:
         parser.error(

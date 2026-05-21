@@ -34,6 +34,11 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from benchmarking.prefix_cache_scenarios import (
+    PrefixCacheRun,
+    build_runs as build_prefix_cache_runs,
+    summarize_runs as summarize_prefix_cache_runs,
+)
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -44,6 +49,9 @@ from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
+
+PREFIX_CACHE_HITS_METRIC = "vllm:prefix_cache_hits_total"
+PREFIX_CACHE_QUERIES_METRIC = "vllm:prefix_cache_queries_total"
 
 
 @dataclass
@@ -146,21 +154,25 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
             # TTFT metrics (Time To First Token)
             "mean_ttft_ms": summary.get("time_to_first_token", {}).get("avg", 0),
             "median_ttft_ms": summary.get("time_to_first_token", {}).get("p50", 0),
+            "p95_ttft_ms": summary.get("time_to_first_token", {}).get("p95", 0),
             "p99_ttft_ms": summary.get("time_to_first_token", {}).get("p99", 0),
             "std_ttft_ms": summary.get("time_to_first_token", {}).get("std", 0),
             # TPOT metrics (Time Per Output Token)
             "mean_tpot_ms": summary.get("inter_token_latency", {}).get("avg", 0),
             "median_tpot_ms": summary.get("inter_token_latency", {}).get("p50", 0),
+            "p95_tpot_ms": summary.get("inter_token_latency", {}).get("p95", 0),
             "p99_tpot_ms": summary.get("inter_token_latency", {}).get("p99", 0),
             "std_tpot_ms": summary.get("inter_token_latency", {}).get("std", 0),
             # ITL metrics (Inter-Token Latency)
             "mean_itl_ms": summary.get("inter_token_latency", {}).get("avg", 0),
             "median_itl_ms": summary.get("inter_token_latency", {}).get("p50", 0),
+            "p95_itl_ms": summary.get("inter_token_latency", {}).get("p95", 0),
             "p99_itl_ms": summary.get("inter_token_latency", {}).get("p99", 0),
             "std_itl_ms": summary.get("inter_token_latency", {}).get("std", 0),
             # E2EL metrics (End-to-End Latency)
             "mean_e2el_ms": summary.get("request_latency", {}).get("avg", 0),
             "median_e2el_ms": summary.get("request_latency", {}).get("p50", 0),
+            "p95_e2el_ms": summary.get("request_latency", {}).get("p95", 0),
             "p99_e2el_ms": summary.get("request_latency", {}).get("p99", 0),
             "std_e2el_ms": summary.get("request_latency", {}).get("std", 0),
             # Throughput metrics
@@ -441,6 +453,655 @@ def run_benchmark(
     return return_code
 
 
+def _collect_metric_samples(
+    server_metrics_path: Path,
+) -> Dict[str, List[float]]:
+    """Collect series of `vllm:prefix_cache_*_total` samples from server_metrics_export.jsonl.
+
+    AIPerf writes one JSONL line per Prometheus scrape snapshot. Each snapshot
+    is a Prometheus-style dict mapping metric_name -> list of {labels, value}
+    or a flat value. We tolerate both shapes by extracting any numeric value
+    found beneath the metric key.
+    """
+    series: Dict[str, List[float]] = {
+        PREFIX_CACHE_HITS_METRIC: [],
+        PREFIX_CACHE_QUERIES_METRIC: [],
+    }
+    if not server_metrics_path.exists():
+        return series
+
+    def _extract_numeric(payload) -> Optional[float]:
+        if isinstance(payload, (int, float)):
+            return float(payload)
+        if isinstance(payload, list):
+            total = 0.0
+            found = False
+            for item in payload:
+                v = _extract_numeric(item)
+                if v is not None:
+                    total += v
+                    found = True
+            return total if found else None
+        if isinstance(payload, dict):
+            for key in ("value", "val", "total", "sum", "count"):
+                if key in payload:
+                    v = _extract_numeric(payload[key])
+                    if v is not None:
+                        return v
+            return None
+        return None
+
+    try:
+        with open(server_metrics_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    snapshot = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for metric_name in series.keys():
+                    if metric_name in snapshot:
+                        value = _extract_numeric(snapshot[metric_name])
+                        if value is not None:
+                            series[metric_name].append(value)
+    except OSError as e:
+        logger.warning(
+            f"Could not read server-metrics file {server_metrics_path}: {e}"
+        )
+    return series
+
+
+def parse_server_metrics_for_prefix_cache(
+    artifact_dir: str,
+) -> Dict[str, Optional[float]]:
+    """Compute the prefix-cache hit rate from AIPerf's Prometheus scrape export.
+
+    Returns a dict with at minimum:
+      - prefix_cache_hit_rate: float in [0, 1] or None if not derivable
+      - prefix_cache_hits_delta, prefix_cache_queries_delta: ints or None
+      - prefix_cache_hits_final, prefix_cache_queries_final: final cumulative counters
+    """
+    out: Dict[str, Optional[float]] = {
+        "prefix_cache_hit_rate": None,
+        "prefix_cache_hits_delta": None,
+        "prefix_cache_queries_delta": None,
+        "prefix_cache_hits_final": None,
+        "prefix_cache_queries_final": None,
+    }
+
+    candidates = [
+        Path(artifact_dir) / "server_metrics_export.jsonl",
+    ]
+    for sub in glob.glob(os.path.join(artifact_dir, "*")):
+        sub_path = Path(sub)
+        if sub_path.is_dir():
+            candidates.append(sub_path / "server_metrics_export.jsonl")
+
+    server_metrics_path: Optional[Path] = None
+    for candidate in candidates:
+        if candidate.exists():
+            server_metrics_path = candidate
+            break
+
+    if server_metrics_path is None:
+        logger.warning(
+            "server_metrics_export.jsonl not found under "
+            f"{artifact_dir}; prefix cache hit-rate will be unavailable. "
+            "Check that the vLLM server exposes a Prometheus /metrics endpoint "
+            "and that AIPerf's --server-metrics is enabled (default on)."
+        )
+        return out
+
+    samples = _collect_metric_samples(server_metrics_path)
+    hits = samples[PREFIX_CACHE_HITS_METRIC]
+    queries = samples[PREFIX_CACHE_QUERIES_METRIC]
+    if not hits or not queries:
+        logger.warning(
+            "vLLM prefix cache counters not present in "
+            f"{server_metrics_path}. Hit rate unavailable for this run."
+        )
+        return out
+
+    hits_delta = max(hits[-1] - hits[0], 0.0)
+    queries_delta = max(queries[-1] - queries[0], 0.0)
+    out["prefix_cache_hits_delta"] = hits_delta
+    out["prefix_cache_queries_delta"] = queries_delta
+    out["prefix_cache_hits_final"] = hits[-1]
+    out["prefix_cache_queries_final"] = queries[-1]
+    if queries_delta > 0:
+        out["prefix_cache_hit_rate"] = hits_delta / queries_delta
+    else:
+        # Server reported queries but no delta inside the window - rare but
+        # surface 0.0 so it's distinguishable from "metric missing".
+        out["prefix_cache_hit_rate"] = 0.0
+    return out
+
+
+def build_aiperf_cmd_for_prefix_cache_run(
+    run: "PrefixCacheRun",
+    *,
+    venv_python: Path,
+    model_name: str,
+    tokenizer: str,
+    url: str,
+    artifact_dir: str,
+    auth_token: str,
+) -> List[str]:
+    """Construct the AIPerf CLI command for one prefix-cache run.
+
+    Two modes:
+
+    1. **Synthetic** (``shared_system`` / ``prefix_pool`` / ``multi_turn`` /
+       ``baseline``): aiperf generates prompts using ``--synthetic-input-tokens-*``,
+       ``--output-tokens-*`` plus a prefix knob
+       (``--shared-system-prompt-length`` / ``--num-prefix-prompts``).
+
+    2. **Trace-driven** (``mooncake_trace``, when ``run.uses_trace`` is
+       ``True``): aiperf reads a JSONL mooncake trace via
+       ``--custom-dataset-type mooncake-trace --input-file <trace>`` and
+       optionally scales it with the ``--synthesis-*`` multipliers from
+       https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md
+       In this mode the synthetic ISL/OSL flags are intentionally omitted
+       (the trace itself supplies sequence lengths).
+    """
+    if not url.startswith("http"):
+        url = f"http://{url}"
+
+    cmd: List[str] = [
+        str(venv_python),
+        "-m",
+        "aiperf",
+        "profile",
+        "--model",
+        model_name,
+        "--tokenizer",
+        tokenizer,
+        "--endpoint-type",
+        "chat",
+        "--streaming",
+        "--concurrency",
+        str(run.concurrency),
+        "--request-count",
+        str(run.request_count),
+        "--url",
+        url,
+        "--artifact-dir",
+        artifact_dir,
+        # Server metrics collection (already on by default but pin it for clarity).
+        "--server-metrics-formats",
+        "jsonl",
+    ]
+
+    if run.uses_trace:
+        # Trace-driven mode (mooncake_trace scenario).
+        cmd.extend(
+            [
+                "--custom-dataset-type",
+                run.custom_dataset_type or "mooncake_trace",
+                "--input-file",
+                str(run.trace_input_file),
+            ]
+        )
+        if run.fixed_schedule:
+            cmd.extend(["--fixed-schedule", "--fixed-schedule-auto-offset"])
+        else:
+            # Synthetic arrival pattern only applies when we don't take the
+            # trace timestamps verbatim.
+            cmd.extend(["--arrival-pattern", run.arrival_pattern])
+            if run.arrival_smoothness is not None and run.arrival_pattern == "gamma":
+                cmd.extend(["--arrival-smoothness", str(run.arrival_smoothness)])
+            if run.request_rate is not None:
+                cmd.extend(["--request-rate", str(run.request_rate)])
+
+        # Block size controls how prefix groups are formed in the radix tree.
+        if run.block_size is not None:
+            cmd.extend(
+                ["--prompt-input-tokens-block-size", str(run.block_size)]
+            )
+
+        # Synthesis multipliers — all optional, only emit when set.
+        if run.synthesis_speedup_ratio is not None:
+            cmd.extend(
+                ["--synthesis-speedup-ratio", str(run.synthesis_speedup_ratio)]
+            )
+        if run.synthesis_prefix_len_multiplier is not None:
+            cmd.extend(
+                [
+                    "--synthesis-prefix-len-multiplier",
+                    str(run.synthesis_prefix_len_multiplier),
+                ]
+            )
+        if run.synthesis_prefix_root_multiplier is not None:
+            cmd.extend(
+                [
+                    "--synthesis-prefix-root-multiplier",
+                    str(run.synthesis_prefix_root_multiplier),
+                ]
+            )
+        if run.synthesis_prompt_len_multiplier is not None:
+            cmd.extend(
+                [
+                    "--synthesis-prompt-len-multiplier",
+                    str(run.synthesis_prompt_len_multiplier),
+                ]
+            )
+        if run.synthesis_max_isl is not None:
+            cmd.extend(["--synthesis-max-isl", str(run.synthesis_max_isl)])
+        if run.synthesis_max_osl is not None:
+            cmd.extend(["--synthesis-max-osl", str(run.synthesis_max_osl)])
+    else:
+        # Synthetic mode (shared_system / prefix_pool / multi_turn / baseline).
+        cmd.extend(
+            [
+                "--synthetic-input-tokens-mean",
+                str(run.isl_mean),
+                "--synthetic-input-tokens-stddev",
+                str(run.isl_stddev),
+                "--output-tokens-mean",
+                str(run.osl_mean),
+                "--output-tokens-stddev",
+                str(run.osl_stddev),
+                "--arrival-pattern",
+                run.arrival_pattern,
+            ]
+        )
+        if run.arrival_smoothness is not None and run.arrival_pattern == "gamma":
+            cmd.extend(["--arrival-smoothness", str(run.arrival_smoothness)])
+        if run.request_rate is not None:
+            cmd.extend(["--request-rate", str(run.request_rate)])
+
+        # Prefix knobs (mutually exclusive between shared-system / pool).
+        if run.shared_system_prompt_length is not None:
+            cmd.extend(
+                [
+                    "--shared-system-prompt-length",
+                    str(run.shared_system_prompt_length),
+                ]
+            )
+        elif run.num_prefix_prompts is not None:
+            cmd.extend(
+                [
+                    "--num-prefix-prompts",
+                    str(run.num_prefix_prompts),
+                    "--prefix-prompt-length",
+                    str(run.prefix_prompt_length or 512),
+                ]
+            )
+
+        # Multi-turn knobs.
+        if run.conversation_num is not None:
+            cmd.extend(
+                [
+                    "--conversation-num",
+                    str(run.conversation_num),
+                    "--conversation-turn-mean",
+                    str(run.conversation_turn_mean or 1),
+                    "--conversation-turn-stddev",
+                    str(run.conversation_turn_stddev or 0),
+                    "--conversation-turn-delay-mean",
+                    str(run.conversation_turn_delay_mean_ms or 0),
+                ]
+            )
+
+    if auth_token:
+        cmd.extend(["--api-key", auth_token])
+    return cmd
+
+
+def analyze_trace(
+    *,
+    trace_path: Path,
+    venv_python: Path,
+    artifact_base: Path,
+    block_size: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Run ``aiperf analyze-trace`` once for *trace_path* and load the result.
+
+    The analysis JSON is cached under ``artifact_base / "prefix_cache" /
+    "trace_analysis" / <trace_stem>.json`` so repeat invocations re-use the
+    same on-disk file. Failures are logged and return ``None`` (analysis is
+    optional — it only enriches the per-run JSON / report).
+    """
+    if not trace_path.exists():
+        logger.warning(
+            "Mooncake trace not found: %s. Skipping analyze-trace.", trace_path
+        )
+        return None
+
+    analysis_dir = Path(artifact_base) / "prefix_cache" / "trace_analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    output_path = analysis_dir / f"{trace_path.stem}.json"
+
+    if output_path.exists():
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            output_path.unlink(missing_ok=True)
+
+    cmd = [
+        str(venv_python),
+        "-m",
+        "aiperf",
+        "analyze-trace",
+        str(trace_path),
+        "--output-file",
+        str(output_path),
+    ]
+    if block_size is not None:
+        cmd.extend(["--block-size", str(block_size)])
+
+    logger.info("[prefix-cache] Analyzing trace: %s", " ".join(cmd))
+    rc = run_command(command=cmd, logger=logger, env=os.environ.copy())
+    if rc != 0 or not output_path.exists():
+        logger.warning(
+            "aiperf analyze-trace returned %s for %s; continuing without "
+            "trace analysis enrichment.",
+            rc,
+            trace_path,
+        )
+        return None
+    try:
+        with open(output_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to read analyze-trace output %s: %s", output_path, exc)
+        return None
+
+
+def save_prefix_cache_result(
+    *,
+    run: "PrefixCacheRun",
+    metrics: Dict[str, float],
+    cache_metrics: Dict[str, Optional[float]],
+    model_name: str,
+    model_id: str,
+    output_dir: str,
+    trace_analysis: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Write the per-run JSON for a prefix-cache benchmark.
+
+    Filename pattern:
+        aiperf_prefix_cache_<scenario>_<filesafe_label>_<timestamp>.json
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = (
+        f"aiperf_prefix_cache_{model_id}_{timestamp}"
+        f"_{run.scenario}_{run.filesafe_label()}.json"
+    )
+    filepath = os.path.join(output_dir, filename)
+
+    payload = {
+        "date": datetime.now().strftime("%Y%m%d-%H%M%S"),
+        "backend": "aiperf",
+        "task_type": "prefix_cache",
+        "scenario": run.scenario,
+        "label": run.label,
+        "model_id": model_name,
+        "tokenizer_id": model_name,
+        "isl_mean": run.isl_mean,
+        "isl_stddev": run.isl_stddev,
+        "osl_mean": run.osl_mean,
+        "osl_stddev": run.osl_stddev,
+        "concurrency": run.concurrency,
+        "max_concurrency": run.concurrency,
+        "request_count": run.request_count,
+        "num_prompts": run.request_count,
+        "arrival_pattern": run.arrival_pattern,
+        "arrival_smoothness": run.arrival_smoothness,
+        "request_rate": run.request_rate,
+        "shared_system_prompt_length": run.shared_system_prompt_length,
+        "num_prefix_prompts": run.num_prefix_prompts,
+        "prefix_prompt_length": run.prefix_prompt_length,
+        "conversation_num": run.conversation_num,
+        "conversation_turn_mean": run.conversation_turn_mean,
+        "conversation_turn_stddev": run.conversation_turn_stddev,
+        "conversation_turn_delay_mean_ms": run.conversation_turn_delay_mean_ms,
+        # Trace / synthesis provenance (None for synthetic scenarios).
+        "trace_input_file": run.trace_input_file,
+        "custom_dataset_type": run.custom_dataset_type,
+        "fixed_schedule": run.fixed_schedule,
+        "block_size": run.block_size,
+        "synthesis_speedup_ratio": run.synthesis_speedup_ratio,
+        "synthesis_prefix_len_multiplier": run.synthesis_prefix_len_multiplier,
+        "synthesis_prefix_root_multiplier": run.synthesis_prefix_root_multiplier,
+        "synthesis_prompt_len_multiplier": run.synthesis_prompt_len_multiplier,
+        "synthesis_max_isl": run.synthesis_max_isl,
+        "synthesis_max_osl": run.synthesis_max_osl,
+        "trace_analysis": trace_analysis,
+        "metadata": run.metadata,
+        **metrics,
+        **cache_metrics,
+    }
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+    logger.info(f"Prefix-cache result saved to: {filepath}")
+    return filepath
+
+
+def run_prefix_cache_benchmark(
+    *,
+    run: "PrefixCacheRun",
+    venv_python: Path,
+    model_name: str,
+    model_id: str,
+    tokenizer: str,
+    url: str,
+    auth_token: str,
+    artifact_base: str,
+    output_dir: str,
+    trace_analysis: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Execute a single prefix-cache run and persist its result."""
+    artifact_dir = os.path.join(
+        artifact_base, "prefix_cache", run.scenario, run.filesafe_label()
+    )
+    if os.path.exists(artifact_dir):
+        shutil.rmtree(artifact_dir)
+    os.makedirs(artifact_dir, exist_ok=True)
+
+    cmd = build_aiperf_cmd_for_prefix_cache_run(
+        run,
+        venv_python=venv_python,
+        model_name=model_name,
+        tokenizer=tokenizer,
+        url=url,
+        artifact_dir=artifact_dir,
+        auth_token=auth_token,
+    )
+    if run.uses_trace:
+        logger.info(
+            f"[prefix-cache] {run.scenario}/{run.label}: "
+            f"trace={run.trace_input_file} "
+            f"concurrency={run.concurrency} requests={run.request_count} "
+            f"synthesis(speedup={run.synthesis_speedup_ratio}, "
+            f"prefix_len={run.synthesis_prefix_len_multiplier}, "
+            f"prefix_root={run.synthesis_prefix_root_multiplier}, "
+            f"prompt_len={run.synthesis_prompt_len_multiplier}) "
+            f"fixed_schedule={run.fixed_schedule}"
+        )
+    else:
+        logger.info(
+            f"[prefix-cache] {run.scenario}/{run.label}: "
+            f"isl_mean={run.isl_mean} osl_mean={run.osl_mean} "
+            f"concurrency={run.concurrency} requests={run.request_count} "
+            f"arrival={run.arrival_pattern} rate={run.request_rate}"
+        )
+    logger.info(f"Executing: {' '.join(cmd)}")
+    return_code = run_command(command=cmd, logger=logger, env=os.environ.copy())
+    if return_code != 0:
+        logger.error(
+            f"[prefix-cache] AIPerf failed for {run.scenario}/{run.label} "
+            f"with return code {return_code}"
+        )
+        return return_code
+
+    metrics = parse_aiperf_output(artifact_dir)
+    cache_metrics = parse_server_metrics_for_prefix_cache(artifact_dir)
+
+    if not metrics:
+        logger.error(
+            f"[prefix-cache] No metrics parsed from {artifact_dir}; "
+            "skipping result save."
+        )
+        return 1
+
+    # Persist combined result JSON for the report layer.
+    save_prefix_cache_result(
+        run=run,
+        metrics=metrics,
+        cache_metrics=cache_metrics,
+        model_name=model_name,
+        model_id=model_id,
+        output_dir=output_dir,
+        trace_analysis=trace_analysis,
+    )
+
+    # Console summary so the run log shows the cache hit rate immediately.
+    hit_rate = cache_metrics.get("prefix_cache_hit_rate")
+    hit_rate_str = (
+        f"{hit_rate * 100:.2f}%" if isinstance(hit_rate, (int, float)) else "n/a"
+    )
+    logger.info("=" * 80)
+    logger.info(
+        f"[prefix-cache] {run.scenario}/{run.label} "
+        f"hit_rate={hit_rate_str} "
+        f"TTFT mean/p95/p99 = "
+        f"{metrics.get('mean_ttft_ms', 0):.1f}/"
+        f"{metrics.get('p95_ttft_ms', 0):.1f}/"
+        f"{metrics.get('p99_ttft_ms', 0):.1f} ms; "
+        f"TPOT mean/p95/p99 = "
+        f"{metrics.get('mean_tpot_ms', 0):.1f}/"
+        f"{metrics.get('p95_tpot_ms', 0):.1f}/"
+        f"{metrics.get('p99_tpot_ms', 0):.1f} ms; "
+        f"E2EL mean/p95/p99 = "
+        f"{metrics.get('mean_e2el_ms', 0):.1f}/"
+        f"{metrics.get('p95_e2el_ms', 0):.1f}/"
+        f"{metrics.get('p99_e2el_ms', 0):.1f} ms"
+    )
+    logger.info("=" * 80)
+    return 0
+
+
+def run_prefix_cache_suite(
+    *,
+    runtime_config: RuntimeConfig,
+    model_spec: ModelSpec,
+    prompt_client: PromptClient,
+    venv_python: Path,
+    auth_token: str,
+    artifact_base: Path,
+    output_dir: str,
+    service_port: str,
+) -> int:
+    """Plan + execute the full prefix-cache scenario set for a model."""
+    manifest_path = (
+        Path(runtime_config.prefix_cache_scenarios_json)
+        if runtime_config.prefix_cache_scenarios_json
+        else None
+    )
+    runs = build_prefix_cache_runs(
+        preset=runtime_config.prefix_cache_preset,
+        scenarios=runtime_config.prefix_cache_scenarios,
+        arrival_pattern=runtime_config.prefix_cache_arrival,
+        request_rate=runtime_config.prefix_cache_request_rate,
+        manifest_path=manifest_path,
+        trace_path_override=getattr(runtime_config, "prefix_cache_trace", None),
+    )
+    if not runs:
+        logger.error("No prefix-cache runs produced by the selected preset/scenarios.")
+        return 1
+    logger.info(summarize_prefix_cache_runs(runs))
+
+    # Pre-compute the trace analysis once per unique (trace, block_size) so
+    # repeat scenarios using the same trace don't re-run aiperf analyze-trace.
+    trace_analyses: Dict[tuple, Optional[Dict[str, Any]]] = {}
+    for r in runs:
+        if not r.uses_trace:
+            continue
+        key = (r.trace_input_file, r.block_size)
+        if key in trace_analyses:
+            continue
+        trace_analyses[key] = analyze_trace(
+            trace_path=Path(r.trace_input_file),
+            venv_python=venv_python,
+            artifact_base=Path(artifact_base),
+            block_size=r.block_size,
+        )
+
+    # Run all baseline scenarios first so subsequent reuse runs benefit from a
+    # consistent, warm-but-cold-for-the-cache starting point. Within each
+    # group, sort by concurrency ascending for predictable logs.
+    # Order: baseline first (so reuse scenarios have a fresh-but-warm
+    # starting point), then synthetic reuse scenarios, then trace-driven
+    # mooncake_trace runs (largest variance, run last).
+    scenario_order = {
+        "baseline": 0,
+        "shared_system": 1,
+        "prefix_pool": 2,
+        "multi_turn": 3,
+        "mooncake_trace": 4,
+    }
+    runs_sorted = sorted(
+        runs,
+        key=lambda r: (
+            scenario_order.get(r.scenario, 99),
+            r.scenario,
+            r.concurrency,
+            r.label,
+        ),
+    )
+
+    return_codes: List[int] = []
+    for i, run in enumerate(runs_sorted, 1):
+        try:
+            health_check = prompt_client.get_health()
+        except requests.exceptions.RequestException as error:
+            logger.error("Health check request failed: %s", error)
+            return 1
+        if health_check.status_code != 200:
+            logger.error("vLLM server is not healthy. Aborting prefix-cache suite.")
+            return 1
+
+        logger.info(
+            f"[prefix-cache] Running {i}/{len(runs_sorted)}: "
+            f"{run.scenario}/{run.label}"
+        )
+        time.sleep(2)
+
+        trace_analysis = (
+            trace_analyses.get((run.trace_input_file, run.block_size))
+            if run.uses_trace
+            else None
+        )
+        rc = run_prefix_cache_benchmark(
+            run=run,
+            venv_python=venv_python,
+            model_name=model_spec.hf_model_repo,
+            model_id=model_spec.model_id,
+            tokenizer=model_spec.hf_model_repo,
+            url=f"localhost:{service_port}",
+            auth_token=auth_token,
+            artifact_base=str(artifact_base),
+            output_dir=output_dir,
+            trace_analysis=trace_analysis,
+        )
+        return_codes.append(rc)
+
+    if all(rc == 0 for rc in return_codes):
+        logger.info("Completed AIPerf prefix-cache benchmarks.")
+        return 0
+    logger.error(
+        f"AIPerf prefix-cache benchmarks failed with return codes: {return_codes}. "
+        "See logs above for details."
+    )
+    return 1
+
+
 def send_warmup_requests(
     prompt_client: "PromptClient",
     model_spec: "ModelSpec",
@@ -557,6 +1218,62 @@ def parse_args():
     return parser.parse_args()
 
 
+def _run_prefix_cache_mode(
+    *,
+    runtime_config: RuntimeConfig,
+    model_spec: ModelSpec,
+    jwt_secret: str,
+    auth_token: str,
+    service_port: str,
+    venv_config,
+    output_path: str,
+) -> int:
+    """Bootstrap a server-healthy AIPerf prefix-cache suite for `model_spec`.
+
+    Mirrors the setup the default sweep path uses (health-check, warm-up,
+    artifact directory) and then delegates to :func:`run_prefix_cache_suite`.
+    """
+    logger.info("=" * 80)
+    logger.info(
+        f"AIPerf prefix-cache benchmark suite for {model_spec.model_name} "
+        f"(preset={runtime_config.prefix_cache_preset})"
+    )
+    logger.info("=" * 80)
+
+    env_config = EnvironmentConfig()
+    env_config.jwt_secret = jwt_secret
+    env_config.service_port = service_port
+    env_config.vllm_model = model_spec.hf_model_repo
+
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
+    if not prompt_client.wait_for_healthy():
+        logger.error("vLLM server is not healthy. Aborting prefix-cache suite.")
+        return 1
+
+    logger.info("Sending warm-up requests to initialize server...")
+    if not send_warmup_requests(prompt_client, model_spec, num_requests=3):
+        logger.warning("Warm-up requests failed, but continuing with prefix-cache suite")
+
+    artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
+    artifact_base.mkdir(parents=True, exist_ok=True)
+    os.makedirs(output_path, exist_ok=True)
+
+    return run_prefix_cache_suite(
+        runtime_config=runtime_config,
+        model_spec=model_spec,
+        prompt_client=prompt_client,
+        venv_python=venv_config.venv_python,
+        auth_token=auth_token,
+        artifact_base=artifact_base,
+        output_dir=output_path,
+        service_port=service_port,
+    )
+
+
 def main():
     """Main entry point for AIPerf benchmarks."""
     setup_workflow_script_logger(logger)
@@ -603,6 +1320,19 @@ def main():
     from workflows.workflow_types import WorkflowVenvType
 
     venv_config = VENV_CONFIGS[WorkflowVenvType.BENCHMARKS_AIPERF]
+
+    # Branch for the prefix-caching scenario suite. We skip the default
+    # benchmark sweep entirely and run the dedicated scenario set instead.
+    if runtime_config.prefix_cache:
+        return _run_prefix_cache_mode(
+            runtime_config=runtime_config,
+            model_spec=model_spec,
+            jwt_secret=jwt_secret,
+            auth_token=auth_token,
+            service_port=service_port,
+            venv_config=venv_config,
+            output_path=args.output_path,
+        )
 
     # Look up the benchmark configuration for the model
     if model_spec.model_id not in BENCHMARK_CONFIGS:
