@@ -338,6 +338,10 @@ _venv_config_list = [
         requirements_file="reports-run-script.txt",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+        requirements_file="v2-run-script.txt",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
