@@ -2000,6 +2000,12 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # Hacky: cap CI_NIGHTLY to 3 prompts to make a fast smoke-equivalent
+                # nightly while broader eval-budget plumbing is being worked on.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="meta_math",
@@ -2019,6 +2025,11 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # Hacky: see meta_gpqa note above.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="livecodebench",
@@ -2036,6 +2047,11 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # Hacky: see meta_gpqa note above.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),

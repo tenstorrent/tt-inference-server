@@ -1,34 +1,11 @@
 {
   "models": {
-    "Falcon3-7B-Instruct": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300"
-          ]
-        }
-      }
-    },
-    "Llama-3.1-8B-Instruct": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300"
-          ]
-        }
-      }
-    },
     "Llama-3.2-3B-Instruct": {
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
           "devices": [
-            "N150",
-            "N300"
+            "N150"
           ]
         }
       }
@@ -39,17 +16,6 @@
         "nightly": {
           "devices": [
             "N150"
-          ]
-        }
-      }
-    },
-    "Qwen3-8B": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150",
-            "N300"
           ]
         }
       }
