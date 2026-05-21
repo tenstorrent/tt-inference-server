@@ -203,3 +203,12 @@ _gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_e2e_test(gateway_e2e_test)
+
+add_executable(socket_transport_benchmark tests/socket_transport_benchmark.cpp)
+target_link_libraries(socket_transport_benchmark PRIVATE
+    prefill_gateway_core
+    prefill_gateway_io
+)
+target_include_directories(socket_transport_benchmark PRIVATE ${CPP_SERVER_DIR}/include)
+target_compile_features(socket_transport_benchmark PRIVATE cxx_std_20)
+target_compile_options(socket_transport_benchmark PRIVATE -Wall -Wextra -Wpedantic)
