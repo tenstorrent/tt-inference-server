@@ -337,6 +337,273 @@ TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
   EXPECT_NE(args.find("10"), std::string::npos);
 }
 
+// Test with realistic agentic tools (edit, exec, read, write, web_search)
+TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_EditFile) {
+  printDebugHeader("RealisticAgenticTools_EditFile");
+
+  tt::test::MockToolCallRunner runner(server->resultQueue());
+  runner.queueToolCall(
+      "edit",
+      R"json({"path":"src/main.cpp","edits":[{"oldText":"int main()","newText":"int main(int argc, char** argv)"}]})json");
+
+  // clang-format off
+  auto request =
+      tt::test::ToolCallRequest()
+          .user("Add argc and argv parameters to the main function in "
+                "src/main.cpp")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "edit",
+              "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file.",
+              "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to edit (relative or absolute)"
+                  },
+                  "edits": {
+                    "type": "array",
+                    "description": "One or more targeted replacements.",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "oldText": {
+                          "type": "string",
+                          "description": "Exact text to replace. Must be unique in the file."
+                        },
+                        "newText": {
+                          "type": "string",
+                          "description": "Replacement text."
+                        }
+                      },
+                      "required": ["oldText", "newText"]
+                    }
+                  }
+                },
+                "required": ["path", "edits"]
+              }
+            }
+          })json")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "read",
+              "description": "Read the contents of a file. Supports text files and images.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to read"
+                  },
+                  "offset": {
+                    "type": "number",
+                    "description": "Line number to start reading from (1-indexed)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of lines to read"
+                  }
+                },
+                "required": ["path"]
+              }
+            }
+          })json")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "exec",
+              "description": "Execute shell commands with background continuation.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command to execute"
+                  },
+                  "workdir": {
+                    "type": "string",
+                    "description": "Working directory"
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds"
+                  },
+                  "background": {
+                    "type": "boolean",
+                    "description": "Run in background immediately"
+                  }
+                },
+                "required": ["command"]
+              }
+            }
+          })json")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "write",
+              "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the file to write"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Content to write to the file"
+                  }
+                },
+                "required": ["path", "content"]
+              }
+            }
+          })json")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "web_search",
+              "description": "Search the web. Returns provider-normalized results for current information lookup.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Search query string"
+                  },
+                  "count": {
+                    "type": "number",
+                    "description": "Number of results to return",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "freshness": {
+                    "type": "string",
+                    "description": "Filter by time: day, week, month, or year"
+                  }
+                },
+                "required": ["query"]
+              }
+            }
+          })json")
+          .toolChoice("auto")
+          .maxTokens(256)
+          .stream();
+  // clang-format on
+
+  printRequestBody(request);
+
+  auto responseFuture = asyncRequest(request);
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+
+  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
+  printTokenSequence(runner);
+
+  runner.streamTo(seq->taskId);
+
+  const std::string rawResponse = responseFuture.get();
+  printRawResponse(rawResponse);
+
+  const auto response = tt::test::HttpResponse::parse(rawResponse);
+  EXPECT_EQ(response.statusCode(), 200);
+
+  const auto stream = tt::test::ToolCallStream::parse(response);
+  printParsedResponse(stream);
+
+  EXPECT_TRUE(stream.endedWithDone());
+
+  ASSERT_TRUE(stream.hasToolCalls());
+  EXPECT_EQ(stream.toolCallFunctionName(0), "edit");
+
+  // Verify the edit arguments contain expected structure
+  const auto& args = stream.toolCallArguments(0);
+  EXPECT_NE(args.find("src/main.cpp"), std::string::npos);
+  EXPECT_NE(args.find("oldText"), std::string::npos);
+  EXPECT_NE(args.find("newText"), std::string::npos);
+  EXPECT_NE(args.find("int main"), std::string::npos);
+}
+
+// Test exec tool call
+TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_ExecCommand) {
+  printDebugHeader("RealisticAgenticTools_ExecCommand");
+
+  tt::test::MockToolCallRunner runner(server->resultQueue());
+  runner.queueToolCall("exec",
+                       R"json({"command":"make -j8 && ./run_tests","timeout":300})json");
+
+  // clang-format off
+  auto request =
+      tt::test::ToolCallRequest()
+          .user("Build the project and run tests")
+          .toolFromJson(R"json({
+            "type": "function",
+            "function": {
+              "name": "exec",
+              "description": "Execute shell commands with background continuation.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command to execute"
+                  },
+                  "workdir": {
+                    "type": "string",
+                    "description": "Working directory"
+                  },
+                  "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds"
+                  },
+                  "background": {
+                    "type": "boolean",
+                    "description": "Run in background immediately"
+                  }
+                },
+                "required": ["command"]
+              }
+            }
+          })json")
+          .toolChoice("auto")
+          .maxTokens(128)
+          .stream();
+  // clang-format on
+
+  printRequestBody(request);
+
+  auto responseFuture = asyncRequest(request);
+  auto seq = server->taskQueue().receive();
+  ASSERT_NE(seq, nullptr);
+
+  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
+  printTokenSequence(runner);
+
+  runner.streamTo(seq->taskId);
+
+  const std::string rawResponse = responseFuture.get();
+  printRawResponse(rawResponse);
+
+  const auto response = tt::test::HttpResponse::parse(rawResponse);
+  EXPECT_EQ(response.statusCode(), 200);
+
+  const auto stream = tt::test::ToolCallStream::parse(response);
+  printParsedResponse(stream);
+
+  EXPECT_TRUE(stream.endedWithDone());
+
+  ASSERT_TRUE(stream.hasToolCalls());
+  EXPECT_EQ(stream.toolCallFunctionName(0), "exec");
+
+  const auto& args = stream.toolCallArguments(0);
+  EXPECT_NE(args.find("make"), std::string::npos);
+  EXPECT_NE(args.find("run_tests"), std::string::npos);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------

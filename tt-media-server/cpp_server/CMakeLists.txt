@@ -745,7 +745,9 @@ add_executable(tool_calling_integration_test
     src/services/disaggregation_service.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/socket_transport.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
 )
 target_link_libraries(tool_calling_integration_test PRIVATE
     llm_runner_lib
@@ -755,8 +757,16 @@ target_link_libraries(tool_calling_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
+endif()
 target_include_directories(tool_calling_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )

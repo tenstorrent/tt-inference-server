@@ -17,6 +17,7 @@
 
 #include <initializer_list>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,7 +30,7 @@ class ToolCallRequest {
     return addMessage("user", std::move(content));
   }
 
-  // Add a tool with the given function schema
+  // Add a tool with the given function schema (simple properties)
   ToolCallRequest& tool(
       const std::string& name, const std::string& description,
       std::initializer_list<std::pair<std::string, std::string>> properties) {
@@ -50,6 +51,30 @@ class ToolCallRequest {
     params["required"] = required;
     tool["function"]["parameters"] = params;
 
+    tools_.push_back(std::move(tool));
+    return *this;
+  }
+
+  // Add a tool with raw JSON parameters schema (for complex nested schemas)
+  ToolCallRequest& toolWithSchema(const std::string& name,
+                                  const std::string& description,
+                                  const Json::Value& parameters) {
+    Json::Value tool;
+    tool["type"] = "function";
+    tool["function"]["name"] = name;
+    tool["function"]["description"] = description;
+    tool["function"]["parameters"] = parameters;
+    tools_.push_back(std::move(tool));
+    return *this;
+  }
+
+  // Add a tool from raw JSON string
+  ToolCallRequest& toolFromJson(const std::string& jsonStr) {
+    Json::Value tool;
+    Json::CharReaderBuilder reader;
+    std::istringstream stream(jsonStr);
+    std::string errors;
+    Json::parseFromStream(reader, stream, &tool, &errors);
     tools_.push_back(std::move(tool));
     return *this;
   }
