@@ -52,6 +52,7 @@ class InputBatch:
             pin_memory=False,
             device="cpu",
             block_sizes=block_sizes,
+            kernel_block_sizes=block_sizes,
         )
 
         self.req_output_token_ids: list[Optional[list[int]]] = []

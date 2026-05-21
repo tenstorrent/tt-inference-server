@@ -10,9 +10,9 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.multimodal.inputs import MultiModalKwargs
+from vllm.multimodal.inputs import MultiModalKwargsItems
 from vllm.sequence import IntermediateTensors
-from vllm.utils import LayerBlockType, cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
 from vllm.v1.outputs import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -164,7 +164,7 @@ class TTModelRunner:
         )
         dtype = kv_cache_spec.dtype
         num_layers = model_config.get_num_layers_by_block_type(
-            self.parallel_config, LayerBlockType.attention
+            self.parallel_config, "attention"
         )
 
         # Allocate KV cache tensors.
@@ -195,7 +195,7 @@ class TTModelRunner:
                 removed_req_indices.append(req_index)
 
         # Free the cached encoder outputs.
-        for req_id, input_id in scheduler_output.free_encoder_input_ids:
+        for req_id, input_id in scheduler_output.free_encoder_mm_hashes:
             encoder_outputs = self.encoder_cache.get(req_id)
             if encoder_outputs is not None:
                 encoder_outputs.pop(input_id, None)
@@ -241,8 +241,7 @@ class TTModelRunner:
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
+                mm_features=new_req_data.mm_features,
             )
 
             req_ids_to_add.append(req_id)
@@ -253,14 +252,15 @@ class TTModelRunner:
             req_state = self.requests[req_id]
             num_computed_tokens = req_data.num_computed_tokens[i]
             new_block_ids = req_data.new_block_ids[i]
-            resumed_from_preemption = req_data.resumed_from_preemption[i]
+            resumed_from_preemption = req_id in req_data.resumed_req_ids
 
             # Update the cached states.
             req_state.num_computed_tokens = num_computed_tokens
             if not resumed_from_preemption:
                 # Append the new blocks to the existing block IDs.
-                for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
-                    block_ids.extend(new_ids)
+                if new_block_ids is not None:
+                    for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
+                        block_ids.extend(new_ids)
             else:
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
@@ -276,7 +276,8 @@ class TTModelRunner:
 
             # Update the persistent batch.
             self.input_batch.num_computed_tokens_cpu[req_index] = num_computed_tokens
-            self.input_batch.block_table.append_row(new_block_ids, req_index)
+            if new_block_ids is not None:
+                self.input_batch.block_table.append_row(new_block_ids, req_index)
 
         # Add the new or resumed requests to the persistent batch.
         # The smaller empty indices are filled first.
@@ -295,7 +296,7 @@ class TTModelRunner:
         if removed_req_indices:
             self.input_batch.condense(removed_req_indices)
 
-    def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
+    def _validate_mm_input(self, mm_input: MultiModalKwargsItems) -> None:
         """Validate multi-modal input supports only single images."""
         if list(mm_input.modalities) != ["image"]:
             raise NotImplementedError("Only images are supported for now")
@@ -318,7 +319,7 @@ class TTModelRunner:
         ]
         """
 
-        multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+        multi_modal_kwargs: MultiModalKwargsItems = {"pixel_values": []}
 
         for new_req_data in scheduler_output.scheduled_new_reqs:
             req_id = new_req_data.req_id
@@ -378,7 +379,15 @@ class TTModelRunner:
 
         for req_idx in range(num_reqs):
             req_id = input_batch.req_ids[req_idx]
-            is_prefill = req_id in scheduled_new_req_ids
+            num_scheduled = scheduler_output.num_scheduled_tokens[req_id]
+            num_computed = input_batch.num_computed_tokens_cpu[req_idx]
+            # prefix cache FULL HIT
+            is_full_hit = (
+                req_id in scheduled_new_req_ids
+                and num_scheduled == 1
+                and num_computed >= input_batch.num_prompt_tokens[req_idx] - 1
+            )
+            is_prefill = (req_id in scheduled_new_req_ids) and not is_full_hit
             is_prefill_list.append(is_prefill)
 
         is_prefill_tensor = torch.tensor(is_prefill_list, dtype=torch.bool)
@@ -519,7 +528,7 @@ class TTModelRunner:
             if is_mixed:
                 # For mixed batches, create multimodal kwargs for all requests
                 # Prefill requests get their mm inputs, decode requests get None
-                multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+                multi_modal_kwargs: MultiModalKwargsItems = {"pixel_values": []}
                 prefill_mm_idx = 0
                 for req_idx in range(num_reqs):
                     if is_prefill_list[req_idx]:
@@ -772,7 +781,7 @@ class TTModelRunner:
 
         if self.model_config.is_multimodal_model and not is_decode:
             # Gather multi-modal inputs from all DP ranks
-            multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+            multi_modal_kwargs: MultiModalKwargsItems = {"pixel_values": []}
             for mi in inputs:
                 multi_modal_kwargs["pixel_values"].append(
                     mi.multi_modal_kwargs["pixel_values"]
@@ -1159,7 +1168,6 @@ class TTModelRunner:
             req_ids=self.input_batch.req_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=sampled_token_ids.tolist(),
-            spec_token_ids=None,
             logprobs=None,
             prompt_logprobs_dict=prompt_logprobs_dict,
             pooler_output=[],

@@ -14,7 +14,7 @@ from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from vllm.utils import cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs
@@ -22,6 +22,9 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
+
+# [PrefixCaching] KVCacheBlocks type used by cache_blocks() for prefix cache registration
+from vllm.v1.core.kv_cache_manager import KVCacheBlocks
 
 logger = init_logger("vllm.tt_vllm_plugin.v1.ascend_scheduler")
 
@@ -35,6 +38,7 @@ class AscendScheduler(Scheduler):
         vllm_config: VllmConfig,
         kv_cache_config: KVCacheConfig,
         structured_output_manager: StructuredOutputManager,
+        block_size: int,
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
         include_finished_set: bool = False,
         log_stats: bool = False,
@@ -43,6 +47,7 @@ class AscendScheduler(Scheduler):
             vllm_config,
             kv_cache_config,
             structured_output_manager,
+            vllm_config.cache_config.block_size,
             mm_registry,
             include_finished_set,
             log_stats,
@@ -75,7 +80,7 @@ class AscendScheduler(Scheduler):
         # uses structured decoding.
         structured_output_request_ids: dict[str, int] = {}
 
-        req_to_new_block_ids: dict[str, tuple[list[int], ...]] = {}
+        req_to_new_block_ids: dict[str, KVCacheBlocks] = {}
         num_scheduled_tokens: dict[str, int] = {}
         token_budget = self.max_num_scheduled_tokens
         # Spec decode-related.
@@ -146,67 +151,72 @@ class AscendScheduler(Scheduler):
             load_kv_async = False
 
             # Get already-cached tokens.
-            if request.num_computed_tokens == 0:
-                new_computed_blocks, num_new_local_computed_tokens = (
-                    self.kv_cache_manager.get_computed_blocks(request)
-                )
-
-                # Get externally-cached tokens if using a KVConnector.
-                if self.connector is not None:
-                    num_external_computed_tokens, load_kv_async = (
-                        self.connector.get_num_new_matched_tokens(
-                            request, num_new_local_computed_tokens
-                        )
-                    )
-
-                # Total computed tokens (local + external).
-                num_computed_tokens = (
-                    num_new_local_computed_tokens + num_external_computed_tokens
-                )
+            # [PrefixCaching] vLLM only creates block hashes for complete blocks.
+            # NPU allocates KV cache in full blocks, so we pad token_ids
+            # to fill the last partial block, making it hashable for prefix cache.
+            # +1 extra token is needed because vLLM limits cache hit
+            # to num_tokens-1, so we add 1 to allow full block hit.
+            # Padding is removed after get_computed_blocks.
+            num_padded = cdiv(request.num_tokens, self.block_size) * self.block_size
+            pad_len = num_padded - request.num_tokens + 1
+            if len(request.block_hashes) < num_padded // self.block_size:
+                request._all_token_ids.extend([0] * pad_len)
+                request.update_block_hashes()
             else:
-                # P/D: skip checking prefix cache if loaded from remote kvs.
-                new_computed_blocks = self.kv_cache_manager.create_empty_block_list()
-                num_new_local_computed_tokens = 0
-                num_computed_tokens = request.num_computed_tokens
+                request._all_token_ids.extend([0] * pad_len)
 
-            # P/D: loading remote KV, do not allocate for new work.
-            if load_kv_async:
-                assert num_external_computed_tokens > 0
-                num_new_tokens = 0
-                blocks = None
+            new_computed_blocks, num_new_local_computed_tokens = (
+                self.kv_cache_manager.get_computed_blocks(request)
+            )
+
+            # Remove padding after block hash lookup
+            del request._all_token_ids[-pad_len:]
+            num_computed_tokens = num_new_local_computed_tokens
+
             # Number of tokens to be scheduled.
-            else:
-                prompt_limit = self._get_prompt_limit(request)
-                # We use `request.num_tokens` instead of
-                # `request.num_prompt_tokens` to consider the resumed
-                # requests, which have output tokens.
-                num_new_tokens = request.num_tokens - num_computed_tokens
-                max_tokens_in_kvcache = (
-                    self.kv_cache_config.num_blocks * self.block_size
+            prompt_limit = self._get_prompt_limit(request)
+            # We use `request.num_tokens` instead of
+            # `request.num_prompt_tokens` to consider the resumed
+            # requests, which have output tokens.
+            # num_new_tokens = request.num_tokens - num_computed_tokens
+
+            # [PrefixCaching] PREFIX_FULL_HIT: all tokens already in cache.
+            # Problem: num_new_tokens=0 causes scheduler to skip this request
+            #          (assert num_new_tokens > 0, allocate_slots, etc. all assume > 0).
+            # Solution: pretend 1 token is not computed (num_computed = num_tokens - 1),
+            #           so scheduler schedules it normally (num_new_tokens = 1).
+            num_new_tokens = request.num_tokens - min(num_computed_tokens, request.num_tokens)
+            if num_new_tokens == 0:
+                num_computed_tokens = request.num_tokens - 1
+                num_new_local_computed_tokens = num_computed_tokens
+                num_new_tokens = 1
+
+            max_tokens_in_kvcache = (
+                self.kv_cache_config.num_blocks * self.block_size
+            )
+            prompt_limit = min(prompt_limit, max_tokens_in_kvcache)
+
+            # Finish request that exceeds prompt_limit or kv cache size.
+            if num_new_tokens > prompt_limit:
+                logger.warning(
+                    "Input prompt (%d tokens) is too long and exceeds limit of %d",
+                    num_new_tokens,
+                    prompt_limit,
                 )
-                prompt_limit = min(prompt_limit, max_tokens_in_kvcache)
+                request.status = RequestStatus.FINISHED_IGNORED
+                self.finished_req_ids.add(  # type: ignore
+                    request.request_id
+                )  # type: ignore
+                self.waiting.pop_request()
+                continue
 
-                # Finish request that exceeds prompt_limit or kv cache size.
-                if num_new_tokens > prompt_limit:
-                    logger.warning(
-                        "Input prompt (%d tokens) is too long and exceeds limit of %d",
-                        num_new_tokens,
-                        prompt_limit,
-                    )
-                    request.status = RequestStatus.FINISHED_IGNORED
-                    self.finished_req_ids.add(  # type: ignore
-                        request.request_id
-                    )  # type: ignore
-                    self.waiting.pop_request()
-                    continue
-
-                if num_new_tokens > token_budget:
-                    # Scheduling would exceed token_budget, skip.
-                    skip_cur_request()
-                    continue
-                assert num_new_tokens > 0
-                blocks = new_computed_blocks.blocks[0]
-
+            if num_new_tokens > token_budget:
+                # Scheduling would exceed token_budget, skip.
+                skip_cur_request()
+                continue
+            assert num_new_tokens > 0
+            blocks = new_computed_blocks.blocks[0]
+            
             watermark = getattr(self.scheduler_config, "watermark", 0.01)
             if not self._check_watermark_for_prefill(
                 request, num_new_tokens, blocks, watermark
@@ -217,11 +227,10 @@ class AscendScheduler(Scheduler):
 
             new_blocks = self.kv_cache_manager.allocate_slots(
                 request,
-                num_new_tokens + num_external_computed_tokens,
+                num_new_tokens,
                 num_new_local_computed_tokens,
                 new_computed_blocks=new_computed_blocks,
                 num_lookahead_tokens=self.num_lookahead_tokens,
-                delay_cache_blocks=load_kv_async,
             )
             if new_blocks is None:
                 # The request cannot be scheduled.
@@ -233,6 +242,12 @@ class AscendScheduler(Scheduler):
                     f"waiting_queue_size={len(self.waiting)}"
                 )
                 break
+            
+            # [PrefixCaching] Register blocks in prefix cache after allocation.
+            # Without this, future requests with the same prompt cannot reuse these blocks.
+            if self.kv_cache_manager.enable_caching:
+                num_tokens_for_cache = len(request.block_hashes) * self.block_size
+                self.kv_cache_manager.cache_blocks(request, num_tokens_for_cache)
 
             # KVConnector: update internal state after allocation.
             # This information is used to determine if a load is
@@ -271,7 +286,7 @@ class AscendScheduler(Scheduler):
             if self.lora_config and request.lora_request:
                 scheduled_loras.add(request.lora_request.lora_int_id)
             req_to_new_block_ids[request.request_id] = (
-                self.kv_cache_manager.get_block_ids(request.request_id)
+                self.kv_cache_manager.get_blocks(request.request_id)
             )
             # Update request info.
             num_scheduled_tokens[request.request_id] = num_new_tokens
@@ -380,7 +395,7 @@ class AscendScheduler(Scheduler):
                 if request.use_structured_output:
                     structured_output_request_ids[request.request_id] = req_index
                 self.scheduled_req_ids.add(request.request_id)
-                req_to_new_block_ids[request.request_id] = new_blocks.get_block_ids()
+                req_to_new_block_ids[request.request_id] = new_blocks
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 req_index += 1
@@ -421,9 +436,8 @@ class AscendScheduler(Scheduler):
             any_request = self.running[0]
             num_common_prefix_blocks = (
                 self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request, len(self.running)
+                    any_request)
                 )
-            )
 
         # Generate grammar bitmask for structured output requests
         grammar_bitmask = self.structured_output_manager.grammar_bitmask(
@@ -434,7 +448,7 @@ class AscendScheduler(Scheduler):
 
         # Construct the scheduler output.
         new_reqs_data = [
-            NewRequestData.from_request(req, req_to_new_block_ids[req.request_id])
+            NewRequestData.from_request(req, req_to_new_block_ids[req.request_id].get_block_ids())
             for req in scheduled_new_reqs
         ]
 
@@ -460,9 +474,7 @@ class AscendScheduler(Scheduler):
             # It contains the request IDs that are finished in between
             # the previous and the current steps.
             finished_req_ids=self.finished_req_ids,  # type: ignore
-            free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
-            structured_output_request_ids=structured_output_request_ids,
-            grammar_bitmask=grammar_bitmask,
+            free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes(),
         )
 
         # NOTE(Kuntai): this function is designed for multiple purposes:
@@ -532,10 +544,10 @@ class AscendScheduler(Scheduler):
             self.scheduler_config.chunked_prefill_enabled
             and not self.scheduler_config.is_multi_step
         ):
-            prompt_limit = self.scheduler_config.max_model_len
+            prompt_limit = self.vllm_config.model_config.max_model_len
         else:
             prompt_limit = min(
-                self.scheduler_config.max_model_len,
+                self.vllm_config.model_config.max_model_len,
                 self.scheduler_config.max_num_batched_tokens,
             )
 
@@ -556,7 +568,7 @@ class AscendScheduler(Scheduler):
         For example, the API server can abort a request when the client
         disconnects.
         """
-        for req_id in request_ids:
+        for req_id in (request_ids or []):
             request = self.requests.get(req_id)
             if request is None:
                 # Invalid request ID.

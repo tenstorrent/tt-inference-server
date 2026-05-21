@@ -15,30 +15,59 @@ def register_models():
     ensuring models are registered before the API server or engine starts.
     """
     from vllm import ModelRegistry
+    import os
 
-    # Register TT Llama model
-    ModelRegistry.register_model(
-        "TTLlamaForCausalLM",
-        "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM",
-    )
-
-    # Register BGE embedding model (TTBertModel)
-    # This allows vLLM to find the TT-specific BGE implementation
-    try:
-        ModelRegistry.register_model(
-            "TTBertModel",
-            "models.demos.wormhole.bge_large_en.demo.generator_vllm:BGEForEmbedding",
+    llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
+    if llama_text_version == "tt_transformers":
+        path_llama_text = (
+            "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM")
+    elif llama_text_version == "llama3_70b_galaxy":
+        path_llama_text = (
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
         )
-        print("Registered BGE embedding model")
-    except Exception as e:
-        # If registration fails (e.g., module not found), log warning but continue
-        # This allows the plugin to work even if BGE model isn't available
-        import logging
-
-        logging.warning(
-            f"Failed to register TTBertModel (BGE): {e}. "
-            "BGE model may not be available. Ensure tt-metal is in Python path."
+    elif llama_text_version == "llama2_70b":
+        path_llama_text = (
+            "models.demos.t3000.llama2_70b.tt.generator_vllm:TtLlamaForCausalLM"
         )
+    else:
+        raise ValueError(
+            f"Unsupported TT Llama version: {llama_text_version}, "
+            "pick one of [tt_transformers, llama3_70b_galaxy, llama2_70b]")
+
+    # Llama3.1/3.2 - Text
+    ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
+
+    ## Llama3.2 - Vision
+    #ModelRegistry.register_model(
+    #    "TTMllamaForConditionalGeneration",
+    #    "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
+    #    )
+    #try:
+    #    ModelRegistry.register_model(
+    #        "TTBertModel",
+    #        "models.demos.wormhole.bge_large_en.demo.generator_vllm:BGEForEmbedding",
+    #    )
+    #    print("Registered BGE embedding model")
+    #except Exception as e:
+    #    # If registration fails (e.g., module not found), log warning but continue
+    #    # This allows the plugin to work even if BGE model isn't available
+    #    import logging
+
+    #    logging.warning(
+    #        f"Failed to register TTBertModel (BGE): {e}. "
+    #        "BGE model may not be available. Ensure tt-metal is in Python path."
+    #    )
+
+    # Qwen2.5 - Text
+    path_qwen_text = "models.tt_transformers.tt.generator_vllm:QwenForCausalLM"
+    ModelRegistry.register_model("TTQwen2ForCausalLM", path_qwen_text)
+    ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen_text)
+
+    ## Qwen2.5 - Vision
+    #ModelRegistry.register_model(
+    #    "TTQwen2_5_VLForConditionalGeneration",
+    #    "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
+    #)
 
     # Register Qwen3-Embedding model (TTQwen3Model)
     # This allows vLLM to find the TT-specific Qwen3-Embedding implementation
@@ -63,6 +92,30 @@ def register_models():
             f"Failed to register TTQwen3Model/TTQwen3ForCausalLM (Qwen3-Embedding): {e}. "
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
+
+    # Mistral
+    ModelRegistry.register_model(
+        "TTMistralForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:MistralForCausalLM",
+    )
+
+    ## Gemma3
+    #ModelRegistry.register_model(
+    #    "TTGemma3ForConditionalGeneration",
+    #    "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration",
+    #)
+
+    ## DeepseekV3
+    #ModelRegistry.register_model(
+    #    "TTDeepseekV3ForCausalLM",
+    #    "models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM",
+    #)
+
+    # GPT-OSS
+    ModelRegistry.register_model(
+        "TTGptOssForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:GptOssForCausalLM",
+    )
 
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")

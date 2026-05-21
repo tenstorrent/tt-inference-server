@@ -5,14 +5,15 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
+import os
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
+    from vllm.inputs import ProcessorInputs, PromptType
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
@@ -20,6 +21,7 @@ else:
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
 
+VLLM_USE_V1 = os.environ.get("VLLM_USE_V1", "1") == "1"
 
 class TTPlatform(Platform):
     _enum = PlatformEnum.OOT  # Out-of-tree platform
@@ -65,12 +67,12 @@ class TTPlatform(Platform):
             cache_config.block_size = 16
 
         # Disable prefix caching for TT backend (not yet supported)
-        logger.info("Prefix caching is not yet supported for TT backend; disabling it.")
-        vllm_config.cache_config.enable_prefix_caching = False
+        # logger.info("Prefix caching is not yet supported for TT backend; disabling it.")
+        # vllm_config.cache_config.enable_prefix_caching = False
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            if envs.VLLM_USE_V1:
+            if VLLM_USE_V1:
                 parallel_config.worker_cls = (
                     "tt_vllm_plugin.v1.worker.tt_worker.TTWorker"
                 )
@@ -120,7 +122,7 @@ class TTPlatform(Platform):
         # or if any of the requests in the batch require it.
         # For now, it is only supported with host-side sampling.
 
-        if envs.VLLM_USE_V1:  # type: ignore[attr-defined]
+        if VLLM_USE_V1:  # type: ignore[attr-defined]
             logger.warning(
                 "Disabling compatibility sampling as it's not yet support for "
                 "V1 TT backend."
@@ -136,7 +138,7 @@ class TTPlatform(Platform):
                 "always_compat_sampling must be a boolean"
             )
             if always_compat_sampling:
-                if envs.VLLM_USE_V1:
+                if VLLM_USE_V1:
                     raise ValueError(
                         "always_compat_sampling is not yet supported for V1 TT backend."
                     )
@@ -165,7 +167,7 @@ class TTPlatform(Platform):
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         # V1 support on TT is experimental.
         # Allow users to opt in, but give a warning.
-        if envs.is_set("VLLM_USE_V1") and envs.VLLM_USE_V1:
+        if envs.is_set("VLLM_USE_V1") and VLLM_USE_V1:
             if model_config.is_encoder_decoder:
                 raise ValueError(
                     "VLLM_USE_V1=1 was set but encoder-decoder models aren't "
@@ -175,7 +177,7 @@ class TTPlatform(Platform):
                 "Enabling V1 since VLLM_USE_V1=1, however V1 is still "
                 "experimental for TT backend."
             )
-            return envs.VLLM_USE_V1
+            return VLLM_USE_V1
         return False
 
     @classmethod
@@ -193,19 +195,19 @@ class TTPlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
-        processed_inputs: ProcessorInputs,
+        processed_inputs: "ProcessorInputs",
+        params: Union["SamplingParams", "PoolingParams"],
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
-            if params.best_of is not None:
-                raise ValueError(
-                    f"Currently not supporting best_of on {cls.device_name}"
-                )
+            #if params.best_of is not None:
+            #    raise ValueError(
+            #        f"Currently not supporting best_of on {cls.device_name}"
+            #    )
             if params.prompt_logprobs is not None:
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"
