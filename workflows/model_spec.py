@@ -1115,8 +1115,8 @@ llm_templates = [
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
         version="0.12.0",
-        tt_metal_commit="7eff69a",  # handrews's PR merged into main
-        vllm_commit="7678b70",  # stable branch
+        tt_metal_commit="89cc991",  
+        vllm_commit="7678b70",  
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
