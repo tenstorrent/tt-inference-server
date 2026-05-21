@@ -159,9 +159,13 @@ class TestRunLocalServer:
         vllm_dir = tmp_path / "vllm"
         plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
         plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text("[project]\nname = 'vllm-tt-plugin'\n")
+        (plugin_dir / "pyproject.toml").write_text(
+            "[project]\nname = 'vllm-tt-plugin'\n"
+        )
 
-        runtime_config = self._make_runtime_config(tt_metal_home, vllm_dir=str(vllm_dir))
+        runtime_config = self._make_runtime_config(
+            tt_metal_home, vllm_dir=str(vllm_dir)
+        )
 
         with patch("workflows.run_local_server.run_command") as run_command_mock, patch(
             "workflows.run_local_server.UV_EXEC", Path("/tmp/uv")
@@ -188,7 +192,9 @@ class TestRunLocalServer:
 
         vllm_dir = tmp_path / "vllm"
         vllm_dir.mkdir()
-        runtime_config = self._make_runtime_config(tt_metal_home, vllm_dir=str(vllm_dir))
+        runtime_config = self._make_runtime_config(
+            tt_metal_home, vllm_dir=str(vllm_dir)
+        )
 
         with patch("workflows.run_local_server.run_command") as run_command_mock:
             result = install_vllm_tt_plugin_if_present(
@@ -213,9 +219,13 @@ class TestRunLocalServer:
         vllm_dir = tmp_path / "vllm"
         plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
         plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text("[project]\nname = 'vllm-tt-plugin'\n")
+        (plugin_dir / "pyproject.toml").write_text(
+            "[project]\nname = 'vllm-tt-plugin'\n"
+        )
 
-        runtime_config = self._make_runtime_config(tt_metal_home, vllm_dir=str(vllm_dir))
+        runtime_config = self._make_runtime_config(
+            tt_metal_home, vllm_dir=str(vllm_dir)
+        )
 
         with patch("workflows.run_local_server.run_command") as run_command_mock, patch(
             "workflows.run_local_server.UV_EXEC", Path("/tmp/uv")

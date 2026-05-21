@@ -241,9 +241,7 @@ def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
         "assert 'tt' in eps, "
         "f'tt platform plugin not registered in vllm.platform_plugins entry points, got: {eps}'"
     )
-    return_code = run_command(
-        [str(venv_python), "-c", check_script], logger=logger
-    )
+    return_code = run_command([str(venv_python), "-c", check_script], logger=logger)
     if return_code != 0:
         raise ValueError(
             "⛔ --local-server with inference engine vLLM requires the "

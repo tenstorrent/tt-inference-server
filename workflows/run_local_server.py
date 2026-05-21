@@ -278,9 +278,7 @@ def install_vllm_tt_plugin_if_present(runtime_config, repo_root=None) -> bool:
         f"--python {shlex.quote(str(paths['venv_python']))} "
         f"--no-deps -e {shlex.quote(str(plugin_path))}"
     )
-    logger.info(
-        f"Installing vllm-tt-plugin into tt-metal venv from: {plugin_path}"
-    )
+    logger.info(f"Installing vllm-tt-plugin into tt-metal venv from: {plugin_path}")
     run_command(install_command, logger=logger, check=True)
     return True
 
