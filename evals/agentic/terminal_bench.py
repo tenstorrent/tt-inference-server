@@ -109,7 +109,12 @@ def _annotate_result_file(result_file: Path) -> None:
             with result_file.open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
     except (json.JSONDecodeError, IOError) as e:
-        logger.warning("Could not annotate result file %s: %s", result_file, e)
+        msg = (
+            f"Could not annotate result file {result_file} with '_result_format' field "
+            f"required for report processing: {e}"
+        )
+        logger.error(msg)
+        raise RuntimeError(msg) from e
 
 
 def run(config: TerminalBenchRunConfig) -> int:
