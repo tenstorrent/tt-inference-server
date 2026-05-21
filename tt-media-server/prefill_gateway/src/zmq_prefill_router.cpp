@@ -11,7 +11,6 @@
 namespace tt::gateway {
 namespace {
 
-constexpr int ZMQ_CONTEXT_IO_THREADS = 1;
 constexpr int ZMQ_RECEIVE_TIMEOUT_MS = 50;
 constexpr auto IO_IDLE_WAIT = std::chrono::milliseconds(1);
 
@@ -24,7 +23,7 @@ std::vector<uint8_t> toBytes(const zmq::message_t& message) {
 
 class ZmqPrefillRouter::Impl {
  public:
-  Impl() : context(ZMQ_CONTEXT_IO_THREADS) {}
+  Impl() : context(tt::sockets::zmq_options::CONTEXT_IO_THREADS) {}
 
   zmq::context_t context;
   std::unique_ptr<zmq::socket_t> socket;
@@ -168,8 +167,8 @@ bool ZmqPrefillRouter::initializeSocket() {
   try {
     impl_->socket = std::make_unique<zmq::socket_t>(impl_->context,
                                                     zmq::socket_type::router);
-    tt::sockets::zmq_options::applyRouterOptions(*impl_->socket);
-    impl_->socket->set(zmq::sockopt::rcvtimeo, ZMQ_RECEIVE_TIMEOUT_MS);
+    tt::sockets::zmq_options::applyRouterOptions(*impl_->socket,
+                                                 ZMQ_RECEIVE_TIMEOUT_MS);
     impl_->socket->bind(endpoint_);
     TT_LOG_INFO("[ZmqPrefillRouter] Bound prefill ROUTER to {}", endpoint_);
     return true;

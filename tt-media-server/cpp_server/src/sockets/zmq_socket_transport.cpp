@@ -16,7 +16,6 @@
 namespace tt::sockets {
 
 namespace {
-constexpr int ZMQ_CONTEXT_IO_THREADS = 1;
 constexpr int ZMQ_MONITOR_TIMEOUT_MS = 200;
 constexpr auto IO_IDLE_WAIT = std::chrono::milliseconds(1);
 
@@ -29,7 +28,8 @@ std::string makeMonitorEndpoint(const void* self) {
 ZmqSocketTransport::ZmqSocketTransport()
     : SocketTransportState(/*reconnectInitialDelayMs=*/1000,
                            /*reconnectMaxDelayMs=*/5000),
-      context_(std::make_unique<zmq::context_t>(ZMQ_CONTEXT_IO_THREADS)) {}
+      context_(
+          std::make_unique<zmq::context_t>(zmq_options::CONTEXT_IO_THREADS)) {}
 
 ZmqSocketTransport::~ZmqSocketTransport() { stop(); }
 
