@@ -2,14 +2,15 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
 import os
 import urllib
+
 import numpy as np
-from scipy import linalg
 import torch
-from torchvision import transforms as TF
 from PIL import Image
-import logging
+from scipy import linalg
+from torchvision import transforms as TF
 
 from utils.sdxl_accuracy_utils.inception import InceptionV3
 
@@ -168,6 +169,14 @@ def calculate_fid_score(images, coco_statistics_path, inception_dims=2048):
     -- coco_statistics_path  : Path to the precomputed statistics of the COCO dataset
     -- inception_dims        : Dimensionality of features returned by Inception
     """
+    if len(images) < 2:
+        logger.warning(
+            "FID requires at least 2 generated images to estimate covariance; "
+            "got %d. Skipping FID calculation.",
+            len(images),
+        )
+        return None
+
     block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[inception_dims]
 
     model = InceptionV3([block_idx])

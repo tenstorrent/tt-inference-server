@@ -99,9 +99,6 @@ class TestTtsTestStatus(unittest.TestCase):
             elapsed=3.0,
             latency=0.120,
             rtr=1.5,
-            text="hello",
-            audio_duration=4.5,
-            reference_text="hello",
         )
 
         result = status.to_dict()
@@ -113,9 +110,6 @@ class TestTtsTestStatus(unittest.TestCase):
                 "elapsed": 3.0,
                 "latency": 0.120,
                 "rtr": 1.5,
-                "text": "hello",
-                "audio_duration": 4.5,
-                "reference_text": "hello",
             },
         )
 
@@ -136,7 +130,6 @@ class TestVideoGenerationTestStatus(unittest.TestCase):
             inference_steps_per_second=5.0,
             job_id="job-123",
             video_path="/tmp/job-123.mp4",
-            prompt="a sunset",
         )
 
         result = status.to_dict()
@@ -150,6 +143,5 @@ class TestVideoGenerationTestStatus(unittest.TestCase):
                 "inference_steps_per_second": 5.0,
                 "job_id": "job-123",
                 "video_path": "/tmp/job-123.mp4",
-                "prompt": "a sunset",
             },
         )

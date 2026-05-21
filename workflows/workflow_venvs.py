@@ -369,6 +369,10 @@ _venv_config_list = [
         setup_function=setup_evals_agentic,
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+        requirements_file="v2-run-script.txt",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),

@@ -24,9 +24,10 @@ SWEEP_ENVELOPE = {
 
 def _benchmark_block() -> Block:
     return Block(
-        kind="image_benchmark",
+        kind="benchmarks",
+        task_type="image",
+        title="Image Benchmark",
         id="tt-sdxl_n300",
-        targets={"task_type": "image"},
         data={
             "Benchmarks": {
                 "num_requests": 5,
@@ -39,9 +40,10 @@ def _benchmark_block() -> Block:
 
 def _eval_block() -> Block:
     return Block(
-        kind="image_eval",
+        kind="evals",
+        task_type="image",
+        title="Image Eval",
         id="tt-sdxl_n300",
-        targets={"task_type": "image"},
         data={
             "task_name": "sdxl-prompts",
             "tolerance": 0.05,
@@ -57,13 +59,13 @@ def test_accumulator_preserves_insertion_order():
     acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
     acc.accept([_eval_block()])
     kinds = [b.kind for b in acc.blocks]
-    assert kinds == ["image_benchmark", "image_eval"]
+    assert kinds == ["benchmarks", "evals"]
 
 
 def test_accumulator_rejects_non_blocks():
     acc = BlockAccumulator()
     with pytest.raises(TypeError):
-        acc.accept([{"kind": "image_benchmark"}])  # type: ignore[list-item]
+        acc.accept([{"kind": "benchmarks"}])  # type: ignore[list-item]
 
 
 def test_envelope_first_write_wins():
@@ -82,7 +84,7 @@ def test_build_schema_uses_recorded_envelope():
     assert schema.metadata["device"] == "n300"
     assert schema.metadata["generated_at"] == "2026-05-05 12:00:00"
     assert schema.metadata["report_id"]  # synthesised, non-empty
-    assert [b.kind for b in schema.sections] == ["image_benchmark", "image_eval"]
+    assert [b.kind for b in schema.sections] == ["benchmarks", "evals"]
 
 
 def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
@@ -102,17 +104,15 @@ def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
     assert "### Image Eval" in md
 
 
-def test_block_targets_no_longer_duplicate_metadata(tmp_path: Path):
-    """Per-block targets carry only block-specific fields (task_type), so the
-    serialised JSON does not repeat model/device/timestamp on every section."""
+def test_sweep_metadata_lives_only_at_top_level(tmp_path: Path):
+    """Sweep-level model/device/timestamp live once in top-level metadata —
+    never duplicated onto every block's serialised payload."""
     acc = BlockAccumulator()
     acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
     schema = acc.build_schema()
     result = ReportGenerator().generate(schema, tmp_path)
 
     payload = result.json_path.read_text()
-    # model/device/timestamp appear once at the top, not in section.targets.
     assert payload.count('"model"') == 0
     assert payload.count('"device"') == 1  # top-level metadata.device
     assert payload.count('"timestamp"') == 0
-    assert '"task_type": "image"' in payload

@@ -70,6 +70,7 @@ class ImageGenerationLoadTest(BaseTest):
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
             "num_concurrent_requests": num_concurrent_requests,
+            "num_inference_steps": num_inference_steps,
             "image_resolution": image_resolution,
             "success": success,
         }

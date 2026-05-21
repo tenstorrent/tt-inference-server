@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
-from test_module._test_common import block_id, block_targets, sweep_envelope
+from test_module._test_common import block_id, sweep_envelope
 
 
 def _ctx(model: str = "tt-sdxl-1.0", device: str = "n300") -> SimpleNamespace:
@@ -17,22 +17,6 @@ def _ctx(model: str = "tt-sdxl-1.0", device: str = "n300") -> SimpleNamespace:
         model_spec=SimpleNamespace(model_name=model),
         device=SimpleNamespace(name=device),
     )
-
-
-def test_block_targets_only_carries_per_block_fields():
-    targets = block_targets(_ctx(), task_type="image")
-    assert targets == {"task_type": "image"}
-    # model/device/timestamp deliberately absent — they live in the
-    # sweep envelope (schema metadata), not on every block.
-    assert "model" not in targets
-    assert "device" not in targets
-    assert "timestamp" not in targets
-
-
-def test_block_targets_extra_kwargs_get_merged():
-    targets = block_targets(_ctx(), task_type="image", task_name="sdxl-prompts")
-    assert targets["task_name"] == "sdxl-prompts"
-    assert targets["task_type"] == "image"
 
 
 def test_sweep_envelope_carries_model_device_timestamp():

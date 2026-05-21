@@ -37,6 +37,9 @@ class WhisperEvalTest(BaseTest):
     from workflow virtual environments or common installation locations.
     """
 
+    KIND = "whisper_evals"
+    TASK_TYPE = "audio"
+
     # Class-level configuration - use same settings as run_evals.py
     model_name: str = "whisper_tt"  # eval_class from eval_config.py
     hf_model_repo: str = "distil-whisper/distil-large-v3"
