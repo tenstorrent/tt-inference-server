@@ -11,9 +11,6 @@
 //   2. LLMService's StreamDecoder decodes tokens to text
 //   3. Tool call parser processes special tokens and text
 //   4. SSE response contains properly formatted tool_calls deltas
-//
-// This is NOT a unit test - it tests the actual integration of tokenizer
-// decoding and tool call parsing as they work together in production.
 
 #include <gtest/gtest.h>
 
@@ -70,62 +67,11 @@ class ToolCallingIntegrationTest : public ::testing::Test {
 std::unique_ptr<tt::test::TestServer> ToolCallingIntegrationTest::server;
 
 // ---------------------------------------------------------------------------
-// Debug helpers
-// ---------------------------------------------------------------------------
-
-void printDebugHeader(const std::string& testName) {
-  std::cout << "\n"
-            << "============================================================\n"
-            << "DEBUG: " << testName << "\n"
-            << "============================================================\n";
-}
-
-void printRequestBody(const tt::test::ToolCallRequest& request) {
-  std::cout << "\n--- 1. REQUEST BODY ---\n" << request.toJson() << "\n";
-}
-
-void printTokenSequence(tt::test::MockToolCallRunner& runner) {
-  std::cout << "\n--- 3. MODEL RUNNER OUTPUT (token by token) ---\n";
-  runner.debugPrint();
-}
-
-void printParsedResponse(const tt::test::ToolCallStream& stream) {
-  std::cout << "\n--- 4. FINAL PARSED MESSAGE ---\n";
-  std::cout << "  ended_with_done: "
-            << (stream.endedWithDone() ? "true" : "false") << "\n";
-  std::cout << "  finish_reason: " << stream.finishReason().value_or("(none)")
-            << "\n";
-  std::cout << "  content: \"" << stream.content() << "\"\n";
-  std::cout << "  tool_call_count: " << stream.toolCallCount() << "\n";
-  for (size_t i = 0; i < stream.toolCallCount(); ++i) {
-    const auto& tc = stream.toolCall(i);
-    std::cout << "  tool_call[" << i << "]:\n";
-    std::cout << "    id: " << tc.id << "\n";
-    std::cout << "    type: " << tc.type << "\n";
-    std::cout << "    function.name: " << tc.functionName << "\n";
-    std::cout << "    function.arguments: " << tc.arguments << "\n";
-  }
-  std::cout << "  chunk_count: " << stream.chunkCount() << "\n";
-}
-
-void printRawResponse(const std::string& rawResponse) {
-  std::cout << "\n--- RAW SSE RESPONSE ---\n";
-  // Print first 2000 chars to avoid overwhelming output
-  if (rawResponse.size() > 2000) {
-    std::cout << rawResponse.substr(0, 2000) << "\n... (truncated)\n";
-  } else {
-    std::cout << rawResponse << "\n";
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 // Test single tool call: verify tokenizer decodes and parser emits tool_calls
 TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
-  printDebugHeader("SingleToolCall_ParsedCorrectly");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
   runner.queueToolCall("get_weather", R"({"location":"San Francisco"})");
 
@@ -137,9 +83,6 @@ TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
                      .maxTokens(128)
                      .stream();
 
-  // 1. Print request body
-  printRequestBody(request);
-
   // Send request - server will log prompt when processing
   auto responseFuture = asyncRequest(request);
 
@@ -147,16 +90,11 @@ TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  // 3. Print token sequence (what we're about to stream)
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   // Stream the tool call tokens
   runner.streamTo(seq->taskId);
 
   // Parse and verify response
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
@@ -164,9 +102,6 @@ TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
             std::string::npos);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-
-  // 4. Print parsed response
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
@@ -187,8 +122,6 @@ TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
 
 // Test multiple tool calls in single response
 TEST_F(ToolCallingIntegrationTest, MultipleToolCalls_AllParsedCorrectly) {
-  printDebugHeader("MultipleToolCalls_AllParsedCorrectly");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
   runner.queueMultiToolCall({
       {"get_weather", R"({"location":"SF"})"},
@@ -203,25 +136,18 @@ TEST_F(ToolCallingIntegrationTest, MultipleToolCalls_AllParsedCorrectly) {
           .maxTokens(256)
           .stream();
 
-  printRequestBody(request);
-
   auto responseFuture = asyncRequest(request);
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   runner.streamTo(seq->taskId);
 
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
@@ -239,8 +165,6 @@ TEST_F(ToolCallingIntegrationTest, MultipleToolCalls_AllParsedCorrectly) {
 
 // Test text before tool call (assistant thinks then calls tool)
 TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
-  printDebugHeader("TextBeforeToolCall_BothParsed");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
   runner.queueTextThenToolCall("Let me check the weather for you.\n",
                                "get_weather", R"({"location":"Boston"})");
@@ -253,25 +177,18 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
           .maxTokens(128)
           .stream();
 
-  printRequestBody(request);
-
   auto responseFuture = asyncRequest(request);
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   runner.streamTo(seq->taskId);
 
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
@@ -286,8 +203,6 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
 
 // Test tool call with complex JSON arguments
 TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
-  printDebugHeader("ComplexJsonArguments_ParsedCorrectly");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
   runner.queueToolCall(
       "search_files",
@@ -304,25 +219,18 @@ TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
                      .maxTokens(128)
                      .stream();
 
-  printRequestBody(request);
-
   auto responseFuture = asyncRequest(request);
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   runner.streamTo(seq->taskId);
 
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
@@ -339,8 +247,6 @@ TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
 
 // Test with realistic agentic tools (edit, exec, read, write, web_search)
 TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_EditFile) {
-  printDebugHeader("RealisticAgenticTools_EditFile");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
   runner.queueToolCall(
       "edit",
@@ -495,25 +401,18 @@ TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_EditFile) {
           .stream();
   // clang-format on
 
-  printRequestBody(request);
-
   auto responseFuture = asyncRequest(request);
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   runner.streamTo(seq->taskId);
 
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
@@ -530,11 +429,9 @@ TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_EditFile) {
 
 // Test exec tool call
 TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_ExecCommand) {
-  printDebugHeader("RealisticAgenticTools_ExecCommand");
-
   tt::test::MockToolCallRunner runner(server->resultQueue());
-  runner.queueToolCall("exec",
-                       R"json({"command":"make -j8 && ./run_tests","timeout":300})json");
+  runner.queueToolCall(
+      "exec", R"json({"command":"make -j8 && ./run_tests","timeout":300})json");
 
   // clang-format off
   auto request =
@@ -574,25 +471,18 @@ TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_ExecCommand) {
           .stream();
   // clang-format on
 
-  printRequestBody(request);
-
   auto responseFuture = asyncRequest(request);
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
 
-  std::cout << "\n--- 2. PROMPT (see server log above) ---\n";
-  printTokenSequence(runner);
-
   runner.streamTo(seq->taskId);
 
   const std::string rawResponse = responseFuture.get();
-  printRawResponse(rawResponse);
 
   const auto response = tt::test::HttpResponse::parse(rawResponse);
   EXPECT_EQ(response.statusCode(), 200);
 
   const auto stream = tt::test::ToolCallStream::parse(response);
-  printParsedResponse(stream);
 
   EXPECT_TRUE(stream.endedWithDone());
 
