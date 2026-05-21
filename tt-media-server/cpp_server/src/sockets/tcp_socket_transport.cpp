@@ -440,6 +440,11 @@ void TcpSocketTransport::setConnectionLostCallback(
   setConnectionLostCallbackCommon(std::move(callback));
 }
 
+void TcpSocketTransport::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  setConnectionEstablishedCallbackCommon(std::move(callback));
+}
+
 void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
                                              uint32_t maxDelayMs) {
   setReconnectBackoffCommon(initialDelayMs, maxDelayMs);

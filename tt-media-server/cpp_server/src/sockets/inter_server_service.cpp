@@ -3,10 +3,7 @@
 
 #include "sockets/inter_server_service.hpp"
 
-#include <chrono>
-#include <mutex>
 #include <string>
-#include <thread>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -95,7 +92,10 @@ void InterServerService::start() {
 
   socket_manager_.start();
   if (periodic_registration_mode_) {
-    startRegistrationThread();
+    // Register once on connect (and again on any reconnect) — no polling thread
+    // needed. The ZMQ monitor fires this callback from its existing thread.
+    socket_manager_.setConnectionEstablishedCallback(
+        [this] { sendRegistration(); });
   }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
@@ -105,14 +105,6 @@ void InterServerService::stop() {
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(registration_mutex_);
-    registration_running_ = false;
-  }
-  registration_cv_.notify_all();
-  if (registration_thread_.joinable()) {
-    registration_thread_.join();
-  }
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -285,20 +277,6 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
     return;
   }
   sendRegistration();
-}
-
-void InterServerService::startRegistrationThread() {
-  registration_running_ = true;
-  registration_thread_ = std::thread([this] {
-    constexpr auto registrationInterval = std::chrono::seconds(1);
-    while (registration_running_) {
-      sendRegistration();
-
-      std::unique_lock<std::mutex> lock(registration_mutex_);
-      registration_cv_.wait_for(lock, registrationInterval,
-                                [this] { return !registration_running_; });
-    }
-  });
 }
 
 }  // namespace tt::sockets

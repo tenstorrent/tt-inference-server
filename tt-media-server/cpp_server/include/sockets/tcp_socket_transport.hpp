@@ -50,6 +50,8 @@ class TcpSocketTransport : public ISocketTransport,
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
+  void setConnectionEstablishedCallback(
+      std::function<void()> callback) override;
   void setReconnectBackoff(uint32_t initialDelayMs,
                            uint32_t maxDelayMs) override;
 

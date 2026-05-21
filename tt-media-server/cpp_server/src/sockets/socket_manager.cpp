@@ -21,6 +21,10 @@ void SocketManager::applyPendingSettings() {
     transport_->setConnectionLostCallback(
         std::move(pendingConnectionLostCallback_));
   }
+  if (pendingConnectionEstablishedCallback_) {
+    transport_->setConnectionEstablishedCallback(
+        std::move(pendingConnectionEstablishedCallback_));
+  }
   if (reconnectBackoffSet_) {
     transport_->setReconnectBackoff(reconnectInitialDelayMs_,
                                     reconnectMaxDelayMs_);
@@ -121,6 +125,15 @@ void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
     transport_->setConnectionLostCallback(std::move(callback));
   } else {
     pendingConnectionLostCallback_ = std::move(callback);
+  }
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  if (transport_) {
+    transport_->setConnectionEstablishedCallback(std::move(callback));
+  } else {
+    pendingConnectionEstablishedCallback_ = std::move(callback);
   }
 }
 
