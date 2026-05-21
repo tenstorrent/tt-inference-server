@@ -50,11 +50,40 @@ void setupRunnerEnvironment(const config::ImageConfig& config) {
 
 }  // namespace
 
+struct __attribute__((visibility("hidden"))) SDXLBaseRunner::PythonState {
+  py::object ttnn_device_;
+  py::object pipeline_;
+  py::object tt_sdxl_;
+  py::object torch_module_;
+  py::object ttnn_module_;
+};
+
+py::object& SDXLBaseRunner::ttnn_device() { return python_->ttnn_device_; }
+py::object& SDXLBaseRunner::pipeline() { return python_->pipeline_; }
+py::object& SDXLBaseRunner::tt_sdxl() { return python_->tt_sdxl_; }
+py::object& SDXLBaseRunner::torch_module() { return python_->torch_module_; }
+py::object& SDXLBaseRunner::ttnn_module() { return python_->ttnn_module_; }
+
+const py::object& SDXLBaseRunner::ttnn_device() const {
+  return python_->ttnn_device_;
+}
+const py::object& SDXLBaseRunner::pipeline() const {
+  return python_->pipeline_;
+}
+const py::object& SDXLBaseRunner::tt_sdxl() const { return python_->tt_sdxl_; }
+const py::object& SDXLBaseRunner::torch_module() const {
+  return python_->torch_module_;
+}
+const py::object& SDXLBaseRunner::ttnn_module() const {
+  return python_->ttnn_module_;
+}
+
 SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
     : config_(config),
       batch_size_(config.max_batch_size),
       is_tensor_parallel_(!config.device_mesh_shape.empty() &&
-                          config.device_mesh_shape[0] > 1) {
+                          config.device_mesh_shape[0] > 1),
+      python_(std::make_unique<PythonState>()) {
   setupRunnerEnvironment(config);
   // py::initialize_interpreter leaves the GIL held; release it so worker
   // threads can re-acquire on demand.
@@ -66,8 +95,8 @@ SDXLBaseRunner::SDXLBaseRunner(const config::ImageConfig& config)
     py::gil_scoped_acquire acquire;
     PythonHelpers::ensureSysPath();
     PythonHelpers::helpers();
-    torch_module_ = importTorch();
-    ttnn_module_ = importTtnn();
+    torch_module() = importTorch();
+    ttnn_module() = importTtnn();
   } catch (const py::error_already_set& e) {
     throw std::runtime_error(std::string("[SDXL] Failed to import Python deps "
                                          "(torch / ttnn / huggingface_hub): ") +
@@ -107,16 +136,16 @@ void SDXLBaseRunner::stop() {
 
   py::gil_scoped_acquire acquire;
   try {
-    if (!ttnn_device_.is_none() && !ttnn_module_.is_none()) {
+    if (!ttnn_device().is_none() && !ttnn_module().is_none()) {
       TT_LOG_INFO("[SDXL] Closing mesh device");
-      ttnn_module_.attr("close_mesh_device")(ttnn_device_);
+      ttnn_module().attr("close_mesh_device")(ttnn_device());
     }
   } catch (const py::error_already_set& e) {
     TT_LOG_WARN("[SDXL] close_mesh_device raised: {}", e.what());
   }
-  pipeline_ = py::object();
-  tt_sdxl_ = py::object();
-  ttnn_device_ = py::object();
+  pipeline() = py::object();
+  tt_sdxl() = py::object();
+  ttnn_device() = py::object();
   initialized_ = false;
 }
 
@@ -169,7 +198,7 @@ void SDXLBaseRunner::initDevice() {
 
   if (!fabricConfig.is_none()) {
     try {
-      ttnn_module_.attr("set_fabric_config")(fabricConfig);
+      ttnn_module().attr("set_fabric_config")(fabricConfig);
     } catch (const py::error_already_set& e) {
       throw std::runtime_error(
           std::string("[SDXL] set_fabric_config failed: ") + e.what());
@@ -178,17 +207,17 @@ void SDXLBaseRunner::initDevice() {
 
   py::list shapeList;
   for (size_t v : config_.device_mesh_shape) shapeList.append(v);
-  py::object meshShape = ttnn_module_.attr("MeshShape")(*py::tuple(shapeList));
+  py::object meshShape = ttnn_module().attr("MeshShape")(*py::tuple(shapeList));
 
   py::dict openKwargs = params;
   openKwargs["mesh_shape"] = meshShape;
   try {
-    ttnn_device_ = ttnn_module_.attr("open_mesh_device")(**openKwargs);
+    ttnn_device() = ttnn_module().attr("open_mesh_device")(**openKwargs);
   } catch (const py::error_already_set& e) {
     if (!fabricConfig.is_none()) {
       try {
-        ttnn_module_.attr("set_fabric_config")(
-            ttnn_module_.attr("FabricConfig").attr("DISABLED"));
+        ttnn_module().attr("set_fabric_config")(
+            ttnn_module().attr("FabricConfig").attr("DISABLED"));
       } catch (const py::error_already_set&) {
       }
     }
@@ -196,7 +225,7 @@ void SDXLBaseRunner::initDevice() {
                              e.what());
   }
   TT_LOG_INFO("[SDXL] Mesh device opened (num_devices={})",
-              ttnn_device_.attr("get_num_devices")().cast<int>());
+              ttnn_device().attr("get_num_devices")().cast<int>());
 }
 
 bool SDXLBaseRunner::warmup() {
@@ -219,7 +248,7 @@ void SDXLBaseRunner::runFullWarmup() {
   {
     py::gil_scoped_acquire acquire;
     initDevice();
-    pipeline_ = loadDiffusersPipeline();
+    pipeline() = loadDiffusersPipeline();
     TT_LOG_INFO("[SDXL] diffusers pipeline loaded");
   }
 
@@ -239,8 +268,8 @@ void SDXLBaseRunner::runFullWarmup() {
     ensureLoraState(head);
     applyModeSpecificSettings(head);
 
-    tt_sdxl_.attr("compile_text_encoding")();
-    py::object encoded = tt_sdxl_.attr("encode_prompts")(
+    tt_sdxl().attr("compile_text_encoding")();
+    py::object encoded = tt_sdxl().attr("encode_prompts")(
         prompts.prompts,
         prompts.negative_prompts.has_value()
             ? py::cast(*prompts.negative_prompts)
@@ -256,8 +285,8 @@ void SDXLBaseRunner::runFullWarmup() {
     py::object tensors =
         generateInputTensors(singleton, promptEmbeds, addTextEmbeds);
     prepareInputTensorsForIteration(tensors);
-    tt_sdxl_.attr("compile_image_processing")();
-    tt_sdxl_.attr("generate_images")();
+    tt_sdxl().attr("compile_image_processing")();
+    tt_sdxl().attr("generate_images")();
   });
 }
 
@@ -313,18 +342,18 @@ void SDXLBaseRunner::applyRequestSettings(
         "Cannot pass both timesteps and sigmas. Choose one.");
   }
   if (request.num_inference_steps.has_value()) {
-    tt_sdxl_.attr("set_num_inference_steps")(*request.num_inference_steps);
+    tt_sdxl().attr("set_num_inference_steps")(*request.num_inference_steps);
   }
   if (request.guidance_scale.has_value()) {
-    tt_sdxl_.attr("set_guidance_scale")(*request.guidance_scale);
+    tt_sdxl().attr("set_guidance_scale")(*request.guidance_scale);
   }
   if (request.guidance_rescale.has_value()) {
-    tt_sdxl_.attr("set_guidance_rescale")(*request.guidance_rescale);
+    tt_sdxl().attr("set_guidance_rescale")(*request.guidance_rescale);
   }
   if (request.crop_coords_top_left.has_value()) {
     py::tuple coords = py::make_tuple(request.crop_coords_top_left->first,
                                       request.crop_coords_top_left->second);
-    tt_sdxl_.attr("set_crop_coords_top_left")(coords);
+    tt_sdxl().attr("set_crop_coords_top_left")(coords);
   }
 }
 
@@ -340,7 +369,7 @@ void SDXLBaseRunner::ensureLoraState(
 
   if (current_lora_path_.has_value()) {
     TT_LOG_INFO("[SDXL] Unloading LoRA: {}", *current_lora_path_);
-    tt_sdxl_.attr("unload_lora_weights")();
+    tt_sdxl().attr("unload_lora_weights")();
     current_lora_path_.reset();
     current_lora_scale_.reset();
   }
@@ -350,8 +379,8 @@ void SDXLBaseRunner::ensureLoraState(
       std::string localPath = PythonHelpers::resolveLoraPath(*requestedPath);
       TT_LOG_INFO("[SDXL] Loading LoRA: {} (scale={})", *requestedPath,
                   requestedScale.value_or(1.0F));
-      tt_sdxl_.attr("load_lora_weights")(localPath);
-      tt_sdxl_.attr("fuse_lora")(
+      tt_sdxl().attr("load_lora_weights")(localPath);
+      tt_sdxl().attr("fuse_lora")(
           requestedScale.has_value() ? py::cast(*requestedScale) : py::none());
       current_lora_path_ = requestedPath;
       current_lora_scale_ = requestedScale;
@@ -379,7 +408,7 @@ std::vector<std::string> SDXLBaseRunner::postProcessImages(
     py::object tensor = imgs[py::int_(i)];
     tensor = tensor.attr("detach")();
     tensor =
-        tensor.attr("to")(py::arg("dtype") = torch_module_.attr("float32"));
+        tensor.attr("to")(py::arg("dtype") = torch_module().attr("float32"));
     tensor = tensor.attr("contiguous")();
     py::array_t<float> arr(tensor.attr("cpu")().attr("numpy")());
     if (arr.ndim() != 3) {
@@ -470,8 +499,8 @@ void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
     ensureLoraState(head);
     applyModeSpecificSettings(head);
 
-    tt_sdxl_.attr("compile_text_encoding")();
-    py::object encoded = tt_sdxl_.attr("encode_prompts")(
+    tt_sdxl().attr("compile_text_encoding")();
+    py::object encoded = tt_sdxl().attr("encode_prompts")(
         prompts.prompts,
         prompts.negative_prompts.has_value()
             ? py::cast(*prompts.negative_prompts)
@@ -487,9 +516,9 @@ void SDXLBaseRunner::runBatch(std::vector<BatchSlot>& batch) {
     py::object tensors =
         generateInputTensors(requests, promptEmbeds, addTextEmbeds);
     prepareInputTensorsForIteration(tensors);
-    tt_sdxl_.attr("compile_image_processing")();
+    tt_sdxl().attr("compile_image_processing")();
 
-    py::object imgs = tt_sdxl_.attr("generate_images")();
+    py::object imgs = tt_sdxl().attr("generate_images")();
     images = postProcessImages(imgs, requests);
   } catch (const py::error_already_set& e) {
     error = std::make_exception_ptr(std::runtime_error(
