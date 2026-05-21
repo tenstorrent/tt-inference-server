@@ -22,7 +22,7 @@ class SpeechT5TTSTest(BaseTest):
     """Test SpeechT5 Text-to-Speech functionality"""
 
     async def _run_specific_test_async(self):
-        """Run SpeechT5 TTS tests"""
+        """Run SpeechT5 TTS tests."""
         results = {"success": False}
         try:
             basic_result = await self._test_basic_tts()
@@ -30,6 +30,9 @@ class SpeechT5TTSTest(BaseTest):
             results["success"] = basic_result.get("status") == "success"
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
+            results["error"] = str(e)
+            results["error_type"] = type(e).__name__
+            raise
         return results
 
     async def _test_basic_tts(self):

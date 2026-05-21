@@ -67,7 +67,7 @@ class TTSLoadTest(BaseTest):
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         tts_target_time = self.targets.get("tts_generation_time", 10)
         sample_count = self.targets.get("sample_count", 10)
-        dataset_split = self.targets.get("dataset_split", "test")
+        dataset_split = self.targets.get("dataset_split", "test.clean")
 
         logger.info(
             f"TTS Load Test: num_concurrent_requests={num_concurrent_requests}, "
@@ -132,8 +132,12 @@ class TTSLoadTest(BaseTest):
             "max_ttft_ms": round(max(ttft_values), 2) if ttft_values else 0,
         }
 
-    def _download_samples(self, count: int = 20, split: str = "test") -> None:
-        """Download samples from LibriTTS-R dataset and save metadata."""
+    def _download_samples(self, count: int = 20, split: str = "test.clean") -> None:
+        """Download samples from LibriTTS-R dataset and save metadata.
+
+        The default split is the libritts_r-native ``test.clean``; HF
+        does not provide a plain ``test`` split for any config.
+        """
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
@@ -171,8 +175,14 @@ class TTSLoadTest(BaseTest):
                     logger.info(
                         f"Retrying with mapped split: '{split}' -> '{standard_split}'"
                     )
+                    # Fallback must also pass the dataset config name; without it
+                    # `blabble-io/libritts_r` raises "Config name is missing"
+                    # with the available configs ['dev','clean','other','all'].
                     dataset = load_dataset(
-                        "blabble-io/libritts_r", split=standard_split, streaming=True
+                        "blabble-io/libritts_r",
+                        "clean",
+                        split=standard_split,
+                        streaming=True,
                     )
                     logger.debug("Dataset loaded with fallback split")
                 else:
