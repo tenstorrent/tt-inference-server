@@ -9,6 +9,10 @@
 
 namespace tt::sockets {
 
+namespace {
+constexpr auto MESSAGE_LOOP_SLEEP = std::chrono::milliseconds(10);
+}
+
 SocketManager::~SocketManager() { stop(); }
 
 void SocketManager::applyPendingSettings() {
@@ -16,6 +20,10 @@ void SocketManager::applyPendingSettings() {
   if (pendingConnectionLostCallback_) {
     transport_->setConnectionLostCallback(
         std::move(pendingConnectionLostCallback_));
+  }
+  if (pendingConnectionEstablishedCallback_) {
+    transport_->setConnectionEstablishedCallback(
+        std::move(pendingConnectionEstablishedCallback_));
   }
   if (reconnectBackoffSet_) {
     transport_->setReconnectBackoff(reconnectInitialDelayMs_,
@@ -74,30 +82,34 @@ void SocketManager::messageLoop() {
       TT_LOG_ERROR("[SocketManager] Message loop error: {}", e.what());
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(MESSAGE_LOOP_SLEEP);
   }
 }
 
 void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
   try {
-    std::string serialized(data.begin(), data.end());
-    std::istringstream iss(serialized);
-
-    cereal::BinaryInputArchive archive(iss);
-    std::string messageType;
-    archive(messageType);
-
-    std::lock_guard<std::mutex> lock(handlersMutex_);
-    auto it = handlers_.find(messageType);
-    if (it != handlers_.end()) {
-      it->second(data);
-    } else {
+    std::string messageType = wire::readMessageType(data);
+    auto handler = getHandler(messageType);
+    if (!handler) {
       TT_LOG_DEBUG("[SocketManager] No handler for message type: {}",
                    messageType);
+      return;
     }
+
+    handler(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Message handling error: {}", e.what());
   }
+}
+
+std::function<void(const std::vector<uint8_t>&)> SocketManager::getHandler(
+    const std::string& messageType) const {
+  std::lock_guard<std::mutex> lock(handlersMutex_);
+  auto it = handlers_.find(messageType);
+  if (it == handlers_.end()) {
+    return {};
+  }
+  return it->second;
 }
 
 bool SocketManager::isConnected() const {
@@ -113,6 +125,15 @@ void SocketManager::setConnectionLostCallback(std::function<void()> callback) {
     transport_->setConnectionLostCallback(std::move(callback));
   } else {
     pendingConnectionLostCallback_ = std::move(callback);
+  }
+}
+
+void SocketManager::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  if (transport_) {
+    transport_->setConnectionEstablishedCallback(std::move(callback));
+  } else {
+    pendingConnectionEstablishedCallback_ = std::move(callback);
   }
 }
 

@@ -15,6 +15,18 @@
 namespace tt::sockets {
 
 namespace {
+constexpr int KEEPALIVE_IDLE_SECONDS = 10;
+constexpr int KEEPALIVE_INTERVAL_SECONDS = 5;
+constexpr int KEEPALIVE_MAX_PROBES = 3;
+constexpr int MAX_SEND_RETRIES = 100;
+constexpr int MAX_HEADER_RETRIES = 100;
+constexpr int MAX_PAYLOAD_RETRIES = 1000;
+constexpr uint32_t MAX_MESSAGE_SIZE_BYTES = 1024 * 1024;
+constexpr auto RETRY_SLEEP = std::chrono::milliseconds(1);
+constexpr auto CONNECTION_POLL_INTERVAL = std::chrono::milliseconds(100);
+
+bool wouldBlock() { return errno == EAGAIN || errno == EWOULDBLOCK; }
+
 void setSocketKeepAlive(int socketFd) {
   int enable = 1;
   if (setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) <
@@ -23,21 +35,21 @@ void setSocketKeepAlive(int socketFd) {
                 strerror(errno));
   }
 
-  int idle = 10;
+  int idle = KEEPALIVE_IDLE_SECONDS;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) <
       0) {
     TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPIDLE: {}",
                 strerror(errno));
   }
 
-  int interval = 5;
+  int interval = KEEPALIVE_INTERVAL_SECONDS;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
                  sizeof(interval)) < 0) {
     TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPINTVL: {}",
                 strerror(errno));
   }
 
-  int maxProbes = 3;
+  int maxProbes = KEEPALIVE_MAX_PROBES;
   if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes,
                  sizeof(maxProbes)) < 0) {
     TT_LOG_WARN("[TcpSocketTransport] Failed to set TCP_KEEPCNT: {}",
@@ -53,6 +65,42 @@ void setNonBlocking(int socketFd) {
   }
 }
 
+void setCloseOnExec(int socketFd) {
+  int flags = fcntl(socketFd, F_GETFD, 0);
+  if (flags < 0 || fcntl(socketFd, F_SETFD, flags | FD_CLOEXEC) < 0) {
+    TT_LOG_WARN("[TcpSocketTransport] Failed to set FD_CLOEXEC: {}",
+                strerror(errno));
+  }
+}
+
+tt::utils::ScopedFd createTcpSocket() {
+  tt::utils::ScopedFd socketFd(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+  if (!socketFd) {
+    socketFd.reset(socket(AF_INET, SOCK_STREAM, 0));
+    if (socketFd) {
+      setCloseOnExec(socketFd.get());
+    }
+  }
+  return socketFd;
+}
+
+tt::utils::ScopedFd acceptClient(int serverSocket,
+                                 struct sockaddr_in* clientAddr,
+                                 socklen_t* clientLen) {
+  tt::utils::ScopedFd accepted(
+      accept4(serverSocket, reinterpret_cast<struct sockaddr*>(clientAddr),
+              clientLen, SOCK_CLOEXEC));
+  if (!accepted && (errno == ENOSYS || errno == EINVAL)) {
+    accepted.reset(accept(serverSocket,
+                          reinterpret_cast<struct sockaddr*>(clientAddr),
+                          clientLen));
+    if (accepted) {
+      setCloseOnExec(accepted.get());
+    }
+  }
+  return accepted;
+}
+
 void configureSocket(int socketFd) {
   setNonBlocking(socketFd);
   setSocketKeepAlive(socketFd);
@@ -65,7 +113,7 @@ bool TcpSocketTransport::initializeAsServer(uint16_t port) {
   mode_ = Mode::SERVER;
   port_ = port;
 
-  serverSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+  serverSocket_ = createTcpSocket();
   if (!serverSocket_) {
     TT_LOG_ERROR("[TcpSocketTransport] Failed to create server socket: {}",
                  strerror(errno));
@@ -137,11 +185,14 @@ void TcpSocketTransport::stop() {
   running_ = false;
   connected_ = false;
 
-  int fd = peerSocket_.load(std::memory_order_acquire);
-  if (fd >= 0) {
-    ::shutdown(fd, SHUT_RDWR);
+  {
+    std::lock_guard<std::mutex> lock(socketMutex_);
+    int fd = peerSocket_.load(std::memory_order_acquire);
+    if (fd >= 0) {
+      ::shutdown(fd, SHUT_RDWR);
+    }
+    peerSocket_.store(-1, std::memory_order_release);
   }
-  peerSocket_.store(-1, std::memory_order_release);
 
   if (serverSocket_) {
     ::shutdown(serverSocket_.get(), SHUT_RDWR);
@@ -151,8 +202,11 @@ void TcpSocketTransport::stop() {
     connectionThread_.join();
   }
 
-  clientSocket_.reset();
-  serverSocket_.reset();
+  {
+    std::lock_guard<std::mutex> lock(socketMutex_);
+    clientSocket_.reset();
+    serverSocket_.reset();
+  }
 
   TT_LOG_INFO("[TcpSocketTransport] Stopped");
 }
@@ -164,8 +218,8 @@ void TcpSocketTransport::serverLoop() {
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
 
-    tt::utils::ScopedFd accepted(
-        accept(serverSocket_.get(), (struct sockaddr*)&clientAddr, &clientLen));
+    tt::utils::ScopedFd accepted =
+        acceptClient(serverSocket_.get(), &clientAddr, &clientLen);
     if (!accepted) {
       if (running_) {
         TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
@@ -182,7 +236,7 @@ void TcpSocketTransport::serverLoop() {
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
     while (running_ && connected_) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
     {
@@ -190,10 +244,8 @@ void TcpSocketTransport::serverLoop() {
       peerSocket_.store(-1, std::memory_order_release);
       accepted.reset();
     }
-    connected_ = false;
-    if (connectionLostCallback_) {
-      connectionLostCallback_();
-    }
+    markDisconnected();
+    notifyConnectionLost();
 
     TT_LOG_INFO("[TcpSocketTransport] Client disconnected");
   }
@@ -207,7 +259,7 @@ void TcpSocketTransport::clientLoop() {
   };
 
   while (running_) {
-    clientSocket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+    clientSocket_ = createTcpSocket();
     if (!clientSocket_) {
       TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
                    strerror(errno));
@@ -248,7 +300,7 @@ void TcpSocketTransport::clientLoop() {
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
 
     while (running_ && connected_) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
     {
@@ -256,10 +308,8 @@ void TcpSocketTransport::clientLoop() {
       peerSocket_.store(-1, std::memory_order_release);
       clientSocket_.reset();
     }
-    connected_ = false;
-    if (connectionLostCallback_) {
-      connectionLostCallback_();
-    }
+    markDisconnected();
+    notifyConnectionLost();
 
     TT_LOG_INFO("[TcpSocketTransport] Disconnected from server");
   }
@@ -275,39 +325,36 @@ bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
   uint32_t size = static_cast<uint32_t>(data.size());
   uint32_t netSize = htonl(size);
 
-  // Send with retry on EAGAIN — the socket is non-blocking, so a transient
-  // "would block" on the header should not disconnect the peer.
-  auto sendAll = [&](const void* buf, size_t len) -> bool {
-    size_t sent = 0;
-    int retries = 0;
-    const int maxRetries = 100;
-    while (sent < len) {
-      ssize_t n = send(fd, static_cast<const uint8_t*>(buf) + sent, len - sent,
-                       MSG_NOSIGNAL);
-      if (n > 0) {
-        sent += static_cast<size_t>(n);
-        retries = 0;
-      } else if (n == 0) {
-        connected_ = false;
-        return false;
-      } else {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-          if (++retries > maxRetries) {
-            connected_ = false;
-            return false;
-          }
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        } else {
-          connected_ = false;
-          return false;
-        }
-      }
-    }
-    return true;
-  };
+  if (!sendAll(fd, &netSize, sizeof(netSize))) return false;
+  if (!sendAll(fd, data.data(), data.size())) return false;
 
-  if (!sendAll(&netSize, sizeof(netSize))) return false;
-  if (!sendAll(data.data(), data.size())) return false;
+  return true;
+}
+
+bool TcpSocketTransport::sendAll(int fd, const void* buffer, size_t size) {
+  size_t sent = 0;
+  int retries = 0;
+  const auto* data = static_cast<const uint8_t*>(buffer);
+
+  while (sent < size) {
+    ssize_t n = send(fd, data + sent, size - sent, MSG_NOSIGNAL);
+    if (n > 0) {
+      sent += static_cast<size_t>(n);
+      retries = 0;
+      continue;
+    }
+
+    if (n == 0 || !wouldBlock()) {
+      markDisconnected();
+      return false;
+    }
+
+    if (++retries > MAX_SEND_RETRIES) {
+      markDisconnected();
+      return false;
+    }
+    std::this_thread::sleep_for(RETRY_SLEEP);
+  }
 
   return true;
 }
@@ -319,105 +366,88 @@ std::vector<uint8_t> TcpSocketTransport::receiveRawData() {
   int fd = peerSocket_.load(std::memory_order_acquire);
   if (fd < 0) return {};
 
-  // Read the 4-byte length header. The first recv uses MSG_DONTWAIT so the
-  // call returns immediately when no data is available (EAGAIN). If a partial
-  // header arrives, retry with a short timeout rather than treating it as a
-  // disconnect — partial reads are possible on non-blocking sockets.
   uint32_t netSize = 0;
-  size_t headerReceived = 0;
-  int headerRetries = 0;
-  const int maxHeaderRetries = 100;  // 100ms timeout (100 * 1ms)
-
-  while (headerReceived < sizeof(netSize)) {
-    ssize_t n = recv(fd, reinterpret_cast<uint8_t*>(&netSize) + headerReceived,
-                     sizeof(netSize) - headerReceived,
-                     headerReceived == 0 ? MSG_DONTWAIT : 0);
-    if (n > 0) {
-      headerReceived += static_cast<size_t>(n);
-      headerRetries = 0;
-    } else if (n == 0) {
-      connected_ = false;
-      return {};
-    } else {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        if (headerReceived == 0) {
-          // No data available yet — normal, just return empty.
-          return {};
-        }
-        // Partial header: wait briefly for the rest.
-        if (++headerRetries > maxHeaderRetries) {
-          connected_ = false;
-          return {};
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      } else {
-        connected_ = false;
-        return {};
-      }
-    }
+  auto headerStatus =
+      receiveExact(fd, reinterpret_cast<uint8_t*>(&netSize), sizeof(netSize),
+                   MAX_HEADER_RETRIES, /*returnIfNoInitialData=*/true);
+  if (headerStatus == ReceiveResult::NO_DATA) {
+    return {};
+  }
+  if (headerStatus == ReceiveResult::DISCONNECTED) {
+    markDisconnected();
+    return {};
   }
 
   uint32_t size = ntohl(netSize);
-  if (size == 0 || size > 1024 * 1024) {  // Max 1MB per message
-    connected_ = false;
+  if (size == 0 || size > MAX_MESSAGE_SIZE_BYTES) {
+    markDisconnected();
     return {};
   }
 
   std::vector<uint8_t> data(size);
-  size_t totalReceived = 0;
-  int retryCount = 0;
-  const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
-
-  while (totalReceived < size) {
-    ssize_t received =
-        recv(fd, data.data() + totalReceived, size - totalReceived, 0);
-    if (received > 0) {
-      totalReceived += static_cast<size_t>(received);
-      retryCount = 0;
-    } else if (received == 0) {
-      connected_ = false;
-      return {};
-    } else {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        if (++retryCount > maxRetries) {
-          TT_LOG_ERROR("[TcpSocketTransport] Timeout waiting for message data");
-          connected_ = false;
-          return {};
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
-      }
-      connected_ = false;
-      return {};
-    }
+  auto payloadStatus =
+      receiveExact(fd, data.data(), data.size(), MAX_PAYLOAD_RETRIES,
+                   /*returnIfNoInitialData=*/false);
+  if (payloadStatus != ReceiveResult::COMPLETE) {
+    markDisconnected();
+    return {};
   }
 
   return data;
 }
 
-bool TcpSocketTransport::isConnected() const { return connected_; }
+TcpSocketTransport::ReceiveResult TcpSocketTransport::receiveExact(
+    int fd, uint8_t* buffer, size_t size, int maxRetries,
+    bool returnIfNoInitialData) {
+  size_t receivedTotal = 0;
+  int retries = 0;
 
-std::string TcpSocketTransport::getStatus() const {
-  if (!running_) {
-    return "stopped";
+  while (receivedTotal < size) {
+    const int flags =
+        receivedTotal == 0 && returnIfNoInitialData ? MSG_DONTWAIT : 0;
+    ssize_t received =
+        recv(fd, buffer + receivedTotal, size - receivedTotal, flags);
+
+    if (received > 0) {
+      receivedTotal += static_cast<size_t>(received);
+      retries = 0;
+      continue;
+    }
+
+    if (received == 0 || !wouldBlock()) {
+      return ReceiveResult::DISCONNECTED;
+    }
+
+    if (receivedTotal == 0 && returnIfNoInitialData) {
+      return ReceiveResult::NO_DATA;
+    }
+
+    if (++retries > maxRetries) {
+      return ReceiveResult::DISCONNECTED;
+    }
+    std::this_thread::sleep_for(RETRY_SLEEP);
   }
 
-  if (connected_) {
-    return mode_ == Mode::SERVER ? "server:connected" : "client:connected";
-  }
-
-  return mode_ == Mode::SERVER ? "server:waiting" : "client:connecting";
+  return ReceiveResult::COMPLETE;
 }
+
+bool TcpSocketTransport::isConnected() const { return isConnectedState(); }
+
+std::string TcpSocketTransport::getStatus() const { return getStatusString(); }
 
 void TcpSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
-  connectionLostCallback_ = std::move(callback);
+  setConnectionLostCallbackCommon(std::move(callback));
+}
+
+void TcpSocketTransport::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
 void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
                                              uint32_t maxDelayMs) {
-  reconnectInitialDelayMs_ = initialDelayMs;
-  reconnectMaxDelayMs_ = maxDelayMs;
+  setReconnectBackoffCommon(initialDelayMs, maxDelayMs);
 }
 
 }  // namespace tt::sockets

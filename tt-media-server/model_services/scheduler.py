@@ -51,6 +51,14 @@ class Scheduler:
             )
 
         self.error_queue = Queue()
+        # Cancellation channel: when a FastAPI handler is cancelled or errored
+        # out mid-flight (client read-timeout, asyncio.CancelledError, etc.),
+        # base_service.process() pushes the request's task_id here so the worker
+        # can abort the in-flight asyncio task in vLLM and free the slot it was
+        # holding. Without this, the engine continues generating until natural
+        # completion, starving sibling sub-requests waiting on max_num_seqs.
+        # See #3533 (Problem 1).
+        self.cancel_queue = Queue()
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -70,6 +78,20 @@ class Scheduler:
         self.listener_task_ref = None
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
+
+    def cancel_task(self, task_id: str) -> None:
+        """Signal the worker that the given task_id should be aborted.
+
+        Best-effort and non-blocking: the worker may already have finished the
+        task (in which case the signal is a no-op), or the cancel_queue may be
+        unavailable during shutdown. Either way we don't raise.
+        """
+        if not task_id:
+            return
+        try:
+            self.cancel_queue.put(task_id, block=False)
+        except Exception:
+            pass
 
     def process_request(self, request):
         try:
@@ -188,6 +210,7 @@ class Scheduler:
                 if self.settings.queue_for_multiprocessing
                 == QueueType.MemoryQueue.value
                 else None,
+                self.cancel_queue,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -410,12 +433,19 @@ class Scheduler:
 
                 self.error_queue.put((None, None, None), timeout=1.0)
                 self.warmup_signals_queue.put(None, timeout=1.0)
+                # Wake the worker's cancel_listener so it can exit cleanly.
+                self.cancel_queue.put(None, timeout=1.0)
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
             # Close all worker queues
             self._close_queues(
-                [self.task_queue, self.warmup_signals_queue, self.error_queue]
+                [
+                    self.task_queue,
+                    self.warmup_signals_queue,
+                    self.error_queue,
+                    self.cancel_queue,
+                ]
                 + list(self.result_queues_by_worker.values())
             )
 

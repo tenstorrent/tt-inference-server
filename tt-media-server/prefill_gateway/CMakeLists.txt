@@ -143,9 +143,12 @@ add_library(prefill_gateway_io STATIC
     ${CPP_SERVER_DIR}/src/sockets/socket_manager.cpp
     ${CPP_SERVER_DIR}/src/sockets/tcp_socket_transport.cpp
     ${CPP_SERVER_DIR}/src/sockets/zmq_socket_transport.cpp
+    src/prefill_connection_wiring.cpp
     src/socket_transport_factory.cpp
+    src/zmq_prefill_router.cpp
 )
 target_include_directories(prefill_gateway_io PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CPP_SERVER_DIR}/include
     ${cppzmq_SOURCE_DIR}
 )

@@ -3,10 +3,7 @@
 
 #include "sockets/inter_server_service.hpp"
 
-#include <chrono>
-#include <mutex>
 #include <string>
-#include <thread>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -30,11 +27,13 @@ bool InterServerService::initializeFromConfig() {
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
   const bool gatewayMode = tt::config::usePrefillGateway();
+  const bool zmqTransport =
+      tt::config::socketTransport() == tt::sockets::transport_names::ZMQ;
 
   bool success = false;
 
-  // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
-  // and the gateway sits between them.
+  // Gateway mode always makes decode dial the gateway. TCP prefills listen for
+  // the gateway, while ZMQ prefills dial the gateway's shared ROUTER socket.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (gatewayMode) {
       TT_LOG_INFO(
@@ -49,18 +48,27 @@ bool InterServerService::initializeFromConfig() {
     }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     if (gatewayMode) {
-      TT_LOG_INFO(
-          "[InterServerService] Prefill (gateway mode): listening on port {} "
-          "for gateway",
-          port);
-      success = socket_manager_.initializeAsServer(port);
+      if (zmqTransport) {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway ZMQ mode): connecting to "
+            "{}:{}",
+            host, port);
+        success = socket_manager_.initializeAsClient(host, port);
+        periodic_registration_mode_ = success;
+      } else {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway mode): listening on port {} "
+            "for gateway",
+            port);
+        success = socket_manager_.initializeAsServer(port);
+      }
       gateway_mode_ = success;
     } else {
       TT_LOG_INFO(
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socket_manager_.initializeAsClient(host, port);
-      direct_prefill_mode_ = success;
+      periodic_registration_mode_ = success;
     }
   }
 
@@ -83,8 +91,11 @@ void InterServerService::start() {
   }
 
   socket_manager_.start();
-  if (direct_prefill_mode_) {
-    startDirectModeRegistrationThread();
+  if (periodic_registration_mode_) {
+    // Register once on connect (and again on any reconnect) — no polling thread
+    // needed. The ZMQ monitor fires this callback from its existing thread.
+    socket_manager_.setConnectionEstablishedCallback(
+        [this] { sendRegistration(); });
   }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
@@ -94,14 +105,6 @@ void InterServerService::stop() {
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(registration_mutex_);
-    registration_running_ = false;
-  }
-  registration_cv_.notify_all();
-  if (registration_thread_.joinable()) {
-    registration_thread_.join();
-  }
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -274,20 +277,6 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
     return;
   }
   sendRegistration();
-}
-
-void InterServerService::startDirectModeRegistrationThread() {
-  registration_running_ = true;
-  registration_thread_ = std::thread([this] {
-    constexpr auto registrationInterval = std::chrono::seconds(1);
-    while (registration_running_) {
-      sendRegistration();
-
-      std::unique_lock<std::mutex> lock(registration_mutex_);
-      registration_cv_.wait_for(lock, registrationInterval,
-                                [this] { return !registration_running_; });
-    }
-  });
 }
 
 }  // namespace tt::sockets

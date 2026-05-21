@@ -1,0 +1,25 @@
+---
+description: Prefer C++20 contains() over find/end checks in C++ code
+globs: **/*.{cpp,hpp,cc,cxx,h,hxx}
+alwaysApply: false
+---
+
+# Prefer `contains` for membership checks
+
+When code only needs to test key membership, prefer C++20 `contains` instead of `find(...) != end()`.
+
+Use this for associative containers that support `contains`, such as `std::set`, `std::map`, `std::unordered_set`, and `std::unordered_map`.
+
+```cpp
+// ❌ BAD
+if (active_ids.find(request_id) != active_ids.end()) {
+    handle_request(request_id);
+}
+
+// ✅ GOOD
+if (active_ids.contains(request_id)) {
+    handle_request(request_id);
+}
+```
+
+Keep `find` when an iterator is needed (for erase by iterator, value access from iterator, or in pre-C++20 code).
