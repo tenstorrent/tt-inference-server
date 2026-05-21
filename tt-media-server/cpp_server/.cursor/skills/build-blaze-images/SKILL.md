@@ -1,10 +1,10 @@
 ---
-name: build-tt-images
+name: build-blaze-images
 description: Trigger Tenstorrent Blaze media server and tt-metal upstream Docker image builds with gh. Use when the user asks to build Blaze and Metal Docker images, run the tt-shield media server image workflow, or build tt-metal images from the tt-llm-engine submodule reference.
 disable-model-invocation: true
 ---
 
-# Build TT Images
+# Build Blaze Images
 
 ## Purpose
 
