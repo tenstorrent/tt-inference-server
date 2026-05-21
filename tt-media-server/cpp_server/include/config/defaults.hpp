@@ -102,4 +102,14 @@ constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS = 131072;  // upper bound for prefill prompt
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
+// Dynamo backend (TCP `generate` endpoint that registers with NVIDIA Dynamo
+// frontends). All defaults are overridable via env vars; the endpoint is
+// off unless DYNAMO_ENDPOINT_ENABLED=1.
+constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr const char* DYNAMO_DISCOVERY_PATH = "/tmp/dynamo_store_kv";
+constexpr const char* DYNAMO_NAMESPACE = "default";
+constexpr const char* DYNAMO_COMPONENT = "backend";
+constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
+
 }  // namespace tt::config::defaults
