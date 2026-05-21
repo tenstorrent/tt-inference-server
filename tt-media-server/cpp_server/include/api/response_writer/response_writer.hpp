@@ -30,6 +30,7 @@ struct ResponseWriterParams {
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
+  std::function<void(uint32_t)> onAbort;
   std::function<void()> onSessionRelease;
 };
 

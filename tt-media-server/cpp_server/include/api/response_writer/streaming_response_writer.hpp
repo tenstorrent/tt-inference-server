@@ -27,7 +27,7 @@ namespace tt::api {
  * (chat.completion.chunk + `data: [DONE]`); `/v1/responses` passes a
  * `ResponsesEventFormatter` to emit `response.created`, ...,
  * `response.completed` events instead. Forwards client-disconnect detection
- * back to the LLM service via `abortRequest`.
+ * back to the LLM/disaggregation services via abort callbacks.
  */
 class StreamingResponseWriter : public ResponseWriter {
  public:

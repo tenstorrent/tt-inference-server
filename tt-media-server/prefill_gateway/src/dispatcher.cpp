@@ -85,12 +85,19 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
     }
   }
 
+  if (!entry) {
+    TT_LOG_WARN(
+        "[Dispatcher] Dropping result for unknown taskId={} from prefill='{}'",
+        msg.task_id, fromServerId);
+    return;
+  }
+
   // Decrement against the responder, not the original assignee, so a stray
   // result still decrements the right counter.
   registry_.decrementInflight(fromServerId);
 
   // Don't cache failures — they'd resend to the same broken prefill.
-  if (entry && !msg.error && entry->registration_hash != 0) {
+  if (!msg.error && entry->registration_hash != 0) {
     affinity_cache_.record(entry->registration_hash, fromServerId);
   }
 
@@ -104,6 +111,37 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
 
   if (senders_.sendResultToDecode) {
     senders_.sendResultToDecode(msg);
+  }
+}
+
+void Dispatcher::onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg) {
+  std::optional<InFlightEntry> entry;
+  {
+    std::lock_guard<std::mutex> lock(inflight_mutex_);
+    auto it = in_flight_.find(msg.task_id);
+    if (it != in_flight_.end()) {
+      entry = std::move(it->second);
+      in_flight_.erase(it);
+    }
+  }
+
+  if (!entry) {
+    TT_LOG_DEBUG("[Dispatcher] Ignoring cancel for unknown taskId={}",
+                 msg.task_id);
+    return;
+  }
+
+  registry_.decrementInflight(entry->prefill_id);
+
+  bool sent = false;
+  if (senders_.sendCancelToPrefill) {
+    sent = senders_.sendCancelToPrefill(entry->prefill_id, msg);
+  }
+  if (!sent) {
+    TT_LOG_WARN(
+        "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
+        "cancellation is best-effort",
+        msg.task_id, entry->prefill_id);
   }
 }
 
