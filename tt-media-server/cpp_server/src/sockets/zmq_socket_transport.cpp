@@ -10,13 +10,13 @@
 #include <utility>
 #include <zmq.hpp>
 
+#include "sockets/zmq_socket_options.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
 
 namespace {
 constexpr int ZMQ_CONTEXT_IO_THREADS = 1;
-constexpr int ZMQ_RECEIVE_TIMEOUT_MS = 100;
 constexpr int ZMQ_MONITOR_TIMEOUT_MS = 200;
 constexpr auto IO_IDLE_WAIT = std::chrono::milliseconds(1);
 
@@ -91,8 +91,7 @@ bool ZmqSocketTransport::initializeSocket() {
     socket_ = std::make_unique<zmq::socket_t>(
         *context_, mode_ == Mode::SERVER ? zmq::socket_type::router
                                          : zmq::socket_type::dealer);
-    socket_->set(zmq::sockopt::linger, 0);
-    socket_->set(zmq::sockopt::rcvtimeo, ZMQ_RECEIVE_TIMEOUT_MS);
+    zmq_options::applyCommonOptions(*socket_);
     if (mode_ == Mode::CLIENT) {
       socket_->set(zmq::sockopt::reconnect_ivl,
                    static_cast<int>(reconnectInitialDelayMs_));

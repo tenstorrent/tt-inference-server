@@ -5,6 +5,7 @@
 
 #include <zmq.hpp>
 
+#include "sockets/zmq_socket_options.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::gateway {
@@ -167,7 +168,7 @@ bool ZmqPrefillRouter::initializeSocket() {
   try {
     impl_->socket = std::make_unique<zmq::socket_t>(impl_->context,
                                                     zmq::socket_type::router);
-    impl_->socket->set(zmq::sockopt::linger, 0);
+    tt::sockets::zmq_options::applyRouterOptions(*impl_->socket);
     impl_->socket->set(zmq::sockopt::rcvtimeo, ZMQ_RECEIVE_TIMEOUT_MS);
     impl_->socket->bind(endpoint_);
     TT_LOG_INFO("[ZmqPrefillRouter] Bound prefill ROUTER to {}", endpoint_);
@@ -197,10 +198,11 @@ bool ZmqPrefillRouter::processPendingSends() {
     bool ok = false;
     try {
       zmq::message_t idFrame(request->peerKey.data(), request->peerKey.size());
-      impl_->socket->send(idFrame, zmq::send_flags::sndmore);
+      auto idResult = impl_->socket->send(idFrame, zmq::send_flags::sndmore);
 
       zmq::message_t msg(request->data.data(), request->data.size());
-      ok = impl_->socket->send(msg, zmq::send_flags::dontwait).has_value();
+      auto msgResult = impl_->socket->send(msg, zmq::send_flags::dontwait);
+      ok = idResult.has_value() && msgResult.has_value();
     } catch (const zmq::error_t& e) {
       TT_LOG_ERROR("[ZmqPrefillRouter] Send failed: {}", e.what());
     }
