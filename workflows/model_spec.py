@@ -2435,9 +2435,9 @@ vlm_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        version="0.9.0",
-        tt_metal_commit="aecd1d7",
-        vllm_commit="0da90eb",
+        version="0.14.0",
+        tt_metal_commit="097517c",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2468,6 +2468,35 @@ vlm_templates = [
                     "fabric_config": "FABRIC_1D",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "data_parallel_size": 8,
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
         ],
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2480,9 +2509,9 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        version="0.9.0",
-        tt_metal_commit="aecd1d7",
-        vllm_commit="0da90eb",
+        version="0.14.0",
+        tt_metal_commit="097517c",
+        vllm_commit="7678b70",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2537,6 +2566,32 @@ vlm_templates = [
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 384 * 1024 * 1024,
+                },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=19.2.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         model_type=ModelType.VLM,
