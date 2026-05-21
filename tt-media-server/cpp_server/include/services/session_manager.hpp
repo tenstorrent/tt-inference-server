@@ -44,7 +44,7 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
-  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
+  // Result of tryAcquireByPrefixHash: the session's UUID and allocated slot.
   struct AcquiredSession {
     std::string sessionId;
     uint32_t slotId;
@@ -59,12 +59,9 @@ class SessionManager {
   void createSession(
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
-      trantor::EventLoop* eventLoop, size_t initialHash = 0,
-      std::optional<uint32_t> slotId = std::nullopt);
+      trantor::EventLoop* eventLoop, size_t initialHash = 0);
 
   CloseSessionResult closeSession(const std::string& sessionId);
-  bool assignSlotId(const std::string& sessionId, uint32_t slotId);
-  uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
 
   // Marks the session in-flight and registers the cancel function atomically.
   // The cancel function is invoked if closeSession is called while in-flight.
