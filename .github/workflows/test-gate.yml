@@ -14,6 +14,7 @@ jobs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
       charts: ${{ steps.filter.outputs.charts }}
+      helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,6 +30,11 @@ jobs:
               - 'tt-media-server/cpp_server/**'
             charts:
               - 'charts/**'
+            helm_inputs:
+              - 'workflows/model_spec.py'
+              - 'workflows/helm_generator/**'
+              - 'charts/tt-inference-server/values.yaml'
+              - 'tests/test_helm_generator/test_values_in_sync.py'
 
   lint:
     needs: detect-changes
@@ -1233,6 +1239,29 @@ jobs:
             diff-cover-output.txt
           retention-days: 14
 
+  helm-values-sync:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' }}
+    name: Helm values.yaml Sync Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install "ruamel.yaml==0.18.6" pytest
+
+      - name: Verify values.yaml matches workflows/model_spec.py
+        run: pytest tests/test_helm_generator/test_values_in_sync.py -v
+
   helm-chart-validate:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.charts == 'true' }}
@@ -1295,6 +1324,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - helm-values-sync
       - helm-chart-validate
     if: always()
     steps:
@@ -1310,6 +1340,7 @@ jobs:
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [helm-values-sync]="${{ needs.helm-values-sync.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"
