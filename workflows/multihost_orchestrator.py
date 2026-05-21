@@ -602,10 +602,10 @@ class MultiHostOrchestrator:
         # Get serialized model spec dict
         spec_dict = self.model_spec.get_serialized_dict()
 
-        # Get the existing override_tt_config from vllm_args (it's a JSON string)
+        # Get the existing TT config from vllm_args plugin_config (it's a JSON string)
         vllm_args = spec_dict.get("device_model_spec", {}).get("vllm_args", {})
-        existing_override_str = vllm_args.get("override_tt_config", "{}")
-        existing_override = json.loads(existing_override_str)
+        existing_plugin_str = vllm_args.get("plugin_config", '{"tt": {}}')
+        existing_override = json.loads(existing_plugin_str).get("tt", {})
 
         # Merge with MPI override_tt_config from multihost setup
         # Lists (e.g., env_passthrough) are concatenated, others are overwritten
@@ -620,9 +620,9 @@ class MultiHostOrchestrator:
                 merged_override, runtime_override
             )
 
-        # Update the spec dict with merged override_tt_config
-        spec_dict["device_model_spec"]["vllm_args"]["override_tt_config"] = json.dumps(
-            merged_override
+        # Update the spec dict with merged plugin_config under the "tt" namespace
+        spec_dict["device_model_spec"]["vllm_args"]["plugin_config"] = json.dumps(
+            {"tt": merged_override}
         )
 
         # Write to JSON file in config_dir
