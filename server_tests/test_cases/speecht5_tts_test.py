@@ -14,10 +14,11 @@ class SpeechT5TTSTest(BaseTest):
 
     async def _run_specific_test_async(self):
         """Run SpeechT5 TTS tests"""
-        results = {}
+        results = {"success": False}
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
+            results["success"] = basic_result.get("status") == "success"
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
         return results
