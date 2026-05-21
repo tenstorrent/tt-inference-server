@@ -37,6 +37,9 @@ class InterServerService {
   using PrefillRequestedCallback =
       std::function<void(const PrefillRequestMessage& message)>;
 
+  using PrefillCancelCallback =
+      std::function<void(const CancelPrefillMessage& message)>;
+
   /**
    * @brief Health info callback type
    */
@@ -95,6 +98,12 @@ class InterServerService {
   bool sendPrefillResult(const PrefillResultMessage& message);
 
   /**
+   * @brief Best-effort cancellation for an in-flight prefill task.
+   * @return true if sent successfully
+   */
+  bool sendPrefillCancel(uint32_t taskId);
+
+  /**
    * @brief Send health check information
    * @param server_id This server's identifier
    * @param cpu_usage CPU usage percentage
@@ -110,6 +119,11 @@ class InterServerService {
    * @param callback Function to call when prefill request is received
    */
   void onPrefillRequested(PrefillRequestedCallback callback);
+
+  /**
+   * @brief Set callback for when prefill server receives a cancellation.
+   */
+  void onPrefillCancelled(PrefillCancelCallback callback);
 
   /**
    * @brief Set callback for when decode server receives prefill completion
@@ -151,6 +165,7 @@ class InterServerService {
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
+  PrefillCancelCallback prefill_cancel_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;

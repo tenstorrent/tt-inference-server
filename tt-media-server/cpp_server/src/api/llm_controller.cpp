@@ -347,6 +347,12 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
+  if (disaggregationService) {
+    params.onDisaggregatedAbort = [disagg =
+                                       disaggregationService](uint32_t taskId) {
+      disagg->abortRequest(taskId);
+    };
+  }
   if (request.session) {
     params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
   }
@@ -390,8 +396,12 @@ void LLMController::handleStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+  auto cancelFn = [svc = service, disagg = disaggregationService,
+                   taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
+    if (disagg) {
+      disagg->abortRequest(taskId);
+    }
   };
 
   resolveSession(
@@ -451,8 +461,12 @@ void LLMController::handleNonStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+  auto cancelFn = [svc = service, disagg = disaggregationService,
+                   taskId = reqPtr->task_id]() {
     svc->abortRequest(taskId);
+    if (disagg) {
+      disagg->abortRequest(taskId);
+    }
   };
 
   resolveSession(

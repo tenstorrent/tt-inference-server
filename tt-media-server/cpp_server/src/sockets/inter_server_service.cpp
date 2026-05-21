@@ -142,6 +142,16 @@ bool InterServerService::sendPrefillResult(
   return socket_manager_.sendObject("prefill_result", message);
 }
 
+bool InterServerService::sendPrefillCancel(uint32_t taskId) {
+  if (!enabled_) {
+    return false;
+  }
+
+  CancelPrefillMessage message;
+  message.task_id = taskId;
+  return socket_manager_.sendObject(tags::CANCEL_PREFILL, message);
+}
+
 bool InterServerService::sendHealthCheck(const std::string& serverId,
                                          double cpuUsage, double memoryUsage,
                                          int activeTasks) {
@@ -160,6 +170,10 @@ bool InterServerService::sendHealthCheck(const std::string& serverId,
 
 void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
   prefill_requested_callback_ = callback;
+}
+
+void InterServerService::onPrefillCancelled(PrefillCancelCallback callback) {
+  prefill_cancel_callback_ = callback;
 }
 
 void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
@@ -195,6 +209,15 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
+        }
+      });
+
+  socket_manager_.registerHandler<CancelPrefillMessage>(
+      tags::CANCEL_PREFILL, [this](const CancelPrefillMessage& message) {
+        TT_LOG_INFO("[InterServerService] Received prefill cancel: {}",
+                    message.task_id);
+        if (prefill_cancel_callback_) {
+          prefill_cancel_callback_(message);
         }
       });
 

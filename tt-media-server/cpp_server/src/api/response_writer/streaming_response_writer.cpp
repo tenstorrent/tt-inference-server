@@ -136,6 +136,9 @@ void StreamingResponseWriter::abort() {
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
+    if (params.onDisaggregatedAbort) {
+      params.onDisaggregatedAbort(params.taskId);
+    }
     if (params.onSessionRelease) params.onSessionRelease();
   }
 }
