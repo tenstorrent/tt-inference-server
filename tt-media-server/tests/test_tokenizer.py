@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """Tests for tokenizer API endpoints."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
-
 from config.constants import SupportedModels
 from domain.detokenize_request import DetokenizeRequest
 from domain.tokenize_request import TokenizeCompletionRequest
+from fastapi import HTTPException
 from open_ai_api.tokenizer import _resolve_model, detokenize, tokenize
 
 

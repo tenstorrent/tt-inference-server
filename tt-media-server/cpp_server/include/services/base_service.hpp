@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <limits>
-#include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
-#include "utils/logger.hpp"
-#include "worker/worker_info.hpp"
+#include "runtime/worker/worker_info.hpp"
 
 namespace tt::services {
 
@@ -22,10 +21,10 @@ class QueueFullException : public std::runtime_error {
 };
 
 struct SystemStatus {
-  bool model_ready;
-  size_t queue_size;
-  size_t max_queue_size;
-  std::vector<tt::worker::WorkerInfo> worker_info;
+  bool modelReady;
+  size_t queueSize;
+  size_t maxQueueSize;
+  std::vector<tt::worker::WorkerInfo> workerInfo;
 };
 
 class IService {
@@ -35,6 +34,7 @@ class IService {
   virtual void stop() = 0;
   virtual bool isModelReady() const = 0;
   virtual SystemStatus getSystemStatus() const = 0;
+  virtual std::string runnerInUse() const { return ""; }
 };
 
 template <std::derived_from<domain::BaseRequest> RequestType,
@@ -52,10 +52,10 @@ class BaseService : public IService {
 
   SystemStatus getSystemStatus() const override {
     SystemStatus status;
-    status.model_ready = isModelReady();
-    status.queue_size = currentQueueSize();
-    status.max_queue_size = max_queue_size_;
-    status.worker_info = getWorkerInfo();
+    status.modelReady = isModelReady();
+    status.queueSize = currentQueueSize();
+    status.maxQueueSize = maxQueueSize;
+    status.workerInfo = getWorkerInfo();
     return status;
   }
 
@@ -64,16 +64,18 @@ class BaseService : public IService {
  protected:
   virtual ResponseType processRequest(RequestType request) = 0;
   virtual void preProcess(RequestType& /*request*/) const {
-    if (currentQueueSize() >= max_queue_size_) throw QueueFullException{};
+    if (currentQueueSize() >= maxQueueSize) throw QueueFullException{};
   }
-  virtual void postProcess(ResponseType& response) const = 0;
-  virtual size_t currentQueueSize() const = 0;
+  virtual void postProcess(ResponseType& /*response*/) const {}
+  /** Override when the service has its own queue; default is no back-pressure.
+   */
+  virtual size_t currentQueueSize() const { return 0; }
 
   virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
     return {};
   }
 
-  size_t max_queue_size_ = std::numeric_limits<size_t>::max();
+  size_t maxQueueSize = std::numeric_limits<size_t>::max();
 };
 
 }  // namespace tt::services

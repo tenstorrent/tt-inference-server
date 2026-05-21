@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import base64
@@ -143,56 +143,6 @@ class VisionEvalsTest(BaseTest):
             raise ValueError("Metadata must be a list of sample descriptors.")
 
         return metadata
-
-    def _wait_for_server_ready(
-        self,
-        service_port: int = 8000,
-        max_attempts: int = 230,
-        retry_delay: int = 10,
-    ) -> bool:
-        """Wait for server to be ready using simple HTTP health check.
-
-        Args:
-            service_port: Port where the server is running.
-            max_attempts: Maximum number of retry attempts.
-            retry_delay: Seconds to wait between retries.
-
-        Returns:
-            bool: True if server is ready, False otherwise.
-        """
-        logger.info("Waiting for server to be ready...")
-        health_url = f"http://localhost:{service_port}/tt-liveness"
-        logger.info("Health URL: %s", health_url)
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                response = requests.get(health_url, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("status") == "alive" and data.get("model_ready"):
-                        logger.info(
-                            "Server is ready after %s attempt(s)",
-                            attempt,
-                        )
-                        return True
-                logger.info(
-                    "Server not ready (attempt %s/%s), retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    retry_delay,
-                )
-            except requests.exceptions.RequestException as e:
-                logger.info(
-                    "Health check failed (attempt %s/%s): %s, retrying in %ss...",
-                    attempt,
-                    max_attempts,
-                    e,
-                    retry_delay,
-                )
-            time.sleep(retry_delay)
-
-        logger.error("Server health check failed after %s attempts", max_attempts)
-        return False
 
     def _replay_samples(
         self,
@@ -521,7 +471,7 @@ class VisionEvalsTest(BaseTest):
         accuracy_summary: dict[str, float] = {}
 
         # Wait for server to be ready (assumes server is already running)
-        if not self._wait_for_server_ready():
+        if not self.wait_for_server_ready():
             raise RuntimeError("Server health check failed - server not ready")
 
         for model in models:

@@ -1,18 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
-import io
-import os
 import csv
-import urllib.request
-import statistics
+import io
 import json
 import logging
+import os
+import statistics
+import urllib.request
+
 from PIL import Image
+
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.fid_score import calculate_fid_score
+from workflows.workflow_types import ReportCheckTypes
 
 COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d1156c23965172ae56eacdd8372f8897eb771/text_to_image/coco2014/captions/captions_source.tsv"
 
@@ -136,7 +139,9 @@ def calculate_metrics(status_list: list, image_resolution: tuple = (1024, 1024))
     logger.info(f"Best 5 CLIP scores:  {[(i, f'{s:.2f}') for i, s in best_5]}")
 
     average_clip_score = sum(clip_scores) / len(clip_scores)
-    deviation_clip_score = statistics.stdev(clip_scores)
+    deviation_clip_score = (
+        statistics.stdev(clip_scores) if len(clip_scores) >= 2 else 0.0
+    )
     fid_score = calculate_fid_score(images, str(COCO_STATISTICS_PATH))
 
     logger.info(f"FID score: {fid_score}")
@@ -153,19 +158,17 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts, model_n
     )
     if num_prompts not in set([100, 5000]):
         logger.warning(
-            f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check. Returning UNDEFINED (0)."
+            f"⚠️ Number of prompts {num_prompts} is not supported for accuracy check. Returning N/A."
         )
-        return 0
+        return ReportCheckTypes.NA
 
-    # Load reference data
     reference_data = _load_accuracy_reference()
 
-    # Check if model exists in reference data
     if model_name not in reference_data:
         logger.warning(
-            f"⚠️ Model '{model_name}' not found in accuracy reference data. Returning UNDEFINED (0)."
+            f"⚠️ Model '{model_name}' not found in accuracy reference data. Returning N/A."
         )
-        return 0
+        return ReportCheckTypes.NA
 
     # Extract the accuracy ranges for the specific model and prompt count
     accuracy_data = reference_data[model_name]["accuracy"]
@@ -195,10 +198,8 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts, model_n
     logger.info(f"FID check:  {fid_status}")
     logger.info(f"CLIP check: {clip_status}")
 
-    result = 2 if fid_approx and clip_approx else 3
-    logger.info(
-        f"Accuracy check result: {result} ({'PASS' if result == 2 else 'FAIL'})"
-    )
+    result = ReportCheckTypes.from_result(bool(fid_approx and clip_approx))
+    logger.info(f"Accuracy check result: {int(result)} ({result.name})")
     return result
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 
 import pytest
@@ -37,7 +37,7 @@ def mock_audio_performance_targets():
         "tolerance": 0.05,
         "max_concurrency": 1,
         "num_eval_runs": 2,
-        "task_type": "audio",
+        "task_type": "asr",
     }
 
 
@@ -73,7 +73,7 @@ def mock_audio_performance_targets():
                 "tolerance": 0.05,
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
             },
         ),
     ],

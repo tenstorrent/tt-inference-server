@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #!/usr/bin/env python3
 # filepath: /localdev/idjuric/tt-inference-server/tt-media-server/scripts/download_sdxl_weights.py

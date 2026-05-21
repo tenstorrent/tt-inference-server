@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
@@ -15,6 +15,7 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
+from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
@@ -50,6 +51,14 @@ class Scheduler:
             )
 
         self.error_queue = Queue()
+        # Cancellation channel: when a FastAPI handler is cancelled or errored
+        # out mid-flight (client read-timeout, asyncio.CancelledError, etc.),
+        # base_service.process() pushes the request's task_id here so the worker
+        # can abort the in-flight asyncio task in vLLM and free the slot it was
+        # holding. Without this, the engine continues generating until natural
+        # completion, starving sibling sub-requests waiting on max_num_seqs.
+        # See #3533 (Problem 1).
+        self.cancel_queue = Queue()
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -69,6 +78,20 @@ class Scheduler:
         self.listener_task_ref = None
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
+
+    def cancel_task(self, task_id: str) -> None:
+        """Signal the worker that the given task_id should be aborted.
+
+        Best-effort and non-blocking: the worker may already have finished the
+        task (in which case the signal is a no-op), or the cancel_queue may be
+        unavailable during shutdown. Either way we don't raise.
+        """
+        if not task_id:
+            return
+        try:
+            self.cancel_queue.put(task_id, block=False)
+        except Exception:
+            pass
 
     def process_request(self, request):
         try:
@@ -99,6 +122,20 @@ class Scheduler:
     def check_is_model_ready(self) -> bool:
         if self.is_ready is not True:
             raise HTTPException(405, "Model is not ready")
+
+        # Check if at least one worker is ready
+        ready_workers = [
+            worker_id
+            for worker_id, info in self.worker_info.items()
+            if info.get("is_ready", False)
+        ]
+
+        if not ready_workers:
+            raise HTTPException(
+                503,
+                "Service unavailable: No workers available.",
+            )
+
         return True
 
     @log_execution_time("Scheduler - starting workers")
@@ -173,6 +210,7 @@ class Scheduler:
                 if self.settings.queue_for_multiprocessing
                 == QueueType.MemoryQueue.value
                 else None,
+                self.cancel_queue,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -203,15 +241,19 @@ class Scheduler:
         )
 
         # Clean up old process if it exists
+        old_pid = None
         if worker_id in self.worker_info:
             try:
                 old_process = self.worker_info[worker_id]["process"]
+                old_pid = old_process.pid
                 if old_process.is_alive():
                     old_process.terminate()
                     old_process.join(timeout=5.0)
             except Exception as e:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
                 self.logger.info(f"Old worker {worker_id} process does not exist")
+
+        mark_worker_dead(old_pid)
 
         # Use same queue index so worker reuses its result queue
         existing_queue_index = old_info.get("queue_index")
@@ -366,6 +408,7 @@ class Scheduler:
 
             for i, worker_element in self.worker_info.items():
                 worker = worker_element["process"]
+                worker_pid = worker.pid
                 if worker.is_alive():
                     worker.join(timeout=10.0)
                     if worker.is_alive():
@@ -374,6 +417,7 @@ class Scheduler:
                         worker.join(timeout=2.0)
                         if worker.is_alive():
                             worker.kill()
+                mark_worker_dead(worker_pid)
 
             self.worker_info = {}
 
@@ -389,12 +433,19 @@ class Scheduler:
 
                 self.error_queue.put((None, None, None), timeout=1.0)
                 self.warmup_signals_queue.put(None, timeout=1.0)
+                # Wake the worker's cancel_listener so it can exit cleanly.
+                self.cancel_queue.put(None, timeout=1.0)
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
             # Close all worker queues
             self._close_queues(
-                [self.task_queue, self.warmup_signals_queue, self.error_queue]
+                [
+                    self.task_queue,
+                    self.warmup_signals_queue,
+                    self.error_queue,
+                    self.cancel_queue,
+                ]
                 + list(self.result_queues_by_worker.values())
             )
 
@@ -497,6 +548,8 @@ class Scheduler:
                             self.worker_info[worker_id]["restart_count"] = (
                                 self.worker_info[worker_id].get("restart_count", 0) + 1
                             )
+                            # set worker not ready
+                            self.worker_info[worker_id]["is_ready"] = False
                     else:
                         self.logger.error(
                             f"Worker {worker_id} has died too many times ({restart_count}), restart did not help"

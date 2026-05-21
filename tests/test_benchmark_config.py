@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import importlib
 import sys
@@ -86,7 +86,7 @@ def test_benchmark_configs_selected_models_print_sweeps(
 
     config = benchmark_config.BENCHMARK_CONFIGS[model_id]
     assert config.model_id == model_id
-    assert len(config.tasks) == 2  # perf_reference + sweeps
+    assert len(config.tasks) == 3  # perf_reference + sweeps + structured_output
 
     perf_ref_task = config.tasks[0]
     sweep_task = config.tasks[1]

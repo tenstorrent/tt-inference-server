@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from typing import List
 import os
+from typing import List
 
 import torch
 import torch_xla
 import torch_xla.runtime as xr
+from config.constants import DatasetLoaders
+from domain.completion_request import CompletionRequest
+from domain.completion_response import CompletionOutput, CompletionResult
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
-
-from domain.completion_request import CompletionRequest
-from domain.completion_response import CompletionOutput, CompletionResult
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
+from utils.dataset_loaders.alpaca import alpaca_utils
+from utils.dataset_loaders.sst2 import sst2_utils
 from utils.decorators import log_execution_time
 
 
@@ -23,6 +25,9 @@ class LoraSingleChipRunner(BaseDeviceRunner):
     MAX_PROMPT_LENGTH: int = 32
     MAX_CACHE_LENGTH: int = 128
     BATCH_SIZE: int = 1
+    WARMUP_PROMPT: str = "warmup"
+    # prefill + 1 decode step: materializes both compile graphs
+    WARMUP_TOKENS: int = 2
 
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
@@ -33,54 +38,83 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._tokenizer = None
 
     async def warmup(self):
-        # single chip setup
         xr.set_device_type("TT")
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
+
+        # Preload adapter and compile model if adapter is set
+        if self.settings.lora_adapter:
+            self.logger.info(
+                f"Preloading adapter from settings: {self.settings.lora_adapter}"
+            )
+            adapter_info = resolve_adapter(self.settings.lora_adapter)
+            self._load_adapter(adapter_info)
+            self._compile_model()
+            self.logger.info("Running warmup decode to trigger compilation")
+            self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
+            self.logger.info("Warmup decode completed")
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
         self._validate_request(request)
 
-        if request.adapter:
-            adapter_info = resolve_adapter(request.adapter)
-            self._load_adapter(adapter_info)
+        # Handle adapter loading and compilation
+        if self.settings.lora_adapter:
+            if request.adapter and request.adapter != self.settings.lora_adapter:
+                self.logger.warning(
+                    f"Ignoring request.adapter={request.adapter!r}; runner is "
+                    f"pinned to settings.lora_adapter={self.settings.lora_adapter!r}"
+                )
         else:
-            base_name = request.model or self.settings.model_weights_path
-            self._load_base_model(base_name)
-
-        compiled_model = self._get_compiled_model()
+            if request.adapter:
+                self._load_adapter(resolve_adapter(request.adapter))
+            else:
+                self._unload_adapter()
+                self._load_base_model(request.model or self.settings.model_weights_path)
+            self._compile_model()
 
         prompt = (
             request.prompt
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
-
-        input_args = self._construct_inputs(
-            [prompt], compiled_model.config, self.BATCH_SIZE, self.MAX_CACHE_LENGTH
+        # wrap prompt in dataset template if applicable
+        dataset_name = (
+            self._active_adapter.dataset_loader if self._active_adapter else None
         )
-        max_tokens = min(
-            request.max_tokens or 16,
-            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
-        )
-        if max_tokens < 1:
-            raise ValueError(
-                f"Prompt fills the entire context window ({self.MAX_CACHE_LENGTH} tokens), no room to generate"
+        if dataset_name == DatasetLoaders.SST2.value:
+            self.logger.info("Using SST2 template for prompt")
+            prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
+        elif dataset_name == DatasetLoaders.ALPACA.value:
+            self.logger.info("Using Alpaca template for prompt")
+            prompt = alpaca_utils.PROMPT_TEMPLATE_NO_INPUT.substitute(
+                instruction=prompt
             )
-        input_args = self._transfer_inputs_to_device(input_args, self.device)
+        else:
+            self.logger.info("Using no template for prompt")
 
-        output_tokens = self._run_generate(
-            compiled_model, input_args, self.device, max_tokens
-        )
+        text = "".join(self._generate(prompt, request.max_tokens or 16))
         return [
             CompletionOutput(
                 type="final_result",
-                data=CompletionResult(text="".join(output_tokens)),
+                data=CompletionResult(text=text),
             )
         ]
+
+    async def _run_async(self, requests):
+        async def _stream():
+            # Run on the worker thread (same as warmup and non-streaming run). Avoid
+            # asyncio.to_thread so XLA/TT compile cache matches across requests.
+            results = self.run(requests)
+            final = results[0]
+            yield CompletionOutput(
+                type="streaming_chunk", data=CompletionResult(text=final["data"].text)
+            )
+            yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
+
+        return _stream()
 
     def _validate_request(self, request: CompletionRequest):
         if isinstance(request.prompt, str) and not request.prompt.strip():
@@ -95,17 +129,26 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}"
             )
-            if isinstance(self._active_model, PeftModel):
-                self._base_model = self._active_model.unload()
-                if hasattr(self._base_model, "peft_config"):
-                    delattr(self._base_model, "peft_config")
+            self._unload_adapter()
         self._load_base_model(adapter_info.base_model_name)
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._active_model = PeftModel.from_pretrained(
             self._base_model, adapter_info.adapter_path
         )
         self._active_adapter = adapter_info
         self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+
+    def _unload_adapter(self):
+        if self._active_adapter is None:
+            return
+        self.logger.info(f"Unloading adapter: {self._active_adapter.adapter_path}")
+        if isinstance(self._active_model, PeftModel):
+            self._base_model = self._active_model.unload()
+            if hasattr(self._base_model, "peft_config"):
+                delattr(self._base_model, "peft_config")
+        self._active_model = self._base_model
+        self._active_adapter = None
+        self._discard_compiled_model()
 
     def _load_base_model(self, model_name: str):
         if not model_name:
@@ -118,7 +161,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching base model: {self._base_model.name_or_path} -> {model_name}"
             )
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._base_model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=torch.bfloat16, use_cache=True
         )
@@ -128,13 +171,13 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
 
-    def _teardown_compiled(self):
+    def _discard_compiled_model(self):
         if self._compiled_model is not None:
             del self._compiled_model
             self._compiled_model = None
             torch._dynamo.reset()
 
-    def _get_compiled_model(self):
+    def _compile_model(self):
         if self._compiled_model is None:
             self._active_model.eval()
             self._active_model.to(self.device)
@@ -219,7 +262,28 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         input_args["attention_mask"] = input_args["attention_mask"].to(device)
         return input_args
 
-    def _run_generate(
+    def _generate(self, prompt: str, max_tokens: int) -> List[str]:
+        input_args = self._construct_inputs(
+            [prompt],
+            self._compiled_model.config,
+            self.BATCH_SIZE,
+            self.MAX_CACHE_LENGTH,
+        )
+        tokens_to_generate = min(
+            max_tokens,
+            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
+        )
+        if tokens_to_generate < 1:
+            raise ValueError(
+                f"Prompt fills the entire context window "
+                f"({self.MAX_CACHE_LENGTH} tokens), no room to generate"
+            )
+        input_args = self._transfer_inputs_to_device(input_args, self.device)
+        return self._greedy_decode_loop(
+            self._compiled_model, input_args, self.device, tokens_to_generate
+        )
+
+    def _greedy_decode_loop(
         self,
         compiled_model: torch.nn.Module,
         input_args: dict,
@@ -246,15 +310,16 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
+
+                # Check for EOS token and early exit without appending it
+                if torch.all(next_token_id == self._tokenizer.eos_token_id):
+                    return output_tokens[0]
+
                 output_text = [
                     self._tokenizer.decode(next_token_id[i]) for i in range(num_users)
                 ]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
-
-                # Check for EOS token and early exit
-                if torch.all(next_token_id == self._tokenizer.eos_token_id):
-                    return output_tokens[0]
 
                 # Update inputs for next iteration
                 input_args["input_ids"] = next_token_id.unsqueeze(-1).to(device)

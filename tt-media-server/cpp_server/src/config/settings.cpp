@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "config/settings.hpp"
 
+#include <unistd.h>
+
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "config/defaults.hpp"
@@ -46,6 +55,19 @@ unsigned long envUlong(const char* name, unsigned long defaultValue) {
   } catch (const std::exception&) {
     return defaultValue;
   }
+}
+
+bool envBool(const char* name, bool defaultValue) {
+  const char* v = std::getenv(name);
+  if (!v || !*v) return defaultValue;
+  const std::string lower = toLower(v);
+  if (lower == "1" || lower == "true" || lower == "yes" || lower == "on") {
+    return true;
+  }
+  if (lower == "0" || lower == "false" || lower == "no" || lower == "off") {
+    return false;
+  }
+  return defaultValue;
 }
 
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
@@ -93,7 +115,9 @@ ModelService modelService() {
 
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
-bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
+bool isLlmService() { return modelService() == ModelService::LLM; }
+
+bool isImageService() { return modelService() == ModelService::IMAGE; }
 
 std::string runnerType() { return toString(modelService()); }
 
@@ -154,15 +178,10 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
-std::string h2dSocketId() {
+std::string blazeSocketDescriptorPrefix() {
   static const std::string cached =
-      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
-  return cached;
-}
-
-std::string d2hSocketId() {
-  static const std::string cached =
-      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
+                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
   return cached;
 }
 
@@ -171,8 +190,18 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t pmMaxUsers() {
+size_t dsMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+}
+
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
+unsigned outputHangTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
 bool useDeepseekMdFormat() {
@@ -206,6 +235,36 @@ std::string ttMemoryResultQueueName() {
   return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
 }
 
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
+size_t resultQueueCapacity() {
+  return envUlong("RESULT_QUEUE_CAPACITY", defaults::RESULT_QUEUE_CAPACITY);
+}
+
+size_t cancelQueueCapacity() {
+  return envUlong("CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY);
+}
+
+size_t memoryQueueCapacity() {
+  return envUlong("MEMORY_QUEUE_CAPACITY", defaults::MEMORY_QUEUE_CAPACITY);
+}
+
+int shmSlots() {
+  return static_cast<int>(envUlong("SHM_SLOTS", defaults::SHM_SLOTS));
+}
+
+int prefillMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("PREFILL_MAX_TOKEN_IDS", defaults::PREFILL_MAX_TOKEN_IDS));
+}
+
+int decodeMaxTokenIds() {
+  return static_cast<int>(
+      envUlong("DECODE_MAX_TOKEN_IDS", defaults::DECODE_MAX_TOKEN_IDS));
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -213,10 +272,7 @@ LLMConfig llmEngineConfig() {
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "pipeline") {
-      cfg.runner_type = ModelRunnerType::PIPELINE;
-      cfg.max_in_flight_count = 1;
-    } else if (backend == "prefill") {
+    if (backend == "prefill") {
       cfg.runner_type = ModelRunnerType::PREFILL;
       cfg.max_in_flight_count = 1;
     } else if (backend == "llama") {
@@ -238,9 +294,116 @@ LLMConfig llmEngineConfig() {
   return cached;
 }
 
+namespace {
+
+/** Parse "WxH" (case-insensitive 'x'); std::nullopt if malformed or either
+ *  dimension is non-positive. Strict: rejects trailing junk like
+ * "1024x1024foo". */
+std::optional<std::pair<size_t, size_t>> parseResolution(const std::string& s) {
+  std::istringstream ss(s);
+  long long w = 0, h = 0;
+  char sep = 0;
+  ss >> w >> sep >> h;
+  if (!ss || w <= 0 || h <= 0 || (sep != 'x' && sep != 'X')) {
+    return std::nullopt;
+  }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    return std::nullopt;
+  }
+  return std::make_pair(static_cast<size_t>(w), static_cast<size_t>(h));
+}
+
+/** Parse "1,1" / "2,4" -> {1,1} / {2,4}. Empty/whitespace -> {1,1}. Rejects
+ *  single-axis input ("8") with a clear error: silently promoting to {8, 1}
+ *  would flip tensor parallelism on without the operator asking for it.
+ *  Rejects more than 2 dims and trailing junk: the rest of the code indexes
+ *  [0]/[1] and treats the mesh as (rows, cols). */
+std::vector<size_t> parseMeshShape(const std::string& s) {
+  std::vector<size_t> out;
+  std::istringstream ss(s);
+  size_t v = 0;
+  while (ss >> v) {
+    out.push_back(v);
+    if (ss.peek() == ',') ss.ignore();
+  }
+  ss >> std::ws;
+  if (!ss.eof()) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE has trailing junk after parsing; "
+        "expected 'rows,cols', got '" +
+        s + "'");
+  }
+  if (out.empty()) return {1, 1};
+  if (out.size() == 1) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 'rows,cols' (e.g. '1,1' for "
+        "single device, '2,4' for 2x4 mesh); got '" +
+        s + "'");
+  }
+  if (out.size() > 2) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE must be 2-D 'rows,cols'; got '" + s +
+        "' with " + std::to_string(out.size()) + " dimensions");
+  }
+  if (out[0] == 0 || out[1] == 0) {
+    throw std::runtime_error(
+        "[Config] DEVICE_MESH_SHAPE dimensions must be >= 1; got '" + s + "'");
+  }
+  return out;
+}
+
+/** Shared reader for every in-process media runner config. */
+void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
+  cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
+  cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
+  cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
+  cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
+      envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
+  cfg.visible_devices = visibleDevicesForWorker(0);
+}
+
+}  // namespace
+
+ImageConfig imageEngineConfig() {
+  static const ImageConfig cached = [] {
+    ImageConfig cfg;
+    const std::string runner =
+        envStringLower("MODEL_RUNNER_TYPE", "tt_sdxl_generate");
+    if (runner == "tt_sdxl_generate") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_GENERATE;
+    } else if (runner == "tt_sdxl_image_to_image") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE;
+    } else if (runner == "tt_sdxl_edit") {
+      cfg.runner_type = ModelRunnerType::TT_SDXL_EDIT;
+    } else {
+      throw std::runtime_error(
+          "[Config] Unknown image MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_sdxl_generate, tt_sdxl_image_to_image, "
+          "tt_sdxl_edit");
+    }
+
+    readMediaRunnerConfig(cfg);
+
+    if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
+      cfg.image_width = wh->first;
+      cfg.image_height = wh->second;
+    }
+    return cfg;
+  }();
+  return cached;
+}
+
 ModelType modelType() {
   static const ModelType cached = modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  return cached;
+}
+
+Model model() {
+  static const Model cached =
+      modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
 }
 
@@ -284,15 +447,63 @@ uint16_t socketPort() {
   return cached;
 }
 
+std::string socketTransport() {
+  static const std::string cached =
+      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
+  return cached;
+}
+
+bool usePrefillGateway() {
+  return envUlong("USE_PREFILL_GATEWAY",
+                  defaults::USE_PREFILL_GATEWAY ? 1UL : 0UL) != 0UL;
+}
+
+namespace {
+std::string getHostname() {
+  std::string host(256, '\0');
+  if (::gethostname(host.data(), host.size()) != 0) {
+    return "unknown-host";
+  }
+  host.resize(std::strlen(host.c_str()));
+  return host;
+}
+}  // namespace
+
+std::string prefillServerId() {
+  static const std::string cached = [] {
+    std::string v = envString("PREFILL_SERVER_ID", defaults::PREFILL_SERVER_ID);
+    if (!v.empty()) return v;
+    return getHostname() + ":" + std::to_string(socketPort());
+  }();
+  return cached;
+}
+
+uint32_t prefillMaxInFlight() {
+  return static_cast<uint32_t>(
+      envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));
+}
+
 size_t maxQueueSize() {
   static const size_t cached =
       static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
   return cached;
 }
 
+namespace {
+std::atomic<size_t> maxSessionsCountOverride{0};
+}
+
 size_t maxSessionsCount() {
+  size_t overrideVal = maxSessionsCountOverride.load(std::memory_order_relaxed);
+  if (overrideVal > 0) {
+    return overrideVal;
+  }
   return static_cast<size_t>(
       envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+void setMaxSessionsCount(size_t count) {
+  maxSessionsCountOverride.store(count, std::memory_order_relaxed);
 }
 
 unsigned sessionEvictionRate() {
@@ -311,6 +522,16 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+size_t maxContextLength() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
+  return cached;
+}
+
+bool useFastMode() {
+  return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
@@ -327,6 +548,11 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

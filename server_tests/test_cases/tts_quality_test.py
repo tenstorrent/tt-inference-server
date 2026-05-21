@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """TTS Quality Test using Word Error Rate (WER).
 
@@ -20,6 +20,7 @@ from pathlib import Path
 
 import aiohttp
 import numpy as np
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class TTSQualityTest(BaseTest):
         sample_count = self.targets.get("sample_count", 10)
         dataset_split = self.targets.get("dataset_split", "test")
         wer_threshold = self.targets.get("wer_threshold", 0.20)  # 20% WER
-        batch_size = self.targets.get("num_of_devices", 1)
+        batch_size = self._get_num_concurrent_requests(default=1)
 
         logger.info(
             f"TTS Quality Test: samples={sample_count}, wer_threshold={wer_threshold * 100:.0f}%"
@@ -117,7 +118,7 @@ class TTSQualityTest(BaseTest):
     def _load_whisper_model(self):
         """Load Whisper model for speech recognition."""
         try:
-            from transformers import WhisperProcessor, WhisperForConditionalGeneration
+            from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
             model_name = "openai/whisper-base"
             logger.info(f"Loading Whisper model: {model_name}")
@@ -335,8 +336,9 @@ class TTSQualityTest(BaseTest):
             raise ValueError("Sample count must be positive.")
 
         try:
-            from datasets import load_dataset
             import itertools
+
+            from datasets import load_dataset
 
             dataset = load_dataset(
                 "blabble-io/libritts_r", "clean", split=split, streaming=True
