@@ -3,18 +3,17 @@
 
 #pragma once
 
-#include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <functional>
 #include <map>
 #include <mutex>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "sockets/socket_transport.hpp"
+#include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -88,16 +87,23 @@ class SocketManager {
   std::string getStatus() const;
 
   /**
-   * @brief Set callback for connection lost events
-   * @param callback Function to call when connection is lost
+   * @brief Set callback for connection lost events.
    */
   void setConnectionLostCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
+   * Must be called before start().
+   */
+  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
 
  private:
   void messageLoop();
   void handleIncomingMessage(const std::vector<uint8_t>& data);
+  std::function<void(const std::vector<uint8_t>&)> getHandler(
+      const std::string& messageType) const;
 
-  SocketTransport transport_;
+  std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
   std::thread messageThread_;
@@ -105,28 +111,26 @@ class SocketManager {
   mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
       handlers_;
+
+  std::function<void()> pendingConnectionLostCallback_;
+  bool reconnectBackoffSet_{false};
+  uint32_t reconnectInitialDelayMs_{0};
+  uint32_t reconnectMaxDelayMs_{0};
+
+  void applyPendingSettings();
 };
 
 // Template implementations
 
 template <typename T>
 bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!transport_.isConnected()) {
+  if (!transport_) {
     return false;
   }
 
   try {
-    std::ostringstream oss;
-    {
-      cereal::BinaryOutputArchive archive(oss);
-      archive(messageType);
-      obj.write(archive);
-    }
-
-    std::string serialized = oss.str();
-    std::vector<uint8_t> data(serialized.begin(), serialized.end());
-
-    return transport_.sendRawData(data);
+    std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
+    return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -140,14 +144,7 @@ void SocketManager::registerHandler(const std::string& messageType,
 
   handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {
-      std::string serialized(data.begin(), data.end());
-      std::istringstream iss(serialized);
-
-      cereal::BinaryInputArchive archive(iss);
-      std::string msgType;
-      archive(msgType);
-      T payload = T::read(archive);
-
+      T payload = wire::deserializePayload<T>(data);
       handler(payload);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());

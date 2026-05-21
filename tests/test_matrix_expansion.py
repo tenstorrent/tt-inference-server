@@ -920,21 +920,13 @@ class TestTtsMatrixExpansion:
 
 
 class TestImageMatrixExpansion:
-    """Validate that the migrated image.json produces the same suites as before."""
+    """Validate image.json expansion.
+
+    SDXL ownership moved to v2; SDXL-specific coverage now lives in
+    tt-inference-server-v2/tests/test_module/test_matrix_expansion.py.
+    """
 
     ORIGINAL_IMAGE_IDS = {
-        "sdxl-n150",
-        "sdxl-t3k",
-        "sdxl-galaxy",
-        "sdxl-n300",
-        "sdxl-p150x8",
-        "sdxl-p300x2",
-        "sdxl-img2img-n150",
-        "sdxl-img2img-t3k",
-        "sdxl-img2img-galaxy",
-        "sdxl-inpaint-n150",
-        "sdxl-inpaint-t3k",
-        "sdxl-inpaint-galaxy",
         "sd35-t3k",
         "sd35-galaxy",
         "flux-dev-t3k",
@@ -958,64 +950,12 @@ class TestImageMatrixExpansion:
 
     def test_image_suite_count(self):
         suites = load_suite_files_by_category("image")
-        assert len(suites) == 31
+        assert len(suites) == 19
 
     def test_image_suite_ids(self):
         suites = load_suite_files_by_category("image")
         ids = {s["id"] for s in suites}
         assert ids == self.ORIGINAL_IMAGE_IDS
-
-    def test_sdxl_full_lora_suites(self):
-        """n150, t3k, galaxy should have 7 test cases including LoRA tests."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["sdxl-n150", "sdxl-t3k", "sdxl-galaxy"]:
-            suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 7, f"{suite_id}: expected 7 test cases"
-            templates = [tc["template"] for tc in suite["test_cases"]]
-            assert "ImageGenerationEvalsTest" in templates
-            assert "ImageGenerationLoraLoadTest" in templates
-
-    def test_sdxl_galaxy_timing_differs(self):
-        """Galaxy should have different LoadTest timing (11/15/25 vs 10/14/23)."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        galaxy = suite_map["sdxl-galaxy"]
-        load_tests = [
-            tc
-            for tc in galaxy["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [11, 15, 25]
-
-        n150 = suite_map["sdxl-n150"]
-        load_tests = [
-            tc
-            for tc in n150["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [10, 14, 23]
-
-    def test_sdxl_reduced_suites(self):
-        """n300, p150x8, p300x2 should have 4 test cases (no LoRA)."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["sdxl-n300", "sdxl-p150x8", "sdxl-p300x2"]:
-            suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 4, f"{suite_id}: expected 4 test cases"
-
-    def test_sdxl_reduced_num_devices(self):
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        assert suite_map["sdxl-n300"]["num_of_devices"] == 1
-        assert suite_map["sdxl-p150x8"]["num_of_devices"] == 4
-        assert suite_map["sdxl-p300x2"]["num_of_devices"] == 2
 
     def test_flux_dev_t3k_timing(self):
         """flux-dev on t3k has unique timing (16/23/36)."""
@@ -1112,7 +1052,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 69
+        assert len(all_suites) == 57
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()

@@ -250,3 +250,21 @@ class BaseMediaStrategy(ABC):
         if not num_requests or not wall_clock_seconds or wall_clock_seconds <= 0:
             return None
         return num_requests / wall_clock_seconds
+
+    @staticmethod
+    def _calculate_steps_per_second(
+        total_steps: int,
+        total_elapsed_seconds: float,
+    ) -> float:
+        """Aggregate inference rate: total steps divided by total time spent.
+
+        Uses sum-of-totals (the model's true average inference rate during
+        request processing) rather than mean-of-per-request-rates, which
+        weights short and long requests equally and inflates the metric
+        whenever fast warm-up requests are present.
+
+        Returns ``0.0`` when no work was performed or no time elapsed.
+        """
+        if total_steps <= 0 or total_elapsed_seconds <= 0:
+            return 0.0
+        return total_steps / total_elapsed_seconds

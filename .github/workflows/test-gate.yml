@@ -13,6 +13,7 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      prefill-gateway: ${{ steps.filter.outputs.prefill_gateway }}
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,8 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+            prefill_gateway:
+              - 'tt-media-server/prefill_gateway/**'
             media_server_deps:
               - 'tt-media-server/requirements.txt'
               - 'tt-media-server/uv-overrides.txt'
@@ -570,6 +573,40 @@ jobs:
           cd cpp_server
           ./build.sh --clang-tidy --blaze
 
+  prefill-gateway-format-check:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
+    name: Prefill Gateway Format Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install clang-format-20
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends curl
+          curl -sSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 20
+          sudo apt-get install -y --no-install-recommends clang-format-20
+
+      - name: C++ format check (.clang-format)
+        run: |
+          if ! find tt-media-server/prefill_gateway/include \
+                    tt-media-server/prefill_gateway/src \
+                    tt-media-server/prefill_gateway/tests \
+               -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
+               | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
+            echo '::error::Some prefill_gateway files are not formatted per .clang-format.'
+            echo 'To fix locally, run from repo root:'
+            echo '  find tt-media-server/prefill_gateway/include tt-media-server/prefill_gateway/src tt-media-server/prefill_gateway/tests -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          fi
+
   cpp-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -1029,12 +1066,12 @@ jobs:
           uv pip install vllm 'transformers<5.6'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
-      # ── Round 1: Plain Decode + Prefill split ────────────────────────
-      - name: Start Decode server (receives HTTP, listens for prefill)
+      # ── Round 1a: TCP Decode + Prefill split ─────────────────────────
+      - name: "[TCP] Start Decode server (direct split)"
         run: |
           cd cpp_server/build
-          NS=r1_decode
-          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          NS=tcp_decode
+          SOCKET_TRANSPORT=tcp LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -1042,8 +1079,8 @@ jobs:
           TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8001 -t 4 > ../../decode_server.log 2>&1 &
-          echo $! > ../../decode_server.pid
+            ./tt_media_server_cpp -p 8001 -t 4 > ../../tcp_decode.log 2>&1 &
+          echo $! > ../../tcp_decode.pid
           cd ../..
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
@@ -1059,11 +1096,11 @@ jobs:
             exit 1
           fi
 
-      - name: Start Prefill server (connects to decode server)
+      - name: "[TCP] Start Prefill server (direct split)"
         run: |
           cd cpp_server/build
-          NS=r1_prefill
-          LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          NS=tcp_prefill
+          SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -1071,8 +1108,8 @@ jobs:
           TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
           TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
           TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill_server.log 2>&1 &
-          echo $! > ../../prefill_server.pid
+            ./tt_media_server_cpp -p 8002 -t 4 > ../../tcp_prefill.log 2>&1 &
+          echo $! > ../../tcp_prefill.pid
           cd ../..
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
@@ -1089,7 +1126,7 @@ jobs:
           fi
           sleep 2
 
-      - name: Run vLLM bench serve against split servers
+      - name: "[TCP] Run vLLM bench serve against split servers"
         env:
           OPENAI_API_KEY: 'your-secret-key'
         run: |
@@ -1104,14 +1141,99 @@ jobs:
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
-            --result-filename "vllm-bench-split-result.json" \
-            2>&1 | tee bench_split_output.txt
+            --result-filename "vllm-bench-split-tcp-result.json" \
+            2>&1 | tee bench_split_tcp_output.txt
 
-      - name: Stop split servers (round 1)
+      - name: "[TCP] Stop split servers"
         if: always()
         run: |
-          [ -f decode_server.pid ] && kill $(cat decode_server.pid) 2>/dev/null || true
-          [ -f prefill_server.pid ] && kill $(cat prefill_server.pid) 2>/dev/null || true
+          [ -f tcp_decode.pid ]  && kill $(cat tcp_decode.pid)  2>/dev/null || true
+          [ -f tcp_prefill.pid ] && kill $(cat tcp_prefill.pid) 2>/dev/null || true
+          sleep 2
+
+      # ── Round 1b: ZMQ Decode + Prefill split ─────────────────────────
+      - name: "[ZMQ] Start Decode server (direct split)"
+        run: |
+          cd cpp_server/build
+          NS=zmq_decode
+          SOCKET_TRANSPORT=zmq LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8001 -t 4 > ../../zmq_decode.log 2>&1 &
+          echo $! > ../../zmq_decode.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8001"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[ZMQ] Start Prefill server (direct split)"
+        run: |
+          cd cpp_server/build
+          NS=zmq_prefill
+          SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8002 -t 4 > ../../zmq_prefill.log 2>&1 &
+          echo $! > ../../zmq_prefill.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8002"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server did not become ready within 30 seconds"
+            exit 1
+          fi
+          sleep 2
+
+      - name: "[ZMQ] Run vLLM bench serve against split servers"
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8001 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-split-zmq-result.json" \
+            2>&1 | tee bench_split_zmq_output.txt
+
+      - name: "[ZMQ] Stop split servers"
+        if: always()
+        run: |
+          [ -f zmq_decode.pid ]  && kill $(cat zmq_decode.pid)  2>/dev/null || true
+          [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
           sleep 2
 
       # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
@@ -1323,8 +1445,11 @@ jobs:
             } >> $GITHUB_STEP_SUMMARY
           }
 
-          check_thresholds "C++ Server Prefill/Decode Split" \
-            "vllm-bench-split-result.json" 10 650
+          check_thresholds "C++ Server Prefill/Decode Split (TCP)" \
+            "vllm-bench-split-tcp-result.json" 10 650
+
+          check_thresholds "C++ Server Prefill/Decode Split (ZMQ)" \
+            "vllm-bench-split-zmq-result.json" 10 650
 
           check_thresholds "C++ Server Prefill/Decode Split (mock_prefill_runner)" \
             "vllm-bench-split-runner-result.json" 10 650
@@ -1339,18 +1464,32 @@ jobs:
       - name: Show server logs
         if: always()
         run: |
-          echo "=== Decode Server Logs (round 1) ==="
-          if [ -f decode_server.log ]; then
-            cat decode_server.log
+          echo "=== Decode Server Logs (TCP round) ==="
+          if [ -f tcp_decode.log ]; then
+            cat tcp_decode.log
           else
-            echo "No decode_server.log file found"
+            echo "No tcp_decode.log file found"
           fi
           echo ""
-          echo "=== Prefill Server Logs (round 1) ==="
-          if [ -f prefill_server.log ]; then
-            cat prefill_server.log
+          echo "=== Prefill Server Logs (TCP round) ==="
+          if [ -f tcp_prefill.log ]; then
+            cat tcp_prefill.log
           else
-            echo "No prefill_server.log file found"
+            echo "No tcp_prefill.log file found"
+          fi
+          echo ""
+          echo "=== Decode Server Logs (ZMQ round) ==="
+          if [ -f zmq_decode.log ]; then
+            cat zmq_decode.log
+          else
+            echo "No zmq_decode.log file found"
+          fi
+          echo ""
+          echo "=== Prefill Server Logs (ZMQ round) ==="
+          if [ -f zmq_prefill.log ]; then
+            cat zmq_prefill.log
+          else
+            echo "No zmq_prefill.log file found"
           fi
           echo ""
           echo "=== mock_prefill_runner Logs (round 2) ==="
@@ -1380,7 +1519,8 @@ jobs:
         with:
           name: cpp-server-prefill-decode-split-result
           path: |
-            tt-media-server/vllm-bench-split-result.json
+            tt-media-server/vllm-bench-split-tcp-result.json
+            tt-media-server/vllm-bench-split-zmq-result.json
             tt-media-server/vllm-bench-split-runner-result.json
           retention-days: 1
           if-no-files-found: warn
@@ -1391,8 +1531,10 @@ jobs:
         with:
           name: cpp-server-prefill-decode-split-logs
           path: |
-            tt-media-server/decode_server.log
-            tt-media-server/prefill_server.log
+            tt-media-server/tcp_decode.log
+            tt-media-server/tcp_prefill.log
+            tt-media-server/zmq_decode.log
+            tt-media-server/zmq_prefill.log
             tt-media-server/mock_prefill_runner.log
             tt-media-server/prefill_server_runner.log
             tt-media-server/decode_server_runner.log
@@ -1407,6 +1549,649 @@ jobs:
           fi
           printf '%s\n' "$BENCH_ERRORS"
           exit 1
+
+  prefill-gateway-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
+    name: Prefill Gateway Build & Unit Tests
+    # Same jammy image as cpp-build so the prefill_gateway binary is
+    # compatible with the tt-ubuntu-2204-xlarge-stable bench runner.
+    runs-on: tt-ubuntu-2204-large-stable
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Install clang-tidy-20
+        working-directory: .
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends clang-tidy-20
+
+      - name: Configure prefill_gateway
+        run: |
+          cmake -S prefill_gateway -B prefill_gateway/build \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build prefill_gateway
+        run: cmake --build prefill_gateway/build -j "$(nproc)"
+
+      - name: Run clang-tidy on gateway sources
+        run: |
+          find prefill_gateway/src -name '*.cpp' -print0 \
+            | xargs -0 clang-tidy-20 \
+                -p prefill_gateway/build \
+                --warnings-as-errors='*'
+
+      - name: Run prefill_gateway unit tests (TCP)
+        run: |
+          cd prefill_gateway/build
+          SOCKET_TRANSPORT=tcp ctest --output-on-failure
+
+      - name: Run prefill_gateway unit tests (ZMQ)
+        run: |
+          cd prefill_gateway/build
+          SOCKET_TRANSPORT=zmq ctest --output-on-failure
+
+      - name: Upload prefill_gateway binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: prefill-gateway-build
+          path: tt-media-server/prefill_gateway/build/prefill_gateway
+          retention-days: 1
+
+  prefill-gateway-tsan:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
+    name: Prefill Gateway ThreadSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Configure prefill_gateway with ThreadSanitizer
+        run: |
+          cmake -S prefill_gateway -B prefill_gateway/tsan_build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+
+      - name: Build prefill_gateway (TSan)
+        run: cmake --build prefill_gateway/tsan_build -j "$(nproc)"
+
+      - name: Run prefill_gateway tests under TSan (TCP)
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:history_size=7"
+        run: |
+          cd prefill_gateway/tsan_build
+          SOCKET_TRANSPORT=tcp ctest --output-on-failure 2>&1 | tee ../../gw_tsan_tcp.log
+
+      - name: Run prefill_gateway tests under TSan (ZMQ)
+        env:
+          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:history_size=7"
+        run: |
+          cd prefill_gateway/tsan_build
+          SOCKET_TRANSPORT=zmq ctest --output-on-failure 2>&1 | tee ../../gw_tsan_zmq.log
+
+      - name: Check TSan output
+        if: always()
+        run: |
+          RACES=0
+          for LOG in gw_tsan_tcp.log gw_tsan_zmq.log; do
+            N=$(grep -c "WARNING: ThreadSanitizer" "$LOG" 2>/dev/null || echo 0)
+            N=$(echo "$N" | tr -dc '0-9'); N=${N:-0}
+            RACES=$((RACES + N))
+          done
+          {
+            echo "## 🧵 Prefill Gateway ThreadSanitizer"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Race reports (TCP)** | $(grep -c 'WARNING: ThreadSanitizer' gw_tsan_tcp.log 2>/dev/null || echo 0) |"
+            echo "| **Race reports (ZMQ)** | $(grep -c 'WARNING: ThreadSanitizer' gw_tsan_zmq.log 2>/dev/null || echo 0) |"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+          if [ "$RACES" -gt 0 ]; then
+            echo "::error::ThreadSanitizer detected $RACES data race(s) in prefill_gateway"
+            exit 1
+          fi
+          echo "✅ No data races detected" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload TSan logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prefill-gateway-tsan-log
+          path: |
+            tt-media-server/gw_tsan_tcp.log
+            tt-media-server/gw_tsan_zmq.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  cpp-server-gateway-split:
+    needs: [detect-changes, cpp-build, prefill-gateway-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
+    name: C++ Server Gateway Split Test
+    runs-on: tt-ubuntu-2204-xlarge-stable
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ server build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Extract C++ server build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
+
+      - name: Download prefill_gateway binary
+        uses: actions/download-artifact@v4
+        with:
+          name: prefill-gateway-build
+          path: tt-media-server/prefill_gateway/build
+
+      - name: Make binaries executable
+        run: |
+          chmod +x cpp_server/build/tt_media_server_cpp
+          chmod +x prefill_gateway/build/prefill_gateway
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          uv pip install vllm 'transformers<5.6'
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      # ── Round 1: TCP transport ────────────────────────────────────────────
+      # Startup order: prefill-1 → prefill-2 → gateway → decode.
+      # In gateway mode the prefill is a server (listens) and the gateway
+      # dials each prefill.  Decode dials the gateway's decode-facing port.
+      # All components must use the same SOCKET_TRANSPORT;
+      - name: "[TCP] Start Prefill server 1 (gateway mode)"
+        run: |
+          cd cpp_server/build
+          NS=gw_prefill1
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
+          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_prefill1.log 2>&1 &
+          echo $! > ../../gw_prefill1.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill-1 ready on port 8201"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[TCP] Start Prefill server 2 (gateway mode)"
+        run: |
+          cd cpp_server/build
+          NS=gw_prefill2
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
+          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_prefill2.log 2>&1 &
+          echo $! > ../../gw_prefill2.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill-2 ready on port 8202"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[TCP] Start PrefillGateway"
+        run: |
+          SOCKET_TRANSPORT=tcp TT_LOG_LEVEL=debug \
+            ./prefill_gateway/build/prefill_gateway \
+            --decode-port=9200 \
+            --prefill=127.0.0.1:9201 \
+            --prefill=127.0.0.1:9202 \
+            > gw.log 2>&1 &
+          echo $! > gw.pid
+          for i in $(seq 1 30); do
+            REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
+            if [ "$REG" -ge 2 ]; then
+              echo "✅ Both prefills registered with gateway"
+              break
+            fi
+            if ! kill -0 "$(cat gw.pid)" 2>/dev/null; then
+              echo "ERROR: Gateway process exited unexpectedly"
+              exit 1
+            fi
+            sleep 1
+          done
+          REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
+          if [ "$REG" -lt 2 ]; then
+            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
+            exit 1
+          fi
+
+      - name: "[TCP] Start Decode server"
+        run: |
+          cd cpp_server/build
+          NS=gw_decode
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
+          TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_decode.log 2>&1 &
+          echo $! > ../../gw_decode.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8200"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[TCP] Verify gateway socket connections"
+        run: |
+          for i in $(seq 1 30); do
+            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+            if echo "$P1"  | grep -q '"socket_status":"server:connected"' \
+               && echo "$P2"  | grep -q '"socket_status":"server:connected"' \
+               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
+              echo "✅ Prefill-1, Prefill-2 (server:connected) and Decode (client:connected) all verified"
+              break
+            fi
+            sleep 1
+          done
+          P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+          DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+          echo "Prefill-1 liveness: $P1"
+          echo "Prefill-2 liveness: $P2"
+          echo "Decode liveness:    $DEC"
+          FAIL=0
+          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
+            NAME="${VAR_NAME%%:*}"
+            VAL="${VAR_NAME#*:}"
+            if ! echo "$VAL" | grep -q '"socket_status":"server:connected"'; then
+              echo "ERROR: $NAME socket_status is not 'server:connected'"
+              FAIL=1
+            fi
+          done
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
+            echo "ERROR: Decode socket_status is not 'client:connected'"
+            FAIL=1
+          fi
+          [ "$FAIL" -eq 0 ] || exit 1
+          sleep 2
+
+      - name: "[TCP] Run vLLM bench serve through gateway"
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8200 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-gateway-split-tcp-result.json" \
+            2>&1 | tee bench_gateway_tcp_output.txt
+
+      - name: "[TCP] Stop gateway and servers"
+        if: always()
+        run: |
+          [ -f gw_decode.pid ]   && kill $(cat gw_decode.pid)   2>/dev/null || true
+          [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
+          [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
+          [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
+          sleep 2
+
+      # ── Round 2: ZMQ transport ────────────────────────────────────────────
+      - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
+        run: |
+          cd cpp_server/build
+          NS=gw_zmq_prefill1
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
+          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_zmq_prefill1.log 2>&1 &
+          echo $! > ../../gw_zmq_prefill1.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill-1 ready on port 8201"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
+        run: |
+          cd cpp_server/build
+          NS=gw_zmq_prefill2
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
+          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_zmq_prefill2.log 2>&1 &
+          echo $! > ../../gw_zmq_prefill2.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill-2 ready on port 8202"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[ZMQ] Start PrefillGateway"
+        run: |
+          SOCKET_TRANSPORT=zmq TT_LOG_LEVEL=debug \
+            ./prefill_gateway/build/prefill_gateway \
+            --decode-port=9200 \
+            --prefill-bind=127.0.0.1:9201 \
+            > gw_zmq.log 2>&1 &
+          echo $! > gw_zmq.pid
+          for i in $(seq 1 30); do
+            REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
+            if [ "$REG" -ge 2 ]; then
+              echo "✅ Both prefills registered with gateway"
+              break
+            fi
+            if ! kill -0 "$(cat gw_zmq.pid)" 2>/dev/null; then
+              echo "ERROR: Gateway process exited unexpectedly"
+              exit 1
+            fi
+            sleep 1
+          done
+          REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
+          if [ "$REG" -lt 2 ]; then
+            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
+            exit 1
+          fi
+
+      - name: "[ZMQ] Start Decode server"
+        run: |
+          cd cpp_server/build
+          NS=gw_zmq_decode
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
+          TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_zmq_decode.log 2>&1 &
+          echo $! > ../../gw_zmq_decode.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8200"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: "[ZMQ] Verify gateway socket connections"
+        run: |
+          for i in $(seq 1 30); do
+            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+            if echo "$P1"  | grep -q '"socket_status":"client:connected"' \
+               && echo "$P2"  | grep -q '"socket_status":"client:connected"' \
+               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
+              echo "✅ Prefill-1, Prefill-2 and Decode (client:connected) all verified"
+              break
+            fi
+            sleep 1
+          done
+          P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
+          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
+          DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
+          echo "Prefill-1 liveness: $P1"
+          echo "Prefill-2 liveness: $P2"
+          echo "Decode liveness:    $DEC"
+          FAIL=0
+          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
+            NAME="${VAR_NAME%%:*}"
+            VAL="${VAR_NAME#*:}"
+            if ! echo "$VAL" | grep -q '"socket_status":"client:connected"'; then
+              echo "ERROR: $NAME socket_status is not 'client:connected'"
+              FAIL=1
+            fi
+          done
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
+            echo "ERROR: Decode socket_status is not 'client:connected'"
+            FAIL=1
+          fi
+          [ "$FAIL" -eq 0 ] || exit 1
+          sleep 2
+
+      - name: "[ZMQ] Run vLLM bench serve through gateway"
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8200 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-gateway-split-zmq-result.json" \
+            2>&1 | tee bench_gateway_zmq_output.txt
+
+      - name: "[ZMQ] Stop gateway and servers"
+        if: always()
+        run: |
+          [ -f gw_zmq_decode.pid ]   && kill $(cat gw_zmq_decode.pid)   2>/dev/null || true
+          [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
+          [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
+          [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
+          sleep 2
+
+      - name: Check benchmark thresholds
+        run: |
+          FAIL=0
+          check_file() {
+            local FILE="$1"
+            local LABEL="$2"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+            COMPLETED=$(jq -r '.completed // 0' "$FILE")
+            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED)"
+              FAIL=1
+            fi
+            if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= 10 else 1)"; then
+              echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds 10ms threshold"
+              FAIL=1
+            fi
+            if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= 650 else 1)"; then
+              echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds 650ms threshold"
+              FAIL=1
+            fi
+            {
+              echo "## C++ Server Gateway Split ($LABEL)"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ 10ms |"
+              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ 650ms |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+          check_file "vllm-bench-gateway-split-tcp-result.json" "TCP"
+          check_file "vllm-bench-gateway-split-zmq-result.json" "ZMQ"
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in gw.log gw_prefill1.log gw_prefill2.log gw_decode.log \
+                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_prefill2.log gw_zmq_decode.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-gateway-split-result
+          path: |
+            tt-media-server/vllm-bench-gateway-split-tcp-result.json
+            tt-media-server/vllm-bench-gateway-split-zmq-result.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-gateway-split-logs
+          path: |
+            tt-media-server/gw.log
+            tt-media-server/gw_prefill1.log
+            tt-media-server/gw_prefill2.log
+            tt-media-server/gw_decode.log
+            tt-media-server/gw_zmq.log
+            tt-media-server/gw_zmq_prefill1.log
+            tt-media-server/gw_zmq_prefill2.log
+            tt-media-server/gw_zmq_decode.log
+          retention-days: 1
+          if-no-files-found: warn
 
   cpp-tsan:
     needs: detect-changes
@@ -1824,6 +2609,10 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - prefill-gateway-format-check
+      - prefill-gateway-build
+      - prefill-gateway-tsan
+      - cpp-server-gateway-split
       - cpp-tsan
     if: always()
     steps:
@@ -1841,6 +2630,10 @@ jobs:
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
+            [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
+            [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
+            [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do

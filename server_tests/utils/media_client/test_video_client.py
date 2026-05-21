@@ -156,7 +156,6 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -165,7 +164,6 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
             ),
         ]
 
@@ -205,8 +203,9 @@ class TestVideoClientStrategyRunBenchmark(unittest.TestCase):
         assert report_data["benchmarks"]["num_requests"] == 2
         assert report_data["benchmarks"]["num_inference_steps"] == 20
         assert report_data["benchmarks"]["latency"] == pytest.approx(70.0)
+        # 40 steps / 140 s ≈ 0.2857; avg-of-rates blend would give 0.2917.
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
-            0.29
+            40 / 140
         )
         assert "throughput_rps" in report_data["benchmarks"]
         assert "latency_p50" in report_data["benchmarks"]
@@ -592,7 +591,6 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test video 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -601,7 +599,6 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test video 2",
             ),
         ]
 
@@ -625,8 +622,9 @@ class TestVideoClientStrategyGenerateReport(unittest.TestCase):
         assert report_data["task_type"] == "video"
         assert report_data["benchmarks"]["num_requests"] == 2
         assert report_data["benchmarks"]["latency"] == pytest.approx(70.0)
+        # 40 steps / 140 s ≈ 0.2857; avg-of-rates blend would give 0.2917.
         assert report_data["benchmarks"]["inference_steps_per_second"] == pytest.approx(
-            0.29
+            40 / 140
         )
         assert "throughput_rps" in report_data["benchmarks"]
         assert "latency_p50" in report_data["benchmarks"]
@@ -677,7 +675,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.33,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test 1",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -686,7 +683,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.25,
                 job_id="job2",
                 video_path="/tmp/job2.mp4",
-                prompt="Test 2",
             ),
             VideoGenerationTestStatus(
                 status=True,
@@ -695,7 +691,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.29,
                 job_id="job3",
                 video_path="/tmp/job3.mp4",
-                prompt="Test 3",
             ),
         ]
         result = strategy._calculate_latency(status_list)
@@ -716,7 +711,6 @@ class TestVideoClientStrategyCalculateLatency(unittest.TestCase):
                 inference_steps_per_second=0.22,
                 job_id="job1",
                 video_path="/tmp/job1.mp4",
-                prompt="Test",
             )
         ]
         result = strategy._calculate_latency(status_list)

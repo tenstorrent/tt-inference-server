@@ -32,6 +32,7 @@ class WorkflowVenvType(IntEnum):
     TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
+    V2_RUN_SCRIPT = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()

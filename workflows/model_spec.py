@@ -2153,7 +2153,7 @@ llm_templates = [
                 device=DeviceTypes.GPU,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2695,6 +2695,12 @@ vlm_templates = [
                 override_tt_config={
                     "trace_region_size": 28467200,
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GPU,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -4117,13 +4123,13 @@ def get_runtime_model_spec(
         (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
         None,
     )
-    selected_spec = default_spec or (candidate_specs[0] if impl else None)
+    selected_spec = default_spec or (candidate_specs[0] if (impl or engine) else None)
 
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
             f"device:={device}, engine:={engine}; "
-            f"you must pass --impl"
+            f"you must pass --impl or --engine"
         )
 
     resolved_impl = selected_spec.impl.impl_name

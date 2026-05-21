@@ -21,7 +21,7 @@ A **list of records**. Each record is a dict with at minimum:
 
 The renderer only emits sub-tables when a block has **exactly one record**. Multiple same-kind records collapse into a single multi-row table where every nested field gets JSON-stringified into one cell — which is what produced the ugly `results_details` blob originally. So:
 
-- Don't emit two `kind: server_tests` records for the same model/device — merge them into one with internal sub-tables.
+- Don't emit two `kind: spec_tests` records for the same model/device — merge them into one with internal sub-tables.
 - Multiple records of the same kind are fine **only** if they're flat (all fields scalar). They render as one multi-row table.
 
 ## 3. Field-type rules (this is the whole renderer in three lines)
@@ -117,7 +117,7 @@ For each piece of data:
 
 ## 9. Reference fixtures to crib from
 
-- `tests/report_module/fixtures/mock_full_schema.json` — evals + benchmarks + server_tests with worker info
+- `tests/report_module/fixtures/mock_full_schema.json` — evals + benchmarks + spec_tests with worker info
 - `tests/report_module/fixtures/mock_sdxl_n150.json` — split-by-shape sub-table pattern
 - `llm_module/guidellm_adapter.py:to_report_record` — programmatic construction (when the source data needs aggregation/calculations first)
 
