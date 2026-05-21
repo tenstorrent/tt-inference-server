@@ -3,10 +3,19 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import os
 
 import aiohttp
 
 from server_tests.base_test import BaseTest
+
+DEFAULT_API_KEY = "your-secret-key"
+
+HEADERS = {
+    "accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {os.getenv('API_KEY', DEFAULT_API_KEY)}",
+}
 
 
 class SpeechT5TTSTest(BaseTest):
@@ -32,7 +41,7 @@ class SpeechT5TTSTest(BaseTest):
         }
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
             async with session.post(url, json=payload) as response:
                 assert response.status == 200, (
                     f"Expected status 200, got {response.status}"
