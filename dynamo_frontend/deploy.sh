@@ -69,6 +69,16 @@ Performance knobs (read from the calling shell, optional):
                           info,dynamo_llm::preprocessor=debug,dynamo_runtime::transport=debug
                         to see per-request spans and find where the
                         ~600 ms TTFT delta is hiding.
+  DYN_TX_TRACE          Enable per-token send tracing on the worker
+                        (cpp_server) side. When set to '1' (or any
+                        non-zero/non-'false' value) the worker emits a
+                        '[DynamoTx] stage=chunk seq=N ... since_prev_us=...'
+                        log line for every TokenChunk it writes to the
+                        frontend's call-home socket. Use to verify
+                        whether inter-token latency lives on the
+                        backend->frontend wire or downstream of it. High
+                        log volume (~one line per generated token), keep
+                        off in normal runs.
 
 Example:
   $0 \\
@@ -204,6 +214,7 @@ docker run -d --name "$WORKER_NAME" \
     -e SERVER_MODE=cpp \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
+    -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     "$WORKER_IMAGE" >/dev/null
 
 log "waiting for worker to register against etcd (up to 60s)"
