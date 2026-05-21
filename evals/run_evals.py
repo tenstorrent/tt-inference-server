@@ -264,6 +264,95 @@ def _setup_openai_api_key(args, logger):
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
+def _has_agentic_eval_tasks(eval_config: EvalConfig) -> bool:
+    return any(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+        for task in eval_config.tasks
+    )
+
+
+def _get_openai_base_url(service_port) -> str:
+    return f"http://127.0.0.1:{service_port}/v1"
+
+
+def _setup_agentic_eval_env(service_port):
+    base_url = _get_openai_base_url(service_port)
+    os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
+    os.environ.setdefault("OPENAI_BASE_URL", base_url)
+    os.environ.setdefault("OPENAI_API_BASE", base_url)
+    logger.info("OpenAI-compatible environment configured for agentic evals.")
+
+
+def _resolve_task_names(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> List[str]:
+    """
+    Determine the task names to run for an agentic evaluation based on the
+    evaluation task configuration and runtime evaluation limit mode.
+    This function checks the agentic_eval_config for the task, retrieves
+    the appropriate list of task names based on the current limit mode, and
+    returns it. If no specific list of task names is set for the limit mode,
+    it falls back to a default list of task names defined in the config or
+    returns an empty list if not specified.
+    """
+    agentic_config = task.agentic_eval_config
+    if agentic_config is None:
+        return []
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is not None and limit_mode in agentic_config.task_names_map:
+        return agentic_config.task_names_map[limit_mode]
+    return agentic_config.task_names
+
+
+def _resolve_instance_ids(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> List[str]:
+    """Determine the instance IDs to run for a SWE-bench agentic evaluation based on
+    the evaluation task configuration and runtime evaluation limit mode. This function
+    checks the swebench_eval_config for the task, retrieves the appropriate list of
+    instance IDs based on the current limit mode, and returns it. If no specific list
+    of instance IDs is set for the limit mode, it falls back to a default list of
+    instance IDs defined in the config or returns an empty list if not specified.
+    """
+    swebench_config = task.swebench_eval_config
+    if swebench_config is None:
+        return []
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is not None and limit_mode in swebench_config.instance_ids_map:
+        return swebench_config.instance_ids_map[limit_mode]
+    return []
+
+
+def _resolve_n_tasks(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> Optional[int]:
+    """Determine the number of tasks to run for an agentic evaluation based on
+    the evaluation task configuration and runtime evaluation limit mode.
+    This function checks the agentic_eval_config for the task, retrieves the
+    appropriate n_tasks value based on the current limit mode, and returns it.
+    If no specific n_tasks is set for the limit mode, it falls back to a
+    default n_tasks defined in the config or returns None (None=full dataset)
+    if not specified.
+    A return value of 0 indicates that the task should be skipped under
+    the current limit mode.
+    """
+    agentic_config = task.agentic_eval_config or task.swebench_eval_config
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is None:
+        return agentic_config.n_tasks if agentic_config else None
+
+    limit_arg = task.limit_samples_map.get(limit_mode)
+    if limit_arg is None:
+        return agentic_config.n_tasks if agentic_config else None
+    if isinstance(limit_arg, float) and limit_arg < 1:
+        logger.warning(
+            "Agentic eval limits are task counts, not fractions; using one task for %s",
+            task.task_name,
+        )
+        return 1
+    return int(limit_arg)  # 0 means skip — callers check for this
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -321,6 +410,15 @@ def build_eval_command(
     Build the command for lm_eval by templating command-line arguments using properties
     from the given evaluation task and model configuration.
     """
+    if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC:
+        return build_agentic_eval_command(
+            task,
+            model_spec,
+            output_path,
+            service_port,
+            runtime_config=runtime_config,
+        )
+
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
@@ -460,6 +558,145 @@ def build_eval_command(
     return cmd
 
 
+def build_agentic_eval_command(
+    task: EvalTask,
+    model_spec,
+    output_path,
+    service_port,
+    runtime_config=None,
+) -> List[str]:
+    """
+    Build the command for agentic evals by templating command-line arguments
+    using properties from the given evaluation task and model configuration.
+    """
+    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    runner_path = project_root / "evals" / "agentic" / "run_agentic_eval.py"
+    n_tasks = _resolve_n_tasks(task, runtime_config)
+    if n_tasks == 0:
+        logger.info(
+            "Skipping agentic task %s: n_tasks=0 for this limit mode", task.task_name
+        )
+        return []
+
+    if task.swebench_eval_config is not None:
+        swebench_config = task.swebench_eval_config
+        safe_model_id = model_spec.model_id.replace("/", "__")
+        output_dir = (
+            Path(output_path) / f"eval_{safe_model_id}" / "agentic" / task.task_name
+        )
+        model_name = swebench_config.model or f"openai/{model_spec.hf_model_repo}"
+        cmd = [
+            str(task_venv_config.venv_python),
+            str(runner_path),
+            "swebench",
+            "--task-name",
+            task.task_name,
+            "--dataset-name",
+            swebench_config.dataset_name,
+            "--dataset-split",
+            swebench_config.dataset_split,
+            "--sweagent-subset",
+            swebench_config.sweagent_subset,
+            "--agent-backend",
+            swebench_config.agent_backend,
+            "--model-name",
+            model_name,
+            "--api-base",
+            _get_openai_base_url(service_port),
+            "--output-dir",
+            str(output_dir),
+            "--sweagent-config",
+            swebench_config.sweagent_config,
+            "--mini-config",
+            swebench_config.mini_config,
+            "--mini-model-class",
+            swebench_config.mini_model_class,
+            "--mini-environment-class",
+            swebench_config.mini_environment_class,
+            "--n-concurrent-trials",
+            str(swebench_config.n_concurrent_trials),
+            "--max-workers",
+            str(swebench_config.max_workers),
+            "--temperature",
+            str(swebench_config.temperature),
+            "--top-p",
+            str(swebench_config.top_p),
+            "--max-input-tokens",
+            str(swebench_config.max_input_tokens),
+            "--completion-kwargs-json",
+            json.dumps(swebench_config.completion_kwargs),
+            "--random-delay-multiplier",
+            str(swebench_config.random_delay_multiplier),
+        ]
+        if n_tasks is not None:
+            cmd.extend(["--n-tasks", str(n_tasks)])
+        if swebench_config.max_output_tokens is not None:
+            cmd.extend(["--max-output-tokens", str(swebench_config.max_output_tokens)])
+        if swebench_config.swebench_timeout_sec is not None:
+            cmd.extend(
+                ["--swebench-timeout-sec", str(swebench_config.swebench_timeout_sec)]
+            )
+        if not swebench_config.shuffle:
+            cmd.append("--no-shuffle")
+        for instance_id in _resolve_instance_ids(task, runtime_config):
+            cmd.extend(["--instance-id", instance_id])
+        return cmd
+
+    if task.agentic_eval_config is not None:
+        agentic_config = task.agentic_eval_config
+        safe_model_id = model_spec.model_id.replace("/", "__")
+        jobs_dir = Path(output_path) / f"eval_{safe_model_id}" / "agentic"
+        model_name = agentic_config.model or f"openai/{model_spec.hf_model_repo}"
+        cmd = [
+            str(task_venv_config.venv_python),
+            str(runner_path),
+            "terminal-bench",
+            "--task-name",
+            task.task_name,
+            "--dataset",
+            agentic_config.dataset,
+            "--agent",
+            agentic_config.agent,
+            "--model-name",
+            model_name,
+            "--jobs-dir",
+            str(jobs_dir),
+            "--api-base",
+            _get_openai_base_url(service_port),
+            "--n-concurrent-trials",
+            str(agentic_config.n_concurrent_trials),
+            "--n-attempts",
+            str(agentic_config.n_attempts),
+            "--environment-type",
+            agentic_config.environment_type,
+            "--agent-kwargs-json",
+            json.dumps(agentic_config.agent_kwargs),
+        ]
+        if n_tasks is not None:
+            cmd.extend(["--n-tasks", str(n_tasks)])
+        if agentic_config.override_cpus is not None:
+            cmd.extend(["--override-cpus", str(agentic_config.override_cpus)])
+        if agentic_config.override_memory_mb is not None:
+            cmd.extend(["--override-memory-mb", str(agentic_config.override_memory_mb)])
+        if agentic_config.timeout_multiplier is not None:
+            cmd.extend(["--timeout-multiplier", str(agentic_config.timeout_multiplier)])
+        if agentic_config.agent_timeout_sec is not None:
+            cmd.extend(["--agent-timeout-sec", str(agentic_config.agent_timeout_sec)])
+        for task_name in _resolve_task_names(task, runtime_config):
+            cmd.extend(["--include-task-name", task_name])
+        for task_name in agentic_config.exclude_task_names:
+            cmd.extend(["--exclude-task-name", task_name])
+        if not agentic_config.quiet:
+            cmd.append("--no-quiet")
+        if not agentic_config.yes:
+            cmd.append("--no-yes")
+        return cmd
+
+    raise ValueError(
+        f"Task {task.task_name} has neither agentic_eval_config nor swebench_eval_config"
+    )
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
@@ -510,9 +747,6 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
-    # copy env vars to pass to subprocesses
-    env_vars = os.environ.copy()
-
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
         message = f"No evaluation tasks defined for model: {model_spec.model_name}"
@@ -529,6 +763,13 @@ def main():
     if has_code_eval_tasks:
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         logger.info("Set HF_ALLOW_CODE_EVAL=1 for code evaluation tasks")
+
+    has_agentic_eval_tasks = _has_agentic_eval_tasks(eval_config)
+    if has_agentic_eval_tasks:
+        _setup_agentic_eval_env(runtime_config.service_port)
+
+    # copy env vars to pass to subprocesses
+    env_vars = os.environ.copy()
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -600,14 +841,16 @@ def main():
             runtime_config=runtime_config,
         )
         logger.info(
-            "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
             prompt_client.cache_monitor.get_tensor_cache_timeout(),
         )
         if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
 
-        if not disable_trace_capture:
+        if has_agentic_eval_tasks:
+            logger.info("Skipping trace capture for agentic eval tasks.")
+        elif not disable_trace_capture:
             if "image" in model_spec.supported_modalities:
                 prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
             else:
@@ -635,6 +878,10 @@ def main():
                 runtime_config.service_port,
                 runtime_config=runtime_config,
             )
+            if not cmd:
+                logger.info("Skipping task %s (no command built)", task.task_name)
+                return_codes.append(0)
+                continue
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
 
