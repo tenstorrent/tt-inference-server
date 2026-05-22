@@ -611,7 +611,12 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-22.04 (Jammy) so the binary links libpython3.10 via
+    # pybind11::embed. Noble (ubuntu-latest) would link libpython3.12, which
+    # the Jammy mock_pipeline bench runner doesn't have. All downstream
+    # cpp_server bench/run jobs are also pinned to ubuntu-22.04 (or the
+    # Jammy-based tt-ubuntu-2204-xlarge-stable) for the same reason.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
@@ -673,7 +678,8 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Benchmarks (mock + structured output)
-    runs-on: ubuntu-latest
+    # Jammy: matches cpp-build's libpython3.10 linkage.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
@@ -1155,7 +1161,8 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
-    runs-on: ubuntu-latest
+    # Jammy: matches cpp-build's libpython3.10 linkage.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
@@ -1692,7 +1699,8 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    runs-on: ubuntu-latest
+    # Jammy: matches cpp-server-gateway-split bench runner (also Jammy).
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
@@ -1827,7 +1835,8 @@ jobs:
     needs: [detect-changes, cpp-build, prefill-gateway-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: C++ Server Gateway Split Test
-    runs-on: ubuntu-latest
+    # Jammy: matches cpp-build's libpython3.10 linkage.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
