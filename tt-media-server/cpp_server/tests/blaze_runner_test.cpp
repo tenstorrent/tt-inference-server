@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/manage_memory.hpp"
@@ -332,6 +334,90 @@ TEST(BlazeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
   for (const auto& token : tokensB) {
     EXPECT_EQ(token.task_id, taskB);
     EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+  }
+}
+
+TEST(BlazeRunnerIntegrationTest,
+     ManyConcurrentUsersGenerateTokensUnderBackpressure) {
+  BlazeRunnerHarness harness;
+
+  constexpr uint32_t kFirstTaskId = 9000;
+  constexpr size_t kRequestedUsers = 128;
+  constexpr int kMaxTokensPerUser = 4;
+  const size_t userCount = std::min(kRequestedUsers, tt::config::dsMaxUsers());
+  ASSERT_GE(userCount, 2u)
+      << "Need at least two scheduler users for backpressure coverage";
+
+  std::vector<uint32_t> taskIds;
+  std::vector<uint32_t> slotIds;
+  taskIds.reserve(userCount);
+  slotIds.reserve(userCount);
+
+  for (size_t i = 0; i < userCount; ++i) {
+    const uint32_t taskId = kFirstTaskId + static_cast<uint32_t>(i);
+    const auto allocateResponse = harness.allocate(taskId);
+    ASSERT_EQ(allocateResponse.taskId, taskId);
+    ASSERT_EQ(allocateResponse.status, tt::domain::ManageMemoryStatus::SUCCESS);
+    ASSERT_NE(allocateResponse.slotId, tt::domain::INVALID_SLOT_ID);
+    taskIds.push_back(taskId);
+    slotIds.push_back(allocateResponse.slotId);
+  }
+
+  for (const auto slotId : slotIds) {
+    EXPECT_EQ(std::count(slotIds.begin(), slotIds.end(), slotId), 1)
+        << "Expected each concurrent user to get a unique slot";
+  }
+
+  tt::domain::llm::SamplingParams samplingParams;
+  samplingParams.max_tokens = kMaxTokensPerUser;
+  samplingParams.ignore_eos = false;
+
+  for (size_t i = 0; i < userCount; ++i) {
+    harness.submitSequence(
+        taskIds[i], slotIds[i],
+        {static_cast<int64_t>(100 + i), static_cast<int64_t>(200 + i)},
+        samplingParams);
+  }
+
+  std::vector<size_t> tokenCounts(userCount, 0);
+  std::vector<bool> sawFinal(userCount, false);
+  size_t finalCount = 0;
+  const auto deadline = std::chrono::steady_clock::now() + DEADLINE;
+  while (std::chrono::steady_clock::now() < deadline &&
+         finalCount < userCount) {
+    tt::ipc::SharedToken token{};
+    if (!harness.waitPopFor(token)) {
+      continue;
+    }
+
+    if (token.task_id < kFirstTaskId ||
+        token.task_id >= kFirstTaskId + userCount) {
+      ADD_FAILURE() << "Received token for unexpected task_id="
+                    << token.task_id;
+      continue;
+    }
+
+    const size_t userIndex = token.task_id - kFirstTaskId;
+    EXPECT_FALSE(sawFinal[userIndex])
+        << "Received token after final for task_id=" << token.task_id;
+    tokenCounts[userIndex]++;
+    EXPECT_EQ(token.token_id, MOCK_PIPELINE_TOKEN_ID);
+    EXPECT_FALSE(token.isAbort());
+
+    if (token.isFinal()) {
+      sawFinal[userIndex] = true;
+      finalCount++;
+    }
+  }
+  harness.assertRunnerHealthy();
+
+  ASSERT_EQ(finalCount, userCount)
+      << "Expected every concurrent user to reach a final token";
+  for (size_t i = 0; i < userCount; ++i) {
+    EXPECT_TRUE(sawFinal[i])
+        << "Missing final token for task_id=" << taskIds[i];
+    EXPECT_EQ(tokenCounts[i], static_cast<size_t>(kMaxTokensPerUser))
+        << "Unexpected token count for task_id=" << taskIds[i];
   }
 }
 
