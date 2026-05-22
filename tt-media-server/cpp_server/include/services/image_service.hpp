@@ -5,33 +5,23 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
-#include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/media_worker_scheduler.hpp"
 
 namespace tt::services {
 
-/** In-process image service. Owns one or more runners and dispatches
- *  synchronously; the Drogon controller offloads to a thread pool. */
+/** Image service facade backed by media worker processes. */
 class ImageService : public BaseService<domain::ImageGenerateRequest,
                                         domain::image::ImageResponse> {
  public:
-  using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
-                                       std::vector<std::string>>;
-  using RunnerList = std::vector<std::unique_ptr<Runner>>;
-
-  ImageService(config::ImageConfig config, std::unique_ptr<Runner> runner);
-  ImageService(config::ImageConfig config, RunnerList runners);
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
                std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
@@ -54,23 +44,9 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
-  size_t selectRunnerIndex() const;
-  domain::image::ImageResponse processInProcessRequest(
-      const domain::ImageGenerateRequest& request);
-  domain::image::ImageResponse processWorkerRequest(
-      const domain::ImageGenerateRequest& request);
-
   config::ImageConfig config_;
-  RunnerList runners_;
   std::unique_ptr<MediaWorkerScheduler> worker_scheduler_;
-  mutable std::atomic<size_t> next_runner_{0};
-  std::vector<std::atomic<size_t>> runner_in_flight_;
-  std::atomic<bool> ready_{false};
   mutable std::atomic<size_t> in_flight_{0};
-  // Warmup runs here so start() can return immediately and the HTTP listener
-  // can bind; /tt-liveness reports model_ready=false until warmup completes.
-  std::thread warmup_thread_;
-  std::mutex warmup_mutex_;
 };
 
 }  // namespace tt::services

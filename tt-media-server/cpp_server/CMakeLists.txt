@@ -537,41 +537,6 @@ target_include_directories(test_image_generate_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(image_service_test
-    tests/image_service_test.cpp
-    src/services/image_service.cpp
-    src/services/media_worker_scheduler.cpp
-    src/services/llm_service.cpp
-    src/services/embedding_service.cpp
-    src/services/reasoning_parser.cpp
-    src/runtime/worker/worker_manager.cpp
-    src/runtime/worker/process_liveness.cpp
-    src/runtime/worker/single_process_worker.cpp
-    src/utils/ipc_runner_factory.cpp
-    src/runtime/runners/media_ipc_runner.cpp
-    src/runtime/runners/image_ipc_runner.cpp
-    src/services/model_service_registration.cpp
-    src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
-    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
-    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
-    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
-    src/utils/image_codec.cpp
-    src/runtime/runners/embedding_runner.cpp
-    src/utils/mapper.cpp
-    src/metrics/metrics.cpp
-    src/profiling/tracy.cpp
-)
-target_link_libraries(image_service_test PRIVATE
-    llm_runner_lib
-    prometheus-cpp::core
-    pybind11::embed
-    stb_image_write
-    GTest::gtest_main)
-target_include_directories(image_service_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
@@ -780,7 +745,6 @@ gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(test_image_generate_request)
-gtest_discover_tests(image_service_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 # Register tool call tests

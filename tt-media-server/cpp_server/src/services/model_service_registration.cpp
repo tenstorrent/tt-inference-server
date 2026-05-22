@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <cstdlib>
 
 #include "api/route_registry.hpp"
@@ -181,42 +180,16 @@ void registerImage() {
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
         const size_t configuredWorkers = config::numWorkers();
-        if (configuredWorkers > 1) {
-          TT_LOG_INFO(
-              "[RegisterImage] Creating worker-backed image service with {} "
-              "worker process(es)",
-              configuredWorkers);
-          auto queueManager =
-              std::make_unique<tt::ipc::media_payload::MediaPayloadQueueSet>(
-                  static_cast<int>(configuredWorkers));
-          return std::make_shared<ImageService>(
-              cfg, std::make_unique<tt::worker::WorkerManager>(
-                       configuredWorkers),
-              std::move(queueManager));
-        }
-
-        ImageService::RunnerList runners;
-        constexpr size_t workerCount = 1;
-        runners.reserve(workerCount);
-        for (size_t i = 0; i < workerCount; ++i) {
-          auto workerCfg = cfg;
-          workerCfg.visible_devices = config::visibleDevicesForWorker(i);
-          TT_LOG_INFO(
-              "[RegisterImage] Creating image runner {}/{} for "
-              "TT_VISIBLE_DEVICES='{}'",
-              i + 1, workerCount, workerCfg.visible_devices);
-          auto runner = utils::RunnerRegistry::instance()
-                            .createMedia<ImageService::Runner>(
-                                config::ModelService::IMAGE, cfg.runner_type,
-                                config::RunnerConfig{workerCfg});
-          if (!runner) {
-            throw std::runtime_error(
-                "[RegisterImage] No image runner registered for runner_type=" +
-                config::toString(cfg.runner_type));
-          }
-          runners.push_back(std::move(runner));
-        }
-        return std::make_shared<ImageService>(cfg, std::move(runners));
+        TT_LOG_INFO(
+            "[RegisterImage] Creating worker-backed image service with {} "
+            "worker process(es)",
+            configuredWorkers);
+        auto queueManager =
+            std::make_unique<tt::ipc::media_payload::MediaPayloadQueueSet>(
+                static_cast<int>(configuredWorkers));
+        return std::make_shared<ImageService>(
+            cfg, std::make_unique<tt::worker::WorkerManager>(configuredWorkers),
+            std::move(queueManager));
       });
 
   auto& routes = api::RouteRegistry::instance();
