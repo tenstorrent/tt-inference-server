@@ -68,8 +68,8 @@ def main() -> None:
         groups.append([10 * (g + 1) + i for i in range(prefix_blocks)])
 
     # ISLs are exact multiples of BLOCK_SIZE so len(hash_ids) is unambiguous.
-    isl_choices_short = (BLOCK_SIZE, 2 * BLOCK_SIZE)            #  512, 1024
-    isl_choices_long = (3 * BLOCK_SIZE, 4 * BLOCK_SIZE)         # 1536, 2048
+    isl_choices_short = (BLOCK_SIZE, 2 * BLOCK_SIZE)  #  512, 1024
+    isl_choices_long = (3 * BLOCK_SIZE, 4 * BLOCK_SIZE)  # 1536, 2048
     osl_choices = (64, 96, 128, 192)
 
     requests = []

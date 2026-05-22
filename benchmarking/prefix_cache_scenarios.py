@@ -180,9 +180,11 @@ def _expand_shared_system(
         cfg.get("shared_system_prompt_lengths"),
         fallback=512,
     )
-    arrivals = arrival_overrides.get("arrival_pattern_overrides") or cfg.get(
-        "arrival_patterns"
-    ) or [{"pattern": "constant"}]
+    arrivals = (
+        arrival_overrides.get("arrival_pattern_overrides")
+        or cfg.get("arrival_patterns")
+        or [{"pattern": "constant"}]
+    )
     runs: List[PrefixCacheRun] = []
     request_count = int(cfg.get("request_count", preset_request_count))
     for isl_profile in isl_profiles:
@@ -194,11 +196,10 @@ def _expand_shared_system(
                     )
                     smoothness = arrival.get("smoothness")
                     request_rate = arrival_overrides.get("request_rate")
-                    isl_name = isl_profile.get("name") or f"isl{isl_profile['isl_mean']}"
-                    label = (
-                        f"shared_sys{length}_{isl_name}"
-                        f"_c{concurrency}_{pattern}"
+                    isl_name = (
+                        isl_profile.get("name") or f"isl{isl_profile['isl_mean']}"
                     )
+                    label = f"shared_sys{length}_{isl_name}_c{concurrency}_{pattern}"
                     runs.append(
                         PrefixCacheRun(
                             scenario="shared_system",
@@ -306,7 +307,9 @@ def _expand_multi_turn(
     # For multi-turn, total requests ~= conversation_num * turn_mean; we still pass
     # an explicit request_count to AIPerf so it stops at a predictable point.
     request_count = int(
-        cfg.get("request_count", max(preset_request_count, conversation_num * turn_mean))
+        cfg.get(
+            "request_count", max(preset_request_count, conversation_num * turn_mean)
+        )
     )
     runs: List[PrefixCacheRun] = []
     for isl_profile in isl_profiles:
