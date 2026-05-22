@@ -467,7 +467,7 @@ class TestSetupBlackholeMeshConfig:
                 assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
 
     def test_sets_p300_mesh_descriptor(self):
-        """Test mesh descriptor is set for p300 device"""
+        """Test mesh descriptor is set for p300 device (maps to p150 descriptor)"""
         mock_settings_bh = Mock()
         mock_settings_bh.device = "p300"
 
@@ -477,7 +477,7 @@ class TestSetupBlackholeMeshConfig:
 
                 expected_path = (
                     "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
-                    "p300_mesh_graph_descriptor.textproto"
+                    "p150_mesh_graph_descriptor.textproto"
                 )
                 assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
 
