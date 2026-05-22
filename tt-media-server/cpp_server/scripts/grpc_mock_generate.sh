@@ -60,13 +60,13 @@ for id in "${IDS[@]}"; do
 done
 
 echo "gRPC ${GRPC_ADDR} inference.Inference/Generate"
-echo "  model=${MODEL} token_ids=[${JSON_IDS}] max_tokens=${MAX_TOKENS}"
+echo "  model=${MODEL} token_ids=[${JSON_IDS}] stop_conditions.max_tokens=${MAX_TOKENS}"
 echo "--- stream ---"
 
 grpcurl -plaintext \
   -import-path "${CPP_SERVER_DIR}/protos" \
   -proto inference.proto \
-  -d "{\"model\":\"${MODEL}\",\"token_ids\":[${JSON_IDS}],\"max_tokens\":${MAX_TOKENS}}" \
+  -d "{\"model\":\"${MODEL}\",\"token_ids\":[${JSON_IDS}],\"stop_conditions\":{\"max_tokens\":${MAX_TOKENS}}}" \
   "${GRPC_ADDR}" inference.Inference/Generate
 
 echo "--- done ---"

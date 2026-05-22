@@ -56,7 +56,7 @@ echo "--- Generate (streaming, 3 prompt tokens) ---"
 grpcurl "${GRPCURL_COMMON[@]}" -d '{
   "model": "deepseek-ai/DeepSeek-R1-0528",
   "token_ids": [1, 2, 3],
-  "max_tokens": 4
+  "stop_conditions": { "max_tokens": 4 }
 }' "${GRPC_ADDR}" inference.Inference/Generate
 
 echo ""

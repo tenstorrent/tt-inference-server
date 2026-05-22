@@ -9,63 +9,112 @@
 
 namespace tt::api::grpc {
 
+namespace {
+
 using namespace tt::domain::llm;
+
+constexpr int kDynamoDefaultMaxTokens = 128;
+
+void prepareLLMRequest(LLMRequest& req, const inference::GenerateRequest* grpc) {
+  std::vector<int> tokens;
+  tokens.reserve(grpc->token_ids_size());
+  for (int i = 0; i < grpc->token_ids_size(); ++i) {
+    tokens.push_back(static_cast<int>(grpc->token_ids(i)));
+  }
+  const int promptLen = static_cast<int>(tokens.size());
+
+  req.stream = true;
+  req.skip_apply_chat_template = true;
+  req.prompt = std::move(tokens);
+  req.prompt_tokens_count = promptLen;
+  req.full_prompt_tokens_count = promptLen;
+
+  if (!grpc->model().empty()) {
+    req.model = grpc->model();
+  }
+
+  if (grpc->has_stop_conditions()) {
+    const auto& sc = grpc->stop_conditions();
+    if (sc.has_max_tokens()) {
+      req.max_tokens = static_cast<int>(sc.max_tokens());
+    } else {
+      req.max_tokens = kDynamoDefaultMaxTokens;
+    }
+    if (sc.has_min_tokens()) {
+      req.min_tokens = static_cast<int>(sc.min_tokens());
+    }
+    req.stop_token_ids.clear();
+    req.stop_token_ids.reserve(sc.stop_token_ids_size());
+    for (int i = 0; i < sc.stop_token_ids_size(); ++i) {
+      req.stop_token_ids.push_back(static_cast<int>(sc.stop_token_ids(i)));
+    }
+    req.stop.clear();
+    req.stop.reserve(sc.stop_size());
+    for (int i = 0; i < sc.stop_size(); ++i) {
+      req.stop.push_back(sc.stop(i));
+    }
+    if (sc.has_ignore_eos()) {
+      req.ignore_eos = sc.ignore_eos();
+    }
+  } else {
+    req.max_tokens = kDynamoDefaultMaxTokens;
+  }
+
+  if (grpc->has_sampling_options()) {
+    const auto& so = grpc->sampling_options();
+    if (so.has_temperature()) {
+      req.temperature = so.temperature();
+    }
+    if (so.has_top_p()) {
+      req.top_p = so.top_p();
+    }
+    if (so.has_top_k()) {
+      req.top_k = static_cast<int>(so.top_k());
+    }
+    if (so.has_seed()) {
+      req.seed = static_cast<int>(so.seed());
+    }
+    if (so.has_frequency_penalty()) {
+      req.frequency_penalty = so.frequency_penalty();
+    }
+    if (so.has_presence_penalty()) {
+      req.presence_penalty = so.presence_penalty();
+    }
+    if (so.has_repetition_penalty()) {
+      req.repetition_penalty = so.repetition_penalty();
+    }
+  }
+}
+
+/// Align with tt::dynamo::DynamoEndpoint::toTokenChunk — one token id per
+/// chunk; finish_reason only on the final chunk.
+inference::TokenChunk toGrpcTokenChunk(const LLMStreamChunk& chunk,
+                                       bool isFinal) {
+  inference::TokenChunk out;
+  if (!chunk.choices.empty() && chunk.choices.front().token_id.has_value()) {
+    out.add_token_ids(static_cast<uint32_t>(*chunk.choices.front().token_id));
+  }
+  if (isFinal) {
+    if (!chunk.choices.empty() &&
+        chunk.choices.front().finish_reason.has_value()) {
+      out.set_finish_reason(chunk.choices.front().finish_reason.value());
+    } else {
+      out.set_finish_reason("stop");
+    }
+  }
+  return out;
+}
+
+}  // namespace
 
 GrpcInferenceService::GrpcInferenceService(
     std::shared_ptr<tt::services::LLMService> service)
     : llmService(std::move(service)) {}
 
-void GrpcInferenceService::prepareLLMRequest(
-    LLMRequest& req, const inference::GenerateRequest* request, uint32_t) {
-  std::vector<int> tokens;
-  tokens.reserve(request->token_ids_size());
-  for (int i = 0; i < request->token_ids_size(); ++i) {
-    tokens.push_back(static_cast<int>(request->token_ids(i)));
-  }
-  req.prompt = std::move(tokens);
-
-  if (!request->model().empty()) {
-    req.model = request->model();
-  }
-  if (request->max_tokens() > 0) {
-    req.max_tokens = static_cast<int>(request->max_tokens());
-  }
-
-  if (request->has_sampling_params()) {
-    const auto& sp = request->sampling_params();
-    if (sp.temperature() > 0) {
-      req.temperature = sp.temperature();
-    }
-    if (sp.top_p() > 0) {
-      req.top_p = sp.top_p();
-    }
-    if (sp.top_k() > 0) {
-      req.top_k = static_cast<int>(sp.top_k());
-    }
-    if (sp.max_tokens() > 0) {
-      req.max_tokens = static_cast<int>(sp.max_tokens());
-    }
-  }
-
-  req.stream = true;
-}
-
 void GrpcInferenceService::handleStreamChunk(
     LLMStreamChunk& chunk, bool isFinal,
-    tt::utils::BlockingQueue<ChunkData>& queue) {
-  ChunkData data;
-  data.is_final = isFinal;
-
-  for (const auto& choice : chunk.choices) {
-    if (choice.token_id.has_value()) {
-      data.token_ids.push_back(choice.token_id.value());
-    }
-    if (choice.finish_reason.has_value()) {
-      data.finish_reason = choice.finish_reason;
-    }
-  }
-
-  queue.push(std::move(data));
+    tt::utils::BlockingQueue<inference::TokenChunk>& queue) {
+  queue.push(toGrpcTokenChunk(chunk, isFinal));
   if (isFinal) {
     queue.markDone();
   }
@@ -74,30 +123,20 @@ void GrpcInferenceService::handleStreamChunk(
 ::grpc::Status GrpcInferenceService::drainQueueToWriter(
     ::grpc::ServerContext* ctx,
     ::grpc::ServerWriter<inference::TokenChunk>* writer, uint32_t taskId,
-    tt::utils::BlockingQueue<ChunkData>& queue) {
-  while (auto dataOpt = queue.pop()) {
-    ChunkData& data = *dataOpt;
-
-    inference::TokenChunk chunk;
-    for (int64_t tid : data.token_ids) {
-      chunk.add_token_ids(static_cast<uint32_t>(tid));
-    }
-    if (data.finish_reason.has_value()) {
-      chunk.set_finish_reason(data.finish_reason.value());
-    }
-
+    tt::utils::BlockingQueue<inference::TokenChunk>& queue) {
+  while (auto chunkOpt = queue.pop()) {
     if (ctx->IsCancelled()) {
       llmService->abortRequest(taskId);
       return ::grpc::Status::CANCELLED;
     }
 
-    if (!writer->Write(chunk)) {
+    if (!writer->Write(*chunkOpt)) {
       llmService->abortRequest(taskId);
       return ::grpc::Status(::grpc::StatusCode::ABORTED,
                             "Failed to write chunk");
     }
 
-    if (data.is_final) {
+    if (chunkOpt->has_finish_reason()) {
       return ::grpc::Status::OK;
     }
   }
@@ -110,10 +149,10 @@ void GrpcInferenceService::handleStreamChunk(
     ::grpc::ServerWriter<inference::TokenChunk>* writer) {
   uint32_t taskId = tt::utils::TaskIDGenerator::generate();
   LLMRequest llmRequest(taskId);
-  prepareLLMRequest(llmRequest, request, taskId);
+  prepareLLMRequest(llmRequest, request);
   llmService->preProcess(llmRequest);
 
-  tt::utils::BlockingQueue<ChunkData> chunkQueue;
+  tt::utils::BlockingQueue<inference::TokenChunk> chunkQueue;
 
   llmService->processStreamingRequest(
       std::move(llmRequest),

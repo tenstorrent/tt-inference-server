@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+//
+// Wire shapes mirror tt::dynamo::GenerateRequest / TokenChunk (Dynamo
+// PreprocessedRequest) so the gRPC backend can replace the Dynamo TCP
+// generate path without a separate request schema.
 
 syntax = "proto2";
 
@@ -10,18 +14,29 @@ service Inference {
   rpc Health(HealthRequest) returns (HealthResponse);
 }
 
-message SamplingParams {
+message StopConditions {
+  optional uint32 max_tokens = 1;
+  optional uint32 min_tokens = 2;
+  repeated uint32 stop_token_ids = 3;
+  repeated string stop = 4;
+  optional bool ignore_eos = 5;
+}
+
+message SamplingOptions {
   optional float temperature = 1;
   optional float top_p = 2;
   optional uint32 top_k = 3;
-  optional uint32 max_tokens = 4;
+  optional uint32 seed = 4;
+  optional float frequency_penalty = 5;
+  optional float presence_penalty = 6;
+  optional float repetition_penalty = 7;
 }
 
 message GenerateRequest {
   required string model = 1;
   repeated uint32 token_ids = 2;
-  optional uint32 max_tokens = 3;
-  optional SamplingParams sampling_params = 4;
+  optional StopConditions stop_conditions = 3;
+  optional SamplingOptions sampling_options = 4;
 }
 
 message TokenChunk {
