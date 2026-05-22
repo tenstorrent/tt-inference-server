@@ -18,6 +18,7 @@ Usage:
 """
 
 import json
+import math
 import random
 from pathlib import Path
 
@@ -27,44 +28,76 @@ NUM_PREFIX_GROUPS = 4
 BLOCK_SIZE = 512
 OUT_PATH = Path(__file__).with_name("ci_mooncake.jsonl")
 
+# AIPerf 0.5 validates that
+#     len(hash_ids) * BLOCK_SIZE >= input_length > (len(hash_ids) - 1) * BLOCK_SIZE
+# i.e. len(hash_ids) == ceil(input_length / BLOCK_SIZE). The previous
+# generator emitted a fixed `len(prefix_blocks)+1` regardless of ISL,
+# which made every 1024+-token request fail with
+#   ConfigurationError('Input length: 1536, Hash IDs: [..], Block size: 512 are not compatible.')
+# Below we always size hash_ids = ceil(input_length / BLOCK_SIZE), keeping
+# the group's shared prefix at the front (so AIPerf's radix-tree groups it
+# with siblings) and padding the tail with per-request unique blocks.
+#
+# Why we only allow ISLs that are multiples of BLOCK_SIZE: AIPerf treats
+# the trailing block as "fills exactly input_length - (len-1)*B tokens".
+# We keep the math trivially valid by always picking ISL ∈ {B, 2B, 3B, 4B}
+# so the trace's intent ("requests of length L share their first K
+# blocks") is preserved without depending on AIPerf's fractional handling
+# of the last block.
+
 
 def main() -> None:
     rng = random.Random(SEED)
-    # Each prefix group gets a unique [hash_id, hash_id, ...] root path.
-    # AIPerf groups requests with identical hash_ids prefixes as cache-shared.
+    # Each prefix group gets a unique root path of shared blocks. AIPerf
+    # groups requests with identical hash_ids prefixes as cache-shared,
+    # so this controls the theoretical reuse ceiling per group.
     groups = []
     for g in range(NUM_PREFIX_GROUPS):
-        prefix_blocks = 1 + (g % 3)  # 1, 2 or 3 shared blocks
+        # 1..3 shared blocks per group, deterministic
+        prefix_blocks = 1 + (g % 3)
         # Stable, non-colliding ids per group (10*group + offset).
-        groups.append(
-            [10 * (g + 1) + i for i in range(prefix_blocks)]
-        )
+        groups.append([10 * (g + 1) + i for i in range(prefix_blocks)])
 
-    isl_choices_short = (256, 384, 512)
-    isl_choices_long = (1024, 1536, 2048)
+    # ISLs are exact multiples of BLOCK_SIZE so len(hash_ids) is unambiguous.
+    isl_choices_short = (BLOCK_SIZE, 2 * BLOCK_SIZE)            #  512, 1024
+    isl_choices_long = (3 * BLOCK_SIZE, 4 * BLOCK_SIZE)         # 1536, 2048
     osl_choices = (64, 96, 128, 192)
 
     requests = []
     timestamp_ms = 0
+    next_unique_block = 10_000
     for i in range(NUM_REQUESTS):
         group_idx = rng.choices(
             range(NUM_PREFIX_GROUPS),
-            # Skewed distribution so a few groups dominate (~ Zipf-like).
+            # Skewed (Zipf-ish) distribution: a few groups dominate, the
+            # rest are tail traffic. Produces non-trivial cache pressure.
             weights=[8, 4, 2, 1],
             k=1,
         )[0]
         prefix_hashes = list(groups[group_idx])
-        # Add a per-request unique suffix block so the trace exhibits both
-        # shared roots and unique leaves.
-        unique_block_id = 1000 + i
-        hash_ids = prefix_hashes + [unique_block_id]
 
-        # Mix short and long contexts so the CI preset covers both regimes.
+        # Mix short and long contexts so the CI preset exercises both
+        # regimes (small ISL = cheap-to-recompute, long ISL = where
+        # prefix caching actually pays off).
         if rng.random() < 0.7:
             isl = rng.choice(isl_choices_short)
         else:
             isl = rng.choice(isl_choices_long)
         osl = rng.choice(osl_choices)
+
+        # Required: len(hash_ids) == ceil(isl / BLOCK_SIZE).
+        num_blocks = math.ceil(isl / BLOCK_SIZE)
+        # Keep the shared root, then pad with unique blocks so every
+        # request still hashes to a distinct leaf.
+        shared = prefix_hashes[: max(1, min(len(prefix_hashes), num_blocks - 1))]
+        unique_tail_count = num_blocks - len(shared)
+        unique = list(range(next_unique_block, next_unique_block + unique_tail_count))
+        next_unique_block += unique_tail_count
+        hash_ids = shared + unique
+        assert len(hash_ids) * BLOCK_SIZE >= isl, (
+            f"trace generator bug: isl={isl} hash_ids={hash_ids} "
+            f"block_size={BLOCK_SIZE}"
+        )
 
         # Poisson-ish inter-arrival (~25 ms mean) for a non-trivial schedule.
         timestamp_ms += int(rng.expovariate(1.0 / 25.0))

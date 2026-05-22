@@ -37,6 +37,9 @@ generated_modules
 *_params.pt
 *.json
 *.jsonl
+# Curated sample traces shipped with the benchmarking suite need to
+# escape the wildcard above so CI runs can use them out of the box.
+!benchmarking/benchmark_targets/sample_traces/*.jsonl
 *.pt
 *.tti
 *.txt
