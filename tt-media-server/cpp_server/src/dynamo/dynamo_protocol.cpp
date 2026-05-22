@@ -23,17 +23,18 @@ namespace {
 /// Parse JSON bytes into a Json::Value. Returns an empty value on parse error
 /// (callers treat that as "skip").
 Json::Value parseJsonBytes(const uint8_t* data, size_t len) {
-  Json::Value out;
-  if (len == 0) return out;
+  Json::Value outt;
+  if (len == 0) return outt;
   Json::CharReaderBuilder builder;
   builder["collectComments"] = false;
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   std::string errs;
   const char* begin = reinterpret_cast<const char*>(data);
-  if (!reader->parse(begin, begin + len, &out, &errs)) {
+  if (!reader->parse(begin, begin + len, &outt, &errs)) {
     return Json::Value{};
   }
-  return out;
+
+  return outt;
 }
 
 std::string dumpJsonCompact(const Json::Value& v) {
@@ -314,9 +315,14 @@ void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
     return;
   }
 
-  // Stream tokens via the call-home connection (separate TCP socket back to
-  // the frontend's stream server).
-  stream_response(connInfo, ctrl.id, genReq);
+  // Off-thread the slow path (LLMService dispatch + call-home streaming)
+  // so the read loop on `fd` can immediately consume the next pipelined
+  // request. `stream_response` opens its own outbound socket and never
+  // touches `fd`, so concurrent streams don't share state.
+  std::thread([this, connInfo = std::move(connInfo), requestId = ctrl.id,
+               genReq = std::move(genReq)]() {
+    stream_response(connInfo, requestId, genReq);
+  }).detach();
 }
 
 void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
