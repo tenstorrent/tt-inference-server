@@ -44,7 +44,11 @@ DISPLAY_COLUMNS: List[Tuple[str, str]] = [
     ("request_count", "N Req"),
     ("prefix_cache_hit_rate_pct", "Cache Hit %"),
     ("mean_ttft_ms", "TTFT Avg (ms)"),
-    ("p50_ttft_ms", "TTFT P50 (ms)"),
+    # Parser writes `median_ttft_ms` (consistent with the rest of the
+    # benchmark suite, e.g. workflows/run_reports.py and
+    # benchmarking/run_guidellm_benchmarks.py). The previous lookup of
+    # `p50_ttft_ms` was a typo that silently rendered N/A every time.
+    ("median_ttft_ms", "TTFT P50 (ms)"),
     ("p95_ttft_ms", "TTFT P95 (ms)"),
     ("p99_ttft_ms", "TTFT P99 (ms)"),
     ("mean_tpot_ms", "TPOT Avg (ms)"),
