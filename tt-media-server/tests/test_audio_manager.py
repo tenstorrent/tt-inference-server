@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import io
+import types
 import wave
 
 import numpy as np
@@ -14,7 +15,7 @@ from unittest.mock import patch
 import config.settings
 
 with patch.object(config.settings.settings, "model_service", None):
-    from utils.audio_manager import AudioManager
+    from utils.audio_manager import AudioManager, _installLegacyTorchLoadDefault
 
 
 class DummySettings:
@@ -99,3 +100,72 @@ def test_normalize_speaker_ids():
     assert norm[0]["speaker"] == "SPEAKER_00"
     assert norm[1]["speaker"] == "SPEAKER_01"
     assert norm[2]["speaker"] == "SPEAKER_00"
+
+
+def _makeFakeTorchModule():
+    """Return (fakeTorch, callLog) where fakeTorch.load records its calls."""
+    callLog = []
+
+    def fakeLoad(*args, **kwargs):
+        callLog.append((args, dict(kwargs)))
+        return "loaded"
+
+    return types.SimpleNamespace(load=fakeLoad), callLog
+
+
+def test_install_legacy_torch_load_default_replaces_load():
+    fakeTorch, _ = _makeFakeTorchModule()
+    originalLoad = fakeTorch.load
+    _installLegacyTorchLoadDefault(fakeTorch)
+    assert fakeTorch.load is not originalLoad
+    assert fakeTorch.load.__name__ == "_torchLoadLegacyDefault"
+
+
+def test_install_legacy_torch_load_default_returns_wrapper():
+    fakeTorch, _ = _makeFakeTorchModule()
+    wrapper = _installLegacyTorchLoadDefault(fakeTorch)
+    assert wrapper is fakeTorch.load
+
+
+def test_legacy_default_forces_false_when_kwarg_missing():
+    fakeTorch, callLog = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    fakeTorch.load("/tmp/model.pt")
+    assert callLog[0][1] == {"weights_only": False}
+
+
+def test_legacy_default_forces_false_when_kwarg_is_none():
+    # The actual scenario hit by lightning_fabric._load: it forwards
+    # weights_only=None explicitly, which a plain dict.setdefault() would miss.
+    fakeTorch, callLog = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    fakeTorch.load("/tmp/model.pt", weights_only=None)
+    assert callLog[0][1] == {"weights_only": False}
+
+
+def test_legacy_default_respects_explicit_true():
+    fakeTorch, callLog = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    fakeTorch.load("/tmp/model.pt", weights_only=True)
+    assert callLog[0][1] == {"weights_only": True}
+
+
+def test_legacy_default_respects_explicit_false():
+    fakeTorch, callLog = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    fakeTorch.load("/tmp/model.pt", weights_only=False)
+    assert callLog[0][1] == {"weights_only": False}
+
+
+def test_legacy_default_forwards_positional_and_extra_kwargs():
+    fakeTorch, callLog = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    fakeTorch.load("/tmp/model.pt", "cpu", map_location="cpu")
+    assert callLog[0][0] == ("/tmp/model.pt", "cpu")
+    assert callLog[0][1] == {"map_location": "cpu", "weights_only": False}
+
+
+def test_legacy_default_preserves_return_value():
+    fakeTorch, _ = _makeFakeTorchModule()
+    _installLegacyTorchLoadDefault(fakeTorch)
+    assert fakeTorch.load("/tmp/model.pt") == "loaded"

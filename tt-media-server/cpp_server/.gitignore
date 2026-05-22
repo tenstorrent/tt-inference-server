@@ -1,5 +1,7 @@
 # Build output and CMake / FetchContent (build/, build-tracy/, build_tsan/, …)
 build*/
+!.cursor/
+!.cursor/**
 tsan_build/
 .cache/
 
