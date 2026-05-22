@@ -47,7 +47,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": True,
+                "cpu_sampling": self.settings.vllm.cpu_sampling,
                 "optimization_level": 1,
             },
         )

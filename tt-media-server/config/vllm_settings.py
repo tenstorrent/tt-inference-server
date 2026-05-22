@@ -15,3 +15,8 @@ class VLLMSettings(BaseModel):
     max_num_seqs: int = int(os.environ.get("MAX_NUM_SEQS", 1))
     max_num_batched_tokens: int = max_model_length * max_num_seqs
     gpu_memory_utilization: float = 0.1
+    # When False (default), sampling runs on the TT device (vllm-tt's on-device
+    # sampler path); when True, sampling runs on CPU. Env-driven so it can be
+    # flipped per-run without rebuilding the image. See
+    # debug-docs/sampling_params_on_device_analysis.md.
+    cpu_sampling: bool = os.environ.get("CPU_SAMPLING", "false").lower() != "false"
