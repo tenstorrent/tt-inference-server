@@ -2057,9 +2057,16 @@ jobs:
           # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
           # frontend tokenizer in sync with the backend avoids vocab
           # mismatches that show up as model-routing rejections.
+          #
+          # --router-mode kv: required for the per-worker last-observed
+          # ITL/TTFT gauges to populate per cpp_server instance. The
+          # default round-robin router doesn't attach the worker label,
+          # so the "both backends took traffic" verification step below
+          # would have nothing to count.
           MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
           "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
               --http-port 8000 \
+              --router-mode kv \
               --model-name "${MODEL_NAME}" \
               --model-path "${MODEL_PATH}" \
               > frontend.log 2>&1 &
@@ -2115,6 +2122,59 @@ jobs:
             --save-result \
             --result-filename "vllm-bench-dynamo.json" \
             2>&1 | tee bench_dynamo_output.txt
+
+      - name: Verify both backends served traffic (per-worker ITL gauge)
+        # Dynamo's frontend exposes per-worker last-observed gauges on
+        # /metrics (same HTTP port as the API). With --router-mode kv
+        # every served chunk is tagged with the worker_id of the
+        # cpp_server instance that produced it, so after a bench of
+        # 1000 random prompts at concurrency 64 we expect ≥2 distinct
+        # worker_id labels with a non-zero
+        # `dynamo_frontend_worker_last_inter_token_latency_seconds`.
+        #
+        # A single active worker means the load-balancer collapsed onto
+        # one backend — the regression mode this whole job exists to
+        # detect (most recently caused by the etcd-empty-host bug in
+        # cpp_server's discovery.cpp silencing one of the two
+        # instances).
+        #
+        # Must run before the cleanup step below — once the frontend is
+        # killed /metrics goes away.
+        run: |
+          METRICS=$(curl -sS http://127.0.0.1:8000/metrics)
+          echo "--- per-worker ITL gauges ---"
+          echo "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
+            || echo "(no ITL gauges emitted — frontend never observed ≥2 tokens from any worker)"
+          echo ""
+          echo "--- per-worker TTFT gauges ---"
+          echo "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_time_to_first_token_seconds\{' \
+            || true
+          echo ""
+          # Count workers with non-zero ITL. The metric format is:
+          #   dynamo_frontend_worker_last_inter_token_latency_seconds{...,worker_id="<decimal>",...} <float>
+          # awk -F'} ' splits on the closing label brace + space, putting
+          # the float value in $2.
+          ACTIVE=$(printf '%s\n' "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
+            | awk -F'} ' '$2 + 0 > 0 {n++} END {print n+0}')
+          # Cross-check: count distinct cpp_server backends in etcd. The
+          # ITL count must match — fewer means at least one registered
+          # backend never received a request.
+          REGISTERED=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/backend/generate/" \
+            | grep -c "v1/instances/default/backend/generate/" || true)
+          echo "registered_backends=${REGISTERED}  active_backends=${ACTIVE}"
+          if [ "$ACTIVE" -lt 2 ]; then
+            echo "::error::Only ${ACTIVE} backend(s) reported non-zero ITL after bench (registered=${REGISTERED}, expected ≥2 active)."
+            echo "  Routing collapsed onto a single cpp_server instance — check etcd lease"
+            echo "  registrations and the kv-event subscription in frontend.log."
+            exit 1
+          fi
+          echo "✅ ${ACTIVE} cpp_server backends served traffic (matches ${REGISTERED} registered)" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ ${ACTIVE} cpp_server backends served traffic"
 
       - name: Stop Dynamo frontend, cpp_server backends, and etcd
         if: always()
