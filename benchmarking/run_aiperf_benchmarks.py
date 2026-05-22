@@ -642,6 +642,14 @@ def build_aiperf_cmd_for_prefix_cache_run(
     if not url.startswith("http"):
         url = f"http://{url}"
 
+    # AIPerf 0.5 rejects `--request-count` together with either
+    # `--input-file` (the trace owns the request count) or
+    # `--conversation-num` (the conversation count owns it). Only emit
+    # `--request-count` for synthetic, non-multi-turn runs.
+    emit_request_count = (
+        not run.uses_trace and run.conversation_num is None
+    )
+
     cmd: List[str] = [
         str(venv_python),
         "-m",
@@ -656,8 +664,6 @@ def build_aiperf_cmd_for_prefix_cache_run(
         "--streaming",
         "--concurrency",
         str(run.concurrency),
-        "--request-count",
-        str(run.request_count),
         "--url",
         url,
         "--artifact-dir",
@@ -666,27 +672,27 @@ def build_aiperf_cmd_for_prefix_cache_run(
         "--server-metrics-formats",
         "jsonl",
     ]
+    if emit_request_count:
+        cmd.extend(["--request-count", str(run.request_count)])
 
     if run.uses_trace:
         # Trace-driven mode (mooncake_trace scenario).
+        #
+        # AIPerf 0.5 rejects `--arrival-pattern` whenever a custom dataset
+        # with timestamps is loaded — the trace's `timestamp` column already
+        # defines arrival times. So we always run trace mode in
+        # `--fixed-schedule` (consume the trace's timestamps verbatim, with
+        # `--fixed-schedule-auto-offset` so the first request fires at t=0).
         cmd.extend(
             [
                 "--custom-dataset-type",
                 run.custom_dataset_type or "mooncake_trace",
                 "--input-file",
                 str(run.trace_input_file),
+                "--fixed-schedule",
+                "--fixed-schedule-auto-offset",
             ]
         )
-        if run.fixed_schedule:
-            cmd.extend(["--fixed-schedule", "--fixed-schedule-auto-offset"])
-        else:
-            # Synthetic arrival pattern only applies when we don't take the
-            # trace timestamps verbatim.
-            cmd.extend(["--arrival-pattern", run.arrival_pattern])
-            if run.arrival_smoothness is not None and run.arrival_pattern == "gamma":
-                cmd.extend(["--arrival-smoothness", str(run.arrival_smoothness)])
-            if run.request_rate is not None:
-                cmd.extend(["--request-rate", str(run.request_rate)])
 
         # Block size controls how prefix groups are formed in the radix tree.
         if run.block_size is not None:
@@ -983,6 +989,23 @@ def run_prefix_cache_benchmark(
         )
         return 1
 
+    # AIPerf 0.5 reports rc=0 even when every request errored (e.g. 401
+    # Unauthorized, 400 Bad Request from a missing chat template). In that
+    # case every latency field comes out as 0.0 and we'd silently emit a
+    # row of zeros. Treat "no request actually completed" as a hard failure
+    # so the suite surfaces server-side problems instead of hiding them.
+    mean_ttft_ms = float(metrics.get("mean_ttft_ms") or 0.0)
+    completed = int(metrics.get("completed") or 0)
+    if mean_ttft_ms <= 0.0 or completed <= 0:
+        logger.error(
+            "[prefix-cache] AIPerf produced no successful requests for "
+            f"{run.scenario}/{run.label} "
+            f"(completed={completed}, mean_ttft_ms={mean_ttft_ms}). "
+            f"Inspect {artifact_dir}/logs/aiperf.log and the AIPerf Error "
+            "Summary above for the underlying HTTP error (401/400/etc.)."
+        )
+        return 1
+
     # Persist combined result JSON for the report layer.
     save_prefix_cache_result(
         run=run,
@@ -1174,7 +1197,13 @@ def send_warmup_requests(
             if prompt_client.env_config.jwt_secret:
                 import jwt as jwt_lib
 
-                json_payload = {"team_id": "tenstorrent", "token_id": "warmup"}
+                # Must match the token_id the inference server's JWT validator
+                # accepts; the rest of the repo uses "debug-test" (see
+                # utils/prompt_client.py, utils/vllm_run_utils.py). The previous
+                # "warmup" value caused every warm-up request to 401 against
+                # the vLLM TT image, which left the model cold for the first
+                # real benchmark run.
+                json_payload = {"team_id": "tenstorrent", "token_id": "debug-test"}
                 token = jwt_lib.encode(
                     json_payload, prompt_client.env_config.jwt_secret, algorithm="HS256"
                 )
