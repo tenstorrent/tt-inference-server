@@ -3,6 +3,7 @@
 
 #include "services/llm_pipeline.hpp"
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -119,6 +120,18 @@ void LLMPipeline::resolveSession(
     std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError,
     std::function<void()> cancelFn) const {
+  size_t promptTokens = 0;
+  const char* promptKind = "string";
+  if (auto* toks = std::get_if<std::vector<int>>(&req->prompt)) {
+    promptTokens = toks->size();
+    promptKind = "tokens";
+  }
+  TT_LOG_INFO(
+      "[LLMPipeline] Request received taskId={} model={} stream={} "
+      "messages={} promptKind={} promptTokens={}",
+      req->task_id, req->model.value_or("default"), req->stream,
+      req->messages.size(), promptKind, promptTokens);
+
   SessionInfo info;
 
   if (!sessionManager_) {
@@ -140,8 +153,19 @@ void LLMPipeline::resolveSession(
   // Layer 1: Prefix-cache routing. Requires a prior turn and a lookup hash.
   if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
     try {
+      // Time the synchronous SessionManager acquire. Under burst load this
+      // is where prefixIndex / sessions mutex contention shows up; per-req
+      // µs lets you spot tail latency events without a profiler.
+      const auto tAcquireStart = std::chrono::steady_clock::now();
       auto acquired = sessionManager_->tryAcquireByPrefixHash(
           *routingInfo.lookupHash, cancelFn);
+      const auto acquireUs =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - tAcquireStart)
+              .count();
+      TT_LOG_INFO(
+          "[SessionTimer] taskId={} tryAcquireByPrefixHash_us={} hit={}",
+          req->task_id, acquireUs, acquired.has_value());
 
       if (acquired.has_value()) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
@@ -183,17 +207,38 @@ void LLMPipeline::resolveSession(
   }
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
+  // Capture `tCreateStart` so the onCompletion callback can report end-to-end
+  // createSession latency (submit → completion). Under contention this gap
+  // grows: it covers queueing for the SessionManager, slot allocation, any
+  // memory-request RPC, and the trantor hop back onto `loop`.
+  const auto tCreateStart = std::chrono::steady_clock::now();
   sessionManager_->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
-       mgr = sessionManager_](const tt::domain::Session& session) mutable {
+       mgr = sessionManager_,
+       tCreateStart](const tt::domain::Session& session) mutable {
+        const auto createUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tCreateStart)
+                .count();
+
+        const auto tAcqInFlightStart = std::chrono::steady_clock::now();
         req->sessionId = session.getSessionId();
         req->slotId =
             mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
+        const auto acqInFlightUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tAcqInFlightStart)
+                .count();
+
         req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(),
                                 routingInfo.registrationHash);
 
+        TT_LOG_INFO(
+            "[SessionTimer] taskId={} createSession_us={} "
+            "acquireInFlight_us={}",
+            req->task_id, createUs, acqInFlightUs);
         TT_LOG_INFO(
             "[LLMPipeline] New session: sessionId={}, slotId={}, "
             "registered under hash={}",

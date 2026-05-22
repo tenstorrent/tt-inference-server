@@ -1,6 +1,7 @@
 #include "runtime/runners/llm_runner.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -39,8 +40,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     for (int64_t id : tt::utils::tokenizers::staticInfo().stopTokenIds) {
       stopIds.push_back(static_cast<int32_t>(id));
     }
-    guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
-                                                           vocabSize, stopIds);
+    guidedDecoder = std::make_unique<GuidedDecoderManager>(
+        encodedVocab, vocabSize, stopIds);
     TT_LOG_INFO(
         "[LLMRunner] Guided decoder initialized (vocab_size={}, "
         "stop_tokens={})",

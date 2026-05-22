@@ -163,9 +163,22 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
   return [pipeline, pool](const GenerateRequest& dynReq,
                           std::function<bool(const TokenChunk&)> sendChunk) {
+    using SteadyClock = std::chrono::steady_clock;
+    const auto recvT = SteadyClock::now();
+    const std::string probeId = dynReq.raw.get("request_id", "").asString();
+    auto firstChunkSeen = std::make_shared<std::atomic<bool>>(false);
+
     trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
     auto svc = pipeline->service();
+
+    // Capture which loop thread is serving this request — combined with the
+    // pre-warm log this lets us spot any unexpected cold thread that bypassed
+    // the warm-up (e.g. consumer thread spawned later in LLMService).
+    const auto loopTid = std::hash<std::thread::id>{}(
+        std::this_thread::get_id());
+    TT_LOG_INFO("[DynamoLatency] id={} stage=dispatched loop_tid={}",
+                probeId.empty() ? "?" : probeId, loopTid);
 
     // Block the dynamo per-request worker thread until the streaming
     // callback signals completion. Using a shared_ptr + future lets the
@@ -187,9 +200,21 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     pipeline->resolveSession(
         req, loop,
-        [pipeline, req, sendChunk,
-         signalDone](services::LLMPipeline::SessionInfo info) {
+        [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen,
+         probeId](services::LLMPipeline::SessionInfo info) {
+          using SteadyClock = std::chrono::steady_clock;
+          const auto tSession = SteadyClock::now();
+          const auto sessionMs =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  tSession - recvT)
+                  .count() /
+              1000.0;
+          TT_LOG_INFO(
+              "[DynamoLatency] id={} stage=session_ready ms_since_recv={:.3f}",
+              probeId.empty() ? "?" : probeId, sessionMs);
+
           auto svc = pipeline->service();
+          const auto tPreStart = SteadyClock::now();
           try {
             svc->preProcess(*req);
           } catch (const std::exception& e) {
@@ -201,10 +226,46 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             signalDone();
             return;
           }
+          const auto preProcessMs =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  SteadyClock::now() - tPreStart)
+                  .count() /
+              1000.0;
+          TT_LOG_INFO(
+              "[DynamoLatency] id={} stage=preprocessed preprocess_ms={:.3f}",
+              probeId.empty() ? "?" : probeId, preProcessMs);
 
-          auto cb = [req, sendChunk, signalDone](
+          const auto tDispatch = SteadyClock::now();
+          auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen,
+                     probeId, tDispatch](
                         const tt::domain::llm::LLMStreamChunk& chunk,
                         bool isFinal) {
+            // Log worker-side TTFT exactly once per request: total since recv
+            // AND time spent purely in BlazeRunner (since dispatchGeneration).
+            // Splitting these lets us tell the difference between "session
+            // resolve + preprocess took 400ms" and "the model itself took
+            // 400ms to emit its first token".
+            bool expected = false;
+            if (firstChunkSeen->compare_exchange_strong(expected, true)) {
+              using SteadyClock = std::chrono::steady_clock;
+              const auto firstChunkT = SteadyClock::now();
+              const auto sinceRecvMs =
+                  std::chrono::duration_cast<std::chrono::microseconds>(
+                      firstChunkT - recvT)
+                      .count() /
+                  1000.0;
+              const auto sinceDispatchMs =
+                  std::chrono::duration_cast<std::chrono::microseconds>(
+                      firstChunkT - tDispatch)
+                      .count() /
+                  1000.0;
+              TT_LOG_INFO(
+                  "[DynamoLatency] id={} stage=first_chunk "
+                  "worker_recv_to_first_chunk_ms={:.3f} "
+                  "dispatch_to_first_chunk_ms={:.3f}",
+                  probeId.empty() ? "?" : probeId, sinceRecvMs,
+                  sinceDispatchMs);
+            }
             sendChunk(toTokenChunk(chunk, isFinal));
             if (isFinal) {
               if (req->session) req->session->clearInFlight();
@@ -290,8 +351,6 @@ void DynamoEndpoint::start() {
   }
 
   DiscoveryConfig dc;
-  dc.backend = options_.discovery_backend;
-  dc.store_path = options_.discovery_path;
   dc.etcd_endpoints = options_.etcd_endpoints;
   dc.etcd_lease_ttl_secs = options_.etcd_lease_ttl_secs;
   dc.namespace_name = options_.namespace_name;
@@ -311,16 +370,11 @@ void DynamoEndpoint::start() {
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
-  const char* backendStr =
-      (dc.backend == DiscoveryBackendKind::Etcd) ? "etcd" : "file";
-  const std::string& backendTarget = (dc.backend == DiscoveryBackendKind::Etcd)
-                                         ? dc.etcd_endpoints
-                                         : dc.store_path;
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery={}({})",
+      "discovery=etcd({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
-      backendStr, backendTarget);
+      dc.etcd_endpoints);
 
   // Refresh the registration periodically so a frontend that prunes stale
   // entries (file mtime) or expires unleased keys (etcd) keeps seeing us.
