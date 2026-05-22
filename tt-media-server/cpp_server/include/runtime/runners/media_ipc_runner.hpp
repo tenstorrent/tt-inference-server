@@ -4,8 +4,11 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
+
+#include <json/json.h>
 
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/ipc_runner.hpp"
@@ -23,12 +26,13 @@ class MediaIpcRunner : public IRunner {
 
  protected:
   int workerId() const { return worker_id_; }
-  virtual void processTask(
-      const tt::ipc::media_payload::MediaPayloadTask& task,
-      tt::ipc::media_payload::MediaPayloadResult& result) = 0;
+  virtual Json::Value processJsonTask(const Json::Value& request,
+                                      uint32_t taskId) = 0;
 
  private:
   void run() override;
+  void processTask(const tt::ipc::media_payload::MediaPayloadTask& task,
+                   tt::ipc::media_payload::MediaPayloadResult& result);
 
   std::string runner_name_;
   int worker_id_;

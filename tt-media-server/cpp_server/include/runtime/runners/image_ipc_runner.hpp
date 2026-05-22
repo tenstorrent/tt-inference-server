@@ -4,10 +4,10 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
-#include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/media_ipc_runner.hpp"
 #include "runtime/runners/media_runner.hpp"
 
@@ -26,8 +26,8 @@ class ImageIpcRunner : public MediaIpcRunner {
   const char* runnerType() const override { return "ImageIpcRunner"; }
 
  private:
-  void processTask(const tt::ipc::media_payload::MediaPayloadTask& task,
-                   tt::ipc::media_payload::MediaPayloadResult& result) override;
+  Json::Value processJsonTask(const Json::Value& request,
+                              uint32_t taskId) override;
 
   config::ImageConfig config_;
   std::unique_ptr<MediaRunner> runner_;

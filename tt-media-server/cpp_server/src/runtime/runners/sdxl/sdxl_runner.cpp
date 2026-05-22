@@ -181,9 +181,7 @@ py::dict SDXLBaseRunner::pipelineDeviceParams() {
 }
 
 void SDXLBaseRunner::initDevice() {
-  if (!config_.visible_devices.empty()) {
-    setenv("TT_VISIBLE_DEVICES", config_.visible_devices.c_str(), 1);
-  }
+  setupRunnerEnvironment(config_);
   py::dict params = pipelineDeviceParams();
 
   // Fabric config must be set BEFORE open_mesh_device.

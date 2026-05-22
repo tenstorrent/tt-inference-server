@@ -3,13 +3,46 @@
 
 #include "runtime/runners/media_ipc_runner.hpp"
 
+#include <chrono>
+#include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <stdexcept>
 #include <utility>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
+
+namespace {
+
+Json::Value readJsonFile(const std::string& path) {
+  std::ifstream input(path);
+  if (!input) {
+    throw std::runtime_error("failed to open media IPC request file: " + path);
+  }
+  Json::CharReaderBuilder builder;
+  Json::Value json;
+  std::string errors;
+  if (!Json::parseFromStream(builder, input, &json, &errors)) {
+    throw std::runtime_error("failed to parse media IPC request file: " +
+                             errors);
+  }
+  return json;
+}
+
+void writeJsonFile(const std::string& path, const Json::Value& json) {
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "";
+  std::ofstream output(path, std::ios::trunc);
+  if (!output) {
+    throw std::runtime_error("failed to open media IPC response file: " + path);
+  }
+  output << Json::writeString(builder, json);
+}
+
+}  // namespace
 
 MediaIpcRunner::MediaIpcRunner(std::string runnerName, int workerId)
     : runner_name_(std::move(runnerName)), worker_id_(workerId) {
@@ -25,6 +58,22 @@ MediaIpcRunner::~MediaIpcRunner() { stop(); }
 
 void MediaIpcRunner::stop() {
   stopped_.store(true, std::memory_order_release);
+}
+
+void MediaIpcRunner::processTask(
+    const tt::ipc::media_payload::MediaPayloadTask& task,
+    tt::ipc::media_payload::MediaPayloadResult& result) {
+  const auto started = std::chrono::steady_clock::now();
+  Json::Value responseJson =
+      processJsonTask(readJsonFile(task.request_path), task.task_id);
+  result.generation_time_seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - started)
+          .count();
+  if (!responseJson.isMember("generation_time")) {
+    responseJson["generation_time"] =
+        std::round(result.generation_time_seconds * 100.0) / 100.0;
+  }
+  writeJsonFile(task.response_path, responseJson);
 }
 
 void MediaIpcRunner::run() {
