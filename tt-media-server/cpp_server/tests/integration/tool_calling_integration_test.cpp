@@ -190,7 +190,6 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
   EXPECT_TRUE(stream.endedWithDone());
 
   // Should have both content and tool call
-  EXPECT_FALSE(stream.content().empty()) << "Expected content before tool call";
   EXPECT_NE(stream.content().find("check the weather"), std::string::npos);
 
   ASSERT_TRUE(stream.hasToolCalls());
