@@ -1887,6 +1887,24 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       no_proxy: "localhost,127.0.0.1,::1"
+      # Shared by the Dynamo frontend and every cpp_server backend in this
+      # job so all processes agree on discovery store, request/event plane,
+      # and endpoint identity (NAMESPACE/COMPONENT/ENDPOINT). Mirrors the
+      # exports in cpp_server/scripts/start_dynamo.sh — we set them at the
+      # job level so we can launch one frontend + N backends without
+      # repeating the env block on every step.
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_COMPONENT: backend
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      LLM_DEVICE_BACKEND: mock_pipeline
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
       run:
         working-directory: tt-media-server
@@ -1936,7 +1954,7 @@ jobs:
       - name: Start etcd
         run: |
           # --data-dir under /tmp so it gets wiped between runs; bind to
-          # 127.0.0.1 only — both Dynamo frontends + both cpp_server
+          # 127.0.0.1 only — the Dynamo frontend and both cpp_server
           # backends run on this same runner.
           etcd \
             --data-dir /tmp/etcd-data \
@@ -1971,67 +1989,72 @@ jobs:
           # Expose vllm on PATH for subsequent bench step.
           echo "$HOME/.venvs/dynamo/bin" >> "$GITHUB_PATH"
 
-      - name: Start Dynamo + cpp_server pair 1 (frontend 8000, backend 8001)
+      # Two cpp_server backends + one Dynamo frontend. The frontend
+      # discovers both backends through the shared etcd store (one instance
+      # key per backend under v1/instances/<ns>/<component>/<endpoint>/) and
+      # load-balances requests across them. Backends register the same
+      # NAMESPACE/COMPONENT/ENDPOINT (inherited from job-level env) and are
+      # only differentiated by their cpp_server HTTP port (8001 vs 8002)
+      # and their etcd lease id; the frontend's display model_name is set
+      # once for the whole fleet.
+      - name: Start cpp_server backend 1 (port 8001)
         run: |
           cd cpp_server
-          # MODEL_NAME aligned with the model the vllm bench client uses so
-          # both sides tokenize against the same vocab (otherwise the client
-          # tokenizes against deepseek-ai/* while the frontend exposes a
-          # different display_name and the request count gets rejected by
-          # model routing).
-          # LLM_DEVICE_BACKEND must be set in the *parent* env (the script
-          # only reads it for the MODEL_DIR pick — the cpp_server binary
-          # inherits it from the environment).
-          DYN_VENV="$HOME/.venvs/dynamo" \
-          DYN_DISCOVERY_BACKEND=etcd \
-          ETCD_ENDPOINTS=http://127.0.0.1:2379 \
-          HTTP_PORT=8000 SERVER_PORT=8001 \
-          MODEL_NAME=deepseek-ai/DeepSeek-R1-0528 \
-          LLM_DEVICE_BACKEND=mock_pipeline \
-            ./scripts/start_dynamo.sh > ../dynamo_pair1.log 2>&1 &
-          echo $! > ../dynamo_pair1.pid
+          ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
+          echo $! > ../backend1.pid
           cd ..
-          for i in $(seq 1 90); do
-            BACK=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            FRONT=$(curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null || true)
-            if echo "$BACK"  | grep -q '"model_ready":true' \
-               && echo "$FRONT" | grep -q '"data"'; then
-              echo "✅ Pair 1 ready (frontend :8000, backend :8001) after ${i}*2s"
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null \
+                 | grep -q '"model_ready":true'; then
+              echo "✅ Backend 1 ready (:8001) after ${i}*2s"
               break
             fi
             sleep 2
           done
           curl -sf "http://127.0.0.1:8001/tt-liveness" | grep -q '"model_ready":true' \
-            || { echo "ERROR: pair-1 backend not ready"; cat dynamo_pair1.log; exit 1; }
-          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
-            || { echo "ERROR: pair-1 frontend not ready"; cat dynamo_pair1.log; exit 1; }
+            || { echo "ERROR: backend 1 not ready"; cat backend1.log; exit 1; }
 
-      - name: Start Dynamo + cpp_server pair 2 (frontend 8002, backend 8003)
+      - name: Start cpp_server backend 2 (port 8002)
         run: |
           cd cpp_server
-          DYN_VENV="$HOME/.venvs/dynamo" \
-          DYN_DISCOVERY_BACKEND=etcd \
-          ETCD_ENDPOINTS=http://127.0.0.1:2379 \
-          HTTP_PORT=8002 SERVER_PORT=8003 \
-          MODEL_NAME=deepseek-ai/DeepSeek-R1-0528 \
-          LLM_DEVICE_BACKEND=mock_pipeline \
-            ./scripts/start_dynamo.sh > ../dynamo_pair2.log 2>&1 &
-          echo $! > ../dynamo_pair2.pid
+          ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
+          echo $! > ../backend2.pid
           cd ..
-          for i in $(seq 1 90); do
-            BACK=$(curl -sf "http://127.0.0.1:8003/tt-liveness" 2>/dev/null || true)
-            FRONT=$(curl -sf "http://127.0.0.1:8002/v1/models" 2>/dev/null || true)
-            if echo "$BACK"  | grep -q '"model_ready":true' \
-               && echo "$FRONT" | grep -q '"data"'; then
-              echo "✅ Pair 2 ready (frontend :8002, backend :8003) after ${i}*2s"
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null \
+                 | grep -q '"model_ready":true'; then
+              echo "✅ Backend 2 ready (:8002) after ${i}*2s"
               break
             fi
             sleep 2
           done
-          curl -sf "http://127.0.0.1:8003/tt-liveness" | grep -q '"model_ready":true' \
-            || { echo "ERROR: pair-2 backend not ready"; cat dynamo_pair2.log; exit 1; }
-          curl -sf "http://127.0.0.1:8002/v1/models" | grep -q '"data"' \
-            || { echo "ERROR: pair-2 frontend not ready"; cat dynamo_pair2.log; exit 1; }
+          curl -sf "http://127.0.0.1:8002/tt-liveness" | grep -q '"model_ready":true' \
+            || { echo "ERROR: backend 2 not ready"; cat backend2.log; exit 1; }
+
+      - name: Start single Dynamo frontend (port 8000)
+        run: |
+          # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
+          # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
+          # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
+          # frontend tokenizer in sync with the backend avoids vocab
+          # mismatches that show up as model-routing rejections.
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null \
+                 | grep -q '"data"'; then
+              echo "✅ Frontend ready (:8000) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
+            || { echo "ERROR: frontend not ready"; cat frontend.log; exit 1; }
 
       - name: Verify both backends registered in etcd
         # cpp_server's etcd discovery writes one instance + one MDC entry per
@@ -2051,14 +2074,17 @@ jobs:
           fi
           echo "✅ $COUNT cpp_server backends registered in etcd"
 
-      - name: Run vllm bench serve against pair-1 Dynamo frontend
+      - name: Run vllm bench serve against the Dynamo frontend
         env:
           # ai-dynamo/Dynamo's OpenAI surface still requires a bearer; any
           # non-empty string works for the mock backend.
           OPENAI_API_KEY: 'your-secret-key'
         run: |
+          # Single frontend on :8000 fans requests out across both
+          # cpp_server backends discovered via etcd; success here proves
+          # the load-balanced routing path end-to-end.
           vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --model "${MODEL_NAME}" \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8000 \
@@ -2071,12 +2097,10 @@ jobs:
             --result-filename "vllm-bench-dynamo.json" \
             2>&1 | tee bench_dynamo_output.txt
 
-      - name: Stop Dynamo pairs and etcd
+      - name: Stop Dynamo frontend, cpp_server backends, and etcd
         if: always()
         run: |
-          # start_dynamo.sh installs a trap that kills its frontend + backend
-          # children on SIGTERM, so killing the wrapper PID cascades.
-          for pidfile in dynamo_pair1.pid dynamo_pair2.pid etcd.pid; do
+          for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
             [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
           done
           sleep 2
@@ -2122,7 +2146,7 @@ jobs:
       - name: Show server logs
         if: always()
         run: |
-          for LOG in etcd.log dynamo_pair1.log dynamo_pair2.log; do
+          for LOG in etcd.log frontend.log backend1.log backend2.log; do
             echo "=== $LOG ==="
             [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
             echo ""
@@ -2144,8 +2168,9 @@ jobs:
           name: dynamo-frontend-integration-logs
           path: |
             tt-media-server/etcd.log
-            tt-media-server/dynamo_pair1.log
-            tt-media-server/dynamo_pair2.log
+            tt-media-server/frontend.log
+            tt-media-server/backend1.log
+            tt-media-server/backend2.log
           retention-days: 1
           if-no-files-found: warn
 
