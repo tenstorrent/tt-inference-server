@@ -44,9 +44,9 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
-  config::ImageConfig config_;
-  std::unique_ptr<MediaWorkerScheduler> worker_scheduler_;
-  mutable std::atomic<size_t> in_flight_{0};
+  config::ImageConfig imageConfig;
+  std::unique_ptr<MediaWorkerScheduler> workerScheduler;
+  mutable std::atomic<size_t> inFlight{0};
 };
 
 }  // namespace tt::services

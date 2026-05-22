@@ -29,8 +29,8 @@ class ImageIpcRunner : public MediaIpcRunner {
   Json::Value processJsonTask(const Json::Value& request,
                               uint32_t taskId) override;
 
-  config::ImageConfig config_;
-  std::unique_ptr<MediaRunner> runner_;
+  config::ImageConfig imageConfig;
+  std::unique_ptr<MediaRunner> runner;
 };
 
 }  // namespace tt::runners

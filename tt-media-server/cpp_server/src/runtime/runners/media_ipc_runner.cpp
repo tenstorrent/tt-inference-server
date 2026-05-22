@@ -45,19 +45,19 @@ void writeJsonFile(const std::string& path, const Json::Value& json) {
 }  // namespace
 
 MediaIpcRunner::MediaIpcRunner(std::string runnerName, int workerId)
-    : runner_name_(std::move(runnerName)), worker_id_(workerId) {
-  task_queue_ = std::make_unique<tt::ipc::media_payload::MediaPayloadTaskQueue>(
+    : runnerName(std::move(runnerName)), workerIndex(workerId) {
+  taskQueue = std::make_unique<tt::ipc::media_payload::MediaPayloadTaskQueue>(
       tt::config::ttTaskQueueName());
-  result_queue_ =
+  resultQueue =
       std::make_unique<tt::ipc::media_payload::MediaPayloadResultQueue>(
           std::string(tt::config::ttResultQueueName()) +
-          std::to_string(worker_id_));
+          std::to_string(workerIndex));
 }
 
 MediaIpcRunner::~MediaIpcRunner() { stop(); }
 
 void MediaIpcRunner::stop() {
-  stopped_.store(true, std::memory_order_release);
+  stopped.store(true, std::memory_order_release);
 }
 
 void MediaIpcRunner::processTask(
@@ -77,14 +77,14 @@ void MediaIpcRunner::processTask(
 }
 
 void MediaIpcRunner::run() {
-  TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop", worker_id_,
-              runner_name_);
-  while (!stopped_.load(std::memory_order_acquire)) {
+  TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop", workerIndex,
+              runnerName);
+  while (!stopped.load(std::memory_order_acquire)) {
     tt::ipc::media_payload::MediaPayloadTask task;
-    task_queue_->receive(task);
+    taskQueue->receive(task);
     if (task.isDone()) {
       TT_LOG_INFO("[MediaIpcRunner] Worker {} received shutdown task",
-                  worker_id_);
+                  workerIndex);
       break;
     }
 
@@ -95,17 +95,17 @@ void MediaIpcRunner::run() {
       processTask(task, result);
     } catch (const std::exception& e) {
       result.error = e.what();
-      TT_LOG_ERROR("[MediaIpcRunner] Worker {} task {} failed: {}", worker_id_,
+      TT_LOG_ERROR("[MediaIpcRunner] Worker {} task {} failed: {}", workerIndex,
                    task.task_id, e.what());
     } catch (...) {
       result.error = "unknown media runner error";
       TT_LOG_ERROR("[MediaIpcRunner] Worker {} task {} failed: unknown",
-                   worker_id_, task.task_id);
+                   workerIndex, task.task_id);
     }
 
-    if (!result_queue_->push(result)) {
+    if (!resultQueue->push(result)) {
       TT_LOG_ERROR("[MediaIpcRunner] Worker {} failed to push result for task {}",
-                   worker_id_, task.task_id);
+                   workerIndex, task.task_id);
     }
 
     std::error_code ec;

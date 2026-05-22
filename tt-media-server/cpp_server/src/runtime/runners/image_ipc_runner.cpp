@@ -14,27 +14,27 @@ namespace tt::runners {
 
 ImageIpcRunner::ImageIpcRunner(config::ImageConfig config, int workerId)
     : MediaIpcRunner("ImageIpcRunner", workerId),
-      config_(std::move(config)) {}
+      imageConfig(std::move(config)) {}
 
 ImageIpcRunner::~ImageIpcRunner() { stop(); }
 
 bool ImageIpcRunner::warmup() {
-  runner_ = tt::utils::RunnerRegistry::instance().createMedia<MediaRunner>(
-      config::ModelService::IMAGE, config_.runner_type,
-      config::RunnerConfig{config_});
-  if (!runner_) {
+  runner = tt::utils::RunnerRegistry::instance().createMedia<MediaRunner>(
+      config::ModelService::IMAGE, imageConfig.runner_type,
+      config::RunnerConfig{imageConfig});
+  if (!runner) {
     throw std::runtime_error(
         "[ImageIpcRunner] no media runner registered for runner_type=" +
-        config::toString(config_.runner_type));
+        config::toString(imageConfig.runner_type));
   }
   TT_LOG_INFO("[ImageIpcRunner] Worker {} warming media runner ({})", workerId(),
-              runner_->runnerType());
-  return runner_->warmup();
+              runner->runnerType());
+  return runner->warmup();
 }
 
 void ImageIpcRunner::stop() {
-  if (runner_) {
-    runner_->stop();
+  if (runner) {
+    runner->stop();
   }
   MediaIpcRunner::stop();
 }
@@ -45,7 +45,7 @@ Json::Value ImageIpcRunner::processJsonTask(const Json::Value& requestJson,
       tt::domain::ImageGenerateRequest::fromJson(requestJson, taskId);
 
   tt::domain::image::ImageResponse response(taskId);
-  response.images = runner_->run(request);
+  response.images = runner->run(request);
   return response.toOpenaiJson();
 }
 

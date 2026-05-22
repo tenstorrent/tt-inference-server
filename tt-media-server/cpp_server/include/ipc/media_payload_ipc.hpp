@@ -111,23 +111,23 @@ class MediaPayloadTaskQueue {
   using Queue = boost::MemoryQueue<MediaPayloadTask, 8192>;
 
   MediaPayloadTaskQueue(const std::string& name, int capacity)
-      : queue_(std::make_unique<Queue>(name, capacity)) {}
+      : queue(std::make_unique<Queue>(name, capacity)) {}
 
   explicit MediaPayloadTaskQueue(const std::string& name)
-      : queue_(Queue::openExisting(name)) {}
+      : queue(Queue::openExisting(name)) {}
 
-  void push(const MediaPayloadTask& task) { queue_->push(task); }
+  void push(const MediaPayloadTask& task) { queue->push(task); }
 
-  bool tryPop(MediaPayloadTask& out) { return queue_->tryPop(out); }
+  bool tryPop(MediaPayloadTask& out) { return queue->tryPop(out); }
 
-  void receive(MediaPayloadTask& out) { queue_->receive(out); }
+  void receive(MediaPayloadTask& out) { queue->receive(out); }
 
-  bool empty() const { return queue_->empty(); }
+  bool empty() const { return queue->empty(); }
 
-  void remove() { queue_->remove(); }
+  void remove() { queue->remove(); }
 
  private:
-  std::unique_ptr<Queue> queue_;
+  std::unique_ptr<Queue> queue;
 };
 
 class MediaPayloadResultQueue {
@@ -135,26 +135,26 @@ class MediaPayloadResultQueue {
   using Queue = boost::MemoryQueue<MediaPayloadResult, 8192>;
 
   MediaPayloadResultQueue(const std::string& name, int capacity)
-      : queue_(std::make_unique<Queue>(name, capacity)) {}
+      : queue(std::make_unique<Queue>(name, capacity)) {}
 
   explicit MediaPayloadResultQueue(const std::string& name)
-      : queue_(Queue::openExisting(name)) {}
+      : queue(Queue::openExisting(name)) {}
 
   bool push(const MediaPayloadResult& result) {
-    return queue_->tryPush(result);
+    return queue->tryPush(result);
   }
 
   bool blockingPop(MediaPayloadResult& out) {
-    queue_->receive(out);
+    queue->receive(out);
     return !out.isDone();
   }
 
-  void shutdown() { queue_->push(MediaPayloadResult::done()); }
+  void shutdown() { queue->push(MediaPayloadResult::done()); }
 
-  void remove() { queue_->remove(); }
+  void remove() { queue->remove(); }
 
  private:
-  std::unique_ptr<Queue> queue_;
+  std::unique_ptr<Queue> queue;
 };
 
 class MediaPayloadQueueSet {
@@ -179,11 +179,13 @@ class MediaPayloadQueueSet {
   void clear() {
     if (taskQueue) {
       taskQueue->remove();
+      taskQueue.reset();
     }
     for (auto& queue : resultQueues) {
       queue->shutdown();
       queue->remove();
     }
+    resultQueues.clear();
   }
 
   MediaPayloadQueueSet(const MediaPayloadQueueSet&) = delete;

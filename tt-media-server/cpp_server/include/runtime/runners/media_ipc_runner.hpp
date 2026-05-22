@@ -22,10 +22,10 @@ class MediaIpcRunner : public IRunner {
   ~MediaIpcRunner() override;
 
   void stop() override;
-  const char* runnerType() const override { return runner_name_.c_str(); }
+  const char* runnerType() const override { return runnerName.c_str(); }
 
  protected:
-  int workerId() const { return worker_id_; }
+  int workerId() const { return workerIndex; }
   virtual Json::Value processJsonTask(const Json::Value& request,
                                       uint32_t taskId) = 0;
 
@@ -34,11 +34,11 @@ class MediaIpcRunner : public IRunner {
   void processTask(const tt::ipc::media_payload::MediaPayloadTask& task,
                    tt::ipc::media_payload::MediaPayloadResult& result);
 
-  std::string runner_name_;
-  int worker_id_;
-  std::unique_ptr<tt::ipc::media_payload::MediaPayloadTaskQueue> task_queue_;
-  std::unique_ptr<tt::ipc::media_payload::MediaPayloadResultQueue> result_queue_;
-  std::atomic<bool> stopped_{false};
+  std::string runnerName;
+  int workerIndex;
+  std::unique_ptr<tt::ipc::media_payload::MediaPayloadTaskQueue> taskQueue;
+  std::unique_ptr<tt::ipc::media_payload::MediaPayloadResultQueue> resultQueue;
+  std::atomic<bool> stopped{false};
 };
 
 }  // namespace tt::runners
