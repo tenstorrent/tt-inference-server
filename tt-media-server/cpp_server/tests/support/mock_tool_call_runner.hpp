@@ -112,30 +112,6 @@ class MockToolCallRunner {
     tokens_.clear();
   }
 
-  // Debug: print tokens and their decoded text
-  void debugPrint() const {
-    auto& tok = utils::tokenizers::activeTokenizer();
-    std::cout << "=== MockToolCallRunner Tokens (" << tokens_.size()
-              << ") ===" << std::endl;
-    for (size_t i = 0; i < tokens_.size(); ++i) {
-      auto decoded = tok.decode({static_cast<int>(tokens_[i])}, false);
-      std::cout << "  [" << i << "] " << tokens_[i];
-      if (tokens_[i] == deepseek::TOOL_CALLS_BEGIN)
-        std::cout << " (TOOL_CALLS_BEGIN)";
-      else if (tokens_[i] == deepseek::TOOL_CALLS_END)
-        std::cout << " (TOOL_CALLS_END)";
-      else if (tokens_[i] == deepseek::TOOL_CALL_BEGIN)
-        std::cout << " (TOOL_CALL_BEGIN)";
-      else if (tokens_[i] == deepseek::TOOL_CALL_END)
-        std::cout << " (TOOL_CALL_END)";
-      else if (tokens_[i] == deepseek::TOOL_SEP)
-        std::cout << " (TOOL_SEP)";
-      else
-        std::cout << " -> \"" << decoded << "\"";
-      std::cout << std::endl;
-    }
-  }
-
  private:
   void appendEncoded(const std::string& text) {
     auto ids = utils::tokenizers::activeTokenizer().encode(text);

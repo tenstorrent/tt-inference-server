@@ -80,7 +80,6 @@ TEST_F(ToolCallingIntegrationTest, SingleToolCall_ParsedCorrectly) {
                      .tool("get_weather", "Get weather for a location",
                            {{"location", "string"}})
                      .toolChoice("auto")
-                     .maxTokens(128)
                      .stream();
 
   // Send request - server will log prompt when processing
@@ -133,7 +132,6 @@ TEST_F(ToolCallingIntegrationTest, MultipleToolCalls_AllParsedCorrectly) {
           .user("What's the weather in SF and NYC?")
           .tool("get_weather", "Get weather", {{"location", "string"}})
           .toolChoice("auto")
-          .maxTokens(256)
           .stream();
 
   auto responseFuture = asyncRequest(request);
@@ -174,7 +172,6 @@ TEST_F(ToolCallingIntegrationTest, TextBeforeToolCall_BothParsed) {
           .user("What's the weather in Boston?")
           .tool("get_weather", "Get weather", {{"location", "string"}})
           .toolChoice("auto")
-          .maxTokens(128)
           .stream();
 
   auto responseFuture = asyncRequest(request);
@@ -216,7 +213,6 @@ TEST_F(ToolCallingIntegrationTest, ComplexJsonArguments_ParsedCorrectly) {
                             {"recursive", "boolean"},
                             {"max_results", "integer"}})
                      .toolChoice("auto")
-                     .maxTokens(128)
                      .stream();
 
   auto responseFuture = asyncRequest(request);
@@ -397,7 +393,6 @@ TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_EditFile) {
             }
           })json")
           .toolChoice("auto")
-          .maxTokens(256)
           .stream();
   // clang-format on
 
@@ -467,7 +462,6 @@ TEST_F(ToolCallingIntegrationTest, RealisticAgenticTools_ExecCommand) {
             }
           })json")
           .toolChoice("auto")
-          .maxTokens(128)
           .stream();
   // clang-format on
 
