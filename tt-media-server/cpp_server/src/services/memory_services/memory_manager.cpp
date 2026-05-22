@@ -3,7 +3,6 @@
 
 #include "services/memory_services/memory_manager.hpp"
 
-#include <string>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -13,49 +12,10 @@
 
 namespace tt::services {
 
-namespace {
-
-class SharedMemoryRequestQueue : public ipc::IMemoryRequestQueue {
- public:
-  explicit SharedMemoryRequestQueue(const std::string& name)
-      : queue(ipc::boost::MemoryRequestQueue::openExisting(name)) {}
-
-  void push(const domain::ManageMemoryTask& task) override {
-    queue->push(task);
-  }
-
-  bool tryPop(domain::ManageMemoryTask& out) override {
-    return queue->tryPop(out);
-  }
-
- private:
-  std::unique_ptr<ipc::boost::MemoryRequestQueue> queue;
-};
-
-class SharedMemoryResultQueue : public ipc::IMemoryResultQueue {
- public:
-  explicit SharedMemoryResultQueue(const std::string& name)
-      : queue(ipc::boost::MemoryResultQueue::openExisting(name)) {}
-
-  void push(const domain::ManageMemoryResult& result) override {
-    queue->push(result);
-  }
-
-  bool waitPop(domain::ManageMemoryResult& out) override {
-    queue->receive(out);
-    return true;
-  }
-
- private:
-  std::unique_ptr<ipc::boost::MemoryResultQueue> queue;
-};
-
-}  // namespace
-
 MemoryManager::MemoryManager()
-    : MemoryManager(std::make_shared<SharedMemoryRequestQueue>(
+    : MemoryManager(std::make_shared<ipc::boost::SharedMemoryRequestQueue>(
                         tt::config::ttMemoryRequestQueueName()),
-                    std::make_shared<SharedMemoryResultQueue>(
+                    std::make_shared<ipc::boost::SharedMemoryResultQueue>(
                         tt::config::ttMemoryResultQueueName())) {}
 
 MemoryManager::MemoryManager(
