@@ -1,0 +1,35 @@
+# process-exporter config for tt-media-server (CPU / memory / threads
+# per named process group on the host).
+#
+# Matches by comm (/proc/<pid>/comm) so it catches both the main server
+# binary and all its workers without needing to know their pids.
+# See https://github.com/ncabatoff/process-exporter for the full schema.
+
+process_names:
+  # Main server and workers are the same binary (tt_media_server_cpp);
+  # workers are distinguished only by a "--worker N" cmdline arg.
+  # First-match-wins: the worker rule must come BEFORE the main rule
+  # since workers also match the main's comm.
+  #
+  # Notes:
+  #  - Linux truncates /proc/<pid>/comm to 15 chars, so the real binary
+  #    "tt_media_server_cpp" appears as "tt_media_server" via comm.
+  #  - cmdline is a list of regexes, ALL of which must match, against
+  #    the full argv joined with spaces.
+
+  - name: "tt_media_server_cpp_worker"
+    cmdline:
+      - "tt_media_server_cpp.*--worker"
+
+  - name: "tt_media_server_cpp_main"
+    comm:
+      - tt_media_server
+
+  # Python tt-media-server (TRANSIENT — sunsets in ~4 months together with the
+  # Python server itself, see README "Sunset of the Python server" section).
+  # Matches the canonical uvicorn launch from run_uvicorn.sh as well as
+  # direct `python tt-media-server/main.py` invocations and any forked
+  # multiprocessing workers that inherit the parent's cmdline.
+  - name: "tt_media_server_python"
+    cmdline:
+      - "uvicorn.*main:app|python.*tt-media-server"

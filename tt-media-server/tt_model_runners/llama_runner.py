@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """
 Llama-3.1-8B-Instruct runner for cpp_server LLM flow.
@@ -65,6 +65,7 @@ class StepSequence:
     repetition_penalty: float | None = None
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
+    allowed_token_ids: list[int] | None = None
 
 
 @dataclass
@@ -128,6 +129,66 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             else 1.0,
             seed=seq.seed,
         )
+
+    @staticmethod
+    def _sample_from_logits(logits_1d, seq: StepSequence, torch):
+        """Host-side sampling with grammar mask, penalties, top-k/top-p filtering.
+
+        Temporary fallback until bitmask-based constrained decoding is supported
+        on device.  Mirrors the parameters that _build_sampling_params passes to
+        the on-device sampler so behaviour is consistent.
+        """
+        if seq.allowed_token_ids is not None:
+            mask = torch.full_like(logits_1d, float("-inf"))
+            allowed = torch.tensor(seq.allowed_token_ids, dtype=torch.long)
+            mask[allowed] = 0.0
+            logits_1d = logits_1d + mask
+
+        rep_pen = seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+        if rep_pen != 1.0:
+            positive = logits_1d > 0
+            logits_1d = torch.where(positive, logits_1d / rep_pen, logits_1d * rep_pen)
+
+        pres_pen = seq.presence_penalty
+        freq_pen = seq.frequency_penalty
+        if pres_pen != 0.0 or freq_pen != 0.0:
+            token_counts = torch.zeros_like(logits_1d)
+            for tid in seq.token_ids:
+                if 0 <= tid < token_counts.size(0):
+                    token_counts[tid] += 1
+            appeared = (token_counts > 0).float()
+            logits_1d = logits_1d - freq_pen * token_counts - pres_pen * appeared
+
+        temp = seq.temperature
+        if temp == 0 or temp is None:
+            return int(logits_1d.argmax().item())
+
+        scaled = logits_1d / temp
+
+        k = seq.top_k if seq.top_k is not None and seq.top_k > 0 else 10
+        top_vals, top_idx = torch.topk(scaled, min(k, scaled.size(0)))
+
+        top_p = seq.top_p if seq.top_p is not None else 1.0
+        if top_p < 1.0:
+            sorted_probs, sorted_order = torch.sort(
+                torch.softmax(top_vals, dim=-1), descending=True
+            )
+            cumulative = torch.cumsum(sorted_probs, dim=-1)
+            cutoff = (cumulative - sorted_probs) >= top_p
+            sorted_probs[cutoff] = 0.0
+            sorted_probs /= sorted_probs.sum()
+            orig_idx = sorted_order[torch.multinomial(sorted_probs, 1)]
+            chosen = top_idx[orig_idx]
+        else:
+            probs = torch.softmax(top_vals, dim=-1)
+            if seq.seed is not None:
+                g = torch.Generator()
+                g.manual_seed(seq.seed)
+                chosen = top_idx[torch.multinomial(probs, 1, generator=g)]
+            else:
+                chosen = top_idx[torch.multinomial(probs, 1)]
+
+        return int(chosen.item())
 
     def _build_batch_sampling_params(
         self, sequences: list[StepSequence]
@@ -265,18 +326,29 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         prompt_len = len(seq.token_ids)
         page_table = self._page_table_from_block_ids(seq.block_table, torch)
         tokens = torch.tensor([seq.token_ids], dtype=torch.int64)
-        sampling_params = self._build_sampling_params(seq)
 
-        output_tokens, _log_probs = self.model.prefill_forward(
-            tokens,
-            page_table=page_table,
-            kv_cache=self._kv_cache,
-            prompt_lens=[prompt_len],
-            warmup_prefill=False,
-            sampling_params=sampling_params,
-        )
+        if seq.allowed_token_ids is not None:
+            logits_3d = self.model.prefill_forward(
+                tokens,
+                page_table=page_table,
+                kv_cache=self._kv_cache,
+                prompt_lens=[prompt_len],
+                warmup_prefill=False,
+                sampling_params=None,
+            )
+            next_token = self._sample_from_logits(logits_3d[0, 0, :], seq, torch)
+        else:
+            sampling_params = self._build_sampling_params(seq)
+            output_tokens, _log_probs = self.model.prefill_forward(
+                tokens,
+                page_table=page_table,
+                kv_cache=self._kv_cache,
+                prompt_lens=[prompt_len],
+                warmup_prefill=False,
+                sampling_params=sampling_params,
+            )
+            next_token = int(output_tokens[0].item())
 
-        next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode(
@@ -293,19 +365,32 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         last_token = seq.token_ids[-1]
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         current_pos = torch.tensor([seq.current_pos], dtype=torch.int64)
-        sampling_params = self._build_sampling_params(seq)
 
-        output_tokens, _log_probs = self.model.decode_forward(
-            tokens,
-            current_pos,
-            page_table=page_table,
-            kv_cache=self._kv_cache,
-            enable_trace=True,
-            sampling_params=sampling_params,
-            reset_batch=reset_batch,
-        )
+        if seq.allowed_token_ids is not None:
+            result = self.model.decode_forward(
+                tokens,
+                current_pos,
+                page_table=page_table,
+                kv_cache=self._kv_cache,
+                enable_trace=True,
+                sampling_params=None,
+                reset_batch=reset_batch,
+            )
+            logits = result[0] if isinstance(result, tuple) else result
+            next_token = self._sample_from_logits(logits[0, 0, :], seq, torch)
+        else:
+            sampling_params = self._build_sampling_params(seq)
+            output_tokens, _log_probs = self.model.decode_forward(
+                tokens,
+                current_pos,
+                page_table=page_table,
+                kv_cache=self._kv_cache,
+                enable_trace=True,
+                sampling_params=sampling_params,
+                reset_batch=reset_batch,
+            )
+            next_token = int(output_tokens[0].item())
 
-        next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode_batch(
@@ -320,10 +405,17 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         Per-sequence sampling parameters are supported: each sequence can have
         different temperature, top_p, top_k, etc. Parameters are passed as
         list-valued fields in SamplingParams.
+
+        When any sequence has allowed_token_ids (grammar constraints), the batch
+        falls back to host-side sampling: the model forward runs on device to
+        produce logits, then each token is sampled on the host with the grammar
+        mask applied.
         """
         B = self.max_batch_size
         if len(sequences) > B:
             return [self._run_decode(s, torch, reset_batch) for s in sequences]
+
+        has_constrained = any(s.allowed_token_ids is not None for s in sequences)
 
         n = len(sequences)
         tokens_list = []
@@ -341,10 +433,26 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
         page_table_batch = torch.cat(page_tables, dim=0)
 
-        # Build per-sequence sampling parameters for batched decode (including padded slots)
-        # Each field in SamplingParams is a list where element i corresponds to padded_sequences[i]
-        sampling_params = self._build_batch_sampling_params(padded_sequences)
+        if has_constrained:
+            result = self.model.decode_forward(
+                tokens_batch,
+                start_pos_batch,
+                page_table=page_table_batch,
+                kv_cache=self._kv_cache,
+                enable_trace=True,
+                sampling_params=None,
+                reset_batch=reset_batch,
+            )
+            logits = result[0] if isinstance(result, tuple) else result
+            return [
+                StepResult(
+                    task_id=seq.task_id,
+                    token_id=self._sample_from_logits(logits[i, 0, :], seq, torch),
+                )
+                for i, seq in enumerate(sequences)
+            ]
 
+        sampling_params = self._build_batch_sampling_params(padded_sequences)
         output_tokens, _log_probs = self.model.decode_forward(
             tokens_batch,
             start_pos_batch,
@@ -355,7 +463,6 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             reset_batch=reset_batch,
         )
 
-        # Device sampling returns tokens directly, shape [batch]
         return [
             StepResult(
                 task_id=seq.task_id,

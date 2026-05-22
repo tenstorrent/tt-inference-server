@@ -116,7 +116,6 @@ Any field not overridden at the model/device level falls back to `defaults`.
 | model | string | `""` | Model name. Must match a key in `models`. |
 | models | object | See the Supported Models section below. | Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list. |
 | nameOverride | string | `""` | Overrides the chart name component in resource names. |
-
 ---
 
 ## Supported Models

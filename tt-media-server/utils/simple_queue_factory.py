@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from config.constants import QueueType
 from config.settings import get_settings
-from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
-from model_services.queues.tt_batch_fifo_queue import TTBatchFifoQueue
-from model_services.queues.tt_queue import TTQueue
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
+from model_services.queues.tt_batch_fifo_queue import TTBatchFifoQueue
+from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
+from model_services.queues.tt_queue import TTQueue
 from model_services.queues.tt_queue_interface import TTQueueInterface
 
 

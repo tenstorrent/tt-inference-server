@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_VIDEO workflow venv.
+# Used by: setup_evals_video() in workflows/workflow_venvs.py
+#
+# Video models need CLIP scoring, video frame extraction, and HTTP client deps.
+# torch / torchvision are sourced from the PyTorch CPU index; everything else
+# falls back to PyPI via the default index.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch
+torchvision
+requests
+datasets
+open-clip-torch
+pyjwt
+pillow
+imageio
+imageio-ffmpeg

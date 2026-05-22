@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +65,14 @@ WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "benchmarking" / "run_aiperf_benchmarks.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
     # Use default name="benchmarks" (same as vLLM and GenAI-Perf) for unified output directory
+)
+WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.BENCHMARKS,
+    run_script_path=get_repo_root_path()
+    / "benchmarking"
+    / "run_guidellm_benchmarks.py",
+    workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
+    # Use default name="benchmarks" for unified output directory across tools.
 )
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,

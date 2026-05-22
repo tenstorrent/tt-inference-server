@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from typing import Any, Dict, List, Optional
-from pathlib import Path
-
-import sqlite3
 import json
+import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class JobDatabase:
@@ -66,8 +65,8 @@ class JobDatabase:
                     value FLOAT NOT NULL,
                     learning_rate FLOAT,
                     timestamp REAL NOT NULL,
-                    
-                    PRIMARY KEY (job_id, global_step, metric_name), 
+
+                    PRIMARY KEY (job_id, global_step, metric_name),
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
             """)

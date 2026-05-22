@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import sys
@@ -160,6 +160,7 @@ class TestScheduler:
         """Test process_request when queue is full"""
         # Setup
         scheduler.is_ready = True
+        scheduler.worker_info = {"worker_0": {"is_ready": True}}
         mock_request = Mock()
 
         # Patch the task_queue.full method
@@ -176,6 +177,7 @@ class TestScheduler:
         """Test process_request when queue.put times out"""
         # Setup
         scheduler.is_ready = True
+        scheduler.worker_info = {"worker_0": {"is_ready": True}}
         mock_request = Mock()
 
         # Patch the task_queue.put method to raise an exception
@@ -201,6 +203,21 @@ class TestScheduler:
             scheduler.process_request(mock_request)
 
         assert "405" in str(exc_info.value) or "Model is not ready" in str(
+            exc_info.value
+        )
+
+    def test_process_request_no_ready_workers(self, scheduler):
+        """Test process_request when no workers are ready"""
+        # Setup
+        scheduler.is_ready = True
+        scheduler.worker_info = {"worker_0": {"is_ready": False}}
+        mock_request = Mock()
+
+        # Execute and verify
+        with pytest.raises(Exception) as exc_info:
+            scheduler.process_request(mock_request)
+
+        assert "503" in str(exc_info.value) or "No workers available" in str(
             exc_info.value
         )
 

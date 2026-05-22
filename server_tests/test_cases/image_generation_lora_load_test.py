@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 """Load test for mixed LoRA and baseline image generation requests.
 
 Fires a batch of concurrent requests — some baseline (no LoRA), some with

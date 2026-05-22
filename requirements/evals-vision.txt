@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_VISION workflow venv.
+# Used by: setup_evals_vision() in workflows/workflow_venvs.py
+#
+# Uses upstream lmms-eval pinned to v0.4.1 with the vision/multimodal stack.
+
+-c constraints.txt
+
+git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
+pyjwt
+pillow
+qwen_vl_utils
