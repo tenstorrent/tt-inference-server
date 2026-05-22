@@ -2642,6 +2642,12 @@ jobs:
         with:
           version: latest
 
+      - name: Helm lint
+        run: |
+          helm lint charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct \
+            --set device=galaxy
+
       - name: Install kubeconform
         run: |
           KUBECONFORM_VERSION=v0.6.7

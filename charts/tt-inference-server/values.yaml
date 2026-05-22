@@ -1,79 +1,101 @@
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Required at install time:
-#   helm install my-model ./charts/tt-inference-server \
+#   helm install my-model ./charts/tt-inference-server-v2 \
 #     --set model="Llama-3.1-8B-Instruct" \
 #     --set device=galaxy \
 #     --set hfToken="hf_xxx"
-#
-# Optional:
-#   --set engine=vllm       # pin engine when a model has multiple
-#   --set impl=tt_transformers   # pin impl when a device has multiple
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
+# -- Model name. Must match a key in `models`.
 model: ""
+# -- Device name. Must match a key under `models.<model>`.
 device: ""
-engine: ""
-impl: ""
+# -- HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded.
 hfToken: ""
 
+# -- Overrides the chart name component in resource names.
 nameOverride: ""
+# -- Fully overrides the resource name prefix.
 fullnameOverride: ""
 
-# Optional: override the cache host path (defaults to /opt/cache/<model>-<device>-<impl>)
 cache:
+  # -- Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`.
   hostPath: ""
 
-# Optional: pre-downloaded HuggingFace cache directory on the host. When set,
-# it is mounted read-only at /mnt/hf-cache inside the container, and the
-# MODEL_WEIGHTS_DIR (vLLM) and MODEL_WEIGHTS_PATH + DOWNLOAD_WEIGHTS_FROM_SERVICE
-# (tt-media-server) env vars are set so each server picks up the name it reads.
-hfCacheDir: ""
-
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Defaults — merged with (and overridden by) per-model config below.
-# ---------------------------------------------------------------------------
+# ===========================================================================
 defaults:
+  # -- Server backend: `vllm` or `media`.
+  serverType: vllm
+  # -- Number of Deployment replicas.
   replicaCount: 1
+  # -- Deployment progress deadline. Set high due to long model load times.
   progressDeadlineSeconds: 3600
+  # -- Annotations applied to the pod template.
   podAnnotations: {}
+  # -- Pod-level `securityContext`.
   podSecurityContext: {}
   image:
+    # -- Image pull policy.
     pullPolicy: IfNotPresent
+    # -- Image pull secrets.
     pullSecrets: []
   service:
+    # -- Kubernetes Service type.
     type: ClusterIP
+    # -- Service port.
     port: 8000
+    # -- Container target port.
     targetPort: 8000
+    # -- Annotations applied to the Service.
     annotations: {}
   resources:
     limits:
+      # -- CPU limit.
       cpu: "8"
+      # -- Memory limit (overridden per model).
       memory: 128Gi
+      # -- Hugepage limit.
       hugepages-1Gi: 32Gi
     requests:
+      # -- CPU request.
       cpu: "6"
+      # -- Memory request (overridden per model).
       memory: 64Gi
+      # -- Hugepage request.
       hugepages-1Gi: 32Gi
   probes:
     liveness:
+      # -- Enable liveness probe.
       enabled: true
+      # -- Liveness probe HTTP path.
       path: /v1/models
+      # -- Liveness probe initial delay. Set high due to model load times.
       initialDelaySeconds: 2400
     readiness:
+      # -- Enable readiness probe.
       enabled: true
+      # -- Readiness probe HTTP path.
       path: /health
+      # -- Readiness probe initial delay.
       initialDelaySeconds: 2400
+  # -- Node selector applied to the pod.
   nodeSelector: {}
+  # -- Tolerations applied to the pod.
   tolerations: []
+  # -- Affinity rules applied to the pod.
   affinity: {}
+  # -- Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)).
   extraEnv: []
 
-# ---------------------------------------------------------------------------
-# Per-model configuration — keyed by model -> engine -> device -> impl.
-# Populated by `python -m workflows.helm_generator` from the
-# ModelSpec catalog. Hand edits to leaf values are preserved across re-runs;
-# the generator only overwrites the keys it owns.
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Per-model configuration — keyed by model name then device.
+# Only fields that differ from defaults need to be specified.
+# ===========================================================================
+
+# -- Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list.
+# @default -- See the Supported Models section below.
 models:
   gpt-oss-20b:
     vllm:
