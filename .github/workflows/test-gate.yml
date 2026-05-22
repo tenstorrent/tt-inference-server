@@ -3013,6 +3013,7 @@ jobs:
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
+            [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
