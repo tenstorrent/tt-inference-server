@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "domain/image/image_request_json.hpp"
 #include "runtime/worker/worker_info.hpp"
 #include "utils/logger.hpp"
 
@@ -247,7 +246,7 @@ domain::image::ImageResponse ImageService::processWorkerRequest(
   }
 
   auto workerResponse =
-      worker_scheduler_->submit(request.task_id, domain::image::toJson(request));
+      worker_scheduler_->submit(request.task_id, request.toJson());
   response.generation_time_seconds = workerResponse.generation_time_seconds;
   if (!workerResponse.error.empty()) {
     response.error = std::move(workerResponse.error);
