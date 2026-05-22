@@ -45,9 +45,9 @@ class BlazeRunnerHarness {
         memoryRequestQueue, memoryResultQueue);
     config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
     config.stop_token_ids = std::move(stopTokenIds);
-    runner = std::make_unique<BlazeRunner>(config, &resultQueue, &taskQueue,
-                                           &cancelQueue,
-                                           std::move(memoryManager));
+    runner =
+        std::make_unique<BlazeRunner>(config, &resultQueue, &taskQueue,
+                                      &cancelQueue, std::move(memoryManager));
 
     runnerThread = std::thread([this]() {
       try {

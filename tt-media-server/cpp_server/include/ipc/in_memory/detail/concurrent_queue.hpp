@@ -47,7 +47,8 @@ class ConcurrentQueue {
   template <typename Rep, typename Period>
   bool waitPopFor(T& out, std::chrono::duration<Rep, Period> timeout) {
     std::unique_lock<std::mutex> lock(mu);
-    if (!cv.wait_for(lock, timeout, [&] { return shuttingDown || !queue.empty(); })) {
+    if (!cv.wait_for(lock, timeout,
+                     [&] { return shuttingDown || !queue.empty(); })) {
       return false;
     }
     if (queue.empty()) {

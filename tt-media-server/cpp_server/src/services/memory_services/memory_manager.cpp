@@ -20,9 +20,13 @@ class SharedMemoryRequestQueue : public ipc::IMemoryRequestQueue {
   explicit SharedMemoryRequestQueue(const std::string& name)
       : queue(ipc::boost::MemoryRequestQueue::openExisting(name)) {}
 
-  void push(const domain::ManageMemoryTask& task) override { queue->push(task); }
+  void push(const domain::ManageMemoryTask& task) override {
+    queue->push(task);
+  }
 
-  bool tryPop(domain::ManageMemoryTask& out) override { return queue->tryPop(out); }
+  bool tryPop(domain::ManageMemoryTask& out) override {
+    return queue->tryPop(out);
+  }
 
  private:
   std::unique_ptr<ipc::boost::MemoryRequestQueue> queue;
@@ -49,16 +53,16 @@ class SharedMemoryResultQueue : public ipc::IMemoryResultQueue {
 }  // namespace
 
 MemoryManager::MemoryManager()
-    : MemoryManager(
-          std::make_shared<SharedMemoryRequestQueue>(
-              tt::config::ttMemoryRequestQueueName()),
-          std::make_shared<SharedMemoryResultQueue>(
-              tt::config::ttMemoryResultQueueName())) {}
+    : MemoryManager(std::make_shared<SharedMemoryRequestQueue>(
+                        tt::config::ttMemoryRequestQueueName()),
+                    std::make_shared<SharedMemoryResultQueue>(
+                        tt::config::ttMemoryResultQueueName())) {}
 
 MemoryManager::MemoryManager(
     std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue,
     std::shared_ptr<ipc::IMemoryResultQueue> resultQueue)
-    : requestQueue(std::move(requestQueue)), resultQueue(std::move(resultQueue)) {
+    : requestQueue(std::move(requestQueue)),
+      resultQueue(std::move(resultQueue)) {
   if (!this->requestQueue || !this->resultQueue) {
     TT_LOG_ERROR(
         "[MemoryManager] Failed to open memory queues. SessionManager should "

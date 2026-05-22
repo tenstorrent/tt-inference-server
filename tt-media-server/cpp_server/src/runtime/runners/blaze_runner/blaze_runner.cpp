@@ -18,12 +18,10 @@
 #include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 namespace tt::runners::blaze {
-BlazeRunner::BlazeRunner(const config::LLMConfig& config,
-                         ipc::IResultQueue* resultQueue,
-                         tt::ipc::ITaskQueue* taskQueue,
-                         tt::ipc::ICancelQueue* cancelQueue,
-                         std::unique_ptr<tt::services::MemoryManager>
-                             injectedMemoryManager)
+BlazeRunner::BlazeRunner(
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+    tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
+    std::unique_ptr<tt::services::MemoryManager> injectedMemoryManager)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),

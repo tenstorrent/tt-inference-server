@@ -28,11 +28,10 @@ namespace ds = tt_llm_engine::scheduler::decode;
 
 class BlazeRunner : public IRunner {
  public:
-  BlazeRunner(const tt::config::LLMConfig& config,
-              ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
-              tt::ipc::ICancelQueue* cancelQueue,
-              std::unique_ptr<tt::services::MemoryManager> memoryManager =
-                  nullptr);
+  BlazeRunner(
+      const tt::config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+      tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
+      std::unique_ptr<tt::services::MemoryManager> memoryManager = nullptr);
   ~BlazeRunner() override;
 
   void run() override;
