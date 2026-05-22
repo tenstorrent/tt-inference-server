@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -16,6 +17,14 @@ from .._test_common import BaseTest, TestConfig
 if TYPE_CHECKING:
     from ..context import MediaContext
 
+DEFAULT_API_KEY = "your-secret-key"
+
+HEADERS = {
+    "accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {os.getenv('API_KEY', DEFAULT_API_KEY)}",
+}
+
 
 class SpeechT5TTSTest(BaseTest):
     """Test SpeechT5 Text-to-Speech functionality"""
@@ -25,10 +34,11 @@ class SpeechT5TTSTest(BaseTest):
 
     async def _run_specific_test_async(self):
         """Run SpeechT5 TTS tests"""
-        results = {}
+        results = {"success": False}
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
+            results["success"] = basic_result.get("status") == "success"
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
         return results
@@ -42,7 +52,7 @@ class SpeechT5TTSTest(BaseTest):
         }
 
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minute timeout for TTS
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
             async with session.post(url, json=payload) as response:
                 assert response.status == 200, (
                     f"Expected status 200, got {response.status}"
