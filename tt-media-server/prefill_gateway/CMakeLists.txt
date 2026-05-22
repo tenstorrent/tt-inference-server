@@ -98,22 +98,71 @@ target_link_libraries(prefill_gateway_core PUBLIC
 target_compile_features(prefill_gateway_core PUBLIC cxx_std_20)
 target_compile_options(prefill_gateway_core PRIVATE -Wall -Wextra -Wpedantic)
 
+# libzmq + cppzmq for the ZMQ transport. Mirror cpp_server's strategy:
+# prefer system libzmq via pkg-config, fall back to FetchContent.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(ZMQ IMPORTED_TARGET libzmq)
+endif()
+if(NOT ZMQ_FOUND)
+    find_package(ZeroMQ QUIET)
+    if(ZeroMQ_FOUND AND TARGET libzmq)
+        set(ZMQ_FOUND TRUE)
+    endif()
+endif()
+if(NOT ZMQ_FOUND)
+    message(STATUS "[gateway] libzmq not found; building from source via FetchContent")
+    FetchContent_Declare(
+        libzmq
+        GIT_REPOSITORY https://github.com/zeromq/libzmq.git
+        GIT_TAG v4.3.5
+    )
+    set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(ENABLE_CPACK OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(libzmq)
+endif()
+FetchContent_Declare(
+    cppzmq
+    GIT_REPOSITORY https://github.com/zeromq/cppzmq.git
+    GIT_TAG v4.11.0
+    GIT_SHALLOW TRUE
+)
+set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cppzmq)
+
 # Socket + logger sources pulled from cpp_server — shared implementation so
 # the gateway uses exactly the same wire format and logger as the inference
-# servers, without introducing a second copy of the code. Packaged as a
-# static lib so both the binary and the end-to-end integration test can link
-# against it without recompiling the sources.
+# servers, without introducing a second copy of the code. The gateway ships
+# its own factory (src/socket_transport_factory.cpp) so that it can honor
+# SOCKET_TRANSPORT without pulling cpp_server's settings.cpp (and its
+# tokenizer/runner deps).
 add_library(prefill_gateway_io STATIC
     ${CPP_SERVER_DIR}/src/sockets/socket_manager.cpp
-    ${CPP_SERVER_DIR}/src/sockets/socket_transport.cpp
+    ${CPP_SERVER_DIR}/src/sockets/tcp_socket_transport.cpp
+    ${CPP_SERVER_DIR}/src/sockets/zmq_socket_transport.cpp
+    src/prefill_connection_wiring.cpp
+    src/socket_transport_factory.cpp
+    src/zmq_prefill_router.cpp
 )
 target_include_directories(prefill_gateway_io PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CPP_SERVER_DIR}/include
+    ${cppzmq_SOURCE_DIR}
 )
 target_link_libraries(prefill_gateway_io PUBLIC
     cereal::cereal
     spdlog::spdlog
 )
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(prefill_gateway_io PUBLIC PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(prefill_gateway_io PUBLIC libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(prefill_gateway_io PUBLIC libzmq)
+endif()
 target_compile_features(prefill_gateway_io PUBLIC cxx_std_20)
 
 # prefill_gateway binary — wires core library to real SocketManagers.

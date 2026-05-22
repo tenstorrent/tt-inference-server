@@ -447,6 +447,12 @@ uint16_t socketPort() {
   return cached;
 }
 
+std::string socketTransport() {
+  static const std::string cached =
+      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
+  return cached;
+}
+
 bool usePrefillGateway() {
   return envUlong("USE_PREFILL_GATEWAY",
                   defaults::USE_PREFILL_GATEWAY ? 1UL : 0UL) != 0UL;

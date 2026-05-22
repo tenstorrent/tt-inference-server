@@ -584,12 +584,13 @@
         }
       }
     },
-    "openai-whisper-large-v3": {
+    "distil-large-v3": {
       "inference_engine": "MEDIA",
       "ci": {
-        "weekly": {
+        "nightly": {
           "devices": [
-            "GALAXY"
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -620,7 +621,9 @@
         "nightly": {
           "devices": [
             "N150",
-            "N300"
+            "N300",
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -710,7 +713,14 @@
           "devices": [
             "GALAXY",
             "GALAXY_BH",
-            "N150"
+            "N150",
+            "P150",
+            "P300X2"
+          ]
+        },
+        "weekly": {
+          "devices": [
+            "GALAXY"
           ]
         },
         "release": {

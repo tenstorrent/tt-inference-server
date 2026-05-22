@@ -349,7 +349,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "max-log-len": "32",
             "seed": "9472",
-            "override_tt_config": json.dumps(self.override_tt_config),
+            "plugin_config": json.dumps({"tt": self.override_tt_config}),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
@@ -784,7 +784,7 @@ class ModelSpec:
             )
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "override_tt_config": json.dumps(merged_override_config),
+                "plugin_config": json.dumps({"tt": merged_override_config}),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -2153,7 +2153,7 @@ llm_templates = [
                 device=DeviceTypes.GPU,
                 max_concurrency=32,
                 max_context=128 * 1024,
-                default_impl=False,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2695,6 +2695,12 @@ vlm_templates = [
                 override_tt_config={
                     "trace_region_size": 28467200,
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GPU,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,

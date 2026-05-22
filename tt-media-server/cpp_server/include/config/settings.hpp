@@ -76,6 +76,10 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
+/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
+ * Default: defaults::SOCKET_TRANSPORT. */
+std::string socketTransport();
+
 /** Whether the inter-server socket integrates with PrefillGateway. From
  * USE_PREFILL_GATEWAY. */
 bool usePrefillGateway();
