@@ -738,11 +738,14 @@ add_executable(tool_calling_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp

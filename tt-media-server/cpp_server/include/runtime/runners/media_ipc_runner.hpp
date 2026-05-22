@@ -3,12 +3,12 @@
 
 #pragma once
 
+#include <json/json.h>
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
-
-#include <json/json.h>
 
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/ipc_runner.hpp"

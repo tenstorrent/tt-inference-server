@@ -3,9 +3,9 @@
 
 #include "services/model_service_registration.hpp"
 
+#include <cstdlib>
 #include <memory>
 #include <mutex>
-#include <cstdlib>
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"

@@ -65,8 +65,7 @@ class MediaWorkerScheduler {
   mutable std::mutex pending_mutex_;
   std::unordered_map<
       uint32_t,
-      std::shared_ptr<
-          std::promise<tt::ipc::media_payload::MediaPayloadResult>>>
+      std::shared_ptr<std::promise<tt::ipc::media_payload::MediaPayloadResult>>>
       pending_results_;
   std::filesystem::path payload_dir_;
   std::atomic<bool> running_{false};

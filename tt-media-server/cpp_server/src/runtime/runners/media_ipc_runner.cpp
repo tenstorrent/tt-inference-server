@@ -56,9 +56,7 @@ MediaIpcRunner::MediaIpcRunner(std::string runnerName, int workerId)
 
 MediaIpcRunner::~MediaIpcRunner() { stop(); }
 
-void MediaIpcRunner::stop() {
-  stopped.store(true, std::memory_order_release);
-}
+void MediaIpcRunner::stop() { stopped.store(true, std::memory_order_release); }
 
 void MediaIpcRunner::processTask(
     const tt::ipc::media_payload::MediaPayloadTask& task,
@@ -77,8 +75,8 @@ void MediaIpcRunner::processTask(
 }
 
 void MediaIpcRunner::run() {
-  TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop", workerIndex,
-              runnerName);
+  TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop",
+              workerIndex, runnerName);
   while (!stopped.load(std::memory_order_acquire)) {
     tt::ipc::media_payload::MediaPayloadTask task;
     taskQueue->receive(task);
@@ -104,8 +102,9 @@ void MediaIpcRunner::run() {
     }
 
     if (!resultQueue->push(result)) {
-      TT_LOG_ERROR("[MediaIpcRunner] Worker {} failed to push result for task {}",
-                   workerIndex, task.task_id);
+      TT_LOG_ERROR(
+          "[MediaIpcRunner] Worker {} failed to push result for task {}",
+          workerIndex, task.task_id);
     }
 
     std::error_code ec;

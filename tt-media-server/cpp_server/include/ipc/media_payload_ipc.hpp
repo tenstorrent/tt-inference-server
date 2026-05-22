@@ -140,9 +140,7 @@ class MediaPayloadResultQueue {
   explicit MediaPayloadResultQueue(const std::string& name)
       : queue(Queue::openExisting(name)) {}
 
-  bool push(const MediaPayloadResult& result) {
-    return queue->tryPush(result);
-  }
+  bool push(const MediaPayloadResult& result) { return queue->tryPush(result); }
 
   bool blockingPop(MediaPayloadResult& out) {
     queue->receive(out);

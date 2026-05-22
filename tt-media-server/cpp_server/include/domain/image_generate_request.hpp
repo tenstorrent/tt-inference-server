@@ -56,8 +56,7 @@ struct ImageGenerateRequest : BaseRequest {
     if (prompt_2) json["prompt_2"] = *prompt_2;
     if (negative_prompt) json["negative_prompt"] = *negative_prompt;
     if (negative_prompt_2) json["negative_prompt_2"] = *negative_prompt_2;
-    if (num_inference_steps)
-      json["num_inference_steps"] = *num_inference_steps;
+    if (num_inference_steps) json["num_inference_steps"] = *num_inference_steps;
     if (guidance_scale) json["guidance_scale"] = *guidance_scale;
     if (guidance_rescale) json["guidance_rescale"] = *guidance_rescale;
     if (seed) json["seed"] = *seed;

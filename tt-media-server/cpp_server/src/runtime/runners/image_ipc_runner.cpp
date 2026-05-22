@@ -27,8 +27,8 @@ bool ImageIpcRunner::warmup() {
         "[ImageIpcRunner] no media runner registered for runner_type=" +
         config::toString(imageConfig.runner_type));
   }
-  TT_LOG_INFO("[ImageIpcRunner] Worker {} warming media runner ({})", workerId(),
-              runner->runnerType());
+  TT_LOG_INFO("[ImageIpcRunner] Worker {} warming media runner ({})",
+              workerId(), runner->runnerType());
   return runner->warmup();
 }
 

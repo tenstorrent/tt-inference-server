@@ -38,15 +38,15 @@ domain::image::ImageResponse responseFromJson(uint32_t taskId,
 ImageService::ImageService(
     config::ImageConfig config,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
-        queueManager)
+    std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet> queueManager)
     : imageConfig(std::move(config)),
       workerScheduler(std::make_unique<MediaWorkerScheduler>(
           "image", std::move(workerManager), std::move(queueManager))) {
   this->maxQueueSize = tt::config::maxQueueSize();
-  TT_LOG_INFO("[ImageService] Initialized worker-backed image service "
-              "(workers={}, max_queue_size={})",
-              workerScheduler->numWorkers(), this->maxQueueSize);
+  TT_LOG_INFO(
+      "[ImageService] Initialized worker-backed image service "
+      "(workers={}, max_queue_size={})",
+      workerScheduler->numWorkers(), this->maxQueueSize);
 }
 
 ImageService::~ImageService() { stop(); }
@@ -57,9 +57,7 @@ void ImageService::start() {
   workerScheduler->start();
 }
 
-void ImageService::stop() {
-  workerScheduler->stop();
-}
+void ImageService::stop() { workerScheduler->stop(); }
 
 bool ImageService::isModelReady() const { return workerScheduler->isReady(); }
 

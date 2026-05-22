@@ -111,7 +111,9 @@ void MediaWorkerScheduler::stop() {
   TT_LOG_INFO("[MediaWorkerScheduler] {} scheduler stopped", service_name_);
 }
 
-bool MediaWorkerScheduler::isReady() const { return worker_manager_->isReady(); }
+bool MediaWorkerScheduler::isReady() const {
+  return worker_manager_->isReady();
+}
 
 size_t MediaWorkerScheduler::numWorkers() const {
   return worker_manager_->numWorkers();
@@ -188,8 +190,7 @@ void MediaWorkerScheduler::consumerLoopForWorker(size_t workerIdx) {
       break;
     }
 
-    std::shared_ptr<
-        std::promise<tt::ipc::media_payload::MediaPayloadResult>>
+    std::shared_ptr<std::promise<tt::ipc::media_payload::MediaPayloadResult>>
         promise;
     {
       std::lock_guard<std::mutex> lock(pending_mutex_);
