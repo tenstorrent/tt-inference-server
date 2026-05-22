@@ -51,6 +51,17 @@ logger = logging.getLogger(__name__)
 
 PREFIX_CACHE_HITS_METRIC = "vllm:prefix_cache_hits_total"
 PREFIX_CACHE_QUERIES_METRIC = "vllm:prefix_cache_queries_total"
+# AIPerf 0.5 strips the canonical Prometheus `_total` suffix when it writes
+# server_metrics_export.jsonl. Older AIPerf / raw scrapes keep it. Accept both
+# spellings so we work across versions.
+PREFIX_CACHE_HITS_METRIC_ALIASES = (
+    PREFIX_CACHE_HITS_METRIC,
+    "vllm:prefix_cache_hits",
+)
+PREFIX_CACHE_QUERIES_METRIC_ALIASES = (
+    PREFIX_CACHE_QUERIES_METRIC,
+    "vllm:prefix_cache_queries",
+)
 
 
 @dataclass
@@ -462,9 +473,15 @@ def _collect_metric_samples(
     or a flat value. We tolerate both shapes by extracting any numeric value
     found beneath the metric key.
     """
+    # Track every alias separately; the caller collapses them back into the
+    # canonical metric name. This keeps `_extract_numeric` (and any future
+    # additions) shape-agnostic.
     series: Dict[str, List[float]] = {
-        PREFIX_CACHE_HITS_METRIC: [],
-        PREFIX_CACHE_QUERIES_METRIC: [],
+        alias: []
+        for alias in (
+            *PREFIX_CACHE_HITS_METRIC_ALIASES,
+            *PREFIX_CACHE_QUERIES_METRIC_ALIASES,
+        )
     }
     if not server_metrics_path.exists():
         return series
@@ -563,8 +580,16 @@ def parse_server_metrics_for_prefix_cache(
         return out
 
     samples = _collect_metric_samples(server_metrics_path)
-    hits = samples[PREFIX_CACHE_HITS_METRIC]
-    queries = samples[PREFIX_CACHE_QUERIES_METRIC]
+
+    def _first_populated(aliases):
+        for alias in aliases:
+            series = samples.get(alias) or []
+            if series:
+                return series
+        return []
+
+    hits = _first_populated(PREFIX_CACHE_HITS_METRIC_ALIASES)
+    queries = _first_populated(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
     if not hits or not queries:
         logger.warning(
             "vLLM prefix cache counters not present in "
