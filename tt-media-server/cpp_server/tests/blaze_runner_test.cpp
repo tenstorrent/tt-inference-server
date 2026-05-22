@@ -59,9 +59,11 @@ class BlazeRunnerHarness {
     tt::ipc::boost::MemoryResultQueue::remove(memoryResQueueName);
 
     memoryRequestQueue = std::make_unique<tt::ipc::boost::MemoryRequestQueue>(
-        memoryReqQueueName, static_cast<int>(tt::config::memoryQueueCapacity()));
+        memoryReqQueueName,
+        static_cast<int>(tt::config::memoryQueueCapacity()));
     memoryResultQueue = std::make_unique<tt::ipc::boost::MemoryResultQueue>(
-        memoryResQueueName, static_cast<int>(tt::config::memoryQueueCapacity()));
+        memoryResQueueName,
+        static_cast<int>(tt::config::memoryQueueCapacity()));
 
     config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
     config.stop_token_ids = std::move(stopTokenIds);
@@ -103,7 +105,8 @@ class BlazeRunnerHarness {
     return resultQueue.waitPopFor(token, POLL_INTERVAL);
   }
 
-  std::vector<tt::ipc::SharedToken> collectTaskTokensUntilFinal(uint32_t taskId) {
+  std::vector<tt::ipc::SharedToken> collectTaskTokensUntilFinal(
+      uint32_t taskId) {
     std::vector<tt::ipc::SharedToken> tokens;
     const auto deadline = std::chrono::steady_clock::now() + DEADLINE;
     while (std::chrono::steady_clock::now() < deadline) {
