@@ -744,6 +744,7 @@ add_executable(tool_calling_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
