@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -223,6 +224,62 @@ const Tokenizer& activeTokenizer() {
   thread_local auto tok =
       createTokenizer(config::modelType(), config::tokenizerPath());
   return *tok;
+}
+
+// ---------------------------------------------------------------------------
+// Static, tokenizer-free model info
+// ---------------------------------------------------------------------------
+//
+// Each entry below is what the corresponding Tokenizer subclass returns from
+// its modelName() / stopTokenIds() / assistantHeaderSequence() overrides —
+// just lifted into a constexpr-friendly table so the request hot path can
+// look them up without loading tokenizer.json.
+//
+// If you add a new ModelType, you MUST add an entry here. Compile-time
+// catch: any ModelType missing from the switch in `staticInfoFor()` will
+// throw at first access.
+//
+// Llama 3.1 assistant header sequence (`<|start_header_id|>assistant
+// <|end_header_id|>\n\n`) tokenizes to {128006, 78191, 128007, 271}. This
+// is a stable model-specific constant; verified by encoding the literal
+// header string on a freshly loaded Llama-3 tokenizer.
+
+namespace {
+
+const StaticTokenizerInfo& deepseekR1Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"deepseek-ai/DeepSeek-R1-0528",
+      /*stopTokenIds=*/{1},
+      /*assistantHeaderSequence=*/{128804},
+  };
+  return kInfo;
+}
+
+const StaticTokenizerInfo& llama31Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"meta-llama/Llama-3.1-8B-Instruct",
+      /*stopTokenIds=*/{128001, 128008, 128009},
+      /*assistantHeaderSequence=*/{128006, 78191, 128007, 271},
+  };
+  return kInfo;
+}
+
+}  // namespace
+
+const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
+  switch (model) {
+    case config::ModelType::DEEPSEEK_R1_0528:
+      return deepseekR1Info();
+    case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return llama31Info();
+  }
+  throw std::invalid_argument(
+      "tokenizers::staticInfoFor: no static info registered for ModelType " +
+      std::to_string(static_cast<int>(model)));
+}
+
+const StaticTokenizerInfo& staticInfo() {
+  return staticInfoFor(config::modelType());
 }
 
 }  // namespace tt::utils::tokenizers

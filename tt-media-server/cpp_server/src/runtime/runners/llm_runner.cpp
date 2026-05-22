@@ -1,6 +1,7 @@
 #include "runtime/runners/llm_runner.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -31,25 +32,46 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
-  try {
-    const auto& tok = tt::utils::tokenizers::activeTokenizer();
-    auto encodedVocab = tok.getEncodedVocab();
-    int vocabSize = static_cast<int>(encodedVocab.size());
-    std::vector<int32_t> stopIds;
-    for (int64_t id : tok.stopTokenIds()) {
-      stopIds.push_back(static_cast<int32_t>(id));
+  // Guided decoding is the only place at startup that needs the full
+  // tokenizer vocab (Tokenizer::getEncodedVocab()). On a Dynamo-style
+  // deployment the frontend already handles structured outputs, so we
+  // skip initialization here by default and avoid synchronously parsing
+  // ~129k vocab entries (~500ms for DeepSeek-R1) on every server start.
+  //
+  // Set LLM_ENABLE_GUIDED_DECODING=1 to opt into the legacy HTTP/
+  // chat-completions structured-output path that requires a local
+  // GuidedDecoderManager.
+  const char* guidedEnv = std::getenv("LLM_ENABLE_GUIDED_DECODING");
+  const bool guidedEnabled = guidedEnv != nullptr &&
+                             (guidedEnv[0] == '1' || guidedEnv[0] == 't' ||
+                              guidedEnv[0] == 'T');
+  if (guidedEnabled) {
+    try {
+      const auto& tok = tt::utils::tokenizers::activeTokenizer();
+      auto encodedVocab = tok.getEncodedVocab();
+      int vocabSize = static_cast<int>(encodedVocab.size());
+      std::vector<int32_t> stopIds;
+      for (int64_t id : tt::utils::tokenizers::staticInfo().stopTokenIds) {
+        stopIds.push_back(static_cast<int32_t>(id));
+      }
+      guidedDecoder = std::make_unique<GuidedDecoderManager>(
+          encodedVocab, vocabSize, stopIds);
+      TT_LOG_INFO(
+          "[LLMRunner] Guided decoder initialized (vocab_size={}, "
+          "stop_tokens={})",
+          vocabSize, stopIds.size());
+    } catch (const std::exception& e) {
+      TT_LOG_WARN(
+          "[LLMRunner] Failed to init guided decoder, structured outputs "
+          "disabled: {}",
+          e.what());
     }
-    guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
-                                                           vocabSize, stopIds);
+  } else {
     TT_LOG_INFO(
-        "[LLMRunner] Guided decoder initialized (vocab_size={}, "
-        "stop_tokens={})",
-        vocabSize, stopIds.size());
-  } catch (const std::exception& e) {
-    TT_LOG_WARN(
-        "[LLMRunner] Failed to init guided decoder, structured outputs "
-        "disabled: {}",
-        e.what());
+        "[LLMRunner] Guided decoder DISABLED (LLM_ENABLE_GUIDED_DECODING "
+        "not set). Tokenizer.json will not be loaded at startup. Set "
+        "LLM_ENABLE_GUIDED_DECODING=1 to re-enable structured outputs on "
+        "the HTTP path.");
   }
 
   auto decodeCb = [this](const TokenResult& result) {

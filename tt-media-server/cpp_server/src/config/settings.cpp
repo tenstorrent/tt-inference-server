@@ -268,7 +268,7 @@ int decodeMaxTokenIds() {
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
@@ -553,6 +553,59 @@ unsigned sessionAllocationMaxRetries() {
 unsigned prefillTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
+}
+
+bool dynamoEndpointEnabled() {
+  return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
+}
+
+std::string dynamoBindHost() {
+  return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+std::string dynamoDiscoveryBackend() {
+  return envString("DYNAMO_DISCOVERY_BACKEND",
+                   defaults::DYNAMO_DISCOVERY_BACKEND);
+}
+
+std::string dynamoDiscoveryPath() {
+  return envString("DYNAMO_DISCOVERY_PATH", defaults::DYNAMO_DISCOVERY_PATH);
+}
+
+std::string dynamoEtcdEndpoints() {
+  // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
+  // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single
+  // export propagates to both processes when start_dynamo.sh wires them
+  // together.
+  if (const char* v = std::getenv("DYNAMO_ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  if (const char* v = std::getenv("ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  return defaults::DYNAMO_ETCD_ENDPOINTS;
+}
+
+int64_t dynamoEtcdLeaseTtlSecs() {
+  const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
+  if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  try {
+    return std::stoll(v);
+  } catch (const std::exception&) {
+    return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  }
+}
+
+std::string dynamoNamespace() {
+  return envString("DYNAMO_NAMESPACE", defaults::DYNAMO_NAMESPACE);
+}
+
+std::string dynamoComponent() {
+  return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
+}
+
+std::string dynamoEndpointName() {
+  return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
 }
 
 }  // namespace tt::config

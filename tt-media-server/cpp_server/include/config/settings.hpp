@@ -238,6 +238,49 @@ int prefillMaxTokenIds();
  * defaults::DECODE_MAX_TOKEN_IDS. */
 int decodeMaxTokenIds();
 
+// ---------------------------------------------------------------------------
+// Dynamo TCP backend (NVIDIA Dynamo frontend integration)
+// ---------------------------------------------------------------------------
+
+/** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
+ * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+bool dynamoEndpointEnabled();
+
+/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
+ * defaults::DYNAMO_BIND_HOST. */
+std::string dynamoBindHost();
+
+/** Discovery backend selection ("file" or "etcd"). From
+ * DYNAMO_DISCOVERY_BACKEND. Default: defaults::DYNAMO_DISCOVERY_BACKEND.
+ * Must match the Dynamo frontend's DYN_DISCOVERY_BACKEND. */
+std::string dynamoDiscoveryBackend();
+
+/** Path to the file-based discovery store the Dynamo frontend watches. From
+ * DYNAMO_DISCOVERY_PATH. Default: defaults::DYNAMO_DISCOVERY_PATH. Only
+ * consulted when the discovery backend is "file". */
+std::string dynamoDiscoveryPath();
+
+/** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
+ * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
+ * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
+std::string dynamoEtcdEndpoints();
+
+/** Lease TTL (seconds) for etcd-backed discovery. From
+ * DYNAMO_ETCD_LEASE_TTL_SECS. Default: defaults::DYNAMO_ETCD_LEASE_TTL_SECS. */
+int64_t dynamoEtcdLeaseTtlSecs();
+
+/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
+ * defaults::DYNAMO_NAMESPACE. */
+std::string dynamoNamespace();
+
+/** Discovery component key. From DYNAMO_COMPONENT. Default:
+ * defaults::DYNAMO_COMPONENT. */
+std::string dynamoComponent();
+
+/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
+ * defaults::DYNAMO_ENDPOINT_NAME. */
+std::string dynamoEndpointName();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
