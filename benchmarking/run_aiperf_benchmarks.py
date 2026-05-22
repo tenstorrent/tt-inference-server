@@ -159,33 +159,48 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
         with open(json_path, "r") as f:
             summary = json.load(f)
 
-        # Map AIPerf metrics to vLLM-compatible format
-        # AIPerf summary format: {"metric_name": {"unit": "...", "avg": X, "p50": Y, ...}}
+        # AIPerf 0.5 inconsistently emits the median: most latency blocks
+        # include "p50", but `time_to_first_token` (and occasionally
+        # others) use "median" instead. Fall back across both spellings
+        # so the report stops rendering "N/A" for an otherwise-populated
+        # row. The aliases are tried left-to-right; the first hit wins.
+        def _pct(metric_block: Dict[str, Any], *keys: str, default: float = 0) -> float:
+            for k in keys:
+                if k in metric_block:
+                    return metric_block[k]
+            return default
+
+        ttft = summary.get("time_to_first_token", {})
+        itl = summary.get("inter_token_latency", {})
+        e2el = summary.get("request_latency", {})
+
+        # Map AIPerf metrics to vLLM-compatible format.
+        # AIPerf summary format: {"metric_name": {"unit": "...", "avg": X, "p50"|"median": Y, ...}}
         metrics = {
             # TTFT metrics (Time To First Token)
-            "mean_ttft_ms": summary.get("time_to_first_token", {}).get("avg", 0),
-            "median_ttft_ms": summary.get("time_to_first_token", {}).get("p50", 0),
-            "p95_ttft_ms": summary.get("time_to_first_token", {}).get("p95", 0),
-            "p99_ttft_ms": summary.get("time_to_first_token", {}).get("p99", 0),
-            "std_ttft_ms": summary.get("time_to_first_token", {}).get("std", 0),
+            "mean_ttft_ms": _pct(ttft, "avg", "mean"),
+            "median_ttft_ms": _pct(ttft, "p50", "median"),
+            "p95_ttft_ms": _pct(ttft, "p95"),
+            "p99_ttft_ms": _pct(ttft, "p99"),
+            "std_ttft_ms": _pct(ttft, "std"),
             # TPOT metrics (Time Per Output Token)
-            "mean_tpot_ms": summary.get("inter_token_latency", {}).get("avg", 0),
-            "median_tpot_ms": summary.get("inter_token_latency", {}).get("p50", 0),
-            "p95_tpot_ms": summary.get("inter_token_latency", {}).get("p95", 0),
-            "p99_tpot_ms": summary.get("inter_token_latency", {}).get("p99", 0),
-            "std_tpot_ms": summary.get("inter_token_latency", {}).get("std", 0),
-            # ITL metrics (Inter-Token Latency)
-            "mean_itl_ms": summary.get("inter_token_latency", {}).get("avg", 0),
-            "median_itl_ms": summary.get("inter_token_latency", {}).get("p50", 0),
-            "p95_itl_ms": summary.get("inter_token_latency", {}).get("p95", 0),
-            "p99_itl_ms": summary.get("inter_token_latency", {}).get("p99", 0),
-            "std_itl_ms": summary.get("inter_token_latency", {}).get("std", 0),
+            "mean_tpot_ms": _pct(itl, "avg", "mean"),
+            "median_tpot_ms": _pct(itl, "p50", "median"),
+            "p95_tpot_ms": _pct(itl, "p95"),
+            "p99_tpot_ms": _pct(itl, "p99"),
+            "std_tpot_ms": _pct(itl, "std"),
+            # ITL metrics (Inter-Token Latency) -- same source as TPOT.
+            "mean_itl_ms": _pct(itl, "avg", "mean"),
+            "median_itl_ms": _pct(itl, "p50", "median"),
+            "p95_itl_ms": _pct(itl, "p95"),
+            "p99_itl_ms": _pct(itl, "p99"),
+            "std_itl_ms": _pct(itl, "std"),
             # E2EL metrics (End-to-End Latency)
-            "mean_e2el_ms": summary.get("request_latency", {}).get("avg", 0),
-            "median_e2el_ms": summary.get("request_latency", {}).get("p50", 0),
-            "p95_e2el_ms": summary.get("request_latency", {}).get("p95", 0),
-            "p99_e2el_ms": summary.get("request_latency", {}).get("p99", 0),
-            "std_e2el_ms": summary.get("request_latency", {}).get("std", 0),
+            "mean_e2el_ms": _pct(e2el, "avg", "mean"),
+            "median_e2el_ms": _pct(e2el, "p50", "median"),
+            "p95_e2el_ms": _pct(e2el, "p95"),
+            "p99_e2el_ms": _pct(e2el, "p99"),
+            "std_e2el_ms": _pct(e2el, "std"),
             # Throughput metrics
             "output_token_throughput": summary.get("output_token_throughput", {}).get(
                 "avg", 0
