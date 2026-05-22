@@ -44,6 +44,35 @@ class HealthCheckConfig:
 HEALTH_CHECK_CONFIG = HealthCheckConfig()
 
 
+_CHECK_INT_TO_LABEL = {1: "NA", 2: "PASS", 3: "FAIL"}
+
+
+def _check_label(value: Any) -> str:
+    if isinstance(value, bool):
+        return "PASS" if value else "FAIL"
+    if isinstance(value, int):
+        return _CHECK_INT_TO_LABEL.get(value, str(value))
+    return str(value)
+
+
+def _synthesize_failure_reason(data: Dict[str, Any]) -> str:
+    sources: list[Dict[str, Any]] = [data]
+    for value in data.values():
+        if isinstance(value, dict):
+            sources.append(value)
+    parts: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        for key, value in source.items():
+            if key in seen or not key.endswith("_check"):
+                continue
+            seen.add(key)
+            parts.append(f"{key}={_check_label(value)}")
+    if not parts:
+        return "Test reported success=False"
+    return "Failed: " + ", ".join(parts)
+
+
 class BaseTest(ABC):
     # Subclasses set these so run_tests() can build a properly-tagged Block.
     KIND: str = "base"
@@ -194,6 +223,8 @@ class BaseTest(ABC):
                 data["elapsed_seconds"] = time.monotonic() - run_started
                 data["test_name"] = type(self).__name__
                 data["description"] = self.description
+                if not success and not data.get("error"):
+                    data["error"] = _synthesize_failure_reason(data)
                 return self._block(data)
 
             except asyncio.TimeoutError as e:

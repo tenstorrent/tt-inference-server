@@ -206,9 +206,7 @@ def _build_image_status_list(
                 status, elapsed = generator(ctx)
         except Exception as e:
             failed_count += 1
-            logger.error(
-                f"❌ Image generation {i + 1}/{num_calls} failed: {e}"
-            )
+            logger.error(f"❌ Image generation {i + 1}/{num_calls} failed: {e}")
             continue
         inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
         logger.info(
@@ -368,9 +366,9 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         failed_count,
     )
     ttft_value = _image_ttft(status_list)
-    inference_steps_per_second = (
-        sum(s.inference_steps_per_second for s in status_list) / len(status_list)
-    )
+    inference_steps_per_second = sum(
+        s.inference_steps_per_second for s in status_list
+    ) / len(status_list)
     # Sequential single-user benchmark, so tput_user = total throughput.
     target_checks, accuracy_check = _image_target_checks(
         ctx, ttft_value, inference_steps_per_second
