@@ -250,16 +250,6 @@ bool dynamoEndpointEnabled();
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
 
-/** Discovery backend selection ("file" or "etcd"). From
- * DYNAMO_DISCOVERY_BACKEND. Default: defaults::DYNAMO_DISCOVERY_BACKEND.
- * Must match the Dynamo frontend's DYN_DISCOVERY_BACKEND. */
-std::string dynamoDiscoveryBackend();
-
-/** Path to the file-based discovery store the Dynamo frontend watches. From
- * DYNAMO_DISCOVERY_PATH. Default: defaults::DYNAMO_DISCOVERY_PATH. Only
- * consulted when the discovery backend is "file". */
-std::string dynamoDiscoveryPath();
-
 /** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
  * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */

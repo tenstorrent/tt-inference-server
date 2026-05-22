@@ -6,18 +6,12 @@
 /**
  * Discovery registration for Dynamo backends.
  *
- * Two backends are supported:
+ * Uses etcd: PUTs instance + Model Descriptor Card JSON under keys
+ * `v1/instances/<key>` and `v1/mdc/<key>` attached to a lease. Keep-alive
+ * refreshes that lease; unregister revokes it (atomically deleting both keys).
  *
- *   - File: writes the instance + Model Descriptor Card JSON under
- *     `${DYNAMO_DISCOVERY_PATH}/v1/{instances,mdc}/<url-encoded-key>`. The
- *     keep-alive simply rewrites the file (refreshes mtime).
- *
- *   - Etcd: PUTs the same JSON bodies under keys `v1/instances/<key>` and
- *     `v1/mdc/<key>` attached to a lease. Keep-alive refreshes that lease;
- *     unregister revokes it (atomically deleting both keys).
- *
- * Both are wire-compatible with NVIDIA Dynamo's KVStoreDiscovery; the
- * frontend reads the same JSON payloads regardless of backend.
+ * Wire-compatible with NVIDIA Dynamo's KVStoreDiscovery; the frontend reads
+ * the same JSON payloads.
  */
 
 #include <cstdint>
@@ -26,18 +20,7 @@
 
 namespace tt::dynamo {
 
-enum class DiscoveryBackendKind {
-  File,
-  Etcd,
-};
-
 struct DiscoveryConfig {
-  DiscoveryBackendKind backend = DiscoveryBackendKind::File;
-
-  // ---- File backend ------------------------------------------------------
-  std::string store_path = "/tmp/dynamo_store_kv";
-
-  // ---- Etcd backend ------------------------------------------------------
   /// Single etcd HTTP endpoint or comma-separated list (only the first is
   /// dialed today). Use `http://<host>:2379`; HTTPS is unsupported.
   std::string etcd_endpoints = "http://localhost:2379";
@@ -46,7 +29,7 @@ struct DiscoveryConfig {
   /// cause an etcd reap.
   int64_t etcd_lease_ttl_secs = 10;
 
-  // ---- Identity (both backends) ------------------------------------------
+  // ---- Identity ----------------------------------------------------------
   std::string namespace_name = "default";
   std::string component = "backend";
   std::string endpoint = "generate";
@@ -80,10 +63,10 @@ class DiscoveryRegistration {
   /// Publish the instance + MDC documents. Throws on transport failure.
   virtual void registerSelf() = 0;
 
-  /// Refresh the registration so it doesn't expire. For the file backend
-  /// this is a re-write; for etcd it's a lease keep-alive that falls back
-  /// to a full re-register if the lease has been reaped. Errors are
-  /// swallowed (logged) so a transient outage doesn't kill the worker.
+  /// Refresh the registration so it doesn't expire. This is a lease
+  /// keep-alive that falls back to a full re-register if the lease has been
+  /// reaped. Errors are swallowed (logged) so a transient outage doesn't
+  /// kill the worker.
   virtual void keepAlive() = 0;
 
   /// Remove the registration. Errors are swallowed (best effort on
@@ -94,9 +77,5 @@ class DiscoveryRegistration {
   /// seconds between `keepAlive()` calls.
   virtual int keepAliveIntervalSecs() const = 0;
 };
-
-/// Map a string form ("file" / "etcd", case-insensitive) to the enum. Used
-/// by settings.cpp.
-DiscoveryBackendKind parseDiscoveryBackend(const std::string& s);
 
 }  // namespace tt::dynamo

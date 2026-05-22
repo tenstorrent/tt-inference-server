@@ -111,11 +111,7 @@ constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
 
-// Discovery backend: "file" (default) writes JSON to DYNAMO_DISCOVERY_PATH,
-// "etcd" PUTs to a Dynamo-shared etcd cluster (matching the frontend's
-// DYN_DISCOVERY_BACKEND=etcd mode). Frontend and backend must agree.
-constexpr const char* DYNAMO_DISCOVERY_BACKEND = "file";
-constexpr const char* DYNAMO_DISCOVERY_PATH = "/tmp/dynamo_store_kv";
+// Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
 constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://localhost:2379";
 // Lease TTL for instance + MDC entries in etcd. The keep-alive thread
 // refreshes the lease at half this interval so a missed tick doesn't trip

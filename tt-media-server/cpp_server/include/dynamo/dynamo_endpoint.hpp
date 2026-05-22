@@ -46,9 +46,6 @@ class DynamoEndpoint {
 
     /// Discovery backend ("file" or "etcd"). Must match the frontend's
     /// DYN_DISCOVERY_BACKEND.
-    DiscoveryBackendKind discovery_backend = DiscoveryBackendKind::File;
-    /// File backend: store directory.
-    std::string discovery_path = "/tmp/dynamo_store_kv";
     /// Etcd backend: endpoint URL (or comma-separated list).
     std::string etcd_endpoints = "http://localhost:2379";
     /// Etcd backend: lease TTL in seconds (keep-alive runs at half this).

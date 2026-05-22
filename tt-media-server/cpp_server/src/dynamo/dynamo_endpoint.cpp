@@ -397,8 +397,6 @@ void DynamoEndpoint::start() {
   }
 
   DiscoveryConfig dc;
-  dc.backend = options_.discovery_backend;
-  dc.store_path = options_.discovery_path;
   dc.etcd_endpoints = options_.etcd_endpoints;
   dc.etcd_lease_ttl_secs = options_.etcd_lease_ttl_secs;
   dc.namespace_name = options_.namespace_name;
@@ -425,16 +423,11 @@ void DynamoEndpoint::start() {
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
-  const char* backendStr =
-      (dc.backend == DiscoveryBackendKind::Etcd) ? "etcd" : "file";
-  const std::string& backendTarget = (dc.backend == DiscoveryBackendKind::Etcd)
-                                         ? dc.etcd_endpoints
-                                         : dc.store_path;
   TT_LOG_INFO(
       "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
-      "discovery={}({})",
+      "discovery=etcd({})",
       options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
-      backendStr, backendTarget);
+      dc.etcd_endpoints);
 
   // Refresh the registration periodically so a frontend that prunes stale
   // entries (file mtime) or expires unleased keys (etcd) keeps seeing us.

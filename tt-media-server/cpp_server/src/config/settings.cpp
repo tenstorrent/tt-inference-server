@@ -563,15 +563,6 @@ std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
 }
 
-std::string dynamoDiscoveryBackend() {
-  return envString("DYNAMO_DISCOVERY_BACKEND",
-                   defaults::DYNAMO_DISCOVERY_BACKEND);
-}
-
-std::string dynamoDiscoveryPath() {
-  return envString("DYNAMO_DISCOVERY_PATH", defaults::DYNAMO_DISCOVERY_PATH);
-}
-
 std::string dynamoEtcdEndpoints() {
   // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
   // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single

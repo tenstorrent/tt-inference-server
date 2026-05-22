@@ -6,8 +6,6 @@
 #include <json/json.h>
 
 #include <algorithm>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -16,8 +14,6 @@
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
-
-namespace fs = std::filesystem;
 
 namespace {
 
@@ -28,22 +24,6 @@ constexpr int K_KV_CACHE_BLOCK_SIZE = 16;
 /// used only for cache invalidation.
 constexpr const char* K_BLAKE3_PLACEHOLDER =
     "blake3:0000000000000000000000000000000000000000000000000000000000000000";
-
-/// URL-encode a path component (only `/` needs to be escaped for our keys).
-/// Used by the file backend so a slash inside namespace/component doesn't
-/// create unintended subdirectories.
-std::string urlEncodeSlash(const std::string& s) {
-  std::string out;
-  out.reserve(s.size());
-  for (char c : s) {
-    if (c == '/') {
-      out += "%2F";
-    } else {
-      out += c;
-    }
-  }
-  return out;
-}
 
 /// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
 /// model ids have `/` and uppercase, so map them to `-` and lowercase.
@@ -162,57 +142,6 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
 }
 
 // ---------------------------------------------------------------------------
-// File backend
-// ---------------------------------------------------------------------------
-
-class FileDiscoveryRegistration : public DiscoveryRegistration {
- public:
-  explicit FileDiscoveryRegistration(DiscoveryConfig cfg)
-      : cfg(std::move(cfg)) {}
-
-  void registerSelf() override { writeAll(/*quiet=*/false); }
-  void keepAlive() override { writeAll(/*quiet=*/true); }
-
-  void unregisterSelf() override {
-    const std::string encoded = urlEncodeSlash(instanceKey(cfg));
-    std::error_code ec;
-    fs::remove(cfg.store_path + "/v1/instances/" + encoded, ec);
-    fs::remove(cfg.store_path + "/v1/mdc/" + encoded, ec);
-    TT_LOG_INFO("[DynamoDiscovery/file] Unregistered {}", instanceKey(cfg));
-  }
-
-  int keepAliveIntervalSecs() const override { return 5; }
-
- private:
-  void writeAll(bool quiet) {
-    const std::string encoded = urlEncodeSlash(instanceKey(cfg));
-    {
-      const std::string dir = cfg.store_path + "/v1/instances";
-      fs::create_directories(dir);
-      const std::string path = dir + "/" + encoded;
-      std::ofstream f(path);
-      f << serializeJson(buildInstanceJson(cfg));
-      if (!quiet) {
-        TT_LOG_INFO("[DynamoDiscovery/file] Registered instance at {}", path);
-      }
-    }
-    {
-      const std::string dir = cfg.store_path + "/v1/mdc";
-      fs::create_directories(dir);
-      const std::string path = dir + "/" + encoded;
-      std::ofstream f(path);
-      f << serializeJson(buildMdcJson(cfg));
-      if (!quiet) {
-        TT_LOG_INFO("[DynamoDiscovery/file] Registered MDC at {} (model={})",
-                    path, cfg.model_name);
-      }
-    }
-  }
-
-  DiscoveryConfig cfg;
-};
-
-// ---------------------------------------------------------------------------
 // Etcd backend
 // ---------------------------------------------------------------------------
 
@@ -307,23 +236,7 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
 
 std::unique_ptr<DiscoveryRegistration> DiscoveryRegistration::create(
     const DiscoveryConfig& config) {
-  switch (config.backend) {
-    case DiscoveryBackendKind::File:
-      return std::make_unique<FileDiscoveryRegistration>(config);
-    case DiscoveryBackendKind::Etcd:
-      return std::make_unique<EtcdDiscoveryRegistration>(config);
-  }
-  throw std::invalid_argument("DiscoveryRegistration: unknown backend");
-}
-
-DiscoveryBackendKind parseDiscoveryBackend(const std::string& s) {
-  std::string lower;
-  lower.reserve(s.size());
-  for (char c : s) lower += static_cast<char>(std::tolower(c));
-  if (lower == "etcd") return DiscoveryBackendKind::Etcd;
-  if (lower == "file" || lower.empty()) return DiscoveryBackendKind::File;
-  throw std::invalid_argument("Unknown DYNAMO_DISCOVERY_BACKEND value: '" + s +
-                              "' (expected 'file' or 'etcd')");
+  return std::make_unique<EtcdDiscoveryRegistration>(config);
 }
 
 }  // namespace tt::dynamo
