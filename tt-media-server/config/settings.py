@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.SP_RUNNER.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # SHM response deadline in SPRunner (server-side proxy to video_runner).
     # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
     video_request_timeout_seconds: float = 300.0
+    # Deadline for SPRunner's warmup round-trip against the video pipeline.
+    # The ping is only sent when SP_REQUIRE_WARMUP_PING=true; default is a full
+    # hour because cold-start WAN with weight load + first compile across a
+    # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
+    sp_warmup_timeout_seconds: float = 6000.0
 
     # Job management settings
     max_jobs: int = 10000
