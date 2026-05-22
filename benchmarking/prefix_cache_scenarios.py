@@ -452,12 +452,17 @@ def _expand_mooncake_trace(
         return []
 
     synthesis_grid: List[Dict[str, Any]] = list(cfg.get("synthesis_grid", [{}]))
-    fixed_schedule: bool = bool(cfg.get("fixed_schedule", False))
     block_size: Optional[int] = (
         int(cfg["block_size"]) if cfg.get("block_size") is not None else None
     )
-    arrivals = cfg.get("arrival_patterns") or [{"pattern": "poisson"}]
     request_count = int(cfg.get("request_count", preset_request_count))
+
+    # AIPerf 0.5 rejects `--arrival-pattern` together with a custom dataset
+    # that has timestamps (every mooncake trace does). Trace mode therefore
+    # always runs in `--fixed-schedule` and the manifest's `arrival_patterns`
+    # / top-level arrival overrides are ignored for this scenario type.
+    fixed_schedule = True
+    _ = arrival_overrides  # intentionally unused for trace-driven runs.
 
     runs: List[PrefixCacheRun] = []
     for trace in traces_cfg:
@@ -473,91 +478,80 @@ def _expand_mooncake_trace(
         for synth in synthesis_grid:
             synth_name = synth.get("name") or "default"
             for concurrency in concurrencies:
-                # When fixed_schedule is enabled the arrival pattern is
-                # driven entirely by the trace timestamps, so we still
-                # emit a single run per concurrency (no arrival sweep).
-                arrivals_for_run = (
-                    [{"pattern": "constant"}] if fixed_schedule else arrivals
-                )
-                for arrival in arrivals_for_run:
-                    pattern = arrival_overrides.get(
-                        "arrival_pattern"
-                    ) or arrival.get("pattern", "poisson")
-                    smoothness = arrival.get("smoothness")
-                    request_rate = arrival_overrides.get("request_rate")
-                    label = (
-                        f"trace_{trace_name}_{synth_name}_c{concurrency}_"
-                        f"{'fixed' if fixed_schedule else pattern}"
-                    )
-                    runs.append(
-                        PrefixCacheRun(
-                            scenario="mooncake_trace",
-                            label=label,
-                            # ISL/OSL are *advisory only* in trace mode; the
-                            # actual lengths come from the trace. We surface
-                            # the trace's nominal mean so reports stay
-                            # consistent across scenarios.
-                            isl_mean=int(synth.get("nominal_isl_mean", 0)),
-                            isl_stddev=int(synth.get("nominal_isl_stddev", 0)),
-                            osl_mean=int(synth.get("nominal_osl_mean", 0)),
-                            osl_stddev=int(synth.get("nominal_osl_stddev", 0)),
-                            concurrency=int(concurrency),
-                            request_count=request_count,
-                            arrival_pattern=pattern,
-                            arrival_smoothness=smoothness,
-                            request_rate=request_rate,
-                            trace_input_file=str(resolved),
-                            # AIPerf's CLI help advertises "mooncake-trace"
-                            # (hyphenated) but its pydantic enum only accepts
-                            # the underscored form. See aiperf v0.5.0 source.
-                            custom_dataset_type="mooncake_trace",
-                            synthesis_speedup_ratio=(
-                                float(synth["speedup"]) if "speedup" in synth else None
-                            ),
-                            synthesis_prefix_len_multiplier=(
-                                float(synth["prefix_len"])
-                                if "prefix_len" in synth
-                                else None
-                            ),
-                            synthesis_prefix_root_multiplier=(
-                                int(synth["prefix_root"])
-                                if "prefix_root" in synth
-                                else None
-                            ),
-                            synthesis_prompt_len_multiplier=(
-                                float(synth["prompt_len"])
-                                if "prompt_len" in synth
-                                else None
-                            ),
-                            synthesis_max_isl=(
-                                int(synth["max_isl"]) if "max_isl" in synth else None
-                            ),
-                            synthesis_max_osl=(
-                                int(synth["max_osl"]) if "max_osl" in synth else None
-                            ),
-                            fixed_schedule=fixed_schedule,
-                            block_size=block_size,
-                            metadata={
-                                "trace_name": trace_name,
-                                "trace_path": str(resolved),
-                                "synthesis_variant": synth_name,
-                                "synthesis": {
-                                    k: synth[k]
-                                    for k in (
-                                        "speedup",
-                                        "prefix_len",
-                                        "prefix_root",
-                                        "prompt_len",
-                                        "max_isl",
-                                        "max_osl",
-                                    )
-                                    if k in synth
-                                },
-                                "fixed_schedule": fixed_schedule,
-                                "expected_reuse": "trace-derived",
+                label = f"trace_{trace_name}_{synth_name}_c{concurrency}_fixed"
+                runs.append(
+                    PrefixCacheRun(
+                        scenario="mooncake_trace",
+                        label=label,
+                        # ISL/OSL are *advisory only* in trace mode; the
+                        # actual lengths come from the trace. We surface the
+                        # trace's nominal mean so reports stay consistent
+                        # across scenarios.
+                        isl_mean=int(synth.get("nominal_isl_mean", 0)),
+                        isl_stddev=int(synth.get("nominal_isl_stddev", 0)),
+                        osl_mean=int(synth.get("nominal_osl_mean", 0)),
+                        osl_stddev=int(synth.get("nominal_osl_stddev", 0)),
+                        concurrency=int(concurrency),
+                        request_count=request_count,
+                        # Arrival is driven entirely by the trace's own
+                        # `timestamp` column when fixed_schedule=True; we
+                        # still record "trace" here so reports surface the
+                        # provenance.
+                        arrival_pattern="trace",
+                        arrival_smoothness=None,
+                        request_rate=None,
+                        trace_input_file=str(resolved),
+                        # AIPerf's CLI help advertises "mooncake-trace"
+                        # (hyphenated) but its pydantic enum only accepts
+                        # the underscored form. See aiperf v0.5.0 source.
+                        custom_dataset_type="mooncake_trace",
+                        synthesis_speedup_ratio=(
+                            float(synth["speedup"]) if "speedup" in synth else None
+                        ),
+                        synthesis_prefix_len_multiplier=(
+                            float(synth["prefix_len"])
+                            if "prefix_len" in synth
+                            else None
+                        ),
+                        synthesis_prefix_root_multiplier=(
+                            int(synth["prefix_root"])
+                            if "prefix_root" in synth
+                            else None
+                        ),
+                        synthesis_prompt_len_multiplier=(
+                            float(synth["prompt_len"])
+                            if "prompt_len" in synth
+                            else None
+                        ),
+                        synthesis_max_isl=(
+                            int(synth["max_isl"]) if "max_isl" in synth else None
+                        ),
+                        synthesis_max_osl=(
+                            int(synth["max_osl"]) if "max_osl" in synth else None
+                        ),
+                        fixed_schedule=fixed_schedule,
+                        block_size=block_size,
+                        metadata={
+                            "trace_name": trace_name,
+                            "trace_path": str(resolved),
+                            "synthesis_variant": synth_name,
+                            "synthesis": {
+                                k: synth[k]
+                                for k in (
+                                    "speedup",
+                                    "prefix_len",
+                                    "prefix_root",
+                                    "prompt_len",
+                                    "max_isl",
+                                    "max_osl",
+                                )
+                                if k in synth
                             },
-                        )
+                            "fixed_schedule": fixed_schedule,
+                            "expected_reuse": "trace-derived",
+                        },
                     )
+                )
     return runs
 
 
