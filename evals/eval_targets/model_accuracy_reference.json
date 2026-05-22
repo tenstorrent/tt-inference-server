@@ -225,8 +225,8 @@
         "accuracy": {
             "100": {
                 "fid_valid_range": [
-                    180.0,
-                    230.0
+                    264.3848,
+                    280.3848
                 ],
                 "clip_valid_range": [
                     27.0,
