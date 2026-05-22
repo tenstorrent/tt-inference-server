@@ -272,8 +272,13 @@ struct ChatCompletionRequest : BaseRequest {
     out.messages = messages;
     out.skip_apply_chat_template = skip_apply_chat_template;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+    std::optional<std::vector<tool_calls::Tool>> effectiveTools =
+        (tool_choice.has_value() && tool_choice->type == "none")
+            ? std::nullopt
+            : tools;
     auto promptStr = tokenizer.applyChatTemplate(
-        messages, true, tools, enable_reasoning, skip_apply_chat_template);
+        messages, true, effectiveTools, enable_reasoning,
+        skip_apply_chat_template);
     out.full_prompt_tokens_count =
         static_cast<int>(tokenizer.encode(promptStr).size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;

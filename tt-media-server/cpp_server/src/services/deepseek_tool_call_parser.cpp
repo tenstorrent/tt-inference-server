@@ -85,6 +85,8 @@ struct ToolCallTaskState {
   Json::Value tool_calls;         // Array of completed tool calls
   int call_index = 0;             // Tool call counter
   bool in_json_block = false;     // Inside ```json...``` block
+  bool json_header_stripped =
+      false;  // Whether "json" header after ``` has been checked/stripped
   bool sent_tool_call_start =
       false;  // Whether we've sent TOOL_CALL_START for current call
   std::string current_tool_call_id;  // ID for current tool call being parsed
@@ -115,6 +117,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
     state.tool_calls = Json::Value(Json::arrayValue);
     state.call_index = 0;
     state.in_json_block = false;
+    state.json_header_stripped = false;
     state.sent_tool_call_start = false;
     state.current_tool_call_id.clear();
     state.arguments_buffer.clear();
@@ -159,6 +162,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
       state.current_arguments.clear();
       state.arguments_buffer.clear();
       state.in_json_block = false;
+      state.json_header_stripped = false;
       state.sent_tool_call_start = false;
       state.current_tool_call_id = tt::utils::ToolCallIDGenerator::generate();
       TT_LOG_DEBUG("[ToolCallParser] Task {} started new tool call, id={}",
@@ -240,9 +244,11 @@ class DeepSeekToolCallParser : public IToolCallParser {
           size_t backtickPos = state.buffer.find("```");
           if (backtickPos != std::string::npos) {
             state.in_json_block = true;
+            state.json_header_stripped = false;
             size_t jsonStart = backtickPos + 3;
             if (state.buffer.substr(jsonStart, 4) == "json") {
               jsonStart += 4;
+              state.json_header_stripped = true;
             }
             while (jsonStart < state.buffer.size() &&
                    (state.buffer[jsonStart] == ' ' ||
@@ -264,6 +270,35 @@ class DeepSeekToolCallParser : public IToolCallParser {
           return std::nullopt;
 
         } else {
+          // Strip "json" header if ``` and "json" arrived in separate tokens
+          if (!state.json_header_stripped) {
+            if (state.buffer.size() >= 4) {
+              size_t start = 0;
+              while (start < state.buffer.size() &&
+                     (state.buffer[start] == ' ' ||
+                      state.buffer[start] == '\t')) {
+                start++;
+              }
+              if (state.buffer.substr(start, 4) == "json") {
+                size_t afterJson = start + 4;
+                while (afterJson < state.buffer.size() &&
+                       (state.buffer[afterJson] == ' ' ||
+                        state.buffer[afterJson] == '\n' ||
+                        state.buffer[afterJson] == '\t' ||
+                        state.buffer[afterJson] == '\r')) {
+                  afterJson++;
+                }
+                state.buffer = state.buffer.substr(afterJson);
+                state.arguments_buffer.clear();
+                state.current_arguments.clear();
+              }
+              state.json_header_stripped = true;
+            } else if (state.buffer.find('{') != std::string::npos) {
+              state.json_header_stripped = true;
+            } else {
+              return std::nullopt;
+            }
+          }
           size_t backtickPos = state.buffer.find("```");
           if (backtickPos != std::string::npos) {
             std::string finalContent = state.buffer.substr(0, backtickPos);
@@ -363,9 +398,13 @@ class DeepSeekToolCallParser : public IToolCallParser {
       return;
     }
 
-    // Trim whitespace from arguments
+    // Trim whitespace and any residual "json" prefix from arguments
     std::string argsStr = state.current_arguments;
     argsStr.erase(0, argsStr.find_first_not_of(" \t\n\r"));
+    if (argsStr.substr(0, 4) == "json") {
+      argsStr.erase(0, 4);
+      argsStr.erase(0, argsStr.find_first_not_of(" \t\n\r"));
+    }
     argsStr.erase(argsStr.find_last_not_of(" \t\n\r") + 1);
 
     // Parse JSON arguments
