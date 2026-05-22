@@ -137,6 +137,11 @@ void Dispatcher::onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg) {
   if (senders_.sendCancelToPrefill) {
     sent = senders_.sendCancelToPrefill(entry->prefill_id, msg);
   }
+  if (sent) {
+    TT_LOG_INFO("[Dispatcher] taskId={} cancel -> prefill='{}'", msg.task_id,
+                entry->prefill_id);
+    return;
+  }
   if (!sent) {
     TT_LOG_WARN(
         "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
