@@ -13,13 +13,22 @@ We synthesize a small, deterministic workload with three controlled prefix
 groups so the CI run produces non-zero cache hits (the analyze-trace stats
 expect ~0.5+ reuse ratio).
 
+Security note: this script uses ``random.Random(SEED)`` intentionally and is
+not security-sensitive. The output is a fixture file committed to the repo
+for byte-stable CI reproducibility; switching to ``secrets``/``os.urandom``
+would produce a different trace on every regeneration and defeat the entire
+purpose of the file. No value produced here is used as an identifier, token,
+nonce, credential, or in any access-control decision -- they are
+benchmark-input integers (input length, output length, block hashes,
+inter-arrival deltas). The ``# nosec B311`` markers below acknowledge this.
+
 Usage:
     python benchmarking/benchmark_targets/sample_traces/generate_ci_mooncake.py
 """
 
 import json
 import math
-import random
+import random  # nosec B311  # noqa: S311  -- see module docstring
 from pathlib import Path
 
 SEED = 9472
@@ -47,7 +56,7 @@ OUT_PATH = Path(__file__).with_name("ci_mooncake.jsonl")
 
 
 def main() -> None:
-    rng = random.Random(SEED)
+    rng = random.Random(SEED)  # nosec B311  # noqa: S311  -- deterministic CI fixture
     # Each prefix group gets a unique root path of shared blocks. AIPerf
     # groups requests with identical hash_ids prefixes as cache-shared,
     # so this controls the theoretical reuse ceiling per group.
@@ -67,7 +76,9 @@ def main() -> None:
     timestamp_ms = 0
     next_unique_block = 10_000
     for i in range(NUM_REQUESTS):
-        group_idx = rng.choices(
+        # All rng.* calls below are non-cryptographic by design; see module
+        # docstring for the security rationale.
+        group_idx = rng.choices(  # nosec B311  # noqa: S311
             range(NUM_PREFIX_GROUPS),
             # Skewed (Zipf-ish) distribution: a few groups dominate, the
             # rest are tail traffic. Produces non-trivial cache pressure.
@@ -79,11 +90,11 @@ def main() -> None:
         # Mix short and long contexts so the CI preset exercises both
         # regimes (small ISL = cheap-to-recompute, long ISL = where
         # prefix caching actually pays off).
-        if rng.random() < 0.7:
-            isl = rng.choice(isl_choices_short)
+        if rng.random() < 0.7:  # nosec B311  # noqa: S311
+            isl = rng.choice(isl_choices_short)  # nosec B311  # noqa: S311
         else:
-            isl = rng.choice(isl_choices_long)
-        osl = rng.choice(osl_choices)
+            isl = rng.choice(isl_choices_long)  # nosec B311  # noqa: S311
+        osl = rng.choice(osl_choices)  # nosec B311  # noqa: S311
 
         # Required: len(hash_ids) == ceil(isl / BLOCK_SIZE).
         num_blocks = math.ceil(isl / BLOCK_SIZE)
@@ -100,7 +111,7 @@ def main() -> None:
         )
 
         # Poisson-ish inter-arrival (~25 ms mean) for a non-trivial schedule.
-        timestamp_ms += int(rng.expovariate(1.0 / 25.0))
+        timestamp_ms += int(rng.expovariate(1.0 / 25.0))  # nosec B311  # noqa: S311
 
         requests.append(
             {

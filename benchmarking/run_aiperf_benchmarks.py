@@ -49,6 +49,45 @@ from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_path_component(value: str, *, fallback: str = "unknown") -> str:
+    """Return a filesystem-safe single path component.
+
+    Strips directory separators, NUL bytes, and any leading dots so the
+    result can never be ``..`` or an absolute path fragment. Used when
+    interpolating workflow-derived values (model id, scenario name, run
+    label) into output filenames so that a future change which exposes one
+    of those values to external input cannot escape the output directory.
+    """
+    if not value:
+        return fallback
+    cleaned = (
+        value.replace("/", "_")
+        .replace("\\", "_")
+        .replace("\x00", "")
+        .replace("..", "_")
+        .strip()
+        .lstrip(".")
+    )
+    cleaned = "".join(c for c in cleaned if c.isalnum() or c in ("-", "_", "."))
+    return cleaned or fallback
+
+
+def _safe_join_within(base_dir: str, *components: str) -> str:
+    """Join ``components`` under ``base_dir`` and enforce containment.
+
+    Raises ``ValueError`` if the resolved path escapes ``base_dir`` after
+    normalization. Defense-in-depth against tainted filename components.
+    """
+    base_abs = os.path.abspath(base_dir)
+    candidate = os.path.abspath(os.path.join(base_abs, *components))
+    if os.path.commonpath([base_abs, candidate]) != base_abs:
+        raise ValueError(
+            f"Refusing to write outside output directory: {candidate} not under {base_abs}"
+        )
+    return candidate
+
+
 PREFIX_CACHE_HITS_METRIC = "vllm:prefix_cache_hits_total"
 PREFIX_CACHE_QUERIES_METRIC = "vllm:prefix_cache_queries_total"
 # AIPerf 0.5 strips the canonical Prometheus `_total` suffix when it writes
@@ -881,11 +920,19 @@ def save_prefix_cache_result(
         aiperf_prefix_cache_<scenario>_<filesafe_label>_<timestamp>.json
     """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # Sanitize every interpolated component: model_id can contain "/"
+    # (e.g. "meta-llama/Llama-3.1-8B-Instruct") and scenario / label are
+    # workflow-derived strings that could in principle carry path
+    # separators after a future refactor. _safe_join_within enforces that
+    # the resolved file stays under output_dir.
+    safe_model = _safe_path_component(model_id, fallback="model")
+    safe_scenario = _safe_path_component(run.scenario, fallback="scenario")
+    safe_label = _safe_path_component(run.filesafe_label(), fallback="run")
     filename = (
-        f"aiperf_prefix_cache_{model_id}_{timestamp}"
-        f"_{run.scenario}_{run.filesafe_label()}.json"
+        f"aiperf_prefix_cache_{safe_model}_{timestamp}"
+        f"_{safe_scenario}_{safe_label}.json"
     )
-    filepath = os.path.join(output_dir, filename)
+    filepath = _safe_join_within(output_dir, filename)
 
     payload = {
         "date": datetime.now().strftime("%Y%m%d-%H%M%S"),
@@ -1327,8 +1374,19 @@ def _run_prefix_cache_mode(
     if not send_warmup_requests(prompt_client, model_spec, num_requests=3):
         logger.warning("Warm-up requests failed, but continuing with prefix-cache suite")
 
-    artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
+    # model_id can contain "/" (HF-style namespaces); keep it as a single
+    # path segment under artifacts/ by sanitizing before joining.
+    artifact_base = (
+        venv_config.venv_path
+        / "artifacts"
+        / _safe_path_component(model_spec.model_id, fallback="model")
+    )
     artifact_base.mkdir(parents=True, exist_ok=True)
+    # output_path is workflow-derived (workflow_logs/benchmarks_output/...),
+    # but normalize before mkdir so any symlink/relative segment is
+    # resolved up-front and downstream _safe_join_within checks have a
+    # stable absolute base.
+    output_path = os.path.abspath(output_path)
     os.makedirs(output_path, exist_ok=True)
 
     return run_prefix_cache_suite(
@@ -1467,11 +1525,18 @@ def main():
     else:
         logger.info("Warm-up completed successfully")
 
-    # Create artifact directory
-    artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
+    # Create artifact directory (sanitize HF-style "namespace/name" model ids).
+    artifact_base = (
+        venv_config.venv_path
+        / "artifacts"
+        / _safe_path_component(model_spec.model_id, fallback="model")
+    )
     artifact_base.mkdir(parents=True, exist_ok=True)
 
-    # Ensure output path exists
+    # Normalize output path before mkdir so any relative/symlink segment
+    # is resolved up-front; downstream file writes use _safe_join_within
+    # against this resolved base.
+    args.output_path = os.path.abspath(args.output_path)
     os.makedirs(args.output_path, exist_ok=True)
 
     # Run benchmarks
