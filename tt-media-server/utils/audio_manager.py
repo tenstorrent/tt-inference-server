@@ -20,6 +20,29 @@ from utils.logger import TTLogger
 
 if settings.model_service == ModelServices.AUDIO.value:
     import torch
+
+    # PyTorch 2.6 flipped torch.load's `weights_only` default from False to True
+    # and lightning 2.6 propagated that change into
+    # lightning_fabric.utilities.cloud_io._load (Lightning-AI/pytorch-lightning#21072).
+    # pyannote-audio<=3.4.0 (pinned transitively by whisperx==3.4.3) does not
+    # forward `weights_only=False`, so pyannote checkpoints — which legitimately
+    # contain non-tensor objects like torch.torch_version.TorchVersion and
+    # omegaconf containers — fail to unpickle (pyannote/pyannote-audio#1960).
+    #
+    # The audio worker only loads checkpoints from trusted sources (gated HF
+    # repos under HF_TOKEN and bundled weights); no user-supplied .pt ever
+    # reaches torch.load in this process, so the strict default offers no real
+    # safety here. Restore the pre-2.6 default for this process only. Callers
+    # that explicitly pass `weights_only=True` are still respected via setdefault.
+    _ORIGINAL_TORCH_LOAD = torch.load
+
+    def _torchLoadLegacyDefault(*args, **kwargs):
+        if kwargs.get("weights_only") is None:
+            kwargs["weights_only"] = False
+        return _ORIGINAL_TORCH_LOAD(*args, **kwargs)
+
+    torch.load = _torchLoadLegacyDefault
+
     from silero_vad import get_speech_timestamps, load_silero_vad
     from whisperx.diarize import DiarizationPipeline
 
