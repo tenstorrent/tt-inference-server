@@ -378,6 +378,11 @@ _venv_config_list = [
         requirements_file="benchmarks-guidellm.txt",
         python_version="3.11",
     ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_SPEC_DECODE,
+        requirements_file="benchmarks-spec-decode.txt",
+        python_version="3.11",
+    ),
     # No pip; directory and/or runtime check
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,

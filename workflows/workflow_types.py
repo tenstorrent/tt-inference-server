@@ -15,6 +15,7 @@ class WorkflowType(IntEnum):
     SERVER = auto()
     RELEASE = auto()
     SPEC_TESTS = auto()
+    SPEC_DECODE_BENCH = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -45,6 +46,7 @@ class WorkflowVenvType(IntEnum):
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
     BENCHMARKS_GUIDELLM = auto()
+    BENCHMARKS_SPEC_DECODE = auto()
     HF_SETUP = auto()
     SERVER = auto()
     TT_SMI = auto()

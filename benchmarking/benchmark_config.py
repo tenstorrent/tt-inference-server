@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
+from benchmarking.spec_decode_common import SpecDecodeRunSpec
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -100,6 +101,126 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (65536, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+
+
+# Profile definitions for the speculative-decoding benchmark
+# (--workflow benchmarks --tools spec_decode). Selection happens at run time:
+# --limit-samples-mode smoke-test → "smoke"; otherwise → "full".
+#
+# Two datasets are wired up:
+#
+#   * Spec-Bench (hemingkx/Spec-Bench, 480 prompts) — exposes 13 row-level
+#     category values via question.jsonl. We use these one-at-a-time at
+#     concurrency=1 to isolate per-content-type acceptance rates.
+#   * SPEED-Bench (nvidia/SPEED-Bench, 2026) — two splits:
+#       - "qualitative": semantically diverse prompts for drafter accuracy
+#       - "throughput_{1k,2k,8k,16k,32k}": fixed-ISL prompts for system
+#         throughput across input lengths under realistic batching.
+#
+# vLLM's SpecBench/SpeedBench loaders do exact-match category filtering on
+# the JSONL ``category`` column. Passing a name that isn't in that column
+# (e.g. "mt_bench" — that's the dataset name, not a row label — or "default"
+# for SPEED-Bench) yields 0 prompts. ``category=None`` skips filtering and
+# loads every row in the (sub)set, which is what we use for SPEED-Bench's
+# wide qualitative + throughput sweeps.
+
+# Spec-Bench's 13 row-level categories. The first 8 are MT-Bench's
+# sub-categories, flattened into top-level rows by the Spec-Bench authors.
+SPEC_BENCH_CATEGORIES = (
+    "writing",
+    "roleplay",
+    "reasoning",
+    "math",
+    "coding",
+    "extraction",
+    "stem",
+    "humanities",
+    "translation",
+    "summarization",
+    "qa",
+    "math_reasoning",
+    "rag",
+)
+
+# SPEED-Bench subsets (matches vllm 0.21 argparse choices).
+SPEED_BENCH_QUALITATIVE = "qualitative"
+SPEED_BENCH_THROUGHPUT_SUBSETS = (
+    "throughput_1k",
+    "throughput_2k",
+    "throughput_8k",
+    "throughput_16k",
+    "throughput_32k",
+)
+
+# Concurrency points for the throughput sweep. Spans single-stream to
+# moderate batching so the diminishing-returns curve — where the workload
+# becomes compute-bound and speculative decoding stops winning — is visible.
+THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
+
+SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
+    # CI-level smoke profile: tiny, finishes in seconds. Exercises both
+    # dataset code paths with real category/subset values so a misconfigured
+    # name (the historical "mt_bench" / "default" / "throughput" bugs) fails
+    # loudly instead of silently loading 0 prompts.
+    "smoke": [
+        SpecDecodeRunSpec(
+            dataset_kind="spec_bench",
+            category="writing",
+            output_len=128,
+            max_concurrency=1,
+            num_prompts=4,
+        ),
+        SpecDecodeRunSpec(
+            dataset_kind="speed_bench",
+            category=None,
+            output_len=128,
+            max_concurrency=1,
+            num_prompts=4,
+            speed_bench_subset=SPEED_BENCH_QUALITATIVE,
+        ),
+    ],
+    # Full sweep:
+    #   - All 13 Spec-Bench categories × 2 output lengths × conc=1
+    #     → per-content-type acceptance rate, single-stream
+    #   - SPEED-Bench qualitative whole-split × conc=1 × osl=2048
+    #     → broad cross-domain AR check on the 880-prompt diverse split
+    #   - SPEED-Bench throughput_{1k..32k} × conc{1,16,64} × osl=1024
+    #     → maps E2E speedup across ISL and concurrency so the compute-bound
+    #       regime is observable
+    "full": [
+        SpecDecodeRunSpec(
+            dataset_kind="spec_bench",
+            category=category,
+            output_len=output_len,
+            max_concurrency=1,
+            num_prompts=16,
+        )
+        for category in SPEC_BENCH_CATEGORIES
+        for output_len in (128, 512)
+    ]
+    + [
+        SpecDecodeRunSpec(
+            dataset_kind="speed_bench",
+            category=None,
+            output_len=2048,
+            max_concurrency=1,
+            num_prompts=64,
+            speed_bench_subset=SPEED_BENCH_QUALITATIVE,
+        )
+    ]
+    + [
+        SpecDecodeRunSpec(
+            dataset_kind="speed_bench",
+            category=None,
+            output_len=1024,
+            max_concurrency=concurrency,
+            num_prompts=max(32, 4 * concurrency),
+            speed_bench_subset=subset,
+        )
+        for subset in SPEED_BENCH_THROUGHPUT_SUBSETS
+        for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
+    ],
+}
 
 
 # Image resolution pairs for multimodal benchmarks
