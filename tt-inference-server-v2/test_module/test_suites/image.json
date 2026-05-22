@@ -70,7 +70,7 @@
                             "num_prompts": 100,
                             "num_inference_steps": 20,
                             "lora_path": "artificialguybr/ColoringBookRedmond-V2",
-                            "lora_scale": 0.6
+                            "lora_scale": 1
                         }
                     }
                 },
@@ -85,7 +85,7 @@
                         "lora_configs": [
                             {
                                 "lora_path": "artificialguybr/ColoringBookRedmond-V2",
-                                "lora_scale": 0.6
+                                "lora_scale": 1
                             }
                         ]
                     }
