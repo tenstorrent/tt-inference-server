@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import importlib
 import json
@@ -194,6 +194,8 @@ class TestWorkflowExecution:
 
         # Mock run_single_workflow to return ordered named results
         with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=True
+        ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
             workflow_results = run_workflows(
@@ -221,8 +223,8 @@ class TestWorkflowExecution:
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
 
-    def test_release_workflow_omits_tests_when_unconfigured(self):
-        """Test release skips the pytest workflow for models without test config."""
+    def test_release_workflow_omits_optional_tests_when_unconfigured(self):
+        """Test release skips optional workflows (pytest, spec_tests) when the model lacks config."""
         model_spec = Namespace(
             model_name="missing-model",
         )
@@ -244,18 +246,19 @@ class TestWorkflowExecution:
             )
 
         with patch(
+            "workflows.run_workflows.has_spec_tests_configured", return_value=False
+        ), patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ):
             workflow_results = run_workflows(
                 model_spec, runtime_config, "test_json_path.json"
             )
 
-        assert workflow_calls == ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+        assert workflow_calls == ["EVALS", "BENCHMARKS", "REPORTS"]
         assert workflow_results == [
             WorkflowResult(workflow_name="evals", return_code=0),
             WorkflowResult(workflow_name="benchmarks", return_code=1),
-            WorkflowResult(workflow_name="spec_tests", return_code=2),
-            WorkflowResult(workflow_name="reports", return_code=3),
+            WorkflowResult(workflow_name="reports", return_code=2),
         ]
 
     def test_non_release_workflow_includes_reports_result(self):
@@ -552,11 +555,15 @@ class TestMainWorkflowIntegration:
     def test_main_workflow_benchmarks_no_docker(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py workflow for benchmarks without docker server."""
+        """Test main run.py workflow for benchmarks without docker server.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
@@ -579,11 +586,15 @@ class TestMainWorkflowIntegration:
     def test_main_returns_one_when_any_workflow_fails(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test main run.py returns failure when any workflow result is non-zero."""
+        """Test main run.py returns failure when any workflow result is non-zero.
+
+        Uses a post-0.11 model — pre-0.11 specs are refused by
+        validate_runtime_args (_check_image_version_supported).
+        """
         test_args = [
             "run.py",
             "--model",
-            "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "--device",
             "n150",
             "--workflow",
@@ -799,7 +810,9 @@ class TestSpecTestsBehavior:
 
         with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
-        ), patch.object(spec_tests_run, "_apply_filters", return_value=[]):
+        ), patch.object(
+            spec_tests_run.TestFrameworkRunner, "apply_filters", return_value=[]
+        ):
             result = spec_tests_run.main()
 
         assert result == 1
@@ -851,7 +864,9 @@ class TestSpecTestsBehavior:
         with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
         ), patch.object(
-            spec_tests_run, "_apply_filters", return_value=[fake_suite]
+            spec_tests_run.TestFrameworkRunner,
+            "apply_filters",
+            return_value=[fake_suite],
         ), patch.object(
             spec_tests_run.importlib, "import_module", return_value=fake_module
         ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:

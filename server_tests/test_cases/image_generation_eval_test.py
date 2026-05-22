@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 """Eval test for image generation models (Flux, Motif, SD3.5, etc.)."""
 
 import asyncio
@@ -11,7 +11,6 @@ from enum import IntEnum
 from typing import Optional, Union
 
 import aiohttp
-import requests
 
 from server_tests.base_test import BaseTest
 from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
@@ -52,17 +51,7 @@ class ImageGenConfig:
     REQUEST_TIMEOUT: int = 5000
 
 
-@dataclass(frozen=True)
-class HealthCheckConfig:
-    """Health check configuration."""
-
-    MAX_ATTEMPTS: int = 230
-    RETRY_DELAY: int = 10
-    TIMEOUT: int = 10
-
-
 CONFIG = ImageGenConfig()
-HEALTH_CONFIG = HealthCheckConfig()
 
 
 SDXL_RESOLUTION_MODEL_NAME_SUFFIX = {
@@ -268,7 +257,7 @@ class ImageGenerationEvalsTest(BaseTest):
         """Generate images for all prompts concurrently."""
         logger.info("Step 2: Generating %s images concurrently", len(prompts))
 
-        if not self._wait_for_server_ready():
+        if not self.wait_for_server_ready():
             raise RuntimeError("Server health check failed")
 
         ctx = ImageGenContext(
@@ -379,37 +368,6 @@ class ImageGenerationEvalsTest(BaseTest):
             base64image=images[0],
             prompt=prompt,
         )
-
-    def _wait_for_server_ready(self) -> bool:
-        """Wait for server to be ready."""
-        health_url = f"http://localhost:{self.service_port}/tt-liveness"
-        logger.info("Waiting for server: %s", health_url)
-
-        for attempt in range(1, HEALTH_CONFIG.MAX_ATTEMPTS + 1):
-            if self._check_health(health_url):
-                logger.info("Server ready after %s attempt(s)", attempt)
-                return True
-
-            logger.debug(
-                "Not ready (attempt %s/%s)", attempt, HEALTH_CONFIG.MAX_ATTEMPTS
-            )
-            time.sleep(HEALTH_CONFIG.RETRY_DELAY)
-
-        logger.error("Server not ready after %s attempts", HEALTH_CONFIG.MAX_ATTEMPTS)
-        return False
-
-    def _check_health(self, url: str) -> bool:
-        """Single health check attempt."""
-        try:
-            response = requests.get(url, timeout=HEALTH_CONFIG.TIMEOUT)
-        except requests.RequestException:
-            return False
-
-        if response.status_code != 200:
-            return False
-
-        data = response.json()
-        return data.get("status") == "alive" and data.get("model_ready", False)
 
     @staticmethod
     def _build_headers() -> dict:

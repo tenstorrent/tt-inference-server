@@ -2,7 +2,7 @@
 
 Deploys vLLM and media inference backends on Tenstorrent Galaxy hardware.
 
-**Chart version:** 0.2.0 | **App version:** 0.12.0
+**Chart version:** 0.1.0 | **App version:** 0.12.0
 
 ---
 
@@ -13,7 +13,7 @@ This chart creates a single `Deployment`, `Service`, `ConfigMap`, and `Secret` f
 Two server types are supported:
 
 - **vllm** — large language models served via the vLLM OpenAI-compatible API
-- **media** — image/audio/video models served via the tt-media-inference-server API
+- **media** — image/audio/video/embedding models served via the tt-media-inference-server API
 
 ---
 
@@ -78,85 +78,190 @@ Any field not overridden at the model/device level falls back to `defaults`.
 
 ---
 
-## Values Reference
+## Values
 
-| Value | Required | Default | Description |
-|---|---|---|---|
-| `model` | yes | `""` | Model name. Must match a key in `models`. |
-| `device` | yes | `""` | Device name. Must match a key under `models.<model>`. |
-| `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
-| `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Skips download at startup. |
-| `cache.hostPath` | no | `""` | Override the host path used for the cache volume. Defaults to `/opt/cache/<model>-<device>`. |
-| `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
-| `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
-
----
-
-## Defaults Reference
-
-All fields under `defaults` apply to every model/device unless overridden in the `models` map.
-
-| Field | Default | Description |
-|---|---|---|
-| `defaults.serverType` | `vllm` | Server backend: `vllm` or `media`. |
-| `defaults.replicaCount` | `1` | Number of Deployment replicas. |
-| `defaults.progressDeadlineSeconds` | `3600` | Deployment progress deadline. Set high due to long model load times. |
-| `defaults.hostIPC` | `true` | Enables host IPC namespace, required for Tenstorrent device communication. |
-| `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
-| `defaults.image.pullSecrets` | `[]` | Image pull secrets. |
-| `defaults.service.type` | `ClusterIP` | Kubernetes Service type. |
-| `defaults.service.port` | `8000` | Service port. |
-| `defaults.service.targetPort` | `8000` | Container target port. |
-| `defaults.service.protocol` | `TCP` | Service protocol. |
-| `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.cpu` | `8` | CPU limit. |
-| `defaults.resources.limits.memory` | `128Gi` | Memory limit (overridden per model). |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. |
-| `defaults.resources.requests.cpu` | `6` | CPU request. |
-| `defaults.resources.requests.memory` | `64Gi` | Memory request (overridden per model). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
-| `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
-| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path. |
-| `defaults.probes.liveness.initialDelaySeconds` | `2400` | Liveness probe initial delay. Set high due to model load times. |
-| `defaults.probes.readiness.enabled` | `true` | Enable readiness probe. |
-| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path. |
-| `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
-| `defaults.securityContext.privileged` | `true` | Required for access to Tenstorrent device files. |
-| `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
-| `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
-| `defaults.affinity` | `{}` | Affinity rules applied to the pod. |
-| `defaults.extraEnv` | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| cache.hostPath | string | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>`. |
+| defaults.affinity | object | `{}` | Affinity rules applied to the pod. |
+| defaults.extraEnv | list | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
+| defaults.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
+| defaults.image.pullSecrets | list | `[]` | Image pull secrets. |
+| defaults.nodeSelector | object | `{}` | Node selector applied to the pod. |
+| defaults.podAnnotations | object | `{}` | Annotations applied to the pod template. |
+| defaults.podSecurityContext | object | `{}` | Pod-level `securityContext`. |
+| defaults.probes.liveness.enabled | bool | `true` | Enable liveness probe. |
+| defaults.probes.liveness.initialDelaySeconds | int | `2400` | Liveness probe initial delay. Set high due to model load times. |
+| defaults.probes.liveness.path | string | `"/v1/models"` | Liveness probe HTTP path. |
+| defaults.probes.readiness.enabled | bool | `true` | Enable readiness probe. |
+| defaults.probes.readiness.initialDelaySeconds | int | `2400` | Readiness probe initial delay. |
+| defaults.probes.readiness.path | string | `"/health"` | Readiness probe HTTP path. |
+| defaults.progressDeadlineSeconds | int | `3600` | Deployment progress deadline. Set high due to long model load times. |
+| defaults.replicaCount | int | `1` | Number of Deployment replicas. |
+| defaults.resources.limits.cpu | string | `"8"` | CPU limit. |
+| defaults.resources.limits.hugepages-1Gi | string | `"32Gi"` | Hugepage limit. |
+| defaults.resources.limits.memory | string | `"128Gi"` | Memory limit (overridden per model). |
+| defaults.resources.requests.cpu | string | `"6"` | CPU request. |
+| defaults.resources.requests.hugepages-1Gi | string | `"32Gi"` | Hugepage request. |
+| defaults.resources.requests.memory | string | `"64Gi"` | Memory request (overridden per model). |
+| defaults.serverType | string | `"vllm"` | Server backend: `vllm` or `media`. |
+| defaults.service.annotations | object | `{}` | Annotations applied to the Service. |
+| defaults.service.port | int | `8000` | Service port. |
+| defaults.service.targetPort | int | `8000` | Container target port. |
+| defaults.service.type | string | `"ClusterIP"` | Kubernetes Service type. |
+| defaults.tolerations | list | `[]` | Tolerations applied to the pod. |
+| device | string | `""` | Device name. Must match a key under `models.<model>`. |
+| fullnameOverride | string | `""` | Fully overrides the resource name prefix. |
+| hfToken | string | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded. |
+| model | string | `""` | Model name. Must match a key in `models`. |
+| models | object | See the Supported Models section below. | Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list. |
+| nameOverride | string | `""` | Overrides the chart name component in resource names. |
 
 ---
 
 ## Supported Models
 
-### vLLM
+### Unknown
 
 | Model | Device |
 |---|---|
-| `Llama-3.1-8B-Instruct` | galaxy |
-| `Llama-3.1-8B` | galaxy |
-| `Llama-3.1-70B-Instruct` | galaxy |
-| `Llama-3.1-70B` | galaxy |
-| `Llama-3.3-70B-Instruct` | galaxy |
-| `DeepSeek-R1-Distill-Llama-70B` | galaxy |
-| `Qwen3-8B` | galaxy |
-| `Qwen3-32B` | galaxy |
-| `gpt-oss-120b` | galaxy |
-
-### Media
-
-| Model | Device |
-|---|---|
-| `whisper-large-v3` | galaxy |
-| `distil-large-v3` | galaxy |
-| `stable-diffusion-xl-base-1.0` | galaxy |
-| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy |
-| `FLUX.1-dev` | galaxy |
-| `FLUX.1-schnell` | galaxy |
-| `Wan2.2-T2V-A14B-Diffusers` | galaxy |
-| `mochi-1-preview` | galaxy |
+| `AFM-4.5B` | defaultEngine |
+| `AFM-4.5B` | vllm |
+| `DeepSeek-R1-0528` | defaultEngine |
+| `DeepSeek-R1-0528` | vllm |
+| `DeepSeek-R1-Distill-Llama-70B` | defaultEngine |
+| `DeepSeek-R1-Distill-Llama-70B` | vllm |
+| `FLUX.1-dev` | defaultEngine |
+| `FLUX.1-dev` | media |
+| `FLUX.1-schnell` | defaultEngine |
+| `FLUX.1-schnell` | media |
+| `Falcon3-7B-Instruct` | defaultEngine |
+| `Falcon3-7B-Instruct` | forge |
+| `Llama-3.1-70B` | defaultEngine |
+| `Llama-3.1-70B` | media |
+| `Llama-3.1-70B` | vllm |
+| `Llama-3.1-70B-Instruct` | defaultEngine |
+| `Llama-3.1-70B-Instruct` | vllm |
+| `Llama-3.1-8B` | defaultEngine |
+| `Llama-3.1-8B` | vllm |
+| `Llama-3.1-8B-Instruct` | defaultEngine |
+| `Llama-3.1-8B-Instruct` | forge |
+| `Llama-3.1-8B-Instruct` | vllm |
+| `Llama-3.2-11B-Vision` | defaultEngine |
+| `Llama-3.2-11B-Vision` | vllm |
+| `Llama-3.2-11B-Vision-Instruct` | defaultEngine |
+| `Llama-3.2-11B-Vision-Instruct` | vllm |
+| `Llama-3.2-1B` | defaultEngine |
+| `Llama-3.2-1B` | vllm |
+| `Llama-3.2-1B-Instruct` | defaultEngine |
+| `Llama-3.2-1B-Instruct` | vllm |
+| `Llama-3.2-3B` | defaultEngine |
+| `Llama-3.2-3B` | forge |
+| `Llama-3.2-3B` | vllm |
+| `Llama-3.2-3B-Instruct` | defaultEngine |
+| `Llama-3.2-3B-Instruct` | forge |
+| `Llama-3.2-3B-Instruct` | vllm |
+| `Llama-3.2-90B-Vision` | defaultEngine |
+| `Llama-3.2-90B-Vision` | vllm |
+| `Llama-3.2-90B-Vision-Instruct` | defaultEngine |
+| `Llama-3.2-90B-Vision-Instruct` | vllm |
+| `Llama-3.3-70B-Instruct` | defaultEngine |
+| `Llama-3.3-70B-Instruct` | vllm |
+| `Mistral-7B-Instruct-v0.3` | defaultEngine |
+| `Mistral-7B-Instruct-v0.3` | vllm |
+| `Mistral-Small-3.1-24B-Instruct-2503` | defaultEngine |
+| `Mistral-Small-3.1-24B-Instruct-2503` | vllm |
+| `Motif-Image-6B-Preview` | defaultEngine |
+| `Motif-Image-6B-Preview` | media |
+| `QwQ-32B` | defaultEngine |
+| `QwQ-32B` | vllm |
+| `Qwen-Image` | defaultEngine |
+| `Qwen-Image` | media |
+| `Qwen-Image-2512` | defaultEngine |
+| `Qwen-Image-2512` | media |
+| `Qwen2.5-72B` | defaultEngine |
+| `Qwen2.5-72B` | vllm |
+| `Qwen2.5-72B-Instruct` | defaultEngine |
+| `Qwen2.5-72B-Instruct` | vllm |
+| `Qwen2.5-7B` | defaultEngine |
+| `Qwen2.5-7B` | vllm |
+| `Qwen2.5-7B-Instruct` | defaultEngine |
+| `Qwen2.5-7B-Instruct` | vllm |
+| `Qwen2.5-Coder-32B-Instruct` | defaultEngine |
+| `Qwen2.5-Coder-32B-Instruct` | vllm |
+| `Qwen2.5-VL-32B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-32B-Instruct` | vllm |
+| `Qwen2.5-VL-3B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-3B-Instruct` | vllm |
+| `Qwen2.5-VL-72B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-72B-Instruct` | vllm |
+| `Qwen2.5-VL-7B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-7B-Instruct` | vllm |
+| `Qwen3-32B` | defaultEngine |
+| `Qwen3-32B` | vllm |
+| `Qwen3-4B` | defaultEngine |
+| `Qwen3-4B` | forge |
+| `Qwen3-8B` | defaultEngine |
+| `Qwen3-8B` | forge |
+| `Qwen3-8B` | vllm |
+| `Qwen3-Embedding-4B` | defaultEngine |
+| `Qwen3-Embedding-4B` | forge |
+| `Qwen3-Embedding-8B` | defaultEngine |
+| `Qwen3-Embedding-8B` | media |
+| `Qwen3-VL-32B-Instruct` | defaultEngine |
+| `Qwen3-VL-32B-Instruct` | vllm |
+| `Wan2.2-I2V-A14B-Diffusers` | defaultEngine |
+| `Wan2.2-I2V-A14B-Diffusers` | media |
+| `Wan2.2-T2V-A14B-Diffusers` | defaultEngine |
+| `Wan2.2-T2V-A14B-Diffusers` | media |
+| `bge-large-en-v1.5` | defaultEngine |
+| `bge-large-en-v1.5` | media |
+| `bge-m3` | defaultEngine |
+| `bge-m3` | media |
+| `distil-large-v3` | defaultEngine |
+| `distil-large-v3` | media |
+| `efficientnet` | defaultEngine |
+| `efficientnet` | forge |
+| `gemma-3-1b-it` | defaultEngine |
+| `gemma-3-1b-it` | vllm |
+| `gemma-3-27b-it` | defaultEngine |
+| `gemma-3-27b-it` | vllm |
+| `gemma-3-4b-it` | defaultEngine |
+| `gemma-3-4b-it` | vllm |
+| `gpt-oss-120b` | defaultEngine |
+| `gpt-oss-120b` | vllm |
+| `gpt-oss-20b` | defaultEngine |
+| `gpt-oss-20b` | vllm |
+| `medgemma-27b-it` | defaultEngine |
+| `medgemma-27b-it` | vllm |
+| `medgemma-4b-it` | defaultEngine |
+| `medgemma-4b-it` | vllm |
+| `mobilenetv2` | defaultEngine |
+| `mobilenetv2` | forge |
+| `mochi-1-preview` | defaultEngine |
+| `mochi-1-preview` | media |
+| `resnet-50` | defaultEngine |
+| `resnet-50` | forge |
+| `segformer` | defaultEngine |
+| `segformer` | forge |
+| `speecht5_tts` | defaultEngine |
+| `speecht5_tts` | media |
+| `stable-diffusion-3.5-large` | defaultEngine |
+| `stable-diffusion-3.5-large` | media |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | defaultEngine |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | media |
+| `stable-diffusion-xl-base-1.0` | defaultEngine |
+| `stable-diffusion-xl-base-1.0` | media |
+| `stable-diffusion-xl-base-1.0-img-2-img` | defaultEngine |
+| `stable-diffusion-xl-base-1.0-img-2-img` | media |
+| `unet` | defaultEngine |
+| `unet` | forge |
+| `vit` | defaultEngine |
+| `vit` | forge |
+| `vovnet` | defaultEngine |
+| `vovnet` | forge |
+| `whisper-large-v3` | defaultEngine |
+| `whisper-large-v3` | media |
 
 To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
 

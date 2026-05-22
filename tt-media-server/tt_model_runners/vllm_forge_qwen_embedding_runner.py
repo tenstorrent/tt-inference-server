@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import vllm
 from config.settings import SupportedModels
@@ -30,7 +30,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         ]
         llm_args = {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
-            "task": "embed",
             "dtype": "bfloat16",
             "disable_sliding_window": True,
             "enable_prefix_caching": False,

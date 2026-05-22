@@ -1,5 +1,6 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $engine := include "tt-inference-server.resolvedEngine" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -60,7 +61,7 @@ spec:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}
           imagePullPolicy: {{ $cfg.image.pullPolicy }}
-          {{- if eq $cfg.serverType "vllm" }}
+          {{- if eq $engine "vllm" }}
           args:
             - "--model"
             - {{ .Values.model | quote }}
@@ -76,15 +77,9 @@ spec:
                 name: {{ include "tt-inference-server.configmapName" . }}
             - secretRef:
                 name: {{ include "tt-inference-server.secretName" . }}
-          {{- with $cfg.extraEnv }}
+          {{- with (include "tt-inference-server.containerEnv" . | trim) }}
           env:
-            {{- range . }}
-            {{- if .valueFrom }}
-            - name: {{ .name }}
-              valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
-            {{- end }}
-            {{- end }}
+            {{- . | nindent 12 }}
           {{- end }}
           volumeMounts:
             - name: cache
@@ -93,6 +88,11 @@ spec:
               mountPath: /dev/tenstorrent
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
+            {{- if .Values.hfCacheDir }}
+            - name: hf-cache
+              mountPath: /mnt/hf-cache
+              readOnly: true
+            {{- end }}
           {{- with $cfg.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -132,6 +132,12 @@ spec:
           hostPath:
             path: /dev/hugepages-1G
             type: Directory
+        {{- if .Values.hfCacheDir }}
+        - name: hf-cache
+          hostPath:
+            path: {{ .Values.hfCacheDir | quote }}
+            type: Directory
+        {{- end }}
       {{- with $cfg.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

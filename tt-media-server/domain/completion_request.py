@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from typing import Annotated, Union
 
@@ -27,8 +27,9 @@ class CompletionRequest(BaseRequest):
     # Model identifier
     model: str | None = None
 
-    # prompt can be a string or a list of token ids
-    prompt: str | list[int]
+    # Per OpenAI /v1/completions spec, prompt can be a string, list of strings,
+    # flat list of token ids, or list of token-id lists (batched).
+    prompt: str | list[str] | list[int] | list[list[int]]
 
     # Response configuration
     echo: bool | None = False
@@ -71,3 +72,7 @@ class CompletionRequest(BaseRequest):
     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_LONG_INFO.max)] | None = (
         None
     )
+
+    # PEFT adapter checkpoint, e.g. "{job_id}/ckpt-step-{step}".
+    # When set, base model is read from the adapter's config automatically.
+    adapter: str | None = None

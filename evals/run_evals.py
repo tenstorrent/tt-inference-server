@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import json
@@ -38,6 +38,7 @@ from workflows.workflow_config import (
 from workflows.workflow_types import (
     DeviceTypes,
     EvalLimitMode,
+    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -74,6 +75,32 @@ def _get_limit_mode(runtime_config: Optional[RuntimeConfig]) -> Optional[EvalLim
 def _select_eval_config(
     eval_config: EvalConfig, runtime_config: Optional[RuntimeConfig]
 ) -> EvalConfig:
+    eval_samples = getattr(runtime_config, "eval_samples", None)
+    if eval_samples and eval_config.tasks:
+        mapping = _parse_eval_samples_mapping(eval_samples)
+        if mapping:
+            requested = set(mapping.keys())
+            filtered = [t for t in eval_config.tasks if t.task_name in requested]
+            if not filtered:
+                available = sorted({t.task_name for t in eval_config.tasks})
+                raise ValueError(
+                    "--eval-samples specified task(s) "
+                    f"{sorted(requested)} but none match this model's eval "
+                    f"tasks {available}."
+                )
+            unknown = requested - {t.task_name for t in filtered}
+            if unknown:
+                logger.warning(
+                    "--eval-samples references task(s) not configured for this "
+                    "model: %s",
+                    sorted(unknown),
+                )
+            logger.info(
+                "--eval-samples filtering eval tasks down to: %s",
+                [t.task_name for t in filtered],
+            )
+            return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=filtered)
+
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode != EvalLimitMode.SMOKE_TEST or not eval_config.tasks:
         return eval_config
@@ -95,6 +122,88 @@ def _resolve_eval_limit(
     if limit_mode == EvalLimitMode.SMOKE_TEST:
         return SMOKE_TEST_EVAL_LIMIT
     return task.limit_samples_map.get(limit_mode)
+
+
+def _parse_eval_samples_mapping(value: Optional[str]) -> Optional[dict]:
+    """Parse the --eval-samples value into a dict.
+
+    Accepts either a JSON string of shape ``{"task_name": [int, ...], ...}``
+    or a path to a JSON file containing the same shape.
+    """
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except TypeError as exc:
+        raise ValueError(
+            "--eval-samples must be a JSON string or a path to a JSON file; "
+            f"got {type(value).__name__}"
+        ) from exc
+    except json.JSONDecodeError:
+        path = Path(value)
+        if not path.is_file():
+            raise ValueError(
+                f"--eval-samples value is not valid JSON and not an existing file: {value}"
+            )
+        try:
+            parsed = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"--eval-samples file does not contain valid JSON: {path}"
+            ) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            "--eval-samples must decode to a JSON object mapping task_name -> "
+            f"[int, ...]; got {type(parsed).__name__}"
+        )
+    return parsed
+
+
+def _resolve_eval_samples(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> Optional[str]:
+    """Resolve --eval-samples to a per-task JSON string for lm-eval's --samples.
+
+    Returns ``None`` when eval_samples is unset, when the current task has no
+    entry in the user-supplied mapping, or when the task uses a vision/audio
+    (lmms-eval) backend that does not support the --samples flag.
+    """
+    eval_samples = getattr(runtime_config, "eval_samples", None)
+    if not eval_samples:
+        return None
+    if task.workflow_venv_type in (
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ):
+        logger.warning(
+            "--eval-samples is not supported for vision/audio evals; "
+            "ignoring for task %s",
+            task.task_name,
+        )
+        return None
+    mapping = _parse_eval_samples_mapping(eval_samples)
+    if mapping is None:
+        return None
+    indices = mapping.get(task.task_name)
+    if indices is None:
+        logger.info(
+            "--eval-samples has no entry for task %s; skipping --samples for this task",
+            task.task_name,
+        )
+        return None
+    if not isinstance(indices, (list, tuple)) or not all(
+        isinstance(i, int) and not isinstance(i, bool) and i >= 0 for i in indices
+    ):
+        raise ValueError(
+            f"--eval-samples entry for task '{task.task_name}' must be a list of "
+            f"non-negative integers; got {indices!r}"
+        )
+    logger.info(
+        "Filtering task %s to %d doc_id(s) via --samples",
+        task.task_name,
+        len(indices),
+    )
+    return json.dumps({task.task_name: list(indices)})
 
 
 def _check_media_server_health(model_spec, device, output_path, service_port):
@@ -207,6 +316,7 @@ def build_eval_command(
     output_path,
     service_port,
     runtime_config=None,
+    deploy_url: str = "http://127.0.0.1",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -215,9 +325,9 @@ def build_eval_command(
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"http://127.0.0.1:{service_port}"
+        base_url = f"{deploy_url}:{service_port}"
     else:
-        base_url = f"http://127.0.0.1:{service_port}/v1"
+        base_url = f"{deploy_url}:{service_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -338,6 +448,10 @@ def build_eval_command(
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
+    samples_arg = _resolve_eval_samples(task, runtime_config)
+    if samples_arg is not None:
+        cmd.extend(["--samples", samples_arg])
+
     limit_arg = _resolve_eval_limit(task, runtime_config)
     if limit_arg is not None:
         cmd.extend(["--limit", str(limit_arg)])
@@ -380,8 +494,15 @@ def main():
     # Setup authentication based on model type
     if model_spec.model_type in EVAL_TASK_TYPES:
         _setup_openai_api_key(args, logger)
+    elif model_spec.inference_engine in (
+        InferenceEngine.MEDIA.value,
+        InferenceEngine.FORGE.value,
+    ):
+        # Forge/media servers validate the literal API key, not JWTs.
+        _setup_openai_api_key(args, logger)
+        os.environ["VLLM_API_KEY"] = os.environ["OPENAI_API_KEY"]
     elif args.jwt_secret:
-        # For LLM models, generate JWT token from jwt_secret
+        # For tt-transformers / vllm-tt LLMs, generate JWT token from jwt_secret
         json_payload = json.loads(
             '{"team_id": "tenstorrent", "token_id": "debug-test"}'
         )
@@ -415,6 +536,12 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    # EnvironmentConfig.vllm_api_key default is captured at module-load time;
+    # explicitly re-read so in-process PromptClient sees later env updates
+    # (mirrors run_benchmarks.py:439).
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    if getattr(runtime_config, "server_url", None):
+        env_config.deploy_url = runtime_config.server_url
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
@@ -456,6 +583,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -476,7 +604,7 @@ def main():
             runtime_config=runtime_config,
         )
         logger.info(
-            "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
             prompt_client.cache_monitor.get_tensor_cache_timeout(),
         )
         if not prompt_client.wait_for_healthy():
@@ -510,6 +638,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)

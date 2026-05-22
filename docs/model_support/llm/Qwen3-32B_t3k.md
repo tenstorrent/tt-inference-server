@@ -10,6 +10,7 @@
 
 - [WH Galaxy](Qwen3-32B_galaxy.md)
 - [BH LoudBox](Qwen3-32B_p150x8.md)
+- [BH QuietBox 2](Qwen3-32B_p300x2.md)
 
 ## Quickstart - Deploy Qwen3-32B Inference Server on WH LoudBox/QuietBox
 

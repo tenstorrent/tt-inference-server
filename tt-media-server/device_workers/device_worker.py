@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import threading
 from multiprocessing import Queue
@@ -18,6 +18,7 @@ def device_worker(
     warmup_signals_queue: Queue,
     error_queue: Queue,
     result_queue_name: None | str = None,
+    cancel_queue: Queue = None,  # accepted for signature parity with dynamic-batch worker; unused here (legacy batched-sync path has no async tasks to cancel mid-flight).
 ):
     logger = TTLogger()
 

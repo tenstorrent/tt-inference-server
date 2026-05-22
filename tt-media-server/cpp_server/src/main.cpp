@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <drogon/drogon.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 
 #include <atomic>
@@ -12,32 +14,84 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "api/error_response.hpp"
+#include "api/route_registry.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
+#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "runtime/worker/blaze_worker_metrics_renderer.hpp"
+#include "runtime/worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/worker_manager.hpp"
+#include "runtime/worker/worker_metrics_aggregator.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
+#include "services/llm_service.hpp"
+#include "services/service_container.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
-#include "worker/worker_manager.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
 namespace {
+
 volatile std::sig_atomic_t gShutdownRequested = 0;
+
+// Returns true if the port is available, false if already in use.
+bool probePort(const std::string& host, uint16_t port) {
+  int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    TT_LOG_ERROR("[Main] Failed to create probe socket: {}", strerror(errno));
+    return false;
+  }
+  int reuse = 1;
+  ::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  struct sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0)
+    addr.sin_addr.s_addr = INADDR_ANY;
+  bool available =
+      (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+  ::close(sock);
+  return available;
+}
 
 void signalHandler(int signal) {
   TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
   gShutdownRequested = 1;
   drogon::app().quit();
 }
+
+/** Map the runtime ModelService to the metrics layout this binary's runner
+ *  publishes into shared memory. */
+tt::worker::MetricsLayout metricsLayoutFromConfig() {
+  switch (tt::config::modelService()) {
+    case tt::config::ModelService::LLM:
+      return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
+    case tt::config::ModelService::EMBEDDING:
+      return tt::worker::MetricsLayout::EMBEDDING;
+    case tt::config::ModelService::IMAGE:
+      return tt::worker::MetricsLayout::UNKNOWN;
+  }
+  return tt::worker::MetricsLayout::UNKNOWN;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
     tracy_config::tracyStartupWorker(workerId);
+    tt::utils::ZeroOverheadLogger::initialize();
+
+    tt::worker::SingleProcessWorkerMetrics::instance().initialize(
+        workerId, metricsLayoutFromConfig());
+
     tt::worker::WorkerConfig cfg =
         tt::worker::makeWorkerConfigForProcess(workerId);
     tt::worker::SingleProcessWorker worker(cfg);
@@ -65,7 +119,6 @@ int main(int argc, char* argv[]) {
   std::string host = defs::SERVER_HOST;
   uint16_t port = defs::SERVER_PORT;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::initializeServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -113,6 +166,60 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
   }
 
+  // Create the worker-metrics shared-memory segment BEFORE workers are spawned
+  // (initializeServices() starts the WorkerManager which fork+execv's
+  // workers). The unique_ptr below owns the lifecycle: its destructor
+  // munmaps and shm_unlinks on scope exit, so there is no explicit teardown.
+  // Pre-flight port probe: verify the port is available before forking workers.
+  // If we skip this and Drogon fails to bind later, workers are already running
+  // and the warmup signal queue gets removed mid-lifecycle — causing a crash.
+  if (!probePort(host, port)) {
+    TT_LOG_CRITICAL(
+        "[Main] Port {} is already in use. "
+        "Stop the existing server before starting a new one.",
+        port);
+    return 1;
+  }
+  TT_LOG_INFO("[Main] Port {} is available", port);
+
+  const std::string shmName = tt::config::workerMetricsShmName();
+  const size_t numWorkers = tt::config::numWorkers();
+  auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
+
+  tt::utils::service_factory::initializeServices();
+
+  // Start the configured service on the main thread. Services whose start()
+  // is slow (e.g. image warmup) own their own background thread internally;
+  // services that fork worker processes (LLM, embedding) MUST start on the
+  // main thread, because PR_SET_PDEATHSIG sends SIGTERM to the worker as
+  // soon as the *thread* that called fork() exits.
+  try {
+    tt::utils::service_factory::startConfiguredService();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
+    return 1;
+  }
+
+  // Wire the aggregator now that the WorkerManager exists. Workers may still
+  // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
+  if (shm != nullptr) {
+    auto& agg = tt::worker::WorkerMetricsAggregator::instance();
+    tt::worker::WorkerManager* mgr = nullptr;
+    auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
+        tt::services::ServiceContainer::instance().getService(
+            tt::config::ModelService::LLM));
+    if (llm) {
+      mgr = llm->getWorkerManager();
+    }
+    std::vector<tt::worker::MetricsLayout> layoutByWorker(
+        numWorkers, metricsLayoutFromConfig());
+    agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
+    agg.registerRenderer(
+        tt::worker::MetricsLayout::SP_PIPELINE_RUNNER,
+        std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
+    agg.prebuildAll();
+  }
+
   const char* envToken = std::getenv("OPENAI_API_KEY");
   std::string apiKey =
       (envToken && envToken[0] != '\0') ? envToken : "your-secret-key";
@@ -120,15 +227,32 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
   }
 
+  // SyncAdvice runs before Drogon's routing/method check, so cross-service
+  // paths uniformly return 404 instead of leaking 405.
+  drogon::app().registerSyncAdvice(
+      [activeService = modelSvc](
+          const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+        const std::string& path = req->path();
+        const std::string method = req->methodString();
+        if (tt::api::RouteRegistry::instance().isAllowed(activeService, method,
+                                                         path)) {
+          return nullptr;
+        }
+        return tt::api::errorResponse(
+            drogon::k404NotFound,
+            "Endpoint not available for the active MODEL_SERVICE",
+            "route_not_found");
+      });
+
   drogon::app().registerPreHandlingAdvice(
       [apiKey](const drogon::HttpRequestPtr& req,
                drogon::AdviceCallback&& callback,
                drogon::AdviceChainCallback&& chainCallback) {
         const std::string& path = req->path();
 
-        if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-            path == "/swagger" || path == "/openapi.json" ||
-            path == "/metrics") {
+        // Same exempt list SyncAdvice uses, so new exempt paths registered by
+        // future modalities skip auth automatically.
+        if (tt::api::RouteRegistry::instance().isAlwaysExempt(path)) {
           chainCallback();
           return;
         }
@@ -163,6 +287,18 @@ int main(int argc, char* argv[]) {
         chainCallback();
       });
 
+  // Record every HTTP response for Prometheus (method, status). This is
+  // Drogon's only officially-supported per-response hook and runs on the IO
+  // thread that serves the request, so the callback must be cheap.
+  // prometheus::Counter::Increment is lock-free; Family::Add hashes the label
+  // set and takes an internal shared lock, which is fine at HTTP RPS scale.
+  drogon::app().registerPreSendingAdvice(
+      [](const drogon::HttpRequestPtr& req,
+         const drogon::HttpResponsePtr& resp) {
+        tt::metrics::ServerMetrics::instance().onHttpResponse(
+            req->methodString(), static_cast<int>(resp->statusCode()));
+      });
+
   // Configure Drogon
   drogon::app()
       .setLogLevel(trantor::Logger::kDebug)
@@ -183,27 +319,23 @@ int main(int argc, char* argv[]) {
       .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
-  TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);
+  TT_LOG_INFO("[Main] Starting Drogon HTTP server at http://{}:{}", host, port);
 
-  if (modelSvc == tt::config::ModelService::EMBEDDING) {
-    TT_LOG_INFO("[Main] Endpoints:");
-    TT_LOG_INFO("  POST /v1/embeddings   - OpenAI-compatible embeddings");
-    TT_LOG_INFO("  GET  /health          - Health check");
-    TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
-  } else {
-    TT_LOG_INFO("[Main] Endpoints:");
-    TT_LOG_INFO(
-        "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
-    TT_LOG_INFO("  GET  /health               - Health check");
-    TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
-    TT_LOG_INFO("  GET  /docs                 - Swagger UI");
-    TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
-    TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
+  TT_LOG_INFO("[Main] Endpoints for MODEL_SERVICE='{}':",
+              tt::config::toString(modelSvc));
+  for (const auto& route :
+       tt::api::RouteRegistry::instance().routesFor(modelSvc)) {
+    TT_LOG_INFO("  {} {}  - {}", route.method, route.path, route.description);
+  }
+  for (const auto& path :
+       tt::api::RouteRegistry::instance().alwaysExemptPaths()) {
+    TT_LOG_INFO("  *      {}  - always available", path);
   }
 
   // Run the server
   drogon::app().run();
 
+  // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
   return 0;
 }

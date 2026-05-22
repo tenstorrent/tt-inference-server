@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """Tests for bind mount permission validation in workflows/validate_setup.py."""
 
@@ -13,6 +13,7 @@ import pytest
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
 from workflows.validate_setup import (
+    _check_image_version_supported,
     _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
     validate_local_setup,
@@ -536,3 +537,85 @@ class TestLocalServerValidation:
 
         mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
         mock_run_command.assert_called_once()
+
+
+class TestCheckImageVersionSupported:
+    """run.py only emits the post-0.11 vLLM docker contract; pre-0.11 vLLM
+    specs (or pre-0.11 override images) must be refused with a clear migration
+    message rather than silently producing a broken docker run.
+
+    Media-inference-server and forge images use a different Dockerfile that
+    isn't affected by the 0.11.0 vLLM interface refactor, so the check must
+    NOT fire for them.
+    """
+
+    def _spec(self, version, engine="vLLM"):
+        s = MagicMock()
+        s.version = version
+        s.inference_engine = engine
+        return s
+
+    def test_post_0_11_vllm_versions_pass(self):
+        # Boundary and above must not raise.
+        _check_image_version_supported(self._spec("0.11.0"))
+        _check_image_version_supported(self._spec("0.11.1"))
+        _check_image_version_supported(self._spec("0.13.0"))
+        _check_image_version_supported(self._spec("1.0.0"))
+
+    def test_pre_0_11_vllm_versions_raise(self):
+        for v in ("0.10.9", "0.10.1", "0.10.0", "0.9.0", "0.2.0"):
+            with pytest.raises(RuntimeError, match="not supported"):
+                _check_image_version_supported(self._spec(v))
+
+    def test_error_names_exact_tag_to_checkout(self):
+        # The matching tt-inference-server release tag is `v<spec.version>`.
+        with pytest.raises(RuntimeError) as exc:
+            _check_image_version_supported(self._spec("0.10.1"))
+        msg = str(exc.value)
+        assert "v0.10.1" in msg
+        assert "git checkout v0.10.1" in msg
+
+    def test_unparseable_versions_pass(self):
+        # `dev`, `latest`, empty — let the runtime decide, matches main.
+        _check_image_version_supported(self._spec("dev"))
+        _check_image_version_supported(self._spec("latest"))
+        _check_image_version_supported(self._spec(""))
+
+    def test_media_engine_not_blocked_by_pre_0_11(self):
+        # tt-media-inference-server images aren't affected by the vLLM
+        # 0.11.0 interface change. Pre-0.11 media specs must still run.
+        for v in ("0.2.0", "0.5.0", "0.9.0", "0.10.0", "0.10.1"):
+            _check_image_version_supported(self._spec(v, engine="media"))
+
+    def test_forge_engine_not_blocked_by_pre_0_11(self):
+        # forge images are also outside the vLLM image-interface refactor.
+        for v in ("0.2.0", "0.9.0", "0.10.1"):
+            _check_image_version_supported(self._spec(v, engine="forge"))
+
+
+class TestVersionParsers:
+    """workflows.utils version helpers, used by _check_image_version_supported."""
+
+    def test_parse_version_tuple(self):
+        from workflows.utils import parse_version_tuple
+
+        assert parse_version_tuple("0.10.0") == (0, 10, 0)
+        assert parse_version_tuple("0.11.0") == (0, 11, 0)
+        assert parse_version_tuple("0.9") == (0, 9, 0)
+        assert parse_version_tuple("0.13.0-suffix") == (0, 13, 0)
+        # Non-version / empty / non-string inputs return None.
+        assert parse_version_tuple("dev") is None
+        assert parse_version_tuple("") is None
+        assert parse_version_tuple(None) is None  # type: ignore[arg-type]
+
+    def test_parse_image_version(self):
+        from workflows.utils import parse_image_version
+
+        assert parse_image_version("ghcr.io/foo/bar:0.10.0-abc") == (0, 10, 0)
+        assert parse_image_version("ghcr.io/foo/bar:0.11.0") == (0, 11, 0)
+        assert parse_image_version("ghcr.io/foo/bar:0.9-abc") == (0, 9, 0)
+        # Unparseable tags / no tag / no version-prefix / None.
+        assert parse_image_version("ghcr.io/foo/bar:dev") is None
+        assert parse_image_version("ghcr.io/foo/bar:latest") is None
+        assert parse_image_version("ghcr.io/foo/bar") is None
+        assert parse_image_version(None) is None  # type: ignore[arg-type]

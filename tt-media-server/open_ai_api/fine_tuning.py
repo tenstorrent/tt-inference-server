@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import io
 import os
 import zipfile
@@ -16,7 +16,6 @@ from security.api_key_checker import get_api_key
 from security.org_id_checker import get_org_id
 from utils.build_catalog import build_training_catalog
 
-
 router = APIRouter()
 
 
@@ -31,7 +30,10 @@ async def get_catalog(api_key: str = Security(get_api_key)):
     settings = get_settings()
     num_workers = len(settings.device_ids.replace(" ", "").split("),("))
     catalog = build_training_catalog(
-        settings.model_runner, settings.device, settings.device_mesh_shape, num_workers
+        settings.device,
+        settings.device_mesh_shape,
+        num_workers,
+        settings.training_model,
     )
     return JSONResponse(content=catalog)
 

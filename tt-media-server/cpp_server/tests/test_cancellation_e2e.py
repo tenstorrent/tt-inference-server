@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 """
 End-to-end tests for request cancellation via client disconnect.
 
@@ -28,24 +28,6 @@ def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _create_test_session(base_url: str) -> str:
-    """Create a session for testing with a pre-allocated slot. Returns session_id."""
-    try:
-        # Create a session with slot_id to avoid memory manager dependency in tests
-        resp = requests.post(
-            f"{base_url}/v1/sessions",
-            json={"slot_id": 0},  # Use slot 0 for testing
-            headers=_auth_headers(),
-            timeout=5,
-        )
-        if resp.status_code == 201:
-            session_data = resp.json()
-            return session_data.get("session_id", "")
-    except Exception as e:
-        print(f"  Warning: Could not create session: {e}")
-    return ""
-
-
 def _wait_for_server(base_url: str, timeout: int = 30) -> bool:
     """Wait for the server to become ready."""
     deadline = time.time() + timeout
@@ -60,27 +42,20 @@ def _wait_for_server(base_url: str, timeout: int = 30) -> bool:
     return False
 
 
-def _streaming_request(
-    base_url: str, max_tokens: int = 50, session_id: str = None
-) -> dict:
+def _streaming_request(max_tokens: int = 50) -> dict:
     """Build a streaming chat completion request payload."""
-    request = {
+    return {
         "messages": [{"role": "user", "content": "Hello world"}],
         "max_tokens": max_tokens,
         "stream": True,
     }
-    if session_id:
-        request["session_id"] = session_id
-    return request
 
 
-def _complete_streaming_request(
-    base_url: str, max_tokens: int = 10, session_id: str = ""
-) -> list[str]:
+def _complete_streaming_request(base_url: str, max_tokens: int = 10) -> list[str]:
     """Make a streaming request and collect all SSE chunks."""
     resp = requests.post(
         f"{base_url}/v1/chat/completions",
-        json=_streaming_request(base_url, max_tokens, session_id=session_id),
+        json=_streaming_request(max_tokens),
         headers=_auth_headers(),
         stream=True,
         timeout=30,
@@ -97,13 +72,13 @@ def _complete_streaming_request(
     return chunks
 
 
-def test_server_healthy_after_disconnect(base_url: str, session_id: str = "") -> bool:
+def test_server_healthy_after_disconnect(base_url: str) -> bool:
     """Disconnect mid-stream and verify the server stays healthy."""
     print("\n=== Test: Server healthy after disconnect ===")
     try:
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(base_url, max_tokens=200, session_id=session_id),
+            json=_streaming_request(max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -132,16 +107,14 @@ def test_server_healthy_after_disconnect(base_url: str, session_id: str = "") ->
         return False
 
 
-def test_request_completes_after_disconnect(
-    base_url: str, session_id: str = ""
-) -> bool:
+def test_request_completes_after_disconnect(base_url: str) -> bool:
     """After a disconnect, a new request should complete normally."""
     print("\n=== Test: Request completes after disconnect ===")
     try:
         # First: disconnect mid-stream
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(base_url, max_tokens=200, session_id=session_id),
+            json=_streaming_request(max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -154,9 +127,7 @@ def test_request_completes_after_disconnect(
         time.sleep(0.5)
 
         # Second: complete a full request
-        chunks = _complete_streaming_request(
-            base_url, max_tokens=5, session_id=session_id
-        )
+        chunks = _complete_streaming_request(base_url, max_tokens=5)
         ok = len(chunks) > 0
         print(f"  Got {len(chunks)} chunks from follow-up request")
         return ok
@@ -165,16 +136,14 @@ def test_request_completes_after_disconnect(
         return False
 
 
-def test_multiple_rapid_disconnects(base_url: str, session_id: str = "") -> bool:
+def test_multiple_rapid_disconnects(base_url: str) -> bool:
     """Multiple rapid disconnects should not degrade the server."""
     print("\n=== Test: Multiple rapid disconnects ===")
     try:
-        for i in range(5):
+        for _ in range(5):
             resp = requests.post(
                 f"{base_url}/v1/chat/completions",
-                json=_streaming_request(
-                    base_url, max_tokens=200, session_id=session_id
-                ),
+                json=_streaming_request(max_tokens=200),
                 headers=_auth_headers(),
                 stream=True,
                 timeout=10,
@@ -194,9 +163,7 @@ def test_multiple_rapid_disconnects(base_url: str, session_id: str = "") -> bool
         print(f"  5 rapid disconnects, health={health.status_code}")
 
         # And a full request should work
-        chunks = _complete_streaming_request(
-            base_url, max_tokens=5, session_id=session_id
-        )
+        chunks = _complete_streaming_request(base_url, max_tokens=5)
         ok = ok and len(chunks) > 0
         print(f"  Follow-up request: {len(chunks)} chunks")
         return ok
@@ -205,13 +172,13 @@ def test_multiple_rapid_disconnects(base_url: str, session_id: str = "") -> bool
         return False
 
 
-def test_disconnect_at_first_token(base_url: str, session_id: str = "") -> bool:
+def test_disconnect_at_first_token(base_url: str) -> bool:
     """Disconnect immediately after receiving the very first SSE event."""
     print("\n=== Test: Disconnect at first token ===")
     try:
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(base_url, max_tokens=200, session_id=session_id),
+            json=_streaming_request(max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -234,16 +201,14 @@ def test_disconnect_at_first_token(base_url: str, session_id: str = "") -> bool:
         return False
 
 
-def test_concurrent_disconnect_and_new_request(
-    base_url: str, session_id: str = ""
-) -> bool:
+def test_concurrent_disconnect_and_new_request(base_url: str) -> bool:
     """Start a request, disconnect, and immediately start another."""
     print("\n=== Test: Concurrent disconnect and new request ===")
     try:
         # Start streaming
         resp1 = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(base_url, max_tokens=200, session_id=session_id),
+            json=_streaming_request(max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -255,9 +220,7 @@ def test_concurrent_disconnect_and_new_request(
         resp1.close()
 
         # Immediately start a new request (no sleep)
-        chunks = _complete_streaming_request(
-            base_url, max_tokens=5, session_id=session_id
-        )
+        chunks = _complete_streaming_request(base_url, max_tokens=5)
         ok = len(chunks) > 0
         print(f"  Immediate follow-up: {len(chunks)} chunks")
         return ok
@@ -280,19 +243,12 @@ def main():
         print("ERROR: Server not ready within timeout")
         sys.exit(1)
 
-    # Create a test session with pre-allocated slot to avoid memory manager dependency
-    session_id = _create_test_session(base_url)
-    if session_id:
-        print(f"Created test session: {session_id}")
-    else:
-        print("Running tests without session (server may not support sessions)")
-
     tests = [
-        lambda url: test_server_healthy_after_disconnect(url, session_id),
-        lambda url: test_request_completes_after_disconnect(url, session_id),
-        lambda url: test_multiple_rapid_disconnects(url, session_id),
-        lambda url: test_disconnect_at_first_token(url, session_id),
-        lambda url: test_concurrent_disconnect_and_new_request(url, session_id),
+        test_server_healthy_after_disconnect,
+        test_request_completes_after_disconnect,
+        test_multiple_rapid_disconnects,
+        test_disconnect_at_first_token,
+        test_concurrent_disconnect_and_new_request,
     ]
 
     passed = 0

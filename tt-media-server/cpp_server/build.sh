@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 set -e
 
@@ -35,6 +35,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --tracy)
             ENABLE_TRACY="ON"
+            BUILD_TYPE="Debug"
             shift
             ;;
         --blaze)
@@ -94,9 +95,6 @@ echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
-echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
-echo "  Tracy profiling: ${ENABLE_TRACY}"
-echo "  Clang-tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "=============================================="
 
@@ -314,7 +312,7 @@ fi
 
 echo ""
 echo "Configuring CMake..."
-cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
 
 # Symlink compile_commands.json to project root for intellisense (clangd, VSCode C++)
 if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
