@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <trantor/net/EventLoop.h>
-#include <trantor/net/EventLoopThread.h>
+#include <trantor/net/EventLoopThreadPool.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -46,6 +46,9 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
       tt::utils::TaskIDGenerator::generate());
   req->stream = true;
   req->skip_apply_chat_template = true;
+  // Dynamo's TokenChunk wire format carries only token_ids; the frontend
+  // handles detokenization. Skip decode + parser work on the consumer.
+  req->skip_text_decode = true;
   req->prompt = dyn.token_ids;
   req->prompt_tokens_count = static_cast<int>(dyn.token_ids.size());
   req->full_prompt_tokens_count = req->prompt_tokens_count;
@@ -111,7 +114,8 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
     options_.advertise_host = detectAdvertiseHost();
   }
   if (options_.model_name.empty()) {
-    options_.model_name = tt::utils::tokenizers::activeTokenizer().modelName();
+    options_.model_name =
+        std::string(tt::utils::tokenizers::staticInfo().modelName);
   }
   if (options_.model_path.empty()) {
     options_.model_path = detectModelPath();
@@ -149,14 +153,17 @@ std::string DynamoEndpoint::detectAdvertiseHost() const {
 }
 
 GenerateHandler DynamoEndpoint::makeGenerateHandler() {
-  // `pipeline` and `loop` are captured by value (shared_ptr / raw ptr to a
-  // loop owned by `loop_thread_` whose lifetime exceeds any in-flight
-  // request: we join the loop thread in stop()).
+  // `pool` is owned by DynamoEndpoint::loop_pool_; stop() tears it down
+  // only after joining accept + handler threads, so the raw pointer is
+  // valid for the lifetime of every in-flight request. Round-robining
+  // requests across loops gives drogon-style per-IO-thread concurrency
+  // and keeps a slow callback from head-of-line blocking other requests.
   auto pipeline = pipeline_;
-  trantor::EventLoop* loop = loop_thread_->getLoop();
+  trantor::EventLoopThreadPool* pool = loop_pool_.get();
 
-  return [pipeline, loop](const GenerateRequest& dynReq,
+  return [pipeline, pool](const GenerateRequest& dynReq,
                           std::function<bool(const TokenChunk&)> sendChunk) {
+    trantor::EventLoop* loop = pool->getNextLoop();
     auto req = buildLLMRequest(dynReq);
     auto svc = pipeline->service();
 
@@ -237,9 +244,17 @@ void DynamoEndpoint::start() {
     return;
   }
 
-  loop_thread_ =
-      std::make_unique<trantor::EventLoopThread>("DynamoEndpointLoop");
-  loop_thread_->run();
+  // Pool of trantor loops, one per logical CPU by default, clamped to
+  // [4, 64]. makeGenerateHandler() round-robins requests across them.
+  size_t requestedLoops = options_.num_loops;
+  if (requestedLoops == 0) {
+    const auto hw = std::thread::hardware_concurrency();
+    requestedLoops = hw == 0 ? 8u : hw;
+  }
+  requestedLoops = std::min<size_t>(std::max<size_t>(requestedLoops, 4), 64);
+  loop_pool_ = std::make_unique<trantor::EventLoopThreadPool>(
+      static_cast<size_t>(requestedLoops), "DynamoEndpointLoop");
+  loop_pool_->start();
 
   ServerConfig sc;
   sc.bind_host = options_.bind_host;
@@ -284,9 +299,12 @@ void DynamoEndpoint::start() {
   dc.endpoint = options_.endpoint;
   dc.instance_id = server_->config().instance_id;
   dc.instance_id_hex = server_->config().instance_id_hex;
+  // Dynamo's TCP dialer parses `IP:port/endpoint_name`: the left half
+  // must be a numeric SocketAddr, and the right half is required for the
+  // x-endpoint-path header. The instance id is already carried in the
+  // instance JSON, so only the endpoint name goes here.
   dc.tcp_address = options_.advertise_host + ":" +
-                   std::to_string(server_->port()) + "/" + dc.instance_id_hex +
-                   "/" + options_.endpoint;
+                   std::to_string(server_->port()) + "/" + options_.endpoint;
   dc.model_name = options_.model_name;
   dc.model_path = options_.model_path;
 
@@ -332,8 +350,10 @@ void DynamoEndpoint::stop() {
 
   if (keepalive_thread_.joinable()) keepalive_thread_.join();
   if (server_thread_.joinable()) server_thread_.join();
-  if (loop_thread_) {
-    loop_thread_.reset();
+  if (loop_pool_) {
+    // EventLoopThreadPool has no explicit stop(); destruction joins all
+    // threads.
+    loop_pool_.reset();
   }
   server_.reset();
   discovery_.reset();

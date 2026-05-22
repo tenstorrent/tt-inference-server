@@ -12,7 +12,7 @@
 #include "dynamo/dynamo_protocol.hpp"
 
 namespace trantor {
-class EventLoopThread;
+class EventLoopThreadPool;
 }
 
 namespace tt::services {
@@ -60,6 +60,11 @@ class DynamoEndpoint {
     /// Filesystem dir containing config.json + tokenizer{.json,_config.json}.
     /// When empty, derived from the cpp_server tokenizers/ tree.
     std::string model_path;
+
+    /// Number of trantor loops used to resolve sessions and run streaming
+    /// callbacks. Requests are round-robined across loops so a slow
+    /// callback can't stall the rest. 0 = auto.
+    size_t num_loops = 0;
   };
 
   DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
@@ -87,7 +92,7 @@ class DynamoEndpoint {
   std::unique_ptr<DynamoServer> server_;
   std::thread server_thread_;
   std::thread keepalive_thread_;
-  std::unique_ptr<trantor::EventLoopThread> loop_thread_;
+  std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
   std::atomic<bool> running_{false};
   std::unique_ptr<DiscoveryRegistration> discovery_;
 };

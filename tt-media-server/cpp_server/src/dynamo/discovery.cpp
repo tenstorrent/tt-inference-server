@@ -146,7 +146,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
   runtime["tool_call_parser"] = Json::Value::null;
-  runtime["reasoning_parser"] = Json::Value::null;
+  runtime["reasoning_parser"] = "deepseek_r1";
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;
@@ -218,8 +218,8 @@ class FileDiscoveryRegistration : public DiscoveryRegistration {
 
 class EtcdDiscoveryRegistration : public DiscoveryRegistration {
  public:
-  explicit EtcdDiscoveryRegistration(DiscoveryConfig cfg)
-      : cfg(std::move(cfg)),
+  explicit EtcdDiscoveryRegistration(DiscoveryConfig config)
+      : cfg(std::move(config)),
         client(std::make_unique<EtcdClient>(cfg.etcd_endpoints)) {}
 
   void registerSelf() override {

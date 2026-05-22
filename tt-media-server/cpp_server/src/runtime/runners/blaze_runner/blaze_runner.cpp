@@ -27,7 +27,7 @@ PipelineConfig makePipelineConfig(const tt::config::LLMConfig& config) {
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return PipelineSimulatorConfig{
           .num_stages = 64,
-          .stage_duration_us = 44,
+          .stage_duration_us = 1000,
           .decode_token_id = 12345,
       };
       /* spec decode config

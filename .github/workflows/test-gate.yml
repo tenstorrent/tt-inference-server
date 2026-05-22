@@ -1908,7 +1908,7 @@ jobs:
     defaults:
       run:
         working-directory: tt-media-server
-
+ 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -2030,6 +2030,25 @@ jobs:
           done
           curl -sf "http://127.0.0.1:8002/tt-liveness" | grep -q '"model_ready":true' \
             || { echo "ERROR: backend 2 not ready"; cat backend2.log; exit 1; }
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        # cpp_server/build.sh's tokenizer pre-fetch is the single source of
+        # truth for what lands in the build artifact. The Dynamo frontend
+        # needs all three files (tokenizer.json, tokenizer_config.json,
+        # config.json) under the model dir or it dies at startup with
+        # `unable to extract config.json from directory ...`. Fail loudly
+        # here rather than discover it via a 60s frontend-ready timeout.
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              echo "  Expected cpp_server/build.sh's download_tokenizer to pre-fetch this."
+              exit 1
+            }
+          done
+          echo "✅ Tokenizer + config files present:"
+          ls -la "${MODEL_DIR}"
 
       - name: Start single Dynamo frontend (port 8000)
         run: |

@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -188,7 +189,31 @@ std::string tokenizerDirForModel(config::ModelType model);
  * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
  * instance so encode/decode are race-free without locking. The reference is
  * only valid on the calling thread; do not capture it for cross-thread use.
+ *
+ * Instantiation parses tokenizer.json synchronously and is expensive on
+ * large vocabs. For model-level constants used on the request hot path
+ * prefer `staticInfoFor()` below.
  */
 const Tokenizer& activeTokenizer();
+
+/**
+ * Per-model constants that don't require a live Tokenizer instance.
+ * Lets the request hot path read modelName / stopTokenIds /
+ * assistantHeaderSequence without parsing tokenizer.json.
+ */
+struct StaticTokenizerInfo {
+  std::string_view modelName;
+  std::vector<int64_t> stopTokenIds;
+  std::vector<int> assistantHeaderSequence;
+};
+
+/**
+ * Static constants for `model`. Throws std::invalid_argument if no entry
+ * is registered. O(1) and thread-safe; never touches the tokenizer.
+ */
+const StaticTokenizerInfo& staticInfoFor(config::ModelType model);
+
+/// Shorthand for `staticInfoFor(config::modelType())`.
+const StaticTokenizerInfo& staticInfo();
 
 }  // namespace tt::utils::tokenizers

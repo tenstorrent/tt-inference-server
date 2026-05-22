@@ -175,8 +175,13 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens) {
   PrefixCachingInfo info;
 
-  const auto headerSeq =
-      tokenizers::activeTokenizer().assistantHeaderSequence();
+  // Read from the static per-model table so this hot path NEVER touches
+  // a Tokenizer instance. Critical on the Dynamo path: the TCP server
+  // spawns a fresh std::thread per request (dynamo/dynamo_protocol.cpp);
+  // any thread_local activeTokenizer() call there would synchronously
+  // parse tokenizer.json (~500ms for DeepSeek-R1) and show up directly
+  // as TTFT.
+  const auto& headerSeq = tokenizers::staticInfo().assistantHeaderSequence;
   auto ends = findSequenceEndPositions(tokens, headerSeq);
 
   // Registration hashes the conversation through the LAST assistant-header

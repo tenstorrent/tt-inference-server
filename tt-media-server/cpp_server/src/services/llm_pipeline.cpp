@@ -71,8 +71,8 @@ tt::utils::PrefixCachingInfo computeRoutingInfo(
       return s;
     };
 
-    const auto header =
-        tt::utils::tokenizers::activeTokenizer().assistantHeaderSequence();
+    const auto& header =
+        tt::utils::tokenizers::staticInfo().assistantHeaderSequence;
     std::string headerStr;
     for (int t : header) {
       if (!headerStr.empty()) headerStr += ",";
@@ -193,6 +193,7 @@ void LLMPipeline::resolveSession(
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(),
                                 routingInfo.registrationHash);
+
         TT_LOG_INFO(
             "[LLMPipeline] New session: sessionId={}, slotId={}, "
             "registered under hash={}",
