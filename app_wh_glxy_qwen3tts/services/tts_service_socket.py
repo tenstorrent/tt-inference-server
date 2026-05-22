@@ -35,6 +35,34 @@ def _clean_for_tts(text: str) -> str:
 
 logger = logging.getLogger(__name__)
 
+
+def _detect_language(text: str) -> str:
+    """Auto-detect language from text characters."""
+    cjk_ja = 0
+    cjk_zh = 0
+    korean = 0
+    cyrillic = 0
+    for ch in text:
+        cp = ord(ch)
+        if 0x3040 <= cp <= 0x309F or 0x30A0 <= cp <= 0x30FF:  # Hiragana/Katakana
+            cjk_ja += 1
+        elif 0x4E00 <= cp <= 0x9FFF:  # CJK Unified
+            cjk_zh += 1
+        elif 0xAC00 <= cp <= 0xD7AF:  # Korean Hangul
+            korean += 1
+        elif 0x0400 <= cp <= 0x04FF:  # Cyrillic
+            cyrillic += 1
+    total = len(text)
+    if cjk_ja > 0:
+        return "japanese"
+    if korean > total * 0.1:
+        return "korean"
+    if cjk_zh > total * 0.15:
+        return "chinese"
+    if cyrillic > total * 0.2:
+        return "russian"
+    return "english"
+
 TTS_SOCKET = "/tmp/tts_server.sock"
 TTS_GUEST_SOCKET = "/tmp/tts_server_guest.sock"
 
@@ -129,7 +157,10 @@ class TTSService:
             import time
             output_path = os.path.join(self.output_dir, f"tts_{int(time.time() * 1000)}.wav")
             
-            req = {"text": clean_text, "output_path": output_path}
+            language = _detect_language(clean_text)
+            req = {"text": clean_text, "output_path": output_path, "language": language}
+            if language != "english":
+                logger.info(f"    Language detected: {language}")
             if speaker_id is not None:
                 req["speaker_id"] = speaker_id
             
@@ -166,7 +197,8 @@ class TTSService:
         try:
             import time
             output_path = os.path.join(self.output_dir, f"tts_guest_{int(time.time() * 1000)}.wav")
-            req = {"text": clean_text, "output_path": output_path}
+            language = _detect_language(clean_text)
+            req = {"text": clean_text, "output_path": output_path, "language": language}
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
