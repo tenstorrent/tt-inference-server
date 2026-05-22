@@ -431,6 +431,137 @@ void testMalformedSequences() {
   std::cout << "✅ All malformed sequence tests passed!\n";
 }
 
+void testSplitTokenJsonHeader() {
+  std::cout << "\n=== Testing Split-Token JSON Header ===\n";
+
+  constexpr int64_t kToolCallsBeginToken = 128806;
+  constexpr int64_t kToolCallsEndToken = 128807;
+  constexpr int64_t kToolCallBeginToken = 128808;
+  constexpr int64_t kToolCallEndToken = 128809;
+  constexpr int64_t kToolSepToken = 128814;
+
+  // Test 1: ``` and json arrive as separate tokens
+  {
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    uint32_t taskId = 300;
+    parser->initializeTask(taskId);
+
+    parser->processToken(taskId, kToolCallsBeginToken, "");
+    parser->processToken(taskId, kToolCallBeginToken, "");
+    parser->processToken(taskId, 12345, "function");
+    parser->processToken(taskId, kToolSepToken, "");
+
+    auto r1 = parser->processToken(taskId, 12346, "get_weather\n");
+    assert(r1.has_value());
+    assert(r1->delta_type == ToolCallDeltaType::TOOL_CALL_START);
+    assert(r1->function_name == "get_weather");
+
+    // ``` arrives alone, then "json\n" as next token
+    parser->processToken(taskId, 12347, "```");
+    parser->processToken(taskId, 12348, "json\n");
+
+    // Actual JSON arguments
+    auto r2 = parser->processToken(taskId, 12349,
+                                   "{\"location\":\"San Francisco, CA\"}\n");
+    assert(r2.has_value());
+    assert(r2->delta_type == ToolCallDeltaType::ARGUMENTS_DELTA);
+    // Arguments must NOT contain "json\n" prefix
+    assert(r2->delta.find("json") == std::string::npos);
+
+    parser->processToken(taskId, 12350, "```\n");
+    parser->processToken(taskId, kToolCallEndToken, "");
+    parser->processToken(taskId, kToolCallsEndToken, "");
+
+    auto toolCalls = parser->finalizeTask(taskId);
+    assert(toolCalls.has_value());
+    assert(toolCalls->size() == 1);
+    assert((*toolCalls)[0]["function"]["name"].asString() == "get_weather");
+
+    // Verify arguments are clean JSON
+    std::string args =
+        (*toolCalls)[0]["function"]["arguments"].asString();
+    assert(args.find("json") == std::string::npos);
+    assert(args.find("San Francisco") != std::string::npos);
+
+    std::cout
+        << "✓ Test 1 passed: ``` and json as separate tokens handled\n";
+  }
+
+  // Test 2: ```, json, \n all as separate tokens
+  {
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    uint32_t taskId = 301;
+    parser->initializeTask(taskId);
+
+    parser->processToken(taskId, kToolCallsBeginToken, "");
+    parser->processToken(taskId, kToolCallBeginToken, "");
+    parser->processToken(taskId, 12345, "function");
+    parser->processToken(taskId, kToolSepToken, "");
+    parser->processToken(taskId, 12346, "get_time\n");
+
+    parser->processToken(taskId, 12347, "```");
+    parser->processToken(taskId, 12348, "json");
+    parser->processToken(taskId, 12349, "\n");
+
+    auto r = parser->processToken(taskId, 12350, "{\"tz\":\"PST\"}\n");
+    assert(r.has_value());
+    assert(r->delta_type == ToolCallDeltaType::ARGUMENTS_DELTA);
+    assert(r->delta.find("json") == std::string::npos);
+
+    parser->processToken(taskId, 12351, "```\n");
+    parser->processToken(taskId, kToolCallEndToken, "");
+    parser->processToken(taskId, kToolCallsEndToken, "");
+
+    auto toolCalls = parser->finalizeTask(taskId);
+    assert(toolCalls.has_value());
+    assert(toolCalls->size() == 1);
+
+    std::string args =
+        (*toolCalls)[0]["function"]["arguments"].asString();
+    assert(args.find("json") == std::string::npos);
+    assert(args.find("PST") != std::string::npos);
+
+    std::cout
+        << "✓ Test 2 passed: ```, json, \\n as three separate tokens\n";
+  }
+
+  // Test 3: ``` without json header (just ```\n)
+  {
+    auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
+    uint32_t taskId = 302;
+    parser->initializeTask(taskId);
+
+    parser->processToken(taskId, kToolCallsBeginToken, "");
+    parser->processToken(taskId, kToolCallBeginToken, "");
+    parser->processToken(taskId, 12345, "function");
+    parser->processToken(taskId, kToolSepToken, "");
+    parser->processToken(taskId, 12346, "my_func\n");
+
+    // No "json" after backticks
+    parser->processToken(taskId, 12347, "```\n");
+
+    auto r = parser->processToken(taskId, 12348, "{\"key\":\"val\"}\n");
+    assert(r.has_value());
+    assert(r->delta_type == ToolCallDeltaType::ARGUMENTS_DELTA);
+
+    parser->processToken(taskId, 12349, "```\n");
+    parser->processToken(taskId, kToolCallEndToken, "");
+    parser->processToken(taskId, kToolCallsEndToken, "");
+
+    auto toolCalls = parser->finalizeTask(taskId);
+    assert(toolCalls.has_value());
+    assert(toolCalls->size() == 1);
+
+    std::string args =
+        (*toolCalls)[0]["function"]["arguments"].asString();
+    assert(args.find("val") != std::string::npos);
+
+    std::cout << "✓ Test 3 passed: ``` without json header works\n";
+  }
+
+  std::cout << "✅ All split-token JSON header tests passed!\n";
+}
+
 void testStreamingMultipleToolCalls() {
   std::cout << "\n=== Testing Streaming Multiple Tool Calls ===\n";
 
@@ -494,6 +625,7 @@ int main() {
     testMultipleStreamingTasks();
     testStreamingEdgeCases();
     testMalformedSequences();
+    testSplitTokenJsonHeader();
     testStreamingMultipleToolCalls();
 
     std::cout << "\n";

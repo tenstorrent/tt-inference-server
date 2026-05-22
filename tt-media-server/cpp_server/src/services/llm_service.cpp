@@ -524,6 +524,23 @@ void LLMService::processStreamingRequest(
 
   // Initialize tool call parser only if tools are provided
   bool hasTools = request.tools.has_value() && !request.tools->empty();
+
+  // DeepSeek R1 reasoning tokens consume the max_tokens budget.  Clients
+  // often send low values (e.g. 8192) which get exhausted on reasoning before
+  // the model emits tool calls.  Apply a floor when tools are present so
+  // there is enough headroom for both reasoning and tool call output.
+  if (tt::config::modelType() == tt::config::ModelType::DEEPSEEK_R1_0528) {
+    constexpr int MIN_MAX_TOKENS_WITH_TOOLS = 16384;
+    if (hasTools && request.max_tokens.has_value() &&
+        request.max_tokens.value() < MIN_MAX_TOKENS_WITH_TOOLS) {
+      TT_LOG_INFO(
+          "Task {}: bumping max_tokens from {} to {} (DeepSeek R1 with tools, "
+          "need headroom for reasoning)",
+          taskId, request.max_tokens.value(), MIN_MAX_TOKENS_WITH_TOOLS);
+      request.max_tokens = MIN_MAX_TOKENS_WITH_TOOLS;
+    }
+  }
+
   if (hasTools) {
     // Determine effective tool_choice (default to "auto" if not specified)
     tt::domain::tool_calls::ToolChoice effectiveToolChoice;
