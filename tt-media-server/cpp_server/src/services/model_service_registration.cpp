@@ -12,7 +12,7 @@
 #include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "config/types.hpp"
-#include "ipc/file_payload_ipc.hpp"
+#include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
@@ -187,7 +187,7 @@ void registerImage() {
               "worker process(es)",
               configuredWorkers);
           auto queueManager =
-              std::make_unique<tt::ipc::file_payload::FilePayloadQueueSet>(
+              std::make_unique<tt::ipc::media_payload::MediaPayloadQueueSet>(
                   static_cast<int>(configuredWorkers));
           return std::make_shared<ImageService>(
               cfg, std::make_unique<tt::worker::WorkerManager>(

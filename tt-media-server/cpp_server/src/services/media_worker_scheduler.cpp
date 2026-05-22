@@ -47,7 +47,7 @@ Json::Value readJsonFile(const std::filesystem::path& path) {
 MediaWorkerScheduler::MediaWorkerScheduler(
     std::string serviceName,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queueSet)
+    std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet> queueSet)
     : service_name_(std::move(serviceName)),
       worker_manager_(std::move(workerManager)),
       queue_set_(std::move(queueSet)) {
@@ -89,7 +89,7 @@ void MediaWorkerScheduler::stop() {
 
   for (size_t i = 0; i < worker_manager_->numWorkers(); ++i) {
     queue_set_->taskQueue->push(
-        tt::ipc::file_payload::FilePayloadTask::done());
+        tt::ipc::media_payload::MediaPayloadTask::done());
   }
 
   for (auto& queue : queue_set_->resultQueues) {
@@ -134,7 +134,7 @@ MediaWorkerResult MediaWorkerScheduler::submit(uint32_t taskId,
   const auto responsePath = payloadPath(taskId, "response");
 
   auto promise = std::make_shared<
-      std::promise<tt::ipc::file_payload::FilePayloadResult>>();
+      std::promise<tt::ipc::media_payload::MediaPayloadResult>>();
   auto future = promise->get_future();
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
@@ -144,7 +144,7 @@ MediaWorkerResult MediaWorkerScheduler::submit(uint32_t taskId,
   try {
     writeJsonFile(requestPath, request);
 
-    tt::ipc::file_payload::FilePayloadTask task;
+    tt::ipc::media_payload::MediaPayloadTask task;
     task.task_id = taskId;
     task.request_path = requestPath;
     task.response_path = responsePath;
@@ -183,13 +183,13 @@ void MediaWorkerScheduler::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[MediaWorkerScheduler] {} consumer {} started", service_name_,
               workerIdx);
   while (running_.load(std::memory_order_acquire)) {
-    tt::ipc::file_payload::FilePayloadResult result;
+    tt::ipc::media_payload::MediaPayloadResult result;
     if (!resultQueue->blockingPop(result)) {
       break;
     }
 
     std::shared_ptr<
-        std::promise<tt::ipc::file_payload::FilePayloadResult>>
+        std::promise<tt::ipc::media_payload::MediaPayloadResult>>
         promise;
     {
       std::lock_guard<std::mutex> lock(pending_mutex_);

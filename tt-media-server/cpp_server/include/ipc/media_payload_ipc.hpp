@@ -13,7 +13,7 @@
 #include "config/settings.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 
-namespace tt::ipc::file_payload {
+namespace tt::ipc::media_payload {
 
 namespace detail {
 
@@ -35,7 +35,7 @@ inline std::string readString(std::istream& is) {
 
 }  // namespace detail
 
-struct FilePayloadTask {
+struct MediaPayloadTask {
   uint32_t task_id = 0;
   uint32_t flags = 0;
   std::string request_path;
@@ -45,8 +45,8 @@ struct FilePayloadTask {
 
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
 
-  static FilePayloadTask done() {
-    FilePayloadTask task;
+  static MediaPayloadTask done() {
+    MediaPayloadTask task;
     task.flags = FLAG_DONE;
     return task;
   }
@@ -58,8 +58,8 @@ struct FilePayloadTask {
     detail::writeString(os, response_path);
   }
 
-  static FilePayloadTask deserialize(std::istream& is) {
-    FilePayloadTask task;
+  static MediaPayloadTask deserialize(std::istream& is) {
+    MediaPayloadTask task;
     is.read(reinterpret_cast<char*>(&task.task_id), sizeof(task.task_id));
     is.read(reinterpret_cast<char*>(&task.flags), sizeof(task.flags));
     task.request_path = detail::readString(is);
@@ -68,7 +68,7 @@ struct FilePayloadTask {
   }
 };
 
-struct FilePayloadResult {
+struct MediaPayloadResult {
   uint32_t task_id = 0;
   uint32_t flags = 0;
   double generation_time_seconds = 0.0;
@@ -79,8 +79,8 @@ struct FilePayloadResult {
 
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
 
-  static FilePayloadResult done() {
-    FilePayloadResult result;
+  static MediaPayloadResult done() {
+    MediaPayloadResult result;
     result.flags = FLAG_DONE;
     return result;
   }
@@ -94,8 +94,8 @@ struct FilePayloadResult {
     detail::writeString(os, error);
   }
 
-  static FilePayloadResult deserialize(std::istream& is) {
-    FilePayloadResult result;
+  static MediaPayloadResult deserialize(std::istream& is) {
+    MediaPayloadResult result;
     is.read(reinterpret_cast<char*>(&result.task_id), sizeof(result.task_id));
     is.read(reinterpret_cast<char*>(&result.flags), sizeof(result.flags));
     is.read(reinterpret_cast<char*>(&result.generation_time_seconds),
@@ -106,21 +106,21 @@ struct FilePayloadResult {
   }
 };
 
-class FilePayloadTaskQueue {
+class MediaPayloadTaskQueue {
  public:
-  using Queue = boost::MemoryQueue<FilePayloadTask, 8192>;
+  using Queue = boost::MemoryQueue<MediaPayloadTask, 8192>;
 
-  FilePayloadTaskQueue(const std::string& name, int capacity)
+  MediaPayloadTaskQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
-  explicit FilePayloadTaskQueue(const std::string& name)
+  explicit MediaPayloadTaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  void push(const FilePayloadTask& task) { queue_->push(task); }
+  void push(const MediaPayloadTask& task) { queue_->push(task); }
 
-  bool tryPop(FilePayloadTask& out) { return queue_->tryPop(out); }
+  bool tryPop(MediaPayloadTask& out) { return queue_->tryPop(out); }
 
-  void receive(FilePayloadTask& out) { queue_->receive(out); }
+  void receive(MediaPayloadTask& out) { queue_->receive(out); }
 
   bool empty() const { return queue_->empty(); }
 
@@ -130,26 +130,26 @@ class FilePayloadTaskQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-class FilePayloadResultQueue {
+class MediaPayloadResultQueue {
  public:
-  using Queue = boost::MemoryQueue<FilePayloadResult, 8192>;
+  using Queue = boost::MemoryQueue<MediaPayloadResult, 8192>;
 
-  FilePayloadResultQueue(const std::string& name, int capacity)
+  MediaPayloadResultQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
-  explicit FilePayloadResultQueue(const std::string& name)
+  explicit MediaPayloadResultQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  bool push(const FilePayloadResult& result) {
+  bool push(const MediaPayloadResult& result) {
     return queue_->tryPush(result);
   }
 
-  bool blockingPop(FilePayloadResult& out) {
+  bool blockingPop(MediaPayloadResult& out) {
     queue_->receive(out);
     return !out.isDone();
   }
 
-  void shutdown() { queue_->push(FilePayloadResult::done()); }
+  void shutdown() { queue_->push(MediaPayloadResult::done()); }
 
   void remove() { queue_->remove(); }
 
@@ -157,24 +157,24 @@ class FilePayloadResultQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-class FilePayloadQueueSet {
+class MediaPayloadQueueSet {
  public:
-  std::shared_ptr<FilePayloadTaskQueue> taskQueue;
-  std::vector<std::shared_ptr<FilePayloadResultQueue>> resultQueues;
+  std::shared_ptr<MediaPayloadTaskQueue> taskQueue;
+  std::vector<std::shared_ptr<MediaPayloadResultQueue>> resultQueues;
 
-  explicit FilePayloadQueueSet(int numWorkers) {
-    taskQueue = std::make_shared<FilePayloadTaskQueue>(
+  explicit MediaPayloadQueueSet(int numWorkers) {
+    taskQueue = std::make_shared<MediaPayloadTaskQueue>(
         tt::config::ttTaskQueueName(),
         static_cast<int>(tt::config::maxQueueSize()));
     resultQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; ++i) {
-      resultQueues.emplace_back(std::make_shared<FilePayloadResultQueue>(
+      resultQueues.emplace_back(std::make_shared<MediaPayloadResultQueue>(
           std::string(tt::config::ttResultQueueName()) + std::to_string(i),
           static_cast<int>(tt::config::resultQueueCapacity())));
     }
   }
 
-  ~FilePayloadQueueSet() { clear(); }
+  ~MediaPayloadQueueSet() { clear(); }
 
   void clear() {
     if (taskQueue) {
@@ -186,11 +186,11 @@ class FilePayloadQueueSet {
     }
   }
 
-  FilePayloadQueueSet(const FilePayloadQueueSet&) = delete;
-  FilePayloadQueueSet& operator=(const FilePayloadQueueSet&) = delete;
+  MediaPayloadQueueSet(const MediaPayloadQueueSet&) = delete;
+  MediaPayloadQueueSet& operator=(const MediaPayloadQueueSet&) = delete;
 
-  FilePayloadQueueSet(FilePayloadQueueSet&&) = default;
-  FilePayloadQueueSet& operator=(FilePayloadQueueSet&&) = default;
+  MediaPayloadQueueSet(MediaPayloadQueueSet&&) = default;
+  MediaPayloadQueueSet& operator=(MediaPayloadQueueSet&&) = default;
 };
 
-}  // namespace tt::ipc::file_payload
+}  // namespace tt::ipc::media_payload

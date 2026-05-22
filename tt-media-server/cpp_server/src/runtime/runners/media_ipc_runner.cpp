@@ -13,10 +13,10 @@ namespace tt::runners {
 
 MediaIpcRunner::MediaIpcRunner(std::string runnerName, int workerId)
     : runner_name_(std::move(runnerName)), worker_id_(workerId) {
-  task_queue_ = std::make_unique<tt::ipc::file_payload::FilePayloadTaskQueue>(
+  task_queue_ = std::make_unique<tt::ipc::media_payload::MediaPayloadTaskQueue>(
       tt::config::ttTaskQueueName());
   result_queue_ =
-      std::make_unique<tt::ipc::file_payload::FilePayloadResultQueue>(
+      std::make_unique<tt::ipc::media_payload::MediaPayloadResultQueue>(
           std::string(tt::config::ttResultQueueName()) +
           std::to_string(worker_id_));
 }
@@ -31,7 +31,7 @@ void MediaIpcRunner::run() {
   TT_LOG_INFO("[MediaIpcRunner] Worker {} entering {} request loop", worker_id_,
               runner_name_);
   while (!stopped_.load(std::memory_order_acquire)) {
-    tt::ipc::file_payload::FilePayloadTask task;
+    tt::ipc::media_payload::MediaPayloadTask task;
     task_queue_->receive(task);
     if (task.isDone()) {
       TT_LOG_INFO("[MediaIpcRunner] Worker {} received shutdown task",
@@ -39,7 +39,7 @@ void MediaIpcRunner::run() {
       break;
     }
 
-    tt::ipc::file_payload::FilePayloadResult result;
+    tt::ipc::media_payload::MediaPayloadResult result;
     result.task_id = task.task_id;
     result.response_path = task.response_path;
     try {

@@ -72,7 +72,7 @@ ImageService::ImageService(config::ImageConfig config, RunnerList runners)
 ImageService::ImageService(
     config::ImageConfig config,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet>
+    std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
         queueManager)
     : config_(std::move(config)),
       worker_scheduler_(std::make_unique<MediaWorkerScheduler>(

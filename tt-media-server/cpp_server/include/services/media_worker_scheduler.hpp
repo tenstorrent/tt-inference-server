@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ipc/file_payload_ipc.hpp"
+#include "ipc/media_payload_ipc.hpp"
 #include "runtime/worker/worker_info.hpp"
 #include "runtime/worker/worker_manager.hpp"
 
@@ -37,7 +37,7 @@ class MediaWorkerScheduler {
   MediaWorkerScheduler(
       std::string serviceName,
       std::unique_ptr<tt::worker::WorkerManager> workerManager,
-      std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queueSet);
+      std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet> queueSet);
   ~MediaWorkerScheduler();
 
   MediaWorkerScheduler(const MediaWorkerScheduler&) = delete;
@@ -60,13 +60,13 @@ class MediaWorkerScheduler {
 
   std::string service_name_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queue_set_;
+  std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet> queue_set_;
   std::vector<std::thread> consumer_threads_;
   mutable std::mutex pending_mutex_;
   std::unordered_map<
       uint32_t,
       std::shared_ptr<
-          std::promise<tt::ipc::file_payload::FilePayloadResult>>>
+          std::promise<tt::ipc::media_payload::MediaPayloadResult>>>
       pending_results_;
   std::filesystem::path payload_dir_;
   std::atomic<bool> running_{false};

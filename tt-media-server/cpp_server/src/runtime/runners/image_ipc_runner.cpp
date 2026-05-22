@@ -79,8 +79,8 @@ void ImageIpcRunner::stop() {
 }
 
 void ImageIpcRunner::processTask(
-    const tt::ipc::file_payload::FilePayloadTask& task,
-    tt::ipc::file_payload::FilePayloadResult& result) {
+    const tt::ipc::media_payload::MediaPayloadTask& task,
+    tt::ipc::media_payload::MediaPayloadResult& result) {
   const auto started = std::chrono::steady_clock::now();
   Json::Value requestJson = readJsonFile(task.request_path);
   auto request =

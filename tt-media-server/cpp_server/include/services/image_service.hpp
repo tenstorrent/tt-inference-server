@@ -13,7 +13,7 @@
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
-#include "ipc/file_payload_ipc.hpp"
+#include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/base_service.hpp"
@@ -34,7 +34,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   ImageService(config::ImageConfig config, RunnerList runners);
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
-               std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet>
+               std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
                    queueManager);
   ~ImageService() override;
 

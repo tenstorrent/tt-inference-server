@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-#include "ipc/file_payload_ipc.hpp"
+#include "ipc/media_payload_ipc.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 
 namespace tt::runners {
@@ -24,16 +24,16 @@ class MediaIpcRunner : public IRunner {
  protected:
   int workerId() const { return worker_id_; }
   virtual void processTask(
-      const tt::ipc::file_payload::FilePayloadTask& task,
-      tt::ipc::file_payload::FilePayloadResult& result) = 0;
+      const tt::ipc::media_payload::MediaPayloadTask& task,
+      tt::ipc::media_payload::MediaPayloadResult& result) = 0;
 
  private:
   void run() override;
 
   std::string runner_name_;
   int worker_id_;
-  std::unique_ptr<tt::ipc::file_payload::FilePayloadTaskQueue> task_queue_;
-  std::unique_ptr<tt::ipc::file_payload::FilePayloadResultQueue> result_queue_;
+  std::unique_ptr<tt::ipc::media_payload::MediaPayloadTaskQueue> task_queue_;
+  std::unique_ptr<tt::ipc::media_payload::MediaPayloadResultQueue> result_queue_;
   std::atomic<bool> stopped_{false};
 };
 

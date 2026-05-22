@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "ipc/file_payload_ipc.hpp"
+#include "ipc/media_payload_ipc.hpp"
 
 #include <gtest/gtest.h>
 
 #include <string>
 
-TEST(FilePayloadIpcTest, TaskQueueRoundTripsPayloadPaths) {
-  const std::string queueName = "test_file_payload_tasks";
-  tt::ipc::file_payload::FilePayloadTaskQueue::Queue::remove(queueName);
+TEST(MediaPayloadIpcTest, TaskQueueRoundTripsPayloadPaths) {
+  const std::string queueName = "test_media_payload_tasks";
+  tt::ipc::media_payload::MediaPayloadTaskQueue::Queue::remove(queueName);
 
-  tt::ipc::file_payload::FilePayloadTaskQueue owner(queueName, 4);
-  tt::ipc::file_payload::FilePayloadTaskQueue peer(queueName);
+  tt::ipc::media_payload::MediaPayloadTaskQueue owner(queueName, 4);
+  tt::ipc::media_payload::MediaPayloadTaskQueue peer(queueName);
 
-  tt::ipc::file_payload::FilePayloadTask task;
+  tt::ipc::media_payload::MediaPayloadTask task;
   task.task_id = 42;
   task.request_path = "/tmp/request-42.json";
   task.response_path = "/tmp/response-42.json";
   owner.push(task);
 
-  tt::ipc::file_payload::FilePayloadTask received;
+  tt::ipc::media_payload::MediaPayloadTask received;
   peer.receive(received);
 
   EXPECT_EQ(received.task_id, task.task_id);
@@ -30,20 +30,20 @@ TEST(FilePayloadIpcTest, TaskQueueRoundTripsPayloadPaths) {
   owner.remove();
 }
 
-TEST(FilePayloadIpcTest, ResultQueueUsesDonePillForShutdown) {
-  const std::string queueName = "test_file_payload_results";
-  tt::ipc::file_payload::FilePayloadResultQueue::Queue::remove(queueName);
+TEST(MediaPayloadIpcTest, ResultQueueUsesDonePillForShutdown) {
+  const std::string queueName = "test_media_payload_results";
+  tt::ipc::media_payload::MediaPayloadResultQueue::Queue::remove(queueName);
 
-  tt::ipc::file_payload::FilePayloadResultQueue owner(queueName, 4);
-  tt::ipc::file_payload::FilePayloadResultQueue peer(queueName);
+  tt::ipc::media_payload::MediaPayloadResultQueue owner(queueName, 4);
+  tt::ipc::media_payload::MediaPayloadResultQueue peer(queueName);
 
-  tt::ipc::file_payload::FilePayloadResult result;
+  tt::ipc::media_payload::MediaPayloadResult result;
   result.task_id = 7;
   result.response_path = "/tmp/response-7.json";
   result.generation_time_seconds = 1.25;
   ASSERT_TRUE(owner.push(result));
 
-  tt::ipc::file_payload::FilePayloadResult received;
+  tt::ipc::media_payload::MediaPayloadResult received;
   EXPECT_TRUE(peer.blockingPop(received));
   EXPECT_EQ(received.task_id, result.task_id);
   EXPECT_EQ(received.response_path, result.response_path);

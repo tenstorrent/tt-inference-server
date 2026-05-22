@@ -572,9 +572,9 @@ target_include_directories(image_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(file_payload_ipc_test tests/file_payload_ipc_test.cpp)
-target_link_libraries(file_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(file_payload_ipc_test PRIVATE
+add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
+target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(media_payload_ipc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -781,7 +781,7 @@ gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(test_image_generate_request)
 gtest_discover_tests(image_service_test)
-gtest_discover_tests(file_payload_ipc_test)
+gtest_discover_tests(media_payload_ipc_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
