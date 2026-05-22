@@ -4,28 +4,24 @@
 #include "runtime/runners/blaze_runner/blaze_runner.hpp"
 
 #include <gtest/gtest.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <exception>
 #include <memory>
-#include <string>
-#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "config/settings.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/in_memory/in_memory_cancel_queue.hpp"
+#include "ipc/in_memory/in_memory_memory_queue.hpp"
 #include "ipc/in_memory/in_memory_result_queue.hpp"
 #include "ipc/in_memory/in_memory_task_queue.hpp"
+#include "services/memory_services/memory_manager.hpp"
 
 namespace tt::runners::blaze {
 
@@ -37,38 +33,21 @@ constexpr uint64_t MOCK_PIPELINE_TOKEN_ID = 12345u;
 constexpr int DEFAULT_BLOCK_SIZE = 1;
 const std::vector<int64_t> DEFAULT_STOP_TOKEN_IDS = {987654321};
 
-std::string makeQueueSuffix(std::string_view label) {
-  const auto ticks =
-      std::chrono::steady_clock::now().time_since_epoch().count();
-  return std::to_string(::getpid()) + "_" + std::string(label) + "_" +
-         std::to_string(ticks);
-}
-
 class BlazeRunnerHarness {
  public:
   explicit BlazeRunnerHarness(
-      std::string_view label,
-      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS)
-      : memoryReqQueueName("test_blaze_mem_req_" + makeQueueSuffix(label)),
-        memoryResQueueName("test_blaze_mem_res_" + makeQueueSuffix(label)) {
-    setenv("TT_MEMORY_REQUEST_QUEUE", memoryReqQueueName.c_str(), 1);
-    setenv("TT_MEMORY_RESULT_QUEUE", memoryResQueueName.c_str(), 1);
-
-    // Remove any existing queues from previous test runs.
-    tt::ipc::boost::MemoryRequestQueue::remove(memoryReqQueueName);
-    tt::ipc::boost::MemoryResultQueue::remove(memoryResQueueName);
-
-    memoryRequestQueue = std::make_unique<tt::ipc::boost::MemoryRequestQueue>(
-        memoryReqQueueName,
-        static_cast<int>(tt::config::memoryQueueCapacity()));
-    memoryResultQueue = std::make_unique<tt::ipc::boost::MemoryResultQueue>(
-        memoryResQueueName,
-        static_cast<int>(tt::config::memoryQueueCapacity()));
-
+      std::vector<int64_t> stopTokenIds = DEFAULT_STOP_TOKEN_IDS) {
+    memoryRequestQueue =
+        std::make_shared<tt::ipc::in_memory::MemoryRequestQueue>();
+    memoryResultQueue =
+        std::make_shared<tt::ipc::in_memory::MemoryResultQueue>();
+    auto memoryManager = std::make_unique<tt::services::MemoryManager>(
+        memoryRequestQueue, memoryResultQueue);
     config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
     config.stop_token_ids = std::move(stopTokenIds);
     runner = std::make_unique<BlazeRunner>(config, &resultQueue, &taskQueue,
-                                           &cancelQueue);
+                                           &cancelQueue,
+                                           std::move(memoryManager));
 
     runnerThread = std::thread([this]() {
       try {
@@ -88,7 +67,7 @@ class BlazeRunnerHarness {
     memoryRequestQueue->push(request);
 
     tt::domain::ManageMemoryResult response{};
-    memoryResultQueue->receive(response);
+    memoryResultQueue->waitPop(response);
     return response;
   }
 
@@ -145,14 +124,10 @@ class BlazeRunnerHarness {
     resultQueue.shutdown();
     memoryRequestQueue.reset();
     memoryResultQueue.reset();
-    tt::ipc::boost::MemoryRequestQueue::remove(memoryReqQueueName);
-    tt::ipc::boost::MemoryResultQueue::remove(memoryResQueueName);
   }
 
-  std::string memoryReqQueueName;
-  std::string memoryResQueueName;
-  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue;
-  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueue;
+  std::shared_ptr<tt::ipc::in_memory::MemoryRequestQueue> memoryRequestQueue;
+  std::shared_ptr<tt::ipc::in_memory::MemoryResultQueue> memoryResultQueue;
   tt::ipc::in_memory::ResultQueue resultQueue;
   tt::ipc::in_memory::TaskQueue taskQueue;
   tt::ipc::in_memory::CancelQueue cancelQueue;
@@ -166,7 +141,7 @@ class BlazeRunnerHarness {
 }  // namespace
 
 TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
-  BlazeRunnerHarness harness("blaze_integration");
+  BlazeRunnerHarness harness;
 
   const uint32_t taskId = 4242;
   const auto allocateResponse = harness.allocate(taskId);
@@ -197,7 +172,7 @@ TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
 }
 
 TEST(BlazeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
-  BlazeRunnerHarness harness("blaze_cancel");
+  BlazeRunnerHarness harness;
 
   const uint32_t taskId = 5252;
   const auto allocateResponse = harness.allocate(taskId);
@@ -259,7 +234,7 @@ TEST(BlazeRunnerIntegrationTest, CancelFlowEmitsAbortToken) {
 
 TEST(BlazeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   // Mock simulator emits token_id=12345; this forces stop-token completion.
-  BlazeRunnerHarness harness("blaze_stop_token", {MOCK_PIPELINE_TOKEN_ID});
+  BlazeRunnerHarness harness({MOCK_PIPELINE_TOKEN_ID});
 
   const uint32_t taskId = 6262;
   const auto allocateResponse = harness.allocate(taskId);
@@ -287,7 +262,7 @@ TEST(BlazeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
 }
 
 TEST(BlazeRunnerIntegrationTest, TwoConcurrentTasksStayIsolated) {
-  BlazeRunnerHarness harness("blaze_two_task_isolation");
+  BlazeRunnerHarness harness;
 
   const uint32_t taskA = 7001;
   const uint32_t taskB = 7002;

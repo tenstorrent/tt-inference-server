@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
@@ -20,7 +21,9 @@ namespace tt::runners::blaze {
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
                          tt::ipc::ITaskQueue* taskQueue,
-                         tt::ipc::ICancelQueue* cancelQueue)
+                         tt::ipc::ICancelQueue* cancelQueue,
+                         std::unique_ptr<tt::services::MemoryManager>
+                             injectedMemoryManager)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -39,7 +42,9 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
   decodeScheduler->start();
   TT_LOG_INFO(
       "BlazeRunner: PipelineManager started, creating MemoryManager...");
-  memoryManager = std::make_unique<tt::services::MemoryManager>();
+  memoryManager = injectedMemoryManager
+                      ? std::move(injectedMemoryManager)
+                      : std::make_unique<tt::services::MemoryManager>();
   TT_LOG_INFO("BlazeRunner: Constructor complete");
 }
 
