@@ -116,36 +116,152 @@ Any field not overridden at the model/device level falls back to `defaults`.
 | model | string | `""` | Model name. Must match a key in `models`. |
 | models | object | See the Supported Models section below. | Per-model catalogue keyed by `<model-name>.<device-name>`. Each leaf overrides `defaults:` for image, resources, and probes. See the Supported Models section below for the full list. |
 | nameOverride | string | `""` | Overrides the chart name component in resource names. |
+
 ---
 
 ## Supported Models
 
-### vLLM
+### Unknown
 
 | Model | Device |
 |---|---|
-| `DeepSeek-R1-Distill-Llama-70B` | galaxy |
-| `Llama-3.1-70B` | galaxy |
-| `Llama-3.1-70B-Instruct` | galaxy |
-| `Llama-3.1-8B` | galaxy |
-| `Llama-3.1-8B-Instruct` | galaxy |
-| `Llama-3.3-70B-Instruct` | galaxy |
-| `Qwen3-32B` | galaxy |
-| `Qwen3-8B` | galaxy |
-| `gpt-oss-120b` | galaxy |
-
-### Media
-
-| Model | Device |
-|---|---|
-| `FLUX.1-dev` | galaxy |
-| `FLUX.1-schnell` | galaxy |
-| `Wan2.2-T2V-A14B-Diffusers` | galaxy |
-| `distil-large-v3` | galaxy |
-| `mochi-1-preview` | galaxy |
-| `stable-diffusion-xl-base-1.0` | galaxy |
-| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy |
-| `whisper-large-v3` | galaxy |
+| `AFM-4.5B` | defaultEngine |
+| `AFM-4.5B` | vllm |
+| `DeepSeek-R1-0528` | defaultEngine |
+| `DeepSeek-R1-0528` | vllm |
+| `DeepSeek-R1-Distill-Llama-70B` | defaultEngine |
+| `DeepSeek-R1-Distill-Llama-70B` | vllm |
+| `FLUX.1-dev` | defaultEngine |
+| `FLUX.1-dev` | media |
+| `FLUX.1-schnell` | defaultEngine |
+| `FLUX.1-schnell` | media |
+| `Falcon3-7B-Instruct` | defaultEngine |
+| `Falcon3-7B-Instruct` | forge |
+| `Llama-3.1-70B` | defaultEngine |
+| `Llama-3.1-70B` | media |
+| `Llama-3.1-70B` | vllm |
+| `Llama-3.1-70B-Instruct` | defaultEngine |
+| `Llama-3.1-70B-Instruct` | vllm |
+| `Llama-3.1-8B` | defaultEngine |
+| `Llama-3.1-8B` | vllm |
+| `Llama-3.1-8B-Instruct` | defaultEngine |
+| `Llama-3.1-8B-Instruct` | forge |
+| `Llama-3.1-8B-Instruct` | vllm |
+| `Llama-3.2-11B-Vision` | defaultEngine |
+| `Llama-3.2-11B-Vision` | vllm |
+| `Llama-3.2-11B-Vision-Instruct` | defaultEngine |
+| `Llama-3.2-11B-Vision-Instruct` | vllm |
+| `Llama-3.2-1B` | defaultEngine |
+| `Llama-3.2-1B` | vllm |
+| `Llama-3.2-1B-Instruct` | defaultEngine |
+| `Llama-3.2-1B-Instruct` | vllm |
+| `Llama-3.2-3B` | defaultEngine |
+| `Llama-3.2-3B` | forge |
+| `Llama-3.2-3B` | vllm |
+| `Llama-3.2-3B-Instruct` | defaultEngine |
+| `Llama-3.2-3B-Instruct` | forge |
+| `Llama-3.2-3B-Instruct` | vllm |
+| `Llama-3.2-90B-Vision` | defaultEngine |
+| `Llama-3.2-90B-Vision` | vllm |
+| `Llama-3.2-90B-Vision-Instruct` | defaultEngine |
+| `Llama-3.2-90B-Vision-Instruct` | vllm |
+| `Llama-3.3-70B-Instruct` | defaultEngine |
+| `Llama-3.3-70B-Instruct` | vllm |
+| `Mistral-7B-Instruct-v0.3` | defaultEngine |
+| `Mistral-7B-Instruct-v0.3` | vllm |
+| `Mistral-Small-3.1-24B-Instruct-2503` | defaultEngine |
+| `Mistral-Small-3.1-24B-Instruct-2503` | vllm |
+| `Motif-Image-6B-Preview` | defaultEngine |
+| `Motif-Image-6B-Preview` | media |
+| `QwQ-32B` | defaultEngine |
+| `QwQ-32B` | vllm |
+| `Qwen-Image` | defaultEngine |
+| `Qwen-Image` | media |
+| `Qwen-Image-2512` | defaultEngine |
+| `Qwen-Image-2512` | media |
+| `Qwen2.5-72B` | defaultEngine |
+| `Qwen2.5-72B` | vllm |
+| `Qwen2.5-72B-Instruct` | defaultEngine |
+| `Qwen2.5-72B-Instruct` | vllm |
+| `Qwen2.5-7B` | defaultEngine |
+| `Qwen2.5-7B` | vllm |
+| `Qwen2.5-7B-Instruct` | defaultEngine |
+| `Qwen2.5-7B-Instruct` | vllm |
+| `Qwen2.5-Coder-32B-Instruct` | defaultEngine |
+| `Qwen2.5-Coder-32B-Instruct` | vllm |
+| `Qwen2.5-VL-32B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-32B-Instruct` | vllm |
+| `Qwen2.5-VL-3B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-3B-Instruct` | vllm |
+| `Qwen2.5-VL-72B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-72B-Instruct` | vllm |
+| `Qwen2.5-VL-7B-Instruct` | defaultEngine |
+| `Qwen2.5-VL-7B-Instruct` | vllm |
+| `Qwen3-32B` | defaultEngine |
+| `Qwen3-32B` | vllm |
+| `Qwen3-4B` | defaultEngine |
+| `Qwen3-4B` | forge |
+| `Qwen3-8B` | defaultEngine |
+| `Qwen3-8B` | forge |
+| `Qwen3-8B` | vllm |
+| `Qwen3-Embedding-4B` | defaultEngine |
+| `Qwen3-Embedding-4B` | forge |
+| `Qwen3-Embedding-8B` | defaultEngine |
+| `Qwen3-Embedding-8B` | media |
+| `Qwen3-VL-32B-Instruct` | defaultEngine |
+| `Qwen3-VL-32B-Instruct` | vllm |
+| `Wan2.2-I2V-A14B-Diffusers` | defaultEngine |
+| `Wan2.2-I2V-A14B-Diffusers` | media |
+| `Wan2.2-T2V-A14B-Diffusers` | defaultEngine |
+| `Wan2.2-T2V-A14B-Diffusers` | media |
+| `bge-large-en-v1.5` | defaultEngine |
+| `bge-large-en-v1.5` | media |
+| `bge-m3` | defaultEngine |
+| `bge-m3` | media |
+| `distil-large-v3` | defaultEngine |
+| `distil-large-v3` | media |
+| `efficientnet` | defaultEngine |
+| `efficientnet` | forge |
+| `gemma-3-1b-it` | defaultEngine |
+| `gemma-3-1b-it` | vllm |
+| `gemma-3-27b-it` | defaultEngine |
+| `gemma-3-27b-it` | vllm |
+| `gemma-3-4b-it` | defaultEngine |
+| `gemma-3-4b-it` | vllm |
+| `gpt-oss-120b` | defaultEngine |
+| `gpt-oss-120b` | vllm |
+| `gpt-oss-20b` | defaultEngine |
+| `gpt-oss-20b` | vllm |
+| `medgemma-27b-it` | defaultEngine |
+| `medgemma-27b-it` | vllm |
+| `medgemma-4b-it` | defaultEngine |
+| `medgemma-4b-it` | vllm |
+| `mobilenetv2` | defaultEngine |
+| `mobilenetv2` | forge |
+| `mochi-1-preview` | defaultEngine |
+| `mochi-1-preview` | media |
+| `resnet-50` | defaultEngine |
+| `resnet-50` | forge |
+| `segformer` | defaultEngine |
+| `segformer` | forge |
+| `speecht5_tts` | defaultEngine |
+| `speecht5_tts` | media |
+| `stable-diffusion-3.5-large` | defaultEngine |
+| `stable-diffusion-3.5-large` | media |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | defaultEngine |
+| `stable-diffusion-xl-1.0-inpainting-0.1` | media |
+| `stable-diffusion-xl-base-1.0` | defaultEngine |
+| `stable-diffusion-xl-base-1.0` | media |
+| `stable-diffusion-xl-base-1.0-img-2-img` | defaultEngine |
+| `stable-diffusion-xl-base-1.0-img-2-img` | media |
+| `unet` | defaultEngine |
+| `unet` | forge |
+| `vit` | defaultEngine |
+| `vit` | forge |
+| `vovnet` | defaultEngine |
+| `vovnet` | forge |
+| `whisper-large-v3` | defaultEngine |
+| `whisper-large-v3` | media |
 
 To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
 
