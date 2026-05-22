@@ -3,22 +3,25 @@
 
 #include "services/model_service_registration.hpp"
 
-#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <cstdlib>
 
 #include "api/route_registry.hpp"
 #include "config/runner_config.hpp"
 #include "config/settings.hpp"
 #include "config/types.hpp"
+#include "ipc/image_ipc.hpp"
 #include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
+#include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/llm_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_image_to_image_runner.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
@@ -149,12 +152,51 @@ void registerImage() {
             std::get<config::ImageConfig>(cfg));
       });
 
+  auto imageIpcFactory =
+      [](const config::RunnerConfig& cfg, ipc::IResultQueue* /*resultQueue*/,
+         ipc::ITaskQueue* /*taskQueue*/, ipc::ICancelQueue* /*cancelQueue*/)
+      -> std::unique_ptr<runners::IRunner> {
+    const char* workerIdEnv = std::getenv("TT_WORKER_ID");
+    const int workerId = workerIdEnv ? std::atoi(workerIdEnv) : 0;
+    auto imageCfg = std::get<config::ImageConfig>(cfg);
+    imageCfg.visible_devices = config::visibleDevicesForWorker(workerId);
+    TT_LOG_INFO(
+        "[RunnerRegistry] Creating image IPC runner worker={} "
+        "TT_VISIBLE_DEVICES='{}'",
+        workerId, imageCfg.visible_devices);
+    return std::make_unique<runners::ImageIpcRunner>(imageCfg, workerId);
+  };
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_GENERATE,
+                            imageIpcFactory);
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_IMAGE_TO_IMAGE,
+                            imageIpcFactory);
+  runners.registerIpcRunner(config::ModelService::IMAGE,
+                            config::ModelRunnerType::TT_SDXL_EDIT,
+                            imageIpcFactory);
+
   const auto cfg = config::imageEngineConfig();
 
   ServiceRegistry::instance().registerService(
       config::ModelService::IMAGE, [cfg]() -> std::shared_ptr<IService> {
+        const size_t configuredWorkers = config::numWorkers();
+        if (configuredWorkers > 1) {
+          TT_LOG_INFO(
+              "[RegisterImage] Creating worker-backed image service with {} "
+              "worker process(es)",
+              configuredWorkers);
+          auto queueManager =
+              std::make_unique<tt::ipc::image::ImageQueueManager>(
+                  static_cast<int>(configuredWorkers));
+          return std::make_shared<ImageService>(
+              cfg, std::make_unique<tt::worker::WorkerManager>(
+                       configuredWorkers),
+              std::move(queueManager));
+        }
+
         ImageService::RunnerList runners;
-        const size_t workerCount = std::max<size_t>(1, config::numWorkers());
+        constexpr size_t workerCount = 1;
         runners.reserve(workerCount);
         for (size_t i = 0; i < workerCount; ++i) {
           auto workerCfg = cfg;
