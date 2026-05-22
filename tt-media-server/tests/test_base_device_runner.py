@@ -209,6 +209,78 @@ class TestBaseDeviceRunner(unittest.TestCase):
             self.assertEqual(runner.device_id, device_id)
 
 
+class _WeightlessRunner(BaseDeviceRunner):
+    """SHM-proxy-style runner that doesn't read weights from disk."""
+
+    requires_weights = False
+
+    async def warmup(self):
+        return True
+
+    def run(self, *args, **kwargs):
+        return []
+
+
+class TestBaseDeviceRunnerWeightsGate(unittest.TestCase):
+    """The HF_TOKEN/HF_HOME warning is only meaningful for runners that
+    actually load weights. SPRunner (a SHM proxy) inherits BaseDeviceRunner
+    but never touches HF cache — emitting the warning for it is a false
+    positive that sends operators on wild goose chases.
+
+    The opt-out is the class-level ``requires_weights = False`` attribute;
+    when set, ``__init__`` skips the HF cache check entirely.
+    """
+
+    def setUp(self):
+        self.device_id = "0"
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("tt_model_runners.base_device_runner.setup_runner_environment")
+    @patch("tt_model_runners.base_device_runner.get_settings")
+    def test_warning_suppressed_for_weightless_runner(
+        self, mock_get_settings, mock_setup_env
+    ):
+        mock_settings = MagicMock()
+        mock_settings.device_mesh_shape = (1, 1)
+        mock_settings.use_dynamic_batcher = False
+        mock_get_settings.return_value = mock_settings
+
+        with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
+            mock_logger = MagicMock()
+            mock_logger_class.return_value = mock_logger
+
+            _WeightlessRunner(self.device_id)
+
+            # The HF_TOKEN warning string must never be logged for this runner.
+            for call in mock_logger.warning.call_args_list:
+                self.assertNotIn("HF_TOKEN", str(call))
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("tt_model_runners.base_device_runner.setup_runner_environment")
+    @patch("tt_model_runners.base_device_runner.get_settings")
+    def test_warning_still_fires_for_default_runner(
+        self, mock_get_settings, mock_setup_env
+    ):
+        """Sanity check: with the default ``requires_weights=True``, the
+        warning continues to fire when neither HF_TOKEN nor a populated
+        HF_HOME is present (the regression-safety case)."""
+        mock_settings = MagicMock()
+        mock_settings.device_mesh_shape = (1, 1)
+        mock_settings.use_dynamic_batcher = False
+        mock_get_settings.return_value = mock_settings
+
+        with patch("tt_model_runners.base_device_runner.TTLogger") as mock_logger_class:
+            mock_logger = MagicMock()
+            mock_logger_class.return_value = mock_logger
+
+            ConcreteDeviceRunner(self.device_id)
+
+            warning_msgs = [str(c) for c in mock_logger.warning.call_args_list]
+            assert any("HF_TOKEN" in msg for msg in warning_msgs), (
+                "default runner should still emit HF_TOKEN warning when env is unset"
+            )
+
+
 if __name__ == "__main__":
     # Configure logging for tests
     logging.basicConfig(level=logging.DEBUG)
