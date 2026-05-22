@@ -365,7 +365,8 @@ class DeepSeekToolCallParser : public IToolCallParser {
     state.buffer = state.buffer.substr(jsonStart);
     state.arguments_buffer.clear();
 
-    if (!state.buffer.empty() && state.buffer.find("```") == std::string::npos) {
+    if (!state.buffer.empty() &&
+        state.buffer.find("```") == std::string::npos) {
       state.arguments_buffer += state.buffer;
       state.current_arguments += state.buffer;
       return makeArgumentsDelta(state.call_index, state.buffer);
@@ -400,8 +401,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
       return finalizeJsonBlockArguments(state, backtickPos);
     }
 
-    std::string newContent =
-        state.buffer.substr(state.arguments_buffer.size());
+    std::string newContent = state.buffer.substr(state.arguments_buffer.size());
     state.arguments_buffer = state.buffer;
     state.current_arguments += newContent;
 
@@ -414,8 +414,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
 
   std::optional<ToolCallTokenResult> finalizeJsonBlockArguments(
       ToolCallTaskState& state, size_t closingBackticksPos) {
-    std::string finalContent =
-        state.buffer.substr(0, closingBackticksPos);
+    std::string finalContent = state.buffer.substr(0, closingBackticksPos);
     auto lastNonWs = finalContent.find_last_not_of(" \n\t\r");
     if (lastNonWs != std::string::npos) {
       finalContent.erase(lastNonWs + 1);
