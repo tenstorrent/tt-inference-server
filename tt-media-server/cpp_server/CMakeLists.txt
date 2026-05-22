@@ -642,7 +642,7 @@ target_include_directories(llm_service_test PRIVATE
 )
 
 add_executable(main_integration_test
-    tests/main_integration_test.cpp
+    tests/integration/main_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -706,6 +706,71 @@ target_include_directories(main_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(tool_calling_integration_test
+    tests/integration/tool_calling_integration_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/domain/session.cpp
+    src/runtime/worker/worker_manager.cpp
+    src/runtime/worker/process_liveness.cpp
+    src/runtime/worker/single_process_worker.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+    src/utils/ipc_runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/utils/image_codec.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
+)
+target_link_libraries(tool_calling_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(tool_calling_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 # main_integration_test boots the whole server stack (services, IPC queues,
 # Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
@@ -713,6 +778,8 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
+set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
 # Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
 # fails with ctest's captured stdout instead of hanging the job indefinitely.
 set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
