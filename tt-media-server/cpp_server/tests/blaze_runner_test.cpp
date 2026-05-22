@@ -187,6 +187,7 @@ TEST(BlazeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
       << "Expected BlazeRunner to emit at least one token";
   EXPECT_TRUE(producedTokens.back().isFinal())
       << "Expected BlazeRunner to emit a final token";
+  EXPECT_EQ(producedTokens.size(), samplingParams.max_tokens.value());
 
   for (const auto& token : producedTokens) {
     EXPECT_EQ(token.task_id, taskId);

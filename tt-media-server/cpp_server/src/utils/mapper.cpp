@@ -1,8 +1,21 @@
 #include "utils/mapper.hpp"
 
+#include <cstdint>
+
 #include "config/settings.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils::mapper {
+
+std::vector<uint32_t> mergeStopTokenIds(const std::vector<int>& requestStops) {
+  const auto& modelStops =
+      tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  std::vector<uint32_t> merged;
+  merged.reserve(requestStops.size() + modelStops.size());
+  for (auto id : requestStops) merged.push_back(static_cast<uint32_t>(id));
+  for (auto id : modelStops) merged.push_back(static_cast<uint32_t>(id));
+  return merged;
+}
 
 tt::domain::llm::SamplingParams mapSamplingParams(
     const tt::domain::llm::LLMRequest& request) {
@@ -19,7 +32,7 @@ tt::domain::llm::SamplingParams mapSamplingParams(
   params.min_p = request.min_p;
   params.repetition_penalty = request.repetition_penalty;
   params.length_penalty = request.length_penalty;
-  params.stop_token_ids = request.stop_token_ids;
+  params.stop_token_ids = mergeStopTokenIds(request.stop_token_ids);
   params.include_stop_str_in_output = request.include_stop_str_in_output;
   params.min_tokens = request.min_tokens;
   params.skip_special_tokens = request.skip_special_tokens;

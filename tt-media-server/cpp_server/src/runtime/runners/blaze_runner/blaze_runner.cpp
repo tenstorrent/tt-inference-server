@@ -22,7 +22,6 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          tt::ipc::ITaskQueue* taskQueue,
                          tt::ipc::ICancelQueue* cancelQueue)
     : config(config),
-      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       cancelQueue(cancelQueue),
@@ -531,16 +530,14 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
     assert(false && "scheduler output for slot not RUNNING/AWAITING_*_ACK");
     return;
   }
-  bool hitStop =
-      !slotContext.ignoreEos && stopTokenIds.count(output.token_id) > 0;
-  bool finished = output.is_complete || hitStop;
+  bool finished = output.is_complete;
   auto taskId = slotContext.taskId.value();
 
   slotContext.tokensGenerated++;
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
-                                         taskId, hitStop);
+                                         taskId);
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
