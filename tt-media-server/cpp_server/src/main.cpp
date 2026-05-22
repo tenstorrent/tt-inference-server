@@ -154,7 +154,7 @@ int main(int argc, char* argv[]) {
   std::string serviceName = tt::config::toString(modelSvc);
 
   TT_LOG_INFO("=================================================");
-  TT_LOG_INFO("  TT Media Server (C++ Drogon Implementation)");
+  TT_LOG_INFO("  TT Media Server (C++ Drogon implementation)");
   TT_LOG_INFO("=================================================");
   TT_LOG_INFO("  Host: {}", host);
   TT_LOG_INFO("  Port: {}", port);

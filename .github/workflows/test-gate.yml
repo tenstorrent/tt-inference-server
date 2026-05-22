@@ -611,13 +611,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
-    # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
-    # find every shared lib the binary was linked against. Splitting build
-    # (ubuntu-latest = noble, Python 3.12) from bench (jammy, Python 3.10)
-    # has produced repeated runtime "missing libfoo.so" failures (libpq5,
-    # libpython3.12, ...). Same OS image on both sides eliminates the class.
-    runs-on: tt-ubuntu-2204-large-stable
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
@@ -675,16 +669,15 @@ jobs:
           path: tt-media-server/cpp_server/cpp-server-build.tar.gz
           retention-days: 1
 
-  cpp-server-benchmarks:
+  cpp-server-benchmarks-mock:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server Benchmarks
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    name: C++ Server Benchmarks (mock + structured output)
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
@@ -837,64 +830,6 @@ jobs:
           [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
           sleep 1
 
-      # ── Mock pipeline backend benchmarks ─────────────────────────────
-      - name: Start C++ server (mock_pipeline backend)
-        run: |
-          cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
-          echo $! > ../../cpp_server.pid
-          cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "Server ready."
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Server did not become ready within 30 seconds"
-            exit 1
-          fi
-
-      - name: Warm up mock_pipeline backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 32 \
-            --random-output-len 32 \
-            --num-prompts 32 \
-            --max-concurrency 16 \
-            > /dev/null
-
-      - name: Bench mock_pipeline backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 32\
-            --random-output-len 1024\
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-mock-pipeline.json" \
-            2>&1 | tee bench_mock_pipeline_output.txt
-
-      - name: Stop mock_pipeline server
-        if: always()
-        run: |
-          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
-
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
         run: |
@@ -959,9 +894,6 @@ jobs:
           check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
             "vllm-bench-structured-output-json-schema.json" 3 250
 
-          check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
-            "vllm-bench-mock-pipeline.json" 3 395
-
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
           {
             echo "BENCH_ERRORS<<BENCHERRORSEOF"
@@ -975,7 +907,218 @@ jobs:
         run: |
           echo "=== Mock Server Logs ==="
           [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
-          echo ""
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-results-mock
+          path: |
+            tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-structured-output-json-object.json
+            tt-media-server/vllm-bench-structured-output-json-schema.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-logs-mock
+          path: |
+            tt-media-server/cpp_server_mock.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        if: always()
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_ERRORS"
+          exit 1
+
+  cpp-server-benchmarks-mock-pipeline:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Benchmarks (mock_pipeline)
+    # mock_pipeline pushes longer outputs (1024 tokens) under concurrency 64
+    # and its thresholds are tuned against the xlarge runner's hardware.
+    runs-on: tt-ubuntu-2204-xlarge-stable
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the runner's injected proxy.
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Extract C++ build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
+          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
+          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
+          # Track upstream and remove pin once 5.6.x is fixed or bench is
+          # made resilient to client tokenizer cost.
+          uv pip install vllm 'transformers<5.6'
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Start C++ server (mock_pipeline backend)
+        run: |
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Warm up mock_pipeline backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 32 \
+            --random-output-len 32 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
+
+      - name: Bench mock_pipeline backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 32\
+            --random-output-len 1024\
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-mock-pipeline.json" \
+            2>&1 | tee bench_mock_pipeline_output.txt
+
+      - name: Stop mock_pipeline server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      - name: Check benchmark thresholds
+        run: |
+          FAIL=0
+          ERRORS=""
+
+          check_thresholds() {
+            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+
+            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
+            COMPLETED=$(jq -r '.completed // 0' "$FILE")
+            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              FAIL=1
+            fi
+
+            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+
+            {
+              echo "## $LABEL"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
+              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+
+          check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
+            "vllm-bench-mock-pipeline.json" 3 395
+
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          {
+            echo "BENCH_ERRORS<<BENCHERRORSEOF"
+            printf '%s\n' "$ERRORS"
+            echo "BENCHERRORSEOF"
+          } >> $GITHUB_ENV
+
+      - name: Show server logs
+        if: always()
+        run: |
           echo "=== Mock Pipeline Server Logs ==="
           [ -f cpp_server_mock_pipeline.log ] && cat cpp_server_mock_pipeline.log || echo "No log"
 
@@ -983,11 +1126,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cpp-server-bench-results
+          name: cpp-server-bench-results-mock-pipeline
           path: |
-            tt-media-server/vllm-bench-mock.json
-            tt-media-server/vllm-bench-structured-output-json-object.json
-            tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
           retention-days: 1
           if-no-files-found: warn
@@ -996,9 +1136,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cpp-server-bench-logs
+          name: cpp-server-bench-logs-mock-pipeline
           path: |
-            tt-media-server/cpp_server_mock.log
             tt-media-server/cpp_server_mock_pipeline.log
           retention-days: 1
           if-no-files-found: warn
@@ -1016,12 +1155,11 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
@@ -1554,9 +1692,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    # Same jammy image as cpp-build so the prefill_gateway binary is
-    # compatible with the tt-ubuntu-2204-xlarge-stable bench runner.
-    runs-on: tt-ubuntu-2204-large-stable
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
@@ -1691,7 +1827,7 @@ jobs:
     needs: [detect-changes, cpp-build, prefill-gateway-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: C++ Server Gateway Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
@@ -2607,7 +2743,8 @@ jobs:
       - test-coverage
       - cpp-format-check
       - cpp-build
-      - cpp-server-benchmarks
+      - cpp-server-benchmarks-mock
+      - cpp-server-benchmarks-mock-pipeline
       - cpp-server-prefill-decode-split
       - prefill-gateway-format-check
       - prefill-gateway-build
@@ -2628,7 +2765,8 @@ jobs:
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
-            [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
+            [cpp-server-benchmarks-mock]="${{ needs.cpp-server-benchmarks-mock.result }}"
+            [cpp-server-benchmarks-mock-pipeline]="${{ needs.cpp-server-benchmarks-mock-pipeline.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
