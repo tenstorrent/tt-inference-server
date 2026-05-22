@@ -501,9 +501,18 @@ def _collect_metric_samples(
                     snapshot = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                # AIPerf 0.5 nests the Prometheus scrape under a top-level
+                # "metrics" key (each entry is a list of {labels, value}).
+                # Older shapes put metrics at the top level; support both.
+                payload = (
+                    snapshot["metrics"]
+                    if isinstance(snapshot, dict)
+                    and isinstance(snapshot.get("metrics"), dict)
+                    else snapshot
+                )
                 for metric_name in series.keys():
-                    if metric_name in snapshot:
-                        value = _extract_numeric(snapshot[metric_name])
+                    if metric_name in payload:
+                        value = _extract_numeric(payload[metric_name])
                         if value is not None:
                             series[metric_name].append(value)
     except OSError as e:
