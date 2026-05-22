@@ -8,12 +8,12 @@
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
 #include "ipc/file_payload_ipc.hpp"
+#include "runtime/runners/media_ipc_runner.hpp"
 #include "runtime/runners/media_runner.hpp"
-#include "runtime/runners/sync_media_ipc_runner.hpp"
 
 namespace tt::runners {
 
-class ImageIpcRunner : public SyncMediaIpcRunner {
+class ImageIpcRunner : public MediaIpcRunner {
  public:
   using MediaRunner =
       IMediaRunner<tt::domain::ImageGenerateRequest, std::vector<std::string>>;

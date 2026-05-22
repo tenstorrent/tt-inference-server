@@ -157,12 +157,12 @@ class FilePayloadResultQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-class FilePayloadQueueManager {
+class FilePayloadQueueSet {
  public:
   std::shared_ptr<FilePayloadTaskQueue> taskQueue;
   std::vector<std::shared_ptr<FilePayloadResultQueue>> resultQueues;
 
-  explicit FilePayloadQueueManager(int numWorkers) {
+  explicit FilePayloadQueueSet(int numWorkers) {
     taskQueue = std::make_shared<FilePayloadTaskQueue>(
         tt::config::ttTaskQueueName(),
         static_cast<int>(tt::config::maxQueueSize()));
@@ -174,7 +174,7 @@ class FilePayloadQueueManager {
     }
   }
 
-  ~FilePayloadQueueManager() { clear(); }
+  ~FilePayloadQueueSet() { clear(); }
 
   void clear() {
     if (taskQueue) {
@@ -186,11 +186,11 @@ class FilePayloadQueueManager {
     }
   }
 
-  FilePayloadQueueManager(const FilePayloadQueueManager&) = delete;
-  FilePayloadQueueManager& operator=(const FilePayloadQueueManager&) = delete;
+  FilePayloadQueueSet(const FilePayloadQueueSet&) = delete;
+  FilePayloadQueueSet& operator=(const FilePayloadQueueSet&) = delete;
 
-  FilePayloadQueueManager(FilePayloadQueueManager&&) = default;
-  FilePayloadQueueManager& operator=(FilePayloadQueueManager&&) = default;
+  FilePayloadQueueSet(FilePayloadQueueSet&&) = default;
+  FilePayloadQueueSet& operator=(FilePayloadQueueSet&&) = default;
 };
 
 }  // namespace tt::ipc::file_payload

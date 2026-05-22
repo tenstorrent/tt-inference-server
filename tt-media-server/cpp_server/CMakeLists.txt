@@ -540,7 +540,7 @@ target_include_directories(test_image_generate_request PRIVATE
 add_executable(image_service_test
     tests/image_service_test.cpp
     src/services/image_service.cpp
-    src/services/sync_media_worker_client.cpp
+    src/services/media_worker_scheduler.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/reasoning_parser.cpp
@@ -548,7 +548,7 @@ add_executable(image_service_test
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
     src/utils/ipc_runner_factory.cpp
-    src/runtime/runners/sync_media_ipc_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/services/model_service_registration.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -652,7 +652,7 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
-    src/services/sync_media_worker_client.cpp
+    src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
@@ -665,7 +665,7 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/sync_media_ipc_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
@@ -705,14 +705,14 @@ add_executable(main_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/sync_media_ipc_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
-    src/services/sync_media_worker_client.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -881,14 +881,14 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/sync_media_ipc_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
-    src/services/sync_media_worker_client.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp

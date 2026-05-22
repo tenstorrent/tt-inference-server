@@ -12,10 +12,11 @@
 
 namespace tt::runners {
 
-class SyncMediaIpcRunner : public IRunner {
+/** Generic child-side IPC loop for synchronous media runners. */
+class MediaIpcRunner : public IRunner {
  public:
-  SyncMediaIpcRunner(std::string runnerName, int workerId);
-  ~SyncMediaIpcRunner() override;
+  MediaIpcRunner(std::string runnerName, int workerId);
+  ~MediaIpcRunner() override;
 
   void stop() override;
   const char* runnerType() const override { return runner_name_.c_str(); }

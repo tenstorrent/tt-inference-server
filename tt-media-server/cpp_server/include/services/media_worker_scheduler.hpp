@@ -21,23 +21,27 @@
 
 namespace tt::services {
 
-struct SyncMediaWorkerResponse {
+struct MediaWorkerResult {
   Json::Value body;
   double generation_time_seconds = 0.0;
   std::string error;
 };
 
-class SyncMediaWorkerClient {
+/** Parent-side scheduler for synchronous media workers.
+ *
+ * Owns worker lifecycle, request dispatch, result collection, and the temp-file
+ * payload handoff used for large media responses.
+ */
+class MediaWorkerScheduler {
  public:
-  SyncMediaWorkerClient(
+  MediaWorkerScheduler(
       std::string serviceName,
       std::unique_ptr<tt::worker::WorkerManager> workerManager,
-      std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
-          queueManager);
-  ~SyncMediaWorkerClient();
+      std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queueSet);
+  ~MediaWorkerScheduler();
 
-  SyncMediaWorkerClient(const SyncMediaWorkerClient&) = delete;
-  SyncMediaWorkerClient& operator=(const SyncMediaWorkerClient&) = delete;
+  MediaWorkerScheduler(const MediaWorkerScheduler&) = delete;
+  MediaWorkerScheduler& operator=(const MediaWorkerScheduler&) = delete;
 
   void start();
   void stop();
@@ -46,7 +50,7 @@ class SyncMediaWorkerClient {
   size_t numWorkers() const;
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const;
 
-  SyncMediaWorkerResponse submit(uint32_t taskId, const Json::Value& request);
+  MediaWorkerResult submit(uint32_t taskId, const Json::Value& request);
 
  private:
   void startConsumers();
@@ -56,8 +60,7 @@ class SyncMediaWorkerClient {
 
   std::string service_name_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
-      queue_manager_;
+  std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queue_set_;
   std::vector<std::thread> consumer_threads_;
   mutable std::mutex pending_mutex_;
   std::unordered_map<

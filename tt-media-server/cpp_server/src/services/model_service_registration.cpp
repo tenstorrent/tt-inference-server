@@ -187,7 +187,7 @@ void registerImage() {
               "worker process(es)",
               configuredWorkers);
           auto queueManager =
-              std::make_unique<tt::ipc::file_payload::FilePayloadQueueManager>(
+              std::make_unique<tt::ipc::file_payload::FilePayloadQueueSet>(
                   static_cast<int>(configuredWorkers));
           return std::make_shared<ImageService>(
               cfg, std::make_unique<tt::worker::WorkerManager>(

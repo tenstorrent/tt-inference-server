@@ -17,7 +17,7 @@
 #include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/base_service.hpp"
-#include "services/sync_media_worker_client.hpp"
+#include "services/media_worker_scheduler.hpp"
 
 namespace tt::services {
 
@@ -34,7 +34,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   ImageService(config::ImageConfig config, RunnerList runners);
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
-               std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
+               std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet>
                    queueManager);
   ~ImageService() override;
 
@@ -62,7 +62,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
 
   config::ImageConfig config_;
   RunnerList runners_;
-  std::unique_ptr<SyncMediaWorkerClient> worker_client_;
+  std::unique_ptr<MediaWorkerScheduler> worker_scheduler_;
   mutable std::atomic<size_t> next_runner_{0};
   std::vector<std::atomic<size_t>> runner_in_flight_;
   std::atomic<bool> ready_{false};

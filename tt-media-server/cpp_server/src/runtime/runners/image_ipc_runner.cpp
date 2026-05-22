@@ -52,7 +52,7 @@ void writeResponseFile(const std::string& path,
 }  // namespace
 
 ImageIpcRunner::ImageIpcRunner(config::ImageConfig config, int workerId)
-    : SyncMediaIpcRunner("ImageIpcRunner", workerId),
+    : MediaIpcRunner("ImageIpcRunner", workerId),
       config_(std::move(config)) {}
 
 ImageIpcRunner::~ImageIpcRunner() { stop(); }
@@ -75,7 +75,7 @@ void ImageIpcRunner::stop() {
   if (runner_) {
     runner_->stop();
   }
-  SyncMediaIpcRunner::stop();
+  MediaIpcRunner::stop();
 }
 
 void ImageIpcRunner::processTask(

@@ -73,24 +73,24 @@ ImageService::ImageService(config::ImageConfig config, RunnerList runners)
 ImageService::ImageService(
     config::ImageConfig config,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
+    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet>
         queueManager)
     : config_(std::move(config)),
-      worker_client_(std::make_unique<SyncMediaWorkerClient>(
+      worker_scheduler_(std::make_unique<MediaWorkerScheduler>(
           "image", std::move(workerManager), std::move(queueManager))) {
   this->maxQueueSize = tt::config::maxQueueSize();
   TT_LOG_INFO("[ImageService] Initialized worker-backed image service "
               "(workers={}, max_queue_size={})",
-              worker_client_->numWorkers(), this->maxQueueSize);
+              worker_scheduler_->numWorkers(), this->maxQueueSize);
 }
 
 ImageService::~ImageService() { stop(); }
 
 void ImageService::start() {
-  if (worker_client_) {
+  if (worker_scheduler_) {
     TT_LOG_INFO("[ImageService] Starting worker-backed service (workers={})",
-                worker_client_->numWorkers());
-    worker_client_->start();
+                worker_scheduler_->numWorkers());
+    worker_scheduler_->start();
     return;
   }
 
@@ -120,8 +120,8 @@ void ImageService::start() {
 }
 
 void ImageService::stop() {
-  if (worker_client_) {
-    worker_client_->stop();
+  if (worker_scheduler_) {
+    worker_scheduler_->stop();
     return;
   }
 
@@ -137,8 +137,8 @@ void ImageService::stop() {
 }
 
 bool ImageService::isModelReady() const {
-  if (worker_client_) {
-    return worker_client_->isReady();
+  if (worker_scheduler_) {
+    return worker_scheduler_->isReady();
   }
   return ready_.load(std::memory_order_acquire);
 }
@@ -148,8 +148,8 @@ std::string ImageService::runnerInUse() const {
 }
 
 std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
-  if (worker_client_) {
-    return worker_client_->getWorkerInfo();
+  if (worker_scheduler_) {
+    return worker_scheduler_->getWorkerInfo();
   }
   const bool ready = ready_.load(std::memory_order_acquire);
   const size_t count = runners_.size();
@@ -202,7 +202,7 @@ domain::image::ImageResponse ImageService::processRequest(
     ~InFlightGuard() { counter.fetch_sub(1, std::memory_order_acq_rel); }
   } guard{in_flight_};
 
-  if (worker_client_) {
+  if (worker_scheduler_) {
     return processWorkerRequest(request);
   }
 
@@ -241,13 +241,13 @@ domain::image::ImageResponse ImageService::processInProcessRequest(
 domain::image::ImageResponse ImageService::processWorkerRequest(
     const domain::ImageGenerateRequest& request) {
   domain::image::ImageResponse response(request.task_id);
-  if (!worker_client_->isReady()) {
+  if (!worker_scheduler_->isReady()) {
     response.error = "Image service not ready";
     return response;
   }
 
   auto workerResponse =
-      worker_client_->submit(request.task_id, domain::image::toJson(request));
+      worker_scheduler_->submit(request.task_id, domain::image::toJson(request));
   response.generation_time_seconds = workerResponse.generation_time_seconds;
   if (!workerResponse.error.empty()) {
     response.error = std::move(workerResponse.error);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "services/sync_media_worker_client.hpp"
+#include "services/media_worker_scheduler.hpp"
 
 #include <unistd.h>
 
@@ -44,57 +44,55 @@ Json::Value readJsonFile(const std::filesystem::path& path) {
 
 }  // namespace
 
-SyncMediaWorkerClient::SyncMediaWorkerClient(
+MediaWorkerScheduler::MediaWorkerScheduler(
     std::string serviceName,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
-        queueManager)
+    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueSet> queueSet)
     : service_name_(std::move(serviceName)),
       worker_manager_(std::move(workerManager)),
-      queue_manager_(std::move(queueManager)) {
+      queue_set_(std::move(queueSet)) {
   if (!worker_manager_) {
     throw std::invalid_argument(
-        "[SyncMediaWorkerClient] workerManager must not be null");
+        "[MediaWorkerScheduler] workerManager must not be null");
   }
-  if (!queue_manager_) {
+  if (!queue_set_) {
     throw std::invalid_argument(
-        "[SyncMediaWorkerClient] queueManager must not be null");
+        "[MediaWorkerScheduler] queueSet must not be null");
   }
   payload_dir_ = std::filesystem::temp_directory_path() /
                  ("tt-" + service_name_ + "-ipc-" + std::to_string(::getpid()));
   std::filesystem::create_directories(payload_dir_);
   TT_LOG_INFO(
-      "[SyncMediaWorkerClient] Initialized {} worker client "
+      "[MediaWorkerScheduler] Initialized {} scheduler "
       "(workers={}, payload_dir='{}')",
       service_name_, worker_manager_->numWorkers(), payload_dir_.string());
 }
 
-SyncMediaWorkerClient::~SyncMediaWorkerClient() { stop(); }
+MediaWorkerScheduler::~MediaWorkerScheduler() { stop(); }
 
-void SyncMediaWorkerClient::start() {
+void MediaWorkerScheduler::start() {
   if (running_.exchange(true, std::memory_order_acq_rel)) {
     return;
   }
-  TT_LOG_INFO("[SyncMediaWorkerClient] Starting {} worker client (workers={})",
+  TT_LOG_INFO("[MediaWorkerScheduler] Starting {} scheduler (workers={})",
               service_name_, worker_manager_->numWorkers());
   worker_manager_->start();
   startConsumers();
 }
 
-void SyncMediaWorkerClient::stop() {
+void MediaWorkerScheduler::stop() {
   if (!running_.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
 
-  TT_LOG_INFO("[SyncMediaWorkerClient] Stopping {} worker client",
-              service_name_);
+  TT_LOG_INFO("[MediaWorkerScheduler] Stopping {} scheduler", service_name_);
 
   for (size_t i = 0; i < worker_manager_->numWorkers(); ++i) {
-    queue_manager_->taskQueue->push(
+    queue_set_->taskQueue->push(
         tt::ipc::file_payload::FilePayloadTask::done());
   }
 
-  for (auto& queue : queue_manager_->resultQueues) {
+  for (auto& queue : queue_set_->resultQueues) {
     queue->shutdown();
   }
 
@@ -106,30 +104,27 @@ void SyncMediaWorkerClient::stop() {
   consumer_threads_.clear();
 
   worker_manager_->stop();
-  queue_manager_->clear();
+  queue_set_->clear();
 
   std::error_code ec;
   std::filesystem::remove_all(payload_dir_, ec);
-  TT_LOG_INFO("[SyncMediaWorkerClient] {} worker client stopped",
-              service_name_);
+  TT_LOG_INFO("[MediaWorkerScheduler] {} scheduler stopped", service_name_);
 }
 
-bool SyncMediaWorkerClient::isReady() const {
-  return worker_manager_->isReady();
-}
+bool MediaWorkerScheduler::isReady() const { return worker_manager_->isReady(); }
 
-size_t SyncMediaWorkerClient::numWorkers() const {
+size_t MediaWorkerScheduler::numWorkers() const {
   return worker_manager_->numWorkers();
 }
 
-std::vector<tt::worker::WorkerInfo> SyncMediaWorkerClient::getWorkerInfo()
+std::vector<tt::worker::WorkerInfo> MediaWorkerScheduler::getWorkerInfo()
     const {
   return worker_manager_->getWorkerInfo();
 }
 
-SyncMediaWorkerResponse SyncMediaWorkerClient::submit(
-    uint32_t taskId, const Json::Value& request) {
-  SyncMediaWorkerResponse response;
+MediaWorkerResult MediaWorkerScheduler::submit(uint32_t taskId,
+                                               const Json::Value& request) {
+  MediaWorkerResult response;
   if (!worker_manager_->isReady()) {
     response.error = "Media service not ready";
     return response;
@@ -153,7 +148,7 @@ SyncMediaWorkerResponse SyncMediaWorkerClient::submit(
     task.task_id = taskId;
     task.request_path = requestPath;
     task.response_path = responsePath;
-    queue_manager_->taskQueue->push(task);
+    queue_set_->taskQueue->push(task);
 
     auto result = future.get();
     response.generation_time_seconds = result.generation_time_seconds;
@@ -174,18 +169,18 @@ SyncMediaWorkerResponse SyncMediaWorkerClient::submit(
   return response;
 }
 
-void SyncMediaWorkerClient::startConsumers() {
+void MediaWorkerScheduler::startConsumers() {
   const size_t n = worker_manager_->numWorkers();
   consumer_threads_.reserve(n);
   for (size_t i = 0; i < n; ++i) {
-    consumer_threads_.emplace_back(&SyncMediaWorkerClient::consumerLoopForWorker,
+    consumer_threads_.emplace_back(&MediaWorkerScheduler::consumerLoopForWorker,
                                    this, i);
   }
 }
 
-void SyncMediaWorkerClient::consumerLoopForWorker(size_t workerIdx) {
-  auto resultQueue = queue_manager_->resultQueues.at(workerIdx);
-  TT_LOG_INFO("[SyncMediaWorkerClient] {} consumer {} started", service_name_,
+void MediaWorkerScheduler::consumerLoopForWorker(size_t workerIdx) {
+  auto resultQueue = queue_set_->resultQueues.at(workerIdx);
+  TT_LOG_INFO("[MediaWorkerScheduler] {} consumer {} started", service_name_,
               workerIdx);
   while (running_.load(std::memory_order_acquire)) {
     tt::ipc::file_payload::FilePayloadResult result;
@@ -208,16 +203,16 @@ void SyncMediaWorkerClient::consumerLoopForWorker(size_t workerIdx) {
       promise->set_value(std::move(result));
     } else {
       TT_LOG_WARN(
-          "[SyncMediaWorkerClient] Dropping {} result for unknown task {}",
+          "[MediaWorkerScheduler] Dropping {} result for unknown task {}",
           service_name_, result.task_id);
     }
   }
-  TT_LOG_INFO("[SyncMediaWorkerClient] {} consumer {} stopped", service_name_,
+  TT_LOG_INFO("[MediaWorkerScheduler] {} consumer {} stopped", service_name_,
               workerIdx);
 }
 
-std::string SyncMediaWorkerClient::payloadPath(uint32_t taskId,
-                                               const char* prefix) const {
+std::string MediaWorkerScheduler::payloadPath(uint32_t taskId,
+                                              const char* prefix) const {
   return (payload_dir_ /
           (std::string(prefix) + "-" + std::to_string(taskId) + ".json"))
       .string();
