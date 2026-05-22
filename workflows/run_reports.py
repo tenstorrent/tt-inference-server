@@ -3686,9 +3686,7 @@ def main():
     # generate AIPerf prefix-cache report (only present when --prefix-cache ran)
     from benchmarking.prefix_cache_report import generate_prefix_cache_report
 
-    benchmarks_output_dir = (
-        f"{get_default_workflow_root_log_dir()}/benchmarks_output"
-    )
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
     prefix_cache_output_dir = Path(simple_args.output_path) / "benchmarks_prefix_cache"
     (
         prefix_cache_release_str,

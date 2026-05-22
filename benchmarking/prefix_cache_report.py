@@ -92,7 +92,9 @@ TRACE_DISPLAY_COLUMNS: List[Tuple[str, str]] = [
 ]
 
 
-def _load_prefix_cache_files(model_id: str, benchmarks_output_dir: str) -> List[Dict[str, Any]]:
+def _load_prefix_cache_files(
+    model_id: str, benchmarks_output_dir: str
+) -> List[Dict[str, Any]]:
     pattern = f"{benchmarks_output_dir}/aiperf_prefix_cache_{model_id}_*.json"
     files = glob(pattern)
     files.sort()
@@ -194,7 +196,9 @@ def _row_to_display_dict(
     }
 
 
-def _delta_pct(treatment: Optional[float], baseline: Optional[float]) -> Optional[float]:
+def _delta_pct(
+    treatment: Optional[float], baseline: Optional[float]
+) -> Optional[float]:
     if treatment is None or baseline is None:
         return None
     if baseline == 0:

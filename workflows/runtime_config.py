@@ -157,9 +157,7 @@ class RuntimeConfig:
             prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
             prefix_cache_scenarios=getattr(args, "prefix_cache_scenarios", None),
             prefix_cache_arrival=getattr(args, "prefix_cache_arrival", None),
-            prefix_cache_request_rate=getattr(
-                args, "prefix_cache_request_rate", None
-            ),
+            prefix_cache_request_rate=getattr(args, "prefix_cache_request_rate", None),
             prefix_cache_scenarios_json=getattr(
                 args, "prefix_cache_scenarios_json", None
             ),

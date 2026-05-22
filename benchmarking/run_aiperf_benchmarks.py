@@ -587,9 +587,7 @@ def _collect_metric_samples(
                         if value is not None:
                             series[metric_name].append(value)
     except OSError as e:
-        logger.warning(
-            f"Could not read server-metrics file {server_metrics_path}: {e}"
-        )
+        logger.warning(f"Could not read server-metrics file {server_metrics_path}: {e}")
     return series
 
 
@@ -701,9 +699,7 @@ def build_aiperf_cmd_for_prefix_cache_run(
     # `--input-file` (the trace owns the request count) or
     # `--conversation-num` (the conversation count owns it). Only emit
     # `--request-count` for synthetic, non-multi-turn runs.
-    emit_request_count = (
-        not run.uses_trace and run.conversation_num is None
-    )
+    emit_request_count = not run.uses_trace and run.conversation_num is None
 
     cmd: List[str] = [
         str(venv_python),
@@ -751,15 +747,11 @@ def build_aiperf_cmd_for_prefix_cache_run(
 
         # Block size controls how prefix groups are formed in the radix tree.
         if run.block_size is not None:
-            cmd.extend(
-                ["--prompt-input-tokens-block-size", str(run.block_size)]
-            )
+            cmd.extend(["--prompt-input-tokens-block-size", str(run.block_size)])
 
         # Synthesis multipliers — all optional, only emit when set.
         if run.synthesis_speedup_ratio is not None:
-            cmd.extend(
-                ["--synthesis-speedup-ratio", str(run.synthesis_speedup_ratio)]
-            )
+            cmd.extend(["--synthesis-speedup-ratio", str(run.synthesis_speedup_ratio)])
         if run.synthesis_prefix_len_multiplier is not None:
             cmd.extend(
                 [
@@ -1187,8 +1179,7 @@ def run_prefix_cache_suite(
             return 1
 
         logger.info(
-            f"[prefix-cache] Running {i}/{len(runs_sorted)}: "
-            f"{run.scenario}/{run.label}"
+            f"[prefix-cache] Running {i}/{len(runs_sorted)}: {run.scenario}/{run.label}"
         )
         time.sleep(2)
 
@@ -1381,7 +1372,9 @@ def _run_prefix_cache_mode(
 
     logger.info("Sending warm-up requests to initialize server...")
     if not send_warmup_requests(prompt_client, model_spec, num_requests=3):
-        logger.warning("Warm-up requests failed, but continuing with prefix-cache suite")
+        logger.warning(
+            "Warm-up requests failed, but continuing with prefix-cache suite"
+        )
 
     # model_id can contain "/" (HF-style namespaces); keep it as a single
     # path segment under artifacts/ by sanitizing before joining.
