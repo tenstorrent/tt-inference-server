@@ -114,8 +114,6 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
     failed = 0
     for block in benchmark_blocks:
         block_key = _block_key(block)
-        data = block.data if isinstance(block.data, Mapping) else None
-
         success_value = _resolve_nested(block.data, "success")
         attempts_value = _resolve_nested(block.data, "attempts")
         if success_value is False:
