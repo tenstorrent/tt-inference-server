@@ -1878,7 +1878,7 @@ jobs:
   dynamo-frontend-integration:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: Test Dynamo Frontend and cpp server integration
+    name: C++ Server + Dynamo Frontend Integration
     # Same jammy runner as the cpp-server bench jobs so the artifact built by
     # cpp-build links against the same glibc / libstdc++ at runtime.
     runs-on: tt-ubuntu-2204-xlarge-stable
