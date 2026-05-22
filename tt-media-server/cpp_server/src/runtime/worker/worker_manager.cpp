@@ -175,11 +175,8 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
       std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::isImageService()
-                          ? tt::config::RunnerConfig{
-                                tt::config::imageEngineConfig()}
-                          : tt::config::RunnerConfig{
-                                tt::config::llmEngineConfig()};
+  cfg.runner_config =
+      tt::config::workerRunnerConfig(static_cast<size_t>(workerId));
   return cfg;
 }
 
@@ -282,11 +279,8 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
       std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::isImageService()
-                          ? tt::config::RunnerConfig{
-                                tt::config::imageEngineConfig()}
-                          : tt::config::RunnerConfig{
-                                tt::config::llmEngineConfig()};
+  cfg.runner_config =
+      tt::config::workerRunnerConfig(static_cast<size_t>(workerId));
   return cfg;
 }
 

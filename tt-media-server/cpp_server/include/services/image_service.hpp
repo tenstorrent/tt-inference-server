@@ -4,22 +4,20 @@
 #pragma once
 
 #include <atomic>
-#include <filesystem>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
-#include "ipc/image_ipc.hpp"
+#include "ipc/file_payload_ipc.hpp"
 #include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/base_service.hpp"
+#include "services/sync_media_worker_client.hpp"
 
 namespace tt::services {
 
@@ -36,7 +34,8 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   ImageService(config::ImageConfig config, RunnerList runners);
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
-               std::unique_ptr<tt::ipc::image::ImageQueueManager> queueManager);
+               std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
+                   queueManager);
   ~ImageService() override;
 
   ImageService(const ImageService&) = delete;
@@ -56,9 +55,6 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
 
  private:
   size_t selectRunnerIndex() const;
-  void startWorkerConsumers();
-  void consumerLoopForWorker(size_t workerIdx);
-  void stopWorkerMode();
   domain::image::ImageResponse processInProcessRequest(
       const domain::ImageGenerateRequest& request);
   domain::image::ImageResponse processWorkerRequest(
@@ -66,18 +62,10 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
 
   config::ImageConfig config_;
   RunnerList runners_;
-  std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  std::unique_ptr<tt::ipc::image::ImageQueueManager> image_queue_manager_;
-  std::vector<std::thread> consumer_threads_;
-  mutable std::mutex pending_mutex_;
-  std::unordered_map<uint32_t,
-                     std::shared_ptr<std::promise<tt::ipc::image::ImageResult>>>
-      pending_results_;
-  std::filesystem::path ipc_payload_dir_;
+  std::unique_ptr<SyncMediaWorkerClient> worker_client_;
   mutable std::atomic<size_t> next_runner_{0};
   std::vector<std::atomic<size_t>> runner_in_flight_;
   std::atomic<bool> ready_{false};
-  std::atomic<bool> running_{false};
   mutable std::atomic<size_t> in_flight_{0};
   // Warmup runs here so start() can return immediately and the HTTP listener
   // can bind; /tt-liveness reports model_ready=false until warmup completes.

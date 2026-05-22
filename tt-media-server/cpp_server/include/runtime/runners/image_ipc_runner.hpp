@@ -3,18 +3,17 @@
 
 #pragma once
 
-#include <atomic>
 #include <memory>
 
 #include "config/runner_config.hpp"
 #include "domain/image_generate_request.hpp"
-#include "ipc/image_ipc.hpp"
-#include "runtime/runners/ipc_runner.hpp"
+#include "ipc/file_payload_ipc.hpp"
 #include "runtime/runners/media_runner.hpp"
+#include "runtime/runners/sync_media_ipc_runner.hpp"
 
 namespace tt::runners {
 
-class ImageIpcRunner : public IRunner {
+class ImageIpcRunner : public SyncMediaIpcRunner {
  public:
   using MediaRunner =
       IMediaRunner<tt::domain::ImageGenerateRequest, std::vector<std::string>>;
@@ -27,15 +26,11 @@ class ImageIpcRunner : public IRunner {
   const char* runnerType() const override { return "ImageIpcRunner"; }
 
  private:
-  void run() override;
-  void handleTask(const tt::ipc::image::ImageTask& task);
+  void processTask(const tt::ipc::file_payload::FilePayloadTask& task,
+                   tt::ipc::file_payload::FilePayloadResult& result) override;
 
   config::ImageConfig config_;
-  int worker_id_;
-  std::unique_ptr<tt::ipc::image::ImageTaskQueue> task_queue_;
-  std::unique_ptr<tt::ipc::image::ImageResultQueue> result_queue_;
   std::unique_ptr<MediaRunner> runner_;
-  std::atomic<bool> stopped_{false};
 };
 
 }  // namespace tt::runners

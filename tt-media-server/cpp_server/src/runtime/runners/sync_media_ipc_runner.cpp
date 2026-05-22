@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+#include "runtime/runners/sync_media_ipc_runner.hpp"
+
+#include <filesystem>
+#include <utility>
+
+#include "config/settings.hpp"
+#include "utils/logger.hpp"
+
+namespace tt::runners {
+
+SyncMediaIpcRunner::SyncMediaIpcRunner(std::string runnerName, int workerId)
+    : runner_name_(std::move(runnerName)), worker_id_(workerId) {
+  task_queue_ = std::make_unique<tt::ipc::file_payload::FilePayloadTaskQueue>(
+      tt::config::ttTaskQueueName());
+  result_queue_ =
+      std::make_unique<tt::ipc::file_payload::FilePayloadResultQueue>(
+          std::string(tt::config::ttResultQueueName()) +
+          std::to_string(worker_id_));
+}
+
+SyncMediaIpcRunner::~SyncMediaIpcRunner() { stop(); }
+
+void SyncMediaIpcRunner::stop() {
+  stopped_.store(true, std::memory_order_release);
+}
+
+void SyncMediaIpcRunner::run() {
+  TT_LOG_INFO("[SyncMediaIpcRunner] Worker {} entering {} request loop",
+              worker_id_, runner_name_);
+  while (!stopped_.load(std::memory_order_acquire)) {
+    tt::ipc::file_payload::FilePayloadTask task;
+    task_queue_->receive(task);
+    if (task.isDone()) {
+      TT_LOG_INFO("[SyncMediaIpcRunner] Worker {} received shutdown task",
+                  worker_id_);
+      break;
+    }
+
+    tt::ipc::file_payload::FilePayloadResult result;
+    result.task_id = task.task_id;
+    result.response_path = task.response_path;
+    try {
+      processTask(task, result);
+    } catch (const std::exception& e) {
+      result.error = e.what();
+      TT_LOG_ERROR("[SyncMediaIpcRunner] Worker {} task {} failed: {}",
+                   worker_id_, task.task_id, e.what());
+    } catch (...) {
+      result.error = "unknown media runner error";
+      TT_LOG_ERROR("[SyncMediaIpcRunner] Worker {} task {} failed: unknown",
+                   worker_id_, task.task_id);
+    }
+
+    if (!result_queue_->push(result)) {
+      TT_LOG_ERROR(
+          "[SyncMediaIpcRunner] Worker {} failed to push result for task {}",
+          worker_id_, task.task_id);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(task.request_path, ec);
+  }
+}
+
+}  // namespace tt::runners

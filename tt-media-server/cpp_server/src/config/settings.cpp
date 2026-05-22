@@ -395,6 +395,21 @@ ImageConfig imageEngineConfig() {
   return cached;
 }
 
+RunnerConfig workerRunnerConfig(size_t workerIndex) {
+  switch (modelService()) {
+    case ModelService::IMAGE: {
+      auto cfg = imageEngineConfig();
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::EMBEDDING:
+      return EmbeddingConfig{};
+    case ModelService::LLM:
+    default:
+      return llmEngineConfig();
+  }
+}
+
 ModelType modelType() {
   static const ModelType cached = modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));

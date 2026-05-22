@@ -13,7 +13,7 @@
 #include "config/settings.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 
-namespace tt::ipc::image {
+namespace tt::ipc::file_payload {
 
 namespace detail {
 
@@ -35,7 +35,7 @@ inline std::string readString(std::istream& is) {
 
 }  // namespace detail
 
-struct ImageTask {
+struct FilePayloadTask {
   uint32_t task_id = 0;
   uint32_t flags = 0;
   std::string request_path;
@@ -45,8 +45,8 @@ struct ImageTask {
 
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
 
-  static ImageTask done() {
-    ImageTask task;
+  static FilePayloadTask done() {
+    FilePayloadTask task;
     task.flags = FLAG_DONE;
     return task;
   }
@@ -58,8 +58,8 @@ struct ImageTask {
     detail::writeString(os, response_path);
   }
 
-  static ImageTask deserialize(std::istream& is) {
-    ImageTask task;
+  static FilePayloadTask deserialize(std::istream& is) {
+    FilePayloadTask task;
     is.read(reinterpret_cast<char*>(&task.task_id), sizeof(task.task_id));
     is.read(reinterpret_cast<char*>(&task.flags), sizeof(task.flags));
     task.request_path = detail::readString(is);
@@ -68,7 +68,7 @@ struct ImageTask {
   }
 };
 
-struct ImageResult {
+struct FilePayloadResult {
   uint32_t task_id = 0;
   uint32_t flags = 0;
   double generation_time_seconds = 0.0;
@@ -79,8 +79,8 @@ struct ImageResult {
 
   bool isDone() const { return (flags & FLAG_DONE) != 0; }
 
-  static ImageResult done() {
-    ImageResult result;
+  static FilePayloadResult done() {
+    FilePayloadResult result;
     result.flags = FLAG_DONE;
     return result;
   }
@@ -94,8 +94,8 @@ struct ImageResult {
     detail::writeString(os, error);
   }
 
-  static ImageResult deserialize(std::istream& is) {
-    ImageResult result;
+  static FilePayloadResult deserialize(std::istream& is) {
+    FilePayloadResult result;
     is.read(reinterpret_cast<char*>(&result.task_id), sizeof(result.task_id));
     is.read(reinterpret_cast<char*>(&result.flags), sizeof(result.flags));
     is.read(reinterpret_cast<char*>(&result.generation_time_seconds),
@@ -106,21 +106,21 @@ struct ImageResult {
   }
 };
 
-class ImageTaskQueue {
+class FilePayloadTaskQueue {
  public:
-  using Queue = boost::MemoryQueue<ImageTask, 8192>;
+  using Queue = boost::MemoryQueue<FilePayloadTask, 8192>;
 
-  ImageTaskQueue(const std::string& name, int capacity)
+  FilePayloadTaskQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
-  explicit ImageTaskQueue(const std::string& name)
+  explicit FilePayloadTaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  void push(const ImageTask& task) { queue_->push(task); }
+  void push(const FilePayloadTask& task) { queue_->push(task); }
 
-  bool tryPop(ImageTask& out) { return queue_->tryPop(out); }
+  bool tryPop(FilePayloadTask& out) { return queue_->tryPop(out); }
 
-  void receive(ImageTask& out) { queue_->receive(out); }
+  void receive(FilePayloadTask& out) { queue_->receive(out); }
 
   bool empty() const { return queue_->empty(); }
 
@@ -130,24 +130,26 @@ class ImageTaskQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-class ImageResultQueue {
+class FilePayloadResultQueue {
  public:
-  using Queue = boost::MemoryQueue<ImageResult, 8192>;
+  using Queue = boost::MemoryQueue<FilePayloadResult, 8192>;
 
-  ImageResultQueue(const std::string& name, int capacity)
+  FilePayloadResultQueue(const std::string& name, int capacity)
       : queue_(std::make_unique<Queue>(name, capacity)) {}
 
-  explicit ImageResultQueue(const std::string& name)
+  explicit FilePayloadResultQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  bool push(const ImageResult& result) { return queue_->tryPush(result); }
+  bool push(const FilePayloadResult& result) {
+    return queue_->tryPush(result);
+  }
 
-  bool blockingPop(ImageResult& out) {
+  bool blockingPop(FilePayloadResult& out) {
     queue_->receive(out);
     return !out.isDone();
   }
 
-  void shutdown() { queue_->push(ImageResult::done()); }
+  void shutdown() { queue_->push(FilePayloadResult::done()); }
 
   void remove() { queue_->remove(); }
 
@@ -155,23 +157,24 @@ class ImageResultQueue {
   std::unique_ptr<Queue> queue_;
 };
 
-class ImageQueueManager {
+class FilePayloadQueueManager {
  public:
-  std::shared_ptr<ImageTaskQueue> taskQueue;
-  std::vector<std::shared_ptr<ImageResultQueue>> resultQueues;
+  std::shared_ptr<FilePayloadTaskQueue> taskQueue;
+  std::vector<std::shared_ptr<FilePayloadResultQueue>> resultQueues;
 
-  explicit ImageQueueManager(int numWorkers) {
-    taskQueue = std::make_shared<ImageTaskQueue>(
-        tt::config::ttTaskQueueName(), static_cast<int>(tt::config::maxQueueSize()));
+  explicit FilePayloadQueueManager(int numWorkers) {
+    taskQueue = std::make_shared<FilePayloadTaskQueue>(
+        tt::config::ttTaskQueueName(),
+        static_cast<int>(tt::config::maxQueueSize()));
     resultQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; ++i) {
-      resultQueues.emplace_back(std::make_shared<ImageResultQueue>(
+      resultQueues.emplace_back(std::make_shared<FilePayloadResultQueue>(
           std::string(tt::config::ttResultQueueName()) + std::to_string(i),
           static_cast<int>(tt::config::resultQueueCapacity())));
     }
   }
 
-  ~ImageQueueManager() { clear(); }
+  ~FilePayloadQueueManager() { clear(); }
 
   void clear() {
     if (taskQueue) {
@@ -183,11 +186,11 @@ class ImageQueueManager {
     }
   }
 
-  ImageQueueManager(const ImageQueueManager&) = delete;
-  ImageQueueManager& operator=(const ImageQueueManager&) = delete;
+  FilePayloadQueueManager(const FilePayloadQueueManager&) = delete;
+  FilePayloadQueueManager& operator=(const FilePayloadQueueManager&) = delete;
 
-  ImageQueueManager(ImageQueueManager&&) = default;
-  ImageQueueManager& operator=(ImageQueueManager&&) = default;
+  FilePayloadQueueManager(FilePayloadQueueManager&&) = default;
+  FilePayloadQueueManager& operator=(FilePayloadQueueManager&&) = default;
 };
 
-}  // namespace tt::ipc::image
+}  // namespace tt::ipc::file_payload

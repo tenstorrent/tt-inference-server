@@ -66,7 +66,7 @@ void waitUntilReady(tt::services::ImageService& service) {
 
 }  // namespace
 
-TEST(ImageServiceTest, WarmsAllConfiguredRunners) {
+TEST(ImageServiceInProcessTest, WarmsAllConfiguredRunners) {
   auto state0 = std::make_shared<RunnerState>();
   auto state1 = std::make_shared<RunnerState>();
 
@@ -83,7 +83,7 @@ TEST(ImageServiceTest, WarmsAllConfiguredRunners) {
   EXPECT_EQ(state1->warmups.load(std::memory_order_relaxed), 1u);
 }
 
-TEST(ImageServiceTest, DispatchesConcurrentRequestsAcrossRunners) {
+TEST(ImageServiceInProcessTest, DispatchesConcurrentRequestsAcrossRunners) {
   auto state0 = std::make_shared<RunnerState>();
   auto state1 = std::make_shared<RunnerState>();
 

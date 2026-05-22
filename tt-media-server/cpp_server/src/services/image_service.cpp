@@ -4,13 +4,9 @@
 #include "services/image_service.hpp"
 
 #include <json/json.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <cstddef>
-#include <filesystem>
-#include <fstream>
-#include <future>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -29,33 +25,6 @@ ImageService::RunnerList singleRunner(
   ImageService::RunnerList runners;
   runners.push_back(std::move(runner));
   return runners;
-}
-
-void writeJsonFile(const std::filesystem::path& path, const Json::Value& json) {
-  Json::StreamWriterBuilder builder;
-  builder["indentation"] = "";
-  std::ofstream output(path, std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error("failed to open image IPC payload file: " +
-                             path.string());
-  }
-  output << Json::writeString(builder, json);
-}
-
-Json::Value readJsonFile(const std::filesystem::path& path) {
-  std::ifstream input(path);
-  if (!input) {
-    throw std::runtime_error("failed to open image IPC response file: " +
-                             path.string());
-  }
-  Json::CharReaderBuilder builder;
-  Json::Value json;
-  std::string errors;
-  if (!Json::parseFromStream(builder, input, &json, &errors)) {
-    throw std::runtime_error("failed to parse image IPC response file: " +
-                             errors);
-  }
-  return json;
 }
 
 domain::image::ImageResponse responseFromJson(uint32_t taskId,
@@ -104,38 +73,24 @@ ImageService::ImageService(config::ImageConfig config, RunnerList runners)
 ImageService::ImageService(
     config::ImageConfig config,
     std::unique_ptr<tt::worker::WorkerManager> workerManager,
-    std::unique_ptr<tt::ipc::image::ImageQueueManager> queueManager)
+    std::unique_ptr<tt::ipc::file_payload::FilePayloadQueueManager>
+        queueManager)
     : config_(std::move(config)),
-      worker_manager_(std::move(workerManager)),
-      image_queue_manager_(std::move(queueManager)) {
-  if (!worker_manager_) {
-    throw std::invalid_argument("[ImageService] workerManager must not be null");
-  }
-  if (!image_queue_manager_) {
-    throw std::invalid_argument("[ImageService] queueManager must not be null");
-  }
+      worker_client_(std::make_unique<SyncMediaWorkerClient>(
+          "image", std::move(workerManager), std::move(queueManager))) {
   this->maxQueueSize = tt::config::maxQueueSize();
-  ipc_payload_dir_ =
-      std::filesystem::temp_directory_path() /
-      ("tt-image-ipc-" + std::to_string(::getpid()));
-  std::filesystem::create_directories(ipc_payload_dir_);
   TT_LOG_INFO("[ImageService] Initialized worker-backed image service "
-              "(workers={}, max_queue_size={}, payload_dir='{}')",
-              worker_manager_->numWorkers(), this->maxQueueSize,
-              ipc_payload_dir_.string());
+              "(workers={}, max_queue_size={})",
+              worker_client_->numWorkers(), this->maxQueueSize);
 }
 
 ImageService::~ImageService() { stop(); }
 
 void ImageService::start() {
-  if (worker_manager_) {
-    if (running_.exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
+  if (worker_client_) {
     TT_LOG_INFO("[ImageService] Starting worker-backed service (workers={})",
-                worker_manager_->numWorkers());
-    worker_manager_->start();
-    startWorkerConsumers();
+                worker_client_->numWorkers());
+    worker_client_->start();
     return;
   }
 
@@ -165,8 +120,8 @@ void ImageService::start() {
 }
 
 void ImageService::stop() {
-  if (worker_manager_) {
-    stopWorkerMode();
+  if (worker_client_) {
+    worker_client_->stop();
     return;
   }
 
@@ -182,8 +137,8 @@ void ImageService::stop() {
 }
 
 bool ImageService::isModelReady() const {
-  if (worker_manager_) {
-    return worker_manager_->isReady();
+  if (worker_client_) {
+    return worker_client_->isReady();
   }
   return ready_.load(std::memory_order_acquire);
 }
@@ -193,8 +148,8 @@ std::string ImageService::runnerInUse() const {
 }
 
 std::vector<tt::worker::WorkerInfo> ImageService::getWorkerInfo() const {
-  if (worker_manager_) {
-    return worker_manager_->getWorkerInfo();
+  if (worker_client_) {
+    return worker_client_->getWorkerInfo();
   }
   const bool ready = ready_.load(std::memory_order_acquire);
   const size_t count = runners_.size();
@@ -222,73 +177,6 @@ size_t ImageService::currentQueueSize() const {
   return in_flight_.load(std::memory_order_acquire);
 }
 
-void ImageService::startWorkerConsumers() {
-  const size_t n = worker_manager_->numWorkers();
-  consumer_threads_.reserve(n);
-  for (size_t i = 0; i < n; ++i) {
-    consumer_threads_.emplace_back(&ImageService::consumerLoopForWorker, this,
-                                   i);
-  }
-}
-
-void ImageService::consumerLoopForWorker(size_t workerIdx) {
-  auto resultQueue = image_queue_manager_->resultQueues.at(workerIdx);
-  TT_LOG_INFO("[ImageService] Image consumer {} started", workerIdx);
-  while (running_.load(std::memory_order_acquire)) {
-    tt::ipc::image::ImageResult result;
-    if (!resultQueue->blockingPop(result)) {
-      break;
-    }
-
-    std::shared_ptr<std::promise<tt::ipc::image::ImageResult>> promise;
-    {
-      std::lock_guard<std::mutex> lock(pending_mutex_);
-      auto it = pending_results_.find(result.task_id);
-      if (it != pending_results_.end()) {
-        promise = std::move(it->second);
-        pending_results_.erase(it);
-      }
-    }
-    if (promise) {
-      promise->set_value(std::move(result));
-    } else {
-      TT_LOG_WARN("[ImageService] Dropping image result for unknown task {}",
-                  result.task_id);
-    }
-  }
-  TT_LOG_INFO("[ImageService] Image consumer {} stopped", workerIdx);
-}
-
-void ImageService::stopWorkerMode() {
-  if (!running_.exchange(false, std::memory_order_acq_rel)) {
-    return;
-  }
-
-  TT_LOG_INFO("[ImageService] Stopping worker-backed service");
-
-  for (size_t i = 0; i < worker_manager_->numWorkers(); ++i) {
-    image_queue_manager_->taskQueue->push(tt::ipc::image::ImageTask::done());
-  }
-
-  for (auto& queue : image_queue_manager_->resultQueues) {
-    queue->shutdown();
-  }
-
-  for (auto& thread : consumer_threads_) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
-  consumer_threads_.clear();
-
-  worker_manager_->stop();
-  image_queue_manager_->clear();
-
-  std::error_code ec;
-  std::filesystem::remove_all(ipc_payload_dir_, ec);
-  TT_LOG_INFO("[ImageService] Worker-backed service stopped");
-}
-
 size_t ImageService::selectRunnerIndex() const {
   const size_t count = runners_.size();
   const size_t start =
@@ -314,7 +202,7 @@ domain::image::ImageResponse ImageService::processRequest(
     ~InFlightGuard() { counter.fetch_sub(1, std::memory_order_acq_rel); }
   } guard{in_flight_};
 
-  if (worker_manager_) {
+  if (worker_client_) {
     return processWorkerRequest(request);
   }
 
@@ -353,52 +241,19 @@ domain::image::ImageResponse ImageService::processInProcessRequest(
 domain::image::ImageResponse ImageService::processWorkerRequest(
     const domain::ImageGenerateRequest& request) {
   domain::image::ImageResponse response(request.task_id);
-  if (!worker_manager_->isReady()) {
+  if (!worker_client_->isReady()) {
     response.error = "Image service not ready";
     return response;
   }
 
-  const auto requestPath =
-      ipc_payload_dir_ /
-      ("request-" + std::to_string(request.task_id) + ".json");
-  const auto responsePath =
-      ipc_payload_dir_ /
-      ("response-" + std::to_string(request.task_id) + ".json");
-
-  auto promise = std::make_shared<
-      std::promise<tt::ipc::image::ImageResult>>();
-  auto future = promise->get_future();
-  {
-    std::lock_guard<std::mutex> lock(pending_mutex_);
-    pending_results_[request.task_id] = promise;
+  auto workerResponse =
+      worker_client_->submit(request.task_id, domain::image::toJson(request));
+  response.generation_time_seconds = workerResponse.generation_time_seconds;
+  if (!workerResponse.error.empty()) {
+    response.error = std::move(workerResponse.error);
+    return response;
   }
-
-  try {
-    writeJsonFile(requestPath, domain::image::toJson(request));
-
-    tt::ipc::image::ImageTask task;
-    task.task_id = request.task_id;
-    task.request_path = requestPath.string();
-    task.response_path = responsePath.string();
-    image_queue_manager_->taskQueue->push(task);
-
-    auto result = future.get();
-    response.generation_time_seconds = result.generation_time_seconds;
-    if (!result.error.empty()) {
-      response.error = std::move(result.error);
-    } else {
-      response = responseFromJson(request.task_id, readJsonFile(responsePath));
-    }
-  } catch (const std::exception& e) {
-    response.error = e.what();
-    std::lock_guard<std::mutex> lock(pending_mutex_);
-    pending_results_.erase(request.task_id);
-  }
-
-  std::error_code ec;
-  std::filesystem::remove(requestPath, ec);
-  std::filesystem::remove(responsePath, ec);
-  return response;
+  return responseFromJson(request.task_id, workerResponse.body);
 }
 
 }  // namespace tt::services

@@ -6,13 +6,11 @@
 #include <json/json.h>
 
 #include <chrono>
-#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-#include "config/settings.hpp"
 #include "domain/image/image_response.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "utils/logger.hpp"
@@ -54,13 +52,8 @@ void writeResponseFile(const std::string& path,
 }  // namespace
 
 ImageIpcRunner::ImageIpcRunner(config::ImageConfig config, int workerId)
-    : config_(std::move(config)), worker_id_(workerId) {
-  task_queue_ = std::make_unique<tt::ipc::image::ImageTaskQueue>(
-      tt::config::ttTaskQueueName());
-  result_queue_ = std::make_unique<tt::ipc::image::ImageResultQueue>(
-      std::string(tt::config::ttResultQueueName()) +
-      std::to_string(worker_id_));
-}
+    : SyncMediaIpcRunner("ImageIpcRunner", workerId),
+      config_(std::move(config)) {}
 
 ImageIpcRunner::~ImageIpcRunner() { stop(); }
 
@@ -73,63 +66,33 @@ bool ImageIpcRunner::warmup() {
         "[ImageIpcRunner] no media runner registered for runner_type=" +
         config::toString(config_.runner_type));
   }
-  TT_LOG_INFO("[ImageIpcRunner] Worker {} warming media runner ({})",
-              worker_id_, runner_->runnerType());
+  TT_LOG_INFO("[ImageIpcRunner] Worker {} warming media runner ({})", workerId(),
+              runner_->runnerType());
   return runner_->warmup();
 }
 
 void ImageIpcRunner::stop() {
-  stopped_.store(true, std::memory_order_release);
   if (runner_) {
     runner_->stop();
   }
+  SyncMediaIpcRunner::stop();
 }
 
-void ImageIpcRunner::run() {
-  TT_LOG_INFO("[ImageIpcRunner] Worker {} entering request loop", worker_id_);
-  while (!stopped_.load(std::memory_order_acquire)) {
-    tt::ipc::image::ImageTask task;
-    task_queue_->receive(task);
-    if (task.isDone()) {
-      TT_LOG_INFO("[ImageIpcRunner] Worker {} received shutdown task",
-                  worker_id_);
-      break;
-    }
-    handleTask(task);
-  }
-}
-
-void ImageIpcRunner::handleTask(const tt::ipc::image::ImageTask& task) {
-  tt::ipc::image::ImageResult result;
-  result.task_id = task.task_id;
-  result.response_path = task.response_path;
+void ImageIpcRunner::processTask(
+    const tt::ipc::file_payload::FilePayloadTask& task,
+    tt::ipc::file_payload::FilePayloadResult& result) {
   const auto started = std::chrono::steady_clock::now();
-  try {
-    Json::Value requestJson = readJsonFile(task.request_path);
-    auto request =
-        tt::domain::ImageGenerateRequest::fromJson(requestJson, task.task_id);
+  Json::Value requestJson = readJsonFile(task.request_path);
+  auto request =
+      tt::domain::ImageGenerateRequest::fromJson(requestJson, task.task_id);
 
-    tt::domain::image::ImageResponse response(task.task_id);
-    response.images = runner_->run(request);
-    response.generation_time_seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                      started)
-            .count();
-    writeResponseFile(task.response_path, response);
-    result.generation_time_seconds = response.generation_time_seconds;
-  } catch (const std::exception& e) {
-    result.error = e.what();
-    TT_LOG_ERROR("[ImageIpcRunner] Worker {} task {} failed: {}", worker_id_,
-                 task.task_id, e.what());
-  }
-
-  if (!result_queue_->push(result)) {
-    TT_LOG_ERROR("[ImageIpcRunner] Worker {} failed to push result for task {}",
-                 worker_id_, task.task_id);
-  }
-
-  std::error_code ec;
-  std::filesystem::remove(task.request_path, ec);
+  tt::domain::image::ImageResponse response(task.task_id);
+  response.images = runner_->run(request);
+  response.generation_time_seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - started)
+          .count();
+  writeResponseFile(task.response_path, response);
+  result.generation_time_seconds = response.generation_time_seconds;
 }
 
 }  // namespace tt::runners

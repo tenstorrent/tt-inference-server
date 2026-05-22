@@ -247,6 +247,10 @@ LLMConfig llmEngineConfig();
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
 
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
+
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
 
