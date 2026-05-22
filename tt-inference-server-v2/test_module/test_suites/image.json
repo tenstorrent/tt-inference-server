@@ -63,20 +63,6 @@
                 {
                     "template": "ImageGenerationEvalsTest",
                     "enabled": true,
-                    "description": "LoRA eval: pixel-art-xl",
-                    "targets": {
-                        "request": {
-                            "model_name": "stable-diffusion-xl-base-1.0-lora",
-                            "num_prompts": 100,
-                            "num_inference_steps": 20,
-                            "lora_path": "nerijs/pixel-art-xl",
-                            "lora_scale": 0.8
-                        }
-                    }
-                },
-                {
-                    "template": "ImageGenerationEvalsTest",
-                    "enabled": true,
                     "description": "LoRA eval: ColoringBookRedmond-V2",
                     "targets": {
                         "request": {
@@ -97,10 +83,6 @@
                         "num_inference_steps": 20,
                         "target_time": 120,
                         "lora_configs": [
-                            {
-                                "lora_path": "nerijs/pixel-art-xl",
-                                "lora_scale": 0.8
-                            },
                             {
                                 "lora_path": "artificialguybr/ColoringBookRedmond-V2",
                                 "lora_scale": 0.6
