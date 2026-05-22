@@ -37,9 +37,9 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   // tokenizer.json load; set LLM_ENABLE_GUIDED_DECODING=1 to opt back
   // into the HTTP structured-output path.
   const char* guidedEnv = std::getenv("LLM_ENABLE_GUIDED_DECODING");
-  const bool guidedEnabled = guidedEnv != nullptr &&
-                             (guidedEnv[0] == '1' || guidedEnv[0] == 't' ||
-                              guidedEnv[0] == 'T');
+  const bool guidedEnabled =
+      guidedEnv != nullptr &&
+      (guidedEnv[0] == '1' || guidedEnv[0] == 't' || guidedEnv[0] == 'T');
   if (guidedEnabled) {
     try {
       const auto& tok = tt::utils::tokenizers::activeTokenizer();

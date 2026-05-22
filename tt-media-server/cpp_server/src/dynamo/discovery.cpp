@@ -290,7 +290,7 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
   void publishKeys() {
     const std::string key = instanceKey(cfg);
     client->put("v1/instances/" + key, serializeJson(buildInstanceJson(cfg)),
-                 leaseId);
+                leaseId);
     client->put("v1/mdc/" + key, serializeJson(buildMdcJson(cfg)), leaseId);
   }
 
