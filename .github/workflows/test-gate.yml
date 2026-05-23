@@ -6,9 +6,9 @@ on:
     types: [opened, synchronize, reopened]
   merge_group:
 
-# Cancel superseded PR runs so a series of force-pushes doesn't keep three
-# xlarge bench jobs alive per stale commit. merge_group and push-to-main runs
-# are never cancelled — those gate merges and main-branch history.
+# Cancel in-flight runs on a PR when its head advances, so we don't keep three
+# xlarge bench jobs alive per stale commit; merge_group and workflow_dispatch
+# runs are never cancelled.
 concurrency:
   group: test-gate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
