@@ -24,6 +24,12 @@ logs/
 
 deps/
 
+# Profiling output (flamegraph-capture[-offcpu].sh writes here)
+bench_results/
+
+# CI integration test artifacts (cpp_server/tests/ci/_artifacts/)
+tests/ci/_artifacts/
+
 # Override root-level *.json ignore
 !resources/openapi.json
 !.mcp.json
