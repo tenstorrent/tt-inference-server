@@ -165,3 +165,10 @@ done
 echo
 echo "Open the .svg files in a browser. Wider = more CPU time. Click any frame"
 echo "to zoom; use the search box (top-right) to highlight specific symbols."
+echo
+echo "For a better UI (real search, sandwich view, time-order view),"
+echo "open https://www.speedscope.app/ and drag-drop any of these .folded files:"
+for entry in "${TARGETS[@]}"; do
+    name="${entry%%:*}"
+    echo "  ${OUTPUT_DIR}/${name}.folded"
+done

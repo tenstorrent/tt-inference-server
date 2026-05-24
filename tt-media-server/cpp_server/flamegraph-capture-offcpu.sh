@@ -156,3 +156,10 @@ echo
 echo "Open the .svg files in a browser. Wider = more off-CPU events for that"
 echo "call path. Look for tails of pthread_mutex_lock or pthread_cond_wait —"
 echo "those are real blocking points. The y-axis is event COUNT, not duration."
+echo
+echo "For a better UI (real search, sandwich view, time-order view),"
+echo "open https://www.speedscope.app/ and drag-drop any of these .folded files:"
+for entry in "${TARGETS[@]}"; do
+    name="${entry%%:*}"
+    echo "  ${OUTPUT_DIR}/${name}.folded"
+done
