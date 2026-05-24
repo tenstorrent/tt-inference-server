@@ -15,6 +15,81 @@ Produce a single self-contained SVG per process that shows where the C++ server 
 
 For `tt_media_server_cpp` you usually want both: the worker's `BlazeRunner::step()` polls `try_pop_response` in a loop (`src/runtime/runners/blaze_runner/blaze_runner.cpp` around lines 200-218). An on-CPU view alone can't distinguish "hot lock under load" from "thread asleep waiting for the lock" — the off-CPU view is what proves contention.
 
+## End-to-end workflow (do these in order)
+
+All paths below are relative to `tt-media-server/cpp_server/`.
+
+1. **Build the server with the BlazeRunner code path enabled.** Without `--blaze`, the runner registry falls back to `MOCK` and you'll be profiling the wrong code.
+
+   ```bash
+   cd tt-media-server/cpp_server
+   ./build.sh --blaze
+   ```
+
+   Verify the binary is fresh and not stripped:
+
+   ```bash
+   file build/tt_media_server_cpp | grep "not stripped"
+   ls build/tt_media_server_cpp
+   ```
+
+2. **One-shot path (preferred):** drive build, server, load, capture, and SVG output from a single command:
+
+   ```bash
+   python3 -m pytest tests/ci/test_perf_flamegraph.py -v -s
+   ```
+
+   This starts the server with `LLM_DEVICE_BACKEND=mock_pipeline`, waits for `/tt-liveness` to report `model_ready=true`, drives a fixed 16-concurrency / 20s load, captures on-CPU and off-CPU flamegraphs of the main + every worker in parallel, and copies the four SVGs to `tests/ci/_artifacts/test_perf_flamegraph/`.
+
+   If the test passes, jump to step 5 (analyze).
+
+3. **Manual path — start the server.** Only needed if step 2 doesn't fit (e.g. you want a longer run, custom env, attaching to an already-running server). Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`).
+
+   ```bash
+   LLM_DEVICE_BACKEND=mock_pipeline ./build/tt_media_server_cpp \
+       -p 8000 -h 127.0.0.1 -t 4 > server.log 2>&1 &
+
+   # Wait for readiness.
+   until curl -sf http://127.0.0.1:8000/tt-liveness \
+            | grep -q '"model_ready":true'; do sleep 1; done
+
+   # Confirm Blaze runner (not the MOCK fallback) was selected.
+   grep -E "Creating Blaze runner|RunnerRegistry" server.log | head
+   # Expect: "[RunnerRegistry] Creating Blaze runner (pipeline_manager)"
+   # If you see "No factory registered for (llm, mock_pipeline); falling back
+   # to MOCK", the binary was built without --blaze — go back to step 1.
+   ```
+
+4. **Manual path — drive load and capture.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise — push traffic during the capture window. The script then handles `perf record`, `stackcollapse-perf`, `flamegraph.pl`, and kernel-frame folding.
+
+   ```bash
+   # In a background shell: drive load for the full capture window.
+   python3 -c '
+   import concurrent.futures, time, requests
+   url = "http://127.0.0.1:8000/v1/chat/completions"
+   headers = {"Authorization": "Bearer your-secret-key"}
+   payload = {"model":"llm","messages":[{"role":"user","content":"x "*32}],
+              "max_tokens":256,"stream":False}
+   stop = time.time() + 60
+   with concurrent.futures.ThreadPoolExecutor(16) as ex:
+       fs = [ex.submit(lambda: requests.post(url, headers=headers, json=payload, timeout=60))
+             for _ in range(16)]
+       while time.time() < stop:
+           done, fs = concurrent.futures.wait(fs, timeout=0.05,
+                                              return_when=concurrent.futures.FIRST_COMPLETED)
+           fs = list(fs) + [ex.submit(lambda: requests.post(url, headers=headers, json=payload, timeout=60))
+                            for _ in done]
+   ' &
+
+   sleep 3                                # let load ramp up
+   ./flamegraph-capture.sh all 30         # on-CPU,  30s, main + every worker
+   ./flamegraph-capture-offcpu.sh all 30  # off-CPU, 30s
+   ```
+
+   Outputs land under `bench_results/flamegraph_<ts>/` and `bench_results/flamegraph_offcpu_<ts>/`.
+
+5. **Analyze the results.** See the **Analyze the results** section below for the procedural recipe (concrete shell commands).
+
 ## Prerequisites
 
 ```bash
@@ -119,14 +194,74 @@ Use these when the scripts aren't checked in, the user wants to vary parameters 
 
 5. **(Optional) Drive load.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise. Push representative traffic during the capture window — for `LLM_DEVICE_BACKEND=mock_pipeline` builds, a simple concurrent POST loop against `/v1/chat/completions` works (see `cpp_server/tests/ci/test_perf_flamegraph.py` for a self-contained example using `requests` + `ThreadPoolExecutor`). Start load first, sleep a few seconds so it ramps up, then start `perf record`.
 
-## Interpreting the flamegraph
+## How to read the SVG
 
 - **x-axis is NOT time.** Each column is one stack; columns are sorted alphabetically so identical stacks merge into a single wide box. Width = relative cost (samples or events).
 - **y-axis is the call stack.** Bottom frame = thread entry point; top frame = the leaf that was on-CPU (or where the thread blocked) at sample time.
 - **Use search (top-right)** to highlight all frames matching a regex — e.g. `pthread_mutex_lock`, `Scheduler::`, `Drogon`. Highlighted total appears in the search status.
-- **Compare on-CPU and off-CPU side-by-side** for the same symbol: a function wide in *both* views means the lock is both expensive when running *and* contended enough to put threads to sleep. That's the textbook signature of a hot contended lock.
-- **`[[vdso]]` as a top leaf** usually means `clock_gettime` is being called in a tight loop. Worth tracking down the parent frame.
-- **`[unknown]` frames** mean missing debug info. The default build has them resolved; if you see many, check `file build/tt_media_server_cpp | grep -i stripped`.
+
+## Analyze the results
+
+The SVG is for humans, but the agent should drive analysis from the `.folded` files alongside each SVG — they're sorted-counts text and easy to grep/sort. Each line is `frame1;frame2;...;leaf COUNT`.
+
+1. **List the hottest call paths per process.** Largest counts first. Cap to ~15 lines per file — anything below that is usually noise.
+
+   ```bash
+   cd bench_results/flamegraph_<ts>     # on-CPU run
+   for f in *.folded; do
+       echo "=== $f (on-CPU, top 15) ==="
+       sort -t' ' -k2 -nr "$f" | head -15
+   done
+
+   cd ../flamegraph_offcpu_<ts>          # off-CPU run
+   for f in *.folded; do
+       echo "=== $f (off-CPU, top 15) ==="
+       sort -t' ' -k2 -nr "$f" | head -15
+   done
+   ```
+
+2. **Find contended locks (the most actionable signal).** A symbol that shows up wide in *both* the on-CPU and off-CPU views is a textbook contended lock: expensive when held, and threads sleep waiting for it.
+
+   ```bash
+   # Symbols that appear in BOTH on-CPU and off-CPU folded files for the worker.
+   ON=bench_results/flamegraph_<ts>/worker0.folded
+   OFF=bench_results/flamegraph_offcpu_<ts>/worker0.folded
+   grep -oE "tt[a-zA-Z_:<>]+|DecodeScheduler::[A-Za-z_]+|BlazeRunner::[A-Za-z_]+" "$ON"  | sort -u > /tmp/on.syms
+   grep -oE "tt[a-zA-Z_:<>]+|DecodeScheduler::[A-Za-z_]+|BlazeRunner::[A-Za-z_]+" "$OFF" | sort -u > /tmp/off.syms
+   comm -12 /tmp/on.syms /tmp/off.syms | head -30
+   ```
+
+   For any symbol in the intersection, check its leaf frame: if it ends in `pthread_mutex_lock` in off-CPU and `pthread_mutex_unlock` in on-CPU, that's a hot contended mutex — the most common single optimization target in `BlazeRunner` / `DecodeScheduler`.
+
+3. **Check symbol resolution quality.** Unresolved frames hide findings.
+
+   ```bash
+   for f in **/*.folded; do
+       total=$(wc -l < "$f")
+       unk=$(grep -c "\[unknown\]" "$f" || true)
+       echo "$f: $unk / $total stacks contain [unknown]"
+   done
+   ```
+
+   Expected: < 2% on the main process, ~0% on the worker. Higher means the binary was built stripped or without `-g` — go back to step 1 of the workflow.
+
+4. **Look for suspicious leaf frames.** A few that almost always indicate a real bug:
+
+   - **`[[vdso]]` as a top-15 leaf** — `clock_gettime` called in a tight loop. Find the parent: `grep '\[\[vdso\]\] [0-9]' <file>.folded | head`.
+   - **Constructor symbols in the hot path** (e.g. `SamplingParams::SamplingParams`) — per-iteration object construction; usually fixable by hoisting or moving to a member.
+   - **`spdlog::sinks::ansicolor_sink::log → write`** wide on the main process — synchronous logging at INFO is bottlenecking request handling. Lower log level or switch to an async sink.
+   - **`prometheus::detail::CKMSQuantiles::insert`** wide on `DrogonIoLoop` — histogram updates are expensive; consider dropping high-cardinality labels or moving to summary-only.
+   - **Tracy_Sampling / Tracy_Profiler / Tracy_DXT1 / Tracy_Symbol_Wo** in the top of an off-CPU view — Tracy was compiled in. Harmless in off-CPU (those threads are mostly asleep), but if they show up wide *on-CPU* the build needs to drop `--tracy`.
+
+5. **Map symbols back to source.** For any finding, find the file it lives in so the user can act:
+
+   ```bash
+   # Cross-repo grep (tt-media-server + tt-llm-engine + tt-metal):
+   grep -rn "DecodeScheduler::Impl::handle_api_requests" \
+       tt-media-server tt-llm-engine 2>/dev/null | head -5
+   ```
+
+   For BlazeRunner / decode scheduler frames, the source is in `tt-llm-engine` (the nested submodule under `tt-media-server/cpp_server/tt-llm-engine/`), not in `tt-media-server` itself.
 
 ## Common pitfalls
 
