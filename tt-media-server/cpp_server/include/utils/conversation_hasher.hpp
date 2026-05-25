@@ -174,4 +174,22 @@ std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens);
 
+/**
+ * Compute per-block KV cache hashes using vLLM's prefix caching approach.
+ *
+ * Tokens are divided into blocks of `kvCacheBlockSize` (from config). Each
+ * block's hash is computed as `xxh64(block_tokens, seed=parent_hash)`, where
+ * `parent_hash` is the hash of the previous block (0 for the first block).
+ * This chaining ensures that two sequences sharing a common prefix produce
+ * identical hashes for the shared blocks.
+ *
+ * Only FULL blocks are hashed — any trailing partial block is ignored (it
+ * hasn't been committed to the KV cache yet).
+ *
+ * @param tokens Full token-id sequence.
+ * @return Vector of per-block hashes (one per full block). Empty if the
+ *         sequence is shorter than one block.
+ */
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
+
 }  // namespace tt::utils

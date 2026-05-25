@@ -292,5 +292,46 @@ class TestEncoderShutdown:
         output_shm.write_response.assert_not_called()
 
 
+class TestEncoderWarmupPing:
+    """The encoder thread is the sole writer of ``output_shm`` for both
+    real responses and the SP readiness ping. The ping path must:
+
+    1. Skip ffmpeg entirely — the encoder owns no frames for a ping.
+    2. Write a SUCCESS response with the sentinel task_id and empty file_path.
+    3. NOT take the error branch (which would surface as VideoStatus.ERROR).
+    """
+
+    def test_warmup_ping_writes_success_without_ffmpeg(self):
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        output_shm = MagicMock()
+        encode_queue: queue.Queue = queue.Queue(maxsize=ENCODER_QUEUE_MAXSIZE)
+        fake_vm = _FakeVideoManager()
+
+        with patch("utils.video_manager.VideoManager", return_value=fake_vm):
+            thread = _start_encoder(output_shm, encode_queue)
+            try:
+                encode_queue.put(
+                    _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
+                )
+                # Give the encoder a moment to process the ping.
+                deadline = time.monotonic() + _DRAIN_BOUND_S
+                while (
+                    output_shm.write_response.call_count == 0
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+            finally:
+                _shutdown_and_join(encode_queue, thread)
+
+        output_shm.write_response.assert_called_once()
+        resp = output_shm.write_response.call_args[0][0]
+        assert resp.task_id == SP_WARMUP_TASK_ID
+        assert resp.status == VideoStatus.SUCCESS
+        assert resp.file_path == ""
+        # ffmpeg must NOT have been invoked for a ping.
+        assert fake_vm.calls == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

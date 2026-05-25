@@ -33,7 +33,6 @@
                 "N300",
                 "P100",
                 "P150X4",
-                "P150X8",
                 "P300X2",
                 "T3K"
               ]
@@ -46,7 +45,6 @@
             "release": {
               "devices": [
                 "GALAXY",
-                "P150X8",
                 "P300X2"
               ]
             }
@@ -133,7 +131,6 @@
             "GALAXY",
             "GALAXY_BH",
             "P150X4",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -271,7 +268,6 @@
           "devices": [
             "GALAXY",
             "GALAXY_BH",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -373,7 +369,6 @@
             "GALAXY",
             "GALAXY_BH",
             "P150X4",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -388,7 +383,6 @@
             "GALAXY",
             "GALAXY_BH",
             "P150X4",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -427,7 +421,6 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "P150X8",
             "P300X2",
             "P150X4",
             "T3K"
@@ -441,7 +434,6 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "P150X8",
             "P300X2",
             "P150X4",
             "T3K"
@@ -455,7 +447,6 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -543,7 +534,6 @@
             "GALAXY",
             "GALAXY_BH",
             "P150X4",
-            "P150X8",
             "P300X2",
             "T3K"
           ]
@@ -636,7 +626,6 @@
             "GALAXY_BH",
             "N150",
             "N300",
-            "P150X8",
             "P300X2"
           ]
         },

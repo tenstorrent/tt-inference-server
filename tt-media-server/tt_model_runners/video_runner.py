@@ -61,6 +61,7 @@ from domain.video_i2v_generate_request import (
     VideoI2VGenerateRequest,
 )
 from ipc.video_shm import (
+    SP_WARMUP_TASK_ID,
     VideoRequest,
     VideoResponse,
     VideoShm,
@@ -339,6 +340,18 @@ def _encoder_loop(
             _log.info("Encoder thread: shutdown sentinel received, exiting")
             return
 
+        # Warmup ping: respond SUCCESS with empty file_path. No ffmpeg, no
+        # frames — the round-trip itself is the readiness signal.
+        if job.task_id == SP_WARMUP_TASK_ID:
+            try:
+                _write_response_to_shm(output_shm, job.task_id, "")
+                _log.info("Encoder thread: replied to SP warmup ping")
+            except Exception as write_err:
+                _log.error(
+                    f"Encoder thread: failed to write SP warmup response: {write_err}"
+                )
+            continue
+
         if job.error is not None:
             try:
                 _write_error_to_shm(output_shm, job.task_id, job.error)
@@ -390,9 +403,24 @@ def _run_inference_loop(
         rank0_skip = False
         if rank == 0:
             raw_req = input_shm.read_request()
-            rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
-                raw_req, encode_queue
-            )
+            # Server-side readiness ping. Reuses the existing ``skip`` lockstep
+            # path so ranks 1..N don't block on a collective with no peer:
+            # rank 0 hands a SUCCESS response to the encoder thread directly
+            # (single-writer invariant preserved) and we broadcast skip=True
+            # so every rank no-ops this iteration. No inference, no MPI
+            # broadcast of the dummy request body — round-trip latency equals
+            # the pipeline's own cold-start time, which is exactly the signal
+            # SPRunner wants.
+            if raw_req is not None and raw_req.task_id == SP_WARMUP_TASK_ID:
+                _log.info("Rank 0: received SP warmup ping, replying READY")
+                encode_queue.put(
+                    _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
+                )
+                rank0_skip = True
+            else:
+                rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
+                    raw_req, encode_queue
+                )
 
         req, image_prompts, skip = _broadcast_request(
             comm,
@@ -409,7 +437,7 @@ def _run_inference_loop(
             if rank == 0:
                 _log.info(
                     f"Rank 0: skipping inference for task {req.task_id} "
-                    f"(rank 0 already submitted error response)"
+                    f"(rank 0 already submitted response)"
                 )
             continue
 
