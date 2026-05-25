@@ -178,12 +178,11 @@ server (no v1 entry point involved). The workflow is `benchmarks`; the
 prefix-cache flag swaps the default media-task dispatch for the scenario sweep
 defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json).
 
-Same invocation shape as the TLDR — activate the dedicated venv first, then run
-`run.py` with the prefix-cache flags:
+The script `run.py` materializes the dedicated venv on
+the first `--prefix-cache` invocation and re-execs itself inside it, so no
+manual venv setup is required:
 
 ```bash
-source .workflow_venvs/.venv_v2_prefix_cache/bin/activate
-
 python tt-inference-server-v2/run.py \
     --model Llama-3.1-8B-Instruct \
     --workflow benchmarks \
@@ -194,22 +193,13 @@ python tt-inference-server-v2/run.py \
     --jwt-secret "$JWT_SECRET"
 ```
 
-The venv is declared as `WorkflowVenvType.V2_PREFIX_CACHE` in
-[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py) with requirements
-in [`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt).
-Create it once before the first run:
-
-```bash
-python - <<'PY'
-from workflows.model_spec import get_runtime_model_spec
-from workflows.workflow_types import WorkflowVenvType
-from workflows.workflow_venvs import VENV_CONFIGS
-model_spec, _, _ = get_runtime_model_spec(
-    model="Llama-3.1-8B-Instruct", device="gpu",
-)
-VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(model_spec=model_spec)
-PY
-```
+When `--prefix-cache` is set, `run.py` calls
+`VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(...)` (declared in
+[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
+[`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt)), then
+`os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python` while
+preserving every CLI argument. Subsequent runs reuse the existing venv and the
+re-exec step is a no-op when the script is already running inside it.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
 `mooncake_trace`) and per-preset grids are JSON-defined and overridable with

@@ -346,6 +346,38 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
     )
 
 
+def _maybe_reexec_in_prefix_cache_venv(args: argparse.Namespace) -> None:
+    """For ``--prefix-cache``: materialize ``V2_PREFIX_CACHE`` and re-exec.
+
+    The AIPerf driver shells out to ``sys.executable -m aiperf``, so the
+    interpreter running this script must have aiperf + pyjwt installed.
+    Rather than make the user manage a venv by hand we materialize the
+    declared ``WorkflowVenvType.V2_PREFIX_CACHE`` venv on demand and
+    ``os.execv`` into it, preserving argv verbatim. Idempotent: when we
+    are already running inside the venv this is a no-op.
+    """
+    if not args.prefix_cache:
+        return
+
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE]
+    venv_python = venv_config.venv_python
+    if Path(sys.executable).resolve() == venv_python.resolve():
+        logger.info("Already inside V2_PREFIX_CACHE venv (%s).", sys.executable)
+        return
+
+    logger.info("Ensuring V2_PREFIX_CACHE venv at %s ...", venv_config.venv_path)
+    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    venv_config.setup(model_spec=model_spec)
+
+    logger.info("Re-executing inside V2_PREFIX_CACHE venv: %s", venv_python)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
+
+
 def _apply_num_prompts_override(num_prompts: Optional[int]) -> None:
     if num_prompts is None:
         return
@@ -384,6 +416,8 @@ def main() -> int:
         level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    _maybe_reexec_in_prefix_cache_venv(args)
 
     ctx = build_context(args)
     _apply_num_prompts_override(args.num_prompts)
