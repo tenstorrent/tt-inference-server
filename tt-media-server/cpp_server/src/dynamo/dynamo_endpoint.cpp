@@ -175,8 +175,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     // Capture which loop thread is serving this request — combined with the
     // pre-warm log this lets us spot any unexpected cold thread that bypassed
     // the warm-up (e.g. consumer thread spawned later in LLMService).
-    const auto loopTid = std::hash<std::thread::id>{}(
-        std::this_thread::get_id());
+    const auto loopTid =
+        std::hash<std::thread::id>{}(std::this_thread::get_id());
     TT_LOG_INFO("[DynamoLatency] id={} stage=dispatched loop_tid={}",
                 probeId.empty() ? "?" : probeId, loopTid);
 
@@ -205,8 +205,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
           using SteadyClock = std::chrono::steady_clock;
           const auto tSession = SteadyClock::now();
           const auto sessionMs =
-              std::chrono::duration_cast<std::chrono::microseconds>(
-                  tSession - recvT)
+              std::chrono::duration_cast<std::chrono::microseconds>(tSession -
+                                                                    recvT)
                   .count() /
               1000.0;
           TT_LOG_INFO(
@@ -236,10 +236,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, preProcessMs);
 
           const auto tDispatch = SteadyClock::now();
-          auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen,
-                     probeId, tDispatch](
-                        const tt::domain::llm::LLMStreamChunk& chunk,
-                        bool isFinal) {
+          auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
+                     tDispatch](const tt::domain::llm::LLMStreamChunk& chunk,
+                                bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
             // AND time spent purely in BlazeRunner (since dispatchGeneration).
             // Splitting these lets us tell the difference between "session
