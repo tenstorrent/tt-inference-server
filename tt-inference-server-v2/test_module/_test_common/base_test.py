@@ -202,7 +202,9 @@ class BaseTest(ABC):
                     f"Tests timed out after {self.timeout} seconds "
                     f"(attempt {attempts_used}/{self.retry_attempts + 1})"
                 )
-                log_fn = logger.error if attempt >= self.retry_attempts else logger.warning
+                log_fn = (
+                    logger.error if attempt >= self.retry_attempts else logger.warning
+                )
                 log_fn(error_msg)
                 self.logs.append(
                     {
@@ -241,7 +243,9 @@ class BaseTest(ABC):
                     f"Test failed with exception "
                     f"(attempt {attempts_used}/{self.retry_attempts + 1}): {e}"
                 )
-                log_fn = logger.error if attempt >= self.retry_attempts else logger.warning
+                log_fn = (
+                    logger.error if attempt >= self.retry_attempts else logger.warning
+                )
                 log_fn(error_msg)
                 log_fn(f"Exception type: {type(e).__name__}")
                 traceback_str = traceback.format_exc()
