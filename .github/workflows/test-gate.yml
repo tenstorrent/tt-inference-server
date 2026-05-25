@@ -16,6 +16,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PYTHON_VERSION_DEFAULT: "3.10"
+  PYTHON_VERSION_DYNAMO: "3.12"
+  PYTHON_VERSION_FORGE: "3.12"
+
 jobs:
   detect-changes:
     name: Detect Code Changes
@@ -59,7 +64,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
 
       - name: Install ruff
         run: pip install ruff==0.15.0
@@ -85,7 +90,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           enable-cache: true
 
       - name: Install media-server requirements (strict, no fallback)
@@ -202,7 +207,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           cache: 'pip'
           cache-dependency-path: 'requirements-dev.txt'
 
@@ -253,7 +258,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           cache: 'pip'
           cache-dependency-path: |
             requirements-dev.txt
@@ -450,7 +455,7 @@ jobs:
             | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
 
             ### Details
-            - **Python Version**: 3.10
+            - **Python Version**: ${{ env.PYTHON_VERSION_DEFAULT }}
             - **Workflow**: \`${context.workflow}\`
             - **Commit**: \`${context.sha.substring(0, 7)}\`
             - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
@@ -505,7 +510,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           cache: 'pip'
           cache-dependency-path: 'tt-media-server/requirements.txt'
 
@@ -689,9 +694,9 @@ jobs:
     # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
     # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
     # find every shared lib the binary was linked against. Splitting build
-    # (ubuntu-latest = noble, Python 3.12) from bench (jammy, Python 3.10)
+    # (ubuntu-latest = noble, newer Python) from bench (jammy, default Python)
     # has produced repeated runtime "missing libfoo.so" failures (libpq5,
-    # libpython3.12, ...). Same OS image on both sides eliminates the class.
+    # libpython from the build runner, ...). Same OS image on both sides eliminates the class.
     runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
@@ -798,7 +803,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -1032,7 +1037,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -1671,7 +1676,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -2187,10 +2192,10 @@ jobs:
           done
           etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
 
-      - name: Set up uv (Python 3.12 for Dynamo)
+      - name: Set up uv for Dynamo
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION_DYNAMO }}
           enable-cache: true
 
       - name: Create dynamo venv with ai-dynamo + vllm
@@ -2201,7 +2206,7 @@ jobs:
           # inflates client-side TTFT/TPOT independently of the backend.
           bash cpp_server/scripts/ci/install_bench_client.sh \
             --venv "$HOME/.venvs/dynamo" \
-            --python 3.12 \
+            --python ${{ env.PYTHON_VERSION_DYNAMO }} \
             --package ai-dynamo \
             --package uvloop
 
@@ -2504,7 +2509,7 @@ jobs:
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           enable-cache: true
 
       - name: Install guidellm
@@ -2639,7 +2644,7 @@ jobs:
   forge-runner-cpu-tests:
     needs: forge-runner-changes
     if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
-    name: Forge Runner CPU Tests (Python 3.12)
+    name: Forge Runner CPU Tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -2664,10 +2669,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Set up Python 3.12
+      - name: Set up Forge Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION_FORGE }}
           # Dissable pip caching for now, it take longer than install sometimes
           # cache: 'pip'
           # cache-dependency-path: |
@@ -2677,8 +2682,8 @@ jobs:
       - name: Create venv, install dependencies
         shell: bash
         run: |
-          python3.12 -m venv venv-3.12
-          source venv-3.12/bin/activate
+          python${{ env.PYTHON_VERSION_FORGE }} -m venv venv-${{ env.PYTHON_VERSION_FORGE }}
+          source venv-${{ env.PYTHON_VERSION_FORGE }}/bin/activate
           export VLLM_TARGET_DEVICE="empty"
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -2688,7 +2693,7 @@ jobs:
       - name: Run CPU-only tests
         shell: bash
         run: |
-          source venv-3.12/bin/activate
+          source venv-${{ env.PYTHON_VERSION_FORGE }}/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
   test-coverage:
@@ -2710,7 +2715,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
 
       - name: Install diff-cover
         run: pip install diff-cover
