@@ -77,7 +77,7 @@
                 {
                     "template": "ImageGenerationLoraLoadTest",
                     "enabled": true,
-                    "description": "Mixed LoRA load test",
+                    "description": "Concurrent baseline + LoRA load test (verifies adapter applied)",
                     "targets": {
                         "batch_size": 10,
                         "num_inference_steps": 20,

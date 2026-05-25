@@ -6,13 +6,14 @@
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import aiohttp
 
 from .._test_common import BaseTest
+from report_module.schema import Block
 from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
 from server_tests.test_classes import TestConfig
 from utils.media_clients.test_status import ImageGenerationTestStatus
@@ -107,6 +108,15 @@ class ImageGenerationEvalsTest(BaseTest):
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}
+
+    def _block(self, data: Dict[str, Any]) -> Block:
+        block = super()._block(data)
+        request = self.targets.get("request") if isinstance(self.targets, dict) else None
+        lora_path = request.get("lora_path") if isinstance(request, dict) else None
+        if lora_path:
+            lora_name = lora_path.rsplit("/", 1)[-1]
+            return replace(block, title=f"{block.title} — LoRA: {lora_name}")
+        return block
 
     async def _run_specific_test_async(self) -> dict:
         """Run the image generation evaluation test."""
