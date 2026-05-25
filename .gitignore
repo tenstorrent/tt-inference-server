@@ -37,9 +37,14 @@ generated_modules
 *_params.pt
 *.json
 *.jsonl
-# Curated sample traces shipped with the benchmarking suite need to
-# escape the wildcard above so CI runs can use them out of the box.
+# Curated assets shipped with the benchmarking suites need to escape the
+# wildcards above so CI runs can use them out of the box.
+#   v1: in-tree sample traces consumed by run_aiperf_benchmarks.py
+#   v2: the prefix-cache scenario manifest + bundled mooncake trace
+#       fixture consumed by tt-inference-server-v2/llm_module/prefix_cache
 !benchmarking/benchmark_targets/sample_traces/*.jsonl
+!tt-inference-server-v2/llm_module/prefix_cache/manifest.json
+!tt-inference-server-v2/llm_module/prefix_cache/sample_traces/*.jsonl
 *.pt
 *.tti
 *.txt
@@ -57,6 +62,7 @@ scripts/examples/example_data
 # unignore
 !**/CMakeLists.txt
 !requirements*.txt
+!requirements/*.txt
 !**/uv-overrides.txt
 !**/tsan_suppressions.txt
 !workflows/model_performance_reference.json
