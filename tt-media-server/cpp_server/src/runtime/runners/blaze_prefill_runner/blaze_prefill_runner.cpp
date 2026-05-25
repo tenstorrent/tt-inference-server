@@ -55,7 +55,7 @@ void BlazePrefillRunner::run() {
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
       ipc::helpers::pushToken(*resultQueue, sequence->taskId, result->tokenId,
-                              true);
+                              ipc::SharedToken::FLAG_FINAL);
     }
 
     // sequence automatically cleaned up at end of scope

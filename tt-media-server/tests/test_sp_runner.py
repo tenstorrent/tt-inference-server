@@ -451,5 +451,302 @@ class TestI2VRunSideFileLifecycle:
         )
 
 
+# ── SPRunner.warmup() readiness round-trip ──
+
+
+_mock_settings.sp_warmup_timeout_seconds = 5.0
+
+
+@pytest.fixture
+def _disable_warmup_ping(monkeypatch):
+    """Default-off behaviour: SP_REQUIRE_WARMUP_PING absent or set to false."""
+    monkeypatch.delenv("SP_REQUIRE_WARMUP_PING", raising=False)
+
+
+@pytest.fixture
+def _enable_warmup_ping(monkeypatch):
+    monkeypatch.setenv("SP_REQUIRE_WARMUP_PING", "true")
+
+
+class TestSPRunnerWarmup:
+    """The warmup round-trip is what gates ``/health`` from 503 → 200 under
+    the new eventually-consistent readiness contract. These tests pin both
+    the legacy no-op fallback (so existing deployments keep working until
+    the pipeline-side ping handler is rolled out) and each branch of the
+    real round-trip."""
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_disabled_flag_is_noop(self, MockVideoShm, _disable_warmup_ping):
+        """With SP_REQUIRE_WARMUP_PING unset, warmup must return True
+        immediately without touching SHM. This preserves the legacy
+        deployment story until both sides are upgraded."""
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True
+        mock_input.write_request.assert_not_called()
+        mock_output.read_response.assert_not_called()
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_happy_path_returns_true(self, MockVideoShm, _enable_warmup_ping):
+        """Pipeline answered our ping with SUCCESS — worker reports ready."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.return_value = VideoResponse(
+            task_id=SP_WARMUP_TASK_ID,
+            status=VideoStatus.SUCCESS,
+            file_path="",
+            error_message="",
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True
+        # Exactly one ping, with the sentinel task_id.
+        mock_input.write_request.assert_called_once()
+        sent_ping = mock_input.write_request.call_args[0][0]
+        assert sent_ping.task_id == SP_WARMUP_TASK_ID
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_timeout_returns_false(self, MockVideoShm, _enable_warmup_ping):
+        """``read_response`` returning None (deadline hit) must fail warmup
+        so /health stays red. The scheduler/orchestrator gets to decide
+        whether to retry by restarting the worker."""
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.return_value = None
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is False
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_error_response_returns_false(
+        self, MockVideoShm, _enable_warmup_ping
+    ):
+        """Pipeline answered ERROR (e.g. weight-load blew up). Fail warmup so
+        the operator sees /health is still red and inspects pipeline logs."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.return_value = VideoResponse(
+            task_id=SP_WARMUP_TASK_ID,
+            status=VideoStatus.ERROR,
+            file_path="",
+            error_message="weight load failed: out of memory",
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is False
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_full_ring_skips_write_and_waits(
+        self, MockVideoShm, _enable_warmup_ping
+    ):
+        """When the input ring is degenerately full (server has restarted
+        many times against a missing pipeline), we MUST NOT write another
+        ping — that would spin-block the worker. Instead, wait for an
+        existing ping to be consumed and treat its response as our own."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 8  # ring full
+        mock_input.INPUT_SLOTS = 8
+        mock_output.read_response.return_value = VideoResponse(
+            task_id=SP_WARMUP_TASK_ID,
+            status=VideoStatus.SUCCESS,
+            file_path="",
+            error_message="",
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True
+        mock_input.write_request.assert_not_called()
+        mock_output.read_response.assert_called_once()
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_write_timeout_returns_false(
+        self, MockVideoShm, _enable_warmup_ping
+    ):
+        """``write_request`` reporting False (slot never freed within the
+        small write deadline) means the ring is in an unrecoverable state —
+        fail fast and let the orchestrator restart us."""
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = False
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is False
+        mock_output.read_response.assert_not_called()
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_enabled_response_with_wrong_task_id_returns_false(
+        self, MockVideoShm, _enable_warmup_ping
+    ):
+        """If a real (non-warmup) response slips through, treat warmup as
+        failed and surface the desync. The next set_device run will drain
+        the output ring so subsequent retries start clean."""
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.return_value = VideoResponse(
+            task_id="some-real-task-id-0000000000000000",
+            status=VideoStatus.SUCCESS,
+            file_path="/dev/shm/tt_video_orphan.pkl",
+            error_message="",
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is False
+
+    def test_warmup_without_set_device_returns_false(self, _enable_warmup_ping):
+        """Defensive: a buggy caller path that triggers warmup before
+        set_device must not crash with AttributeError. SHM not attached →
+        return False so worker init fails cleanly."""
+        runner = SPRunner("dev0")
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is False
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_heartbeat_fires_during_long_wait(
+        self, MockVideoShm, _enable_warmup_ping, monkeypatch
+    ):
+        """While blocked on the pipeline's ack, the worker must emit a
+        ``still waiting`` heartbeat every ``_WARMUP_HEARTBEAT_SECONDS``
+        instead of going silent. Previously a 1 h cold start was a 1 h
+        log blackout. We model that here by returning ``None`` twice (two
+        chunks elapsed → two heartbeat lines) before returning success on
+        the third call. ``TTLogger`` has ``propagate=False`` so ``caplog``
+        is useless; spy on ``runner.logger.info`` directly."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        monkeypatch.setattr(_mock_settings, "sp_warmup_timeout_seconds", 10.0)
+        monkeypatch.setattr(
+            "tt_model_runners.sp_runner._WARMUP_HEARTBEAT_SECONDS", 0.05
+        )
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        ok_resp = VideoResponse(
+            task_id=SP_WARMUP_TASK_ID,
+            status=VideoStatus.SUCCESS,
+            file_path="",
+            error_message="",
+        )
+        mock_output.read_response.side_effect = [None, None, ok_resp]
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        info_calls: list[str] = []
+        monkeypatch.setattr(
+            runner.logger, "info", lambda msg, **kw: info_calls.append(msg)
+        )
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True, "warmup must still succeed after heartbeats"
+        # Three chunks total: 2 timed out (→ heartbeat), 1 returned success.
+        assert mock_output.read_response.call_count == 3
+        heartbeats = [
+            m for m in info_calls if "still waiting for pipeline warmup ack" in m
+        ]
+        assert len(heartbeats) == 2, (
+            f"expected exactly 2 heartbeat lines (one per timed-out chunk), "
+            f"got {len(heartbeats)}: {heartbeats}"
+        )
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_heartbeat_interval_clamped_to_one_second(
+        self, MockVideoShm, _enable_warmup_ping, monkeypatch
+    ):
+        """A misconfigured 0 s heartbeat would spin-loop the worker. Guard
+        clamps the interval to >= 1 s so the worst case is one wakeup per
+        second, not an unbounded CPU burn."""
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        monkeypatch.setattr(_mock_settings, "sp_warmup_timeout_seconds", 2.0)
+        monkeypatch.setattr("tt_model_runners.sp_runner._WARMUP_HEARTBEAT_SECONDS", 0.0)
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        # One chunk of clamped 1 s → None → second chunk (1 s) → success.
+        mock_output.read_response.side_effect = [
+            None,
+            VideoResponse(
+                task_id=SP_WARMUP_TASK_ID,
+                status=VideoStatus.SUCCESS,
+                file_path="",
+                error_message="",
+            ),
+        ]
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+        assert result is True
+        # If clamping failed the loop would burn the entire 2 s budget in
+        # zero-second chunks and exhaust mock side_effect → StopIteration.
+        assert mock_output.read_response.call_count == 2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
