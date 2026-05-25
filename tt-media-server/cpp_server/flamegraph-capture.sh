@@ -56,19 +56,40 @@ fi
 
 # ---------------------------------------------------------------------------
 # Resolve target PIDs
+#
+# IMPORTANT: pgrep -af matches the full command line, so a parent shell, a
+# load-generator script, an editor, or even `pgrep tt_media_server_cpp`
+# itself will match if "tt_media_server_cpp" appears in its argv. Filtering
+# on `--worker` only removes the worker child, not those wrappers — that's
+# how the main PID can end up pointing at a bash wrapper and the capture
+# returns zero samples. We instead check /proc/<pid>/exe symlinks so only
+# real instances of the binary are considered.
 # ---------------------------------------------------------------------------
+list_server_pids() {
+    local pid exe
+    for pid in $(pgrep -f tt_media_server_cpp 2>/dev/null); do
+        exe="$(readlink "/proc/${pid}/exe" 2>/dev/null || true)"
+        [[ "${exe}" == */tt_media_server_cpp ]] && echo "${pid}"
+    done
+}
+
+is_worker_pid() {
+    local pid="$1"
+    tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -q -- '--worker'
+}
+
 resolve_main_pid() {
-    # Drogon parent: the tt_media_server_cpp process NOT spawned with --worker.
-    pgrep -af tt_media_server_cpp \
-        | grep -v -- '--worker' \
-        | grep -v flamegraph-capture \
-        | awk '{print $1}' \
-        | head -1
+    local pid
+    for pid in $(list_server_pids); do
+        is_worker_pid "${pid}" || { echo "${pid}"; return; }
+    done
 }
 
 resolve_worker_pids() {
-    pgrep -af 'tt_media_server_cpp.*--worker' \
-        | awk '{print $1}'
+    local pid
+    for pid in $(list_server_pids); do
+        is_worker_pid "${pid}" && echo "${pid}"
+    done
 }
 
 declare -a TARGETS=()  # array of "name:pid"

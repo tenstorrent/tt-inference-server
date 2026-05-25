@@ -33,11 +33,13 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    ls build/tt_media_server_cpp
    ```
 
-2. **Start the server with the mock pipeline backend.** Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`).
+2. **Start the server with the mock pipeline backend, and stash its PID for step 6.** Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`). Capturing `$!` immediately is the simplest way to make sure cleanup later kills the right process and not some other `tt_media_server_cpp` (`pkill -f` is too broad — see the warning in step 6).
 
    ```bash
    LLM_DEVICE_BACKEND=mock_pipeline ./build/tt_media_server_cpp \
        -p 8000 -h 127.0.0.1 -t 4 > server.log 2>&1 &
+   SERVER_PID=$!
+   echo "SERVER_PID=$SERVER_PID"
 
    # Wait for readiness.
    until curl -sf http://127.0.0.1:8000/tt-liveness \
@@ -52,15 +54,22 @@ All paths below are relative to `tt-media-server/cpp_server/`.
 
 3. **Drive load and capture.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise — push traffic during the capture window. The script then handles `perf record`, `stackcollapse-perf`, `flamegraph.pl`, and kernel-frame folding.
 
+   Wrap load + capture as a single helper so the load generator covers the **whole** window (capture + the 3 s warmup) and is killed when the capture is done. Running both captures from a single long-lived load generator is brittle: if the first capture takes longer than expected, the load runs out before the second one starts (the symptom is a low-sample off-CPU profile).
+
    ```bash
-   # In a background shell: drive load for the full capture window.
-   python3 -c '
-   import concurrent.futures, time, requests
+   # Repeatable: drive load only for the capture window, then kill it.
+   capture_with_load() {
+       local capture_cmd="$1"     # e.g. "./flamegraph-capture.sh all 30"
+       local duration="$2"        # capture seconds, must match capture_cmd
+       local stop=$(( $(date +%s) + duration + 5 ))   # +5s safety margin
+
+       LOAD_STOP=$stop python3 -c '
+   import concurrent.futures, os, time, requests
    url = "http://127.0.0.1:8000/v1/chat/completions"
    headers = {"Authorization": "Bearer your-secret-key"}
    payload = {"model":"llm","messages":[{"role":"user","content":"x "*32}],
               "max_tokens":256,"stream":False}
-   stop = time.time() + 60
+   stop = int(os.environ["LOAD_STOP"])
    with concurrent.futures.ThreadPoolExecutor(16) as ex:
        fs = [ex.submit(lambda: requests.post(url, headers=headers, json=payload, timeout=60))
              for _ in range(16)]
@@ -70,10 +79,15 @@ All paths below are relative to `tt-media-server/cpp_server/`.
            fs = list(fs) + [ex.submit(lambda: requests.post(url, headers=headers, json=payload, timeout=60))
                             for _ in done]
    ' &
+       local load_pid=$!
+       sleep 3                                          # let load ramp up
+       eval "$capture_cmd"
+       kill "$load_pid" 2>/dev/null || true
+       wait "$load_pid" 2>/dev/null || true
+   }
 
-   sleep 3                                # let load ramp up
-   ./flamegraph-capture.sh all 30         # on-CPU,  30s, main + every worker
-   ./flamegraph-capture-offcpu.sh all 30  # off-CPU, 30s
+   capture_with_load "./flamegraph-capture.sh all 30" 30          # on-CPU
+   capture_with_load "./flamegraph-capture-offcpu.sh all 30" 30   # off-CPU
    ```
 
    Each output dir contains a `<name>.folded` + `<name>.svg` per profiled process.
@@ -81,6 +95,39 @@ All paths below are relative to `tt-media-server/cpp_server/`.
 4. **View the result.** Preferred: open https://www.speedscope.app/ in a browser and drag-drop a `.folded` file from the output dir — real search, sandwich view (per-function callers/callees), and time-order view (real timeline). Fallback: open the matching `.svg` in any browser for a self-contained quick look.
 
 5. **Analyze the results.** See the **Analyze the results** section below for the procedural recipe (concrete shell commands).
+
+6. **Stop the server.** Always do this — leftover servers hold port 8000, the `/tt_worker_metrics` shared-memory segment, and the memory-management IPC queues. The next run will fail or, worse, profile a stale binary.
+
+   ```bash
+   # Preferred: use the PID stashed in step 2.
+   if [ -n "${SERVER_PID:-}" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
+       kill -TERM "$SERVER_PID"
+       for _ in $(seq 1 10); do
+           kill -0 "$SERVER_PID" 2>/dev/null || break
+           sleep 1
+       done
+       kill -KILL "$SERVER_PID" 2>/dev/null || true
+   fi
+
+   # Fallback when SERVER_PID is gone (new shell, lost variable). Only kill
+   # processes whose /proc/PID/exe is the actual binary — pgrep -f / pkill -f
+   # would also match any shell, editor, or `pgrep tt_media_server_cpp` whose
+   # argv contains the binary name.
+   for pid in $(pgrep -f tt_media_server_cpp); do
+       [ "$(readlink "/proc/$pid/exe" 2>/dev/null)" = \
+         "$(realpath build/tt_media_server_cpp)" ] && kill -TERM "$pid"
+   done
+   sleep 2
+   for pid in $(pgrep -f tt_media_server_cpp); do
+       [ "$(readlink "/proc/$pid/exe" 2>/dev/null)" = \
+         "$(realpath build/tt_media_server_cpp)" ] && kill -KILL "$pid" 2>/dev/null || true
+   done
+
+   # Verify shutdown: no live binary, port 8000 free, /tt_worker_metrics gone.
+   pgrep -af tt_media_server_cpp || echo "OK: no server processes"
+   ss -tlnp 2>/dev/null | grep ':8000 ' || echo "OK: port 8000 free"
+   ls /dev/shm/tt_worker_metrics 2>/dev/null || echo "OK: shm cleared"
+   ```
 
 ## Prerequisites
 
@@ -110,7 +157,7 @@ Inside Docker `/proc/sys/kernel` is usually read-only — just prefix `perf` cal
 
 ## Workflow — convenience scripts (preferred)
 
-The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main and worker PIDs via `pgrep`, capture all of them in parallel, and produce both a `.folded` file (for speedscope) and a `.svg` (quick look) per process:
+The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main and worker PIDs by checking `/proc/<pid>/exe` against the binary (so shell wrappers, load generators, and `pgrep` itself never get picked), capture all of them in parallel, and produce both a `.folded` file (for speedscope) and a `.svg` (quick look) per process:
 
 ```bash
 # On-CPU (where CPU time goes). Default: every cpp_server process, 30s.
@@ -131,14 +178,27 @@ Outputs in `cpp_server/bench_results/flamegraph[_offcpu]_<timestamp>/`:
 
 Use these when the scripts aren't checked in, the user wants to vary parameters (sampling frequency, custom events, attaching to a different binary), or you need to debug a script failure.
 
-1. **Identify target PIDs.** The main Drogon process is the one *without* `--worker`; workers are spawned as children.
+1. **Identify target PIDs.** The main Drogon process is the one *without* `--worker`; workers are spawned as children. Use `/proc/<pid>/exe` to filter — `pgrep -af tt_media_server_cpp | grep -v -- '--worker'` looks like it works but also matches a parent shell, a load-generator script, or even `pgrep` itself whenever the binary name appears in argv. That's how a capture can target a wrapper PID and return zero samples.
 
    ```bash
-   pgrep -af tt_media_server_cpp        # see all
-   MAIN=$(pgrep -af tt_media_server_cpp | grep -v -- '--worker' | awk '{print $1}' | head -1)
-   WORKER=$(pgrep -af 'tt_media_server_cpp.*--worker' | awk '{print $1}' | head -1)
+   pgrep -af tt_media_server_cpp        # see all matches (incl. wrappers)
+
+   # Only PIDs whose executable IS the binary, not bash/python wrappers.
+   server_pids() {
+       local pid exe
+       for pid in $(pgrep -f tt_media_server_cpp 2>/dev/null); do
+           exe="$(readlink "/proc/$pid/exe" 2>/dev/null)"
+           [[ "$exe" == */tt_media_server_cpp ]] && echo "$pid"
+       done
+   }
+   is_worker() { tr '\0' ' ' < "/proc/$1/cmdline" | grep -q -- '--worker'; }
+
+   MAIN=$(for p in $(server_pids); do is_worker "$p" || { echo "$p"; break; }; done)
+   WORKER=$(for p in $(server_pids); do is_worker "$p" && { echo "$p"; break; }; done)
    echo "MAIN=$MAIN  WORKER=$WORKER"
    ```
+
+   `flamegraph-capture.sh` / `flamegraph-capture-offcpu.sh` already use exactly this filter, so the wrapper scripts will pick the right PIDs on their own. The snippet above is for running `perf` by hand.
 
 2. **Capture on-CPU samples.** 99 Hz × DWARF unwinding is the standard recipe — frequent enough to be statistically meaningful, not so frequent it perturbs the workload. Run in parallel for both processes during steady-state load.
 
@@ -258,11 +318,14 @@ Speedscope is for humans; the agent should drive analysis from the `.folded` fil
 ## Common pitfalls
 
 - **`perf record` runs but the output is empty** — the target process was idle. Drive load (step 3 of the end-to-end workflow) and re-capture.
+- **Capture announces `main:<pid>` but the resulting profile is empty / has no `tt_media_server` frames** — the resolver picked a shell wrapper or load-generator whose argv contains `tt_media_server_cpp`. Run `readlink /proc/<pid>/exe` on the announced PID; if it points to `bash` or `python`, your script is the old version that doesn't filter by `/proc/<pid>/exe`. Update both `flamegraph-capture*.sh` to use the `list_server_pids` helper (see the **Workflow — raw perf commands** step 1 snippet) or pass the main PID explicitly: `./flamegraph-capture.sh <pid> 30`.
 - **All stacks show `[unknown]`** — binary was stripped, or rebuilt without `-g`. Fix the build.
 - **Kernel frames repeat 10+ times in every stack** — `kptr_restrict=1`. Apply the `sed` fold from step 4, or run `sudo sysctl -w kernel.kptr_restrict=0` on a non-container host.
 - **`perf record` fails with `Permission denied`** — `perf_event_paranoid` is restrictive. Prefix with `sudo` (works inside Docker) or lower the sysctl on bare metal.
 - **Worker has very few samples but is clearly busy** — process actually has multiple threads and most are blocked. Switch to the off-CPU script.
 - **Tracy threads (`Tracy_Sampling`, `Tracy_Profiler`, `Tracy_DXT1`, `Tracy_Symbol_Wo`) dominate the off-CPU view** — Tracy was compiled in. They're harmless on idle-block, but their on-CPU contribution is real. Either ignore them via the search box, or rebuild without `--tracy` for a clean baseline.
+- **Next run fails with port-in-use, `shm_open` errors, or "queue already exists"** — a previous server was not shut down. Run step 6 of the workflow against the leftover PID. `pkill -f tt_media_server_cpp` is a hammer, not a fix — it can kill an unrelated shell whose argv contains the binary name; prefer the `/proc/<pid>/exe`-filtered loop in step 6.
+- **Second capture (off-CPU) has far fewer samples than the first** — the load generator timed out before the second capture started. Use the `capture_with_load` helper in step 3 so each capture has its own load window.
 
 ## Reporting
 

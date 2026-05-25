@@ -53,17 +53,35 @@ if [ ! -d "${FLAMEGRAPH_DIR}" ]; then
     git clone --depth 1 https://github.com/brendangregg/FlameGraph "${FLAMEGRAPH_DIR}" >/dev/null 2>&1
 fi
 
+# Filter by /proc/<pid>/exe (not pgrep -af cmdline) — otherwise a parent
+# shell or load-generator with the binary name in its argv can be picked as
+# "main" and yield a zero-sample capture. See flamegraph-capture.sh for the
+# longer explanation.
+list_server_pids() {
+    local pid exe
+    for pid in $(pgrep -f tt_media_server_cpp 2>/dev/null); do
+        exe="$(readlink "/proc/${pid}/exe" 2>/dev/null || true)"
+        [[ "${exe}" == */tt_media_server_cpp ]] && echo "${pid}"
+    done
+}
+
+is_worker_pid() {
+    local pid="$1"
+    tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | grep -q -- '--worker'
+}
+
 resolve_main_pid() {
-    pgrep -af tt_media_server_cpp \
-        | grep -v -- '--worker' \
-        | grep -v flamegraph-capture \
-        | awk '{print $1}' \
-        | head -1
+    local pid
+    for pid in $(list_server_pids); do
+        is_worker_pid "${pid}" || { echo "${pid}"; return; }
+    done
 }
 
 resolve_worker_pids() {
-    pgrep -af 'tt_media_server_cpp.*--worker' \
-        | awk '{print $1}'
+    local pid
+    for pid in $(list_server_pids); do
+        is_worker_pid "${pid}" && echo "${pid}"
+    done
 }
 
 declare -a TARGETS=()
