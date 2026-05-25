@@ -48,7 +48,9 @@ def _make_template(
         weights=list(weights),
         impl=impl,
         tt_metal_commit="abc1234",
-        vllm_commit="def5678" if inference_engine == InferenceEngine.VLLM.value else None,
+        vllm_commit="def5678"
+        if inference_engine == InferenceEngine.VLLM.value
+        else None,
         inference_engine=inference_engine,
         device_model_specs=[
             DeviceModelSpec(
