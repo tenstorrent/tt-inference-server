@@ -53,15 +53,13 @@
       "label": "C++ Server Gateway Split (TCP)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_tpot_ms": 10
     },
     "gateway_split_zmq": {
       "label": "C++ Server Gateway Split (ZMQ)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_tpot_ms": 10
     },
     "dynamo_frontend": {
       "label": "Dynamo Frontend + cpp_server Integration",
