@@ -13,7 +13,6 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from open_ai_api import api_router
 
@@ -50,13 +49,6 @@ prometheus_metrics.setup_metrics()
 
 app.include_router(api_router)
 app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:8002"],
-    allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["*"],
-)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
