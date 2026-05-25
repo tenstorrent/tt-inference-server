@@ -86,8 +86,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=_V2_ROOT / "output",
-        help="Where to write the rendered report (markdown + json).",
+        default=None,
+        help=(
+            "Where to write the rendered report (markdown + json). "
+            "Defaults to <repo>/workflow_logs/reports_output/<workflow>/."
+        ),
     )
     parser.add_argument(
         "--docker-server",
@@ -108,7 +111,12 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.output_dir is None:
+        args.output_dir = (
+            _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
+        )
+    return args
 
 
 def _resolve_eval_config(model_name: str):

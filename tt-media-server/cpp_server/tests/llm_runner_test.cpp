@@ -17,19 +17,20 @@
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
-#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
 
 using namespace tt::domain::llm;
+using tt::ipc::in_memory::TaskQueue;
 
 using Config = tt::config::LLMConfig;
 
 namespace {
 
 std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
-  return std::make_shared<InMemoryTaskQueue>();
+  return std::make_shared<TaskQueue>();
 }
 
 Config makeEngineConfig(int numBlocks = 128, int blockSize = 8, int eos = 32) {
