@@ -2604,10 +2604,10 @@ jobs:
             diff-cover-output.txt
           retention-days: 14
 
-  helm-values-sync:
+  helm-chart-validate:
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' }}
-    name: Helm values.yaml Sync Check
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' || needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Validation
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2622,20 +2622,10 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install "ruamel.yaml==0.18.6" pytest
+        run: pip install "ruamel.yaml==0.18.6" pytest pyyaml
 
       - name: Verify values.yaml matches workflows/model_spec.py
         run: pytest tests/test_helm_generator/test_values_in_sync.py -v
-
-  helm-chart-validate:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.charts == 'true' }}
-    name: Helm Chart Validation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -2713,7 +2703,6 @@ jobs:
       - prefill-gateway-tsan
       - cpp-server-gateway-split
       - cpp-tsan
-      - helm-values-sync
       - helm-chart-validate
     if: always()
     steps:
@@ -2736,7 +2725,7 @@ jobs:
             [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
-            [helm-values-sync]="${{ needs.helm-values-sync.result }}"
+            [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"
@@ -2749,10 +2738,6 @@ jobs:
           done
           if [[ "$STATUS" -ne 0 ]]; then
             echo "CI gate failed: one or more jobs failed or were cancelled"
-            exit 1
-          fi
-          if [[ "${{ needs.helm-chart-validate.result }}" == "failure" ]]; then
-            echo "❌ Helm chart validation failed"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"
