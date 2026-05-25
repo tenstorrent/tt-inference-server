@@ -274,11 +274,18 @@ def runMockBridge(
     )
     encoderThread.start()
 
+    warmupAckCount = [0]  # mutable counter captured by the closure
+
     def replyWarmupPing(taskId: str) -> None:
         """SP readiness ping: respond SUCCESS immediately. No fake inference,
         no encoder hand-off, no mp4 leak. Mirrors the rank-0 short-circuit
         in ``video_runner.py`` so end-to-end testing of the
-        ``SP_REQUIRE_WARMUP_PING`` contract works against the mock too."""
+        ``SP_REQUIRE_WARMUP_PING`` contract works against the mock too.
+
+        Includes a sequence counter in the log line so that consecutive
+        acks (multi-worker boot, server restart against same mock) are
+        distinguishable in a single log tail. Without this all the lines
+        read identically and you can't tell server-1's ack from server-2's."""
         try:
             with writeLock:
                 outputShm.write_response(
@@ -289,7 +296,8 @@ def runMockBridge(
                         error_message="",
                     )
                 )
-            logger.info(f"{cfg.label} replied to SP warmup ping")
+            warmupAckCount[0] += 1
+            logger.info(f"{cfg.label} replied to SP warmup ping (#{warmupAckCount[0]})")
         except Exception as err:
             logger.error(f"{cfg.label} failed writing warmup-ping response: {err}")
 
