@@ -43,15 +43,6 @@ from workflows.model_spec import MODEL_SPECS, get_runtime_model_spec  # noqa: E4
 from workflows.runtime_config import RuntimeConfig  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
-from test_module import MediaContext  # noqa: E402
-from workflow_module import (  # noqa: E402
-    OrchestratorMetadata,
-    PrefixCacheOptions,
-    WorkflowResult,
-    get_default_accumulator,
-    get_workflow_class,
-)
-
 logger = logging.getLogger("tt_v2_run")
 
 _LOG_LEVELS = {
@@ -60,6 +51,63 @@ _LOG_LEVELS = {
     "WARNING": logging.WARNING,
     "ERROR": logging.ERROR,
 }
+
+
+def _bootstrap_prefix_cache_venv() -> None:
+    """Materialize ``V2_PREFIX_CACHE`` and re-exec inside it for ``--prefix-cache``.
+
+    Runs BEFORE the heavy ``test_module`` / ``workflow_module`` imports so
+    a user can invoke ``run.py`` from any Python that has the lightweight
+    ``workflows/*`` deps (no aiohttp / torch / aiperf required); the venv
+    brings in everything the orchestrator and AIPerf subprocess actually need.
+
+    Uses argv-sniffing because ``parse_args()`` cannot run yet — its
+    ``choices=`` lists pull in ``workflow_module`` (heavy). Idempotent: a
+    no-op when ``--prefix-cache`` is absent or we're already inside the
+    venv. argv is preserved verbatim so every other CLI flag survives the
+    ``os.execv``.
+    """
+    if "--prefix-cache" not in sys.argv:
+        return
+
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE]
+    venv_python = venv_config.venv_python
+    if Path(sys.executable).resolve() == venv_python.resolve():
+        return
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    logger.info("Ensuring V2_PREFIX_CACHE venv at %s ...", venv_config.venv_path)
+    # V2_PREFIX_CACHE declares only a requirements_file (no setup_function),
+    # so model_spec is unused at runtime — passing None lets the bootstrap
+    # stay independent of the heavy v2 import chain that's installed below.
+    venv_config.setup(model_spec=None)
+
+    logger.info("Re-executing inside V2_PREFIX_CACHE venv: %s", venv_python)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
+
+
+_bootstrap_prefix_cache_venv()
+
+# Heavy v2 orchestrator imports — only reachable when either:
+#   (a) --prefix-cache was not requested, or
+#   (b) we're already running inside the V2_PREFIX_CACHE venv after the
+#       re-exec above.
+from test_module import MediaContext  # noqa: E402
+from workflow_module import (  # noqa: E402
+    OrchestratorMetadata,
+    PrefixCacheOptions,
+    WorkflowResult,
+    get_default_accumulator,
+    get_workflow_class,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -346,38 +394,6 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
     )
 
 
-def _maybe_reexec_in_prefix_cache_venv(args: argparse.Namespace) -> None:
-    """For ``--prefix-cache``: materialize ``V2_PREFIX_CACHE`` and re-exec.
-
-    The AIPerf driver shells out to ``sys.executable -m aiperf``, so the
-    interpreter running this script must have aiperf + pyjwt installed.
-    Rather than make the user manage a venv by hand we materialize the
-    declared ``WorkflowVenvType.V2_PREFIX_CACHE`` venv on demand and
-    ``os.execv`` into it, preserving argv verbatim. Idempotent: when we
-    are already running inside the venv this is a no-op.
-    """
-    if not args.prefix_cache:
-        return
-
-    from workflows.workflow_types import WorkflowVenvType
-    from workflows.workflow_venvs import VENV_CONFIGS
-
-    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE]
-    venv_python = venv_config.venv_python
-    if Path(sys.executable).resolve() == venv_python.resolve():
-        logger.info("Already inside V2_PREFIX_CACHE venv (%s).", sys.executable)
-        return
-
-    logger.info("Ensuring V2_PREFIX_CACHE venv at %s ...", venv_config.venv_path)
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
-    venv_config.setup(model_spec=model_spec)
-
-    logger.info("Re-executing inside V2_PREFIX_CACHE venv: %s", venv_python)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
-
-
 def _apply_num_prompts_override(num_prompts: Optional[int]) -> None:
     if num_prompts is None:
         return
@@ -416,8 +432,6 @@ def main() -> int:
         level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-
-    _maybe_reexec_in_prefix_cache_venv(args)
 
     ctx = build_context(args)
     _apply_num_prompts_override(args.num_prompts)
