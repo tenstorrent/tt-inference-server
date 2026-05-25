@@ -254,6 +254,8 @@ ResponseWriterParams LLMController::makeWriterParams(
   params.onAbortRequest = [pipeline = pipeline](uint32_t taskId) {
     pipeline->abortRequest(taskId);
   };
+  params.enableDisconnectHeartbeat =
+      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY;
   if (request.session) {
     params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
   }

@@ -30,6 +30,7 @@ struct ResponseWriterParams {
   uint32_t taskId;
   std::function<void(uint32_t)> onAbortRequest;
   std::function<void()> onSessionRelease;
+  bool enableDisconnectHeartbeat = false;
 };
 
 /**

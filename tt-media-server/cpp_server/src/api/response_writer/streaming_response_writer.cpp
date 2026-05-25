@@ -184,7 +184,9 @@ drogon::HttpResponsePtr StreamingResponseWriter::buildResponse() {
           (*self->streamPtr)->close();
           return;
         }
-        self->startHeartbeat();
+        if (self->params.enableDisconnectHeartbeat) {
+          self->startHeartbeat();
+        }
       });
 
   resp->setContentTypeString("text/event-stream");
