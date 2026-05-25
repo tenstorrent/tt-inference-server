@@ -45,6 +45,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
                 "cpu_sampling": self.settings.vllm.cpu_sampling,
+                "enable_trace": self.settings.vllm.enable_trace,
                 "optimization_level": 0,
                 "experimental_weight_dtype": "bfp_bf8",
             },

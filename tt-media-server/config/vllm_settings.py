@@ -25,3 +25,9 @@ class VLLMSettings(BaseModel):
     # flipped per-run without rebuilding the image. See
     # debug-docs/sampling_params_on_device_analysis.md.
     cpu_sampling: bool = os.environ.get("CPU_SAMPLING", "false").lower() != "false"
+    # Enables vllm-tt's trace-capture compile mode (precompiled forward graph).
+    # tt-xla's own b32 benchmarks universally set enable_trace=True; our
+    # additional_config was missing this knob, which appears to be the wall
+    # for batch=32 Llama-3.2-3B engine init (`_xla_warm_up_cache` Error
+    # code: 13). Default True to match upstream; env-flippable for triage.
+    enable_trace: bool = os.environ.get("ENABLE_TRACE", "true").lower() != "false"
