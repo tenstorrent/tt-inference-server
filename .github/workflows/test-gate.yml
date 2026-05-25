@@ -1561,9 +1561,24 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    # Same jammy image as cpp-build so the prefill_gateway binary is
-    # compatible with the tt-ubuntu-2204-xlarge-stable bench runner.
-    runs-on: tt-ubuntu-2204-large-stable
+    # GitHub-hosted ubuntu-22.04 (jammy x86_64) satisfies both constraints
+    # that pin the cpp_server bench jobs to self-hosted runners:
+    #   1. ABI: the artifact is consumed by cpp-server-gateway-split on
+    #      tt-ubuntu-2204-xlarge-stable (also jammy). Same Ubuntu major =
+    #      same libpython3.10 / libstdc++ / glibc majors. Avoids the
+    #      libpython3.12 / libpq5 saga that pinned cpp-build (see line ~626).
+    #   2. CPU budget: prefill_gateway's gtest suite is gateway-only —
+    #      it does NOT start cpp_server, does NOT exercise DecodeScheduler,
+    #      and asserts no latency thresholds. So the 4-core limit on
+    #      GitHub-hosted runners (vs. the bench jobs where DecodeScheduler
+    #      pins 3 cores and starves the bench client) is a non-issue here.
+    # DO NOT generalize this to cpp-server-{benchmarks,prefill-decode-split,
+    # gateway-split} or dynamo-frontend-integration: those run live
+    # tt_media_server_cpp with -t 4 and assert mean_tpot/ttft thresholds,
+    # which fail on 4-core boxes once DecodeScheduler claims its 3 cores.
+    # Saves ~10min queue wait while cpp-build holds the lone large-stable
+    # slot on the critical path.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     env:
