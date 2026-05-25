@@ -903,7 +903,7 @@ class TestTtsMatrixExpansion:
             templates = [tc["template"] for tc in suite["test_cases"]]
             assert templates == [
                 "SpeechT5TTSTest",
-                "TestTTSServerHealth",
+                "TTSLoadTest",
                 "TTSParamTest",
                 "TTSIntegrationTest",
             ]

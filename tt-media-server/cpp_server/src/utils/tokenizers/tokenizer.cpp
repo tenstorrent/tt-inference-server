@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
@@ -223,6 +224,48 @@ const Tokenizer& activeTokenizer() {
   thread_local auto tok =
       createTokenizer(config::modelType(), config::tokenizerPath());
   return *tok;
+}
+
+// Mirrors what each Tokenizer subclass returns from modelName() /
+// stopTokenIds() / assistantHeaderSequence(). Add an entry here whenever
+// a new ModelType is added; staticInfoFor() throws otherwise.
+
+namespace {
+
+const StaticTokenizerInfo& deepseekR1Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"deepseek-ai/DeepSeek-R1-0528",
+      /*stopTokenIds=*/{1},
+      /*assistantHeaderSequence=*/{128804},
+  };
+  return kInfo;
+}
+
+const StaticTokenizerInfo& llama31Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"meta-llama/Llama-3.1-8B-Instruct",
+      /*stopTokenIds=*/{128001, 128008, 128009},
+      /*assistantHeaderSequence=*/{128006, 78191, 128007, 271},
+  };
+  return kInfo;
+}
+
+}  // namespace
+
+const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
+  switch (model) {
+    case config::ModelType::DEEPSEEK_R1_0528:
+      return deepseekR1Info();
+    case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return llama31Info();
+  }
+  throw std::invalid_argument(
+      "tokenizers::staticInfoFor: no static info registered for ModelType " +
+      std::to_string(static_cast<int>(model)));
+}
+
+const StaticTokenizerInfo& staticInfo() {
+  return staticInfoFor(config::modelType());
 }
 
 }  // namespace tt::utils::tokenizers
