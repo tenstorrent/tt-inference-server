@@ -328,7 +328,9 @@ void InterServerService::startRegistrationThread() {
     std::unique_lock<std::mutex> lock(registration_mutex_);
     while (!registration_stop_) {
       lock.unlock();
-      sendRegistration();
+      if (socket_manager_.isConnected()) {
+        sendRegistration();
+      }
       lock.lock();
       registration_cv_.wait_for(lock, REGISTRATION_INTERVAL,
                                 [this] { return registration_stop_; });
