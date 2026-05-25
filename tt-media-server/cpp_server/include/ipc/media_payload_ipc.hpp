@@ -162,12 +162,12 @@ class MediaPayloadQueueSet {
 
   explicit MediaPayloadQueueSet(int numWorkers) {
     taskQueue = std::make_shared<MediaPayloadTaskQueue>(
-        tt::config::ttTaskQueueName(),
+        tt::config::ttMediaTaskQueueName(),
         static_cast<int>(tt::config::maxQueueSize()));
     resultQueues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; ++i) {
       resultQueues.emplace_back(std::make_shared<MediaPayloadResultQueue>(
-          std::string(tt::config::ttResultQueueName()) + std::to_string(i),
+          std::string(tt::config::ttMediaResultQueueName()) + std::to_string(i),
           static_cast<int>(tt::config::resultQueueCapacity())));
     }
   }

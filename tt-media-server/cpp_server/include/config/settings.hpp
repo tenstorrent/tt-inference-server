@@ -192,6 +192,12 @@ std::string ttResultQueueName();
  */
 std::string ttCancelQueueName();
 
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
+
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
 std::string ttMemoryRequestQueueName();

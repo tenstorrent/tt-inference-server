@@ -221,6 +221,14 @@ std::string ttCancelQueueName() {
   return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
 }
 
+std::string ttMediaTaskQueueName() {
+  return envString("TT_MEDIA_TASK_QUEUE", defaults::TT_MEDIA_TASK_QUEUE);
+}
+
+std::string ttMediaResultQueueName() {
+  return envString("TT_MEDIA_RESULT_QUEUE", defaults::TT_MEDIA_RESULT_QUEUE);
+}
+
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
@@ -399,6 +407,7 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
   switch (modelService()) {
     case ModelService::IMAGE: {
       auto cfg = imageEngineConfig();
+      cfg.worker_id = workerIndex;
       cfg.visible_devices = visibleDevicesForWorker(workerIndex);
       return cfg;
     }

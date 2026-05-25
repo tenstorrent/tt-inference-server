@@ -47,10 +47,10 @@ void writeJsonFile(const std::string& path, const Json::Value& json) {
 MediaIpcRunner::MediaIpcRunner(std::string runnerName, int workerId)
     : runnerName(std::move(runnerName)), workerIndex(workerId) {
   taskQueue = std::make_unique<tt::ipc::media_payload::MediaPayloadTaskQueue>(
-      tt::config::ttTaskQueueName());
+      tt::config::ttMediaTaskQueueName());
   resultQueue =
       std::make_unique<tt::ipc::media_payload::MediaPayloadResultQueue>(
-          std::string(tt::config::ttResultQueueName()) +
+          std::string(tt::config::ttMediaResultQueueName()) +
           std::to_string(workerIndex));
 }
 

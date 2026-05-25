@@ -158,7 +158,6 @@ void registerImage() {
     const char* workerIdEnv = std::getenv("TT_WORKER_ID");
     const int workerId = workerIdEnv ? std::atoi(workerIdEnv) : 0;
     auto imageCfg = std::get<config::ImageConfig>(cfg);
-    imageCfg.visible_devices = config::visibleDevicesForWorker(workerId);
     TT_LOG_INFO(
         "[RunnerRegistry] Creating image IPC runner worker={} "
         "TT_VISIBLE_DEVICES='{}'",
