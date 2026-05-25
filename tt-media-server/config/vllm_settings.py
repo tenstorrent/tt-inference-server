@@ -38,3 +38,11 @@ class VLLMSettings(BaseModel):
     enable_const_eval: bool = (
         os.environ.get("ENABLE_CONST_EVAL", "true").lower() != "false"
     )
+    # Experimental weight dtype for vllm-tt (e.g. "bfp_bf8" for block fp8).
+    # Hardcoded to "bfp_bf8" historically; tt-xla's working b32 configs do
+    # NOT set this. Set EXPERIMENTAL_WEIGHT_DTYPE="" (empty) to omit the
+    # key entirely from additional_config (matching tt-xla). Default
+    # "bfp_bf8" preserves current behavior.
+    experimental_weight_dtype: str = os.environ.get(
+        "EXPERIMENTAL_WEIGHT_DTYPE", "bfp_bf8"
+    )

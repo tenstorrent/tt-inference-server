@@ -36,6 +36,19 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
+        additional_config = {
+            "enable_const_eval": self.settings.vllm.enable_const_eval,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "cpu_sampling": self.settings.vllm.cpu_sampling,
+            "enable_trace": self.settings.vllm.enable_trace,
+            "optimization_level": 1,
+        }
+        # Set EXPERIMENTAL_WEIGHT_DTYPE="" to omit the key entirely (matches
+        # tt-xla's working b32 configs which don't set this knob).
+        if self.settings.vllm.experimental_weight_dtype:
+            additional_config["experimental_weight_dtype"] = (
+                self.settings.vllm.experimental_weight_dtype
+            )
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -43,14 +56,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": self.settings.vllm.enable_const_eval,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": self.settings.vllm.cpu_sampling,
-                "enable_trace": self.settings.vllm.enable_trace,
-                "optimization_level": 1,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
