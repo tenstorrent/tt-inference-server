@@ -89,11 +89,12 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&disaggregated),
            sizeof(disaggregated));
   samplingParams->serialize(os);
-  os.write(reinterpret_cast<const char*>(&kvCacheOffset.has_value()),
-           sizeof(kvCacheOffset.has_value()));
-  if (kvCacheOffset.has_value()) {
-    os.write(reinterpret_cast<const char*>(&kvCacheOffset.value()),
-             sizeof(kvCacheOffset.value()));
+  bool hasKvCacheOffset = kvCacheOffset.has_value();
+  os.write(reinterpret_cast<const char*>(&hasKvCacheOffset), sizeof(bool));
+  if (hasKvCacheOffset) {
+    uint32_t kvCacheOffsetValue = kvCacheOffset.value();
+    os.write(reinterpret_cast<const char*>(&kvCacheOffsetValue),
+             sizeof(uint32_t));
   }
 }
 
@@ -133,9 +134,9 @@ Sequence Sequence::deserialize(std::istream& is) {
   auto hasKvCacheOffset = false;
   is.read(reinterpret_cast<char*>(&hasKvCacheOffset), sizeof(hasKvCacheOffset));
   if (hasKvCacheOffset) {
-    seq.kvCacheOffset = std::make_optional<uint32_t>();
-    is.read(reinterpret_cast<char*>(&seq.kvCacheOffset.value()),
-            sizeof(seq.kvCacheOffset.value()));
+    seq.kvCacheOffset = std::make_optional<uint32_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.kvCacheOffset)),
+            sizeof(*seq.kvCacheOffset));
   } else {
     seq.kvCacheOffset = std::nullopt;
   }
