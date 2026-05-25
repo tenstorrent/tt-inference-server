@@ -22,9 +22,8 @@ import json
 import logging
 import shlex
 import sys
-import time
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _V2_ROOT = Path(__file__).resolve().parent
@@ -36,13 +35,13 @@ from workflows.model_spec import MODEL_SPECS, get_runtime_model_spec  # noqa: E4
 from workflows.runtime_config import RuntimeConfig  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
-from report_module import (  # noqa: E402
-    ReportGenerator,
-    acceptance_criteria_check,
-    format_acceptance_summary_markdown,
+from test_module import MediaContext  # noqa: E402
+from workflow_module import (  # noqa: E402
+    OrchestratorMetadata,
+    WorkflowResult,
+    get_default_accumulator,
+    get_workflow_class,
 )
-from test_module import MediaContext, MediaTaskType, run_media_task  # noqa: E402
-from workflow_module import get_default_accumulator  # noqa: E402
 
 logger = logging.getLogger("tt_v2_run")
 
@@ -54,21 +53,12 @@ _LOG_LEVELS = {
 }
 
 
-WORKFLOW_TO_TASKS: dict[str, list[MediaTaskType]] = {
-    "benchmarks": [MediaTaskType.BENCHMARK],
-    "evals": [MediaTaskType.EVALUATION],
-    "spec_tests": [MediaTaskType.SPEC_TESTS],
-    "release": [
-        MediaTaskType.EVALUATION,
-        MediaTaskType.BENCHMARK,
-        MediaTaskType.SPEC_TESTS,
-    ],
-}
-
-
 def parse_args() -> argparse.Namespace:
+    from workflow_module import WORKFLOW_REGISTRY
+
     valid_models = sorted({spec.model_name for spec in MODEL_SPECS.values()})
     valid_devices = sorted({d.name.lower() for d in DeviceTypes})
+    valid_workflows = sorted(WORKFLOW_REGISTRY)
 
     parser = argparse.ArgumentParser(
         description=(
@@ -79,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("--model", required=True, choices=valid_models)
-    parser.add_argument("--workflow", required=True, choices=sorted(WORKFLOW_TO_TASKS))
+    parser.add_argument("--workflow", required=True, choices=valid_workflows)
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)
     parser.add_argument(
@@ -197,15 +187,45 @@ def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
     return "python " + shlex.join(parts)
 
 
-def _inject_orchestrator_metadata(
-    meta: dict, ctx: MediaContext, args: argparse.Namespace
-) -> None:
-    """Populate metadata fields the per-task runners can't see."""
-    del ctx  # reserved for future per-run fields derivable from context
+def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
-    meta["server_mode"] = _resolve_server_mode(args, runtime_config)
-    meta["run_command"] = _capture_run_command()
-    meta["runtime_model_spec_json"] = args.runtime_model_spec_json
+    return OrchestratorMetadata(
+        server_mode=_resolve_server_mode(args, runtime_config),
+        run_command=_capture_run_command(),
+        runtime_model_spec_json=args.runtime_model_spec_json,
+    )
+
+
+def _apply_num_prompts_override(num_prompts: Optional[int]) -> None:
+    if num_prompts is None:
+        return
+    from test_module.benchmark_tests import image_benchmark_tests as _ibt
+
+    _ibt.SDXL_BENCHMARK_NUM_PROMPTS = num_prompts
+    _ibt.SDXL_SD35_BENCHMARK_NUM_PROMPTS = num_prompts
+    logger.info(
+        "Overriding image benchmark + spec_tests prompt count to %d", num_prompts
+    )
+
+
+def _log_workflow_summary(result: WorkflowResult) -> None:
+    logger.info(
+        "Workflow %s finished: rc=%d (%d task(s))",
+        result.workflow_name,
+        result.return_code,
+        len(result.task_outcomes),
+    )
+    for outcome in result.task_outcomes:
+        logger.info(
+            "  %s task=%s rc=%d elapsed=%.1fs block=%s",
+            "✓" if outcome.succeeded else "✘",
+            outcome.task_type,
+            outcome.exit_code,
+            outcome.elapsed_seconds,
+            outcome.block_kind,
+        )
+    if result.error:
+        logger.error("Workflow error: %s", result.error)
 
 
 def main() -> int:
@@ -216,70 +236,17 @@ def main() -> int:
     )
 
     ctx = build_context(args)
-    task_types: List[MediaTaskType] = WORKFLOW_TO_TASKS[args.workflow]
+    _apply_num_prompts_override(args.num_prompts)
 
-    if args.num_prompts is not None:
-        from test_module.benchmark_tests import image_benchmark_tests as _ibt
-
-        _ibt.SDXL_BENCHMARK_NUM_PROMPTS = args.num_prompts
-        _ibt.SDXL_SD35_BENCHMARK_NUM_PROMPTS = args.num_prompts
-        logger.info(
-            "Overriding image benchmark + spec_tests prompt count to %d",
-            args.num_prompts,
-        )
-
-    logger.info(
-        "Workflow=%s -> tasks=%s for model=%s device=%s port=%d output=%s",
-        args.workflow,
-        [t.value for t in task_types],
-        ctx.model_spec.model_name,
-        ctx.device.name,
-        ctx.service_port,
-        ctx.output_path,
+    get_default_accumulator().clear()
+    workflow_cls = get_workflow_class(args.workflow)
+    workflow = workflow_cls(
+        ctx,
+        orchestrator_metadata=_build_orchestrator_metadata(args),
     )
-
-    accumulator = get_default_accumulator()
-    accumulator.clear()
-    failures = 0
-    for task_type in task_types:
-        logger.info("=== Dispatching %s ===", task_type.value)
-        started = time.time()
-        exit_code, block = run_media_task(ctx, task_type)
-        elapsed = time.time() - started
-        logger.info(
-            "%s finished in %.1fs (exit=%d, block=%s)",
-            task_type.value,
-            elapsed,
-            exit_code,
-            block.kind if block else None,
-        )
-        if exit_code != 0 or block is None:
-            logger.error("%s did not produce a Block.", task_type.value)
-            failures += 1
-
-    if not accumulator.blocks:
-        logger.error("Accumulator is empty — no blocks to render.")
-        return 1
-
-    schema = accumulator.build_schema()
-    _inject_orchestrator_metadata(schema.metadata, ctx, args)
-    accepted, blockers = acceptance_criteria_check(schema)
-    schema.metadata["acceptance_summary_markdown"] = format_acceptance_summary_markdown(
-        accepted, blockers
-    )
-    schema.metadata["acceptance_criteria"] = {
-        "accepted": accepted,
-        "blockers": blockers,
-    }
-    logger.info(
-        "Acceptance criteria: %s (%d blocker(s))",
-        "PASS" if accepted else "FAIL",
-        len(blockers),
-    )
-    result = ReportGenerator().generate(schema, ctx.output_path)
-    logger.info("Wrote markdown: %s", result.markdown_path)
-    logger.info("Wrote json:     %s", result.json_path)
-    return 0 if failures == 0 else 1
+    result = workflow.run()
+    _log_workflow_summary(result)
+    return result.return_code
 
 
 if __name__ == "__main__":

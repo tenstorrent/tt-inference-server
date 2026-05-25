@@ -142,11 +142,20 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
+  // Send PrefillRegistrationMessage to the peer (gateway or decode).
+  void sendRegistration();
+
+  // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in
+  // response to a RegistrationProbeMessage from the gateway. No-op otherwise.
+  void sendRegistrationIfGatewayModeIsEnabled();
+
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+  bool gateway_mode_ = false;
+  bool periodic_registration_mode_ = false;
 };
 
 }  // namespace tt::sockets

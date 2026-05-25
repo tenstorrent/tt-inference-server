@@ -32,18 +32,21 @@ class WorkflowVenvType(IntEnum):
     TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
+    V2_RUN_SCRIPT = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
     EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
+    EVALS_AGENTIC = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
+    BENCHMARKS_GUIDELLM = auto()
     HF_SETUP = auto()
     SERVER = auto()
     TT_SMI = auto()
@@ -408,11 +411,11 @@ class ModelType(IntEnum):
         task_types = {
             ModelType.LLM: "text",
             ModelType.VLM: "vlm",
-            ModelType.AUDIO: "audio",
+            ModelType.AUDIO: "asr",  # Automatic Speech Recognition
             ModelType.IMAGE: "image",
             ModelType.CNN: "cnn",
             ModelType.EMBEDDING: "embedding",
-            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
         }
         return task_types[self]

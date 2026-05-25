@@ -9,7 +9,7 @@
 
 #include "domain/base_request.hpp"
 #include "services/service.hpp"
-#include "worker/worker_info.hpp"
+#include "runtime/worker/worker_info.hpp"
 
 namespace tt::services {
 

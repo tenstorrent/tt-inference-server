@@ -205,6 +205,15 @@ class Settings(BaseSettings):
             )
             self.max_batch_size = self.vllm.max_num_seqs
 
+        # Without this the scheduler picks the serial device_worker even though
+        # max_num_seqs > 1 advertises concurrent capacity; explicit env still wins.
+        if self.vllm.max_num_seqs > 1 and os.getenv("USE_DYNAMIC_BATCHER") is None:
+            logger.info(
+                f"Auto-enabling use_dynamic_batcher because max_num_seqs={self.vllm.max_num_seqs} > 1 "
+                f"(set USE_DYNAMIC_BATCHER=false to override)"
+            )
+            self.use_dynamic_batcher = True
+
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
             f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
@@ -272,6 +281,9 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2.value,
             ModelRunners.TT_WAN_2_2_I2V.value,
             ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
+            ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
+            ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
+            ModelRunners.TT_WAN_2_2_I2V_LORA.value,
         ]:
             self.default_throttle_level = None
 

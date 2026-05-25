@@ -163,20 +163,23 @@ class PromptClient:
 
     def wait_for_healthy(
         self,
-        timeout: float = 1200.0,
+        timeout: Optional[float] = None,
         interval: int = 10,
     ) -> bool:
         """
         Wait for the vLLM service to become healthy with intelligent cache generation detection.
 
         Args:
-            timeout: Base timeout in seconds
+            timeout: Base timeout in seconds.
             interval: Health check interval in seconds
 
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
         """
-        base_timeout = float(timeout)
+        if timeout is None:
+            base_timeout = self.cache_monitor.get_tensor_cache_timeout()
+        else:
+            base_timeout = float(timeout)
         effective_timeout = base_timeout
         if self.server_ready:
             return True
@@ -237,14 +240,14 @@ class PromptClient:
                         using_tensor_cache_timeout = False
                     if has_existing_cache:
                         logger.info(
-                            "📁 Existing tensor cache detected - tracking %s file(s), %s; using standard timeout:=%ss",
+                            "📁 Existing tensor cache detected - tracking %s file(s), %s; using startup timeout:=%ss",
                             cache_status.file_count,
                             format_human_readable_bytes(cache_status.total_size_bytes),
                             effective_timeout,
                         )
                     else:
                         logger.info(
-                            "📁 No active tensor cache generation detected, using standard timeout:=%ss",
+                            "📁 No active tensor cache generation detected, using startup timeout:=%ss",
                             effective_timeout,
                         )
                 last_cache_status_log = current_time
@@ -342,14 +345,16 @@ class PromptClient:
         self,
         context_lens: List[Tuple[int, int]] = None,
         image_resolutions: List[Tuple[int, int]] = None,
-        timeout: float = 1200.0,
+        timeout: Optional[float] = None,
     ) -> None:
         """Capture traces for text and/or image inputs at different sizes.
 
         Args:
             context_lens: List of (input_seq_len, output_seq_len) tuples for text lengths
             image_resolutions: List of (width, height) tuples for image resolutions
-            timeout: startup timeout waiting for server, seconds.
+            timeout: startup timeout waiting for server, seconds. When ``None``
+                (the default), the model-spec defined ``tensor_cache_timeout``
+                is used as the full startup budget. See ``wait_for_healthy``.
         """
         logger.info("Capturing traces for input configurations...")
 

@@ -6,7 +6,6 @@
 import asyncio
 import json
 import logging
-import math
 import sys
 import time
 from pathlib import Path
@@ -15,7 +14,7 @@ from typing import Optional
 
 import aiohttp
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import TtsTestStatus
 
 # Add project root to Python path
@@ -24,7 +23,6 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.utils import get_num_calls
-from workflows.utils_report import get_performance_targets
 from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
@@ -59,7 +57,9 @@ class TtsClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=True)
+            loop_start = time.monotonic()
             status_list = self._run_tts_benchmark(num_calls)
+            wall_clock_seconds = time.monotonic() - loop_start
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -67,25 +67,28 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info("Generating eval report...")
         latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
+        tail = self._calculate_tail_latencies([s.latency for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
         logger.info(
-            f"latency={latency_value:.4f}s, RTR={rtr_value:.2f}, "
-            f"P90={p90_latency:.4f}s, P95={p95_latency:.4f}s"
+            f"latency={latency_value:.4f}s, RTR={rtr_value:.2f}, tail={tail}, "
+            f"throughput_rps={throughput_rps}"
         )
 
         benchmark_data = {
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "text_to_speech",
+            "task_type": "tts",
             "task_name": self.all_params.tasks[0].task_name,
             "tolerance": self.all_params.tasks[0].score.tolerance,
             "published_score": self.all_params.tasks[0].score.published_score,
             "score": latency_value,
             "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
             "rtr": rtr_value,
-            "latency_p90": p90_latency,
-            "latency_p95": p95_latency,
+            "throughput_rps": throughput_rps,
+            **tail,
             "performance_check": self._calculate_performance_check(
                 latency_value=latency_value, rtr_value=rtr_value
             ),
@@ -106,7 +109,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> list[TtsTestStatus]:
+    def run_benchmark(self) -> list[TtsTestStatus]:
         """Run benchmarks for the TTS model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
@@ -114,8 +117,10 @@ class TtsClientStrategy(BaseMediaStrategy):
         try:
             self.require_health()
             num_calls = self._get_tts_num_calls(is_eval=False)
+            loop_start = time.monotonic()
             status_list = self._run_tts_benchmark(num_calls)
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
             return status_list
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
@@ -149,7 +154,11 @@ class TtsClientStrategy(BaseMediaStrategy):
         )
         return tts_default
 
-    def _generate_report(self, status_list: list[TtsTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[TtsTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """
         Generate benchmark report for TTS model.
         """
@@ -163,20 +172,25 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         latency_value = self._calculate_latency(status_list)
         rtr_value = self._calculate_rtr_value(status_list)
-        p90_latency, p95_latency = self._calculate_tail_latency(status_list)
+        tail = self._calculate_tail_latencies([s.latency for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
+        performance_check = self._calculate_performance_check(latency_value, rtr_value)
 
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "latency": latency_value,
                 "rtr": rtr_value,
-                "latency_p90": p90_latency,
-                "latency_p95": p95_latency,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
             "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "text_to_speech",
+            "task_type": "tts",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
@@ -189,23 +203,10 @@ class TtsClientStrategy(BaseMediaStrategy):
         logger.info(f"Running TTS benchmark with {num_calls} calls.")
         status_list = []
 
-        test_text = DEFAULT_TTS_TEXT
-        if (
-            not isinstance(self.all_params, (list, tuple))
-            and hasattr(self.all_params, "tasks")
-            and len(self.all_params.tasks) > 0
-        ):
-            if hasattr(self.all_params.tasks[0], "text"):
-                test_text = self.all_params.tasks[0].text
-            elif hasattr(self.all_params.tasks[0], "task_name"):
-                test_text = self.all_params.tasks[0].task_name
-
         for i in range(num_calls):
             logger.info(f"Generating speech {i + 1}/{num_calls}...")
 
-            status, elapsed, latency, rtr, audio_duration = asyncio.run(
-                self._generate_speech()
-            )
+            status, elapsed, latency, rtr, _ = asyncio.run(self._generate_speech())
             logger.debug(f"Generated speech in {elapsed:.2f} seconds.")
 
             status_list.append(
@@ -214,8 +215,6 @@ class TtsClientStrategy(BaseMediaStrategy):
                     elapsed=elapsed,
                     latency=latency,
                     rtr=rtr,
-                    text=test_text,
-                    audio_duration=audio_duration,
                 )
             )
 
@@ -370,106 +369,30 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         return rtr_value
 
-    def _calculate_tail_latency(
-        self, status_list: list[TtsTestStatus]
-    ) -> tuple[float, float]:
-        """Calculate P90 and P95 tail latency in seconds."""
-        logger.info("Calculating tail latency (P90, P95)")
-
-        if not status_list:
-            return 0.0, 0.0
-
-        valid_values = [
-            status.latency for status in status_list if status.latency is not None
-        ]
-
-        if not valid_values:
-            return 0.0, 0.0
-
-        sorted_values = sorted(valid_values)
-        n = len(sorted_values)
-        p90_index = min(math.ceil(n * 0.9) - 1, n - 1)
-        p95_index = min(math.ceil(n * 0.95) - 1, n - 1)
-        p90_latency = sorted_values[p90_index]
-        p95_latency = sorted_values[p95_index]
-
-        return p90_latency, p95_latency
-
     def _calculate_performance_check(
         self,
         latency_value: Optional[float] = None,
         rtr_value: Optional[float] = None,
     ) -> ReportCheckTypes:
-        """Calculate performance check based on latency and RTR targets.
+        """TTS perf check: compares latency and RTR vs configured targets.
 
-        Uses get_performance_targets from model_performance_reference.json.
-
-        Args:
-            latency_value: End-to-end request latency in seconds.
-            rtr_value: Real-time ratio (audio_duration / generation_time)
-
-        Returns:
-            ``ReportCheckTypes`` member. ``IntEnum`` serialises to JSON as its
-            integer value, so downstream consumers still see 1/2/3 (NA/PASS/FAIL).
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
         """
-        logger.info("Calculating performance check based on latency, RTR targets")
-
-        device_str = self.model_spec.cli_args.get("device")
-        targets = get_performance_targets(
-            self.model_spec.model_name,
-            device_str,
-            model_type=self.model_spec.model_type.name,
-        )
+        targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
-
-        # PerformanceTargets stores the latency threshold under ``ttft_ms``.
-        if not targets.ttft_ms:
-            logger.warning(
-                "⚠️ No latency target (PerformanceTargets.ttft_ms) found, "
-                "skipping performance check"
-            )
-            return ReportCheckTypes.NA
-
-        tolerance = targets.tolerance if targets.tolerance else 0.05
-        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-        checks_passed = 0
-        checks_total = 0
-
-        if targets.ttft_ms is not None:
-            checks_total += 1
-            latency_threshold_s = (targets.ttft_ms / 1000.0) * (1 + tolerance)
-            if latency_value <= latency_threshold_s:
-                logger.info(
-                    f"✅ latency PASSED: {latency_value:.4f}s <= {latency_threshold_s:.4f}s"
-                )
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ latency FAILED: {latency_value:.4f}s > {latency_threshold_s:.4f}s"
-                )
-
-        if targets.rtr is not None:
-            checks_total += 1
-            rtr_threshold = targets.rtr * (1 - tolerance)
-            if rtr_value >= rtr_threshold:
-                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        if checks_total == 0:
-            logger.warning("⚠️ No metrics available for validation")
-            return ReportCheckTypes.NA
-
-        if checks_passed == checks_total:
-            logger.info(f"✅ All {checks_total} performance checks passed")
-            return ReportCheckTypes.PASS
-
-        logger.warning(
-            f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
         )
-        return ReportCheckTypes.FAIL
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck("RTR", rtr_value, targets.rtr, lower_is_better=False),
+            ],
+            tolerance=targets.tolerance,
+        )
 
     def _calculate_accuracy_check(self) -> ReportCheckTypes:
         """No quality metric implemented yet for TTS; always reports N/A."""

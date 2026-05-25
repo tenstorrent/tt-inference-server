@@ -17,12 +17,12 @@
 #include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/base_streaming_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
-#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -79,6 +79,10 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   struct StreamCallbackEntry {
     std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
+    // Mirror of LLMRequest::skip_text_decode; lets the consumer loop
+    // skip decode / reasoning / tool-call parsing for token-id-only
+    // transports.
+    bool skip_text_decode = false;
   };
 
   void startConsumers();

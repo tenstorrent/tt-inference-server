@@ -10,34 +10,60 @@
         }
       }
     },
-    "Llama-3.1-8B-Instruct": {
-      "inference_engine": "vLLM",
+    "Falcon3-7B-Instruct": {
+      "inference_engine": "FORGE",
       "ci": {
         "nightly": {
           "devices": [
-            "GALAXY",
             "N150",
-            "N300",
-            "P100",
-            "P150X4",
-            "P150X8",
-            "P300X2",
-            "T3K"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
+            "N300"
           ]
         }
       }
+    },
+    "Llama-3.1-8B-Instruct": {
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "N150",
+                "N300",
+                "P100",
+                "P150X4",
+                "P150X8",
+                "P300X2",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
+            "release": {
+              "devices": [
+                "GALAXY",
+                "P150X8",
+                "P300X2"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
+        }
+      ]
     },
     "Llama-3.2-11B-Vision-Instruct": {
       "inference_engine": "vLLM",
@@ -119,8 +145,6 @@
         },
         "release": {
           "devices": [
-            "GALAXY",
-            "P150X8",
             "P300X2"
           ]
         }
@@ -235,7 +259,6 @@
       "ci": {
         "nightly": {
           "devices": [
-            "N150",
             "N300"
           ]
         }
@@ -257,33 +280,41 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
     "Qwen3-8B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            }
+          }
         },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "N150",
+                "N300"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
@@ -346,13 +377,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -367,13 +391,6 @@
             "P150X8",
             "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -414,12 +431,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -544,12 +555,19 @@
         }
       }
     },
-    "openai-whisper-large-v3": {
+    "distil-large-v3": {
       "inference_engine": "MEDIA",
       "ci": {
-        "weekly": {
+        "nightly": {
           "devices": [
-            "GALAXY"
+            "P150",
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -580,7 +598,15 @@
         "nightly": {
           "devices": [
             "N150",
-            "N300"
+            "N300",
+            "P150",
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -670,12 +696,20 @@
           "devices": [
             "GALAXY",
             "GALAXY_BH",
-            "N150"
+            "N150",
+            "P150",
+            "P300X2"
+          ]
+        },
+        "weekly": {
+          "devices": [
+            "GALAXY"
           ]
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "P150",
+            "P300X2"
           ]
         }
       }

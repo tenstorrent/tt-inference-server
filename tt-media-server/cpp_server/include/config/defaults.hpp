@@ -20,6 +20,16 @@ constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
+constexpr const char* SOCKET_TRANSPORT = "zmq";  // "tcp" or "zmq"
+
+// PrefillGateway integration. When true, decode connects as CLIENT to the
+// gateway and prefill listens as SERVER for the gateway to dial in.
+constexpr bool USE_PREFILL_GATEWAY = false;
+// Stable identity sent in PrefillRegistrationMessage; empty -> "<host>:<port>".
+constexpr const char* PREFILL_SERVER_ID = "";
+// Capacity hint sent to the gateway. 0 = unlimited.
+constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
+
 constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
@@ -66,7 +76,7 @@ constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
 constexpr size_t MAX_CONNECTIONS = 100000;
-constexpr size_t IDLE_CONNECTION_TIMEOUT_S = 300;
+constexpr size_t IDLE_CONNECTION_TIMEOUT_S = 3600;
 constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
@@ -91,5 +101,21 @@ constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS = 131072;  // upper bound for prefill prompt
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
+
+// Dynamo backend (TCP `generate` endpoint that registers with NVIDIA Dynamo
+// frontends). All defaults are overridable via env vars; the endpoint is
+// off unless DYNAMO_ENDPOINT_ENABLED=1.
+constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr const char* DYNAMO_NAMESPACE = "default";
+constexpr const char* DYNAMO_COMPONENT = "backend";
+constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
+
+// Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
+constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://localhost:2379";
+// Lease TTL for instance + MDC entries in etcd. The keep-alive thread
+// refreshes the lease at half this interval so a missed tick doesn't trip
+// the reaper.
+constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
 }  // namespace tt::config::defaults

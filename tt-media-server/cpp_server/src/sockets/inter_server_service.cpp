@@ -26,16 +26,50 @@ bool InterServerService::initializeFromConfig() {
 
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
+  const bool gatewayMode = tt::config::usePrefillGateway();
+  const bool zmqTransport =
+      tt::config::socketTransport() == tt::sockets::transport_names::ZMQ;
 
   bool success = false;
 
+  // Gateway mode always makes decode dial the gateway. TCP prefills listen for
+  // the gateway, while ZMQ prefills dial the gateway's shared ROUTER socket.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as server on port {}", port);
-    success = socket_manager_.initializeAsServer(port);
+    if (gatewayMode) {
+      TT_LOG_INFO(
+          "[InterServerService] Decode (gateway mode): connecting to {}:{}",
+          host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+    } else {
+      TT_LOG_INFO(
+          "[InterServerService] Decode (direct mode): listening on port {}",
+          port);
+      success = socket_manager_.initializeAsServer(port);
+    }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    TT_LOG_INFO("[InterServerService] Initializing as client to {}:{}", host,
-                port);
-    success = socket_manager_.initializeAsClient(host, port);
+    if (gatewayMode) {
+      if (zmqTransport) {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway ZMQ mode): connecting to "
+            "{}:{}",
+            host, port);
+        success = socket_manager_.initializeAsClient(host, port);
+        periodic_registration_mode_ = success;
+      } else {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway mode): listening on port {} "
+            "for gateway",
+            port);
+        success = socket_manager_.initializeAsServer(port);
+      }
+      gateway_mode_ = success;
+    } else {
+      TT_LOG_INFO(
+          "[InterServerService] Prefill (direct mode): connecting to {}:{}",
+          host, port);
+      success = socket_manager_.initializeAsClient(host, port);
+      periodic_registration_mode_ = success;
+    }
   }
 
   if (success) {
@@ -57,6 +91,12 @@ void InterServerService::start() {
   }
 
   socket_manager_.start();
+  if (periodic_registration_mode_) {
+    // Register once on connect (and again on any reconnect) — no polling thread
+    // needed. The ZMQ monitor fires this callback from its existing thread.
+    socket_manager_.setConnectionEstablishedCallback(
+        [this] { sendRegistration(); });
+  }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
 
@@ -158,6 +198,27 @@ void InterServerService::setupMessageHandlers() {
         }
       });
 
+  // Decode-side no-op handler so the gateway's PrefillAssignment doesn't log
+  // "no handler" warnings. Useful for KV-transfer routing in a follow-up.
+  socket_manager_.registerHandler<PrefillAssignmentMessage>(
+      tags::PREFILL_ASSIGNMENT, [](const PrefillAssignmentMessage& message) {
+        TT_LOG_DEBUG(
+            "[InterServerService] PrefillAssignment for task {} → prefill '{}'",
+            message.task_id, message.server_id);
+      });
+
+  socket_manager_.registerHandler<RegistrationProbeMessage>(
+      tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
+        sendRegistrationIfGatewayModeIsEnabled();
+      });
+
+  socket_manager_.registerHandler<PrefillRegistrationMessage>(
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {
+        TT_LOG_DEBUG(
+            "[InterServerService] Prefill '{}' announced (direct mode)",
+            msg.server_id);
+      });
+
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
@@ -193,6 +254,29 @@ void InterServerService::setupMessageHandlers() {
                                  message.memory_usage, message.active_tasks);
         }
       });
+}
+
+void InterServerService::sendRegistration() {
+  PrefillRegistrationMessage msg;
+  msg.server_id = tt::config::prefillServerId();
+  msg.max_in_flight = tt::config::prefillMaxInFlight();
+
+  bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
+  if (ok) {
+    TT_LOG_DEBUG(
+        "[InterServerService] Sent PrefillRegistration: id='{}' "
+        "max_in_flight={}",
+        msg.server_id, msg.max_in_flight);
+  } else {
+    TT_LOG_WARN("[InterServerService] Failed to send PrefillRegistration");
+  }
+}
+
+void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
+  if (!gateway_mode_) {
+    return;
+  }
+  sendRegistration();
 }
 
 }  // namespace tt::sockets

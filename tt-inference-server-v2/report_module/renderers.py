@@ -9,6 +9,12 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Mapping, Sequence
 
+from report_module.display import (
+    DISPLAY_NAMES,
+    decimal_places,
+    display_name,
+    target_checks_header,
+)
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
@@ -17,17 +23,24 @@ logger = logging.getLogger(__name__)
 
 RendererFn = Callable[[Block, Mapping[str, Any]], str]
 
-HIDDEN_COLUMNS = frozenset({"kind", "model", "device", "timestamp"})
+HIDDEN_COLUMNS = frozenset(
+    {
+        "kind",
+        "model",
+        "device",
+        "timestamp",
+        "test_name",
+        "description",
+        "elapsed_seconds",
+        "logs",
+    }
+)
 
 GENERIC_KINDS: tuple[str, ...] = (
     "benchmarks",
-    "benchmarks_summary",
     "evals",
-    "percentile_benchmarks",
-    "parameter_support_tests",
+    "spec_tests",
     "stress_tests",
-    "server_test_results",
-    "results_details",
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -100,8 +113,21 @@ def _resolve_model_device(
     return model, device
 
 
-def _heading(kind: str, model: str, device: str, title_override: str = "") -> str:
-    label = title_override or kind.replace("_", " ").title()
+def _heading(
+    kind: str,
+    model: str,
+    device: str,
+    title_override: str = "",
+    task_type: str = "",
+) -> str:
+    if title_override:
+        label = title_override
+    elif task_type and kind:
+        label = (
+            f"{task_type.replace('_', ' ').title()} {kind.replace('_', ' ').title()}"
+        )
+    else:
+        label = kind.replace("_", " ").title()
     suffix_bits = [bit for bit in (model, device) if bit]
     if not suffix_bits:
         return f"### {label}"
@@ -149,6 +175,9 @@ def _format_cell(column: str, value: Any) -> str:
         and value in _CHECK_INT_TO_LABEL
     ):
         return _CHECK_INT_TO_LABEL[value]
+    places = decimal_places(column)
+    if places is not None and isinstance(value, float) and value == value:
+        return f"{value:.{places}f}"
     return format_value(value)
 
 
@@ -162,30 +191,39 @@ def _pivot_single_record(
     """
     return [
         {
-            PIVOT_FIELD_HEADER: col,
-            PIVOT_VALUE_HEADER: format_value(record.get(col)),
+            PIVOT_FIELD_HEADER: display_name(col),
+            PIVOT_VALUE_HEADER: _format_cell(col, record.get(col)),
         }
         for col in columns
     ]
 
 
-def _build_table(records: Sequence[Mapping[str, Any]]) -> str:
+def _build_table(
+    records: Sequence[Mapping[str, Any]],
+    header_fn: Callable[[str], str] = display_name,
+) -> str:
     columns = _ordered_display_columns(records)
     if not columns:
         return ""
     display_rows = [
-        {col: _format_cell(col, record.get(col)) for col in columns}
+        {header_fn(col): _format_cell(col, record.get(col)) for col in columns}
         for record in records
     ]
     return build_markdown_table(display_rows)
 
+
+_TARGET_CHECKS_KEY = "target_checks"
 
 _SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
 
 
 def _humanize_key(key: str) -> str:
     """Turn ``"summary_stats"`` into ``"Summary Stats"`` while leaving
-    already-formatted keys (``"TTFT vs. Context"``) untouched."""
+    already-formatted keys (``"TTFT vs. Context"``) untouched.
+
+    Prefers an explicit :mod:`display` mapping when one exists"""
+    if key in DISPLAY_NAMES:
+        return display_name(key)
     if _SNAKE_CASE.match(key):
         return key.replace("_", " ").title()
     return key
@@ -218,7 +256,9 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         return ""
 
     model, device = _resolve_model_device(block, metadata, records)
-    heading = _heading(block.kind, model, device, block.title or "")
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
 
     if len(records) > 1:
         table = _build_table(records)
@@ -245,7 +285,8 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
         sub_records = _extract_records(Block(kind=key, data=value))
         if not sub_records:
             continue
-        sub_table = _build_table(sub_records)
+        header_fn = target_checks_header if key == _TARGET_CHECKS_KEY else display_name
+        sub_table = _build_table(sub_records, header_fn=header_fn)
         if not sub_table:
             continue
         parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")

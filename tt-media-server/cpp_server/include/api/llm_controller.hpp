@@ -15,13 +15,8 @@
 #include "api/stream_event_formatter.hpp"
 #include "config/settings.hpp"
 #include "domain/models_response.hpp"
-#include "services/disaggregation_service.hpp"
+#include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
-#include "services/session_manager.hpp"
-
-namespace tt::sockets {
-class InterServerService;
-}
 
 namespace tt::api {
 
@@ -67,9 +62,7 @@ class LLMController : public drogon::HttpController<LLMController> {
 
  private:
   std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<services::DisaggregationService> disaggregationService;
-  std::shared_ptr<services::SessionManager> sessionManager;
-  std::shared_ptr<sockets::InterServerService> socketService;
+  std::shared_ptr<services::LLMPipeline> pipeline;
 
   /**
    * Handle streaming responses (SSE). The provided `formatter` decides the
@@ -93,54 +86,11 @@ class LLMController : public drogon::HttpController<LLMController> {
       NonStreamResponseWriter::ResponseBuilder builder,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-  struct SessionInfo {
-    bool validSessionFound = false;
-    std::optional<size_t> registrationHash;
-  };
-
-  enum class SessionErrorType {
-    RATE_LIMIT,      // Returns 429 Too Many Requests
-    ALLOCATION_FAIL  // Returns 503 Service Unavailable
-  };
-
-  struct SessionError {
-    SessionErrorType type;
-    std::string message;
-  };
-
   /**
-   * Validate/create session, mark it in-flight, and populate request fields.
-   * cancelFn is stored atomically with the in-flight state so that a concurrent
-   * closeSession always has a consistent view. Both streaming and non-streaming
-   * paths pass a cancelFn; when closeSession fires mid-flight the client
-   * receives finish_reason="abort" (partial response for non-streaming).
-   */
-  void resolveSession(std::shared_ptr<LLMRequest> req, trantor::EventLoop* loop,
-                      std::function<void(SessionInfo)> onResolved,
-                      std::function<void(const SessionError&)> onError,
-                      std::function<void()> cancelFn = nullptr) const;
-
-  /**
-   * Determine if disaggregated prefill should be used for this request.
-   */
-  bool shouldDoPrefillOnDecode(const LLMRequest& request,
-                               bool validSessionFound) const;
-
-  /**
-   * Submit the request to the appropriate streaming producer based on
-   * llm_mode (REGULAR vs DECODE_ONLY) and the prefill-on-decode heuristic.
-   * Caller must invoke service->preProcess(req) beforehand. Throws on
-   * unsupported mode or queue/dispatch failures.
-   */
-  void dispatchGeneration(
-      LLMRequest& request, SessionInfo sessionInfo,
-      const std::function<void(const LLMStreamChunk&, bool)>& cb) const;
-
-  /**
-   * Translate a SessionError into a drogon HTTP error response.
+   * Translate a pipeline session error into a drogon HTTP error response.
    */
   static drogon::HttpResponsePtr makeSessionErrorResponse(
-      const SessionError& err);
+      const services::LLMPipeline::SessionError& err);
 
   /**
    * Build the ResponseWriterParams shared by both streaming and non-streaming

@@ -151,6 +151,13 @@ def generate_tts_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
+from evals.agentic.report import (
+    get_agentic_result_file_pattern,
+    is_harbor_result as _is_harbor_result,
+    process_agentic_eval_files,
+)
+
+
 def get_embedding_benchmark_targets(model_spec, device_str, logger):
     """Get embedding-specific benchmark targets.
 
@@ -661,6 +668,10 @@ def aiperf_benchmark_generate_report(
         Config key includes:
         - isl, osl, concurrency, num_requests (base params)
         - images, height, width (for image benchmarks - treated as separate configs)
+        - sweep_index (for GuideLLM sweep profiles - keeps each sweep point as
+          a distinct config so points sharing (isl, osl, maxcon, n) are not
+          collapsed). Files without a `_sweep-K` suffix get sweep_index=None,
+          preserving original AIPerf/vLLM/GenAI dedup behavior.
         """
         config_to_file = {}
         # Sort in reverse order so latest files come first
@@ -675,12 +686,14 @@ def aiperf_benchmark_generate_report(
                 img_match = re.search(
                     r"images-(\d+)_height-(\d+)_width-(\d+)", filename
                 )
+                sweep_match = re.search(r"_sweep-(\d+)", filename)
+                sweep_idx = int(sweep_match.group(1)) if sweep_match else None
                 if img_match:
                     images, height, width = map(int, img_match.groups())
-                    config_key = (isl, osl, con, n, images, height, width)
+                    config_key = (isl, osl, con, n, images, height, width, sweep_idx)
                 else:
                     # Text-only benchmark
-                    config_key = (isl, osl, con, n, 0, 0, 0)
+                    config_key = (isl, osl, con, n, 0, 0, 0, sweep_idx)
 
                 # Only keep the first (latest) file for each config
                 if config_key not in config_to_file:
@@ -1228,6 +1241,30 @@ def aiperf_benchmark_generate_report(
     return release_str, all_aiperf_results, disp_md_path, text_data_file_path
 
 
+def guidellm_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Thin orchestration shim for GuideLLM report generation.
+
+    All GuideLLM-specific logic (discovery, percentile table, native-style
+    tables sourced from `benchmarks.json`, CSV output) lives in
+    `benchmarking/guidellm_report.py` so this orchestrator stays free of any
+    one tool's reporting details. When `run_reports.py` is refactored, this
+    shim is the only thing that needs to be re-wired for GuideLLM.
+    """
+    from benchmarking.guidellm_report import generate_guidellm_report
+
+    return generate_guidellm_report(
+        args=args,
+        model_spec=model_spec,
+        report_id=report_id,
+        metadata=metadata,
+        benchmarks_output_dir=Path(
+            f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+        ),
+    )
+
+
 def genai_perf_benchmark_generate_report(
     args, server_mode, model_spec, report_id, metadata={}
 ):
@@ -1256,7 +1293,11 @@ def genai_perf_benchmark_generate_report(
 
     # Helper function to keep only the latest file for each config
     def deduplicate_by_config(files):
-        """Keep only the latest file for each unique benchmark configuration."""
+        """Keep only the latest file for each unique benchmark configuration.
+
+        Sweep index (from GuideLLM `_sweep-K` filename suffix) is part of the
+        key so sweep points sharing (isl, osl, maxcon, n) are preserved.
+        """
         config_to_file = {}
         # Sort in reverse order so latest files come first
         for filepath in sorted(files, reverse=True):
@@ -1269,11 +1310,13 @@ def genai_perf_benchmark_generate_report(
                 image_match = re.search(
                     r"images-(\d+)_height-(\d+)_width-(\d+)", filename
                 )
+                sweep_match = re.search(r"_sweep-(\d+)", filename)
+                sweep_idx = sweep_match.group(1) if sweep_match else None
                 if image_match:
                     images, height, width = image_match.groups()
-                    config_key = (isl, osl, maxcon, n, images, height, width)
+                    config_key = (isl, osl, maxcon, n, images, height, width, sweep_idx)
                 else:
-                    config_key = (isl, osl, maxcon, n)
+                    config_key = (isl, osl, maxcon, n, sweep_idx)
 
                 # Only keep the first (latest) file for each config
                 if config_key not in config_to_file:
@@ -1520,12 +1563,14 @@ def genai_perf_benchmark_generate_report(
 
 
 def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for vLLM, genai-perf, and AIPerf benchmark files (all stack together)
-    # All benchmark tools now use the same unified output directory
+    # Look for vLLM, genai-perf, AIPerf, and GuideLLM benchmark files
+    # (all stack together). All benchmark tools now use the same unified
+    # output directory.
     vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
     aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
     structured_pattern = f"benchmark_structured_{model_spec.model_id}_*.json"
+    guidellm_pattern = f"guidellm_benchmark_{model_spec.model_id}_*.json"
 
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
 
@@ -1533,12 +1578,13 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
     aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
     structured_files = glob(f"{benchmarks_output_dir}/{structured_pattern}")
+    guidellm_files = glob(f"{benchmarks_output_dir}/{guidellm_pattern}")
     # vllm_pattern also matches structured files; subtract them so they're processed once.
     vllm_files = [f for f in vllm_files if f not in set(structured_files)]
 
     # Mirror the runtime gate from run_benchmarks.py: when only structured-output
-    # tasks were executed, the report should not surface stale text/vlm/aiperf
-    # JSONs left in the shared benchmarks_output/ directory by prior runs.
+    # tasks were executed, the report should not surface stale text/vlm/aiperf/
+    # guidellm JSONs left in the shared benchmarks_output/ directory by prior runs.
     if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
         logger.info(
             "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; restricting report to "
@@ -1547,16 +1593,23 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         vllm_files = []
         genai_files = []
         aiperf_files = []
+        guidellm_files = []
 
     logger.info(
         f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, "
-        f"{len(aiperf_files)} AIPerf, {len(structured_files)} structured-output "
+        f"{len(aiperf_files)} AIPerf, {len(structured_files)} structured-output, "
+        f"and {len(guidellm_files)} GuideLLM "
         "benchmark files before deduplication"
     )
 
     # Deduplicate files - keep only latest run for each config
     def deduplicate_by_config(files):
-        """Keep only the latest file for each unique benchmark configuration."""
+        """Keep only the latest file for each unique benchmark configuration.
+
+        GuideLLM sweep points (filenames carrying a `_sweep-K` suffix) are
+        kept distinct via sweep_index in the config key. Files without that
+        suffix get sweep_index=None, preserving prior dedup behavior.
+        """
         config_to_file = {}
         # Sort in reverse order so latest files come first
         for filepath in sorted(files, reverse=True):
@@ -1570,12 +1623,14 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 img_match = re.search(
                     r"images-(\d+)_height-(\d+)_width-(\d+)", filename
                 )
+                sweep_match = re.search(r"_sweep-(\d+)", filename)
+                sweep_idx = int(sweep_match.group(1)) if sweep_match else None
                 if img_match:
                     images, height, width = map(int, img_match.groups())
-                    config_key = (isl, osl, con, n, images, height, width)
+                    config_key = (isl, osl, con, n, images, height, width, sweep_idx)
                 else:
                     # Text-only benchmark
-                    config_key = (isl, osl, con, n, 0, 0, 0)
+                    config_key = (isl, osl, con, n, 0, 0, 0, sweep_idx)
 
                 # Only keep the first (latest) file for each config
                 if config_key not in config_to_file:
@@ -1588,13 +1643,21 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     vllm_files = deduplicate_by_config(vllm_files)
     genai_files = deduplicate_by_config(genai_files)
     aiperf_files = deduplicate_by_config(aiperf_files)
+    guidellm_files = deduplicate_by_config(guidellm_files)
 
     logger.info(
-        f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, {len(aiperf_files)} AIPerf benchmark files"
+        f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, "
+        f"{len(aiperf_files)} AIPerf, {len(guidellm_files)} GuideLLM benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
 
-    if not vllm_files and not genai_files and not aiperf_files and not structured_files:
+    if (
+        not vllm_files
+        and not genai_files
+        and not aiperf_files
+        and not structured_files
+        and not guidellm_files
+    ):
         logger.info("No benchmark files found. Skipping.")
         return (
             "",
@@ -1642,13 +1705,11 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         )
         all_tool_results.extend(vllm_release_raw)
 
-        # Separate text, vlm, audio, tts, embedding and cnn for vLLM
+        # Separate text, vlm, asr, tts, embedding and cnn for vLLM
         vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
         vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
-        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
-        vllm_tts = [
-            r for r in vllm_release_raw if r.get("task_type") == "text_to_speech"
-        ]
+        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "asr"]
+        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
         vllm_embedding = [
             r for r in vllm_release_raw if r.get("task_type") == "embedding"
         ]
@@ -1791,6 +1852,33 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             genai_vlm_md = get_markdown_table(genai_vlm_display)
             image_sections.append(
                 f"#### GenAI-Perf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_vlm_md}"
+            )
+
+    # Process GuideLLM benchmarks
+    if guidellm_files:
+        _, guidellm_release_raw, _, _ = benchmark_generate_report_helper(
+            guidellm_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(guidellm_release_raw)
+
+        # Separate text and vlm for GuideLLM (omni_modal image runs land in vlm)
+        guidellm_text = [
+            r for r in guidellm_release_raw if r.get("task_type") == "text"
+        ]
+        guidellm_vlm = [r for r in guidellm_release_raw if r.get("task_type") == "vlm"]
+
+        if guidellm_text:
+            guidellm_text_display = [create_display_dict(r) for r in guidellm_text]
+            guidellm_text_md = get_markdown_table(guidellm_text_display)
+            text_sections.append(
+                f"#### GuideLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{guidellm_text_md}"
+            )
+
+        if guidellm_vlm:
+            guidellm_vlm_display = [create_vlm_display_dict(r) for r in guidellm_vlm]
+            guidellm_vlm_md = get_markdown_table(guidellm_vlm_display)
+            image_sections.append(
+                f"#### GuideLLM VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{guidellm_vlm_md}"
             )
 
     # Combine sections: text, image, audio, embedding, then cnn (matching original order)
@@ -2423,20 +2511,22 @@ def generate_evals_release_markdown(report_rows):
 
 
 def separate_files_by_format(files):
-    """Separate eval files into dict-format and list-format.
+    """Separate eval files into dict-format, list-format, and agentic-format.
 
     Detects JSON structure to differentiate between:
     - Dict format: {"results": {...}, "configs": {...}} (lmms-eval)
     - List format: [{...}] (image_client)
+    - Agentic format: {"trial_results": [...], "stats": {...}} (Harbor)
 
     Args:
         files: List of file paths to eval JSON files
 
     Returns:
-        Tuple of (dict_format_files, list_format_files)
+        Tuple of (dict_format_files, list_format_files, agentic_format_files)
     """
     dict_format_files = []
     list_format_files = []
+    agentic_format_files = []
 
     for filepath in files:
         try:
@@ -2445,12 +2535,14 @@ def separate_files_by_format(files):
 
             if isinstance(data, list):
                 list_format_files.append(filepath)
+            elif _is_harbor_result(data):
+                agentic_format_files.append(filepath)
             elif isinstance(data, dict):
                 dict_format_files.append(filepath)
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not read or parse file {filepath}: {e}")
 
-    return dict_format_files, list_format_files
+    return dict_format_files, list_format_files, agentic_format_files
 
 
 def process_list_format_eval_files(list_files):
@@ -2559,6 +2651,16 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
+        agentic_file_name_pattern = get_agentic_result_file_pattern(
+            model_spec, eval_run_id
+        )
+        agentic_file_path_pattern = f"{get_default_workflow_root_log_dir()}/evals_output/{agentic_file_name_pattern}"
+        files.extend(glob(agentic_file_path_pattern))
+        direct_agentic_file_path_pattern = str(
+            Path(args.output_path) / agentic_file_name_pattern
+        )
+        if direct_agentic_file_path_pattern != agentic_file_path_pattern:
+            files.extend(glob(direct_agentic_file_path_pattern))
 
     if "image" in model_spec.supported_modalities:
         image_file_name_pattern = f"eval_{eval_run_id}/*_results.json"
@@ -2604,7 +2706,9 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
         return release_str, combined_data, summary_fpath, data_fpath
 
-    dict_format_files, list_format_files = separate_files_by_format(files)
+    dict_format_files, list_format_files, agentic_format_files = (
+        separate_files_by_format(files)
+    )
 
     results = {}
     meta_data = {}
@@ -2617,6 +2721,12 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
         meta_data.update(list_meta_data)
+    if agentic_format_files:
+        agentic_results, agentic_meta_data = process_agentic_eval_files(
+            agentic_format_files
+        )
+        results.update(agentic_results)
+        meta_data.update(agentic_meta_data)
 
     if not results:
         logger.warning("No evaluation files found. Skipping.")
@@ -3583,6 +3693,16 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
+    # generate GuideLLM benchmarks report (separate detailed report)
+    (
+        guidellm_release_str,
+        guidellm_release_data,
+        guidellm_disp_md_path,
+        guidellm_data_file_path,
+    ) = guidellm_benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
     # generate evals report
     evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
         evals_generate_report(
@@ -3639,6 +3759,8 @@ def main():
         all_benchmarks_str += aiperf_release_str + "\n\n"
     if genai_perf_release_str:
         all_benchmarks_str += genai_perf_release_str + "\n\n"
+    if guidellm_release_str:
+        all_benchmarks_str += guidellm_release_str + "\n\n"
 
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
@@ -3850,6 +3972,16 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read AIPerf CSV data: {e}")
 
+        # Read GuideLLM benchmark data if available
+        guidellm_detailed_data = None
+        if guidellm_data_file_path:
+            try:
+                with open(guidellm_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    guidellm_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read GuideLLM CSV data: {e}")
+
         # Read server tests data if available
         server_tests_data = []
         server_tests_path = Path(project_root) / "test_reports"
@@ -3886,6 +4018,12 @@ def main():
             ],
             "aiperf_benchmarks_detailed": aiperf_detailed_data
             if aiperf_detailed_data
+            else [],
+            "guidellm_benchmarks": guidellm_release_data
+            if guidellm_release_data
+            else [],
+            "guidellm_benchmarks_detailed": guidellm_detailed_data
+            if guidellm_detailed_data
             else [],
         }
 

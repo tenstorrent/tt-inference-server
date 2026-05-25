@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..parsers.guidellm import GuideLLMParser
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class GuideLLMDriver(LLMDriver):
     name = "guidellm"
+    _parser = GuideLLMParser()
 
     def __init__(
         self,

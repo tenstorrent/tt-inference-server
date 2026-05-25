@@ -134,6 +134,31 @@ class VenvConfig:
         return True
 
 
+def setup_evals_agentic(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for EVALS_AGENTIC: clone SWE-agent and install it as editable.
+
+    Other deps (harbor, mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+    """
+    sweagent_dir = venv_config.venv_path / "SWE-agent"
+    if not sweagent_dir.exists():
+        clone_return_code = run_command(
+            f"git clone https://github.com/SWE-agent/SWE-agent.git {sweagent_dir}",
+            logger=logger,
+        )
+        if clone_return_code != 0:
+            return False
+
+    return_code = run_command(
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
+        f"-e {sweagent_dir}",
+        logger=logger,
+    )
+    return return_code == 0
+
+
 def check_docker_available(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -338,6 +363,16 @@ _venv_config_list = [
         requirements_file="reports-run-script.txt",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        requirements_file="evals-agentic.txt",
+        python_version="3.12",
+        setup_function=setup_evals_agentic,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+        requirements_file="v2-run-script.txt",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
@@ -371,6 +406,11 @@ _venv_config_list = [
         venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
         requirements_file="benchmarks-aiperf.txt",
         extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
+        requirements_file="benchmarks-guidellm.txt",
         python_version="3.11",
     ),
     # No pip; directory and/or runtime check

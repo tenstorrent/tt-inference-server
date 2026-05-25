@@ -24,7 +24,10 @@ ModelService modelService();
 bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool isLlmServiceEnabled();
+bool isLlmService();
+
+/** True when model_service() == IMAGE. */
+bool isImageService();
 
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
@@ -72,6 +75,21 @@ std::string socketHost();
 
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
+
+/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
+ * Default: defaults::SOCKET_TRANSPORT. */
+std::string socketTransport();
+
+/** Whether the inter-server socket integrates with PrefillGateway. From
+ * USE_PREFILL_GATEWAY. */
+bool usePrefillGateway();
+
+/** Prefill identity for PrefillRegistrationMessage; falls back to
+ * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
+std::string prefillServerId();
+
+/** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
+uint32_t prefillMaxInFlight();
 
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
@@ -220,9 +238,47 @@ int prefillMaxTokenIds();
  * defaults::DECODE_MAX_TOKEN_IDS. */
 int decodeMaxTokenIds();
 
+// ---------------------------------------------------------------------------
+// Dynamo TCP backend (NVIDIA Dynamo frontend integration)
+// ---------------------------------------------------------------------------
+
+/** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
+ * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+bool dynamoEndpointEnabled();
+
+/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
+ * defaults::DYNAMO_BIND_HOST. */
+std::string dynamoBindHost();
+
+/** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
+ * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
+ * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
+std::string dynamoEtcdEndpoints();
+
+/** Lease TTL (seconds) for etcd-backed discovery. From
+ * DYNAMO_ETCD_LEASE_TTL_SECS. Default: defaults::DYNAMO_ETCD_LEASE_TTL_SECS. */
+int64_t dynamoEtcdLeaseTtlSecs();
+
+/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
+ * defaults::DYNAMO_NAMESPACE. */
+std::string dynamoNamespace();
+
+/** Discovery component key. From DYNAMO_COMPONENT. Default:
+ * defaults::DYNAMO_COMPONENT. */
+std::string dynamoComponent();
+
+/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
+ * defaults::DYNAMO_ENDPOINT_NAME. */
+std::string dynamoEndpointName();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
+
+/** Build ImageConfig from environment variables and runtime settings. Reads
+ * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
+ * src/config/settings.cpp. */
+ImageConfig imageEngineConfig();
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

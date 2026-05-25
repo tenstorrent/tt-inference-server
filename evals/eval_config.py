@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from evals.eval_utils import (
     score_multilevel_keys_mean,
@@ -24,6 +24,52 @@ class EvalTaskScore:
     gpu_reference_score_ref: str = None
     score_func_kwargs: Dict[str, str] = field(default_factory=dict)
     tolerance: float = 0.05
+
+
+@dataclass(frozen=True)
+class TerminalBenchEvalConfig:
+    dataset: str
+    agent: str
+    model: Optional[str] = None
+    n_concurrent_trials: int = 1
+    n_attempts: int = 1
+    n_tasks: Optional[int] = None
+    task_names: List[str] = field(default_factory=list)
+    exclude_task_names: List[str] = field(default_factory=list)
+    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    environment_type: str = "docker"
+    override_cpus: Optional[int] = None
+    override_memory_mb: Optional[int] = None
+    timeout_multiplier: Optional[float] = None
+    agent_timeout_sec: Optional[float] = None
+    quiet: bool = True
+    yes: bool = True
+    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SWEbenchEvalConfig:
+    dataset_name: str
+    sweagent_subset: str = "verified"
+    dataset_split: str = "test"
+    agent_backend: str = "mini-swe-agent"
+    model: Optional[str] = None
+    n_concurrent_trials: int = 1
+    max_workers: int = 1
+    n_tasks: Optional[int] = None
+    temperature: float = 1.0
+    top_p: float = 0.95
+    max_input_tokens: int = 200 * 1024
+    max_output_tokens: Optional[int] = None
+    completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    sweagent_config: str = "config/default.yaml"
+    mini_config: str = "swebench.yaml"
+    mini_model_class: str = "litellm"
+    mini_environment_class: str = "docker"
+    swebench_timeout_sec: Optional[int] = None
+    shuffle: bool = True
+    random_delay_multiplier: float = 0.3
+    instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -59,6 +105,8 @@ class EvalTask:
             EvalLimitMode.SMOKE_TEST: 0.01,
         }
     )
+    agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
+    swebench_eval_config: Optional[SWEbenchEvalConfig] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -91,6 +139,114 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.6-27B",
+        tasks=[
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=59.3,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=53.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4450842511",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=62.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    # we will need to specify specific tasks
+                    # for CI runs to keep runtime reasonable
+                    dataset_split="test",
+                    # mini-swe-agent is preferred: simpler CLI
+                    # The swe-agent backend is kept as a fallback.
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=200 * 1024,
+                    # max output tokens is not specifed in Qwen docs btw
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="arcee-ai/AFM-4.5B",
         tasks=[
@@ -944,9 +1100,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
@@ -982,9 +1135,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-8B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1025,9 +1175,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -1062,9 +1209,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-4B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1104,9 +1248,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1142,9 +1283,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1181,9 +1319,6 @@ _eval_config_list = [
                 max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/Qwen3-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
@@ -1356,9 +1491,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1387,9 +1519,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                     "timeout": "3600",
                 },
@@ -1418,9 +1547,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "Qwen/QwQ-32B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={
@@ -1453,9 +1579,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -1482,9 +1605,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
                 gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
@@ -1512,9 +1632,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-0528",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 32768,
                 },
                 gen_kwargs={
@@ -1544,9 +1661,6 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
-                    "model": "deepseek-ai/DeepSeek-R1-0528",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
-                    "tokenizer_backend": "huggingface",
                     "max_length": 32768,
                 },
                 gen_kwargs={
@@ -3081,6 +3195,54 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-7B-Instruct",
+        tasks=[
+            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
+            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
+            # and send them as List[List[int]] to /v1/completions, which the forge
+            # server's pydantic schema rejects with HTTP 422 (it only accepts
+            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
+            # chat template host-side, sends prompts as strings, and the server
+            # tokenizes them — schema-compatible.
+            EvalTask(
+                task_name="ifeval",
+                tokenizer_backend="none",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                tokenizer_backend="none",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],

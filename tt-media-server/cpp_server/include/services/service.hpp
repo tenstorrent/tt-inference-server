@@ -4,9 +4,10 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
 #include <vector>
 
-#include "worker/worker_info.hpp"
+#include "runtime/worker/worker_info.hpp"
 
 namespace tt::services {
 class QueueFullException : public std::runtime_error {
@@ -29,5 +30,6 @@ class IService {
   virtual void stop() = 0;
   virtual bool isModelReady() const = 0;
   virtual SystemStatus getSystemStatus() const = 0;
+  virtual std::string runnerInUse() const { return ""; }
 };
 }  // namespace tt::services

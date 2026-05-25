@@ -15,8 +15,8 @@ _BH_DEVICE_MESH_DESCRIPTORS = {
     "p150": "p150_mesh_graph_descriptor.textproto",
     "p150x4": "p150x4_mesh_graph_descriptor.textproto",
     "p150x8": "p150x8_mesh_graph_descriptor.textproto",
-    "p300": "p300_mesh_graph_descriptor.textproto",
-    "p300x2": "p300_x2_mesh_graph_descriptor.textproto",
+    "p300": "p150_mesh_graph_descriptor.textproto",
+    "p300x2": "p150_mesh_graph_descriptor.textproto",
     "p100": "p100_mesh_graph_descriptor.textproto",
 }
 
