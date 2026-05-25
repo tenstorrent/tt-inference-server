@@ -176,20 +176,40 @@ everything except prefix caching.
 Run the AIPerf prefix-cache sweep directly against an already-up vLLM-compatible
 server (no v1 entry point involved). The workflow is `benchmarks`; the
 prefix-cache flag swaps the default media-task dispatch for the scenario sweep
-defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json):
+defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json).
+
+Same invocation shape as the TLDR — activate the dedicated venv first, then run
+`run.py` with the prefix-cache flags:
 
 ```bash
-<v2-prefix-cache-venv-python> tt-inference-server-v2/run.py \
-    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
-    --prefix-cache --prefix-cache-preset ci --service-port 8000 \
+source .workflow_venvs/.venv_v2_prefix_cache/bin/activate
+
+python tt-inference-server-v2/run.py \
+    --model Llama-3.1-8B-Instruct \
+    --workflow benchmarks \
+    --device gpu \
+    --service-port 8000 \
+    --prefix-cache \
+    --prefix-cache-preset ci \
     --jwt-secret "$JWT_SECRET"
 ```
 
-Materialize the venv ahead of time via
-`WorkflowVenvType.V2_PREFIX_CACHE` (declared in
-[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py)); its
-requirements live at
-[`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt).
+The venv is declared as `WorkflowVenvType.V2_PREFIX_CACHE` in
+[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py) with requirements
+in [`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt).
+Create it once before the first run:
+
+```bash
+python - <<'PY'
+from workflows.model_spec import get_runtime_model_spec
+from workflows.workflow_types import WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
+model_spec, _, _ = get_runtime_model_spec(
+    model="Llama-3.1-8B-Instruct", device="gpu",
+)
+VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(model_spec=model_spec)
+PY
+```
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
 `mooncake_trace`) and per-preset grids are JSON-defined and overridable with
