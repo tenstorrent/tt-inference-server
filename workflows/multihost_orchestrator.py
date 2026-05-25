@@ -42,7 +42,12 @@ from workflows.multihost_config import (
     generate_rankfile,
     generate_ssh_config,
 )
-from workflows.utils import default_dotenv_path, load_dotenv, write_dotenv
+from workflows.utils import (
+    default_dotenv_path,
+    image_uses_plugin_interface,
+    load_dotenv,
+    write_dotenv,
+)
 from workflows.workflow_types import DeviceTypes, WorkflowType
 
 
@@ -620,10 +625,17 @@ class MultiHostOrchestrator:
                 merged_override, runtime_override
             )
 
-        # Update the spec dict with merged plugin_config under the "tt" namespace
-        spec_dict["device_model_spec"]["vllm_args"]["plugin_config"] = json.dumps(
-            {"tt": merged_override}
-        )
+        # Write the merged TT config under the key the target image expects.
+        # New images (with TT_VLLM_INTERFACE=plugin) accept --plugin-config; legacy
+        # fork-vLLM images (no marker) only accept --override-tt-config.
+        if image_uses_plugin_interface(self.model_spec.docker_image):
+            spec_dict["device_model_spec"]["vllm_args"]["plugin_config"] = json.dumps(
+                {"tt": merged_override}
+            )
+        else:
+            spec_dict["device_model_spec"]["vllm_args"]["override_tt_config"] = (
+                json.dumps(merged_override)
+            )
 
         # Write to JSON file in config_dir
         json_path = self.setup.config_dir / "runtime_model_spec.json"

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import json
 import logging
 import os
 import shlex
@@ -26,6 +27,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    image_uses_plugin_interface,
     run_command,
 )
 from workflows.validate_setup import run_multihost_validation_subprocess
@@ -150,6 +152,44 @@ def get_media_server_docker_env_vars(model_spec):
         f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
     )
     return env_vars
+
+
+def _rewrite_vllm_args_for_legacy_image_if_needed(json_fpath, docker_image):
+    """Convert plugin_config -> override_tt_config in the runtime spec JSON when
+    the target image is a legacy fork-vLLM build.
+
+    Plugin-mode images (post-PR #3594) carry `ENV TT_VLLM_INTERFACE=plugin` and
+    accept `--plugin-config '{"tt": {...}}'`. Older images carry no marker and
+    their vLLM only accepts `--override-tt-config '{...}'`. This function
+    inspects the image; if no marker is present, it unwraps the `"tt"` namespace
+    from `plugin_config` and rewrites the key to `override_tt_config` so the
+    legacy vLLM inside the container can parse it.
+    """
+    if image_uses_plugin_interface(docker_image):
+        return
+    try:
+        with open(json_fpath, "r") as f:
+            data = json.load(f)
+        vllm_args = (
+            data.get("runtime_model_spec", {})
+            .get("device_model_spec", {})
+            .get("vllm_args", {})
+        )
+        if "plugin_config" not in vllm_args:
+            return
+        wrapped = json.loads(vllm_args.pop("plugin_config"))
+        vllm_args["override_tt_config"] = json.dumps(wrapped.get("tt", {}))
+        with open(json_fpath, "w") as f:
+            json.dump(data, f, indent=2)
+        logger.info(
+            f"Rewrote runtime spec JSON {json_fpath} for legacy fork-vLLM image "
+            f"({docker_image}): plugin_config -> override_tt_config."
+        )
+    except (OSError, json.JSONDecodeError, KeyError) as e:
+        logger.warning(
+            f"Failed to rewrite runtime spec JSON for legacy image: {e}. "
+            "Container may fail with 'unrecognized arguments: --plugin-config'."
+        )
 
 
 def ensure_docker_image(image_name):
@@ -350,6 +390,13 @@ def generate_docker_run_command(
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
         if json_fpath:
+            # If the target image is a legacy fork-vLLM build (no
+            # TT_VLLM_INTERFACE=plugin marker), rewrite the runtime JSON's
+            # `vllm_args` to use the legacy `override_tt_config` key (flat dict)
+            # instead of the new `plugin_config` key ({"tt": {...}} wrapper).
+            _rewrite_vllm_args_for_legacy_image_if_needed(
+                json_fpath, model_spec.docker_image
+            )
             container_model_spec_dir = Path(f"{user_home_path}/model_specs")
             runtime_json_fpath = container_model_spec_dir / json_fpath.name
             docker_command += [

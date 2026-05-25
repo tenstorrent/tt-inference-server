@@ -137,6 +137,39 @@ def parse_commits_from_docker_image(
         return None, None
 
 
+def image_uses_plugin_interface(docker_image: str) -> bool:
+    """Detect whether `docker_image` has the upstream vLLM + tt-vllm-plugin interface.
+
+    New images (post-PR #3594 Dockerfile) are built with `ENV TT_VLLM_INTERFACE=plugin`.
+    Their vLLM accepts `--plugin-config '{"tt": {...}}'`. Old images (pre-migration)
+    have the tenstorrent/vllm fork, which only accepts `--override-tt-config '{...}'`,
+    and carry no such env var.
+
+    Returns True if the marker is present, False otherwise (i.e., assume legacy fork).
+    The image must already exist locally; callers should `docker pull` first if needed.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{range .Config.Env}}{{println .}}{{end}}",
+                docker_image,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(
+            f"Could not inspect docker image '{docker_image}' for TT_VLLM_INTERFACE marker: {e}. "
+            "Assuming legacy (fork) vLLM interface."
+        )
+        return False
+    return "TT_VLLM_INTERFACE=plugin" in result.stdout
+
+
 def get_run_id(timestamp, model_id, workflow):
     def _short_uuid():
         """Return 8-character random UUID"""
