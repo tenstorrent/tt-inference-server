@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
@@ -162,6 +165,8 @@ class InterServerService {
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in
   // response to a RegistrationProbeMessage from the gateway. No-op otherwise.
   void sendRegistrationIfGatewayModeIsEnabled();
+  void startRegistrationThread();
+  void stopRegistrationThread();
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -171,6 +176,10 @@ class InterServerService {
   bool enabled_ = false;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
+  bool registration_stop_ = false;
+  std::mutex registration_mutex_;
+  std::condition_variable registration_cv_;
+  std::thread registration_thread_;
 };
 
 }  // namespace tt::sockets
