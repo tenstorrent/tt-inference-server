@@ -62,6 +62,24 @@ class WorkflowResult:
 
 
 @dataclass(frozen=True)
+class PrefixCacheOptions:
+    """Prefix-caching benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    Mirrors the v1 ``RuntimeConfig`` prefix-cache fields. Threaded through
+    ``OrchestratorMetadata`` so the CLI entry point in ``run.py`` stays
+    decoupled from ``llm_module``.
+    """
+
+    preset: str = "full"
+    scenarios: Optional[str] = None
+    arrival_pattern: Optional[str] = None
+    request_rate: Optional[float] = None
+    scenarios_json: Optional[str] = None
+    trace_path: Optional[str] = None
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -72,6 +90,7 @@ class OrchestratorMetadata:
     server_mode: Optional[str] = None
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
+    prefix_cache: Optional[PrefixCacheOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -238,6 +257,7 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "OrchestratorMetadata",
+    "PrefixCacheOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",

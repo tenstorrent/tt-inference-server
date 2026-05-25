@@ -13,13 +13,21 @@ Usage:
     python tt-inference-server-v2/run.py \
         --model stable-diffusion-xl-base-1.0 --workflow release \
         --device n150 --service-port 8000
+
+Prefix-caching benchmark (LLM-only, --workflow benchmarks):
+    python tt-inference-server-v2/run.py \
+        --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+        --prefix-cache --prefix-cache-preset ci --service-port 8000 \
+        --jwt-secret "$JWT_SECRET"
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -38,6 +46,7 @@ from workflows.workflow_types import DeviceTypes  # noqa: E402
 from test_module import MediaContext  # noqa: E402
 from workflow_module import (  # noqa: E402
     OrchestratorMetadata,
+    PrefixCacheOptions,
     WorkflowResult,
     get_default_accumulator,
     get_workflow_class,
@@ -108,7 +117,101 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
-    return parser.parse_args()
+
+    # ----- Prefix-caching benchmark (LLM-only) -----------------------
+    # When --prefix-cache is set, BenchmarksWorkflow swaps its default
+    # task list for the AIPerf prefix-cache sweep. Validated below to
+    # require --workflow benchmarks.
+    parser.add_argument(
+        "--prefix-cache",
+        action="store_true",
+        help=(
+            "Switch the benchmarks workflow to the AIPerf prefix-caching "
+            "scenario sweep (shared_system, prefix_pool, multi_turn, "
+            "baseline, mooncake_trace). Captures vLLM "
+            "prefix_cache_hits/queries via Prometheus and reports "
+            "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate. "
+            "Requires --workflow benchmarks."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help=(
+            "Preset for --prefix-cache (default: full). 'ci' is a short "
+            "regression-friendly sweep, 'full' is the comprehensive serving "
+            "validation sweep."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated subset of prefix-cache scenarios to run "
+            "(any of: shared_system, prefix_pool, multi_turn, baseline, "
+            "mooncake_trace). When unset, every scenario from the preset "
+            "is run."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-arrival",
+        type=str,
+        choices=["constant", "poisson", "gamma"],
+        default=None,
+        help=(
+            "Override the arrival pattern for every prefix-cache run. For "
+            "bursty/clustered traffic use 'gamma' and set "
+            "arrival_smoothness < 1.0 in the manifest. Default is the "
+            "per-scenario value from the preset."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-request-rate",
+        type=float,
+        default=None,
+        help="Override the target request rate (req/s) for every prefix-cache run.",
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios-json",
+        type=str,
+        default=None,
+        help=(
+            "Path to a custom prefix-cache scenarios JSON file. See "
+            "llm_module/prefix_cache/manifest.json for the schema."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-trace",
+        type=str,
+        default=None,
+        help=(
+            "Path to a mooncake-format JSONL trace file. When set, every "
+            "mooncake_trace scenario in the preset uses this trace instead "
+            "of the manifest default. See "
+            "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md"
+        ),
+    )
+    parser.add_argument(
+        "--jwt-secret",
+        type=str,
+        default=None,
+        help=(
+            "JWT secret for prefix-cache runs that hit an inference server "
+            "behind JWT auth. Mints a 'debug-test' token internally and sets "
+            "OPENAI_API_KEY for AIPerf. Reads $JWT_SECRET when omitted."
+        ),
+    )
+
+    args = parser.parse_args()
+    if args.prefix_cache and args.workflow != "benchmarks":
+        parser.error(
+            "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
+    return args
 
 
 def _resolve_eval_config(model_name: str):
@@ -187,12 +290,59 @@ def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
     return "python " + shlex.join(parts)
 
 
+def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
+    """Mint a ``debug-test`` JWT and export it as ``OPENAI_API_KEY``.
+
+    Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When
+    no secret is supplied, returns the empty string (auth disabled).
+    Matches the v1 prefix-cache behaviour so the same servers work in
+    both entry points.
+    """
+    secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
+    if not secret:
+        return ""
+    try:
+        import jwt as _jwt
+    except ImportError:
+        logger.warning(
+            "PyJWT is not installed; --jwt-secret was supplied but no token "
+            "will be minted. Install pyjwt to enable JWT-protected servers."
+        )
+        return ""
+    payload = {
+        "team_id": "tenstorrent",
+        "token_id": "debug-test",
+        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
+    }
+    encoded = _jwt.encode(payload, secret, algorithm="HS256")
+    os.environ["OPENAI_API_KEY"] = encoded
+    logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
+    return encoded
+
+
+def _build_prefix_cache_options(
+    args: argparse.Namespace,
+) -> Optional[PrefixCacheOptions]:
+    if not args.prefix_cache:
+        return None
+    return PrefixCacheOptions(
+        preset=args.prefix_cache_preset,
+        scenarios=args.prefix_cache_scenarios,
+        arrival_pattern=args.prefix_cache_arrival,
+        request_rate=args.prefix_cache_request_rate,
+        scenarios_json=args.prefix_cache_scenarios_json,
+        trace_path=args.prefix_cache_trace,
+        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+    )
+
+
 def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
     return OrchestratorMetadata(
         server_mode=_resolve_server_mode(args, runtime_config),
         run_command=_capture_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
+        prefix_cache=_build_prefix_cache_options(args),
     )
 
 

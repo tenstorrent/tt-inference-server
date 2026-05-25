@@ -164,10 +164,49 @@ Renderer-agnostic schema and a registry-based renderer.
 
 ### `llm_module/`
 
-Work in progress — do not use yet. The directory holds early scaffolding for a
-driver/parser abstraction over LLM perf tools (GuideLLM, AIPerf, GenAIPerf,
-InferenceMax, vllm-bench), but it isn't wired up end-to-end. LLM benchmarking
-still happens through v1.
+Work in progress — do not use yet, except for the **prefix-caching benchmark**
+which is end-to-end on v2 today (see "Prefix-caching benchmark" below). The
+directory also holds early scaffolding for a driver/parser abstraction over the
+other LLM perf tools (GuideLLM, GenAIPerf, InferenceMax, vllm-bench); those
+aren't wired up yet and LLM benchmarking still happens through v1 for
+everything except prefix caching.
+
+## Prefix-caching benchmark
+
+Run the AIPerf prefix-cache sweep directly against an already-up vLLM-compatible
+server (no v1 entry point involved). The workflow is `benchmarks`; the
+prefix-cache flag swaps the default media-task dispatch for the scenario sweep
+defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json):
+
+```bash
+<v2-prefix-cache-venv-python> tt-inference-server-v2/run.py \
+    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --prefix-cache --prefix-cache-preset ci --service-port 8000 \
+    --jwt-secret "$JWT_SECRET"
+```
+
+Materialize the venv ahead of time via
+`WorkflowVenvType.V2_PREFIX_CACHE` (declared in
+[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py)); its
+requirements live at
+[`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt).
+
+Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
+`mooncake_trace`) and per-preset grids are JSON-defined and overridable with
+`--prefix-cache-scenarios-json`. Override the mooncake trace input with
+`--prefix-cache-trace`; the in-tree fixture at
+[`llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl`](llm_module/prefix_cache/sample_traces/ci_mooncake.jsonl)
+ships with the repo for reproducible CI runs.
+
+Each AIPerf run emits a `Block(kind="aiperf_prefix_cache")`, which the report
+generator collapses into three Markdown tables (Synthetic, Trace-Driven, Uplift
+vs zero-prefix baseline) via the renderer registered in
+[`report_module/prefix_cache_renderer.py`](report_module/prefix_cache_renderer.py).
+vLLM prefix-cache hit-rate is derived from the Prometheus counters AIPerf
+scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
+`tt-vllm-plugin` currently disables prefix caching, so the hit-rate column
+renders as `null` until that's lifted (validation work was done against a
+reference GPU vLLM).
 
 ## How v1 routes to v2
 
@@ -257,10 +296,11 @@ To author a new test class:
 |---|---|
 | SDXL base / img2img / inpainting (eval, benchmark, release) | Routed to v2 today via `v2_bridge.py` |
 | Other image models (Flux, Motif, SD3.5) | Runners exist in v2; not yet routed |
-| LLM benchmarking via `llm_module` | Work in progress — LLMs still run through v1 |
+| LLM benchmarking via `llm_module` | Work in progress — LLMs still run through v1, except prefix-caching which is end-to-end on v2 |
+| Prefix-caching benchmark | Implemented on v2 (`--workflow benchmarks --prefix-cache`); validated against reference GPU vLLM |
 | CNN / audio / TTS / video / embedding runners | Scaffolded; correctness gaps tracked as bugs |
 | Spec tests | Ported from v1's `server_tests/`; renamed consistently to `spec_tests` |
-| New workflows on the horizon | Spec-decode bench, prefix-caching bench, structured-outputs bench, agentic accuracy evals |
+| New workflows on the horizon | Spec-decode bench, structured-outputs bench, agentic accuracy evals |
 
 Migration policy (current consensus): start using v2 right away for SDXL and
 treat anything missing as a bug. New benchmarks should be authored as v2
@@ -304,8 +344,9 @@ tt-inference-server-v2/
 │   ├── server_control.py           # ServerController (warmup, traces, health)
 │   ├── config.py                   # LLMRunConfig, ServerConnection, DriverContext
 │   ├── benchmark_configs.py        # get_llm_configs(model_spec, device)
-│   ├── drivers/                    # base, aiperf, genai_perf, guidellm, inferencex, vllm
-│   └── parsers/                    # mirror of drivers/
+│   ├── drivers/                    # base, aiperf, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
+│   ├── parsers/                    # mirror of drivers/
+│   └── prefix_cache/               # Scenario manifest + expander + CI mooncake trace
 ├── tests/                          # pytest tests for the modules above
 └── output/                         # generated reports land here
 ```

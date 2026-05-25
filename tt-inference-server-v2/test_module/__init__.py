@@ -22,7 +22,7 @@ from .eval_tests import (
     run_tts_eval,
     run_video_eval,
 )
-from .llm_tests import run_llm_performance
+from .llm_tests import run_llm_performance, run_prefix_cache
 from .dispatch import (
     BENCHMARK_DISPATCH,
     EVAL_DISPATCH,
@@ -54,4 +54,5 @@ __all__ = [
     "run_tts_benchmark",
     "run_video_benchmark",
     "run_llm_performance",
+    "run_prefix_cache",
 ]

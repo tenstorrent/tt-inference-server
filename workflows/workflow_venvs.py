@@ -373,6 +373,12 @@ _venv_config_list = [
         requirements_file="v2-run-script.txt",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.V2_PREFIX_CACHE,
+        requirements_file="v2-prefix-cache.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),

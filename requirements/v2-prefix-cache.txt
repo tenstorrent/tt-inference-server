@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the V2_PREFIX_CACHE workflow venv (Python 3.11).
+# Used by direct invocations of tt-inference-server-v2/run.py when
+# --prefix-cache is set. Mirrors requirements/benchmarks-aiperf.txt plus
+# the v2 orchestrator's transitive needs (workflow_module imports
+# test_module which eagerly loads aiohttp + torch via the audio/image
+# runners).
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# AIPerf benchmarking tool (https://github.com/ai-dynamo/aiperf).
+# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
+# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
+# import of `AutoTokenizer`. aiperf itself only requires transformers>=4.56.
+torch==2.4.0+cpu
+aiperf
+transformers>=4.56,<5
+pyjwt
+requests
+datasets
+
+# v2 orchestrator eager-import chain (workflow_module -> test_module ->
+# audio/image runners). Keep in sync with requirements/v2-run-script.txt.
+aiohttp
+numpy
+scipy
+torchvision
+open-clip-torch
+pillow
