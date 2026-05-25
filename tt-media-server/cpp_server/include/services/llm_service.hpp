@@ -81,6 +81,10 @@ class LLMService : public BaseService<LLMRequest, LLMResponse>,
   struct StreamCallbackEntry {
     std::function<void(LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
+    // Mirror of LLMRequest::skip_text_decode; lets the consumer loop
+    // skip decode / reasoning / tool-call parsing for token-id-only
+    // transports.
+    bool skip_text_decode = false;
   };
 
   void startConsumers();
