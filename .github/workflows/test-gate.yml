@@ -346,8 +346,8 @@ jobs:
 
       - name: Test Results Summary
         run: |
-          echo "===== Test Results Summary ====="
-          echo "===== Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
+          echo "===== 🧪 Test Results Summary ====="
+          echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
           echo >> $GITHUB_STEP_SUMMARY
 
           parse_summary() {
