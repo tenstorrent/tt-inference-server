@@ -395,9 +395,7 @@ class Scheduler:
                 )
                 if all_devices_ready:
                     self.logger.info(
-                        "All workers reported ready (scheduler-side); "
-                        "actual model readiness depends on each runner's "
-                        "warmup contract"
+                        "All workers ready (model readiness gated by per-runner warmup)"
                     )
 
                 consecutive_errors = 0  # Reset on success
