@@ -40,7 +40,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
-                "enable_const_eval": True,
+                "enable_const_eval": self.settings.vllm.enable_const_eval,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,

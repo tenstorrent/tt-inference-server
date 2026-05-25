@@ -31,3 +31,10 @@ class VLLMSettings(BaseModel):
     # for batch=32 Llama-3.2-3B engine init (`_xla_warm_up_cache` Error
     # code: 13). Default True to match upstream; env-flippable for triage.
     enable_trace: bool = os.environ.get("ENABLE_TRACE", "true").lower() != "false"
+    # vllm-tt constant-evaluation pass — bakes immutable weights into the
+    # compiled graph as constants. Hardcoded to True historically; tt-xla's
+    # working b32 configs do NOT set this. Env-driven so we can flip it for
+    # b32 triage. Default True preserves current behavior.
+    enable_const_eval: bool = (
+        os.environ.get("ENABLE_CONST_EVAL", "true").lower() != "false"
+    )
