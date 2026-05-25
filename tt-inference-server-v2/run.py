@@ -140,7 +140,7 @@ def build_context(args: argparse.Namespace) -> MediaContext:
 
     device = DeviceTypes.from_string(args.device)
 
-    output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+    output_path = args.output_dir
     output_path.mkdir(parents=True, exist_ok=True)
 
     eval_cfg = _resolve_eval_config(args.model)

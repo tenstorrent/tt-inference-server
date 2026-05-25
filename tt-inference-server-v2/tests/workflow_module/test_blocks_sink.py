@@ -104,17 +104,15 @@ def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
     assert "### Image Eval" in md
 
 
-def test_report_generator_writes_legacy_ci_locations(tmp_path: Path):
+def test_report_generator_writes_ci_report_data(tmp_path: Path):
     acc = BlockAccumulator()
     acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
     schema = acc.build_schema()
-    output_dir = tmp_path / "tt-sdxl_n300_release"
 
-    result = ReportGenerator().generate(schema, output_dir)
+    result = ReportGenerator().generate(schema, tmp_path)
 
-    assert result.markdown_path.parent == output_dir
-    assert (tmp_path / result.markdown_path.name).exists()
-    assert (tmp_path / result.json_path.name).exists()
+    assert result.markdown_path.parent == tmp_path
+    assert result.json_path.parent == tmp_path
     assert (tmp_path / "data" / f"report_data_{schema.report_id}.json").exists()
 
 
