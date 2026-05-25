@@ -29,6 +29,7 @@ from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
+    get_media_server_docker_env_vars,
 )
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
@@ -1030,6 +1031,35 @@ class TestOverrideArgsIntegration:
                     assert not env_setting.startswith("CACHE_ROOT=")
                     assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
                     assert not env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH=")
+
+
+class TestMediaServerDockerEnvVars:
+    def test_single_runner_sdxl_uses_cpp_server(self):
+        model_spec, _, _ = get_runtime_model_spec(
+            model="stable-diffusion-xl-base-1.0",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "image"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
+        assert env_vars["DEVICE_IDS"] == "(0)"
+
+    @pytest.mark.parametrize("device", ["p300x2", "galaxy"])
+    def test_multi_runner_sdxl_uses_cpp_server(self, device):
+        model_spec, _, _ = get_runtime_model_spec(
+            model="stable-diffusion-xl-base-1.0",
+            device=device,
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "image"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
+        assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
 
 class TestSecretsHandling:

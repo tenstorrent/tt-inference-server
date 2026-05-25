@@ -200,6 +200,12 @@ std::string ttResultQueueName();
  */
 std::string ttCancelQueueName();
 
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
+
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
 std::string ttMemoryRequestQueueName();
@@ -287,6 +293,10 @@ LLMConfig llmEngineConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
