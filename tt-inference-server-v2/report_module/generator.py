@@ -72,6 +72,7 @@ class ReportGenerator:
             if k not in _METADATA_RENDERING_KEYS
         }
         self._file_saver.write_json(json_payload, json_path, strict=True)
+        self._write_legacy_report_outputs(out_dir, md_path, json_payload, release_md)
         logger.info("Generated report: md=%s, json=%s", md_path, json_path)
 
         return GenerateResult(
@@ -95,6 +96,31 @@ class ReportGenerator:
                 "Renderer for kind '%s' failed on block '%s'", block.kind, block.slug
             )
             return ""
+
+    def _write_legacy_report_outputs(
+        self,
+        out_dir: Path,
+        md_path: Path,
+        json_payload: Dict[str, Any],
+        markdown: str,
+    ) -> None:
+        """Keep CI consumers working while v2 writes per-run subdirectories."""
+        root_dir = out_dir.parent
+        if root_dir == out_dir:
+            return
+
+        report_id = str(json_payload.get("metadata", {}).get("report_id") or "")
+        if not report_id:
+            logger.warning("Skipping legacy report outputs: missing report_id")
+            return
+
+        legacy_md_path = root_dir / md_path.name
+        legacy_json_path = root_dir / f"report_{report_id}.json"
+        data_path = root_dir / "data" / f"report_data_{report_id}.json"
+
+        self._file_saver.write_markdown(markdown, legacy_md_path, strict=True)
+        self._file_saver.write_json(json_payload, legacy_json_path, strict=True)
+        self._file_saver.write_json(json_payload, data_path, strict=True)
 
 
 def _coerce_schema(schema: SchemaLike) -> ReportSchema:

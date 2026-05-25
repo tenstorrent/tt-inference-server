@@ -135,7 +135,7 @@ class WorkflowExecution(ABC):
             )
 
         try:
-            self.apply_acceptance_criteria(schema)
+            accepted, _blockers = self.apply_acceptance_criteria(schema)
             self.inject_metadata(schema)
             gen = self.generate_report(schema)
         except Exception as e:
@@ -149,10 +149,16 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        self.logger.info("=== Workflow done: %s (rc=0) ===", self.name)
+        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        return_code = 0 if accepted and not failed_tasks else 1
+        if failed_tasks:
+            self.logger.error(
+                "Workflow %s had %d failed task(s)", self.name, len(failed_tasks)
+            )
+        self.logger.info("=== Workflow done: %s (rc=%d) ===", self.name, return_code)
         return WorkflowResult(
             workflow_name=self.name,
-            return_code=0,
+            return_code=return_code,
             task_outcomes=task_outcomes,
             markdown_path=gen.markdown_path,
             json_path=gen.json_path,
