@@ -15,6 +15,7 @@
 
 #include "config/defaults.hpp"
 #include "domain/manage_memory.hpp"
+#include "ipc/interface/memory_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::ipc::boost {
@@ -203,5 +204,40 @@ using MemoryRequestQueue =
 using MemoryResultQueue =
     MemoryQueue<tt::domain::ManageMemoryResult,
                 tt::config::defaults::MEMORY_RESULT_MAX_MSG_SIZE>;
+
+class SharedMemoryRequestQueue : public tt::ipc::IMemoryRequestQueue {
+ public:
+  explicit SharedMemoryRequestQueue(const std::string& name)
+      : queue(MemoryRequestQueue::openExisting(name)) {}
+
+  void push(const tt::domain::ManageMemoryTask& task) override {
+    queue->push(task);
+  }
+
+  bool tryPop(tt::domain::ManageMemoryTask& out) override {
+    return queue->tryPop(out);
+  }
+
+ private:
+  std::unique_ptr<MemoryRequestQueue> queue;
+};
+
+class SharedMemoryResultQueue : public tt::ipc::IMemoryResultQueue {
+ public:
+  explicit SharedMemoryResultQueue(const std::string& name)
+      : queue(MemoryResultQueue::openExisting(name)) {}
+
+  void push(const tt::domain::ManageMemoryResult& result) override {
+    queue->push(result);
+  }
+
+  bool waitPop(tt::domain::ManageMemoryResult& out) override {
+    queue->receive(out);
+    return true;
+  }
+
+ private:
+  std::unique_ptr<MemoryResultQueue> queue;
+};
 
 }  // namespace tt::ipc::boost
