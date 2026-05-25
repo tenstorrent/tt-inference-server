@@ -240,7 +240,8 @@ inline void BlazeRunner::handleEvictRequest(
         pendingRequests.pendingMemoryTask = request;
         return;
       }
-      if (pendingRequests.pendingTask && pendingRequests.pendingTask->getKVCacheSlot() == request.slotId) {
+      if (pendingRequests.pendingTask &&
+          pendingRequests.pendingTask->getKVCacheSlot() == request.slotId) {
         auto droppedTaskId = pendingRequests.pendingTask->taskId;
         pendingRequests.pendingTask.reset();
         TT_LOG_DEBUG(
@@ -277,7 +278,8 @@ inline void BlazeRunner::handleEvictRequest(
         auto droppedTaskId = slotContext.deferredContinue->taskId;
         slotContext.deferredContinue.reset();
         TT_LOG_DEBUG(
-            "[BlazeRunner] handleEvictRequest: superseding deferredContinue for "
+            "[BlazeRunner] handleEvictRequest: superseding deferredContinue "
+            "for "
             "taskId={} on slotId={} (DEALLOCATE wins)",
             droppedTaskId, request.slotId);
         ipc::helpers::pushToken(
@@ -421,7 +423,8 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
       auto droppedTaskId = slot.deferredContinue->taskId;
       slot.deferredContinue.reset();
       TT_LOG_DEBUG(
-          "[BlazeRunner] handleDeferred: dropping deferredContinue taskId={} on "
+          "[BlazeRunner] handleDeferred: dropping deferredContinue taskId={} "
+          "on "
           "slotId={} (deferredEvict wins)",
           droppedTaskId, slot.slotId);
       // FINAL|ERROR (not ABORT) — see handleEvictRequest's comment.
@@ -631,9 +634,10 @@ void BlazeRunner::handleRequest(
     case SlotState::AWAITING_STOP_ACK: {
       if (slotContext.deferredContinue) {
         TT_LOG_WARN(
-          "[BlazeRunner] handleRequest: overwriting deferred taskId={} with "
-          "taskId={} on slotId={} — the dropped task's stream will not finalize",
-          slotContext.deferredContinue->taskId, request->taskId, slotId); 
+            "[BlazeRunner] handleRequest: overwriting deferred taskId={} with "
+            "taskId={} on slotId={} — the dropped task's stream will not "
+            "finalize",
+            slotContext.deferredContinue->taskId, request->taskId, slotId);
       }
       TT_LOG_DEBUG(
           "[BlazeRunner] handleRequest: latching deferredSubmit for taskId={} "
