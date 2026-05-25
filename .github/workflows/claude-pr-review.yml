@@ -5,23 +5,25 @@ name: Claude PR Review
 # Uses Anthropic's official `claude-code-action` (v1) with the
 # `ANTHROPIC_API_KEY` repository secret.
 #
-# Trigger: opened / synchronize / reopened / ready_for_review.
+# Trigger: workflow_dispatch (manual or from test-gate).
+#   - If `pr_number` input is provided, that PR is reviewed.
+#   - Otherwise the PR associated with the dispatching branch is
+#     auto-detected via `gh pr list`.
 # Drafts and bot-authored PRs are skipped.
 #
 # Security notes:
-# - Uses `pull_request` (NOT `pull_request_target`) so secrets are NOT
-#   exposed to PRs from forks. Internal-branch PRs are reviewed; external
-#   fork PRs are skipped automatically (the runner has no secret access).
-#   See https://github.com/anthropics/claude-code-action/blob/main/docs/security.md
-# - Concurrency cancels in-progress reviews when a PR is updated, to save
-#   tokens.
 # - `--max-turns` caps Claude's iterations to bound cost per review.
 
 on:
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (auto-detected from branch if not provided)"
+        required: false
+        type: string
 
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
+  group: claude-review-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,11 +35,6 @@ jobs:
   review:
     name: Claude Opus 4.7 review
     runs-on: ubuntu-latest
-    if: >-
-      github.event.pull_request.draft == false &&
-      !endsWith(github.event.pull_request.user.login, '[bot]') &&
-      github.event.pull_request.user.login != 'dependabot[bot]' &&
-      github.event.pull_request.user.login != 'SPDX-Bot'
     timeout-minutes: 20
     steps:
       - name: Checkout PR branch
@@ -45,16 +42,48 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Resolve PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUM="${{ inputs.pr_number }}"
+          if [ -z "$PR_NUM" ]; then
+            PR_NUM=$(gh pr list --head "${{ github.ref_name }}" --json number --limit 1 --jq '.[0].number')
+          fi
+          if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
+            echo "No open PR found for branch ${{ github.ref_name }}" >&2
+            exit 1
+          fi
+          PR_JSON=$(gh pr view "$PR_NUM" --json number,title,author,isDraft)
+          echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+          echo "title=$(echo "$PR_JSON" | jq -r '.title')" >> "$GITHUB_OUTPUT"
+          echo "author=$(echo "$PR_JSON" | jq -r '.author.login')" >> "$GITHUB_OUTPUT"
+          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
+          AUTHOR=$(echo "$PR_JSON" | jq -r '.author.login')
+          SHOULD_REVIEW="true"
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "Skipping draft PR." >&2
+            SHOULD_REVIEW="false"
+          fi
+          case "$AUTHOR" in
+            *\[bot\]|dependabot\[bot\]|SPDX-Bot)
+              echo "Skipping bot-authored PR ($AUTHOR)." >&2
+              SHOULD_REVIEW="false"
+              ;;
+          esac
+          echo "should_review=$SHOULD_REVIEW" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Opus 4.7 review
+        if: steps.pr.outputs.should_review == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            PR TITLE: ${{ github.event.pull_request.title }}
-            PR AUTHOR: ${{ github.event.pull_request.user.login }}
+            PR NUMBER: ${{ steps.pr.outputs.number }}
+            PR TITLE: ${{ steps.pr.outputs.title }}
+            PR AUTHOR: ${{ steps.pr.outputs.author }}
 
             You are reviewing a pull request for `tt-inference-server`, a
             repository that deploys and serves LLM/VLM/embedding/image/audio
