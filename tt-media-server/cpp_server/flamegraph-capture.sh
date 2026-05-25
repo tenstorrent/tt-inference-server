@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Capture an on-CPU flamegraph from a running tt_media_server_cpp process.
-# Output is a single SVG you can open in any browser — wider boxes mean more
-# CPU time. Click to zoom, ctrl-F to search.
+# Capture an on-CPU profile from a running tt_media_server_cpp process.
+# Produces two files per process:
+#   - <name>.folded  → drag-drop into https://www.speedscope.app/ for the
+#                      best interactive UI (real search, sandwich view,
+#                      time-order view). This is the preferred way to view.
+#   - <name>.svg     → quick-look flamegraph that opens in any browser with
+#                      no internet needed; easy to attach to a PR comment.
 #
 # Usage:
 #   ./flamegraph-capture.sh [TARGET] [SECONDS]
@@ -16,7 +20,7 @@
 #   ./flamegraph-capture.sh main 60          # main only, 60s
 #   ./flamegraph-capture.sh 12345 20         # specific PID for 20s
 #
-# Output: ./bench_results/flamegraph_<timestamp>/<name>.svg
+# Output dir: ./bench_results/flamegraph_<timestamp>/  (.folded + .svg per name)
 #
 # Requirements (one-time):
 #   sudo apt install linux-tools-$(uname -r) linux-tools-generic
@@ -163,12 +167,12 @@ for entry in "${TARGETS[@]}"; do
 done
 
 echo
-echo "Open the .svg files in a browser. Wider = more CPU time. Click any frame"
-echo "to zoom; use the search box (top-right) to highlight specific symbols."
-echo
-echo "For a better UI (real search, sandwich view, time-order view),"
-echo "open https://www.speedscope.app/ and drag-drop any of these .folded files:"
+echo "Preferred: open https://www.speedscope.app/ and drag-drop one of these"
+echo ".folded files (real search, sandwich view, time-order view):"
 for entry in "${TARGETS[@]}"; do
     name="${entry%%:*}"
     echo "  ${OUTPUT_DIR}/${name}.folded"
 done
+echo
+echo "Quick look: open the .svg files in any browser. Wider = more CPU time."
+echo "Click any frame to zoom; the search box (top-right) highlights symbols."

@@ -22,7 +22,11 @@
 #     TARGET   "main" | "worker" | "all" | <pid>   (default: all)
 #     SECONDS  capture duration (default: 30)
 #
-# Output: ./bench_results/flamegraph_offcpu_<timestamp>/<name>.svg
+# Output dir: ./bench_results/flamegraph_offcpu_<timestamp>/
+# Per process, you get both:
+#   - <name>.folded  → drag-drop into https://www.speedscope.app/ for the
+#                      best interactive UI. Preferred.
+#   - <name>.svg     → quick-look flamegraph, opens in any browser.
 #
 # See flamegraph-capture.sh for requirements (perf, FlameGraph repo).
 
@@ -153,13 +157,14 @@ for entry in "${TARGETS[@]}"; do
 done
 
 echo
-echo "Open the .svg files in a browser. Wider = more off-CPU events for that"
-echo "call path. Look for tails of pthread_mutex_lock or pthread_cond_wait —"
-echo "those are real blocking points. The y-axis is event COUNT, not duration."
-echo
-echo "For a better UI (real search, sandwich view, time-order view),"
-echo "open https://www.speedscope.app/ and drag-drop any of these .folded files:"
+echo "Preferred: open https://www.speedscope.app/ and drag-drop one of these"
+echo ".folded files (real search, sandwich view, time-order view):"
 for entry in "${TARGETS[@]}"; do
     name="${entry%%:*}"
     echo "  ${OUTPUT_DIR}/${name}.folded"
 done
+echo
+echo "Quick look: open the .svg files in any browser. Wider = more off-CPU"
+echo "events for that call path. Look for tails of pthread_mutex_lock or"
+echo "pthread_cond_wait — those are real blocking points. The y-axis is event"
+echo "COUNT, not duration."

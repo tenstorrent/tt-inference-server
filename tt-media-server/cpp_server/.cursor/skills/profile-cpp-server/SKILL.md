@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Purpose
 
-Produce a single self-contained SVG per process that shows where the C++ server is spending or losing CPU. Two views, complementary:
+For each process (main Drogon + every worker), produce a `.folded` stack-collapsed profile and a self-contained `.svg` flamegraph that show where the C++ server is spending or losing CPU. The preferred way to view is to drag-drop the `.folded` file into [speedscope.app](https://www.speedscope.app/) (real search, sandwich view, time-order view); the SVG is a quick-look fallback that opens in any browser without internet. Two profile flavors, complementary:
 
 - **On-CPU** — what each thread is *executing*. Wider boxes = more CPU samples. Finds hot functions and tight loops.
 - **Off-CPU** — what each thread is *waiting for* (mutex, condvar, sleep, I/O). Wider boxes = more blocking events at that call path. Finds lock contention and missed wakeups.
@@ -33,17 +33,7 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    ls build/tt_media_server_cpp
    ```
 
-2. **One-shot path (preferred):** drive build, server, load, capture, and SVG output from a single command:
-
-   ```bash
-   python3 -m pytest tests/ci/test_perf_flamegraph.py -v -s
-   ```
-
-   This starts the server with `LLM_DEVICE_BACKEND=mock_pipeline`, waits for `/tt-liveness` to report `model_ready=true`, drives a fixed 16-concurrency / 20s load, captures on-CPU and off-CPU flamegraphs of the main + every worker in parallel, and copies the four SVGs to `tests/ci/_artifacts/test_perf_flamegraph/`.
-
-   If the test passes, jump to step 5 (analyze).
-
-3. **Manual path — start the server.** Only needed if step 2 doesn't fit (e.g. you want a longer run, custom env, attaching to an already-running server). Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`).
+2. **Start the server with the mock pipeline backend.** Tokenizer files must be in place (`./build.sh --blaze` fetches them; for an ad-hoc download see `build.sh:200`).
 
    ```bash
    LLM_DEVICE_BACKEND=mock_pipeline ./build/tt_media_server_cpp \
@@ -60,7 +50,7 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    # to MOCK", the binary was built without --blaze — go back to step 1.
    ```
 
-4. **Manual path — drive load and capture.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise — push traffic during the capture window. The script then handles `perf record`, `stackcollapse-perf`, `flamegraph.pl`, and kernel-frame folding.
+3. **Drive load and capture.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise — push traffic during the capture window. The script then handles `perf record`, `stackcollapse-perf`, `flamegraph.pl`, and kernel-frame folding.
 
    ```bash
    # In a background shell: drive load for the full capture window.
@@ -86,7 +76,9 @@ All paths below are relative to `tt-media-server/cpp_server/`.
    ./flamegraph-capture-offcpu.sh all 30  # off-CPU, 30s
    ```
 
-   Outputs land under `bench_results/flamegraph_<ts>/` and `bench_results/flamegraph_offcpu_<ts>/`.
+   Each output dir contains a `<name>.folded` + `<name>.svg` per profiled process.
+
+4. **View the result.** Preferred: open https://www.speedscope.app/ in a browser and drag-drop a `.folded` file from the output dir — real search, sandwich view (per-function callers/callees), and time-order view (real timeline). Fallback: open the matching `.svg` in any browser for a self-contained quick look.
 
 5. **Analyze the results.** See the **Analyze the results** section below for the procedural recipe (concrete shell commands).
 
@@ -118,7 +110,7 @@ Inside Docker `/proc/sys/kernel` is usually read-only — just prefix `perf` cal
 
 ## Workflow — convenience scripts (preferred)
 
-The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main and worker PIDs via `pgrep`, capture all of them in parallel, and render SVGs:
+The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main and worker PIDs via `pgrep`, capture all of them in parallel, and produce both a `.folded` file (for speedscope) and a `.svg` (quick look) per process:
 
 ```bash
 # On-CPU (where CPU time goes). Default: every cpp_server process, 30s.
@@ -131,20 +123,9 @@ The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main an
 ./flamegraph-capture-offcpu.sh
 ```
 
-Output: `cpp_server/bench_results/flamegraph[_offcpu]_<timestamp>/<name>.svg`. Open in any browser. Click any frame to zoom; the search box (top-right) highlights symbols matching a regex.
-
-For the CI-style reproducible capture (fixed workload, four SVGs per run):
-
-```bash
-cd cpp_server
-python3 -m pytest tests/ci/test_perf_flamegraph.py -v -s
-# Outputs in tests/ci/_artifacts/test_perf_flamegraph/
-#   oncpu_main.svg, oncpu_worker0.svg
-#   offcpu_main.svg, offcpu_worker0.svg
-#   summary.txt, server.log
-```
-
-The pytest module requires `./build.sh --blaze` + `LLM_DEVICE_BACKEND=mock_pipeline` (it starts the server itself).
+Outputs in `cpp_server/bench_results/flamegraph[_offcpu]_<timestamp>/`:
+- `<name>.folded` — drag-drop into https://www.speedscope.app/ for the modern UI. Preferred.
+- `<name>.svg` — self-contained flamegraph; open in any browser. Click to zoom, search box highlights symbols. Useful when you want a single file you can attach to a PR comment or chat.
 
 ## Workflow — raw perf commands
 
@@ -175,7 +156,7 @@ Use these when the scripts aren't checked in, the user wants to vary parameters 
    wait
    ```
 
-4. **Render to SVG.** `perf script` decodes `.data` into folded stacks; `stackcollapse-perf.pl` rolls duplicates into counts; `flamegraph.pl` renders. The `sed` step folds the long `[[kernel.kallsyms]]` chains (caused by `kptr_restrict` in containers) into a single readable `[kernel]` frame.
+4. **Render.** `perf script` decodes `.data` into stacks; `stackcollapse-perf.pl` rolls duplicates into counts (output suitable for both speedscope and flamegraph.pl); `flamegraph.pl` renders the quick-look SVG. The `sed` step folds the long `[[kernel.kallsyms]]` chains (caused by `kptr_restrict` in containers) into a single readable `[kernel]` frame.
 
    ```bash
    sudo chown $USER:$USER *.data
@@ -183,26 +164,37 @@ Use these when the scripts aren't checked in, the user wants to vary parameters 
 
    perf script -i main.data | "$FG/stackcollapse-perf.pl" \
        | sed 's/\(;\[\[kernel\.kallsyms\]\]\)\+/;[kernel]/g' \
+       | tee main.folded \
        | "$FG/flamegraph.pl" --title "main on-CPU" > main.svg
 
    perf script -i worker.data | "$FG/stackcollapse-perf.pl" \
        | sed 's/\(;\[\[kernel\.kallsyms\]\]\)\+/;[kernel]/g' \
+       | tee worker.folded \
        | "$FG/flamegraph.pl" --title "worker on-CPU" > worker.svg
    ```
 
-   For the off-CPU SVGs add `--colors=io --countname=switches` so they're visually distinguishable.
+   Drag-drop `*.folded` into https://www.speedscope.app/ for the interactive view; open `*.svg` in a browser for a quick look. For the off-CPU SVGs add `--colors=io --countname=switches` so they're visually distinguishable.
 
-5. **(Optional) Drive load.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise. Push representative traffic during the capture window — for `LLM_DEVICE_BACKEND=mock_pipeline` builds, a simple concurrent POST loop against `/v1/chat/completions` works (see `cpp_server/tests/ci/test_perf_flamegraph.py` for a self-contained example using `requests` + `ThreadPoolExecutor`). Start load first, sleep a few seconds so it ramps up, then start `perf record`.
+5. **(Optional) Drive load.** A flamegraph of an idle process is mostly Tracy / metrics / epoll noise. Push representative traffic during the capture window — for `LLM_DEVICE_BACKEND=mock_pipeline` builds, the inline `python3 -c '...'` snippet in the end-to-end workflow step 3 above works. Start load first, sleep a few seconds so it ramps up, then start `perf record`.
 
-## How to read the SVG
+## How to view and read the result
 
+Two viewers, same underlying data (the `.folded` file is the source of truth; the `.svg` is rendered from it):
+
+**Speedscope (preferred).** Open https://www.speedscope.app/ and drag-drop the `.folded` file. The page is client-side JS — your profile data does not leave the browser. Three views worth knowing:
+- **Left Heavy** (default) — the aggregated flamegraph, equivalent to the SVG.
+- **Sandwich** — pick a function and see *all* its callers above and callees below. Best view for "where is `pthread_mutex_lock` being called from?".
+- **Time Order** — chronological timeline of samples. The x-axis finally means time. Use range-select to zoom into a slice.
+- Keyboard: `1/2/3` switches view; `Cmd/Ctrl+F` searches across all views.
+
+**SVG flamegraph (quick look).** Open the `.svg` in any browser. Useful when you want a single-file artifact or no internet.
 - **x-axis is NOT time.** Each column is one stack; columns are sorted alphabetically so identical stacks merge into a single wide box. Width = relative cost (samples or events).
 - **y-axis is the call stack.** Bottom frame = thread entry point; top frame = the leaf that was on-CPU (or where the thread blocked) at sample time.
-- **Use search (top-right)** to highlight all frames matching a regex — e.g. `pthread_mutex_lock`, `Scheduler::`, `Drogon`. Highlighted total appears in the search status.
+- **Search box (top-right)** highlights all frames matching a regex.
 
 ## Analyze the results
 
-The SVG is for humans, but the agent should drive analysis from the `.folded` files alongside each SVG — they're sorted-counts text and easy to grep/sort. Each line is `frame1;frame2;...;leaf COUNT`.
+Speedscope is for humans; the agent should drive analysis from the `.folded` files (the same input speedscope uses) — they're sorted-counts text and easy to grep/sort. Each line is `frame1;frame2;...;leaf COUNT`.
 
 1. **List the hottest call paths per process.** Largest counts first. Cap to ~15 lines per file — anything below that is usually noise.
 
@@ -265,7 +257,7 @@ The SVG is for humans, but the agent should drive analysis from the `.folded` fi
 
 ## Common pitfalls
 
-- **`perf record` runs but the SVG is empty** — the target process was idle. Drive load (step 5 above) and re-capture.
+- **`perf record` runs but the output is empty** — the target process was idle. Drive load (step 3 of the end-to-end workflow) and re-capture.
 - **All stacks show `[unknown]`** — binary was stripped, or rebuilt without `-g`. Fix the build.
 - **Kernel frames repeat 10+ times in every stack** — `kptr_restrict=1`. Apply the `sed` fold from step 4, or run `sudo sysctl -w kernel.kptr_restrict=0` on a non-container host.
 - **`perf record` fails with `Permission denied`** — `perf_event_paranoid` is restrictive. Prefix with `sudo` (works inside Docker) or lower the sysctl on bare metal.
@@ -280,4 +272,4 @@ When summarizing findings to the user:
 - Cite each finding as `function → child_frame (N samples or events)`, using the exact symbol from the folded output (`sort -t' ' -k2 -nr <file>.folded | head`).
 - For each finding, name the file and code path it points at (e.g. `tt_llm_engine::scheduler::decode::DecodeScheduler::Impl::handle_api_requests` → `src/decode_scheduler/...` in `tt-llm-engine`).
 - Distinguish CPU cost from contention: on-CPU-only = expensive computation; on-CPU + off-CPU = contended lock; off-CPU-only = waiting on external/external event.
-- Attach the SVG paths so the user can open them directly.
+- Attach both the `.folded` paths (so the user can drag-drop into speedscope.app) and the `.svg` paths (for a quick look in any browser).
