@@ -286,6 +286,13 @@ void LLMPipeline::dispatchGeneration(
       "LLM Mode must be regular or decode only for chat completions");
 }
 
+void LLMPipeline::abortRequest(uint32_t taskId) const {
+  service_->abortRequest(taskId);
+  if (disaggregationService_) {
+    disaggregationService_->abortRequest(taskId);
+  }
+}
+
 bool LLMPipeline::shouldDoPrefillOnDecode(
     const tt::domain::llm::LLMRequest& request, bool validSessionFound) const {
   const bool socketReady = socketService_ && socketService_->isConnected();
