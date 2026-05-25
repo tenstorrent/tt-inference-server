@@ -154,12 +154,13 @@ void StreamingResponseWriter::startHeartbeat() {
 
   auto self =
       std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
-  heartbeatTimerId = loop->runEvery(STREAM_HEARTBEAT_INTERVAL_SECONDS, [self]() {
-    if (self->done.load() || !*self->streamPtr) return;
+  heartbeatTimerId =
+      loop->runEvery(STREAM_HEARTBEAT_INTERVAL_SECONDS, [self]() {
+        if (self->done.load() || !*self->streamPtr) return;
 
-    bool ok = (*self->streamPtr)->send(STREAM_HEARTBEAT_SSE);
-    if (!ok) self->abort();
-  });
+        bool ok = (*self->streamPtr)->send(STREAM_HEARTBEAT_SSE);
+        if (!ok) self->abort();
+      });
 }
 
 void StreamingResponseWriter::stopHeartbeat() {
