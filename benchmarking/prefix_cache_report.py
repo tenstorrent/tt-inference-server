@@ -450,8 +450,11 @@ def generate_prefix_cache_report(
     if uplift_md:
         release_str += (
             "#### Uplift vs Zero-Prefix Baseline (mean metrics)\n\n"
-            "Negative TTFT/TPOT/E2EL deltas indicate latency improvements "
-            "from prefix-cache reuse.\n\n"
+            "Each treatment row is paired with the `baseline` row sharing the "
+            "same `Concur`, `Arrival`, and `ISL mean` (e.g. "
+            "`shared_sys512_short_c1_constant` is compared against "
+            "`baseline_short_c1_constant`). Negative TTFT/TPOT/E2EL deltas "
+            "indicate latency improvements from prefix-cache reuse.\n\n"
             f"{uplift_md}\n\n"
         )
     release_str += (
