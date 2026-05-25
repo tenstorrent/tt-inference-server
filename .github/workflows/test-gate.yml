@@ -3070,6 +3070,7 @@ jobs:
       - prefill-gateway-tsan
       - cpp-server-gateway-split
       - cpp-tsan
+      - dynamo-frontend-integration
       - helm-chart-validate
     if: always()
     steps:
