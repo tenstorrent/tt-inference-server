@@ -300,19 +300,18 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Try speculative-decoding benchmark pattern. Filename shape (no isl):
     # benchmark_spec_decode_{baseline|spec|pair}_<model>_<device>_<timestamp>_
-    #   <dataset_kind>_<category[_subset]>_osl-X_maxcon-Y_n-N.json
-    # ``<category>`` is the literal Spec-Bench/SPEED-Bench category, or
-    # "all" when the run swept the whole (sub)set. Examples:
-    #   benchmark_spec_decode_spec_id_x_gpu_2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-1_n-4.json
-    #   benchmark_spec_decode_pair_id_x_gpu_2026-05-20_10-00-00_speed_bench_all_throughput_1k_osl-1024_maxcon-16_n-64.json
+    #   <public_dataset>_osl-X_maxcon-Y_n-N.json
+    # ``<public_dataset>`` is the aiperf ``--public-dataset`` slug, always
+    # starting with ``spec_bench`` or ``speed_bench``. Examples:
+    #   benchmark_spec_decode_spec_id_x_gpu_2026-05-20_10-00-00_spec_bench_osl-128_maxcon-1_n-4.json
+    #   benchmark_spec_decode_pair_id_x_gpu_2026-05-20_10-00-00_speed_bench_throughput_1k_osl-1024_maxcon-16_n-64.json
     spec_decode_pattern = r"""
         ^benchmark_spec_decode_
         (?P<role>baseline|spec|pair)
         _(?P<model>.+?)
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|cpu|GPU|CPU))?
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
-        _(?P<dataset_kind>spec_bench|speed_bench)
-        _(?P<category>.+?)
+        _(?P<public_dataset>(?:spec_bench|speed_bench)(?:_[a-zA-Z0-9]+)*)
         _osl-(?P<osl>\d+)
         _maxcon-(?P<maxcon>\d+)
         _n-(?P<n>\d+)
@@ -331,8 +330,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "output_sequence_length": int(match.group("osl")),
             "max_con": int(match.group("maxcon")),
             "num_requests": int(match.group("n")),
-            "dataset_kind": match.group("dataset_kind"),
-            "category": match.group("category"),
+            "public_dataset": match.group("public_dataset"),
             "endpoint_role": role,
             "task_type": "spec_decode_pair" if role == "pair" else "spec_decode",
         }
@@ -706,9 +704,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model_name": params["model_name"],
             "filename": filename,
             "endpoint_role": params["endpoint_role"],
-            "dataset_kind": data.get("dataset_kind") or params["dataset_kind"],
-            "category": data.get("category") or params["category"],
-            "speed_bench_subset": data.get("speed_bench_subset"),
+            "public_dataset": data.get("public_dataset") or params["public_dataset"],
             "output_sequence_length": params["output_sequence_length"],
             "max_con": params["max_con"],
             "num_requests": params["num_requests"],
@@ -815,10 +811,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         metrics.update(
             {
                 "endpoint_role": params["endpoint_role"],
-                "dataset_kind": spec_meta.get("dataset_kind")
-                or params["dataset_kind"],
-                "category": spec_meta.get("category") or params["category"],
-                "speed_bench_subset": spec_meta.get("speed_bench_subset"),
+                "public_dataset": spec_meta.get("public_dataset")
+                or params["public_dataset"],
                 "acceptance_rate": spec_meta.get("acceptance_rate"),
                 "mean_accepted_length": spec_meta.get("mean_accepted_length"),
                 "accepted_tokens": spec_meta.get("accepted_tokens"),
@@ -1127,8 +1121,7 @@ def create_spec_decode_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     """Per-run display dict for spec-decode baseline + spec result JSONs."""
     display_cols: List[Tuple[str, str]] = [
         ("endpoint_role", "Role"),
-        ("dataset_kind", "Dataset"),
-        ("category", "Category"),
+        ("public_dataset", "Dataset"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
         ("num_requests", "N Req"),
@@ -1149,8 +1142,7 @@ def create_spec_decode_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 def create_spec_decode_pair_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     """Display dict for spec-decode pair sidecar JSONs (speedup ratios)."""
     display_cols: List[Tuple[str, str]] = [
-        ("dataset_kind", "Dataset"),
-        ("category", "Category"),
+        ("public_dataset", "Dataset"),
         ("output_sequence_length", "OSL"),
         ("max_con", "Concurrency"),
         ("speedup_p50_e2el", "Speedup p50"),
@@ -1391,8 +1383,7 @@ def render_spec_decode_sections(
     if spec_decode_results:
         def sort_key(r):
             return (
-                r.get("dataset_kind", ""),
-                r.get("category", ""),
+                r.get("public_dataset", ""),
                 r.get("output_sequence_length", 0),
                 r.get("max_con", 0),
                 # baseline before spec for visual pairing
@@ -1412,8 +1403,7 @@ def render_spec_decode_sections(
     if spec_decode_pair_results:
         def pair_sort_key(r):
             return (
-                r.get("dataset_kind", ""),
-                r.get("category", ""),
+                r.get("public_dataset", ""),
                 r.get("output_sequence_length", 0),
                 r.get("max_con", 0),
             )

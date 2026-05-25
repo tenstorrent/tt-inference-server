@@ -12,9 +12,9 @@ import pytest
 
 from benchmarking import run_spec_decode_benchmarks as runner
 from benchmarking.run_spec_decode_benchmarks import (
+    build_aiperf_cmd,
     build_pair_filename,
     build_result_filename,
-    build_spec_serve_cmd,
     extract_slug_from_filename,
     pair_phase,
     parse_endpoint_url,
@@ -27,22 +27,19 @@ from benchmarking.spec_decode_common import SpecDecodeRunSpec
 
 def _spec_bench_run() -> SpecDecodeRunSpec:
     return SpecDecodeRunSpec(
-        dataset_kind="spec_bench",
-        category="writing",
+        public_dataset="spec_bench",
         output_len=128,
         max_concurrency=4,
         num_prompts=16,
     )
 
 
-def _speed_bench_run() -> SpecDecodeRunSpec:
+def _speed_bench_throughput_run() -> SpecDecodeRunSpec:
     return SpecDecodeRunSpec(
-        dataset_kind="speed_bench",
-        category=None,
+        public_dataset="speed_bench_throughput_1k",
         output_len=512,
         max_concurrency=4,
         num_prompts=16,
-        speed_bench_subset="throughput_1k",
     )
 
 
@@ -81,7 +78,7 @@ def test_build_result_filename_uses_prefix_and_slug():
     )
     assert name.startswith("benchmark_spec_decode_spec_")
     assert "n300" in name
-    assert "spec_bench_writing" in name
+    assert "spec_bench_osl-128" in name
 
 
 def test_build_result_filename_baseline_role():
@@ -108,7 +105,7 @@ def test_extract_slug_from_filename_round_trip():
     assert parts["role"] == "spec"
     assert parts["model_id"] == "model123"
     assert parts["device"] == "gpu"
-    assert parts["slug"] == "spec_bench_writing_osl-128_maxcon-4_n-16"
+    assert parts["slug"] == "spec_bench_osl-128_maxcon-4_n-16"
 
 
 def test_extract_slug_returns_none_for_other_filenames():
@@ -116,83 +113,75 @@ def test_extract_slug_returns_none_for_other_filenames():
     assert extract_slug_from_filename("random.json") is None
 
 
-def test_build_spec_serve_cmd_spec_bench():
-    cmd = build_spec_serve_cmd(
-        benchmark_script=Path("/venv/bin/vllm"),
+def test_build_aiperf_cmd_spec_bench():
+    cmd = build_aiperf_cmd(
+        venv_python=Path("/venv/bin/python"),
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
-        host="127.0.0.1", port=8000,
+        url="http://127.0.0.1:8000",
         run_spec=_spec_bench_run(),
-        result_path=Path("/tmp/out.json"),
+        artifact_dir=Path("/tmp/artifacts"),
     )
-    assert cmd[0:3] == ["/venv/bin/vllm", "bench", "serve"]
-    assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
-    assert cmd[cmd.index("--port") + 1] == "8000"
-    assert cmd[cmd.index("--dataset-name") + 1] == "spec_bench"
-    assert cmd[cmd.index("--spec-bench-category") + 1] == "writing"
-    assert "--speed-bench-category" not in cmd
+    assert cmd[0:4] == ["/venv/bin/python", "-m", "aiperf", "profile"]
+    assert cmd[cmd.index("--model") + 1] == "meta-llama/Llama-3.1-8B-Instruct"
+    assert cmd[cmd.index("--public-dataset") + 1] == "spec_bench"
+    assert cmd[cmd.index("--concurrency") + 1] == "4"
+    assert cmd[cmd.index("--request-count") + 1] == "16"
+    assert cmd[cmd.index("--output-tokens-mean") + 1] == "128"
+    # Deterministic, EOS-ignored: required for apples-to-apples spec-decode.
+    assert "ignore_eos:true" in cmd
+    assert "temperature:0" in cmd
 
 
-def test_build_spec_serve_cmd_speed_bench_includes_subset():
-    cmd = build_spec_serve_cmd(
-        benchmark_script=Path("/venv/bin/vllm"),
+def test_build_aiperf_cmd_speed_bench_throughput_slug():
+    cmd = build_aiperf_cmd(
+        venv_python=Path("/venv/bin/python"),
         hf_model_repo="x/y",
-        host="10.0.0.5", port=8001,
-        run_spec=_speed_bench_run(),
-        result_path=Path("/tmp/out.json"),
+        url="http://10.0.0.5:8001",
+        run_spec=_speed_bench_throughput_run(),
+        artifact_dir=Path("/tmp/artifacts"),
     )
-    assert cmd[cmd.index("--dataset-name") + 1] == "speed_bench"
-    assert cmd[cmd.index("--speed-bench-dataset-subset") + 1] == "throughput_1k"
-    # category=None must omit the --speed-bench-category flag entirely;
-    # passing a sentinel like "default" exact-matches against the JSONL's
-    # category column and loads 0 prompts (the original bug).
-    assert "--speed-bench-category" not in cmd
+    assert cmd[cmd.index("--public-dataset") + 1] == "speed_bench_throughput_1k"
 
 
-def test_build_spec_serve_cmd_includes_auth_header_when_token_set():
-    cmd = build_spec_serve_cmd(
-        benchmark_script=Path("/venv/bin/vllm"),
+def test_build_aiperf_cmd_includes_api_key_when_token_set():
+    cmd = build_aiperf_cmd(
+        venv_python=Path("/venv/bin/python"),
         hf_model_repo="x/y",
-        host="127.0.0.1", port=8000,
+        url="http://127.0.0.1:8000",
         run_spec=_spec_bench_run(),
-        result_path=Path("/tmp/out.json"),
+        artifact_dir=Path("/tmp/artifacts"),
         jwt_token="encoded.jwt",
     )
-    assert "--header" in cmd
-    assert cmd[cmd.index("--header") + 1] == "Authorization: Bearer encoded.jwt"
+    assert "--api-key" in cmd
+    assert cmd[cmd.index("--api-key") + 1] == "encoded.jwt"
 
 
-def test_build_spec_serve_cmd_omits_header_when_no_token():
-    cmd = build_spec_serve_cmd(
-        benchmark_script=Path("/venv/bin/vllm"),
+def test_build_aiperf_cmd_omits_api_key_when_no_token():
+    cmd = build_aiperf_cmd(
+        venv_python=Path("/venv/bin/python"),
         hf_model_repo="x/y",
-        host="127.0.0.1", port=8000,
+        url="http://127.0.0.1:8000",
         run_spec=_spec_bench_run(),
-        result_path=Path("/tmp/out.json"),
+        artifact_dir=Path("/tmp/artifacts"),
     )
-    assert "--header" not in cmd
+    assert "--api-key" not in cmd
 
 
 def test_select_profile_smoke_for_smoke_test_mode():
     profile = select_profile(SimpleNamespace(limit_samples_mode="smoke-test"))
-    # Smoke profile exercises both dataset code paths with real category /
-    # subset values so a future regression to the historical 0-prompt bugs
-    # ("mt_bench" / "default" / "throughput") would fail in CI.
-    assert {p.dataset_kind for p in profile} == {"spec_bench", "speed_bench"}
-    assert all(
-        p.category is None or p.category in {
-            "writing", "roleplay", "reasoning", "math", "coding",
-            "extraction", "stem", "humanities", "translation",
-            "summarization", "qa", "math_reasoning", "rag",
-        }
-        for p in profile
-        if p.dataset_kind == "spec_bench"
-    )
+    # Smoke profile must touch both Spec-Bench and SPEED-Bench code paths so a
+    # mistyped aiperf slug fails loudly instead of silently loading 0 prompts.
+    slugs = {p.public_dataset for p in profile}
+    assert "spec_bench" in slugs
+    assert any(s.startswith("speed_bench_") for s in slugs)
 
 
 def test_select_profile_full_when_no_limit_mode():
     profile = select_profile(SimpleNamespace(limit_samples_mode=None))
     assert len(profile) > 1
-    assert {p.dataset_kind for p in profile} == {"spec_bench", "speed_bench"}
+    slugs = {p.public_dataset for p in profile}
+    assert "spec_bench" in slugs
+    assert any(s.startswith("speed_bench_throughput_") for s in slugs)
 
 
 def test_warmup_endpoint_zero_requests_is_noop(monkeypatch):
@@ -266,8 +255,10 @@ def test_pair_phase_writes_pair_when_baseline_and_spec_match(tmp_path):
         spec_path,
         mean_e2el_ms=100.0, p50_e2el_ms=90.0, p95_e2el_ms=125.0,
         output_throughput=200.0,
-        spec_decode_metrics={"acceptance_rate": 0.8, "dataset_kind": "spec_bench",
-                             "category": "writing"},
+        spec_decode_metrics={
+            "acceptance_rate": 0.8,
+            "public_dataset": "spec_bench",
+        },
     )
     written = pair_phase(tmp_path)
     assert len(written) == 1
@@ -275,8 +266,7 @@ def test_pair_phase_writes_pair_when_baseline_and_spec_match(tmp_path):
     assert pair_data["speedup_p50_e2el"] == pytest.approx(2.0)
     assert pair_data["output_tput_ratio"] == pytest.approx(2.0)
     assert pair_data["slug"] == spec.slug
-    assert pair_data["dataset_kind"] == "spec_bench"
-    assert pair_data["category"] == "writing"
+    assert pair_data["public_dataset"] == "spec_bench"
 
 
 def test_pair_phase_skips_when_only_one_role_present(tmp_path):

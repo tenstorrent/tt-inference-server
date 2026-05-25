@@ -5,9 +5,15 @@
 """
 Speculative-Decoding Benchmark Runner for tt-inference-server.
 
-Drives ``vllm bench serve`` against the upstream Spec-Bench and Speed-Bench
-datasets, scrapes per-run acceptance-rate metrics from the vLLM server's
-Prometheus ``/metrics`` endpoint, and merges them into each result JSON.
+Drives ``aiperf profile`` against the upstream Spec-Bench and SPEED-Bench
+``--public-dataset`` slugs, scrapes per-run acceptance-rate metrics from the
+vLLM server's Prometheus ``/metrics`` endpoint, and merges them into each
+result JSON.
+
+aiperf auto-fetches its datasets from HuggingFace Hub on first use, so there
+is no manual data-download step. The vLLM server still emits the
+``vllm:spec_decode_*`` Prometheus counters that drive acceptance-rate
+measurement regardless of which client tool sends the load.
 
 Designed for **sequential, one-server-at-a-time** use so the same workflow
 fits limited-memory targets (Tenstorrent chips, smaller GPUs) and bigger
@@ -39,15 +45,17 @@ Phase selection comes from ``--workflow-args``, e.g.::
 """
 
 import argparse
+import glob
 import json
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
 project_root = Path(__file__).parent.parent
@@ -184,69 +192,158 @@ def extract_slug_from_filename(filename: str) -> Optional[Dict[str, str]]:
     return match.groupdict()
 
 
-def build_spec_serve_cmd(
+def build_aiperf_cmd(
     *,
-    benchmark_script: Path,
+    venv_python: Path,
     hf_model_repo: str,
-    host: str,
-    port: int,
+    url: str,
     run_spec: SpecDecodeRunSpec,
-    result_path: Path,
+    artifact_dir: Path,
     jwt_token: str = "",
 ) -> List[str]:
-    """Build the ``vllm bench serve`` command for one ``SpecDecodeRunSpec``.
+    """Build the ``aiperf profile`` command for one ``SpecDecodeRunSpec``.
 
-    Verified against vllm 0.21.0: the ``--spec-bench-*`` and ``--speed-bench-*``
-    flags plus ``--dataset-name {spec_bench,speed_bench}`` all exist there.
-    Older or forked vLLMs may rename these; if so, adjust here only — the rest
-    of the harness is dataset-agnostic.
+    Spec-decode-specific knobs vs. the general aiperf perf runner:
+      - ``--public-dataset <slug>`` instead of synthetic-token prompts (real
+        prompts are required for meaningful draft/target acceptance rates).
+      - ``--extra-inputs ignore_eos:true`` so each request emits exactly
+        ``output_len`` tokens (otherwise short EOS-terminated responses skew
+        TPOT/throughput).
+      - ``--extra-inputs temperature:0`` so draft/target sampling is
+        deterministic; matches the spec-decode comparison convention.
     """
+    if not url.startswith("http"):
+        url = f"http://{url}"
     cmd: List[str] = [
-        str(benchmark_script),
-        "bench",
-        "serve",
-        "--backend",
-        "openai-chat",
-        "--endpoint",
-        "/v1/chat/completions",
-        "--model",
-        hf_model_repo,
-        "--host",
-        host,
-        "--port",
-        str(port),
-        "--dataset-name",
-        run_spec.dataset_kind,
-        "--num-prompts",
-        str(run_spec.num_prompts),
-        "--max-concurrency",
-        str(run_spec.max_concurrency),
-        "--percentile-metrics",
-        "ttft,tpot,itl,e2el",
-        "--metric-percentiles",
-        "50,75,90,95,99",
-        "--save-result",
-        "--save-detailed",
-        "--result-filename",
-        str(result_path),
+        str(venv_python),
+        "-m",
+        "aiperf",
+        "profile",
+        "--model", hf_model_repo,
+        "--tokenizer", hf_model_repo,
+        "--endpoint-type",
+        "chat",
+        "--streaming",
+        "--url", url,
+        "--public-dataset", run_spec.public_dataset,
+        "--concurrency", str(run_spec.max_concurrency),
+        "--request-count", str(run_spec.num_prompts),
+        "--output-tokens-mean", str(run_spec.output_len),
+        "--output-tokens-stddev",
+        "0",
+        "--extra-inputs",
+        "ignore_eos:true",
+        "--extra-inputs",
+        "temperature:0",
+        "--artifact-dir", str(artifact_dir),
     ]
-    # vLLM treats a missing category flag as "use all rows in the (sub)set",
-    # so we omit --*-bench-category entirely when run_spec.category is None.
-    # Passing a literal "default"/"all"/etc. would exact-match against the
-    # row's category column and load 0 prompts.
-    if run_spec.dataset_kind == "spec_bench":
-        if run_spec.category is not None:
-            cmd += ["--spec-bench-category", run_spec.category]
-        cmd += ["--spec-bench-output-len", str(run_spec.output_len)]
-    else:  # speed_bench
-        if run_spec.category is not None:
-            cmd += ["--speed-bench-category", run_spec.category]
-        cmd += ["--speed-bench-output-len", str(run_spec.output_len)]
-        if run_spec.speed_bench_subset:
-            cmd += ["--speed-bench-dataset-subset", run_spec.speed_bench_subset]
     if jwt_token:
-        cmd += ["--header", f"Authorization: Bearer {jwt_token}"]
+        cmd += ["--api-key", jwt_token]
     return cmd
+
+
+def _find_aiperf_summary(artifact_dir: Path) -> Optional[Path]:
+    """Locate ``profile_export_aiperf.json`` under the artifact dir.
+
+    aiperf writes it directly into the dir for simple runs but nests it one
+    level deep under some configurations, so we check both.
+    """
+    candidates: List[Path] = [
+        artifact_dir / "profile_export_aiperf.json",
+        artifact_dir / "profile_export.json",
+    ]
+    for subdir in glob.glob(str(artifact_dir / "*")):
+        sub = Path(subdir)
+        if sub.is_dir():
+            candidates += [
+                sub / "profile_export_aiperf.json",
+                sub / "profile_export.json",
+            ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def translate_aiperf_to_vllm_bench_json(
+    artifact_dir: Path,
+    result_path: Path,
+    *,
+    hf_model_repo: str,
+    run_spec: SpecDecodeRunSpec,
+) -> bool:
+    """Read aiperf's summary JSON and write a vllm-bench-shaped result JSON.
+
+    Downstream code (``pair_and_compute_speedup``, ``summary_report``) reads
+    field names from the historical vllm-bench schema (``mean_e2el_ms``,
+    ``p50_e2el_ms``, ``output_throughput``, ...). This normaliser keeps that
+    contract stable across tool swaps.
+    """
+    summary_path = _find_aiperf_summary(artifact_dir)
+    if summary_path is None:
+        logger.warning(
+            "aiperf summary JSON not found under %s; skipping result writeback",
+            artifact_dir,
+        )
+        return False
+    try:
+        with open(summary_path) as f:
+            summary: Dict[str, Any] = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("could not read aiperf summary at %s: %s", summary_path, exc)
+        return False
+
+    def _stat(metric: str, stat: str) -> Optional[float]:
+        block = summary.get(metric)
+        if not isinstance(block, dict):
+            return None
+        return block.get(stat)
+
+    request_count = _stat("request_count", "avg") or 0
+    input_len_mean = _stat("input_sequence_length", "avg") or 0
+    output_len_mean = _stat("output_sequence_length", "avg") or 0
+
+    result: Dict[str, Any] = {
+        "benchmark_kind": "spec_decode",
+        "model_id": hf_model_repo,
+        "public_dataset": run_spec.public_dataset,
+        "num_prompts": run_spec.num_prompts,
+        "max_concurrency": run_spec.max_concurrency,
+        "completed": int(request_count),
+        "total_input_tokens": int(input_len_mean * request_count),
+        "total_output_tokens": int(output_len_mean * request_count),
+        # TTFT (Time To First Token)
+        "mean_ttft_ms": _stat("time_to_first_token", "avg"),
+        "median_ttft_ms": _stat("time_to_first_token", "p50"),
+        "p50_ttft_ms": _stat("time_to_first_token", "p50"),
+        "p95_ttft_ms": _stat("time_to_first_token", "p95"),
+        "p99_ttft_ms": _stat("time_to_first_token", "p99"),
+        # TPOT / ITL (aiperf reports inter_token_latency for both)
+        "mean_tpot_ms": _stat("inter_token_latency", "avg"),
+        "median_tpot_ms": _stat("inter_token_latency", "p50"),
+        "p50_tpot_ms": _stat("inter_token_latency", "p50"),
+        "p95_tpot_ms": _stat("inter_token_latency", "p95"),
+        "p99_tpot_ms": _stat("inter_token_latency", "p99"),
+        "mean_itl_ms": _stat("inter_token_latency", "avg"),
+        "p50_itl_ms": _stat("inter_token_latency", "p50"),
+        "p95_itl_ms": _stat("inter_token_latency", "p95"),
+        "p99_itl_ms": _stat("inter_token_latency", "p99"),
+        # E2EL (End-to-End request Latency)
+        "mean_e2el_ms": _stat("request_latency", "avg"),
+        "median_e2el_ms": _stat("request_latency", "p50"),
+        "p50_e2el_ms": _stat("request_latency", "p50"),
+        "p95_e2el_ms": _stat("request_latency", "p95"),
+        "p99_e2el_ms": _stat("request_latency", "p99"),
+        # Throughput. ``output_throughput`` is the historical vllm-bench
+        # field name read by ``pair_and_compute_speedup``.
+        "output_throughput": _stat("output_token_throughput", "avg"),
+        "total_token_throughput": _stat("total_token_throughput", "avg"),
+        "request_throughput": _stat("request_throughput", "avg"),
+    }
+
+    with open(result_path, "w") as f:
+        json.dump(result, f, indent=2)
+    return True
 
 
 def wait_for_url_healthy(
@@ -356,11 +453,8 @@ def _annotate_with_metrics(
     metrics["benchmark_kind"] = (
         "spec_decode_baseline" if role == PHASE_BASELINE else "spec_decode"
     )
-    metrics["dataset_kind"] = run_spec.dataset_kind
-    metrics["category"] = run_spec.category
+    metrics["public_dataset"] = run_spec.public_dataset
     metrics["endpoint_role"] = role
-    if run_spec.speed_bench_subset:
-        metrics["speed_bench_subset"] = run_spec.speed_bench_subset
     try:
         merge_acceptance_rate(result_path, metrics)
     except (OSError, json.JSONDecodeError) as exc:
@@ -381,32 +475,44 @@ def _run_one_sweep(
     *,
     role: str,
     url: str,
-    benchmark_script: Path,
+    venv_python: Path,
     hf_model_repo: str,
     run_spec: SpecDecodeRunSpec,
     result_path: Path,
+    artifact_dir: Path,
     jwt_token: str,
 ) -> int:
-    host, port = parse_endpoint_url(url)
+    if artifact_dir.exists():
+        shutil.rmtree(artifact_dir)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
     before = _snapshot_counters_safe(url)
-    cmd = build_spec_serve_cmd(
-        benchmark_script=benchmark_script,
+    cmd = build_aiperf_cmd(
+        venv_python=venv_python,
         hf_model_repo=hf_model_repo,
-        host=host,
-        port=port,
+        url=url,
         run_spec=run_spec,
-        result_path=result_path,
+        artifact_dir=artifact_dir,
         jwt_token=jwt_token,
     )
     return_code = run_command(cmd, logger=logger)
     if return_code != 0:
         logger.error(
-            "[%s] vllm bench serve failed (rc=%d) for %s",
+            "[%s] aiperf profile failed (rc=%d) for %s",
             role,
             return_code,
             run_spec.slug,
         )
         return return_code
+    if not translate_aiperf_to_vllm_bench_json(
+        artifact_dir, result_path, hf_model_repo=hf_model_repo, run_spec=run_spec
+    ):
+        logger.error(
+            "[%s] could not translate aiperf output to result JSON for %s",
+            role,
+            run_spec.slug,
+        )
+        return 1
     _annotate_with_metrics(url, before, result_path, run_spec, role=role)
     return 0
 
@@ -415,7 +521,7 @@ def run_benchmark_phase(
     *,
     role: str,
     profile: Sequence[SpecDecodeRunSpec],
-    benchmark_script: Path,
+    venv_python: Path,
     output_dir: Path,
     model_id: str,
     device: str,
@@ -427,6 +533,7 @@ def run_benchmark_phase(
     """Run one phase (baseline or spec) against a single endpoint."""
     assert role in (PHASE_BASELINE, PHASE_SPEC), f"invalid role: {role!r}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    artifact_root = output_dir / "aiperf_artifacts"
 
     if not wait_for_url_healthy(url, jwt_token=jwt_token):
         logger.error("⛔️ %s endpoint not healthy at %s. Aborting phase.", role, url)
@@ -442,16 +549,18 @@ def run_benchmark_phase(
         result_path = output_dir / build_result_filename(
             model_id, device, run_spec, role=role, run_timestamp=run_timestamp
         )
+        artifact_dir = artifact_root / f"{role}_{run_timestamp}_{run_spec.slug}"
         logger.info("[%s %d/%d] running %s", role, i, len(profile), run_spec.slug)
         time.sleep(2)  # small gap so /metrics ticks settle between runs
         return_codes.append(
             _run_one_sweep(
                 role=role,
                 url=url,
-                benchmark_script=benchmark_script,
+                venv_python=venv_python,
                 hf_model_repo=hf_model_repo,
                 run_spec=run_spec,
                 result_path=result_path,
+                artifact_dir=artifact_dir,
                 jwt_token=jwt_token,
             )
         )
@@ -497,13 +606,12 @@ def pair_phase(output_dir: Path) -> List[Path]:
             continue
         pair["benchmark_kind"] = "spec_decode_pair"
         pair["slug"] = slug
-        # Lift dataset/category metadata from the spec file's annotation if present
+        # Lift dataset metadata from the spec file's annotation if present
         with open(spec_path) as f:
             spec_data = json.load(f)
         spec_meta = spec_data.get("spec_decode_metrics", {})
-        for field in ("dataset_kind", "category", "speed_bench_subset"):
-            if spec_meta.get(field) is not None:
-                pair[field] = spec_meta[field]
+        if spec_meta.get("public_dataset") is not None:
+            pair["public_dataset"] = spec_meta["public_dataset"]
         with open(pair_path, "w") as f:
             json.dump(pair, f, indent=2)
         speedup = pair.get("speedup_p50_e2el")
@@ -579,13 +687,16 @@ def main() -> int:
         os.environ["OPENAI_API_KEY"] = encoded
         jwt_token = encoded
 
+    # Dedicated BENCHMARKS_SPEC_DECODE venv: needs aiperf>=0.8.0 (Spec-Bench /
+    # SPEED-Bench dataset plugins), which requires pillow>=12.2 — incompatible
+    # with the shared pillow pin used by the BENCHMARKS_AIPERF venv.
     venv_config = VENV_CONFIGS[WorkflowVenvType.BENCHMARKS_SPEC_DECODE]
-    benchmark_script = venv_config.venv_path / "bin" / "vllm"
+    venv_python = venv_config.venv_python
 
     return_codes = run_benchmark_phase(
         role=phase,
         profile=profile,
-        benchmark_script=benchmark_script,
+        venv_python=venv_python,
         output_dir=output_dir,
         model_id=model_spec.model_id,
         device=device,

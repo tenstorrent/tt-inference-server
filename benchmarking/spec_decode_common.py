@@ -4,16 +4,18 @@
 
 """Engine-agnostic helpers for the speculative-decoding benchmark.
 
-`SpecDecodeRunSpec` describes a single sweep config (dataset, category,
-output length, concurrency). `merge_acceptance_rate` annotates a
-``vllm bench serve --result-filename`` JSON in place with metrics scraped
-from Prometheus. `pair_and_compute_speedup` consumes two such annotated
-results (baseline + speculative) and emits a sidecar dict with
-per-percentile speedup ratios.
+`SpecDecodeRunSpec` describes a single sweep config (dataset, output length,
+concurrency). `merge_acceptance_rate` annotates the per-sweep result JSON in
+place with metrics scraped from Prometheus. `pair_and_compute_speedup`
+consumes two such annotated results (baseline + speculative) and emits a
+sidecar dict with per-percentile speedup ratios.
 
-Kept separate from the vLLM-specific runner so a future
-``run_sglang_spec_decode_benchmarks.py`` (or any other backend) can reuse
-the same sweep specs, result annotation, and pairing math.
+Kept separate from the aiperf-specific runner so a future
+``run_sglang_spec_decode_benchmarks.py`` (or any other client tool) can reuse
+the same sweep specs, result annotation, and pairing math. The runner is
+responsible for normalising tool-specific output JSON into the vllm-bench
+field names (``mean_e2el_ms``, ``p50_e2el_ms``, ``output_throughput``, etc.)
+that ``pair_and_compute_speedup`` reads here.
 """
 
 import json
@@ -29,64 +31,41 @@ logger = logging.getLogger(__name__)
 class SpecDecodeRunSpec:
     """One sweep config for a spec-decode benchmark run.
 
-    ``dataset_kind`` selects the upstream vLLM-bench dataset name:
+    ``public_dataset`` is an aiperf ``--public-dataset`` slug. Examples:
 
-      - ``"spec_bench"`` → ``--dataset-name spec_bench``
-      - ``"speed_bench"`` → ``--dataset-name speed_bench``
+      - ``"spec_bench"`` — hemingkx Spec-Bench (480 prompts, no category breakdown)
+      - ``"speed_bench_qualitative"`` — nvidia SPEED-Bench qualitative split (whole)
+      - ``"speed_bench_coding"`` (and the other 10 per-category SPEED-Bench slugs)
 
-    ``category`` maps to ``--spec-bench-category`` / ``--speed-bench-category``.
-    ``None`` means "don't pass the flag", which makes the upstream loader
-    use every row in the (sub)set — matching vllm's
-    ``if (not self.category) or (self.category == row["category"])``
-    semantics. Concretely: pass a real category to isolate per-domain
-    acceptance rate; pass ``None`` to sweep the whole (sub)set.
-
-    ``speed_bench_subset`` is only meaningful when
-    ``dataset_kind == "speed_bench"`` (``--speed-bench-dataset-subset``).
+    See ``aiperf/plugin/plugins.yaml`` for the full list of registered slugs.
     """
 
-    dataset_kind: str
-    category: Optional[str]
+    public_dataset: str
     output_len: int
     max_concurrency: int
     num_prompts: int
-    speed_bench_subset: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.dataset_kind not in ("spec_bench", "speed_bench"):
-            raise ValueError(
-                f"Unsupported dataset_kind: {self.dataset_kind!r}. "
-                "Expected 'spec_bench' or 'speed_bench'."
-            )
-        if self.dataset_kind == "speed_bench" and self.speed_bench_subset is None:
-            raise ValueError(
-                "speed_bench_subset is required when dataset_kind='speed_bench'"
-            )
+        if not self.public_dataset:
+            raise ValueError("public_dataset is required")
 
     @property
     def slug(self) -> str:
         """Short identifier for use in result filenames."""
-        parts = [self.dataset_kind]
-        if self.category:
-            parts.append(self.category)
-        else:
-            parts.append("all")
-        if self.speed_bench_subset:
-            parts.append(self.speed_bench_subset)
-        parts.extend(
+        return "_".join(
             [
+                self.public_dataset,
                 f"osl-{self.output_len}",
                 f"maxcon-{self.max_concurrency}",
                 f"n-{self.num_prompts}",
             ]
         )
-        return "_".join(parts)
 
 
 def merge_acceptance_rate(
     result_json_path: Union[str, Path], metrics: Dict[str, Any]
 ) -> None:
-    """Atomically merge spec-decode metrics into a vllm-bench result JSON.
+    """Atomically merge spec-decode metrics into a per-sweep result JSON.
 
     Writes ``data["spec_decode_metrics"] = metrics`` then renames over the
     original file so a reader never sees a half-written JSON, matching the
@@ -115,11 +94,12 @@ def pair_and_compute_speedup(
 ) -> Dict[str, Any]:
     """Compute per-percentile speedup from a baseline and speculative result.
 
-    Reads each ``vllm bench serve --result-filename`` JSON and produces a
-    dict with E2EL speedups (baseline / spec — values > 1 mean spec is faster)
-    plus an output-throughput ratio (spec / baseline). Returns ``None`` for
-    any ratio whose numerator or denominator is missing or zero, so callers
-    can distinguish "not measured" from a legitimate zero.
+    Reads each per-sweep result JSON (normalised to vllm-bench field names by
+    the runner) and produces a dict with E2EL speedups (baseline / spec —
+    values > 1 mean spec is faster) plus an output-throughput ratio
+    (spec / baseline). Returns ``None`` for any ratio whose numerator or
+    denominator is missing or zero, so callers can distinguish "not measured"
+    from a legitimate zero.
     """
     baseline_path = Path(baseline_path)
     spec_path = Path(spec_path)

@@ -21,22 +21,10 @@ def _write(path: Path, data: dict) -> None:
         json.dump(data, f)
 
 
-def test_run_spec_rejects_unknown_dataset_kind():
-    with pytest.raises(ValueError, match="dataset_kind"):
+def test_run_spec_rejects_empty_public_dataset():
+    with pytest.raises(ValueError, match="public_dataset"):
         SpecDecodeRunSpec(
-            dataset_kind="bogus",
-            category="writing",
-            output_len=128,
-            max_concurrency=1,
-            num_prompts=4,
-        )
-
-
-def test_run_spec_requires_subset_for_speed_bench():
-    with pytest.raises(ValueError, match="speed_bench_subset"):
-        SpecDecodeRunSpec(
-            dataset_kind="speed_bench",
-            category=None,
+            public_dataset="",
             output_len=128,
             max_concurrency=1,
             num_prompts=4,
@@ -45,41 +33,32 @@ def test_run_spec_requires_subset_for_speed_bench():
 
 def test_run_spec_slug_for_spec_bench():
     spec = SpecDecodeRunSpec(
-        dataset_kind="spec_bench",
-        category="writing",
+        public_dataset="spec_bench",
         output_len=128,
         max_concurrency=4,
         num_prompts=16,
     )
-    assert spec.slug == "spec_bench_writing_osl-128_maxcon-4_n-16"
+    assert spec.slug == "spec_bench_osl-128_maxcon-4_n-16"
 
 
-def test_run_spec_slug_for_speed_bench_with_no_category():
+def test_run_spec_slug_for_speed_bench_throughput():
     spec = SpecDecodeRunSpec(
-        dataset_kind="speed_bench",
-        category=None,
+        public_dataset="speed_bench_throughput_1k",
         output_len=128,
         max_concurrency=4,
         num_prompts=16,
-        speed_bench_subset="throughput_1k",
     )
-    assert spec.slug == (
-        "speed_bench_all_throughput_1k_osl-128_maxcon-4_n-16"
-    )
+    assert spec.slug == "speed_bench_throughput_1k_osl-128_maxcon-4_n-16"
 
 
-def test_run_spec_slug_for_speed_bench_with_explicit_category():
+def test_run_spec_slug_for_speed_bench_qualitative_category():
     spec = SpecDecodeRunSpec(
-        dataset_kind="speed_bench",
-        category="coding",
+        public_dataset="speed_bench_coding",
         output_len=128,
         max_concurrency=4,
         num_prompts=16,
-        speed_bench_subset="qualitative",
     )
-    assert spec.slug == (
-        "speed_bench_coding_qualitative_osl-128_maxcon-4_n-16"
-    )
+    assert spec.slug == "speed_bench_coding_osl-128_maxcon-4_n-16"
 
 
 def test_merge_acceptance_rate_preserves_existing_fields(tmp_path):

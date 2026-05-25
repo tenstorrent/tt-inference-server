@@ -79,6 +79,9 @@ WORKFLOW_BENCHMARKS_SPEC_DECODE_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path()
     / "benchmarking"
     / "run_spec_decode_benchmarks.py",
+    # Dedicated venv: spec-decode needs aiperf>=0.8.0 (Spec-Bench / SPEED-Bench
+    # dataset plugins) which requires pillow>=12.2, incompatible with the
+    # shared pillow==11.1 pin used by the BENCHMARKS_AIPERF venv.
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_SPEC_DECODE,
     # Use default name="benchmarks" so output files land in the unified
     # benchmarks_output/ directory and the existing report aggregator

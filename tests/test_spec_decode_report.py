@@ -31,13 +31,12 @@ def _write(path: Path, data: dict) -> None:
 def test_extract_params_spec_decode_spec_role():
     name = (
         "benchmark_spec_decode_spec_id_tt-transformers_Llama-3.1-8B-Instruct_"
-        "gpu_2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-4_n-16.json"
+        "gpu_2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
     )
     params = extract_params_from_filename(name)
     assert params["task_type"] == "spec_decode"
     assert params["endpoint_role"] == "spec"
-    assert params["dataset_kind"] == "spec_bench"
-    assert params["category"] == "writing"
+    assert params["public_dataset"] == "spec_bench"
     assert params["device"] == "gpu"
     assert params["output_sequence_length"] == 128
     assert params["max_con"] == 4
@@ -47,36 +46,34 @@ def test_extract_params_spec_decode_spec_role():
 def test_extract_params_spec_decode_baseline_role():
     name = (
         "benchmark_spec_decode_baseline_modelid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_writing_osl-512_maxcon-1_n-4.json"
+        "2026-05-20_10-00-00_spec_bench_osl-512_maxcon-1_n-4.json"
     )
     params = extract_params_from_filename(name)
     assert params["task_type"] == "spec_decode"
     assert params["endpoint_role"] == "baseline"
-    assert params["dataset_kind"] == "spec_bench"
+    assert params["public_dataset"] == "spec_bench"
 
 
 def test_extract_params_spec_decode_pair_role():
     name = (
         "benchmark_spec_decode_pair_modelid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-4_n-16.json"
+        "2026-05-20_10-00-00_speed_bench_coding_osl-128_maxcon-4_n-16.json"
     )
     params = extract_params_from_filename(name)
     assert params["task_type"] == "spec_decode_pair"
     assert params["endpoint_role"] == "pair"
+    assert params["public_dataset"] == "speed_bench_coding"
 
 
-def test_extract_params_speed_bench_with_subset_in_category():
-    # The slug encodes the subset inside the category capture because the
-    # filename collapses them with underscores. The structured fields live
-    # in the JSON body; the regex just needs to anchor on osl-/maxcon-/n-.
+def test_extract_params_speed_bench_throughput_slug():
+    # Multi-token slugs (speed_bench_throughput_1k) must be captured whole.
     name = (
         "benchmark_spec_decode_spec_modelid_gpu_"
-        "2026-05-20_10-00-00_speed_bench_all_throughput_1k_"
+        "2026-05-20_10-00-00_speed_bench_throughput_1k_"
         "osl-512_maxcon-4_n-16.json"
     )
     params = extract_params_from_filename(name)
-    assert params["dataset_kind"] == "speed_bench"
-    assert params["category"] == "all_throughput_1k"
+    assert params["public_dataset"] == "speed_bench_throughput_1k"
 
 
 # ---------------------------------------------------------------------------
@@ -87,22 +84,21 @@ def test_extract_params_speed_bench_with_subset_in_category():
 def test_process_spec_decode_pair_file(tmp_path):
     name = (
         "benchmark_spec_decode_pair_mid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-4_n-16.json"
+        "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
     )
     path = tmp_path / name
     _write(
         path,
         {
             "benchmark_kind": "spec_decode_pair",
-            "slug": "spec_bench_writing_osl-128_maxcon-4_n-16",
+            "slug": "spec_bench_osl-128_maxcon-4_n-16",
             "speedup_p50_e2el": 1.8,
             "speedup_p95_e2el": 1.6,
             "speedup_p99_e2el": 1.5,
             "output_tput_ratio": 1.75,
             "spec_acceptance_rate": 0.82,
             "baseline_acceptance_rate": None,
-            "dataset_kind": "spec_bench",
-            "category": "writing",
+            "public_dataset": "spec_bench",
         },
     )
     metrics = process_benchmark_file(str(path))
@@ -111,13 +107,13 @@ def test_process_spec_decode_pair_file(tmp_path):
     assert metrics["speedup_p50_e2el"] == pytest.approx(1.8)
     assert metrics["output_tput_ratio"] == pytest.approx(1.75)
     assert metrics["spec_acceptance_rate"] == pytest.approx(0.82)
-    assert metrics["category"] == "writing"
+    assert metrics["public_dataset"] == "spec_bench"
 
 
 def test_process_spec_decode_spec_file_lifts_metrics(tmp_path):
     name = (
         "benchmark_spec_decode_spec_mid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-4_n-16.json"
+        "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-4_n-16.json"
     )
     path = tmp_path / name
     _write(
@@ -136,8 +132,7 @@ def test_process_spec_decode_spec_file_lifts_metrics(tmp_path):
                 "accepted_tokens": 1300,
                 "draft_tokens": 1585,
                 "num_drafts": 480,
-                "dataset_kind": "spec_bench",
-                "category": "writing",
+                "public_dataset": "spec_bench",
                 "endpoint_role": "spec",
             },
         },
@@ -145,6 +140,7 @@ def test_process_spec_decode_spec_file_lifts_metrics(tmp_path):
     metrics = process_benchmark_file(str(path))
     assert metrics["task_type"] == "spec_decode"
     assert metrics["endpoint_role"] == "spec"
+    assert metrics["public_dataset"] == "spec_bench"
     assert metrics["acceptance_rate"] == pytest.approx(0.82)
     assert metrics["mean_accepted_length"] == pytest.approx(2.7)
     assert metrics["accepted_tokens"] == 1300
@@ -159,7 +155,7 @@ def test_process_spec_decode_handles_missing_annotation(tmp_path):
     # rather than crashing.
     name = (
         "benchmark_spec_decode_spec_mid_gpu_"
-        "2026-05-20_10-00-00_spec_bench_writing_osl-128_maxcon-1_n-4.json"
+        "2026-05-20_10-00-00_spec_bench_osl-128_maxcon-1_n-4.json"
     )
     path = tmp_path / name
     _write(
@@ -186,8 +182,7 @@ def test_process_spec_decode_handles_missing_annotation(tmp_path):
 def test_create_spec_decode_display_dict_columns():
     result = {
         "endpoint_role": "spec",
-        "dataset_kind": "spec_bench",
-        "category": "writing",
+        "public_dataset": "spec_bench",
         "output_sequence_length": 128,
         "max_con": 4,
         "num_requests": 16,
@@ -201,15 +196,13 @@ def test_create_spec_decode_display_dict_columns():
     d = create_spec_decode_display_dict(result)
     assert d["Role"] == "spec"
     assert d["Dataset"] == "spec_bench"
-    assert d["Category"] == "writing"
     assert d["Accept Rate"] == "0.82"
     assert d["E2EL (ms)"] == "200.0"
 
 
 def test_create_spec_decode_pair_display_dict_columns():
     result = {
-        "dataset_kind": "spec_bench",
-        "category": "writing",
+        "public_dataset": "speed_bench_coding",
         "output_sequence_length": 128,
         "max_con": 4,
         "speedup_p50_e2el": 1.8,
@@ -219,6 +212,7 @@ def test_create_spec_decode_pair_display_dict_columns():
         "spec_acceptance_rate": 0.82,
     }
     d = create_spec_decode_pair_display_dict(result)
+    assert d["Dataset"] == "speed_bench_coding"
     assert d["Speedup p50"] == "1.8"
     assert d["Speedup p95"] == "1.6"
     assert d["Output Tput Ratio"] == "1.75"
@@ -240,8 +234,7 @@ def test_render_per_run_section_only():
         {
             "task_type": "spec_decode",
             "endpoint_role": "baseline",
-            "dataset_kind": "spec_bench",
-            "category": "writing",
+            "public_dataset": "spec_bench",
             "output_sequence_length": 128,
             "max_con": 1,
             "mean_e2el_ms": 200.0,
@@ -249,8 +242,7 @@ def test_render_per_run_section_only():
         {
             "task_type": "spec_decode",
             "endpoint_role": "spec",
-            "dataset_kind": "spec_bench",
-            "category": "writing",
+            "public_dataset": "spec_bench",
             "output_sequence_length": 128,
             "max_con": 1,
             "mean_e2el_ms": 100.0,
@@ -263,7 +255,7 @@ def test_render_per_run_section_only():
     # baseline row should come before spec row in the rendered table
     lines = sections[0].splitlines()
     baseline_line = next(i for i, line in enumerate(lines) if "baseline" in line)
-    # match "spec" as a cell value, not as "spec_bench" in the Dataset column
+    # match "spec" as the Role cell, not "spec_bench" in the Dataset column
     spec_line = next(
         i
         for i, line in enumerate(lines)
@@ -276,8 +268,7 @@ def test_render_includes_pair_section_when_pair_results_present():
     pair = [
         {
             "task_type": "spec_decode_pair",
-            "dataset_kind": "spec_bench",
-            "category": "writing",
+            "public_dataset": "spec_bench",
             "output_sequence_length": 128,
             "max_con": 1,
             "speedup_p50_e2el": 1.8,
