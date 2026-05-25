@@ -55,10 +55,6 @@ while [[ $# -gt 0 ]]; do
             ENABLE_GRPC="ON"
             shift
             ;;
-        --no-grpc)
-            ENABLE_GRPC="OFF"
-            shift
-            ;;
         --toolchain-path)
             TOOLCHAIN_PATH_ARG="$2"
             shift 2
@@ -79,7 +75,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
             echo "  --grpc               Enable gRPC server (needs ./install_dependencies.sh --grpc first)"
-            echo "  --no-grpc            Disable gRPC server (default)"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
