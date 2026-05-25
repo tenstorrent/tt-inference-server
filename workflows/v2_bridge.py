@@ -29,12 +29,14 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.RELEASE: "release",
 }
 
-# Only sdxlmodels actually validated end-to-end against v2's engine are routed here.
+# Only models actually validated end-to-end against v2's engine are routed here.
 _V2_ROUTED_MODELS = frozenset(
     {
         "stable-diffusion-xl-base-1.0",
         "stable-diffusion-xl-base-1.0-img-2-img",
         "stable-diffusion-xl-1.0-inpainting-0.1",
+        "whisper-large-v3",
+        "distil-large-v3",
     }
 )
 
