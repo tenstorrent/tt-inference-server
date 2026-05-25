@@ -528,6 +528,18 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t kvCacheBlockSize() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
+  return cached;
+}
+
+size_t kvCacheFirstBlockSize() {
+  static const size_t cached = static_cast<size_t>(envUlong(
+      "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
+  return cached;
+}
+
 bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
