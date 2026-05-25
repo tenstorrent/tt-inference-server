@@ -633,6 +633,9 @@ void LLMService::processStreamingRequest(
       request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)));
+  if (request.disaggregated) {
+    sequence->setKVCacheOffset(sequence->getNumPromptTokens());
+  }
   taskQueue->push(*std::move(sequence));
 }
 

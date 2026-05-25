@@ -51,12 +51,17 @@ inline ds::GenerationParams makeGenerationParams(
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-      .disaggregated_decode = seq.isDisaggregated()};
+      .disaggregated_decode = seq.isDisaggregated(),
+      .position_id = seq.getKVCacheOffset()};
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
-  req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
+  if (seq.isDisaggregated()) {
+    req.tokens = {static_cast<uint32_t>(seq.getLastToken())};
+  } else {
+    req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
+  }
   req.gen = makeGenerationParams(seq);
 }
 

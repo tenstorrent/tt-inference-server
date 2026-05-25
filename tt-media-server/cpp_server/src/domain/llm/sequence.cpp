@@ -89,6 +89,10 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&disaggregated),
            sizeof(disaggregated));
   samplingParams->serialize(os);
+  os.write(reinterpret_cast<const char*>(&kvCacheOffset.has_value()), sizeof(kvCacheOffset.has_value()));
+  if (kvCacheOffset.has_value()) {
+    os.write(reinterpret_cast<const char*>(&kvCacheOffset.value()), sizeof(kvCacheOffset.value()));
+  }
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -124,6 +128,14 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.disaggregated),
           sizeof(seq.disaggregated));
   seq.samplingParams = SamplingParams::deserialize(is);
+  auto hasKvCacheOffset = false;
+  is.read(reinterpret_cast<char*>(&hasKvCacheOffset), sizeof(hasKvCacheOffset));
+  if (hasKvCacheOffset) {
+    seq.kvCacheOffset = std::make_optional<uint32_t>();
+    is.read(reinterpret_cast<char*>(&seq.kvCacheOffset.value()), sizeof(seq.kvCacheOffset.value()));
+  } else {
+    seq.kvCacheOffset = std::nullopt;
+  }
   return seq;
 }
 
