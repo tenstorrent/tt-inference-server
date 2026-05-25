@@ -3123,9 +3123,6 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
-                # vLLM launches with max_num_seqs=1 on P300x2; serial decode
-                # means parallel client requests time out in the queue.
-                max_concurrent=1,
                 model_kwargs={
                     "timeout": "14400",
                 },
