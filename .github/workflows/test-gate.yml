@@ -591,7 +591,6 @@ jobs:
     permissions:
       contents: read
     env:
-      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/tt-media-server/.cache/fetchcontent
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
@@ -610,7 +609,7 @@ jobs:
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
+        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
       - name: Cache C++ dependency sources
         uses: actions/cache@v4
@@ -619,7 +618,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tt-media-server/.cache/ccache
-            tt-media-server/.cache/fetchcontent
           key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
           restore-keys: |
             cpp-deps-${{ runner.os }}-${{ runner.arch }}-
@@ -711,7 +709,6 @@ jobs:
       # Actions treats env keys as case-insensitive, so we set only the
       # lowercase form (which curl and Python requests both read).
       no_proxy: "localhost,127.0.0.1,::1"
-      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/tt-media-server/.cache/fetchcontent
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
@@ -730,7 +727,7 @@ jobs:
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
+        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
       - name: Cache C++ dependency sources
         uses: actions/cache@v4
@@ -739,7 +736,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tt-media-server/.cache/ccache
-            tt-media-server/.cache/fetchcontent
           key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
           restore-keys: |
             cpp-deps-${{ runner.os }}-${{ runner.arch }}-
@@ -1477,7 +1473,6 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
-      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/tt-media-server/.cache/fetchcontent
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
@@ -1495,7 +1490,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tt-media-server/.cache/ccache
-            tt-media-server/.cache/fetchcontent
           key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
           restore-keys: |
             cpp-deps-${{ runner.os }}-${{ runner.arch }}-
@@ -1507,7 +1501,6 @@ jobs:
         run: |
           cmake -S prefill_gateway -B prefill_gateway/build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
@@ -1548,7 +1541,6 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
-      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/tt-media-server/.cache/fetchcontent
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
@@ -1566,7 +1558,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tt-media-server/.cache/ccache
-            tt-media-server/.cache/fetchcontent
           key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
           restore-keys: |
             cpp-deps-${{ runner.os }}-${{ runner.arch }}-
@@ -1578,7 +1569,6 @@ jobs:
         run: |
           cmake -S prefill_gateway -B prefill_gateway/tsan_build \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
@@ -2461,7 +2451,6 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
-      FETCHCONTENT_BASE_DIR: ${{ github.workspace }}/tt-media-server/.cache/fetchcontent
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     # Gating: any TSan race report after suppressions fails this job and the
@@ -2484,7 +2473,7 @@ jobs:
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
+        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
       - name: Cache C++ dependency sources
         uses: actions/cache@v4
@@ -2493,7 +2482,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tt-media-server/.cache/ccache
-            tt-media-server/.cache/fetchcontent
           key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
           restore-keys: |
             cpp-deps-${{ runner.os }}-${{ runner.arch }}-

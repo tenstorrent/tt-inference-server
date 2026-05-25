@@ -38,7 +38,9 @@ def load_scenario(config_path: Path, scenario: str) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate a vLLM bench serve result JSON.")
+    parser = argparse.ArgumentParser(
+        description="Validate a vLLM bench serve result JSON."
+    )
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--result", required=True, type=Path)
@@ -67,15 +69,27 @@ def main() -> int:
         failures.append(f"completed {completed} is below minimum {min_completed}")
     if failed > max_failed:
         failures.append(f"failed {failed} exceeds maximum {max_failed}")
-    if max_mean_tpot_ms is not None and as_number(mean_tpot_ms, float("inf")) > float(max_mean_tpot_ms):
-        failures.append(f"mean_tpot_ms {mean_tpot_ms} exceeds threshold {max_mean_tpot_ms}ms")
-    if max_mean_ttft_ms is not None and as_number(mean_ttft_ms, float("inf")) > float(max_mean_ttft_ms):
-        failures.append(f"mean_ttft_ms {mean_ttft_ms} exceeds threshold {max_mean_ttft_ms}ms")
+    if max_mean_tpot_ms is not None and as_number(mean_tpot_ms, float("inf")) > float(
+        max_mean_tpot_ms
+    ):
+        failures.append(
+            f"mean_tpot_ms {mean_tpot_ms} exceeds threshold {max_mean_tpot_ms}ms"
+        )
+    if max_mean_ttft_ms is not None and as_number(mean_ttft_ms, float("inf")) > float(
+        max_mean_ttft_ms
+    ):
+        failures.append(
+            f"mean_ttft_ms {mean_ttft_ms} exceeds threshold {max_mean_ttft_ms}ms"
+        )
 
     percentile_thresholds = scenario.get("percentile_thresholds", {})
     for metric, threshold in percentile_thresholds.items():
-        if metric in result and as_number(result.get(metric), float("inf")) > float(threshold):
-            failures.append(f"{metric} {result.get(metric)} exceeds threshold {threshold}ms")
+        if metric in result and as_number(result.get(metric), float("inf")) > float(
+            threshold
+        ):
+            failures.append(
+                f"{metric} {result.get(metric)} exceeds threshold {threshold}ms"
+            )
 
     summary = Path(args.summary) if args.summary else None
     lines = [
@@ -89,7 +103,9 @@ def main() -> int:
         f"| **mean_ttft_ms** | {format_value(mean_ttft_ms)} | <= {format_value(max_mean_ttft_ms)}ms |",
     ]
     for metric, threshold in percentile_thresholds.items():
-        lines.append(f"| **{metric}** | {format_value(result.get(metric))} | <= {threshold}ms |")
+        lines.append(
+            f"| **{metric}** | {format_value(result.get(metric))} | <= {threshold}ms |"
+        )
     lines.append("")
     if summary:
         with summary.open("a", encoding="utf-8") as f:
