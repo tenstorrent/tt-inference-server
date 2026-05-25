@@ -65,6 +65,13 @@ class VideoStatus(IntEnum):
 # round-trip latency is exactly the pipeline's cold-start time. Picking a
 # value that cannot collide with the UUID4 task_ids the API emits keeps the
 # wire format unchanged — no slot resizing, no mixed-deploy SHM size mismatch.
+#
+# ── ack-fungibility (multi-worker contract) ──
+# All SPRunner workers — there are N of them when device_ids="(0),(1),...,(N-1)"
+# — write pings carrying THIS same task_id. They share the output ring's
+# reader_index (it lives in SHM state, not per-process), so they don't each
+# get a dedicated response slot. Instead, each worker consumes one SUCCESS
+# response off the ring in arrival order.
 SP_WARMUP_TASK_ID = "__sp_warmup__"
 
 
