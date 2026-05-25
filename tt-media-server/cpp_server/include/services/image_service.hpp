@@ -20,8 +20,9 @@ namespace tt::services {
 
 /** In-process image service. Owns one runner and dispatches synchronously;
  *  the Drogon controller offloads to a thread pool. */
-class ImageService : public BaseService<domain::ImageGenerateRequest,
-                                        domain::image::ImageResponse> {
+class ImageService
+    : public BaseSyncService<domain::ImageGenerateRequest,
+                             domain::image::ImageResponse> {
  public:
   using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
                                        std::vector<std::string>>;
@@ -38,7 +39,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   std::string runnerInUse() const override;
 
  protected:
-  domain::image::ImageResponse processRequest(
+  domain::image::ImageResponse produceResponse(
       domain::ImageGenerateRequest request) override;
   void preProcess(domain::ImageGenerateRequest& request) const override;
   size_t currentQueueSize() const override;

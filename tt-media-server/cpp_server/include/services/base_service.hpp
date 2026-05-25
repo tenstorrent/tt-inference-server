@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -37,18 +38,11 @@ class IService {
   virtual std::string runnerInUse() const { return ""; }
 };
 
-template <std::derived_from<domain::BaseRequest> RequestType,
-          std::derived_from<domain::BaseResponse> ResponseType>
-class BaseService : public IService {
+/** Shared queue back-pressure and system status for all request pipelines. */
+template <std::derived_from<domain::BaseRequest> RequestType>
+class RequestPipeline : public IService {
  public:
-  virtual ~BaseService() = default;
-
-  ResponseType submitRequest(RequestType request) {
-    preProcess(request);
-    auto response = processRequest(std::move(request));
-    postProcess(response);
-    return response;
-  }
+  virtual ~RequestPipeline() = default;
 
   SystemStatus getSystemStatus() const override {
     SystemStatus status;
@@ -62,11 +56,16 @@ class BaseService : public IService {
   bool isModelReady() const override { return false; }
 
  protected:
-  virtual ResponseType processRequest(RequestType request) = 0;
   virtual void preProcess(RequestType& /*request*/) const {
-    if (currentQueueSize() >= maxQueueSize) throw QueueFullException{};
+    enforceQueueCapacity();
   }
-  virtual void postProcess(ResponseType& /*response*/) const {}
+
+  void enforceQueueCapacity() const {
+    if (currentQueueSize() >= maxQueueSize) {
+      throw QueueFullException{};
+    }
+  }
+
   /** Override when the service has its own queue; default is no back-pressure.
    */
   virtual size_t currentQueueSize() const { return 0; }
@@ -76,6 +75,57 @@ class BaseService : public IService {
   }
 
   size_t maxQueueSize = std::numeric_limits<size_t>::max();
+};
+
+/** Single-request services: one response per submitRequest. */
+template <std::derived_from<domain::BaseRequest> RequestType,
+          std::derived_from<domain::BaseResponse> ResponseType>
+class BaseSyncService : public RequestPipeline<RequestType> {
+ public:
+  virtual ~BaseSyncService() = default;
+
+  ResponseType submitRequest(RequestType request) {
+    this->preProcess(request);
+    auto response = produceResponse(std::move(request));
+    postProcess(response);
+    return response;
+  }
+
+ protected:
+  virtual ResponseType produceResponse(RequestType request) = 0;
+  virtual void postProcess(ResponseType& /*response*/) const {}
+};
+
+/** Streaming services: many chunks per request via callback. */
+template <std::derived_from<domain::BaseRequest> RequestType,
+          std::derived_from<domain::BaseResponse> ChunkType>
+class BaseStreamingService : public RequestPipeline<RequestType> {
+ public:
+  virtual ~BaseStreamingService() = default;
+
+  void submitStreamingRequest(
+      RequestType& request,
+      std::function<void(const ChunkType&, bool isFinal)> callback,
+      bool skipPreProcess = false) {
+    if (!skipPreProcess) {
+      this->preProcess(request);
+    }
+    produceStream(
+        std::move(request),
+        [this, cb = std::move(callback)](ChunkType& chunk, bool isFinal) {
+          streamingPostProcess(chunk);
+          cb(chunk, isFinal);
+        });
+  }
+
+  virtual void abortRequest(uint32_t /*taskId*/) {}
+
+ protected:
+  virtual void produceStream(
+      RequestType request,
+      std::function<void(ChunkType&, bool isFinal)> callback) = 0;
+
+  virtual void streamingPostProcess(ChunkType& /*chunk*/) const {}
 };
 
 }  // namespace tt::services

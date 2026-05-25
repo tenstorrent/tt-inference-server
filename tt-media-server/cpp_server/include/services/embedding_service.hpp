@@ -18,7 +18,8 @@ namespace tt::services {
  * Synchronous: submit_request blocks until the embedding is computed.
  */
 class EmbeddingService
-    : public BaseService<domain::EmbeddingRequest, domain::EmbeddingResponse> {
+    : public BaseSyncService<domain::EmbeddingRequest,
+                             domain::EmbeddingResponse> {
  public:
   EmbeddingService();
   ~EmbeddingService() override;
@@ -32,9 +33,8 @@ class EmbeddingService
 
  protected:
   size_t currentQueueSize() const override;
-  void postProcess(domain::EmbeddingResponse& response) const override;
 
-  domain::EmbeddingResponse processRequest(
+  domain::EmbeddingResponse produceResponse(
       domain::EmbeddingRequest request) override;
 
  private:

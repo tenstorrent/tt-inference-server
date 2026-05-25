@@ -790,7 +790,7 @@ cpp_server/
 
 ### Services
 
-- `BaseService`: Base class with pre/post processing hooks
+- `RequestPipeline` / `BaseSyncService` / `BaseStreamingService`: Shared queue hooks; sync vs streaming request paths
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
