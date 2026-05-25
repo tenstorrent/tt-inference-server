@@ -95,6 +95,8 @@ class LLMPipeline {
       const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
           cb) const;
 
+  void abortRequest(uint32_t taskId) const;
+
   std::shared_ptr<LLMService> service() const { return service_; }
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;

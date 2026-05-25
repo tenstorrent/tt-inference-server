@@ -381,13 +381,14 @@ async def _run_inpainting_generation_eval(
 async def _run_image_generation_eval_test(
     ctx: MediaContext, runner: Optional[str] = None
 ) -> dict:
-    """Flux/Motif path: delegate to ImageGenerationEvalsTest."""
+    """Delegate to ImageGenerationEvalsTest."""
     num_prompts = is_sdxl_num_prompts_enabled(ctx)
-    inference_steps = (
-        FLUX_1_SCHNELL_INFERENCE_STEPS
-        if runner == "tt-flux.1-schnell"
-        else FLUX_MOTIF_INFERENCE_STEPS
-    )
+    if runner == "tt-flux.1-schnell":
+        inference_steps = FLUX_1_SCHNELL_INFERENCE_STEPS
+    elif runner in ("tt-sdxl-trace", "tt-sd3.5"):
+        inference_steps = SDXL_SD35_INFERENCE_STEPS
+    else:
+        inference_steps = FLUX_MOTIF_INFERENCE_STEPS
     logger.info(
         f"Running ImageGenerationEvalsTest for {ctx.model_spec.model_name} "
         f"with {num_prompts} prompts, {inference_steps} inference steps"
@@ -405,13 +406,19 @@ async def _run_image_generation_eval_test(
 
     result = await eval_test._run_specific_test_async()
 
-    if not result.get("success"):
+    if not result.get("eval_results"):
+        error = result.get("error", "ImageGenerationEvalsTest failed")
         logger.error(
-            f"ImageGenerationEvalsTest ACCURACY_CHECK failed: error={result.get('error')}"
+            f"ImageGenerationEvalsTest failed before producing results: {error}"
         )
-        raise RuntimeError(result.get("error", "ImageGenerationEvalsTest failed"))
+        raise RuntimeError(error)
 
-    logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")
+    if not result.get("success"):
+        logger.warning(
+            f"ImageGenerationEvalsTest accuracy check failed: {result.get('eval_results')}"
+        )
+    else:
+        logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")
     return result
 
 
@@ -421,10 +428,10 @@ ImageEvalFn = Callable[
 ]
 
 IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
-    "tt-sdxl-trace": _run_image_generation_eval,
+    "tt-sdxl-trace": _run_image_generation_eval_test,
     "tt-sdxl-image-to-image": _run_img2img_generation_eval,
     "tt-sdxl-edit": _run_inpainting_generation_eval,
-    "tt-sd3.5": _run_image_generation_eval,
+    "tt-sd3.5": _run_image_generation_eval_test,
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,

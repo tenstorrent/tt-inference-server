@@ -136,6 +136,14 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_BLOCK_SIZE. */
+size_t kvCacheBlockSize();
+
+/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
+size_t kvCacheFirstBlockSize();
+
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
 
@@ -191,6 +199,12 @@ std::string ttResultQueueName();
 /** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
  */
 std::string ttCancelQueueName();
+
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
 
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
@@ -279,6 +293,10 @@ LLMConfig llmEngineConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

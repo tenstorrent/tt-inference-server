@@ -653,7 +653,7 @@ jobs:
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
-        run: git submodule update --init --remote tt-media-server/cpp_server/tt-llm-engine
+        run: git submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh

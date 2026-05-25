@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include <chrono>
+#include <cstdlib>
+#include <thread>
+
 #include "profiling/tracy.hpp"
 #include "runtime/runners/llm_runner/model_runner.hpp"
 #include "utils/logger.hpp"
@@ -15,6 +19,21 @@ using Config = tt::config::LLMConfig;
 namespace {
 
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
+
+std::chrono::milliseconds mockPrefillDelay() {
+  const char* value = std::getenv("MOCK_PREFILL_SLEEP_MS");
+  if (!value) return std::chrono::milliseconds(0);
+
+  char* end = nullptr;
+  const long long milliseconds = std::strtoll(value, &end, 10);
+  if (end == value || *end != '\0' || milliseconds <= 0) {
+    TT_LOG_WARN("[model_runner:mock] Ignoring invalid MOCK_PREFILL_SLEEP_MS={}",
+                value);
+    return std::chrono::milliseconds(0);
+  }
+
+  return std::chrono::milliseconds(milliseconds);
+}
 
 // Token IDs for structural JSON characters and mock string content, resolved
 // from the active tokenizer at construction time so the mock works with any
@@ -73,6 +92,12 @@ class MockModelRunner : public IModelRunner {
                  isPrefill ? "prefill" : "decode", seqs.size());
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
+      const auto delay = mockPrefillDelay();
+      if (delay.count() > 0) {
+        TT_LOG_INFO("[model_runner:mock] Sleeping {}ms during mock prefill",
+                    delay.count());
+        std::this_thread::sleep_for(delay);
+      }
       for (Sequence* seq : seqs) {
         decodeCallback(
             TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));

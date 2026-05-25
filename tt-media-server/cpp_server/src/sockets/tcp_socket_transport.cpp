@@ -234,6 +234,7 @@ void TcpSocketTransport::serverLoop() {
 
     TT_LOG_INFO("[TcpSocketTransport] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+    notifyConnectionEstablished();
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
@@ -298,6 +299,7 @@ void TcpSocketTransport::clientLoop() {
     delayMs = reconnectInitialDelayMs_;  // reset on success
 
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
+    notifyConnectionEstablished();
 
     while (running_ && connected_) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);

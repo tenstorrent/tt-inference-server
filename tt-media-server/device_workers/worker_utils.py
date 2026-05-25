@@ -23,13 +23,19 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
         device_runner.set_device()
         # Use the same loop for model loading
         try:
-            loop.run_until_complete(device_runner.warmup())
+            warmup_ok = loop.run_until_complete(device_runner.warmup())
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
             )
             loop.close()
             return None, None
+
+        if warmup_ok is False:
+            raise RuntimeError(
+                f"Worker {worker_id}: warmup did not complete successfully "
+                "(runner reported not-ready)"
+            )
 
         return device_runner, loop
     except Exception as e:
