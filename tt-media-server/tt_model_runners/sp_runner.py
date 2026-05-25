@@ -81,6 +81,11 @@ class SPRunner(BaseDeviceRunner):
     def _is_shutdown(self) -> bool:
         return self._shutdown
 
+    @property
+    def _log_id(self) -> str:
+        """Stable prefix for every SPRunner log line."""
+        return f"SPRunner[{self.device_id or 'default'}]"
+
     def set_device(self):
         input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
         output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
@@ -100,7 +105,7 @@ class SPRunner(BaseDeviceRunner):
         out_repair = self._output_shm.recover(side="reader")
         if any(in_repair.values()) or any(out_repair.values()):
             self.logger.warning(
-                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"{self._log_id}: crash-recovery repaired prior "
                 f"inconsistency: input={in_repair} output={out_repair}"
             )
         # Any responses sitting in the output ring at startup are addressed to
@@ -112,11 +117,10 @@ class SPRunner(BaseDeviceRunner):
         removed_imgs = cleanup_orphaned_image_files()
         if removed_imgs:
             self.logger.info(
-                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
-                f"orphaned image side-file(s)"
+                f"{self._log_id}: cleaned up {removed_imgs} orphaned image side-file(s)"
             )
         self.logger.info(
-            f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
+            f"{self._log_id}: SHM opened (in={input_name}, out={output_name})"
         )
         return {}
 
@@ -131,7 +135,7 @@ class SPRunner(BaseDeviceRunner):
             drained += 1
         if drained:
             self.logger.warning(
-                f"SPRunner {self.device_id}: drained {drained} stale "
+                f"{self._log_id}: drained {drained} stale "
                 f"response(s) left by prior session"
             )
 
@@ -146,15 +150,14 @@ class SPRunner(BaseDeviceRunner):
         removed = cleanup_orphaned_video_files()
         if removed:
             self.logger.info(
-                f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
+                f"{self._log_id}: cleaned up {removed} orphaned video file(s)"
             )
         removed_imgs = cleanup_orphaned_image_files()
         if removed_imgs:
             self.logger.info(
-                f"SPRunner {self.device_id}: cleaned up {removed_imgs} "
-                f"orphaned image side-file(s)"
+                f"{self._log_id}: cleaned up {removed_imgs} orphaned image side-file(s)"
             )
-        self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
+        self.logger.info(f"{self._log_id}: SHM cleaned up")
         return True
 
     def load_weights(self):
@@ -165,16 +168,14 @@ class SPRunner(BaseDeviceRunner):
     ) -> VideoResponse | None:
         """Block on the output ring up to ``timeout_s``, logging progress
         every ``sp_warmup_heartbeat_seconds``. Returns the VideoResponse or
-        None on timeout / shutdown / read error.
-
-        The underlying ``read_response`` is itself a polling loop with a
-        cheap sleep, so chunking it into heartbeat-sized waits adds no
-        measurable wakeup overhead but turns a multi-minute log blackout
-        into a steady "still waiting" trickle the operator can grep for.
-        """
+        None on timeout / shutdown / read error."""
         heartbeat_s = max(1.0, float(_WARMUP_HEARTBEAT_SECONDS))
         deadline = time.monotonic() + timeout_s
         start_t = time.monotonic()
+        self.logger.debug(
+            f"{self._log_id}: entering warmup-ack wait loop "
+            f"(budget={timeout_s:.0f}s, heartbeat={heartbeat_s:.0f}s)"
+        )
 
         while True:
             now = time.monotonic()
@@ -187,8 +188,12 @@ class SPRunner(BaseDeviceRunner):
                 resp = await asyncio.to_thread(
                     self._output_shm.read_response, wait_chunk
                 )
-            except Exception as exc:
-                self.logger.error(f"SPRunner warmup: failed to read response: {exc}")
+            except Exception:
+                # Use .exception so the full traceback surfaces — without it,
+                # debugging a corrupt SHM slot in prod is needlessly painful.
+                self.logger.exception(
+                    f"{self._log_id} warmup: failed to read response from output ring"
+                )
                 return None
 
             if resp is not None:
@@ -196,7 +201,7 @@ class SPRunner(BaseDeviceRunner):
 
             elapsed = time.monotonic() - start_t
             self.logger.info(
-                f"SPRunner {self.device_id}: still waiting for pipeline warmup ack "
+                f"{self._log_id}: still waiting for pipeline warmup ack "
                 f"({elapsed:.0f}s elapsed / {timeout_s:.0f}s budget)"
             )
 
@@ -216,7 +221,7 @@ class SPRunner(BaseDeviceRunner):
         """
         if not _is_warmup_ping_enabled():
             self.logger.warning(
-                "SPRunner: SP_REQUIRE_WARMUP_PING is OFF. /health will flip to "
+                f"{self._log_id}: SP_REQUIRE_WARMUP_PING is OFF. /health will flip to "
                 "READY as soon as SHM is attached, BEFORE the video pipeline "
                 "has loaded weights or compiled kernels. The first inference "
                 "request will block in SHM read_response until the pipeline "
@@ -229,13 +234,13 @@ class SPRunner(BaseDeviceRunner):
 
         if self._input_shm is None or self._output_shm is None:
             self.logger.error(
-                "SPRunner warmup called before set_device(); cannot ping pipeline"
+                f"{self._log_id} warmup called before set_device(); cannot ping pipeline"
             )
             return False
 
         timeout_s = self.settings.sp_warmup_timeout_seconds
         self.logger.info(
-            f"SPRunner {self.device_id}: sending warmup ping to pipeline "
+            f"{self._log_id}: sending warmup ping to pipeline "
             f"(timeout={timeout_s:.0f}s)"
         )
 
@@ -263,8 +268,8 @@ class SPRunner(BaseDeviceRunner):
         ring_capacity = self._input_shm.INPUT_SLOTS
         if pending >= ring_capacity:
             self.logger.warning(
-                f"SPRunner warmup: input ring is full ({pending}/{ring_capacity} "
-                f"slots occupied); waiting for an existing ping to be consumed "
+                f"{self._log_id} warmup: input ring full "
+                f"({pending}/{ring_capacity}); waiting on an existing ping "
                 f"instead of writing a new one"
             )
         else:
@@ -274,15 +279,15 @@ class SPRunner(BaseDeviceRunner):
             wrote = await asyncio.to_thread(self._input_shm.write_request, ping, 5.0)
             if not wrote:
                 self.logger.error(
-                    "SPRunner warmup: write_request timed out (input ring "
-                    "appears stuck full); aborting warmup"
+                    f"{self._log_id} warmup: write_request timed out "
+                    f"(input ring stuck full); aborting warmup"
                 )
                 return False
 
         resp = await self._await_ping_ack_with_heartbeat(timeout_s)
         if resp is None:
             self.logger.error(
-                f"SPRunner warmup: pipeline did not respond within {timeout_s:.0f}s"
+                f"{self._log_id} warmup: pipeline did not respond within {timeout_s:.0f}s"
             )
             return False
 
@@ -291,7 +296,7 @@ class SPRunner(BaseDeviceRunner):
             # as failed. The scheduler will restart the worker, which will run
             # _drain_stale_responses on set_device() and try again.
             self.logger.error(
-                f"SPRunner warmup: unexpected response task_id={resp.task_id!r} "
+                f"{self._log_id} warmup: unexpected response task_id={resp.task_id!r} "
                 f"(expected {SP_WARMUP_TASK_ID!r}); pipeline state is desynced"
             )
             self._try_unlink(resp.file_path)
@@ -299,13 +304,11 @@ class SPRunner(BaseDeviceRunner):
 
         if resp.status == VideoStatus.ERROR:
             self.logger.error(
-                f"SPRunner warmup: pipeline reported ERROR: {resp.error_message}"
+                f"{self._log_id} warmup: pipeline reported ERROR: {resp.error_message}"
             )
             return False
 
-        self.logger.info(
-            f"SPRunner {self.device_id}: pipeline ready (warmup ping ack'd)"
-        )
+        self.logger.info(f"{self._log_id}: pipeline ready (warmup ping ack'd)")
         return True
 
     @log_execution_time(
