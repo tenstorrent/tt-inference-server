@@ -405,7 +405,7 @@ int main(int argc, char* argv[]) {
   drogon::app().run();
 
 #ifdef ENABLE_GRPC
-   grpcServer.reset();
+  grpcServer.reset();
 #endif
   if (dynamoEndpoint) {
     dynamoEndpoint->stop();

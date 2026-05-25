@@ -15,7 +15,8 @@ using namespace tt::domain::llm;
 
 constexpr int kDynamoDefaultMaxTokens = 128;
 
-void prepareLLMRequest(LLMRequest& req, const inference::GenerateRequest* grpc) {
+void prepareLLMRequest(LLMRequest& req,
+                       const inference::GenerateRequest* grpc) {
   std::vector<int> tokens;
   tokens.reserve(grpc->token_ids_size());
   for (int i = 0; i < grpc->token_ids_size(); ++i) {

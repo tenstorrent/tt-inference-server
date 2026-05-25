@@ -35,8 +35,9 @@ class GrpcInferenceService final : public inference::Inference::Service {
  private:
   std::shared_ptr<tt::services::LLMService> llmService;
 
-  void handleStreamChunk(tt::domain::llm::LLMStreamChunk& chunk, bool isFinal,
-                         tt::utils::BlockingQueue<inference::TokenChunk>& queue);
+  void handleStreamChunk(
+      tt::domain::llm::LLMStreamChunk& chunk, bool isFinal,
+      tt::utils::BlockingQueue<inference::TokenChunk>& queue);
 
   ::grpc::Status drainQueueToWriter(
       ::grpc::ServerContext* ctx,
