@@ -1,0 +1,330 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+#include "dynamo/dynamo_endpoint.hpp"
+
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <trantor/net/EventLoop.h>
+#include <trantor/net/EventLoopThread.h>
+#include <unistd.h>
+
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <future>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <variant>
+
+#include "config/settings.hpp"
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
+#include "domain/session.hpp"
+#include "services/llm_pipeline.hpp"
+#include "services/llm_service.hpp"
+#include "utils/id_generator.hpp"
+#include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
+
+namespace tt::dynamo {
+
+namespace {
+
+constexpr int K_KEEP_ALIVE_INTERVAL_SEC = 5;
+
+/// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
+/// already applied the chat template, so we forward token ids directly and
+/// leave `messages` empty — the pipeline picks up that signal and routes
+/// through the token-aware prefix-cache hashers.
+std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
+    const GenerateRequest& dyn) {
+  auto req = std::make_shared<tt::domain::llm::LLMRequest>(
+      tt::utils::TaskIDGenerator::generate());
+  req->stream = true;
+  req->skip_apply_chat_template = true;
+  req->prompt = dyn.token_ids;
+  req->prompt_tokens_count = static_cast<int>(dyn.token_ids.size());
+  req->full_prompt_tokens_count = req->prompt_tokens_count;
+
+  if (!dyn.model.empty()) req->model = dyn.model;
+  req->max_tokens = dyn.max_tokens;
+  if (dyn.min_tokens.has_value()) req->min_tokens = *dyn.min_tokens;
+  req->stop_token_ids = dyn.stop_token_ids;
+  req->stop = dyn.stop;
+  req->ignore_eos = dyn.ignore_eos;
+
+  if (dyn.temperature.has_value()) req->temperature = *dyn.temperature;
+  if (dyn.top_p.has_value()) req->top_p = *dyn.top_p;
+  if (dyn.top_k.has_value()) req->top_k = *dyn.top_k;
+  if (dyn.seed.has_value()) req->seed = *dyn.seed;
+  if (dyn.frequency_penalty.has_value())
+    req->frequency_penalty = *dyn.frequency_penalty;
+  if (dyn.presence_penalty.has_value())
+    req->presence_penalty = *dyn.presence_penalty;
+  if (dyn.repetition_penalty.has_value())
+    req->repetition_penalty = *dyn.repetition_penalty;
+
+  return req;
+}
+
+/// Translate one streaming chunk from the pipeline into a Dynamo TokenChunk.
+/// We forward `token_id` (single id per chunk; the engine emits one token at
+/// a time) and let the frontend assemble the OpenAI response.
+TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
+                        bool isFinal) {
+  TokenChunk out;
+  if (!chunk.choices.empty() && chunk.choices.front().token_id.has_value()) {
+    out.token_ids = {static_cast<int>(*chunk.choices.front().token_id)};
+  }
+  if (isFinal) {
+    if (!chunk.choices.empty()) {
+      out.finish_reason = chunk.choices.front().finish_reason.value_or("stop");
+    } else {
+      out.finish_reason = "stop";
+    }
+  }
+  return out;
+}
+
+/// Resolve the cpp_server tokenizers/<model>/ directory for the active
+/// tokenizer. `tokenizerPath()` is the absolute path to tokenizer.json so we
+/// strip the filename to get the directory the discovery MDC needs.
+std::string detectModelPath() {
+  std::string tokJson = tt::config::tokenizerPath();
+  if (tokJson.empty()) return {};
+  return std::filesystem::path(tokJson).parent_path().string();
+}
+
+}  // namespace
+
+DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
+                               Options options)
+    : pipeline_(std::move(pipeline)), options_(std::move(options)) {
+  if (!pipeline_) {
+    throw std::invalid_argument("DynamoEndpoint: pipeline must not be null");
+  }
+  if (options_.advertise_host.empty()) {
+    options_.advertise_host = detectAdvertiseHost();
+  }
+  if (options_.model_name.empty()) {
+    options_.model_name = tt::utils::tokenizers::activeTokenizer().modelName();
+  }
+  if (options_.model_path.empty()) {
+    options_.model_path = detectModelPath();
+  }
+}
+
+DynamoEndpoint::~DynamoEndpoint() { stop(); }
+
+std::string DynamoEndpoint::detectAdvertiseHost() const {
+  if (const char* env = std::getenv("DYN_TCP_RPC_HOST")) {
+    return env;
+  }
+
+  // Pick the first non-loopback IPv4 interface (matches Dynamo's auto-detect
+  // for multi-host deployments). Fall back to 127.0.0.1.
+  ifaddrs* ifaddr = nullptr;
+  if (::getifaddrs(&ifaddr) != 0 || ifaddr == nullptr) {
+    return "127.0.0.1";
+  }
+  std::string result;
+  for (ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == nullptr) continue;
+    if (ifa->ifa_addr->sa_family != AF_INET) continue;
+    if ((ifa->ifa_flags & IFF_LOOPBACK) != 0) continue;
+    if ((ifa->ifa_flags & IFF_UP) == 0) continue;
+    auto* sa = reinterpret_cast<sockaddr_in*>(ifa->ifa_addr);
+    char buf[INET_ADDRSTRLEN] = {0};
+    if (::inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(buf)) != nullptr) {
+      result = buf;
+      break;
+    }
+  }
+  ::freeifaddrs(ifaddr);
+  return result.empty() ? std::string{"127.0.0.1"} : result;
+}
+
+GenerateHandler DynamoEndpoint::makeGenerateHandler() {
+  // `pipeline` and `loop` are captured by value (shared_ptr / raw ptr to a
+  // loop owned by `loop_thread_` whose lifetime exceeds any in-flight
+  // request: we join the loop thread in stop()).
+  auto pipeline = pipeline_;
+  trantor::EventLoop* loop = loop_thread_->getLoop();
+
+  return [pipeline, loop](const GenerateRequest& dynReq,
+                          std::function<bool(const TokenChunk&)> sendChunk) {
+    auto req = buildLLMRequest(dynReq);
+    auto svc = pipeline->service();
+
+    // Block the dynamo per-request worker thread until the streaming
+    // callback signals completion. Using a shared_ptr + future lets the
+    // pipeline callbacks (which run on the LLMService consumer thread)
+    // complete the future safely even if this lambda is being torn down.
+    auto done = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+    auto signalDone = [done]() {
+      try {
+        done->set_value();
+      } catch (...) {
+        // future already satisfied (e.g. multiple final chunks); ignore.
+      }
+    };
+
+    auto cancelFn = [svc, taskId = req->task_id]() {
+      svc->abortRequest(taskId);
+    };
+
+    pipeline->resolveSession(
+        req, loop,
+        [pipeline, req, sendChunk,
+         signalDone](services::LLMPipeline::SessionInfo info) {
+          auto svc = pipeline->service();
+          try {
+            svc->preProcess(*req);
+          } catch (const std::exception& e) {
+            TT_LOG_WARN("[DynamoEndpoint] preProcess failed: {}", e.what());
+            if (req->session) req->session->clearInFlight();
+            TokenChunk err;
+            err.finish_reason = "error";
+            sendChunk(err);
+            signalDone();
+            return;
+          }
+
+          auto cb = [req, sendChunk, signalDone](
+                        const tt::domain::llm::LLMStreamChunk& chunk,
+                        bool isFinal) {
+            sendChunk(toTokenChunk(chunk, isFinal));
+            if (isFinal) {
+              if (req->session) req->session->clearInFlight();
+              signalDone();
+            }
+          };
+
+          try {
+            pipeline->dispatchGeneration(*req, info, cb);
+          } catch (const std::exception& e) {
+            TT_LOG_ERROR("[DynamoEndpoint] dispatchGeneration failed: {}",
+                         e.what());
+            if (req->session) req->session->clearInFlight();
+            TokenChunk err;
+            err.finish_reason = "error";
+            sendChunk(err);
+            signalDone();
+          }
+        },
+        [sendChunk,
+         signalDone](const services::LLMPipeline::SessionError& err) {
+          TT_LOG_WARN("[DynamoEndpoint] Session resolution failed: {}",
+                      err.message);
+          TokenChunk e;
+          e.finish_reason = "error";
+          sendChunk(e);
+          signalDone();
+        },
+        std::move(cancelFn));
+
+    future.wait();
+  };
+}
+
+void DynamoEndpoint::start() {
+  if (running_.exchange(true)) {
+    return;
+  }
+
+  loop_thread_ =
+      std::make_unique<trantor::EventLoopThread>("DynamoEndpointLoop");
+  loop_thread_->run();
+
+  ServerConfig sc;
+  sc.bind_host = options_.bind_host;
+  sc.bind_port = 0;  // OS-assigned: the discovery file advertises the
+                     // resolved port.
+  sc.namespace_name = options_.namespace_name;
+  sc.component = options_.component;
+  sc.endpoint = options_.endpoint;
+  sc.model_name = options_.model_name;
+  sc.model_path = options_.model_path;
+
+  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler());
+
+  // Spawn the accept loop in its own thread so we can fall through to
+  // discovery registration once the port is bound.
+  server_thread_ = std::thread([this]() {
+    try {
+      server_->run();
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[DynamoEndpoint] server thread terminated: {}", e.what());
+    }
+  });
+
+  // Wait for the listener to bind (port becomes non-zero). Bounded poll —
+  // bind is synchronous in run() right after socket creation.
+  for (int i = 0; i < 50 && server_->port() == 0 && running_; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  if (server_->port() == 0) {
+    running_ = false;
+    throw std::runtime_error(
+        "DynamoEndpoint: server failed to bind within timeout");
+  }
+
+  discovery_.store_path = options_.discovery_path;
+  discovery_.namespace_name = options_.namespace_name;
+  discovery_.component = options_.component;
+  discovery_.endpoint = options_.endpoint;
+  discovery_.instance_id = server_->config().instance_id;
+  discovery_.instance_id_hex = server_->config().instance_id_hex;
+  discovery_.tcp_address = options_.advertise_host + ":" +
+                           std::to_string(server_->port()) + "/" +
+                           discovery_.instance_id_hex + "/" + options_.endpoint;
+  discovery_.model_name = options_.model_name;
+  discovery_.model_path = options_.model_path;
+
+  register_discovery(discovery_);
+
+  TT_LOG_INFO(
+      "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
+      "discovery={}",
+      options_.bind_host, server_->port(), discovery_.tcp_address,
+      discovery_.model_name, discovery_.store_path);
+
+  // Refresh discovery files periodically so a frontend that prunes stale
+  // entries keeps seeing this worker.
+  keepalive_thread_ = std::thread([this]() {
+    while (running_) {
+      for (int i = 0; i < K_KEEP_ALIVE_INTERVAL_SEC * 10 && running_; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      if (running_) register_discovery(discovery_, /*quiet=*/true);
+    }
+  });
+}
+
+void DynamoEndpoint::stop() {
+  if (!running_.exchange(false)) {
+    return;
+  }
+
+  TT_LOG_INFO("[DynamoEndpoint] Shutting down");
+  if (server_) {
+    server_->shutdown();
+  }
+  unregister_discovery(discovery_);
+
+  if (keepalive_thread_.joinable()) keepalive_thread_.join();
+  if (server_thread_.joinable()) server_thread_.join();
+  if (loop_thread_) {
+    loop_thread_.reset();
+  }
+  server_.reset();
+}
+
+}  // namespace tt::dynamo
