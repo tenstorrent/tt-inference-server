@@ -155,6 +155,18 @@ sudo sysctl -w kernel.perf_event_paranoid=1 kernel.kptr_restrict=0
 
 Inside Docker `/proc/sys/kernel` is usually read-only — just prefix `perf` calls with `sudo`. Both scripts below already do.
 
+## Frame pointers (enabled in the Release build)
+
+The build adds `-fno-omit-frame-pointer` to global CXX flags (top-level `CMakeLists.txt`), so every in-tree TU keeps `rbp` as a frame-pointer register. Both capture scripts use `perf record --call-graph fp` to walk stacks through this chain — no DWARF unwinding needed.
+
+The trade-off, for reference:
+
+- Runtime cost on this workload: under 1% (mutex / IPC / HTTP-framing dominated, not register-pressure-bound numeric loops; numeric compute runs on TT-Metal devices). Fedora 38+ and Ubuntu 24.04+ ship distro-wide with this flag for the same reason.
+- Capture-time win, measured on this binary: `perf.data` ~6–30× smaller (worker: 3.7 MB → 560 KB; main: 4.8 MB → 129 KB), capture overhead ~100× smaller (1 ring-buffer wake vs 187 for the same 15 s window), and `[unknown]` frames went from 24 to 2.
+- Selective opt-out is available if a specific TU regresses measurably: `__attribute__((optimize("omit-frame-pointer")))`.
+
+`--call-graph dwarf` is still available as a fallback (e.g. profiling a binary built without FP). When walking through libraries like `libstdc++` / `libc` / `libpthread` that aren't compiled with frame pointers, the `fp` walk stops there and lists the library as a frame — caller context above usually still resolves because the chain continues through user code. If you see truncated stacks at library boundaries that matter, fall back to `dwarf` for that capture.
+
 ## Workflow — convenience scripts (preferred)
 
 The two wrapper scripts at the repo root (`cpp_server/`) auto-detect the main and worker PIDs by checking `/proc/<pid>/exe` against the binary (so shell wrappers, load generators, and `pgrep` itself never get picked), capture all of them in parallel, and produce both a `.folded` file (for speedscope) and a `.svg` (quick look) per process:
@@ -200,19 +212,21 @@ Use these when the scripts aren't checked in, the user wants to vary parameters 
 
    `flamegraph-capture.sh` / `flamegraph-capture-offcpu.sh` already use exactly this filter, so the wrapper scripts will pick the right PIDs on their own. The snippet above is for running `perf` by hand.
 
-2. **Capture on-CPU samples.** 99 Hz × DWARF unwinding is the standard recipe — frequent enough to be statistically meaningful, not so frequent it perturbs the workload. Run in parallel for both processes during steady-state load.
+2. **Capture on-CPU samples.** 99 Hz × frame-pointer stack walking — frequent enough to be statistically meaningful, not so frequent it perturbs the workload (FP capture is essentially free; you can safely push to `-F 999` if needed). Run in parallel for both processes during steady-state load.
 
    ```bash
-   sudo perf record -F 99 --call-graph dwarf -o main.data   -p $MAIN   -- sleep 30 &
-   sudo perf record -F 99 --call-graph dwarf -o worker.data -p $WORKER -- sleep 30 &
+   sudo perf record -F 99 --call-graph fp -o main.data   -p $MAIN   -- sleep 30 &
+   sudo perf record -F 99 --call-graph fp -o worker.data -p $WORKER -- sleep 30 &
    wait
    ```
+
+   Use `--call-graph dwarf` instead if profiling a binary that wasn't built with `-fno-omit-frame-pointer`. See the **Frame pointers** section for the trade-off.
 
 3. **Capture off-CPU samples.** `-e cs` (software context-switch event) records a stack every time the thread is taken off-CPU — blocking on a mutex/condvar shows up as a stack ending in `pthread_mutex_lock` / `pthread_cond_wait`. Counts events, not durations (true duration-weighted off-CPU needs BPF / `bcc/offcputime`, which is not available in our containers).
 
    ```bash
-   sudo perf record -e cs --call-graph dwarf -o main_off.data   -p $MAIN   -- sleep 30 &
-   sudo perf record -e cs --call-graph dwarf -o worker_off.data -p $WORKER -- sleep 30 &
+   sudo perf record -e cs --call-graph fp -o main_off.data   -p $MAIN   -- sleep 30 &
+   sudo perf record -e cs --call-graph fp -o worker_off.data -p $WORKER -- sleep 30 &
    wait
    ```
 

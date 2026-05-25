@@ -146,8 +146,8 @@ for entry in "${TARGETS[@]}"; do
     pid="${entry##*:}"
     data="${OUTPUT_DIR}/${name}.data"
     log="${OUTPUT_DIR}/${name}.perf.log"
-    echo "  [${name}] perf record -p ${pid} -F 99 --call-graph dwarf -o ${data} (${DURATION}s)"
-    sudo perf record -F 99 --call-graph dwarf -o "${data}" -p "${pid}" -- sleep "${DURATION}" \
+    echo "  [${name}] perf record -p ${pid} -F 99 --call-graph fp -o ${data} (${DURATION}s)"
+    sudo perf record -F 99 --call-graph fp -o "${data}" -p "${pid}" -- sleep "${DURATION}" \
         >"${log}" 2>&1 &
     PERF_PIDS+=("$!")
 done
@@ -180,7 +180,7 @@ for entry in "${TARGETS[@]}"; do
         > "${folded}"
     "${FLAMEGRAPH_DIR}/flamegraph.pl" \
         --title "tt_media_server ${name} (pid ${pid})" \
-        --subtitle "perf -F 99 --call-graph dwarf, ${DURATION}s @ ${TIMESTAMP}" \
+        --subtitle "perf -F 99 --call-graph fp, ${DURATION}s @ ${TIMESTAMP}" \
         "${folded}" >"${svg}"
     samples=$(wc -l <"${script}")
     stacks=$(wc -l <"${folded}")

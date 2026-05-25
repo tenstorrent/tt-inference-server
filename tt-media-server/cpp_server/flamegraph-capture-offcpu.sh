@@ -135,8 +135,8 @@ for entry in "${TARGETS[@]}"; do
     pid="${entry##*:}"
     data="${OUTPUT_DIR}/${name}.data"
     log="${OUTPUT_DIR}/${name}.perf.log"
-    echo "  [${name}] perf record -e cs -p ${pid} --call-graph dwarf -o ${data} (${DURATION}s)"
-    sudo perf record -e cs --call-graph dwarf -o "${data}" -p "${pid}" -- sleep "${DURATION}" \
+    echo "  [${name}] perf record -e cs -p ${pid} --call-graph fp -o ${data} (${DURATION}s)"
+    sudo perf record -e cs --call-graph fp -o "${data}" -p "${pid}" -- sleep "${DURATION}" \
         >"${log}" 2>&1 &
     PERF_PIDS+=("$!")
 done
@@ -167,7 +167,7 @@ for entry in "${TARGETS[@]}"; do
         --colors=io \
         --countname=switches \
         --title "tt_media_server ${name} (pid ${pid}) — OFF-CPU" \
-        --subtitle "perf -e cs --call-graph dwarf, ${DURATION}s @ ${TIMESTAMP}  (wider = more context-switch events, e.g. lock waits)" \
+        --subtitle "perf -e cs --call-graph fp, ${DURATION}s @ ${TIMESTAMP}  (wider = more context-switch events, e.g. lock waits)" \
         "${folded}" >"${svg}"
     samples=$(wc -l <"${script}")
     stacks=$(wc -l <"${folded}")
