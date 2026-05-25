@@ -145,8 +145,6 @@
         },
         "release": {
           "devices": [
-            "GALAXY",
-            "P150X8",
             "P300X2"
           ]
         }
@@ -282,13 +280,6 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -386,13 +377,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -407,13 +391,6 @@
             "P150X8",
             "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -454,12 +431,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -584,18 +555,7 @@
         }
       }
     },
-    "distil-whisper-distil-large-v3": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        }
-      }
-    },
-    "openai-whisper-large-v3": {
+    "distil-large-v3": {
       "inference_engine": "MEDIA",
       "ci": {
         "nightly": {
@@ -604,9 +564,10 @@
             "P300X2"
           ]
         },
-        "weekly": {
+        "release": {
           "devices": [
-            "GALAXY"
+            "P150",
+            "P300X2"
           ]
         }
       }
@@ -638,6 +599,12 @@
           "devices": [
             "N150",
             "N300",
+            "P150",
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
             "P150",
             "P300X2"
           ]
@@ -729,12 +696,20 @@
           "devices": [
             "GALAXY",
             "GALAXY_BH",
-            "N150"
+            "N150",
+            "P150",
+            "P300X2"
+          ]
+        },
+        "weekly": {
+          "devices": [
+            "GALAXY"
           ]
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "P150",
+            "P300X2"
           ]
         }
       }

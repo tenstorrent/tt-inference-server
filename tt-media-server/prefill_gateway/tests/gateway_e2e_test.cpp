@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <zmq.hpp>
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
@@ -27,6 +28,7 @@
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 #include "sockets/socket_serialization.hpp"
+#include "sockets/zmq_socket_options.hpp"
 #include "sockets/zmq_socket_transport.hpp"
 
 namespace tt::gateway {
@@ -691,6 +693,75 @@ TEST(ZmqPrefillRouterTest, RoutesRequestToRegisteredPrefill) {
     clientThread.join();
   }
   client.stop();
+  router.stop();
+}
+
+TEST(ZmqSocketOptionsTest, AppliesHeartbeatsAndMandatoryRouterSends) {
+  zmq::context_t context(tt::sockets::zmq_options::CONTEXT_IO_THREADS);
+
+  zmq::socket_t dealer(context, zmq::socket_type::dealer);
+  ASSERT_NO_THROW(tt::sockets::zmq_options::applyCommonOptions(
+      dealer, /*receiveTimeoutMs=*/42));
+  EXPECT_EQ(dealer.get(zmq::sockopt::linger), 0);
+  EXPECT_EQ(dealer.get(zmq::sockopt::rcvtimeo), 42);
+  EXPECT_EQ(dealer.get(zmq::sockopt::heartbeat_ivl),
+            tt::sockets::zmq_options::HEARTBEAT_INTERVAL_MS);
+  EXPECT_EQ(dealer.get(zmq::sockopt::heartbeat_timeout),
+            tt::sockets::zmq_options::HEARTBEAT_TIMEOUT_MS);
+
+  zmq::socket_t router(context, zmq::socket_type::router);
+  ASSERT_NO_THROW(tt::sockets::zmq_options::applyRouterOptions(
+      router, /*receiveTimeoutMs=*/43));
+  EXPECT_EQ(router.get(zmq::sockopt::rcvtimeo), 43);
+
+  dealer.close();
+  router.close();
+  context.close();
+}
+
+TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
+  const uint16_t port = ephemeralPort();
+
+  ZmqPrefillRouter router;
+  std::mutex mutex;
+  bool registered = false;
+
+  router.registerHandler<tt::sockets::PrefillRegistrationMessage>(
+      tt::sockets::tags::PREFILL_REGISTRATION,
+      [&router, &mutex, &registered](
+          const ZmqPrefillRouter::PeerIdentity& peerId,
+          const tt::sockets::PrefillRegistrationMessage& msg) {
+        router.rememberRegistration(msg.server_id, peerId);
+        std::lock_guard<std::mutex> lock(mutex);
+        registered = true;
+      });
+
+  ASSERT_TRUE(router.start("127.0.0.1", port));
+
+  tt::sockets::ZmqSocketTransport client;
+  ASSERT_TRUE(client.initializeAsClient("127.0.0.1", port));
+  client.start();
+
+  tt::sockets::PrefillRegistrationMessage registration;
+  registration.server_id = "prefill-A";
+  registration.max_in_flight = 4;
+  ASSERT_TRUE(client.sendRawData(tt::sockets::wire::serializeMessage(
+      tt::sockets::tags::PREFILL_REGISTRATION, registration)));
+  ASSERT_TRUE(waitFor([&] {
+    std::lock_guard<std::mutex> lock(mutex);
+    return registered;
+  }));
+
+  client.stop();
+
+  tt::sockets::PrefillRequestMessage request(7);
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return !router.sendObject("prefill-A", "prefill_request", request);
+      },
+      /*timeout=*/3s))
+      << "ROUTER_MANDATORY should make sends to unroutable peers fail";
+
   router.stop();
 }
 

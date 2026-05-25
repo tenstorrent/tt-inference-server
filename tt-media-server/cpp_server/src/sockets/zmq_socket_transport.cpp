@@ -10,13 +10,12 @@
 #include <utility>
 #include <zmq.hpp>
 
+#include "sockets/zmq_socket_options.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
 
 namespace {
-constexpr int ZMQ_CONTEXT_IO_THREADS = 1;
-constexpr int ZMQ_RECEIVE_TIMEOUT_MS = 100;
 constexpr int ZMQ_MONITOR_TIMEOUT_MS = 200;
 constexpr auto IO_IDLE_WAIT = std::chrono::milliseconds(1);
 
@@ -29,7 +28,8 @@ std::string makeMonitorEndpoint(const void* self) {
 ZmqSocketTransport::ZmqSocketTransport()
     : SocketTransportState(/*reconnectInitialDelayMs=*/1000,
                            /*reconnectMaxDelayMs=*/5000),
-      context_(std::make_unique<zmq::context_t>(ZMQ_CONTEXT_IO_THREADS)) {}
+      context_(
+          std::make_unique<zmq::context_t>(zmq_options::CONTEXT_IO_THREADS)) {}
 
 ZmqSocketTransport::~ZmqSocketTransport() { stop(); }
 
@@ -91,8 +91,7 @@ bool ZmqSocketTransport::initializeSocket() {
     socket_ = std::make_unique<zmq::socket_t>(
         *context_, mode_ == Mode::SERVER ? zmq::socket_type::router
                                          : zmq::socket_type::dealer);
-    socket_->set(zmq::sockopt::linger, 0);
-    socket_->set(zmq::sockopt::rcvtimeo, ZMQ_RECEIVE_TIMEOUT_MS);
+    zmq_options::applyCommonOptions(*socket_);
     if (mode_ == Mode::CLIENT) {
       socket_->set(zmq::sockopt::reconnect_ivl,
                    static_cast<int>(reconnectInitialDelayMs_));
@@ -209,6 +208,7 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
         bool wasConnected = connected_.exchange(true);
         if (!wasConnected) {
           TT_LOG_DEBUG("[ZmqSocketTransport] Peer connected ({})", modeName());
+          notifyConnectionEstablished();
         }
       } else if (eventId == ZMQ_EVENT_DISCONNECTED) {
         bool wasConnected = connected_.exchange(false);
@@ -380,6 +380,11 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsDealer() {
 void ZmqSocketTransport::setConnectionLostCallback(
     std::function<void()> callback) {
   setConnectionLostCallbackCommon(std::move(callback));
+}
+
+void ZmqSocketTransport::setConnectionEstablishedCallback(
+    std::function<void()> callback) {
+  setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
 void ZmqSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
