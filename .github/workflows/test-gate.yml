@@ -128,6 +128,7 @@ jobs:
       # if all docker changes are later reverted.
       - name: Create or remove sticky reminder
         uses: actions/github-script@v7
+        continue-on-error: true
         env:
           SHOULD_HAVE_COMMENT: ${{ needs.detect-changes.outputs.media-server-deps }}
         with:
@@ -439,6 +440,7 @@ jobs:
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        continue-on-error: true
         with:
           script: |
             const { FINAL_TOTAL_TESTS, FINAL_TOTAL_PASSED, FINAL_TOTAL_SKIPPED, FINAL_TOTAL_FAILED,
@@ -2806,8 +2808,9 @@ jobs:
           echo "> 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage." >> $GITHUB_STEP_SUMMARY
 
       - name: Comment coverage on PR
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        continue-on-error: true
         with:
           script: |
             const coveragePct = '${{ steps.diff-cover.outputs.coverage_pct }}';
