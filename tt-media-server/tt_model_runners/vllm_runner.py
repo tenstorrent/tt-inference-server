@@ -49,15 +49,22 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["experimental_weight_dtype"] = (
                 self.settings.vllm.experimental_weight_dtype
             )
-        engine_args = AsyncEngineArgs(
+        engine_args_kwargs = dict(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,
-            enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config=additional_config,
         )
+        # Only pass enable_chunked_prefill if explicitly set via env. When
+        # None (default), let vLLM choose its own default — which is the
+        # behavior tt-xla's working b32 configs rely on.
+        if self.settings.vllm.enable_chunked_prefill is not None:
+            engine_args_kwargs["enable_chunked_prefill"] = (
+                self.settings.vllm.enable_chunked_prefill
+            )
+        engine_args = AsyncEngineArgs(**engine_args_kwargs)
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
         )

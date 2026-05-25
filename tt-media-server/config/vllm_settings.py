@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
+from typing import Optional
 
 from config.constants import SupportedModels
 from pydantic import BaseModel
@@ -45,4 +46,17 @@ class VLLMSettings(BaseModel):
     # "bfp_bf8" preserves current behavior.
     experimental_weight_dtype: str = os.environ.get(
         "EXPERIMENTAL_WEIGHT_DTYPE", "bfp_bf8"
+    )
+    # vLLM chunked-prefill toggle (top-level AsyncEngineArgs, not
+    # additional_config). Hardcoded False historically; vLLM logs an explicit
+    # warning that "disabling this manually may cause the engine to crash or
+    # produce incorrect outputs". Suspected b32 wall: at max_num_seqs=32 the
+    # un-chunked prefill graph compiles for 32 parallel prefills in one shot,
+    # which may exceed a kernel-shape constraint in tt-mlir. Default None
+    # (let vLLM pick — typically True for new models); set
+    # ENABLE_CHUNKED_PREFILL=false to force the old behavior, =true to force on.
+    enable_chunked_prefill: Optional[bool] = (
+        None
+        if "ENABLE_CHUNKED_PREFILL" not in os.environ
+        else os.environ["ENABLE_CHUNKED_PREFILL"].lower() != "false"
     )
