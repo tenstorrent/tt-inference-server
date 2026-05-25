@@ -97,12 +97,16 @@ def test_inserts_new_engine_under_existing_model():
         "              tag: t\n"
     )
     result = merge_spec(
-        doc, _mapped(engine="media", device="t3k", impl="impl_m"), set(COMMON_OWNED_PATHS)
+        doc,
+        _mapped(engine="media", device="t3k", impl="impl_m"),
+        set(COMMON_OWNED_PATHS),
     )
 
     assert result.changed and result.inserted_engine
     assert "media" in doc["models"]["m"]
-    assert doc["models"]["m"]["vllm"]["galaxy"]["impls"]["impl_a"]["image"]["tag"] == "t"
+    assert (
+        doc["models"]["m"]["vllm"]["galaxy"]["impls"]["impl_a"]["image"]["tag"] == "t"
+    )
 
 
 def test_inserts_new_device_under_existing_engine():

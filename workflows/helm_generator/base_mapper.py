@@ -73,7 +73,7 @@ class HelmValuesMapper(ABC):
         if spec.min_ram_gb is None:
             return None
         return f"{int(spec.min_ram_gb)}Gi"
-    
+
     @abstractmethod
     def owned_leaf_paths(self) -> Set[Tuple[str, ...]]:
         """Leaf paths within an impl block that this mapper controls.

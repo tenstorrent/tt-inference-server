@@ -26,11 +26,9 @@ def test_load_returns_mutable_mapping():
     assert "models" in doc
     entry = doc["models"]["Llama-3.1-8B-Instruct"]
     assert entry["defaultEngine"] == "vllm"
-    assert (
-        entry["vllm"]["galaxy"]["impls"][entry["vllm"]["galaxy"]["defaultImpl"]][
-            "image"
-        ]["tag"]
-    )
+    assert entry["vllm"]["galaxy"]["impls"][entry["vllm"]["galaxy"]["defaultImpl"]][
+        "image"
+    ]["tag"]
 
 
 def test_dumps_emits_yaml_string():
@@ -42,12 +40,7 @@ def test_dumps_emits_yaml_string():
 
 def test_setitem_preserves_inline_comment_on_existing_key(tmp_path):
     src = tmp_path / "src.yaml"
-    src.write_text(
-        "models:\n"
-        "  foo:\n"
-        "    image:\n"
-        '      tag: "0.10.0"  # pinned\n'
-    )
+    src.write_text('models:\n  foo:\n    image:\n      tag: "0.10.0"  # pinned\n')
     doc = load_values(src)
     doc["models"]["foo"]["image"]["tag"] = "0.11.0"
     out = tmp_path / "out.yaml"

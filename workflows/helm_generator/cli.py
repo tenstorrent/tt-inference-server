@@ -34,6 +34,7 @@ DEFAULT_VALUES_PATH = (
     / "values.yaml"
 )
 
+
 def _spec_engine_value(spec: ModelSpec) -> str:
     return cast(str, spec.inference_engine)
 
@@ -129,7 +130,9 @@ def compute_default_engine_per_model(specs: Iterable[ModelSpec]) -> Dict[str, st
     return out
 
 
-def map_specs(specs: Iterable[ModelSpec]) -> List[Tuple[HelmModelSpec, HelmValuesMapper]]:
+def map_specs(
+    specs: Iterable[ModelSpec],
+) -> List[Tuple[HelmModelSpec, HelmValuesMapper]]:
     out: List[Tuple[HelmModelSpec, HelmValuesMapper]] = []
     for spec in specs:
         engine_value = _spec_engine_value(spec)
