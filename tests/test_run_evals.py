@@ -275,3 +275,56 @@ def test_build_swebench_eval_command_uses_wrapper_and_task_limit(monkeypatch, tm
         cmd[cmd.index("--completion-kwargs-json") + 1]
         == '{"extra_body": {"top_k": 20}}'
     )
+
+
+class TestClampMaxGenToks:
+    """#3533 Problem 6: clamp eval-client max_gen_toks to fit within the
+    server's max_context. Tasks tuned for a model's full context (e.g. Qwen3
+    with max_gen_toks=32768 assuming 65K) otherwise over-subscribe a forge
+    entry with smaller max_context and trigger 100% server-side rejection."""
+
+    def test_clamps_when_max_gen_toks_exceeds_ceiling(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        # max_context=4096 -> ceiling = max(256, 4096 - 1024) = 3072.
+        out = run_evals._clamp_max_gen_toks(
+            {"max_gen_toks": 32768, "stream": "true"}, 4096, "task_x"
+        )
+        assert out["max_gen_toks"] == 3072
+        assert out["stream"] == "true"
+
+    def test_pass_through_when_within_ceiling(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        gen_kwargs = {"max_gen_toks": 256, "stream": "False"}
+        out = run_evals._clamp_max_gen_toks(gen_kwargs, 4096, "task_x")
+        # Returns original dict unchanged (no copy needed).
+        assert out is gen_kwargs
+
+    def test_floor_protects_tiny_max_context(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        # max_context=512 -> 512 - 1024 < 0, floor of 256 kicks in.
+        out = run_evals._clamp_max_gen_toks({"max_gen_toks": 32768}, 512, "task_x")
+        assert out["max_gen_toks"] == 256
+
+    def test_no_clamp_when_max_context_unset(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        gen_kwargs = {"max_gen_toks": 32768}
+        out = run_evals._clamp_max_gen_toks(gen_kwargs, None, "task_x")
+        assert out is gen_kwargs
+
+    def test_no_clamp_when_max_gen_toks_absent(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        gen_kwargs = {"stream": "False"}
+        out = run_evals._clamp_max_gen_toks(gen_kwargs, 4096, "task_x")
+        assert out is gen_kwargs
+
+    def test_non_numeric_max_gen_toks_passes_through(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        gen_kwargs = {"max_gen_toks": "not-a-number"}
+        out = run_evals._clamp_max_gen_toks(gen_kwargs, 4096, "task_x")
+        assert out is gen_kwargs
+
+    def test_string_numeric_max_gen_toks_clamps(self, monkeypatch):
+        run_evals = _import_run_evals(monkeypatch)
+        # lm-eval task defs sometimes serialize max_gen_toks as a string.
+        out = run_evals._clamp_max_gen_toks({"max_gen_toks": "32768"}, 4096, "task_x")
+        assert out["max_gen_toks"] == 3072
