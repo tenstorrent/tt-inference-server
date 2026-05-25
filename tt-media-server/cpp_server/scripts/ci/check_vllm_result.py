@@ -7,7 +7,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,20 @@ def load_scenario(config_path: Path, scenario: str) -> dict[str, Any]:
     return scenarios[scenario]
 
 
+def github_step_summary_path() -> Path | None:
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return None
+
+    summary = Path(summary_path).resolve(strict=False)
+    runner_temp = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())).resolve(
+        strict=False
+    )
+    if not summary.is_relative_to(runner_temp):
+        raise SystemExit(f"GITHUB_STEP_SUMMARY must be under RUNNER_TEMP: {summary}")
+    return summary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate a vLLM bench serve result JSON."
@@ -44,7 +60,6 @@ def main() -> int:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--result", required=True, type=Path)
-    parser.add_argument("--summary", default="", help="GitHub step summary path")
     args = parser.parse_args()
 
     scenario = load_scenario(args.config, args.scenario)
@@ -91,7 +106,7 @@ def main() -> int:
                 f"{metric} {result.get(metric)} exceeds threshold {threshold}ms"
             )
 
-    summary = Path(args.summary) if args.summary else None
+    summary = github_step_summary_path()
     lines = [
         f"## {label}",
         "",

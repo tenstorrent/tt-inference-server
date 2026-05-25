@@ -209,12 +209,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
           cache: 'pip'
-          cache-dependency-path: 'requirements-dev.txt'
+          cache-dependency-path: |
+            requirements-dev.txt
+            tt-media-server/requirements.txt
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
 
       - name: Run tt-inference-server tests
         run: |
@@ -954,13 +957,13 @@ jobs:
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
-            --result vllm-bench-mock.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-mock.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
-            --result vllm-bench-structured-output-json-object.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-structured-output-json-object.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
-            --result vllm-bench-structured-output-json-schema.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-structured-output-json-schema.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
-            --result vllm-bench-mock-pipeline.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-mock-pipeline.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
@@ -1370,11 +1373,11 @@ jobs:
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
           python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_tcp \
-            --result vllm-bench-split-tcp-result.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-split-tcp-result.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_zmq \
-            --result vllm-bench-split-zmq-result.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-split-zmq-result.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
-            --result vllm-bench-split-runner-result.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-split-runner-result.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
 
       - name: Show server logs
@@ -2047,9 +2050,9 @@ jobs:
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
           python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_tcp \
-            --result vllm-bench-gateway-split-tcp-result.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-gateway-split-tcp-result.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
-            --result vllm-bench-gateway-split-zmq-result.json --summary "$GITHUB_STEP_SUMMARY" || FAIL=1
+            --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
 
       - name: Show server logs
@@ -2407,8 +2410,7 @@ jobs:
           python3 cpp_server/scripts/ci/check_vllm_result.py \
             --config cpp_server/scripts/ci/vllm_thresholds.json \
             --scenario dynamo_frontend \
-            --result vllm-bench-dynamo.json \
-            --summary "$GITHUB_STEP_SUMMARY"
+            --result vllm-bench-dynamo.json
 
       - name: Show server logs
         if: always()
