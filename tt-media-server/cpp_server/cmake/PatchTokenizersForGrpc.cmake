@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Patches tokenizers-cpp so SentencePiece is not built (avoids protobuf clash with gRPC).
 # FetchContent runs this with the tokenizers-cpp source directory as the working directory.
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.25)
 
 set(CMAKELISTS "CMakeLists.txt")
 if(NOT EXISTS "${CMAKELISTS}")
