@@ -2200,6 +2200,384 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  dynamo-frontend-integration:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server + Dynamo Frontend Integration
+    # Same jammy runner as the cpp-server bench jobs so the artifact built by
+    # cpp-build links against the same glibc / libstdc++ at runtime.
+    runs-on: tt-ubuntu-2204-xlarge-stable
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+      # Shared by the Dynamo frontend and every cpp_server backend in this
+      # job so all processes agree on discovery store, request/event plane,
+      # and endpoint identity (NAMESPACE/COMPONENT/ENDPOINT). Mirrors the
+      # exports in cpp_server/scripts/start_dynamo.sh — we set them at the
+      # job level so we can launch one frontend + N backends without
+      # repeating the env block on every step.
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_COMPONENT: backend
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      LLM_DEVICE_BACKEND: mock_pipeline
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Extract C++ build
+        run: |
+          cd cpp_server
+          tar -xzf cpp-server-build.tar.gz
+          rm cpp-server-build.tar.gz
+
+      - name: Make binary executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      # No-docker etcd: grab the upstream signed binary tarball from the
+      # etcd-io GitHub release. Two cpp_server backends registering under the
+      # same DYNAMO_NAMESPACE/COMPONENT/ENDPOINT need a shared discovery
+      # store; the script's default `file` backend does an unconditional
+      # `rm -rf ${DYN_FILE_STORE}` at startup, so concurrent starts would
+      # race-delete each other's registrations. etcd avoids that.
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+          etcdctl version
+
+      - name: Start etcd
+        run: |
+          # --data-dir under /tmp so it gets wiped between runs; bind to
+          # 127.0.0.1 only — the Dynamo frontend and both cpp_server
+          # backends run on this same runner.
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          for i in $(seq 1 30); do
+            if etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null; then
+              echo "✅ etcd ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
+
+      - name: Set up uv (Python 3.12 for Dynamo)
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + vllm
+        run: |
+          mkdir -p "$HOME/.venvs"
+          uv venv --python 3.12 "$HOME/.venvs/dynamo"
+          # vllm is the bench client. transformers<5.6 mirrors the other
+          # cpp-server bench jobs — 5.6.x regresses tokenizer cost and
+          # inflates client-side TTFT/TPOT independently of the backend.
+          uv pip install --python "$HOME/.venvs/dynamo/bin/python" \
+            ai-dynamo uvloop vllm 'transformers<5.6'
+          # Expose vllm on PATH for subsequent bench step.
+          echo "$HOME/.venvs/dynamo/bin" >> "$GITHUB_PATH"
+
+      # Two cpp_server backends + one Dynamo frontend. The frontend
+      # discovers both backends through the shared etcd store (one instance
+      # key per backend under v1/instances/<ns>/<component>/<endpoint>/) and
+      # load-balances requests across them. Backends register the same
+      # NAMESPACE/COMPONENT/ENDPOINT (inherited from job-level env) and are
+      # only differentiated by their cpp_server HTTP port (8001 vs 8002)
+      # and their etcd lease id; the frontend's display model_name is set
+      # once for the whole fleet.
+      - name: Start cpp_server backend 1 (port 8001)
+        run: |
+          cd cpp_server
+          ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
+          echo $! > ../backend1.pid
+          cd ..
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null \
+                 | grep -q '"model_ready":true'; then
+              echo "✅ Backend 1 ready (:8001) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8001/tt-liveness" | grep -q '"model_ready":true' \
+            || { echo "ERROR: backend 1 not ready"; cat backend1.log; exit 1; }
+
+      - name: Start cpp_server backend 2 (port 8002)
+        run: |
+          cd cpp_server
+          ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
+          echo $! > ../backend2.pid
+          cd ..
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null \
+                 | grep -q '"model_ready":true'; then
+              echo "✅ Backend 2 ready (:8002) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8002/tt-liveness" | grep -q '"model_ready":true' \
+            || { echo "ERROR: backend 2 not ready"; cat backend2.log; exit 1; }
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        # cpp_server/build.sh's tokenizer pre-fetch is the single source of
+        # truth for what lands in the build artifact. The Dynamo frontend
+        # needs all three files (tokenizer.json, tokenizer_config.json,
+        # config.json) under the model dir or it dies at startup with
+        # `unable to extract config.json from directory ...`. Fail loudly
+        # here rather than discover it via a 60s frontend-ready timeout.
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              echo "  Expected cpp_server/build.sh's download_tokenizer to pre-fetch this."
+              exit 1
+            }
+          done
+          echo "✅ Tokenizer + config files present:"
+          ls -la "${MODEL_DIR}"
+
+      - name: Start single Dynamo frontend (port 8000)
+        run: |
+          # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
+          # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
+          # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
+          # frontend tokenizer in sync with the backend avoids vocab
+          # mismatches that show up as model-routing rejections.
+          #
+          # --router-mode kv: required for the per-worker last-observed
+          # ITL/TTFT gauges to populate per cpp_server instance. The
+          # default round-robin router doesn't attach the worker label,
+          # so the "both backends took traffic" verification step below
+          # would have nothing to count.
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --router-mode kv \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null \
+                 | grep -q '"data"'; then
+              echo "✅ Frontend ready (:8000) after ${i}*2s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
+            || { echo "ERROR: frontend not ready"; cat frontend.log; exit 1; }
+
+      - name: Verify both backends registered in etcd
+        # cpp_server's etcd discovery writes one instance + one MDC entry per
+        # backend under v1/instances/<ns>/<component>/<endpoint>/<id_hex>
+        # (see tt-media-server/cpp_server/src/dynamo/discovery.cpp).
+        # With NAMESPACE/COMPONENT/ENDPOINT defaulted to
+        # default/backend/generate, expect ≥2 distinct instance keys.
+        run: |
+          KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/backend/generate/")
+          echo "etcd instance keys:"
+          echo "$KEYS"
+          COUNT=$(printf '%s\n' "$KEYS" | grep -c "v1/instances/default/backend/generate/" || true)
+          if [ "$COUNT" -lt 2 ]; then
+            echo "::error::Expected ≥2 backend registrations in etcd, got $COUNT"
+            exit 1
+          fi
+          echo "✅ $COUNT cpp_server backends registered in etcd"
+
+      - name: Run vllm bench serve against the Dynamo frontend
+        env:
+          # ai-dynamo/Dynamo's OpenAI surface still requires a bearer; any
+          # non-empty string works for the mock backend.
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          # Single frontend on :8000 fans requests out across both
+          # cpp_server backends discovered via etcd; success here proves
+          # the load-balanced routing path end-to-end.
+          vllm bench serve \
+            --model "${MODEL_NAME}" \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8000 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-dynamo.json" \
+            2>&1 | tee bench_dynamo_output.txt
+
+      - name: Verify both backends served traffic (per-worker ITL gauge)
+        # Dynamo's frontend exposes per-worker last-observed gauges on
+        # /metrics (same HTTP port as the API). With --router-mode kv
+        # every served chunk is tagged with the worker_id of the
+        # cpp_server instance that produced it, so after a bench of
+        # 1000 random prompts at concurrency 64 we expect ≥2 distinct
+        # worker_id labels with a non-zero
+        # `dynamo_frontend_worker_last_inter_token_latency_seconds`.
+        #
+        # A single active worker means the load-balancer collapsed onto
+        # one backend — the regression mode this whole job exists to
+        # detect (most recently caused by the etcd-empty-host bug in
+        # cpp_server's discovery.cpp silencing one of the two
+        # instances).
+        #
+        # Must run before the cleanup step below — once the frontend is
+        # killed /metrics goes away.
+        run: |
+          METRICS=$(curl -sS http://127.0.0.1:8000/metrics)
+          echo "--- per-worker ITL gauges ---"
+          echo "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
+            || echo "(no ITL gauges emitted — frontend never observed ≥2 tokens from any worker)"
+          echo ""
+          echo "--- per-worker TTFT gauges ---"
+          echo "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_time_to_first_token_seconds\{' \
+            || true
+          echo ""
+          # Count workers with non-zero ITL. The metric format is:
+          #   dynamo_frontend_worker_last_inter_token_latency_seconds{...,worker_id="<decimal>",...} <float>
+          # awk -F'} ' splits on the closing label brace + space, putting
+          # the float value in $2.
+          ACTIVE=$(printf '%s\n' "$METRICS" \
+            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
+            | awk -F'} ' '$2 + 0 > 0 {n++} END {print n+0}')
+          # Cross-check: count distinct cpp_server backends in etcd. The
+          # ITL count must match — fewer means at least one registered
+          # backend never received a request.
+          REGISTERED=$(etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/default/backend/generate/" \
+            | grep -c "v1/instances/default/backend/generate/" || true)
+          echo "registered_backends=${REGISTERED}  active_backends=${ACTIVE}"
+          if [ "$ACTIVE" -lt 2 ]; then
+            echo "::error::Only ${ACTIVE} backend(s) reported non-zero ITL after bench (registered=${REGISTERED}, expected ≥2 active)."
+            echo "  Routing collapsed onto a single cpp_server instance — check etcd lease"
+            echo "  registrations and the kv-event subscription in frontend.log."
+            exit 1
+          fi
+          echo "✅ ${ACTIVE} cpp_server backends served traffic (matches ${REGISTERED} registered)" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ ${ACTIVE} cpp_server backends served traffic"
+
+      - name: Stop Dynamo frontend, cpp_server backends, and etcd
+        if: always()
+        run: |
+          for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          sleep 2
+          # Belt + suspenders: nuke any leftover frontends/backends still bound.
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+
+      - name: Check benchmark result
+        run: |
+          FILE="vllm-bench-dynamo.json"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Result file not found: $FILE"
+            exit 1
+          fi
+          COMPLETED=$(jq -r '.completed // 0' "$FILE")
+          FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+          {
+            echo "## Dynamo Frontend + cpp_server Integration"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **completed** | $COMPLETED |"
+            echo "| **failed** | $FAILED_REQ |"
+            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS |"
+            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS |"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+          # Integration gate: every request must succeed. Latency is not
+          # asserted here — the backend is a mock and the value of this job
+          # is proving the wiring (Dynamo frontend -> etcd discovery ->
+          # cpp_server TCP transport) works end-to-end.
+          if [ "$FAILED_REQ" -gt 0 ]; then
+            echo "::error::$FAILED_REQ request(s) failed (completed=$COMPLETED)"
+            exit 1
+          fi
+          if [ "$COMPLETED" -lt 1000 ]; then
+            echo "::error::Only $COMPLETED/1000 requests completed"
+            exit 1
+          fi
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in etcd.log frontend.log backend1.log backend2.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamo-frontend-integration-result
+          path: tt-media-server/vllm-bench-dynamo.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamo-frontend-integration-logs
+          path: |
+            tt-media-server/etcd.log
+            tt-media-server/frontend.log
+            tt-media-server/backend1.log
+            tt-media-server/backend2.log
+          retention-days: 1
+          if-no-files-found: warn
+
   cpp-tsan:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -2620,6 +2998,7 @@ jobs:
       - prefill-gateway-build
       - prefill-gateway-tsan
       - cpp-server-gateway-split
+      - dynamo-frontend-integration
       - cpp-tsan
     if: always()
     steps:
@@ -2641,6 +3020,7 @@ jobs:
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
+            [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
