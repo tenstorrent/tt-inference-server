@@ -186,9 +186,7 @@ def calculate_accuracy_check(fid_score, average_clip_score, num_prompts, model_n
     clip_pass = clip_valid_range[0] <= average_clip_score <= clip_valid_range[1]
 
     fid_status = "✅ PASS" if fid_pass else f"❌ FAIL (got {fid_score:.4f})"
-    clip_status = (
-        "✅ PASS" if clip_pass else f"❌ FAIL (got {average_clip_score:.4f})"
-    )
+    clip_status = "✅ PASS" if clip_pass else f"❌ FAIL (got {average_clip_score:.4f})"
     logger.info(f"FID check:  {fid_status}")
     logger.info(f"CLIP check: {clip_status}")
 
