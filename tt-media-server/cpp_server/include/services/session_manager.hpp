@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
@@ -48,6 +49,7 @@ class SessionManager {
   struct AcquiredSession {
     std::string sessionId;
     uint32_t slotId;
+    uint32_t numberOfMatchedTokens = 0;
   };
 
   SessionManager();
@@ -137,9 +139,19 @@ class SessionManager {
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
-  // Secondary index: prefix hash -> sessionIds registered under that hash.
+
+  // An entry in the prefix index: a group of sessions sharing the same prefix
+  // path, together with the remaining block hashes that follow (used for deeper
+  // prefix matching / numberOfMatchedTokens calculation).
+  struct PrefixIndexEntry {
+    std::list<std::string> sessionIds;    // sessions registered here
+    std::list<uint64_t> remainingHashes;  // subsequent block hashes
+  };
+
+  // Secondary index: block hash -> entries (each with different remaining
+  // hashes pointing to different sessions/slots).
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
-  utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;
+  utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;

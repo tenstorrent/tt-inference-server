@@ -174,6 +174,11 @@ void DisaggregationService::setupSocketHandlers() {
                 socketService->sendPrefillResult(prefillResult);
               });
         });
+
+    socketService->onPrefillCancelled(
+        [this](const tt::sockets::CancelPrefillMessage& message) {
+          llmService->abortRequest(message.task_id);
+        });
   }
 }
 
@@ -211,6 +216,34 @@ void DisaggregationService::handleStreamingRequest(
     throw std::runtime_error(
         "[DisaggregationService] Server must be in decode only mode to handle "
         "streaming requests");
+  }
+}
+
+void DisaggregationService::abortRequest(uint32_t taskId) {
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    auto callback = streamCallbacks.take(taskId);
+    if (!callback.has_value()) {
+      return;
+    }
+
+    bool sent = socketService->sendPrefillCancel(taskId);
+    if (!sent) {
+      TT_LOG_WARN(
+          "[DisaggregationService] Failed to send prefill cancel for task_id: "
+          "{}",
+          taskId);
+    }
+
+    LLMStreamChunk abortResponse{taskId};
+    LLMChoice choice;
+    choice.finish_reason = "abort";
+    abortResponse.choices.push_back(std::move(choice));
+    callback.value()(abortResponse, /*isFinal=*/true);
+    return;
+  }
+
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    llmService->abortRequest(taskId);
   }
 }
 

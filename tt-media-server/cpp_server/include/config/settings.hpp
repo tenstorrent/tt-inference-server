@@ -136,6 +136,14 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_BLOCK_SIZE. */
+size_t kvCacheBlockSize();
+
+/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
+size_t kvCacheFirstBlockSize();
+
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
 

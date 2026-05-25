@@ -224,6 +224,21 @@ struct PrefillRegistrationMessage
   }
 };
 
+// Decode -> gateway/prefill. Best-effort cancellation for an in-flight prefill
+// task.
+struct CancelPrefillMessage : SerializableMessage<CancelPrefillMessage> {
+  uint32_t task_id = 0;
+
+  template <class F>
+  void fields(F&& f) {
+    f(task_id);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(task_id);
+  }
+};
+
 // Gateway -> prefill. Periodically retried until the gateway gets a
 // PrefillRegistrationMessage back. Triggers (re-)registration regardless of
 // transport semantics
@@ -299,6 +314,7 @@ constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";
 constexpr const char* PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr const char* PREFILL_CACHE_BLOCKS_EVICTED = "prefill_cache_evicted";
 constexpr const char* REGISTRATION_PROBE = "registration_probe";
+constexpr const char* CANCEL_PREFILL = "cancel_prefill";
 }  // namespace tags
 
 }  // namespace tt::sockets
