@@ -74,7 +74,7 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
-  const auto stopIds = tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  const auto& stopIds = tt::utils::tokenizers::staticInfo().stopTokenIds;
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
@@ -383,6 +383,43 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
+      // Dynamo path short-circuit. The wire-level TokenChunk only carries
+      // raw token_ids (see dynamo/dynamo_protocol.hpp), so decoding the
+      // token to text and running it through reasoning / tool-call
+      // parsers here would be dead work. Skipping the decode also avoids
+      // ever calling createStreamDecoder() — the only remaining
+      // request-path call site that would synchronously parse
+      // tokenizer.json on a cold consumer thread.
+      //
+      // resolveCallback() above has already pulled the StreamCallbackEntry
+      // off streamCallbacks and decremented pendingTasks when isFinal=true,
+      // so the per-task bookkeeping here only needs to mirror the cleanup
+      // that the regular branch does at the end of this iteration: clear
+      // the small per-task maps. Reasoning / tool-call parsers were never
+      // initialized for this task in the first place (Dynamo requests
+      // don't go through processStreamingRequest's parser init paths in
+      // a way that matters here) so no finalize calls are needed either.
+      if (entry->skip_text_decode) {
+        tt::metrics::ServerMetrics::instance().onToken(taskId);
+        TokenParseResult emptyResult{ContentType::ANSWER, /*text=*/"",
+                                     /*should_emit=*/true};
+        auto response = buildStreamChunk(token, emptyResult, stopTokenSet);
+        entry->callback(response, isFinal);
+        if (isFinal) {
+          std::optional<std::string> finalReason;
+          if (!response.choices.empty() &&
+              response.choices[0].finish_reason.has_value()) {
+            finalReason = response.choices[0].finish_reason.value();
+          }
+          tt::metrics::ServerMetrics::instance().onRequestCompleted(
+              taskId, finalReason.value_or("error"));
+          streamDecoders.erase(taskId);
+          reasoningSuppressedMap.take(taskId);
+          toolChoiceMap.take(taskId);
+        }
+        continue;
+      }
+
       std::string delta = decodeToken(streamDecoders, taskId, token.token_id,
                                       isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
@@ -535,7 +572,8 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pendingTasks.load()));
 
-  StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
+  StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens,
+                            request.skip_text_decode};
   streamCallbacks.insert(taskId, std::move(entry));
 
   if (!request.enable_reasoning) {
