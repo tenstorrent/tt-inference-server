@@ -30,6 +30,9 @@ class Dispatcher {
     std::function<bool(const std::string& prefill_server_id,
                        const tt::sockets::PrefillRequestMessage&)>
         sendRequestToPrefill;
+    std::function<bool(const std::string& prefill_server_id,
+                       const tt::sockets::CancelPrefillMessage&)>
+        sendCancelToPrefill;
     std::function<bool(const tt::sockets::PrefillAssignmentMessage&)>
         sendAssignmentToDecode;
     std::function<bool(const tt::sockets::PrefillResultMessage&)>
@@ -43,6 +46,7 @@ class Dispatcher {
   Dispatcher& operator=(const Dispatcher&) = delete;
 
   void onPrefillRequest(const tt::sockets::PrefillRequestMessage& msg);
+  void onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg);
 
   // `from_server_id` is the prefill the result arrived on.
   void onPrefillResult(const std::string& from_server_id,
