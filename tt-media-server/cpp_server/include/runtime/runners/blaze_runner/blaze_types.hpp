@@ -21,7 +21,7 @@ enum class SlotState {
   IDLE,     // allocated, no request running (slot retained for prefix cache)
   RUNNING,  // SUBMIT/CONTINUE in flight, tokens flowing
   AWAITING_STOP_ACK,   // STOP in flight; deferred actions latched
-  AWAITING_EVICT_ACK,  // CANCEL/EVICT in flight; terminal-ish
+  AWAITING_EVICT_ACK,  // EVICT in flight; terminal-ish
 };
 
 inline const char* toString(SlotState state) {
@@ -50,7 +50,7 @@ struct SlotContext {
   uint32_t tokensGenerated = 0;
   std::optional<uint32_t> pendingAckRequestId = std::nullopt;
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
-  std::unique_ptr<tt::domain::llm::Sequence> deferredSubmit = nullptr;
+  std::unique_ptr<tt::domain::llm::Sequence> deferredContinue = nullptr;
 
   void setState(SlotState newState) {
     if (newState == state) return;
@@ -91,6 +91,7 @@ struct SlotContext {
                    toString(state), toString(newState),
                    taskId.has_value() ? std::to_string(*taskId) : "none");
       assert(false && "illegal slot state transition");
+      throw std::runtime_error("illegal slot state transition");
     }
     state = newState;
   }

@@ -67,7 +67,7 @@ class BlazeRunner : public IRunner {
   std::unordered_set<int64_t> stopTokenIds;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
-  tt::ipc::ICancelQueue* cancelQueue;
+  tt::ipc::ICancelQueue* stopQueue;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
   PendingRequests pendingRequests;
   SlotManager slotManager;

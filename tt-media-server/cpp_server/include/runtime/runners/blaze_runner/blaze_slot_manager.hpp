@@ -13,7 +13,7 @@
 namespace tt::runners::blaze {
 class SlotManager {
  public:
-  SlotManager(int numSlots) {
+  SlotManager(size_t numSlots) {
     slots.resize(numSlots);
     for (size_t i = 0; i < slots.size(); ++i) {
       slots[i].slotId = i;
@@ -33,7 +33,7 @@ class SlotManager {
     slot.tokensGenerated = 0;
     slot.pendingAckRequestId.reset();
     slot.deferredEvict.reset();
-    slot.deferredSubmit.reset();
+    slot.deferredContinue.reset();
     setSlotState(slotId, SlotState::FREE);
   }
   void clearAllSlotContexts() {
