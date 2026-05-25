@@ -96,7 +96,11 @@ spec:
           {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
+              {{- if and (ne $engine "vllm") (eq $cfg.probes.liveness.path "/v1/models") }}
+              path: /tt-liveness
+              {{- else }}
               path: {{ $cfg.probes.liveness.path }}
+              {{- end }}
               port: http
             initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
             periodSeconds: 30
