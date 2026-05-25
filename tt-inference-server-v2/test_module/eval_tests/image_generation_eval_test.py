@@ -111,7 +111,9 @@ class ImageGenerationEvalsTest(BaseTest):
 
     def _block(self, data: Dict[str, Any]) -> Block:
         block = super()._block(data)
-        request = self.targets.get("request") if isinstance(self.targets, dict) else None
+        request = (
+            self.targets.get("request") if isinstance(self.targets, dict) else None
+        )
         lora_path = request.get("lora_path") if isinstance(request, dict) else None
         if lora_path:
             lora_name = lora_path.rsplit("/", 1)[-1]
