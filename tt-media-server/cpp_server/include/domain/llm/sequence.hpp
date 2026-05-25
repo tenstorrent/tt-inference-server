@@ -97,7 +97,7 @@ class Sequence {
 
   bool isDisaggregated() const { return disaggregated; }
   void setDisaggregated(bool d) { disaggregated = d; }
-  
+
   std::optional<uint32_t> getKVCacheOffset() const { return kvCacheOffset; }
   void setKVCacheOffset(uint32_t offset) { kvCacheOffset = offset; }
 
