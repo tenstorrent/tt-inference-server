@@ -35,11 +35,8 @@ bool txTraceEnabled() {
     const char* v = std::getenv("DYN_TX_TRACE");
     if (v == nullptr) return false;
     std::string s(v);
-    if (s.empty() || s == "0" || s == "false" || s == "FALSE" || s == "False" ||
-        s == "off" || s == "OFF") {
-      return false;
-    }
-    return true;
+    return !(s.empty() || s == "0" || s == "false" || s == "FALSE" || s == "False" ||
+        s == "off" || s == "OFF");
   }();
   return kEnabled;
 }
