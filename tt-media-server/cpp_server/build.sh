@@ -173,14 +173,19 @@ download_tokenizer() {
     local model_name="$1"
     local hf_repo="$2"
     local requires_auth="$3"
+    # Optional 4th arg: minimal placeholder config.json body. Used when HF
+    # is unreachable so the artifact is still self-contained (the cpp_server
+    # itself doesn't need config.json, but Dynamo's frontend loader does —
+    # see dynamo_frontend/deploy.sh for the canonical backfill).
+    local placeholder_config_json="${4:-}"
 
     local model_dir="${TOKENIZER_DIR}/${model_name}"
     local tok_json="${model_dir}/tokenizer.json"
     local tok_config="${model_dir}/tokenizer_config.json"
+    local model_config="${model_dir}/config.json"
 
-    # Skip download if tokenizer files already exist (faster rebuilds, no HF_TOKEN needed)
-    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ]; then
-        echo "  Using existing ${model_name} tokenizer."
+    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ] && [ -f "${model_config}" ]; then
+        echo "  Using existing ${model_name} tokenizer + config."
         return 0
     fi
 
@@ -197,44 +202,72 @@ download_tokenizer() {
     mkdir -p "${model_dir}"
 
     echo "Downloading ${model_name} tokenizer..."
-    if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
-        echo "  tokenizer.json downloaded to ${tok_json}"
-    else
-        rm -f "${tok_json}"
-        echo "  ERROR: Failed to download ${model_name} tokenizer.json."
-        echo "  URL: ${hf_repo}/tokenizer.json"
-        if [ "${requires_auth}" = "true" ]; then
-            echo "  This is a gated model. Make sure you have:"
-            echo "    1. A valid HF_TOKEN set in your environment"
-            echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
+    if [ ! -f "${tok_json}" ]; then
+        if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
+            echo "  tokenizer.json downloaded to ${tok_json}"
+        else
+            rm -f "${tok_json}"
+            echo "  ERROR: Failed to download ${model_name} tokenizer.json."
+            echo "  URL: ${hf_repo}/tokenizer.json"
+            if [ "${requires_auth}" = "true" ]; then
+                echo "  This is a gated model. Make sure you have:"
+                echo "    1. A valid HF_TOKEN set in your environment"
+                echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
+            fi
+            echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
+            return 1
         fi
-        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
-        return 1
     fi
 
-    if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
-        echo "  tokenizer_config.json downloaded to ${tok_config}"
-    else
-        rm -f "${tok_config}"
-        echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
-        return 1
+    if [ ! -f "${tok_config}" ]; then
+        if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
+            echo "  tokenizer_config.json downloaded to ${tok_config}"
+        else
+            rm -f "${tok_config}"
+            echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
+            return 1
+        fi
+    fi
+
+    # config.json (HF model config) is not required by cpp_server itself,
+    # but Dynamo's frontend refuses to start without it. Try HF first; fall
+    # back to the caller-supplied minimal stub so the build artifact always
+    # carries a usable file.
+    if [ ! -f "${model_config}" ]; then
+        if wget -q "${wget_args[@]}" -O "${model_config}" "${hf_repo}/config.json" 2>&1; then
+            echo "  config.json downloaded to ${model_config}"
+        elif [ -n "${placeholder_config_json}" ]; then
+            rm -f "${model_config}"
+            echo "  config.json HF fetch failed; writing minimal placeholder."
+            printf '%s\n' "${placeholder_config_json}" > "${model_config}"
+        else
+            rm -f "${model_config}"
+            echo "  WARN: ${model_name} config.json missing and no placeholder supplied."
+            echo "  Dynamo frontend will fail with 'unable to extract config.json'."
+            return 1
+        fi
     fi
 }
 
 echo ""
 echo "Pre-fetching tokenizer files for supported models..."
 
-# DeepSeek R1-0528 (public, no auth) — required for default build
+# DeepSeek R1-0528 (public, no auth) — required for default build.
+# The placeholder mirrors dynamo_frontend/deploy.sh's offline fallback:
+# `model_type` is what makes Dynamo's frontend pick a HF transformer
+# architecture; `architectures` lets the loader pass its sanity check.
 download_tokenizer \
     "deepseek-ai/DeepSeek-R1-0528" \
     "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
-    "false"
+    "false" \
+    '{"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}'
 
 # Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
 download_tokenizer \
     "meta-llama/Llama-3.1-8B-Instruct" \
     "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
-    "true"
+    "true" \
+    '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
 
 echo ""
 

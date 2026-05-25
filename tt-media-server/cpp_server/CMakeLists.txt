@@ -690,6 +690,7 @@ add_executable(main_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
@@ -758,6 +759,7 @@ add_executable(tool_calling_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
@@ -925,6 +927,7 @@ set(SOURCES
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -936,6 +939,10 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
+    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/discovery.cpp
+    src/dynamo/etcd_client.cpp
+    src/dynamo/dynamo_endpoint.cpp
 )
 
 # Create executable
