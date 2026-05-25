@@ -220,7 +220,9 @@ option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 # Option for gRPC server
 option(ENABLE_GRPC "Build gRPC server" OFF)
 
-if(ENABLE_GRPC)
+if(NOT ENABLE_GRPC)
+    message(STATUS "gRPC server: DISABLED (use -DENABLE_GRPC=ON to enable)")
+else()
     find_package(absl REQUIRED)
     find_package(utf8_range REQUIRED)
     find_package(Protobuf REQUIRED)
@@ -274,8 +276,6 @@ if(ENABLE_GRPC)
     )
 
     message(STATUS "gRPC server: ENABLED")
-else()
-    message(STATUS "gRPC server: DISABLED (use -DENABLE_GRPC=ON to enable)")
 endif()
 
 if(ENABLE_TRACY)
