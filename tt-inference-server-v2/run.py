@@ -261,6 +261,7 @@ def parse_args() -> argparse.Namespace:
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
             f"(got --workflow {args.workflow})."
+        )
     args = parser.parse_args()
     if args.output_dir is None:
         args.output_dir = (
