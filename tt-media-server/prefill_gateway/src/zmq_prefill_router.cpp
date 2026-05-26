@@ -56,6 +56,7 @@ void ZmqPrefillRouter::stop() {
   send_cv_.notify_all();
 
   if (io_thread_.joinable()) {
+    io_thread_.request_stop();
     io_thread_.join();
   }
 
@@ -130,16 +131,20 @@ std::optional<ZmqPrefillRouter::PeerIdentity> ZmqPrefillRouter::peerIdForServer(
 bool ZmqPrefillRouter::startIoThread() {
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  io_thread_ =
-      std::thread(&ZmqPrefillRouter::ioLoop, this, std::move(initialized));
+  io_thread_ = std::jthread([this, initialized = std::move(initialized)](
+                                std::stop_token stopToken) mutable {
+    ioLoop(stopToken, std::move(initialized));
+  });
   bool initializedOk = fut.get();
   if (!initializedOk && io_thread_.joinable()) {
+    io_thread_.request_stop();
     io_thread_.join();
   }
   return initializedOk;
 }
 
-void ZmqPrefillRouter::ioLoop(std::promise<bool> initialized) {
+void ZmqPrefillRouter::ioLoop(std::stop_token stopToken,
+                              std::promise<bool> initialized) {
   if (!initializeSocket()) {
     initialized.set_value(false);
     return;
@@ -147,7 +152,7 @@ void ZmqPrefillRouter::ioLoop(std::promise<bool> initialized) {
 
   initialized.set_value(true);
 
-  while (running_) {
+  while (running_ && !stopToken.stop_requested()) {
     const bool sent = processPendingSends();
     const bool received = receiveAvailableMessages();
     if (!sent && !received) {

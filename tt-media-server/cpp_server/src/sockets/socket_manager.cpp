@@ -50,7 +50,8 @@ void SocketManager::start() {
 
   running_ = true;
   transport_->start();
-  messageThread_ = std::thread(&SocketManager::messageLoop, this);
+  messageThread_ = std::jthread(
+      [this](std::stop_token stopToken) { messageLoop(stopToken); });
 }
 
 void SocketManager::stop() {
@@ -61,6 +62,7 @@ void SocketManager::stop() {
   running_ = false;
 
   if (messageThread_.joinable()) {
+    messageThread_.request_stop();
     messageThread_.join();
   }
 
@@ -71,8 +73,8 @@ void SocketManager::stop() {
   TT_LOG_INFO("[SocketManager] Stopped");
 }
 
-void SocketManager::messageLoop() {
-  while (running_) {
+void SocketManager::messageLoop(std::stop_token stopToken) {
+  while (running_ && !stopToken.stop_requested()) {
     try {
       auto data = transport_->receiveRawData();
       if (!data.empty()) {
