@@ -255,6 +255,63 @@ def _is_whisper(ctx: MediaContext) -> bool:
     return getattr(impl, "impl_name", None) == "whisper"
 
 
+def _wer_from_task_block(task_block: dict) -> Optional[float]:
+    if not isinstance(task_block, dict):
+        return None
+    for key in ("wer,none", "wer"):
+        val = task_block.get(key)
+        if isinstance(val, (int, float)):
+            return float(val)
+    for key, val in task_block.items():
+        if (
+            isinstance(key, str)
+            and key.lower().startswith("wer")
+            and isinstance(val, (int, float))
+        ):
+            return float(val)
+    return None
+
+
+def _extract_wer(results: dict, task_name: str) -> Optional[float]:
+    metrics = results.get("metrics") or {}
+    for key in (f"{task_name}_wer", "wer"):
+        val = metrics.get(key)
+        if isinstance(val, (int, float)):
+            return float(val)
+
+    detailed = results.get("detailed_results") or {}
+    wer = _wer_from_task_block(detailed.get(task_name) or {})
+    if wer is not None:
+        return wer
+    for tname, block in detailed.items():
+        if isinstance(tname, str) and task_name in tname:
+            wer = _wer_from_task_block(block)
+            if wer is not None:
+                return wer
+    for block in detailed.values():
+        wer = _wer_from_task_block(block)
+        if wer is not None:
+            return wer
+
+    raw = results.get("evaluation_results") or {}
+    json_files = raw.get("json_results") or {}
+    for data in json_files.values():
+        nested = (data or {}).get("results") or {}
+        wer = _wer_from_task_block(nested.get(task_name) or {})
+        if wer is not None:
+            return wer
+        for tname, block in nested.items():
+            if isinstance(tname, str) and task_name in tname:
+                wer = _wer_from_task_block(block)
+                if wer is not None:
+                    return wer
+        for block in nested.values():
+            wer = _wer_from_task_block(block)
+            if wer is not None:
+                return wer
+    return None
+
+
 def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest."""
     from .._test_common import TestConfig
@@ -285,20 +342,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
         asyncio.wait_for(test._run_specific_test_async(), timeout=timeout_s)
     )
 
-    wer = None
-    metrics = results.get("metrics") or {}
-    for key in (f"{task.task_name}_wer", "wer"):
-        val = metrics.get(key)
-        if isinstance(val, (int, float)):
-            wer = float(val)
-            break
-
-    if wer is None:
-        detailed = results.get("detailed_results") or {}
-        task_block = detailed.get(task.task_name) or {}
-        raw = task_block.get("wer,none")
-        if isinstance(raw, (int, float)):
-            wer = float(raw)
+    wer = _extract_wer(results, task.task_name)
 
     if wer is None:
         logger.error(
