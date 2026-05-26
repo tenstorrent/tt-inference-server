@@ -249,6 +249,54 @@ download_tokenizer() {
     fi
 }
 
+# Kimi K2.x ships a tiktoken BPE vocab (tiktoken.model), not tokenizer.json.
+# Dynamo's model_card loader accepts tiktoken.model; the chat template lives in
+# chat_template.jinja (see dynamo/lib/llm/src/model_card.rs TokenizerKind::from_disk).
+download_kimi_tokenizer() {
+    local model_name="moonshotai/Kimi-K2.6"
+    local hf_repo="https://huggingface.co/moonshotai/Kimi-K2.6/raw/main"
+    local model_dir="${TOKENIZER_DIR}/${model_name}"
+    local tiktoken_model="${model_dir}/tiktoken.model"
+    local tok_config="${model_dir}/tokenizer_config.json"
+    local model_config="${model_dir}/config.json"
+    local chat_template="${model_dir}/chat_template.jinja"
+    local placeholder_config_json='{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}'
+
+    if [ -f "${tiktoken_model}" ] && [ -f "${tok_config}" ] && [ -f "${model_config}" ] \
+        && [ -f "${chat_template}" ]; then
+        echo "  Using existing ${model_name} tokenizer + config."
+        return 0
+    fi
+
+    mkdir -p "${model_dir}"
+    echo "Downloading ${model_name} tokenizer (tiktoken + chat template)..."
+
+    for f in tiktoken.model tokenizer_config.json chat_template.jinja; do
+        local dest="${model_dir}/${f}"
+        if [ -f "${dest}" ]; then
+            continue
+        fi
+        if wget -q -O "${dest}" "${hf_repo}/${f}" 2>&1; then
+            echo "  ${f} downloaded to ${dest}"
+        else
+            rm -f "${dest}"
+            echo "  ERROR: Failed to download ${model_name}/${f}."
+            echo "  URL: ${hf_repo}/${f}"
+            return 1
+        fi
+    done
+
+    if [ ! -f "${model_config}" ]; then
+        if wget -q -O "${model_config}" "${hf_repo}/config.json" 2>&1; then
+            echo "  config.json downloaded to ${model_config}"
+        else
+            rm -f "${model_config}"
+            echo "  config.json HF fetch failed; writing minimal placeholder."
+            printf '%s\n' "${placeholder_config_json}" > "${model_config}"
+        fi
+    fi
+}
+
 echo ""
 echo "Pre-fetching tokenizer files for supported models..."
 
@@ -268,6 +316,9 @@ download_tokenizer \
     "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
     "true" \
     '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
+
+# Kimi K2.6 (public tiktoken tokenizer + jinja chat template; no tokenizer.json on HF)
+download_kimi_tokenizer
 
 echo ""
 

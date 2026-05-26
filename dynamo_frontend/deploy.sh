@@ -33,8 +33,10 @@ Optional:
                               (default: "10,11,14,15,18,19,22,23" — the
                               local 8-device DeepSeek-R1 mesh)
   --tokenizers-host-dir <dir> host directory containing the tokenizers tree
-                              (must hold <hf-model-id>/{config,tokenizer,
-                              tokenizer_config}.json). Bind-mounted into the
+                              (must hold <hf-model-id>/config.json,
+                              tokenizer_config.json, and either tokenizer.json
+                              or tiktoken.model for tiktoken-based models such
+                              as Kimi K2.6). Bind-mounted into the
                               frontend at the path the worker advertises in
                               the MDC. (default: auto — extracts tokenizer
                               assets out of the worker image into a host
@@ -298,19 +300,41 @@ if [[ -z "$SKIP_TOKENIZER_SHARE" ]]; then
             "https://huggingface.co/${HF_MODEL_ID}/raw/main/config.json" \
             -o "$MODEL_SUBDIR/config.json" 2>/dev/null; then
             log "  HF fetch failed; writing a minimal placeholder config.json"
-            cat > "$MODEL_SUBDIR/config.json" <<'CONF'
+            if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
+                cat > "$MODEL_SUBDIR/config.json" <<'CONF'
+{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}
+CONF
+            else
+                cat > "$MODEL_SUBDIR/config.json" <<'CONF'
 {"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}
 CONF
+            fi
         fi
     fi
 
-    for f in config.json tokenizer.json tokenizer_config.json; do
+    for f in config.json tokenizer_config.json; do
         if [[ ! -f "$MODEL_SUBDIR/$f" ]]; then
             log "missing $f under $MODEL_SUBDIR"
             log "  the worker's MDC will advertise a path the frontend can't read"
             exit 1
         fi
     done
+    if [[ ! -f "$MODEL_SUBDIR/tokenizer.json" && ! -f "$MODEL_SUBDIR/tiktoken.model" ]]; then
+        log "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
+        log "  the worker's MDC will advertise a path the frontend can't read"
+        exit 1
+    fi
+    if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
+        if [[ ! -f "$MODEL_SUBDIR/chat_template.jinja" ]]; then
+            log "fetching $HF_MODEL_ID/chat_template.jinja from HuggingFace"
+            curl -fsSL --max-time 30 \
+                "https://huggingface.co/${HF_MODEL_ID}/raw/main/chat_template.jinja" \
+                -o "$MODEL_SUBDIR/chat_template.jinja" || {
+                log "missing chat_template.jinja under $MODEL_SUBDIR"
+                exit 1
+            }
+        fi
+    fi
 
     log "mounting tokenizers: $TOKENIZERS_HOST_DIR_ABS -> $WORKER_TOKENIZER_DIR"
     log "  using $HF_MODEL_ID:"
