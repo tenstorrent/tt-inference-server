@@ -6,6 +6,7 @@
 #include <bit>
 #include <condition_variable>
 #include <cstddef>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -149,60 +150,85 @@ class LockFreeSPSCQueue {
   alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
 };
 
-/**
- * Thread-safe queue with blocking pop semantics.
- *
- * ConcurrentQueue and LockFreeSPSCQueue above are non-blocking: if the queue
- * is empty, pop/drain returns immediately with nothing. This is fine when the
- * consumer can poll or has other work to do, but some patterns (like bridging
- * an async callback to a synchronous gRPC stream) need the consumer to block
- * until data arrives.
- *
- * BlockingQueue adds a condition variable so `pop()` waits efficiently until
- * an item is available or the queue is marked done.
- */
 template <typename T>
 class BlockingQueue {
  public:
   void push(T item) {
     {
       std::lock_guard<std::mutex> lock(mu);
-      queue.push(std::move(item));
+      queue.push_back(std::move(item));
     }
     cv.notify_one();
   }
 
-  void markDone() {
+  bool tryPop(T& out) {
+    std::lock_guard<std::mutex> lock(mu);
+    if (queue.empty()) {
+      return false;
+    }
+    out = std::move(queue.front());
+    queue.pop_front();
+    return true;
+  }
+
+  bool waitPop(T& out) {
+    std::unique_lock<std::mutex> lock(mu);
+    cv.wait(lock, [&] { return shuttingDown || !queue.empty(); });
+    if (queue.empty()) {
+      return false;
+    }
+    out = std::move(queue.front());
+    queue.pop_front();
+    return true;
+  }
+
+  template <typename Rep, typename Period>
+  bool waitPopFor(T& out, std::chrono::duration<Rep, Period> timeout) {
+    std::unique_lock<std::mutex> lock(mu);
+    if (!cv.wait_for(lock, timeout,
+                     [&] { return shuttingDown || !queue.empty(); })) {
+      return false;
+    }
+    if (queue.empty()) {
+      return false;
+    }
+    out = std::move(queue.front());
+    queue.pop_front();
+    return true;
+  }
+
+  template <typename Container>
+  void drainTo(Container& out) {
+    std::lock_guard<std::mutex> lock(mu);
+    while (!queue.empty()) {
+      out.push_back(std::move(queue.front()));
+      queue.pop_front();
+    }
+  }
+
+  void clear() {
+    std::lock_guard<std::mutex> lock(mu);
+    queue.clear();
+  }
+
+  void shutdown() {
     {
       std::lock_guard<std::mutex> lock(mu);
-      done = true;
+      shuttingDown = true;
     }
     cv.notify_all();
   }
 
-  std::optional<T> pop() {
-    std::unique_lock<std::mutex> lock(mu);
-    cv.wait(lock, [this] { return !queue.empty() || done; });
-
-    if (queue.empty()) {
-      return std::nullopt;
-    }
-
-    T item = std::move(queue.front());
-    queue.pop();
-    return item;
+  bool empty() const {
+    std::lock_guard<std::mutex> lock(mu);
+    return queue.empty();
   }
 
-  BlockingQueue() = default;
-  ~BlockingQueue() = default;
-  BlockingQueue(const BlockingQueue&) = delete;
-  BlockingQueue& operator=(const BlockingQueue&) = delete;
-
  private:
-  std::queue<T> queue;
-  std::mutex mu;
+  mutable std::mutex mu;
   std::condition_variable cv;
-  bool done = false;
+  std::deque<T> queue;
+  bool shuttingDown = false;
 };
 
 }  // namespace tt::utils

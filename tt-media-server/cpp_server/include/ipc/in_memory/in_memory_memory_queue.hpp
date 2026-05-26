@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "ipc/in_memory/detail/concurrent_queue.hpp"
 #include "ipc/interface/memory_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace tt::ipc::in_memory {
 
@@ -19,8 +19,7 @@ class MemoryRequestQueue : public tt::ipc::IMemoryRequestQueue {
   }
 
  private:
-  tt::ipc::in_memory::detail::ConcurrentQueue<tt::domain::ManageMemoryTask>
-      queue;
+  tt::utils::BlockingQueue<tt::domain::ManageMemoryTask> queue;
 };
 
 class MemoryResultQueue : public tt::ipc::IMemoryResultQueue {
@@ -34,8 +33,7 @@ class MemoryResultQueue : public tt::ipc::IMemoryResultQueue {
   }
 
  private:
-  tt::ipc::in_memory::detail::ConcurrentQueue<tt::domain::ManageMemoryResult>
-      queue;
+  tt::utils::BlockingQueue<tt::domain::ManageMemoryResult> queue;
 };
 
 }  // namespace tt::ipc::in_memory

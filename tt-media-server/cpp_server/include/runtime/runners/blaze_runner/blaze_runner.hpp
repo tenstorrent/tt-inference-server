@@ -44,8 +44,8 @@ class BlazeRunner : public IRunner {
 
   void drainAndHandleMemoryResponses();
   void drainAndHandleOutputs();
-  void drainAndHandleCancelRequests();
-  inline void handleCancelRequest(uint32_t taskId);
+  void drainAndHandleStopRequests();
+  inline void handleStopRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleAllocateRequest(
