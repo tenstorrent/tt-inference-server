@@ -1,10 +1,15 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #include "utils/mapper.hpp"
+
+#include "config/settings.hpp"
 
 namespace tt::utils::mapper {
 
-tt::domain::SamplingParams mapSamplingParams(
-    const tt::domain::LLMRequest& request) {
-  tt::domain::SamplingParams params;
+tt::domain::llm::SamplingParams mapSamplingParams(
+    const tt::domain::llm::LLMRequest& request) {
+  tt::domain::llm::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);
   params.max_tokens = request.max_tokens;
   params.ignore_eos = request.ignore_eos;
@@ -25,12 +30,15 @@ tt::domain::SamplingParams mapSamplingParams(
   params.allowed_token_ids = request.allowed_token_ids;
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
-  params.fast_mode = request.fast_mode;
+  params.fast_mode = config::useFastMode() || request.fast_mode;
 
   if (request.response_format.has_value()) {
     params.response_format_type = request.response_format->type;
     params.json_schema_str = request.response_format->json_schema_str;
   }
+
+  params.tools = request.tools;
+  params.tool_choice = request.tool_choice;
 
   return params;
 }

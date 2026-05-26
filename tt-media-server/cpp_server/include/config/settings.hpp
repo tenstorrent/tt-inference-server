@@ -24,7 +24,10 @@ ModelService modelService();
 bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool isLlmServiceEnabled();
+bool isLlmService();
+
+/** True when model_service() == IMAGE. */
+bool isImageService();
 
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
@@ -73,6 +76,21 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
+/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
+ * Default: defaults::SOCKET_TRANSPORT. */
+std::string socketTransport();
+
+/** Whether the inter-server socket integrates with PrefillGateway. From
+ * USE_PREFILL_GATEWAY. */
+bool usePrefillGateway();
+
+/** Prefill identity for PrefillRegistrationMessage; falls back to
+ * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
+std::string prefillServerId();
+
+/** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
+uint32_t prefillMaxInFlight();
+
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
 bool enableAccumulatedStreaming();
@@ -94,8 +112,13 @@ SchedulingPolicy schedulingPolicy();
 size_t maxInFlightCount();
 
 /** Max sessions count from MAX_SESSIONS_COUNT. Default:
- * defaults::MAX_SESSIONS_COUNT. */
+ * defaults::MAX_SESSIONS_COUNT. Can be overridden at runtime via
+ * setMaxSessionsCount(). */
 size_t maxSessionsCount();
+
+/** Set max sessions count override. Pass 0 to clear the override and use the
+ * environment variable value. */
+void setMaxSessionsCount(size_t count);
 
 /** Session eviction rate percentage from SESSION_EVICTION_RATE. Default:
  * defaults::SESSION_EVICTION_RATE. */
@@ -108,6 +131,21 @@ size_t sessionEvictionCount();
 /** Max tokens to prefill on decode server from MAX_TOKENS_TO_PREFILL_ON_DECODE.
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
+
+/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
+ * defaults::MAX_CONTEXT_LENGTH. */
+size_t maxContextLength();
+
+/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_BLOCK_SIZE. */
+size_t kvCacheBlockSize();
+
+/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
+size_t kvCacheFirstBlockSize();
+
+/** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
+bool useFastMode();
 
 /** Kafka broker addresses from KAFKA_BROKERS. Default:
  * defaults::KAFKA_BROKERS. */
@@ -138,9 +176,9 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Pipeline manager max users from PM_MAX_USERS. Default:
- * defaults::PM_MAX_USERS. */
-size_t pmMaxUsers();
+/** Decode scheduler max users from DS_MAX_USERS. Default:
+ * defaults::DS_MAX_USERS. */
+size_t dsMaxUsers();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -161,6 +199,12 @@ std::string ttResultQueueName();
 /** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
  */
 std::string ttCancelQueueName();
+
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
 
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
@@ -183,9 +227,76 @@ std::string workerMetricsShmName();
  * defaults::USE_DEEPSEEK_MD_FORMAT. */
 bool useDeepseekMdFormat();
 
+// IPC queue capacities - configurable via environment variables
+/** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
+ * defaults::RESULT_QUEUE_CAPACITY. */
+size_t resultQueueCapacity();
+
+/** Cancel queue capacity from CANCEL_QUEUE_CAPACITY. Default:
+ * defaults::CANCEL_QUEUE_CAPACITY. */
+size_t cancelQueueCapacity();
+
+/** Memory queue capacity from MEMORY_QUEUE_CAPACITY. Default:
+ * defaults::MEMORY_QUEUE_CAPACITY. */
+size_t memoryQueueCapacity();
+
+// Shared memory slot buffer constants
+/** SHM slots from SHM_SLOTS. Default: defaults::SHM_SLOTS. */
+int shmSlots();
+
+/** Prefill max token IDs from PREFILL_MAX_TOKEN_IDS. Default:
+ * defaults::PREFILL_MAX_TOKEN_IDS. */
+int prefillMaxTokenIds();
+
+/** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
+ * defaults::DECODE_MAX_TOKEN_IDS. */
+int decodeMaxTokenIds();
+
+// ---------------------------------------------------------------------------
+// Dynamo TCP backend (NVIDIA Dynamo frontend integration)
+// ---------------------------------------------------------------------------
+
+/** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
+ * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+bool dynamoEndpointEnabled();
+
+/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
+ * defaults::DYNAMO_BIND_HOST. */
+std::string dynamoBindHost();
+
+/** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
+ * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
+ * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
+std::string dynamoEtcdEndpoints();
+
+/** Lease TTL (seconds) for etcd-backed discovery. From
+ * DYNAMO_ETCD_LEASE_TTL_SECS. Default: defaults::DYNAMO_ETCD_LEASE_TTL_SECS. */
+int64_t dynamoEtcdLeaseTtlSecs();
+
+/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
+ * defaults::DYNAMO_NAMESPACE. */
+std::string dynamoNamespace();
+
+/** Discovery component key. From DYNAMO_COMPONENT. Default:
+ * defaults::DYNAMO_COMPONENT. */
+std::string dynamoComponent();
+
+/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
+ * defaults::DYNAMO_ENDPOINT_NAME. */
+std::string dynamoEndpointName();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
+
+/** Build ImageConfig from environment variables and runtime settings. Reads
+ * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
+ * src/config/settings.cpp. */
+ImageConfig imageEngineConfig();
+
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

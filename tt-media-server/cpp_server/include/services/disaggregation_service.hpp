@@ -3,26 +3,29 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
-#include <string>
 
 #include "config/types.hpp"
-#include "domain/llm_request.hpp"
-#include "domain/llm_response.hpp"
+#include "domain/llm/llm_request.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::sockets {
+
+using namespace tt::domain::llm;
 class InterServerService;
-}
+}  // namespace tt::sockets
 
 namespace tt::services {
+
+using namespace tt::domain::llm;
 
 class LLMService;
 
 class DisaggregationService {
-  using StreamCallback =
-      std::function<void(const domain::LLMStreamChunk&, bool)>;
+  using StreamCallback = std::function<void(const LLMStreamChunk&, bool)>;
 
  public:
   DisaggregationService(
@@ -33,8 +36,9 @@ class DisaggregationService {
   void start();
   void stop();
 
-  void handleStreamingRequest(domain::LLMRequest& request,
+  void handleStreamingRequest(LLMRequest& request, size_t requestHash,
                               const StreamCallback& callback);
+  void abortRequest(uint32_t taskId);
 
  private:
   void setupSocketHandlers();

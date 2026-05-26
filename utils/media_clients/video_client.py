@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import base64
 import json
 import logging
 import time
@@ -10,19 +11,42 @@ from pathlib import Path
 import requests
 
 from utils.media_clients.test_status import VideoGenerationTestStatus
-from workflows.utils import get_num_calls
+from workflows.utils import get_num_calls, get_repo_root_path
+from workflows.workflow_types import ReportCheckTypes
 
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
-INFERENCE_STEPS = {"mochi-1-preview": 50, "Wan2.2-T2V-A14B-Diffusers": 40}
+INFERENCE_STEPS = {
+    "mochi-1-preview": 50,
+    "Wan2.2-T2V-A14B-Diffusers": 40,
+    "Wan2.2-I2V-A14B-Diffusers": 40,
+}
+# Models routed through the image-to-video endpoint instead of plain T2V.
+I2V_MODEL_NAMES = frozenset({"Wan2.2-I2V-A14B-Diffusers"})
+
+I2V_FIXTURE_IMAGE_RELPATH = (
+    Path("server_tests") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
+)
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
+
+
+def _load_i2v_fixture_image_base64() -> str:
+    """Return the I2V conditioning frame, base64-encoded."""
+    fixture_path = get_repo_root_path() / I2V_FIXTURE_IMAGE_RELPATH
+    if not fixture_path.exists():
+        raise FileNotFoundError(
+            f"I2V fixture image missing at {fixture_path}. "
+            "Expected a tracked sample from server_tests/datasets/imagenet_subset/."
+        )
+    return base64.b64encode(fixture_path.read_bytes()).decode("ascii")
 
 
 class VideoClientStrategy(BaseMediaStrategy):
@@ -34,16 +58,7 @@ class VideoClientStrategy(BaseMediaStrategy):
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Run video generation eval using VideoGenerationEvalsTest
+            self.require_health()
             eval_result = self._run_video_generation_eval()
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
@@ -78,7 +93,9 @@ class VideoClientStrategy(BaseMediaStrategy):
             benchmark_data["clip_standard_deviation"] = clip_results.get(
                 "clip_standard_deviation", 0.0
             )
-            benchmark_data["accuracy_check"] = eval_result.get("accuracy_check", 0)
+            benchmark_data["accuracy_check"] = eval_result.get(
+                "accuracy_check", ReportCheckTypes.NA
+            )
         else:
             logger.warning("No eval results from video generation test")
 
@@ -102,6 +119,8 @@ class VideoClientStrategy(BaseMediaStrategy):
             0
         ].score.published_score_ref
 
+        benchmark_data["performance_check"] = self._calculate_performance_check()
+
         # Make benchmark_data inside list as object
         benchmark_data = [benchmark_data]
 
@@ -119,50 +138,60 @@ class VideoClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> None:
+    def run_benchmark(self) -> None:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from video benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
+            loop_start = time.monotonic()
             status_list = self._run_video_generation_benchmark(num_calls)
-
-            self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
+    def _is_i2v_model(self) -> bool:
+        return self.model_spec.model_name in I2V_MODEL_NAMES
+
     def _run_video_generation_benchmark(
         self, num_calls: int
     ) -> list[VideoGenerationTestStatus]:
-        """Run video generation benchmark."""
+        """Run video generation benchmark.
+
+        Routes to the I2V endpoint (with a fixture conditioning image) for
+        I2V models, otherwise the standard T2V endpoint.
+        """
         logger.info("Running video generation benchmark.")
         status_list = []
 
         inference_steps = INFERENCE_STEPS[self.model_spec.model_name]
-        logger.info(f"Inference steps: {inference_steps}")
+        is_i2v = self._is_i2v_model()
+        logger.info(
+            f"Inference steps: {inference_steps}, mode: {'i2v' if is_i2v else 't2v'}"
+        )
+
+        image_b64 = _load_i2v_fixture_image_base64() if is_i2v else None
 
         for i in range(num_calls):
+            prompt = f"Test video generation {i + 1}"
             logger.info(f"Generating video {i + 1}/{num_calls}...")
-            status, elapsed, job_id, video_path = self._generate_video(
-                prompt=f"Test video generation {i + 1}",
-                num_inference_steps=inference_steps,
-            )
+            if is_i2v:
+                status, elapsed, job_id, video_path = self._generate_video_i2v(
+                    prompt=prompt,
+                    image_b64=image_b64,
+                    num_inference_steps=inference_steps,
+                )
+            else:
+                status, elapsed, job_id, video_path = self._generate_video(
+                    prompt=prompt,
+                    num_inference_steps=inference_steps,
+                )
             logger.info(f"Generated video in {elapsed:.2f} seconds.")
 
-            # Calculate inference steps per second if num_inference_steps is available
             inference_steps_per_second = inference_steps / elapsed if elapsed > 0 else 0
 
             status_list.append(
@@ -173,7 +202,6 @@ class VideoClientStrategy(BaseMediaStrategy):
                     inference_steps_per_second=inference_steps_per_second,
                     job_id=job_id,
                     video_path=video_path,
-                    prompt=f"Test video generation {i + 1}",
                 )
             )
 
@@ -182,26 +210,54 @@ class VideoClientStrategy(BaseMediaStrategy):
     def _generate_video(
         self, prompt: str, num_inference_steps: int = 20
     ) -> tuple[bool, float, str, str]:
-        """Generate video using video API."""
+        """Generate video (T2V) using the video API."""
         logger.info(f"🎬 Generating video with prompt: {prompt}")
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+        }
+        return self._submit_and_wait_for_video("/v1/videos/generations", payload)
 
+    def _generate_video_i2v(
+        self,
+        prompt: str,
+        image_b64: str,
+        frame_pos: int = 0,
+        num_inference_steps: int = 40,
+    ) -> tuple[bool, float, str, str]:
+        """Generate video (I2V) using the image-to-video API.
+
+        The image must be base64-encoded (PNG or JPEG, no data URI prefix).
+        ``frame_pos=0`` anchors the image as the first frame; supply a
+        higher ``frame_pos`` to insert it mid-video. For multi-keyframe
+        conditioning use :meth:`_generate_video_i2v_multi`.
+        """
+        logger.info(f"🎬 Generating I2V video with prompt: {prompt}")
+        payload = {
+            "prompt": prompt,
+            "num_inference_steps": num_inference_steps,
+            "image_prompts": [{"image": image_b64, "frame_pos": frame_pos}],
+        }
+        return self._submit_and_wait_for_video("/v1/videos/generations/i2v", payload)
+
+    def _submit_and_wait_for_video(
+        self, endpoint: str, payload: dict
+    ) -> tuple[bool, float, str, str]:
+        """Submit a video-generation job and poll until completion.
+
+        Returns ``(success, elapsed_seconds, job_id, video_path)``.
+        """
         headers = {
             "accept": "application/json",
             "Authorization": "Bearer your-secret-key",
             "Content-Type": "application/json",
         }
+        logger.info(f"POST {endpoint} payload keys: {list(payload.keys())}")
 
-        payload = {
-            "prompt": prompt,
-            "num_inference_steps": num_inference_steps,
-        }
-        logger.info(f"Payload: {payload}")
-
-        # Submit video generation job
         start_time = time.time()
         try:
             response = requests.post(
-                f"{self.base_url}/v1/videos/generations",
+                f"{self.base_url}{endpoint}",
                 json=payload,
                 headers=headers,
                 timeout=90,
@@ -209,7 +265,8 @@ class VideoClientStrategy(BaseMediaStrategy):
 
             if response.status_code != 202:
                 logger.error(
-                    f"Failed to submit video generation job: {response.status_code}"
+                    f"Failed to submit video generation job: "
+                    f"{response.status_code} {response.text[:500]}"
                 )
                 return False, time.time() - start_time, "", ""
 
@@ -217,7 +274,6 @@ class VideoClientStrategy(BaseMediaStrategy):
             job_id = job_data.get("id")
             logger.info(f"Video generation job submitted: {job_id}")
 
-            # Poll for completion
             video_path = self._poll_video_completion(job_id, headers)
             elapsed = time.time() - start_time
 
@@ -313,7 +369,11 @@ class VideoClientStrategy(BaseMediaStrategy):
             logger.error(f"Error downloading video: {e}")
             return ""
 
-    def _generate_report(self, status_list: list[VideoGenerationTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[VideoGenerationTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         """Generate benchmark report."""
         logger.info("Generating benchmark report...")
         result_filename = (
@@ -323,44 +383,68 @@ class VideoClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
-        ttft_value = self._calculate_ttft_value(status_list)
+        latency_value = self._calculate_latency(status_list)
+        performance_check = self._calculate_performance_check(
+            latency_value=latency_value
+        )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
+        )
+        steps_per_second = self._calculate_steps_per_second(
+            total_steps=sum(s.num_inference_steps for s in status_list),
+            total_elapsed_seconds=sum(s.elapsed for s in status_list),
+        )
 
-        # Convert VideoGenerationTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
                 "num_inference_steps": status_list[0].num_inference_steps
                 if status_list
                 else 0,
-                "ttft": ttft_value,
-                "inference_steps_per_second": sum(
-                    status.inference_steps_per_second for status in status_list
-                )
-                / len(status_list)
-                if status_list
-                else 0,
+                "latency": latency_value,
+                "inference_steps_per_second": steps_per_second,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "task_type": "video",
+            "performance_check": performance_check,
         }
 
         with open(result_filename, "w") as f:
             json.dump(report_data, f, indent=4)
         logger.info(f"Report generated: {result_filename}")
 
-    def _calculate_ttft_value(
-        self, status_list: list[VideoGenerationTestStatus]
-    ) -> float:
-        """Calculate TTFT value based on status list."""
-        logger.info("Calculating TTFT value")
+    def _calculate_latency(self, status_list: list[VideoGenerationTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
 
         return (
             sum(status.elapsed for status in status_list) / len(status_list)
             if status_list
             else 0
+        )
+
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float] = None,
+    ) -> ReportCheckTypes:
+        """Video perf check: compares latency vs configured target."""
+        targets = self.get_performance_targets()
+        logger.info(f"Performance targets: {targets}")
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
+        )
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+            ],
+            tolerance=targets.tolerance,
         )
 
     def _run_video_generation_eval(self) -> dict:

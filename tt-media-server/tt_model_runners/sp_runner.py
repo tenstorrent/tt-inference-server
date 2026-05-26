@@ -19,20 +19,31 @@ legacy callers.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import tempfile
 import threading
 import time
 from concurrent.futures import Future as CFuture
 
 from ipc.video_shm import (
+    MAX_IMAGE_PATH_LEN,
+    SP_WARMUP_TASK_ID,
     VideoRequest,
+    VideoResponse,
     VideoShm,
     VideoStatus,
+    cleanup_orphaned_image_files,
     cleanup_orphaned_video_files,
+    image_prompts_path,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+
+# Interval (seconds) between "still waiting" heartbeat lines while
+# SPRunner.warmup() is blocked on the pipeline's ack.
+_WARMUP_HEARTBEAT_SECONDS: float = 7.0
 
 DEFAULT_VIDEO_HEIGHT = 480
 DEFAULT_VIDEO_WIDTH = 832
@@ -48,11 +59,31 @@ _DRAINER_READ_TIMEOUT_S = 1.0
 _DRAINER_JOIN_TIMEOUT_S = 2.0
 
 
+def _is_warmup_ping_enabled() -> bool:
+    """Feature flag for the SHM warmup round-trip.
+
+    Default ``False`` so the server-side change can land independently of the
+    matching pipeline-side handler in ``video_runner.py``. Once both sides are
+    deployed, flip ``SP_REQUIRE_WARMUP_PING=true`` to get the DS-style
+    eventually-consistent readiness contract (``/health`` stays 503 until the
+    pipeline has finished its own warmup and replied to the ping).
+    """
+    return os.environ.get("SP_REQUIRE_WARMUP_PING", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+
 class SPRunner(BaseDeviceRunner):
     """Proxy runner that bridges the device-worker to an external video runner via SHM."""
 
-    # Opt in to ``device_worker.continuousFanOut``. The SHM input ring (8
-    # slots) plus the encoder thread on the external runner pipeline
+    # SHM-proxy runner: never reads weights from HF; suppresses the
+    # spurious "HF_TOKEN missing" warning in BaseDeviceRunner.
+    requires_weights = False
+
+    # Opt in to ``device_worker._continuous_fan_out``. The SHM input ring
+    # (8 slots) plus the encoder thread on the external runner pipeline
     # inference + MP4 encode; continuous fan-out keeps the ring primed
     # across batch boundaries instead of draining at the tail of every
     # gather. Per-request deadlines are enforced inside ``await_result``
@@ -67,8 +98,11 @@ class SPRunner(BaseDeviceRunner):
         self._shutdown = False
 
         # task_id -> Future[VideoResponse]. Owned jointly by submit() (insert),
-        # the drainer thread (resolve+pop), and await_result (timeout-pop).
+        # the drainer thread (resolve, does NOT pop), and await_result (pop).
         self._pending: dict[str, CFuture] = {}
+        # task_id -> I2V side-file path (empty for T2V). Lifecycle is identical
+        # to _pending and the same lock guards both maps so cleanup is atomic.
+        self._pending_image_paths: dict[str, str] = {}
         self._pending_lock = threading.Lock()
 
         self._drainer: threading.Thread | None = None
@@ -76,6 +110,11 @@ class SPRunner(BaseDeviceRunner):
 
     def _is_shutdown(self) -> bool:
         return self._shutdown
+
+    @property
+    def _log_id(self) -> str:
+        """Stable prefix for every SPRunner log line."""
+        return f"SPRunner[{self.device_id or 'default'}]"
 
     def set_device(self):
         input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
@@ -96,7 +135,7 @@ class SPRunner(BaseDeviceRunner):
         out_repair = self._output_shm.recover(side="reader")
         if any(in_repair.values()) or any(out_repair.values()):
             self.logger.warning(
-                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"{self._log_id}: crash-recovery repaired prior "
                 f"inconsistency: input={in_repair} output={out_repair}"
             )
         # Any responses sitting in the output ring at startup are addressed to
@@ -104,8 +143,14 @@ class SPRunner(BaseDeviceRunner):
         # them in place would desync ridx by N and every future request would
         # silently receive the previous task's file_path. Drain + unlink now.
         self._drain_stale_responses()
+        # Sweep any I2V side-files left behind by a prior crashed session.
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"{self._log_id}: cleaned up {removed_imgs} orphaned image side-file(s)"
+            )
         self.logger.info(
-            f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
+            f"{self._log_id}: SHM opened (in={input_name}, out={output_name})"
         )
         return {}
 
@@ -120,7 +165,7 @@ class SPRunner(BaseDeviceRunner):
             drained += 1
         if drained:
             self.logger.warning(
-                f"SPRunner {self.device_id}: drained {drained} stale "
+                f"{self._log_id}: drained {drained} stale "
                 f"response(s) left by prior session"
             )
 
@@ -143,12 +188,21 @@ class SPRunner(BaseDeviceRunner):
         with self._pending_lock:
             stragglers = list(self._pending.items())
             self._pending.clear()
+            straggler_image_paths = list(self._pending_image_paths.items())
+            self._pending_image_paths.clear()
         for task_id, fut in stragglers:
             if not fut.done():
                 fut.cancel()
             self.logger.warning(
                 f"SPRunner {self.device_id}: cancelled pending future for "
                 f"task_id={task_id!r} during shutdown"
+            )
+        # Unlink any I2V side-files that the runner peer never got to consume.
+        for task_id, path in straggler_image_paths:
+            self._try_unlink(path)
+            self.logger.warning(
+                f"SPRunner {self.device_id}: unlinked orphan I2V side-file "
+                f"for task_id={task_id!r} during shutdown ({path!r})"
             )
 
         if self._input_shm:
@@ -160,16 +214,165 @@ class SPRunner(BaseDeviceRunner):
         removed = cleanup_orphaned_video_files()
         if removed:
             self.logger.info(
-                f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
+                f"{self._log_id}: cleaned up {removed} orphaned video file(s)"
             )
-        self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
+        removed_imgs = cleanup_orphaned_image_files()
+        if removed_imgs:
+            self.logger.info(
+                f"{self._log_id}: cleaned up {removed_imgs} orphaned image side-file(s)"
+            )
+        self.logger.info(f"{self._log_id}: SHM cleaned up")
         return True
 
     def load_weights(self):
         return True
 
+    async def _await_ping_ack_with_heartbeat(
+        self, timeout_s: float
+    ) -> VideoResponse | None:
+        """Block on the output ring up to ``timeout_s``, logging progress
+        every ``sp_warmup_heartbeat_seconds``. Returns the VideoResponse or
+        None on timeout / shutdown / read error."""
+        heartbeat_s = max(1.0, float(_WARMUP_HEARTBEAT_SECONDS))
+        deadline = time.monotonic() + timeout_s
+        start_t = time.monotonic()
+        self.logger.debug(
+            f"{self._log_id}: entering warmup-ack wait loop "
+            f"(budget={timeout_s:.0f}s, heartbeat={heartbeat_s:.0f}s)"
+        )
+
+        while True:
+            now = time.monotonic()
+            remaining = deadline - now
+            if remaining <= 0:
+                return None
+            wait_chunk = min(heartbeat_s, remaining)
+
+            try:
+                resp = await asyncio.to_thread(
+                    self._output_shm.read_response, wait_chunk
+                )
+            except Exception:
+                # Use .exception so the full traceback surfaces — without it,
+                # debugging a corrupt SHM slot in prod is needlessly painful.
+                self.logger.exception(
+                    f"{self._log_id} warmup: failed to read response from output ring"
+                )
+                return None
+
+            if resp is not None:
+                return resp
+
+            elapsed = time.monotonic() - start_t
+            self.logger.info(
+                f"{self._log_id}: still waiting for pipeline warmup ack "
+                f"({elapsed:.0f}s elapsed / {timeout_s:.0f}s budget)"
+            )
+
     async def warmup(self) -> bool:
-        self.logger.info("Skipping warmup since SHM runner has a warm start")
+        """Block until the video pipeline is ready to serve.
+
+        When ``SP_REQUIRE_WARMUP_PING=true``, sends a sentinel ``VideoRequest``
+        through the SHM input ring and waits for the pipeline's response on
+        the output ring. The pipeline only enters its SHM read loop after its
+        own ``runner.warmup()`` completes, so the round-trip latency equals
+        the pipeline's full cold-start time (weight load + compile across
+        every MPI rank). This is what gates ``/health`` from 503 → 200.
+
+        When the flag is off (default), we keep the legacy no-op behaviour so
+        the server-side change can be deployed before the pipeline-side ping
+        handler is in production.
+        """
+        if not _is_warmup_ping_enabled():
+            self.logger.warning(
+                f"{self._log_id}: SP_REQUIRE_WARMUP_PING is OFF. /health will flip to "
+                "READY as soon as SHM is attached, BEFORE the video pipeline "
+                "has loaded weights or compiled kernels. The first inference "
+                "request will block in SHM read_response until the pipeline "
+                "catches up (or times out at "
+                f"{self.settings.video_request_timeout_seconds:.0f}s). Set "
+                "SP_REQUIRE_WARMUP_PING=true once the matching pipeline-side "
+                "handler is deployed to get truthful readiness reporting."
+            )
+            return True
+
+        if self._input_shm is None or self._output_shm is None:
+            self.logger.error(
+                f"{self._log_id} warmup called before set_device(); cannot ping pipeline"
+            )
+            return False
+
+        timeout_s = self.settings.sp_warmup_timeout_seconds
+        self.logger.info(
+            f"{self._log_id}: sending warmup ping to pipeline "
+            f"(timeout={timeout_s:.0f}s)"
+        )
+
+        ping = VideoRequest(
+            task_id=SP_WARMUP_TASK_ID,
+            prompt="",
+            negative_prompt="",
+            num_inference_steps=0,
+            seed=0,
+            height=0,
+            width=0,
+            num_frames=0,
+            guidance_scale=0.0,
+            guidance_scale_2=0.0,
+            image_path="",
+        )
+
+        # If the input ring already holds unconsumed pings from prior server
+        # sessions, the pipeline will eventually consume one and reply — that
+        # same READY response works for us (all pings share the sentinel
+        # task_id). Skip the write entirely when the ring is full, so this
+        # worker never spin-blocks on write_request and the pod can be
+        # restarted cleanly by the orchestrator.
+        pending = self._input_shm.queue_depth()
+        ring_capacity = self._input_shm.INPUT_SLOTS
+        if pending >= ring_capacity:
+            self.logger.warning(
+                f"{self._log_id} warmup: input ring full "
+                f"({pending}/{ring_capacity}); waiting on an existing ping "
+                f"instead of writing a new one"
+            )
+        else:
+            # Short timeout: if write blocks, ring is degenerately full and
+            # we'd rather fail fast and let the orchestrator restart us than
+            # silently hang the worker for an hour.
+            wrote = await asyncio.to_thread(self._input_shm.write_request, ping, 5.0)
+            if not wrote:
+                self.logger.error(
+                    f"{self._log_id} warmup: write_request timed out "
+                    f"(input ring stuck full); aborting warmup"
+                )
+                return False
+
+        resp = await self._await_ping_ack_with_heartbeat(timeout_s)
+        if resp is None:
+            self.logger.error(
+                f"{self._log_id} warmup: pipeline did not respond within {timeout_s:.0f}s"
+            )
+            return False
+
+        if resp.task_id != SP_WARMUP_TASK_ID:
+            # A stale response from a prior session — drop it and treat warmup
+            # as failed. The scheduler will restart the worker, which will run
+            # _drain_stale_responses on set_device() and try again.
+            self.logger.error(
+                f"{self._log_id} warmup: unexpected response task_id={resp.task_id!r} "
+                f"(expected {SP_WARMUP_TASK_ID!r}); pipeline state is desynced"
+            )
+            self._try_unlink(resp.file_path)
+            return False
+
+        if resp.status == VideoStatus.ERROR:
+            self.logger.error(
+                f"{self._log_id} warmup: pipeline reported ERROR: {resp.error_message}"
+            )
+            return False
+
+        self.logger.info(f"{self._log_id}: pipeline ready (warmup ping ack'd)")
         return True
 
     # ── Async submit / await flow ─────────────────────────────────────────
@@ -223,28 +426,50 @@ class SPRunner(BaseDeviceRunner):
 
     def submit(self, request) -> str:
         """
-        Pack request, register a future, and write it to the input SHM ring.
+        Pack request, write the optional I2V side-file, register a future, and
+        write the request to the input SHM ring.
+
         Returns the ``task_id`` so callers can pair with :meth:`await_result`.
         Does **not** block on a response. If the input ring is full, the
         underlying ``write_request`` spin-waits on an EMPTY slot (natural
         back-pressure to the producer).
+
+        Cleanup contract for the I2V side-file:
+          * On any failure before the SHM write completes, the side-file is
+            unlinked here and ``_pending_image_paths`` is left untouched.
+          * Once the SHM write succeeds, the side-file path is parked under
+            ``_pending_image_paths[task_id]`` and ownership transfers to
+            :meth:`_run_async`'s ``finally`` (or to ``close_device`` on
+            shutdown).
         """
         task_id = request._task_id
+        image_path = self._write_image_side_file(request, task_id)
 
         fut: CFuture = CFuture()
         with self._pending_lock:
             if task_id in self._pending:
+                if image_path:
+                    self._try_unlink(image_path)
                 raise RuntimeError(
                     f"SPRunner: duplicate task_id {task_id!r} (already in flight)"
                 )
             self._pending[task_id] = fut
 
         try:
-            self._input_shm.write_request(self._build_video_req(request, task_id))
+            self._input_shm.write_request(
+                self._build_video_req(request, task_id, image_path)
+            )
         except Exception:
             with self._pending_lock:
                 self._pending.pop(task_id, None)
+            if image_path:
+                self._try_unlink(image_path)
             raise
+
+        # Park the path for the matching await_result/close_device cleanup.
+        if image_path:
+            with self._pending_lock:
+                self._pending_image_paths[task_id] = image_path
 
         self._ensure_drainer()
 
@@ -303,12 +528,22 @@ class SPRunner(BaseDeviceRunner):
     async def _run_async(self, requests):
         """Async entry point used by ``device_worker`` to fan out via gather.
 
-        One request per call — ``device_worker`` calls this concurrently for
-        each request in the batch so the input ring stays primed.
+        One request per call — ``device_worker._continuous_fan_out`` invokes
+        this once per in-flight slot via ``asyncio.create_task`` so the SHM
+        input ring stays primed across batch boundaries. The drainer thread
+        demultiplexes responses by ``task_id``, so the N concurrent calls do
+        not need to share completion order.
         """
         request = requests[0]
         task_id = self.submit(request)
-        mp4_path = await self.await_result(task_id)
+        try:
+            mp4_path = await self.await_result(task_id)
+        finally:
+            # Reliable I2V side-file cleanup on every exit (success, error,
+            # timeout, asyncio.CancelledError). The runner peer has finished
+            # with the file by the time the response (or error / timeout)
+            # surfaces, so unlinking here is always safe.
+            self._pop_and_unlink_image_path(task_id)
         # List so device_worker's responses[i] matches one path per request.
         return [mp4_path]
 
@@ -323,8 +558,19 @@ class SPRunner(BaseDeviceRunner):
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
+    def _pop_and_unlink_image_path(self, task_id: str) -> None:
+        """Remove and unlink the I2V side-file for ``task_id`` (if any).
+
+        Idempotent: callable from success / error / timeout / shutdown paths
+        without coordinating who "owns" the cleanup.
+        """
+        with self._pending_lock:
+            path = self._pending_image_paths.pop(task_id, "")
+        if path:
+            self._try_unlink(path)
+
     @staticmethod
-    def _build_video_req(request, task_id: str) -> VideoRequest:
+    def _build_video_req(request, task_id: str, image_path: str) -> VideoRequest:
         return VideoRequest(
             task_id=task_id,
             prompt=request.prompt,
@@ -340,7 +586,51 @@ class SPRunner(BaseDeviceRunner):
             guidance_scale_2=getattr(
                 request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
             ),
+            image_path=image_path,
         )
+
+    @staticmethod
+    def _write_image_side_file(request, task_id: str) -> str:
+        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs.
+
+        Atomic publish: write to a temp file in the same directory and then
+        ``os.rename`` to the final path. The runner peer never observes a
+        partially-written file at the final name — it sees either no file or
+        the fully-written JSON.
+        """
+        image_prompts = getattr(request, "image_prompts", None)
+        if not image_prompts:
+            return ""
+
+        final_path = image_prompts_path(task_id)
+        path_bytes = len(final_path.encode("utf-8"))
+        if path_bytes > MAX_IMAGE_PATH_LEN:
+            raise RuntimeError(
+                f"image_prompts side-file path exceeds SHM cap "
+                f"({path_bytes} > {MAX_IMAGE_PATH_LEN} bytes); "
+                f"reduce TT_VIDEO_FILE_DIR length"
+            )
+
+        payload = [
+            {"image": entry.image, "frame_pos": entry.frame_pos}
+            for entry in image_prompts
+        ]
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f"tt_img_{task_id}.",
+            suffix=".json.tmp",
+            dir=os.path.dirname(final_path),
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f)
+            os.rename(tmp_path, final_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return final_path
 
     @staticmethod
     def _try_unlink(path: str) -> None:

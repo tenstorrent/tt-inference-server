@@ -29,6 +29,7 @@ from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
+    get_media_server_docker_env_vars,
 )
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
@@ -189,6 +190,30 @@ class TestArgumentParsing:
                     or "error" in stderr_output.lower()
                 )
 
+    @pytest.mark.parametrize(
+        "invalid_value",
+        [
+            "not-a-real-tool",
+            "VLLM",  # case-sensitive: uppercase variant should be rejected
+            "guidellm ",  # trailing whitespace should be rejected
+            "",  # empty string
+        ],
+    )
+    def test_invalid_tools_choice(self, base_args, invalid_value):
+        """--tools must be restricted to the documented choice set."""
+        full_args = base_args + ["--tools", invalid_value]
+        with patch("sys.argv", ["run.py"] + full_args):
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_arguments()
+
+                assert exc_info.value.code == 2
+
+                stderr_calls = [str(call) for call in mock_stderr.write.call_args_list]
+                stderr_output = "".join(stderr_calls).lower()
+                assert "--tools" in stderr_output
+                assert "invalid choice" in stderr_output
+
 
 class TestModelSpecCliArgsCompatibility:
     def test_populate_model_spec_cli_args_uses_runtime_config_values(self):
@@ -318,6 +343,8 @@ class TestModelSpecCliArgsCompatibility:
             "/opt/tt-metal",
             "--vllm-dir",
             "/opt/vllm",
+            "--tools",
+            "guidellm",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -338,6 +365,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.concurrency_sweeps is True
         assert args.tt_metal_home == "/opt/tt-metal"
         assert args.vllm_dir == "/opt/vllm"
+        assert args.tools == "guidellm"
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -1003,6 +1031,35 @@ class TestOverrideArgsIntegration:
                     assert not env_setting.startswith("CACHE_ROOT=")
                     assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
                     assert not env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH=")
+
+
+class TestMediaServerDockerEnvVars:
+    def test_single_runner_sdxl_uses_cpp_server(self):
+        model_spec, _, _ = get_runtime_model_spec(
+            model="stable-diffusion-xl-base-1.0",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "image"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
+        assert env_vars["DEVICE_IDS"] == "(0)"
+
+    @pytest.mark.parametrize("device", ["p300x2", "galaxy"])
+    def test_multi_runner_sdxl_uses_cpp_server(self, device):
+        model_spec, _, _ = get_runtime_model_spec(
+            model="stable-diffusion-xl-base-1.0",
+            device=device,
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "image"
+        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
+        assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
 
 class TestSecretsHandling:

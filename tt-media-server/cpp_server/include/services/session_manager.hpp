@@ -15,9 +15,10 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "domain/session.hpp"
-#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
 
@@ -48,6 +49,7 @@ class SessionManager {
   struct AcquiredSession {
     std::string sessionId;
     uint32_t slotId;
+    uint32_t numberOfMatchedTokens = 0;
   };
 
   SessionManager();
@@ -72,10 +74,8 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
-  std::optional<domain::Session> getSession(const std::string& sessionId) const;
+  domain::Session* getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
-
-  void releaseInFlight(const std::string& sessionId);
 
   /**
    * Try to find a session whose registered prefix hash matches, atomically
@@ -109,13 +109,6 @@ class SessionManager {
   void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
  private:
-  // cancelFn is null when idle, set atomically with in-flight state by
-  // acquireInFlight.
-  struct ManagedSession {
-    domain::Session session;
-    std::function<void()> cancelFn;
-  };
-
   struct PendingAllocation {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
@@ -145,13 +138,23 @@ class SessionManager {
   void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
-  mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
-  // Secondary index: prefix hash -> sessionIds registered under that hash.
-  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
-  utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;
+  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
-  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
-  std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;
+  // An entry in the prefix index: a group of sessions sharing the same prefix
+  // path, together with the remaining block hashes that follow (used for deeper
+  // prefix matching / numberOfMatchedTokens calculation).
+  struct PrefixIndexEntry {
+    std::list<std::string> sessionIds;    // sessions registered here
+    std::list<uint64_t> remainingHashes;  // subsequent block hashes
+  };
+
+  // Secondary index: block hash -> entries (each with different remaining
+  // hashes pointing to different sessions/slots).
+  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
+  utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
+
+  std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
+  std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
 
   utils::ConcurrentMap<uint32_t, PendingAllocation> pendingAllocationsMap;
   utils::ConcurrentQueue<PendingAllocation> pendingAllocationsRetryQueue;

@@ -64,41 +64,36 @@ class TTSLoadTest(BaseTest):
         test_start_time = time.time()
         self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
-        devices = self.targets.get("num_of_devices", 1)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         tts_target_time = self.targets.get("tts_generation_time", 10)
         sample_count = self.targets.get("sample_count", 10)
-        dataset_split = self.targets.get("dataset_split", "test")
+        dataset_split = self.targets.get("dataset_split", "test.clean")
 
         logger.info(
-            f"TTS Load Test: devices={devices}, target={tts_target_time}s, samples={sample_count}"
+            f"TTS Load Test: num_concurrent_requests={num_concurrent_requests}, "
+            f"target={tts_target_time}s, samples={sample_count}"
         )
 
-        # Download samples
         self._download_samples(count=sample_count, split=dataset_split)
 
-        # Load metadata
         metadata = self._load_metadata()
         if not metadata:
             logger.error("No metadata found. Please download samples first.")
             return {"success": False, "error": "No metadata found"}
 
-        # Run load test
         load_test_results = await self._run_load_test(
-            metadata=metadata, batch_size=devices
+            metadata=metadata, batch_size=num_concurrent_requests
         )
 
-        # Check success criteria
         time_check = load_test_results.get("average_duration", 0) <= tts_target_time
         load_test_results["success"] = time_check
 
-        # Cleanup samples
         cleanup = self.targets.get("cleanup", True)
         if cleanup:
             self._cleanup_samples()
 
-        # Prepare final results
         load_test_results["target_time"] = tts_target_time
-        load_test_results["devices"] = devices
+        load_test_results["num_concurrent_requests"] = num_concurrent_requests
         load_test_results["sample_count"] = len(metadata)
         load_test_results = self._format_response_values(load_test_results)
 
@@ -137,8 +132,12 @@ class TTSLoadTest(BaseTest):
             "max_ttft_ms": round(max(ttft_values), 2) if ttft_values else 0,
         }
 
-    def _download_samples(self, count: int = 20, split: str = "test") -> None:
-        """Download samples from LibriTTS-R dataset and save metadata."""
+    def _download_samples(self, count: int = 20, split: str = "test.clean") -> None:
+        """Download samples from LibriTTS-R dataset and save metadata.
+
+        The default split is the libritts_r-native ``test.clean``; HF
+        does not provide a plain ``test`` split for any config.
+        """
         if count <= 0:
             raise ValueError("Sample count must be positive.")
 
@@ -149,7 +148,7 @@ class TTSLoadTest(BaseTest):
         try:
             import itertools
 
-            from datasets import load_dataset
+            from datasets import Audio, load_dataset
 
             # Try with streaming first
             try:
@@ -176,12 +175,20 @@ class TTSLoadTest(BaseTest):
                     logger.info(
                         f"Retrying with mapped split: '{split}' -> '{standard_split}'"
                     )
+                    # Fallback must also pass the dataset config name; without it
+                    # `blabble-io/libritts_r` raises "Config name is missing"
+                    # with the available configs ['dev','clean','other','all'].
                     dataset = load_dataset(
-                        "blabble-io/libritts_r", split=standard_split, streaming=True
+                        "blabble-io/libritts_r",
+                        "clean",
+                        split=standard_split,
+                        streaming=True,
                     )
                     logger.debug("Dataset loaded with fallback split")
                 else:
                     raise
+
+            dataset = dataset.cast_column("audio", Audio(decode=False))
 
             # Get samples from stream
             if hasattr(dataset, "__iter__") and not hasattr(dataset, "__len__"):

@@ -3,26 +3,34 @@
 
 #include "services/memory_services/memory_manager.hpp"
 
+#include <utility>
+
 #include "config/settings.hpp"
+#include "domain/slot_types.hpp"
+#include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
 
-MemoryManager::MemoryManager() {
-  // Open existing queues created by SessionManager in the main process
-  requestQueue = ipc::MemoryRequestQueue::openExisting(
-      tt::config::ttMemoryRequestQueueName());
-  resultQueue = ipc::MemoryResultQueue::openExisting(
-      tt::config::ttMemoryResultQueueName());
+MemoryManager::MemoryManager()
+    : MemoryManager(std::make_shared<ipc::boost::SharedMemoryRequestQueue>(
+                        tt::config::ttMemoryRequestQueueName()),
+                    std::make_shared<ipc::boost::SharedMemoryResultQueue>(
+                        tt::config::ttMemoryResultQueueName())) {}
 
-  if (!requestQueue || !resultQueue) {
+MemoryManager::MemoryManager(
+    std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue,
+    std::shared_ptr<ipc::IMemoryResultQueue> resultQueue)
+    : requestQueue(std::move(requestQueue)),
+      resultQueue(std::move(resultQueue)) {
+  if (!this->requestQueue || !this->resultQueue) {
     TT_LOG_ERROR(
         "[MemoryManager] Failed to open memory queues. SessionManager should "
         "have created them.");
     throw std::runtime_error("Memory queues not available");
   }
 
-  TT_LOG_INFO("[MemoryManager] Opened memory management IPC queues");
+  TT_LOG_INFO("[MemoryManager] Opened memory management queues");
 }
 
 MemoryManager::~MemoryManager() {
@@ -35,6 +43,22 @@ std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
     return task;
   }
   return std::nullopt;
+}
+
+void MemoryManager::replyAllocateSuccess(uint32_t taskId, uint32_t slotId) {
+  domain::ManageMemoryResult result{};
+  result.taskId = taskId;
+  result.status = domain::ManageMemoryStatus::SUCCESS;
+  result.slotId = slotId;
+  resultQueue->push(result);
+}
+
+void MemoryManager::replyAllocateFailure(uint32_t taskId) {
+  domain::ManageMemoryResult result{};
+  result.taskId = taskId;
+  result.status = domain::ManageMemoryStatus::FAILURE;
+  result.slotId = tt::domain::INVALID_SLOT_ID;
+  resultQueue->push(result);
 }
 
 }  // namespace tt::services

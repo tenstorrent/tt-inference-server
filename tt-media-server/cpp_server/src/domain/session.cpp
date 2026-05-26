@@ -16,14 +16,22 @@ Session::Session(uint32_t slotId, size_t initialHash)
       last_activity_time_(std::chrono::system_clock::now()) {}
 
 bool Session::markInFlight() {
-  if (state_ != SessionState::IDLE) return false;
+  if (state_ != SessionState::PREPARED && state_ != SessionState::IDLE)
+    return false;
   state_ = SessionState::IN_FLIGHT;
+  return true;
+}
+
+bool Session::markPrepared() {
+  if (state_ != SessionState::IDLE) return false;
+  state_ = SessionState::PREPARED;
   return true;
 }
 
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
+  cancelFn_ = nullptr;
   return true;
 }
 

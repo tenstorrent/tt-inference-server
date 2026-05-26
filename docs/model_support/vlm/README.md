@@ -13,6 +13,7 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | [Llama-3.2-11B-Vision](Llama-3.2-11B-Vision_t3k.md) | - | [🟡 Functional](Llama-3.2-11B-Vision_t3k.md) | [🟡 Functional](Llama-3.2-11B-Vision_n150.md) |
 | [Llama-3.2-90B-Vision](Llama-3.2-90B-Vision_t3k.md) | - | [🟡 Functional](Llama-3.2-90B-Vision_t3k.md) | - |
 | [Qwen2.5-VL-72B-Instruct](Qwen2.5-VL-72B-Instruct_t3k.md) | - | [🟡 Functional](Qwen2.5-VL-72B-Instruct_t3k.md) | - |
+| [Qwen3-VL-32B-Instruct](Qwen3-VL-32B-Instruct_t3k.md) | - | [🟡 Functional](Qwen3-VL-32B-Instruct_t3k.md) | - |
 
 ## Experimental Models
 
@@ -25,4 +26,3 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [Qwen2.5-VL-32B-Instruct](Qwen2.5-VL-32B-Instruct_t3k.md) | - | [🛠️ Experimental](Qwen2.5-VL-32B-Instruct_t3k.md) | - |
 | [Qwen2.5-VL-3B-Instruct](Qwen2.5-VL-3B-Instruct_n150.md) | - | - | [🛠️ Experimental](Qwen2.5-VL-3B-Instruct_n150.md) |
 | [Qwen2.5-VL-7B-Instruct](Qwen2.5-VL-7B-Instruct_n150.md) | - | - | [🛠️ Experimental](Qwen2.5-VL-7B-Instruct_n150.md) |
-| [Qwen3-VL-32B-Instruct](Qwen3-VL-32B-Instruct_t3k.md) | - | [🛠️ Experimental](Qwen3-VL-32B-Instruct_t3k.md) | - |

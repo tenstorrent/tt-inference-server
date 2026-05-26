@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 
+#include "config/defaults.hpp"
 #include "profiling/tracy.hpp"
 
 namespace tt::utils {
@@ -63,5 +64,12 @@ class ThreadPool {
   std::condition_variable_any cv_;
   bool stop_;
 };
+
+/** Process-wide pool for HTTP controllers to offload service dispatch off the
+ *  Drogon I/O loop. */
+inline ThreadPool& controllerCallbackPool() {
+  static ThreadPool pool(tt::config::defaults::CALLBACK_POOL_THREADS);
+  return pool;
+}
 
 }  // namespace tt::utils

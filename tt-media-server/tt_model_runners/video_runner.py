@@ -41,6 +41,7 @@ Environment variables:
 """
 
 import asyncio
+import json
 import os
 import queue
 import signal
@@ -49,17 +50,23 @@ import threading
 import traceback
 from dataclasses import dataclass
 from dataclasses import fields as dc_fields
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import (
+    ImagePromptEntry,
+    VideoI2VGenerateRequest,
+)
 from ipc.video_shm import (
+    SP_WARMUP_TASK_ID,
     VideoRequest,
     VideoResponse,
     VideoShm,
     VideoStatus,
+    cleanup_orphaned_video_files,
 )
 from utils.logger import TTLogger
 
@@ -142,11 +149,24 @@ def _attach_mpi_comm():
 
 def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
-    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
+    from tt_model_runners.dit_runners import (
+        TTMochi1Runner,
+        TTWan22I2VAniSoraRunner,
+        TTWan22I2VDistillRunner,
+        TTWan22I2VLoRARunner,
+        TTWan22I2VProdiaRunner,
+        TTWan22I2VRunner,
+        TTWan22Runner,
+    )
 
     runner_map = {
         ModelRunners.TT_MOCHI_1.value: TTMochi1Runner,
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
+        ModelRunners.TT_WAN_2_2_I2V.value: TTWan22I2VRunner,
+        ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: TTWan22I2VProdiaRunner,
+        ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: TTWan22I2VAniSoraRunner,
+        ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: TTWan22I2VDistillRunner,
+        ModelRunners.TT_WAN_2_2_I2V_LORA.value: TTWan22I2VLoRARunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:
@@ -158,16 +178,96 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
-    """Map SHM VideoRequest to VideoGenerateRequest for DiT runners.
+def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict]]:
+    """Load the I2V image_prompts list written by ``SPRunner._write_image_side_file``.
+
+    The cross-process contract is a JSON array of ``{"image", "frame_pos"}``
+    dicts (see ``ipc.video_shm.image_prompts_path`` and the SPRunner helper).
+    Returns the parsed list on success, or ``None`` on any failure (missing
+    file, parse error, unexpected top-level shape).
+    """
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        _log.warning(
+            f"Rank 0: failed to read I2V side-file {path!r} for task {task_id}: {e}"
+        )
+        return None
+    if not isinstance(data, list):
+        _log.warning(
+            f"Rank 0: I2V side-file {path!r} for task {task_id} is not a "
+            f"JSON list (got {type(data).__name__})"
+        )
+        return None
+    return data
+
+
+def _enqueue_rank0_error(
+    encode_queue: "queue.Queue[Optional[_EncodeJob]]",
+    task_id: str,
+    err: str,
+) -> tuple:
+    """Surface a rank-0-detected I2V error: log it, enqueue an ERROR job
+    for the encoder thread to write back, and return the
+    ``([], skip=True)`` tuple ``_rank0_load_image_prompts`` callers expect
+    so ranks 1..N no-op in lockstep on this iteration.
+    """
+    _log.error(f"Rank 0: {err}")
+    encode_queue.put(_EncodeJob(task_id=task_id, error=err))
+    return [], True
+
+
+def _rank0_load_image_prompts(
+    raw_req: Optional[VideoRequest],
+    encode_queue: "queue.Queue[Optional[_EncodeJob]]",
+) -> tuple:
+    """
+    Rank-0-only: resolve ``image_prompts`` for one inference iteration.
+    Returns ``(image_prompts, skip)`` where ``skip=True`` means rank 0 has
+    already enqueued an error response on the caller's behalf.
+
+    """
+    if raw_req is None or not raw_req.image_path:
+        return None, False
+    prompts = _read_image_prompts_side_file(raw_req.image_path, raw_req.task_id)
+    if prompts is None:
+        return _enqueue_rank0_error(
+            encode_queue,
+            raw_req.task_id,
+            f"I2V conditioning side-file unreadable: "
+            f"{raw_req.image_path!r} for task {raw_req.task_id}",
+        )
+    if not prompts:
+        return _enqueue_rank0_error(
+            encode_queue,
+            raw_req.task_id,
+            f"I2V conditioning side-file is an empty list: "
+            f"{raw_req.image_path!r} for task {raw_req.task_id}",
+        )
+    return prompts, False
+
+
+def video_request_to_generate_request(
+    req: VideoRequest,
+    image_prompts: Optional[List[dict]] = None,
+) -> VideoGenerateRequest:
+    """Map SHM VideoRequest (+ optional broadcast image_prompts) to a runner request.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
-    height, width) unless they exist on VideoGenerateRequest.
+    height, width, image_path) unless they exist on the target request schema.
     """
     shm_names = {f.name for f in dc_fields(VideoRequest)}
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
-    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
+    base_kwargs = {name: getattr(req, name) for name in common}
+
+    if image_prompts:
+        return VideoI2VGenerateRequest(
+            **base_kwargs,
+            image_prompts=[ImagePromptEntry(**entry) for entry in image_prompts],
+        )
+    return VideoGenerateRequest(**base_kwargs)
 
 
 def _write_response_to_shm(
@@ -197,13 +297,25 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
     )
 
 
-def _broadcast_request(comm, req: Optional[VideoRequest]) -> Optional[VideoRequest]:
-    """Collective: rank 0 provides the request, all ranks receive it.
+def _broadcast_request(
+    comm,
+    req: Optional[VideoRequest],
+    image_prompts: Optional[List[dict]] = None,
+    skip: bool = False,
+) -> tuple:
+    """Collective: rank 0 provides ``(req, image_prompts, skip)``; all ranks
+    receive it.
 
-    Returns None when rank 0 signals shutdown (read_request returned None).
-    All ranks must call this on every iteration so MPI stays in sync.
+    Returns ``(None, None, False)`` when rank 0 signals shutdown
+    (``read_request`` returned None). All ranks must call this on every
+    iteration so MPI stays in sync.
+
+    ``skip=True`` signals that rank 0 has already produced an error response
+    for this iteration (e.g. the I2V side-file was unreadable) and the
+    inference call must be skipped on every rank in lockstep — otherwise
+    ranks 1..N would block on collective ops with no rank-0 peer.
     """
-    return comm.bcast(req, root=0)
+    return comm.bcast((req, image_prompts, skip), root=0)
 
 
 def _encoder_loop(
@@ -227,6 +339,18 @@ def _encoder_loop(
         if job is None:
             _log.info("Encoder thread: shutdown sentinel received, exiting")
             return
+
+        # Warmup ping: respond SUCCESS with empty file_path. No ffmpeg, no
+        # frames — the round-trip itself is the readiness signal.
+        if job.task_id == SP_WARMUP_TASK_ID:
+            try:
+                _write_response_to_shm(output_shm, job.task_id, "")
+                _log.info("Encoder thread: replied to SP warmup ping")
+            except Exception as write_err:
+                _log.error(
+                    f"Encoder thread: failed to write SP warmup response: {write_err}"
+                )
+            continue
 
         if job.error is not None:
             try:
@@ -275,24 +399,58 @@ def _run_inference_loop(
 
     while not _shutdown:
         raw_req: Optional[VideoRequest] = None
+        rank0_image_prompts: Optional[List[dict]] = None
+        rank0_skip = False
         if rank == 0:
             raw_req = input_shm.read_request()
+            # Server-side readiness ping. Reuses the existing ``skip`` lockstep
+            # path so ranks 1..N don't block on a collective with no peer:
+            # rank 0 hands a SUCCESS response to the encoder thread directly
+            # (single-writer invariant preserved) and we broadcast skip=True
+            # so every rank no-ops this iteration. No inference, no MPI
+            # broadcast of the dummy request body — round-trip latency equals
+            # the pipeline's own cold-start time, which is exactly the signal
+            # SPRunner wants.
+            if raw_req is not None and raw_req.task_id == SP_WARMUP_TASK_ID:
+                _log.info("Rank 0: received SP warmup ping, replying READY")
+                encode_queue.put(
+                    _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
+                )
+                rank0_skip = True
+            else:
+                rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
+                    raw_req, encode_queue
+                )
 
-        req = _broadcast_request(comm, raw_req)
+        req, image_prompts, skip = _broadcast_request(
+            comm,
+            raw_req,
+            image_prompts=rank0_image_prompts,
+            skip=rank0_skip,
+        )
 
         if req is None:
             _log.info(f"Rank {rank}: Shutdown signal received, exiting loop")
             break
 
+        if skip:
+            if rank == 0:
+                _log.info(
+                    f"Rank 0: skipping inference for task {req.task_id} "
+                    f"(rank 0 already submitted response)"
+                )
+            continue
+
         if rank == 0:
             _log.info(
                 f"Rank 0: task_id={req.task_id}, "
                 f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
-                f"steps={req.num_inference_steps}, seed={req.seed}"
+                f"steps={req.num_inference_steps}, seed={req.seed}, "
+                f"image_prompts={len(image_prompts) if image_prompts else 0}"
             )
 
         try:
-            video_gen_req = video_request_to_generate_request(req)
+            video_gen_req = video_request_to_generate_request(req, image_prompts)
 
             _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
             frames = runner.run([video_gen_req])
@@ -326,6 +484,12 @@ def run_all_ranks() -> None:
     _log.info(f"Rank {rank}: model={model_runner}")
 
     runner = _create_dit_runner(model_runner, rank)
+    # Force out-of-runner MP4 export across all ranks: the encoder thread on
+    # rank 0 is the sole writer to ``output_shm`` and must receive raw frames,
+    # not a path-string. ``hasattr`` keeps this a no-op for runners that don't
+    # opt into the in-worker export pattern.
+    if hasattr(runner, "export_in_runner"):
+        runner.export_in_runner = False
 
     _log.info(f"Rank {rank}: Setting up device...")
     runner.set_device()
@@ -400,6 +564,13 @@ def run_all_ranks() -> None:
                 input_shm.close()
             if output_shm:
                 output_shm.close()
+            # Mirror mock_video_runner_base + sp_runner: a crash mid-encode
+            # can leave mp4 files on tmpfs. Sweeping here bounds orphan growth
+            # to one runner lifetime instead of relying on the next SP_RUNNER
+            # restart to clean up.
+            removed = cleanup_orphaned_video_files()
+            if removed:
+                _log.info(f"Rank 0: cleaned up {removed} orphaned video file(s)")
         runner.close_device()
 
     _log.info(f"Rank {rank}: Shutdown complete")

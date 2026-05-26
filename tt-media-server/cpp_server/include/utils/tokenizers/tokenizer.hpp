@@ -9,14 +9,17 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
+
+using namespace tt::domain::llm;
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -49,8 +52,9 @@ TokenizerConfig getTokenizerConfig(const std::string& configPath);
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace /
- * SentencePiece). Each instance owns its own underlying tokenizer, so separate
- * instances are safe to use from different threads without synchronization.
+ * SentencePiece). The underlying Rust tokenizer is not thread-safe and a single
+ * instance must not be shared across threads. Use `activeTokenizer()` to obtain
+ * a thread-local instance.
  *
  * Model-specific behavior (chat template format, special token decode
  * filtering, stop tokens) is provided by subclasses: DeepseekTokenizer and
@@ -95,13 +99,36 @@ class Tokenizer {
   virtual std::vector<int64_t> stopTokenIds() const = 0;
 
   /**
+   * Token id sequence that ends an assistant generation prompt in the
+   * model's chat template (e.g. Llama-3
+   * `<|start_header_id|>assistant<|end_header_id|>\n\n`, DeepSeek
+   * `<｜Assistant｜>`).
+   *
+   * Used by `computePrefixCachingInfoFromTokens` to locate turn boundaries
+   * in a pre-tokenized prompt without round-tripping through text. The
+   * count of occurrences in the prompt equals the number of assistant
+   * turns (including the trailing one we are about to generate); the
+   * second-to-last occurrence marks the cache-lookup boundary.
+   *
+   * Returns an empty vector when the tokenizer does not expose a stable
+   * assistant marker; callers must then treat every request as fresh.
+   */
+  virtual std::vector<int> assistantHeaderSequence() const { return {}; }
+
+  /**
    * Apply the model-specific chat template to a list of messages.
+   * @param enableReasoning When false, reasoning models (e.g. DeepSeek-R1)
+   *   inject a closed think block to suppress chain-of-thought output.
+   * @param skipApplyChatTemplate When true, skip adding <bos><user> and
+   *   <assistant> tags (returns raw message content only).
    */
   virtual std::string applyChatTemplate(
-      const std::vector<tt::domain::ChatMessage>& messages,
+      const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt = true,
       const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
-          std::nullopt) const = 0;
+          std::nullopt,
+      bool enableReasoning = true,
+      bool skipApplyChatTemplate = false) const = 0;
 
   /**
    * Stream decoder for incremental token-by-token decoding.
@@ -158,11 +185,35 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
 std::string tokenizerDirForModel(config::ModelType model);
 
 /**
- * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first
- * access. Thread-safe (C++11 function-local static initialization). Intended
- * for metadata access (model_name, stop_token_ids, apply_chat_template); for
- * encode/decode in multithreaded contexts, create separate instances.
+ * Active tokenizer for the calling thread, auto-initialized from
+ * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
+ * instance so encode/decode are race-free without locking. The reference is
+ * only valid on the calling thread; do not capture it for cross-thread use.
+ *
+ * Instantiation parses tokenizer.json synchronously and is expensive on
+ * large vocabs. For model-level constants used on the request hot path
+ * prefer `staticInfoFor()` below.
  */
 const Tokenizer& activeTokenizer();
+
+/**
+ * Per-model constants that don't require a live Tokenizer instance.
+ * Lets the request hot path read modelName / stopTokenIds /
+ * assistantHeaderSequence without parsing tokenizer.json.
+ */
+struct StaticTokenizerInfo {
+  std::string_view modelName;
+  std::vector<int64_t> stopTokenIds;
+  std::vector<int> assistantHeaderSequence;
+};
+
+/**
+ * Static constants for `model`. Throws std::invalid_argument if no entry
+ * is registered. O(1) and thread-safe; never touches the tokenizer.
+ */
+const StaticTokenizerInfo& staticInfoFor(config::ModelType model);
+
+/// Shorthand for `staticInfoFor(config::modelType())`.
+const StaticTokenizerInfo& staticInfo();
 
 }  // namespace tt::utils::tokenizers

@@ -17,9 +17,9 @@
                     "description": "SpeechT5 TTS functionality test"
                 },
                 {
-                    "template": "TestTTSServerHealth",
+                    "template": "TTSLoadTest",
                     "enabled": true,
-                    "description": "TTS server health test",
+                    "description": "TTS server load / health test",
                     "targets": {
                         "tts_generation_time": 10,
                         "sample_count": 10,
