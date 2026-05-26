@@ -4,7 +4,7 @@
 
 """Markdown renderer for ``aiperf_prefix_cache`` Blocks.
 
-Mirrors the v1 ``benchmarking/prefix_cache_report.py`` report layout:
+Renders the prefix-cache benchmark report layout:
 three sub-tables (Synthetic per-run, Trace-driven per-run, Uplift vs
 zero-prefix baseline) plus the metric-definitions footer. The renderer
 is fed the collapsed records from every ``aiperf_prefix_cache`` Block

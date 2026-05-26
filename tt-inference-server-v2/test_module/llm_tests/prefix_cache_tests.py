@@ -13,7 +13,7 @@ Bridges ``test_module`` to ``llm_module``: builds a scenario plan from
 ``workflow_module.accept_blocks`` so the unified report generator picks
 them up alongside any other workflow output.
 
-Mirrors v1's ``benchmarking/run_aiperf_benchmarks.py::run_prefix_cache_suite``
+Orchestrates the full prefix-cache scenario sweep for v2 benchmarks.
 loop, minus the v1-specific PromptClient bootstrap -- v2's
 :class:`ServerController` protocol replaces it.
 """

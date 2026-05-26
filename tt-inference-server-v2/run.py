@@ -343,8 +343,7 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
 
     Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When
     no secret is supplied, returns the empty string (auth disabled).
-    Matches the v1 prefix-cache behaviour so the same servers work in
-    both entry points.
+    Matches the inference server's expected debug token for JWT auth.
     """
     secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
     if not secret:

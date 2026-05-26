@@ -23,7 +23,7 @@ benchmark-input integers (input length, output length, block hashes,
 inter-arrival deltas). The ``# nosec B311`` markers below acknowledge this.
 
 Usage:
-    python benchmarking/benchmark_targets/sample_traces/generate_ci_mooncake.py
+    python tt-inference-server-v2/llm_module/prefix_cache/sample_traces/generate_ci_mooncake.py
 """
 
 import json

@@ -3683,25 +3683,6 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
-    # generate AIPerf prefix-cache report (only present when --prefix-cache ran)
-    from benchmarking.prefix_cache_report import generate_prefix_cache_report
-
-    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
-    prefix_cache_output_dir = Path(simple_args.output_path) / "benchmarks_prefix_cache"
-    (
-        prefix_cache_release_str,
-        prefix_cache_release_data,
-        prefix_cache_disp_md_path,
-        prefix_cache_data_file_path,
-    ) = generate_prefix_cache_report(
-        model_id=model_spec.model_id,
-        model_name=model_spec.model_name,
-        device=str(simple_args.device),
-        benchmarks_output_dir=benchmarks_output_dir,
-        output_dir=prefix_cache_output_dir,
-        report_id=report_id,
-    )
-
     # generate GenAI-Perf benchmarks report (separate detailed report)
     (
         genai_perf_release_str,
@@ -3776,8 +3757,6 @@ def main():
         all_benchmarks_str += benchmarks_release_str + "\n\n"
     if aiperf_release_str:
         all_benchmarks_str += aiperf_release_str + "\n\n"
-    if prefix_cache_release_str:
-        all_benchmarks_str += prefix_cache_release_str + "\n\n"
     if genai_perf_release_str:
         all_benchmarks_str += genai_perf_release_str + "\n\n"
     if guidellm_release_str:
@@ -3993,18 +3972,6 @@ def main():
             except Exception as e:
                 logger.warning(f"Could not read AIPerf CSV data: {e}")
 
-        # Read prefix-cache benchmark data if available
-        prefix_cache_detailed_data = None
-        if prefix_cache_data_file_path:
-            try:
-                with open(
-                    prefix_cache_data_file_path, "r", encoding="utf-8"
-                ) as csv_file:
-                    csv_reader = csv.DictReader(csv_file)
-                    prefix_cache_detailed_data = list(csv_reader)
-            except Exception as e:
-                logger.warning(f"Could not read prefix-cache CSV data: {e}")
-
         # Read GuideLLM benchmark data if available
         guidellm_detailed_data = None
         if guidellm_data_file_path:
@@ -4051,12 +4018,6 @@ def main():
             ],
             "aiperf_benchmarks_detailed": aiperf_detailed_data
             if aiperf_detailed_data
-            else [],
-            "prefix_cache_benchmarks": prefix_cache_release_data
-            if prefix_cache_release_data
-            else [],
-            "prefix_cache_benchmarks_detailed": prefix_cache_detailed_data
-            if prefix_cache_detailed_data
             else [],
             "guidellm_benchmarks": guidellm_release_data
             if guidellm_release_data
