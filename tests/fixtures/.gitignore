@@ -1,0 +1,2 @@
+# Allow committed test fixtures to override the root *.json ignore rule.
+!*.json
