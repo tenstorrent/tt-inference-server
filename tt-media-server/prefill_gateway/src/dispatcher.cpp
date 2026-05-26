@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -178,14 +179,13 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
   std::vector<uint32_t> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    for (auto it = in_flight_.begin(); it != in_flight_.end();) {
-      if (it->second.prefill_id == serverId) {
-        orphaned.push_back(it->first);
-        it = in_flight_.erase(it);
-      } else {
-        ++it;
+    std::erase_if(in_flight_, [&orphaned, &serverId](const auto& task) {
+      if (task.second.prefill_id != serverId) {
+        return false;
       }
-    }
+      orphaned.push_back(task.first);
+      return true;
+    });
   }
 
   if (!orphaned.empty()) {
@@ -199,20 +199,23 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
 }
 
 void Dispatcher::onRequestTimeouts(Clock::time_point now) {
+  std::vector<std::string> recoveredPrefills;
   {
     std::lock_guard<std::mutex> lock(timeout_state_mutex_);
-    for (auto it = prefill_blocked_until_.begin();
-         it != prefill_blocked_until_.end();) {
-      if (now >= it->second) {
-        TT_LOG_INFO("[Dispatcher] prefill='{}' accepting tasks after timeout "
-                    "cooldown",
-                    it->first);
-        registry_.setAcceptingTasks(it->first, true);
-        it = prefill_blocked_until_.erase(it);
-      } else {
-        ++it;
-      }
-    }
+    std::erase_if(prefill_blocked_until_,
+                  [&recoveredPrefills, now](const auto& blockedPrefill) {
+                    if (now < blockedPrefill.second) {
+                      return false;
+                    }
+                    recoveredPrefills.push_back(blockedPrefill.first);
+                    return true;
+                  });
+  }
+  for (const auto& prefillId : recoveredPrefills) {
+    TT_LOG_INFO("[Dispatcher] prefill='{}' accepting tasks after timeout "
+                "cooldown",
+                prefillId);
+    registry_.setAcceptingTasks(prefillId, true);
   }
 
   if (options_.request_timeout.count() <= 0) {
@@ -222,14 +225,13 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
   std::vector<std::pair<uint32_t, InFlightEntry>> timedOut;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    for (auto it = in_flight_.begin(); it != in_flight_.end();) {
-      if (now - it->second.started_at >= options_.request_timeout) {
-        timedOut.emplace_back(it->first, std::move(it->second));
-        it = in_flight_.erase(it);
-      } else {
-        ++it;
+    std::erase_if(in_flight_, [&timedOut, now, this](auto& task) {
+      if (now - task.second.started_at < options_.request_timeout) {
+        return false;
       }
-    }
+      timedOut.emplace_back(task.first, std::move(task.second));
+      return true;
+    });
   }
 
   for (const auto& [taskId, entry] : timedOut) {
