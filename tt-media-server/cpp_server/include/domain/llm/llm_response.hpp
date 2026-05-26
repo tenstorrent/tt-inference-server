@@ -128,4 +128,18 @@ inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error) {
   return chunk;
 }
 
+/**
+ * Build a terminal abort chunk with `finish_reason="abort"`. Used for both
+ * client-initiated aborts (LLMService::abortRequest) and runner-initiated
+ * preemptions (e.g. an EVICT that supersedes an in-flight SUBMIT), where the
+ * stream must be closed cleanly but the cause is termination, not error.
+ */
+inline LLMStreamChunk makeAbortChunk(uint32_t taskId) {
+  LLMStreamChunk chunk(taskId);
+  LLMChoice choice;
+  choice.finish_reason = "abort";
+  chunk.choices.push_back(std::move(choice));
+  return chunk;
+}
+
 }  // namespace tt::domain::llm

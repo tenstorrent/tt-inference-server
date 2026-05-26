@@ -35,8 +35,8 @@ bool txTraceEnabled() {
     const char* v = std::getenv("DYN_TX_TRACE");
     if (v == nullptr) return false;
     std::string s(v);
-    if (s.empty() || s == "0" || s == "false" || s == "FALSE" ||
-        s == "False" || s == "off" || s == "OFF") {
+    if (s.empty() || s == "0" || s == "false" || s == "FALSE" || s == "False" ||
+        s == "off" || s == "OFF") {
       return false;
     }
     return true;
@@ -502,8 +502,7 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
           "[DynamoTx] id={} stage=chunk seq={} tokens={} bytes={} "
           "write_us={} since_prev_us={} since_first_us={}",
           requestId, chunkSeq, chunk.token_ids.size(), bytesOut,
-          microsBetween(tBefore, tAfter),
-          microsBetween(tPrevChunk, tBefore),
+          microsBetween(tBefore, tAfter), microsBetween(tPrevChunk, tBefore),
           microsBetween(tFirstChunk, tBefore));
     }
 
