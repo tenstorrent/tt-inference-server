@@ -291,48 +291,24 @@ if [[ -z "$SKIP_TOKENIZER_SHARE" ]]; then
     MODEL_SUBDIR="$TOKENIZERS_HOST_DIR_ABS/$HF_MODEL_ID"
     mkdir -p "$MODEL_SUBDIR"
 
-    # Backfill config.json. cpp_server/build.sh's pre-fetch grabs only
-    # tokenizer{.json,_config.json}, so the image ships without the HF
-    # model config. Frontend's model_card loader needs it.
-    if [[ ! -f "$MODEL_SUBDIR/config.json" ]]; then
-        log "fetching $HF_MODEL_ID/config.json from HuggingFace"
-        if ! curl -fsSL --max-time 30 \
-            "https://huggingface.co/${HF_MODEL_ID}/raw/main/config.json" \
-            -o "$MODEL_SUBDIR/config.json" 2>/dev/null; then
-            log "  HF fetch failed; writing a minimal placeholder config.json"
-            if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
-                cat > "$MODEL_SUBDIR/config.json" <<'CONF'
-{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}
-CONF
-            else
-                cat > "$MODEL_SUBDIR/config.json" <<'CONF'
-{"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}
-CONF
-            fi
-        fi
-    fi
-
+    # Validate required tokenizer files exist (expected to be in worker image)
     for f in config.json tokenizer_config.json; do
         if [[ ! -f "$MODEL_SUBDIR/$f" ]]; then
             log "missing $f under $MODEL_SUBDIR"
-            log "  the worker's MDC will advertise a path the frontend can't read"
+            log "  ensure tokenizer files are included in the worker image"
             exit 1
         fi
     done
     if [[ ! -f "$MODEL_SUBDIR/tokenizer.json" && ! -f "$MODEL_SUBDIR/tiktoken.model" ]]; then
         log "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
-        log "  the worker's MDC will advertise a path the frontend can't read"
+        log "  ensure tokenizer files are included in the worker image"
         exit 1
     fi
     if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
         if [[ ! -f "$MODEL_SUBDIR/chat_template.jinja" ]]; then
-            log "fetching $HF_MODEL_ID/chat_template.jinja from HuggingFace"
-            curl -fsSL --max-time 30 \
-                "https://huggingface.co/${HF_MODEL_ID}/raw/main/chat_template.jinja" \
-                -o "$MODEL_SUBDIR/chat_template.jinja" || {
-                log "missing chat_template.jinja under $MODEL_SUBDIR"
-                exit 1
-            }
+            log "missing chat_template.jinja under $MODEL_SUBDIR"
+            log "  ensure tokenizer files are included in the worker image"
+            exit 1
         fi
     fi
 
