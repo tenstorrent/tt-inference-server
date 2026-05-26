@@ -28,7 +28,7 @@ void DisaggregationService::setupSocketHandlers() {
                                            double /*cpu*/, double /*memory*/,
                                            int tasks) {
     TT_LOG_INFO(
-        "[DisaggregationService] Health check from {} (active_tasks={})",
+        "[DisaggregationService]  Health check from {} (active_tasks={})",
         serverId, tasks);
   });
 
