@@ -32,10 +32,12 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::vector<int64_t> inputTokenIds, size_t numPromptTokens,
                    std::optional<uint32_t> slotId, bool continuation,
                    bool disaggregated,
-                   std::unique_ptr<SamplingParams> inputSamplingParams)
+                   std::unique_ptr<SamplingParams> inputSamplingParams,
+                   std::optional<uint32_t> kvCacheOffset)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
+      kvCacheOffset(std::move(kvCacheOffset)),
       numPromptTokens(numPromptTokens),
       samplingParams(std::move(inputSamplingParams)),
       blockSize(blockSize),
