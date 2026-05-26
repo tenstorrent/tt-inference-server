@@ -350,6 +350,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -687,6 +688,7 @@ add_executable(main_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -724,6 +726,7 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -756,6 +759,7 @@ add_executable(tool_calling_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp

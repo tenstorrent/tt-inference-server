@@ -20,6 +20,83 @@
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
+namespace {
+
+/**
+ * Extract partial block tokens from the end of a prompt.
+ * These are tokens that don't fit into a complete block and need to be
+ * passed to the streaming accumulator.
+ */
+std::vector<int64_t> extractPartialBlockTokens(
+    const std::vector<int>& promptTokens, size_t completedBlockCount) {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  // Calculate where complete blocks end
+  size_t completeTokens = 0;
+  if (completedBlockCount > 0) {
+    completeTokens = firstBlockSize + (completedBlockCount - 1) * blockSize;
+  }
+
+  if (completeTokens >= promptTokens.size()) {
+    return {};  // No partial block
+  }
+
+  // Extract partial tokens (convert int to int64_t)
+  std::vector<int64_t> partial;
+  partial.reserve(promptTokens.size() - completeTokens);
+  for (size_t i = completeTokens; i < promptTokens.size(); ++i) {
+    partial.push_back(static_cast<int64_t>(promptTokens[i]));
+  }
+  return partial;
+}
+
+/**
+ * For a cache HIT, compute the hashes and partial tokens that reflect
+ * what's ACTUALLY in the KV cache after the match.
+ *
+ * The KV cache contains `matchedTokens` from the prefix. The delta prompt
+ * (tokens from matchedTokens to end) will be sent to the worker and added
+ * to the cache. The accumulator needs to track this correctly.
+ *
+ * @param promptTokens Full prompt token vector
+ * @param allHashes All block hashes computed from the prompt
+ * @param matchedTokens Number of tokens matched from the KV cache
+ * @return Pair of (matched block hashes, delta tokens to accumulate)
+ */
+std::pair<std::vector<uint64_t>, std::vector<int64_t>>
+computeAccumulatorStateForHit(const std::vector<int>& promptTokens,
+                              const std::vector<uint64_t>& allHashes,
+                              size_t matchedTokens) {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  // Calculate how many complete blocks are covered by matchedTokens
+  size_t matchedBlocks = 0;
+  if (matchedTokens >= firstBlockSize) {
+    matchedBlocks = 1 + (matchedTokens - firstBlockSize) / blockSize;
+  }
+
+  // Take only the matched block hashes
+  std::vector<uint64_t> matchedHashes;
+  if (matchedBlocks > 0 && !allHashes.empty()) {
+    size_t hashCount = std::min(matchedBlocks, allHashes.size());
+    matchedHashes.assign(allHashes.begin(), allHashes.begin() + hashCount);
+  }
+
+  // The delta tokens start from matchedTokens and go to end of prompt
+  // These will be processed by the worker and added to KV cache
+  std::vector<int64_t> deltaTokens;
+  deltaTokens.reserve(promptTokens.size() - matchedTokens);
+  for (size_t i = matchedTokens; i < promptTokens.size(); ++i) {
+    deltaTokens.push_back(static_cast<int64_t>(promptTokens[i]));
+  }
+
+  return {std::move(matchedHashes), std::move(deltaTokens)};
+}
+
+}  // namespace
+
 namespace tt::services {
 
 LLMPipeline::LLMPipeline(
@@ -159,6 +236,23 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
+
+        // Initialize streaming prefix accumulator with matched state + delta
+        // The accumulator must reflect what's actually in the KV cache:
+        // - matched block hashes (not all prompt hashes)
+        // - delta tokens (from matchedTokens to end) as the starting buffer
+        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+          auto [matchedHashes, deltaTokens] =
+              computeAccumulatorStateForHit(*promptTokens, routingInfo.hashes,
+                                            acquired->numberOfMatchedTokens);
+          req->session->initPrefixAccumulator(
+              std::move(matchedHashes), std::move(deltaTokens),
+              [mgr = sessionManager_](const std::string& sessionId,
+                                      const std::vector<uint64_t>& hashes) {
+                mgr->registerPrefixHash(sessionId, hashes);
+              });
+        }
+
         applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.hashes);
@@ -213,6 +307,18 @@ void LLMPipeline::resolveSession(
         req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.hashes);
+
+        // Initialize streaming prefix accumulator
+        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+          auto partial = extractPartialBlockTokens(*promptTokens,
+                                                   routingInfo.hashes.size());
+          req->session->initPrefixAccumulator(
+              routingInfo.hashes, std::move(partial),
+              [mgr](const std::string& sessionId,
+                    const std::vector<uint64_t>& hashes) {
+                mgr->registerPrefixHash(sessionId, hashes);
+              });
+        }
 
         TT_LOG_INFO(
             "[SessionTimer] taskId={} createSession_us={} "
