@@ -234,6 +234,24 @@ int main(int argc, char** argv) {
     return sm->sendObject("prefill_request", msg);
   };
 
+  senders.sendCancelToPrefill =
+      [&registry, &zmqPrefillRouter, useZmqPrefillRouter](
+          const std::string& serverId,
+          const tt::sockets::CancelPrefillMessage& msg) -> bool {
+    if (useZmqPrefillRouter) {
+      return zmqPrefillRouter.sendObject(
+          serverId, tt::sockets::tags::CANCEL_PREFILL, msg);
+    }
+
+    auto* sm = registry.getSocketManager(serverId);
+    if (!sm) {
+      TT_LOG_WARN("[Gateway] sendCancelToPrefill: no socket for '{}'",
+                  serverId);
+      return false;
+    }
+    return sm->sendObject(tt::sockets::tags::CANCEL_PREFILL, msg);
+  };
+
   senders.sendAssignmentToDecode =
       [&decodeSm](const tt::sockets::PrefillAssignmentMessage& msg) -> bool {
     return decodeSm.sendObject(tt::sockets::tags::PREFILL_ASSIGNMENT, msg);
@@ -263,6 +281,12 @@ int main(int argc, char** argv) {
       "prefill_request",
       [&dispatcherPtr](const tt::sockets::PrefillRequestMessage& msg) {
         dispatcherPtr->onPrefillRequest(msg);
+      });
+
+  decodeSm.registerHandler<tt::sockets::CancelPrefillMessage>(
+      tt::sockets::tags::CANCEL_PREFILL,
+      [&dispatcherPtr](const tt::sockets::CancelPrefillMessage& msg) {
+        dispatcherPtr->onPrefillCancel(msg);
       });
 
   decodeSm.setConnectionLostCallback([]() {

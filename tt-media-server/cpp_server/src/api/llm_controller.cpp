@@ -251,7 +251,11 @@ ResponseWriterParams LLMController::makeWriterParams(
           : 0;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
-  params.service = service;
+  params.onAbortRequest = [pipeline = pipeline](uint32_t taskId) {
+    pipeline->abortRequest(taskId);
+  };
+  params.enableDisconnectHeartbeat =
+      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY;
   if (request.session) {
     params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
   }
@@ -295,8 +299,8 @@ void LLMController::handleStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
-    svc->abortRequest(taskId);
+  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
+    pipeline->abortRequest(taskId);
   };
 
   pipeline->resolveSession(
@@ -357,8 +361,8 @@ void LLMController::handleNonStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
-    svc->abortRequest(taskId);
+  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
+    pipeline->abortRequest(taskId);
   };
 
   pipeline->resolveSession(

@@ -249,7 +249,8 @@ class WorkflowExecution(ABC):
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
 
     def generate_report(self, schema: ReportSchema) -> GenerateResult:
-        result = ReportGenerator().generate(schema, self.ctx.output_path)
+        report_dir = Path(self.ctx.output_path).parent
+        result = ReportGenerator().generate(schema, report_dir)
         self.logger.info("Wrote markdown: %s", result.markdown_path)
         self.logger.info("Wrote json:     %s", result.json_path)
         return result

@@ -137,6 +137,7 @@ def runMockBridge(
     the I2V mock passes a validator that opens + parses the side-file.
     """
     from ipc.video_shm import (
+        SP_WARMUP_TASK_ID,
         VideoResponse,
         VideoShm,
         VideoStatus,
@@ -273,11 +274,41 @@ def runMockBridge(
     )
     encoderThread.start()
 
+    warmupAckCount = [0]  # mutable counter captured by the closure
+
+    def replyWarmupPing(taskId: str) -> None:
+        """SP readiness ping: respond SUCCESS immediately. No fake inference,
+        no encoder hand-off, no mp4 leak. Mirrors the rank-0 short-circuit
+        in ``video_runner.py`` so end-to-end testing of the
+        ``SP_REQUIRE_WARMUP_PING`` contract works against the mock too.
+
+        Includes a sequence counter in the log line so that consecutive
+        acks (multi-worker boot, server restart against same mock) are
+        distinguishable in a single log tail. Without this all the lines
+        read identically and you can't tell server-1's ack from server-2's."""
+        try:
+            with writeLock:
+                outputShm.write_response(
+                    VideoResponse(
+                        task_id=taskId,
+                        status=VideoStatus.SUCCESS,
+                        file_path="",
+                        error_message="",
+                    )
+                )
+            warmupAckCount[0] += 1
+            logger.info(f"{cfg.label} replied to SP warmup ping (#{warmupAckCount[0]})")
+        except Exception as err:
+            logger.error(f"{cfg.label} failed writing warmup-ping response: {err}")
+
     try:
         while not _shutdown:
             req = inputShm.read_request()
             if req is None:
                 break
+            if req.task_id == SP_WARMUP_TASK_ID:
+                replyWarmupPing(req.task_id)
+                continue
             pool.submit(handleRequest, req)
     finally:
         logger.info(f"{cfg.label} shutting down — draining inference workers...")

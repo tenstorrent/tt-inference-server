@@ -9,7 +9,7 @@
 #include "config/runner_config.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "domain/llm/sequence.hpp"
-#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "runtime/runners/schedulers/max_occupancy_scheduler.hpp"
 #include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
 #include "runtime/runners/schedulers/scheduler.hpp"
@@ -19,7 +19,7 @@ namespace tt::runners::schedulers {
 using namespace tt::domain::llm;
 
 using Config = tt::config::LLMConfig;
-using tt::runners::llm_engine::InMemoryTaskQueue;
+using tt::ipc::in_memory::TaskQueue;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
 using Sequence = tt::domain::llm::Sequence;
 using SamplingParams = tt::domain::llm::SamplingParams;
@@ -27,7 +27,7 @@ using SamplingParams = tt::domain::llm::SamplingParams;
 namespace {
 
 std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
-  return std::make_shared<InMemoryTaskQueue>();
+  return std::make_shared<TaskQueue>();
 }
 
 Config makeConfig(int numBlocks = 32, int blockSize = 8,

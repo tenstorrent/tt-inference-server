@@ -143,8 +143,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=_V2_ROOT / "output",
-        help="Where to write the rendered report (markdown + json).",
+        default=None,
+        help=(
+            "Where to write the rendered report (markdown + json). "
+            "Defaults to <repo>/workflow_logs/reports_output/<workflow>/."
+        ),
     )
     parser.add_argument(
         "--docker-server",
@@ -258,6 +261,10 @@ def parse_args() -> argparse.Namespace:
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "
             f"(got --workflow {args.workflow})."
+    args = parser.parse_args()
+    if args.output_dir is None:
+        args.output_dir = (
+            _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
         )
     return args
 

@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "config/settings.hpp"
 #include "dynamo/etcd_client.hpp"
 #include "utils/logger.hpp"
 
@@ -18,7 +19,6 @@ namespace tt::dynamo {
 namespace {
 
 constexpr int K_CONTEXT_LENGTH = 131072;
-constexpr int K_KV_CACHE_BLOCK_SIZE = 16;
 
 /// Frontend reads the checksum but doesn't validate it for routing — it's
 /// used only for cache invalidation.
@@ -116,7 +116,8 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["prompt_formatter"] = std::move(promptFormatter);
 
   card["context_length"] = K_CONTEXT_LENGTH;
-  card["kv_cache_block_size"] = K_KV_CACHE_BLOCK_SIZE;
+  card["kv_cache_block_size"] =
+      static_cast<int>(tt::config::kvCacheBlockSize());
   card["migration_limit"] = 0;
   card["model_type"] = "Chat";
   card["model_input"] = "Tokens";
