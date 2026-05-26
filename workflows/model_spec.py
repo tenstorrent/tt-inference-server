@@ -1005,16 +1005,8 @@ class ModelSpecTemplate:
         return specs
 
 
-# Model specification templates - these get expanded into individual specs
-# order: spec_templates = (
-#     llm_templates
-#     + vlm_templates
-#     + video_templates
-#     + image_templates
-#     + audio_tts_templates
-#     + embedding_templates
-#     + cnn_templates
-# )
+# Catalog data lives in workflows/model_specs/catalog.yaml.
+# spec_templates below loads from that file at import time.
 
 
 def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirements"]:
@@ -1083,44 +1075,9 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 
 
-# =============================================================================
-# llm_templates
-# =============================================================================
-# Single source of truth for the catalog. Categories below remain in
-# Python lists until Task 10 collapses them; spec_templates loads from
-# catalog.yaml for everything that has already migrated.
-_catalog_yaml_templates = load_templates_from_yaml(_MODEL_SPECS_DIR / "catalog.yaml")
-
-# =============================================================================
-# vlm_templates (migrated to catalog.yaml)
-# =============================================================================
-
-
-# =============================================================================
-# video_templates (migrated to catalog.yaml)
-# =============================================================================
-
-# =============================================================================
-# image_templates (migrated to catalog.yaml)
-# =============================================================================
-
-# =============================================================================
-# audio_tts_templates (migrated to catalog.yaml)
-# =============================================================================
-
-# =============================================================================
-# embedding_templates (migrated to catalog.yaml)
-# =============================================================================
-
-# =============================================================================
-# cnn_templates (migrated to catalog.yaml)
-# =============================================================================
-
-
-# make spec_templates from the templates in the correct order
-spec_templates = [
-    *_catalog_yaml_templates,
-]
+spec_templates: List["ModelSpecTemplate"] = load_templates_from_yaml(
+    _MODEL_SPECS_DIR / "catalog.yaml"
+)
 
 
 def get_model_spec_map(
