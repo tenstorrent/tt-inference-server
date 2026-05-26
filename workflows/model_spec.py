@@ -1017,6 +1017,72 @@ class ModelSpecTemplate:
 # )
 
 
+def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirements"]:
+    if data is None:
+        return None
+    kwargs: Dict = {}
+    for key in ("firmware", "kmd"):
+        if data.get(key) is not None:
+            kwargs[key] = VersionRequirement(
+                specifier=data[key]["specifier"],
+                mode=VersionMode[data[key]["mode"]],
+            )
+    return SystemRequirements(**kwargs)
+
+
+def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
+    kwargs = dict(data)
+    kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
+    if "system_requirements" in kwargs:
+        kwargs["system_requirements"] = _build_system_requirements(
+            kwargs["system_requirements"]
+        )
+    if "known_issues" in kwargs:
+        kwargs["known_issues"] = [
+            KnownIssue(
+                workflow_type=WorkflowType.from_string(ki["workflow_type"]),
+                reason=ki["reason"],
+                task_name=ki.get("task_name"),
+            )
+            for ki in kwargs["known_issues"]
+        ]
+    return DeviceModelSpec(**kwargs)
+
+
+def _build_template(data: Dict) -> "ModelSpecTemplate":
+    kwargs = dict(data)
+    impl_id = kwargs["impl"]
+    if impl_id not in _IMPL_REGISTRY:
+        raise ValueError(
+            f"Unknown impl '{impl_id}'. Known impls: {sorted(_IMPL_REGISTRY)}"
+        )
+    kwargs["impl"] = _IMPL_REGISTRY[impl_id]
+    kwargs["inference_engine"] = InferenceEngine[kwargs["inference_engine"]].value
+    kwargs["device_model_specs"] = [
+        _build_device_model_spec(d) for d in kwargs["device_model_specs"]
+    ]
+    if "system_requirements" in kwargs:
+        kwargs["system_requirements"] = _build_system_requirements(
+            kwargs["system_requirements"]
+        )
+    if "model_type" in kwargs and kwargs["model_type"] is not None:
+        kwargs["model_type"] = ModelType[kwargs["model_type"]]
+    if "status" in kwargs:
+        kwargs["status"] = ModelStatusTypes[kwargs["status"]]
+    return ModelSpecTemplate(**kwargs)
+
+
+def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or "templates" not in data:
+        raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
+    return [_build_template(t) for t in data["templates"]]
+
+
+_MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
+
+
 # =============================================================================
 # llm_templates
 # =============================================================================
@@ -4113,71 +4179,6 @@ cnn_templates = [
         },
     ),
 ]
-
-def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirements"]:
-    if data is None:
-        return None
-    kwargs: Dict = {}
-    for key in ("firmware", "kmd"):
-        if data.get(key) is not None:
-            kwargs[key] = VersionRequirement(
-                specifier=data[key]["specifier"],
-                mode=VersionMode[data[key]["mode"]],
-            )
-    return SystemRequirements(**kwargs)
-
-
-def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
-    kwargs = dict(data)
-    kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
-    if "system_requirements" in kwargs:
-        kwargs["system_requirements"] = _build_system_requirements(
-            kwargs["system_requirements"]
-        )
-    if "known_issues" in kwargs:
-        kwargs["known_issues"] = [
-            KnownIssue(
-                workflow_type=WorkflowType.from_string(ki["workflow_type"]),
-                reason=ki["reason"],
-                task_name=ki.get("task_name"),
-            )
-            for ki in kwargs["known_issues"]
-        ]
-    return DeviceModelSpec(**kwargs)
-
-
-def _build_template(data: Dict) -> "ModelSpecTemplate":
-    kwargs = dict(data)
-    impl_id = kwargs["impl"]
-    if impl_id not in _IMPL_REGISTRY:
-        raise ValueError(
-            f"Unknown impl '{impl_id}'. Known impls: {sorted(_IMPL_REGISTRY)}"
-        )
-    kwargs["impl"] = _IMPL_REGISTRY[impl_id]
-    kwargs["inference_engine"] = InferenceEngine[kwargs["inference_engine"]].value
-    kwargs["device_model_specs"] = [
-        _build_device_model_spec(d) for d in kwargs["device_model_specs"]
-    ]
-    if "system_requirements" in kwargs:
-        kwargs["system_requirements"] = _build_system_requirements(
-            kwargs["system_requirements"]
-        )
-    if "model_type" in kwargs and kwargs["model_type"] is not None:
-        kwargs["model_type"] = ModelType[kwargs["model_type"]]
-    if "status" in kwargs:
-        kwargs["status"] = ModelStatusTypes[kwargs["status"]]
-    return ModelSpecTemplate(**kwargs)
-
-
-def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    if not data or "templates" not in data:
-        raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
-    return [_build_template(t) for t in data["templates"]]
-
-
-_MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 
 
 # make spec_templates from the templates in the correct order
