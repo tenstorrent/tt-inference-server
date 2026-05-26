@@ -212,9 +212,10 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
                   });
   }
   for (const auto& prefillId : recoveredPrefills) {
-    TT_LOG_INFO("[Dispatcher] prefill='{}' accepting tasks after timeout "
-                "cooldown",
-                prefillId);
+    TT_LOG_INFO(
+        "[Dispatcher] prefill='{}' accepting tasks after timeout "
+        "cooldown",
+        prefillId);
     registry_.setAcceptingTasks(prefillId, true);
   }
 
@@ -243,13 +244,13 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
     cancel.task_id = taskId;
     if (senders_.sendCancelToPrefill &&
         !senders_.sendCancelToPrefill(entry.prefill_id, cancel)) {
-      TT_LOG_WARN("[Dispatcher] taskId={} timeout cancel send to prefill='{}' "
-                  "failed",
-                  taskId, entry.prefill_id);
+      TT_LOG_WARN(
+          "[Dispatcher] taskId={} timeout cancel send to prefill='{}' "
+          "failed",
+          taskId, entry.prefill_id);
     }
 
-    if (options_.timeout_threshold > 0 &&
-        options_.timeout_window.count() > 0 &&
+    if (options_.timeout_threshold > 0 && options_.timeout_window.count() > 0 &&
         options_.timeout_cooldown.count() > 0) {
       std::lock_guard<std::mutex> lock(timeout_state_mutex_);
       auto& history = prefill_timeout_history_[entry.prefill_id];
@@ -263,10 +264,11 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
         prefill_blocked_until_[entry.prefill_id] = blockedUntil;
         registry_.setAcceptingTasks(entry.prefill_id, false);
         history.clear();
-        TT_LOG_WARN("[Dispatcher] prefill='{}' disabled for new tasks after "
-                    "{} timeouts in {}ms",
-                    entry.prefill_id, options_.timeout_threshold,
-                    options_.timeout_window.count());
+        TT_LOG_WARN(
+            "[Dispatcher] prefill='{}' disabled for new tasks after "
+            "{} timeouts in {}ms",
+            entry.prefill_id, options_.timeout_threshold,
+            options_.timeout_window.count());
       }
     }
 
