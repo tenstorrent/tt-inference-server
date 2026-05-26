@@ -284,8 +284,8 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   const char* kTest = "NonStreaming";
   // Most tests use streaming; this one verifies the non-streaming code path
   // still returns a single buffered JSON document with the assistant message.
-  auto responseFuture =
-      asyncRequest(ChatRequest().user(uniqueContent(kTest, __LINE__)).maxTokens(1));
+  auto responseFuture = asyncRequest(
+      ChatRequest().user(uniqueContent(kTest, __LINE__)).maxTokens(1));
 
   auto seq = receiveWithTimeout(server->taskQueue(), kTest);
   if (!seq) return;
@@ -345,10 +345,8 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   server->setMemoryAutoRespond(false);
 
   const auto opener = uniqueContent(kTest, __LINE__);
-  auto future1 =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
-  auto future2 =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto future1 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
