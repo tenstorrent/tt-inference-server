@@ -161,7 +161,7 @@ void BlazeRunner::step() {
                  static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
-  drainAndHandleCancelRequests();
+  drainAndHandleStopRequests();
   auto request = getRequest();
   if (request) {
     TT_LOG_DEBUG(
@@ -336,7 +336,7 @@ inline void BlazeRunner::handleMemoryResponse(
       handleAllocateAck(taskId, slotId);
       break;
     }
-    case ds::RequestType::CANCEL: {
+    case ds::RequestType::EVICT: {
       handleEvictAck(taskId, slotId);
       break;
     }
@@ -455,7 +455,7 @@ BlazeRunner::getMemoryRequest() {
   return memoryManager->getRequest();
 }
 
-void BlazeRunner::drainAndHandleCancelRequests() {
+void BlazeRunner::drainAndHandleStopRequests() {
   if (pendingRequests.pendingCancelTaskId.has_value()) {
     auto retryTaskId = *pendingRequests.pendingCancelTaskId;
     pendingRequests.pendingCancelTaskId = std::nullopt;
@@ -463,16 +463,16 @@ void BlazeRunner::drainAndHandleCancelRequests() {
         "[BlazeRunner] drainAndHandleCancelRequests: retrying deferred cancel "
         "for taskId={}",
         retryTaskId);
-    handleCancelRequest(retryTaskId);
+    handleStopRequest(retryTaskId);
   }
   std::vector<uint32_t> taskIds;
   stopQueue->tryPopAll(taskIds);
   for (auto taskId : taskIds) {
-    handleCancelRequest(taskId);
+    handleStopRequest(taskId);
   }
 }
 
-inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
+inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
   if (pendingRequests.pendingTask &&
       pendingRequests.pendingTask->taskId == taskId) {
     TT_LOG_DEBUG(
