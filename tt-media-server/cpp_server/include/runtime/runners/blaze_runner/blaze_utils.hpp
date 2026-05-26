@@ -50,8 +50,7 @@ inline ds::GenerationParams makeGenerationParams(
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-      .disaggregated_decode = seq.isDisaggregated(),
-      .position_id = seq.getKVCacheOffset()};
+      .disaggregated_decode = seq.isDisaggregated()};
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,
@@ -70,11 +69,16 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq) {
+                                         const tt::domain::llm::Sequence& seq, uint32_t currentPosition) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
+  if (seq.getKVCacheOffset().has_value()) { // override position id
+    req.gen.position_id = *seq.getKVCacheOffset();
+  } else {
+    req.gen.position_id = currentPosition;
+  }
   return req;
 }
 
