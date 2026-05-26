@@ -433,12 +433,45 @@ def _log_workflow_summary(result: WorkflowResult) -> None:
         logger.error("Workflow error: %s", result.error)
 
 
+def _maybe_reexec_in_evals_agentic_venv(args: argparse.Namespace) -> None:
+    """For ``--workflow agentic``: materialize the EVALS_AGENTIC venv and re-exec.
+
+    Reuses v1's existing ``WorkflowVenvType.EVALS_AGENTIC`` venv config
+    (harbor + mini-swe-agent + SWE-bench, declared in
+    workflows/workflow_venvs.py). Idempotent: no-op when already inside
+    the venv. Mirrors ``_maybe_reexec_in_prefix_cache_venv`` from PR #3698.
+    """
+    if args.workflow != "agentic":
+        return
+
+    from workflows.workflow_types import WorkflowVenvType
+    from workflows.workflow_venvs import VENV_CONFIGS
+
+    venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC]
+    venv_python = venv_config.venv_python
+    if Path(sys.executable).resolve() == venv_python.resolve():
+        logger.info("Already inside EVALS_AGENTIC venv (%s).", sys.executable)
+        return
+
+    logger.info("Ensuring EVALS_AGENTIC venv at %s ...", venv_config.venv_path)
+    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    if not venv_config.setup(model_spec=model_spec):
+        raise RuntimeError("Failed to setup EVALS_AGENTIC venv")
+
+    logger.info("Re-executing inside EVALS_AGENTIC venv: %s", venv_python)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
+
+
 def main() -> int:
     args = parse_args()
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    _maybe_reexec_in_evals_agentic_venv(args)
 
     ctx = build_context(args)
     _apply_num_prompts_override(args.num_prompts)

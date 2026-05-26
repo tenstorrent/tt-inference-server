@@ -29,6 +29,46 @@ class EvalsWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.EVALUATION,)
 
 
+class AgenticWorkflow(WorkflowExecution):
+    """Agentic evals (Terminal-Bench-2, SWE-bench Verified).
+
+    A flavor of evals — emits Block(kind="evals"), reuses _check_evals.
+    Bypasses the media-task dispatcher because the agentic runner has
+    its own multi-task loop (one Block per terminal_bench / swebench
+    task in the model's EvalConfig).
+    """
+
+    name = "agentic"
+    task_types = (MediaTaskType.EVALUATION,)
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        self.logger.info("→ task=agentic")
+        started = time.time()
+        try:
+            blocks = run_llm_agentic_eval(self.ctx)
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "✘ agentic raised after %.1fs: %s", elapsed, e
+            )
+            return [TaskOutcome("evaluation", 1, elapsed, None)]
+
+        elapsed = time.time() - started
+        if not blocks:
+            self.logger.error("✘ agentic produced no blocks (%.1fs)", elapsed)
+            return [TaskOutcome("evaluation", 1, elapsed, None)]
+
+        self.logger.info(
+            "✓ agentic blocks=%d kind=%s (%.1fs)",
+            len(blocks),
+            blocks[0].kind,
+            elapsed,
+        )
+        return [TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)]
+
+
 class BenchmarksWorkflow(WorkflowExecution):
     name = "benchmarks"
     task_types = (MediaTaskType.BENCHMARK,)
@@ -121,6 +161,7 @@ class ReleaseWorkflow(WorkflowExecution):
 
 WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
     EvalsWorkflow.name: EvalsWorkflow,
+    AgenticWorkflow.name: AgenticWorkflow,
     BenchmarksWorkflow.name: BenchmarksWorkflow,
     SpecTestsWorkflow.name: SpecTestsWorkflow,
     ReleaseWorkflow.name: ReleaseWorkflow,
@@ -136,6 +177,7 @@ def get_workflow_class(name: str) -> Type[WorkflowExecution]:
 
 
 __all__ = [
+    "AgenticWorkflow",
     "BenchmarksWorkflow",
     "EvalsWorkflow",
     "ReleaseWorkflow",
