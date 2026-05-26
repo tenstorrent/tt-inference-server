@@ -498,6 +498,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
+            "P300X2",
             "T3K"
           ]
         },
