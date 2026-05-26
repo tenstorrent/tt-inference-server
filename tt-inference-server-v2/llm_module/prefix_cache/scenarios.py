@@ -18,7 +18,7 @@ driver needs; the driver is intentionally kept dumb about the scenario
 shapes so we can extend / override scenarios entirely from the JSON
 manifest.
 
-This module is a v2 port of v1's ``benchmarking/prefix_cache_scenarios.py``.
+Scenario expansion for the v2 prefix-caching AIPerf sweep.
 Only the default manifest path changed -- the dataclass + expanders are
 identical so the v1 manifest JSONs are byte-compatible with the v2 loader.
 """

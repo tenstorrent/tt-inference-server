@@ -26,30 +26,13 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
 ```
 
-#### Prefix-caching benchmark (AIPerf only)
-```
-python run.py --model <model> --device <device> --workflow benchmarks --tools aiperf --prefix-cache
-```
+#### Prefix-caching benchmark (v2 only)
 
-Switches the aiperf sweep to a dedicated KV-cache reuse scenario set
-(`shared_system`, `prefix_pool`, `multi_turn`, `mooncake_trace`, `baseline`)
-with configurable concurrency, reuse ratio, arrival pattern (`constant` |
-`poisson` | `gamma`; bursty traffic = `gamma` with `--arrival-smoothness < 1.0`),
-ISL/OSL mixes, and a baseline-vs-treatment uplift report. Cache hit rate is
-computed from `vllm:prefix_cache_hits_total` / `vllm:prefix_cache_queries_total`
-(scraped via AIPerf `--server-metrics`).
-
-The `mooncake_trace` scenario uses
-[AIPerf's prefix-synthesis pipeline](https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md)
-(`aiperf analyze-trace` + `aiperf profile --custom-dataset-type mooncake_trace
---synthesis-*`) to replay a JSONL trace with controlled scaling of prefix
-length, prompt length, request rate and prefix-root diversity. A reproducible
-sample trace ships under
-`benchmark_targets/sample_traces/ci_mooncake.jsonl`; point at a production
-trace at runtime with `--prefix-cache-trace /path/to/prod.jsonl`.
-
-See [Prefix-Caching Benchmarks](../docs/benchmarking_tools.md#prefix-caching-benchmarks-aiperf)
-for the full scenario / metric reference.
+The prefix-caching AIPerf sweep lives in `tt-inference-server-v2/` — use
+`tt-inference-server-v2/run.py` with `--workflow benchmarks --prefix-cache`
+against an already-running vLLM server. See
+[tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
+and [Prefix-Caching Benchmarks](../docs/benchmarking_tools.md#prefix-caching-benchmarks-v2).
 
 ### GuideLLM - dataset-driven multi-turn and omni-modal benchmarking
 ```
@@ -71,30 +54,9 @@ Purpose: Docker orchestration script for GenAI-Perf benchmarks using NVIDIA Trit
 ### `run_benchmarks_aiperf.py`
 
 Purpose: Main script for AIPerf benchmarks with detailed percentile metrics and warm-up logic.
-Switches to the prefix-caching scenario suite when `--prefix-cache` is passed.
 
-### `prefix_cache_scenarios.py`
-
-Purpose: Builds the list of AIPerf runs that make up a prefix-caching benchmark
-sweep from `benchmark_targets/prefix_cache_scenarios.json`. Used by
-`run_benchmarks_aiperf.py` when `--prefix-cache` is set. Handles both the
-synthetic scenarios (`shared_system` / `prefix_pool` / `multi_turn` /
-`baseline`) and the trace-driven `mooncake_trace` scenario.
-
-### `prefix_cache_report.py`
-
-Purpose: Discovers `aiperf_prefix_cache_*.json` results, builds the per-run
-percentile table for the synthetic scenarios, the dedicated trace-driven table
-(measured vs analyze-trace theoretical hit rate), and the
-baseline-vs-treatment uplift table, then writes them to
-`workflow_logs/reports_output/benchmarks_prefix_cache/`.
-
-### `benchmark_targets/sample_traces/`
-
-Purpose: In-tree reproducible mooncake JSONL traces used by the `ci` preset of
-the `mooncake_trace` scenario. `generate_ci_mooncake.py` regenerates
-`ci_mooncake.jsonl` (64 requests, ~54% theoretical cache hit rate). Production
-runs should override the trace via `--prefix-cache-trace /path/to/prod.jsonl`.
+Prefix-caching benchmarks are implemented in `tt-inference-server-v2/` (see
+`llm_module/prefix_cache/` and `run.py --prefix-cache`).
 
 ### `run_guidellm_benchmarks.py`
 

@@ -65,7 +65,7 @@ class WorkflowResult:
 class PrefixCacheOptions:
     """Prefix-caching benchmark knobs forwarded to ``BenchmarksWorkflow``.
 
-    Mirrors the v1 ``RuntimeConfig`` prefix-cache fields. Threaded through
+    Threaded through
     ``OrchestratorMetadata`` so the CLI entry point in ``run.py`` stays
     decoupled from ``llm_module``.
     """

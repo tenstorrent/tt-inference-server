@@ -281,181 +281,53 @@ Separate tables with AIPerf's unique percentile metrics:
 
 ---
 
-## Prefix-Caching Benchmarks (AIPerf)
+## Prefix-Caching Benchmarks (v2)
 
-Use the `--prefix-cache` flag on `--tools aiperf` to switch the sweep from the
-default ISL/OSL grid to an opinionated prefix-caching scenario set that exercises
-KV-cache reuse with controlled prefix-sharing patterns and variable arrival rates.
+Prefix-caching benchmarks are **not** wired through v1 `run.py`. Use the v2
+orchestrator against an already-running vLLM-compatible server:
 
 ```bash
-# Full validation sweep (~3 dozen runs across synthetic + trace-driven)
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
-  --tools aiperf --prefix-cache
+# CI smoke (~12 runs)
+python tt-inference-server-v2/run.py \
+  --model Llama-3.1-8B-Instruct \
+  --workflow benchmarks \
+  --device gpu \
+  --service-port 8000 \
+  --prefix-cache \
+  --prefix-cache-preset ci \
+  --jwt-secret "$JWT_SECRET"
 
-# CI smoke (5 scenarios x 2 concurrencies; ~12 runs)
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
-  --tools aiperf --prefix-cache --prefix-cache-preset ci
-
-# Subset of scenarios, overridden arrival pattern, fixed request rate
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
-  --tools aiperf --prefix-cache \
-  --prefix-cache-scenarios prefix_pool,baseline \
-  --prefix-cache-arrival gamma --prefix-cache-request-rate 5.0
-
-# Trace-driven: replay a production mooncake JSONL trace through AIPerf's
-# prefix-synthesis pipeline (synthesis multipliers from the manifest still apply)
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
-  --tools aiperf --prefix-cache \
-  --prefix-cache-scenarios mooncake_trace \
-  --prefix-cache-trace /path/to/production.jsonl
+# Full validation sweep
+python tt-inference-server-v2/run.py \
+  --model Llama-3.1-8B-Instruct \
+  --workflow benchmarks \
+  --device gpu \
+  --service-port 8000 \
+  --prefix-cache
 ```
+
+On first use, `run.py` materializes the `V2_PREFIX_CACHE` venv
+(`.workflow_venvs/.venv_v2_prefix_cache`) and re-execs inside it so AIPerf and
+its dependencies are available without manual setup.
 
 ### Scenarios
 
-| Scenario | Reuse model | AIPerf flags used | What it answers |
-|----------|-------------|-------------------|-----------------|
-| `shared_system` | 100% shared system prompt | `--shared-system-prompt-length` | Best-case prefix-cache uplift |
-| `prefix_pool` | Pool of N prefixes (reuse ratio = `request_count / N`) | `--num-prefix-prompts`, `--prefix-prompt-length` | Realistic chat-style reuse at tunable rates |
-| `multi_turn` | Organic reuse via re-sent chat history | `--conversation-num`, `--conversation-turn-mean`, `--conversation-turn-delay-mean` | Multi-turn chatting scenario |
-| `mooncake_trace` | Replay of a mooncake JSONL trace + AIPerf synthesis multipliers | `--custom-dataset-type mooncake_trace`, `--input-file`, `--synthesis-*` | Production-realistic patterns, statistically scaled |
-| `baseline` | Zero shared prefix (control) | _none_ | Reference for measuring uplift |
+| Scenario | Reuse model | What it answers |
+|----------|-------------|-----------------|
+| `shared_system` | 100% shared system prompt | Best-case prefix-cache uplift |
+| `prefix_pool` | Pool of N prefixes | Realistic chat-style reuse at tunable rates |
+| `multi_turn` | Organic reuse via re-sent chat history | Multi-turn chatting scenario |
+| `mooncake_trace` | Mooncake JSONL trace + AIPerf synthesis multipliers | Production-realistic patterns |
+| `baseline` | Zero shared prefix (control) | Reference for measuring uplift |
 
-Each scenario expands across:
+Scenarios and per-preset grids are defined in
+`tt-inference-server-v2/llm_module/prefix_cache/manifest.json`. Override with
+`--prefix-cache-scenarios-json`, subset with `--prefix-cache-scenarios`, and
+point `mooncake_trace` at a production trace via `--prefix-cache-trace`.
 
-- Concurrencies: `[1, 8]` (CI) or `[1, 8, 32]` (full)
-- Arrival patterns: `constant`, `poisson`, `gamma` (smoothness <1.0 = bursty) — per scenario
-- ISL profiles: `short` (mean 256, stddev 64) and (full only) `long` (mean 4096, stddev 256)
-- Reuse ratios for `prefix_pool`: `[4]` (CI) or `[2, 4, 16, 64]` (full)
-- `mooncake_trace.synthesis_grid` entries (apply `--synthesis-speedup-ratio`, `--synthesis-prefix-len-multiplier`, `--synthesis-prefix-root-multiplier`, `--synthesis-prompt-len-multiplier`, `--synthesis-max-isl`, `--synthesis-max-osl`)
-
-Scenarios are defined in `benchmarking/benchmark_targets/prefix_cache_scenarios.json`
-and can be overridden via `--prefix-cache-scenarios-json /path/to/custom.json`.
-
-#### Trace-driven mode (`mooncake_trace`)
-
-The `mooncake_trace` scenario uses AIPerf's
-[prefix-synthesis pipeline](https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md):
-
-1. **`aiperf analyze-trace`** runs once per unique trace before the benchmark
-   sweep. The resulting report (cache hit rate, prefix reuse ratio, ISL/OSL
-   distributions) is bundled into every run's JSON under `trace_analysis`.
-2. **`aiperf profile --custom-dataset-type mooncake_trace --input-file <trace>`**
-   replays the trace. The `--synthesis-*` multipliers from the manifest's
-   `synthesis_grid` allow scaling:
-   - `speedup` (`--synthesis-speedup-ratio`): faster/slower request timing
-   - `prefix_len` (`--synthesis-prefix-len-multiplier`): scale shared-prefix length
-   - `prefix_root` (`--synthesis-prefix-root-multiplier`): split traces across N independent radix trees (lowers achievable cache hit rate)
-   - `prompt_len` (`--synthesis-prompt-len-multiplier`): scale unique-prompt length
-   - `max_isl` / `max_osl`: filter/cap sequence lengths
-3. The runner pairs the trace's **theoretical** hit rate (from `analyze-trace`) with the **measured** hit rate (from `vllm:prefix_cache_*_total` Prometheus counters).
-
-A small reproducible sample trace lives at
-`benchmarking/benchmark_targets/sample_traces/ci_mooncake.jsonl` (regeneratable
-via `python benchmarking/benchmark_targets/sample_traces/generate_ci_mooncake.py`).
-Override the trace for a real run with `--prefix-cache-trace /path/to/prod.jsonl`.
-
-### Cache hit-rate metric
-
-AIPerf's `--server-metrics` flag (on by default) scrapes the vLLM Prometheus
-endpoint during every run. The runner diffs the cumulative counters
-`vllm:prefix_cache_hits_total` and `vllm:prefix_cache_queries_total` to compute
-the per-run cache hit rate:
-
-```
-prefix_cache_hit_rate = (hits_final - hits_initial) / (queries_final - queries_initial)
-```
-
-If the server does not expose Prometheus metrics, the runner still emits the
-TTFT/TPOT/ITL/E2EL percentiles and logs a warning that the hit rate is
-unavailable.
-
-### Output files
-
-Each run writes a vLLM-compatible JSON to
-`workflow_logs/benchmarks_output/`:
-
-```
-aiperf_prefix_cache_<model_id>_<timestamp>_<scenario>_<label>.json
-```
-
-with all the percentile fields plus the prefix-cache-specific fields:
-
-```json
-{
-  "backend": "aiperf",
-  "task_type": "prefix_cache",
-  "scenario": "prefix_pool",
-  "label": "pool_reuse4_plen512_short_c8_poisson",
-  "arrival_pattern": "poisson",
-  "concurrency": 8,
-  "isl_mean": 256, "isl_stddev": 64,
-  "num_prefix_prompts": 8, "prefix_prompt_length": 512,
-  "prefix_cache_hit_rate": 0.74,
-  "prefix_cache_hits_delta": 1832,
-  "prefix_cache_queries_delta": 2470,
-  "mean_ttft_ms": ..., "p50_ttft_ms": ..., "p95_ttft_ms": ..., "p99_ttft_ms": ...,
-  "mean_tpot_ms": ..., "p95_tpot_ms": ..., "p99_tpot_ms": ...,
-  "mean_itl_ms":  ..., "p95_itl_ms":  ..., "p99_itl_ms":  ...,
-  "mean_e2el_ms": ..., "p95_e2el_ms": ..., "p99_e2el_ms": ...,
-  "output_token_throughput": ...,
-  "request_throughput": ...
-}
-```
-
-For `mooncake_trace` runs the JSON additionally carries the trace + synthesis
-provenance and the pre-run trace analysis:
-
-```json
-{
-  "scenario": "mooncake_trace",
-  "label": "trace_ci_sample_more_reuse_c8_poisson",
-  "trace_input_file": "/.../sample_traces/ci_mooncake.jsonl",
-  "custom_dataset_type": "mooncake_trace",
-  "fixed_schedule": false,
-  "block_size": 512,
-  "synthesis_prefix_len_multiplier": 1.5,
-  "synthesis_prompt_len_multiplier": 0.7,
-  "trace_analysis": {
-    "total_requests": 64,
-    "unique_prefixes": 71,
-    "cache_hit_rate": 0.54,
-    "prefix_reuse_ratio": 0.4,
-    "isl_stats": { "mean": 670.5, ... }
-  },
-  "prefix_cache_hit_rate": 0.49,
-  ...
-}
-```
-
-Raw AIPerf artifacts (per-request JSONL, server-metrics JSONL) land under
-`.workflow_venvs/.venv_benchmarks_aiperf/artifacts/<model_id>/prefix_cache/<scenario>/<label>/`.
-
-### Report
-
-`--workflow reports` produces a dedicated section per model under
-`workflow_logs/reports_output/benchmarks_prefix_cache/`:
-
-- `aiperf_prefix_cache_display_<report_id>.md` - three tables:
-  1. **Synthetic Scenarios — Per-run Percentiles** (TTFT/TPOT/ITL/E2EL P50/P95/P99 + measured cache hit %).
-  2. **Trace-Driven (`mooncake_trace`) — Per-run Percentiles** with the trace name, synthesis variant, multipliers and a **theoretical vs measured** cache hit-rate column.
-  3. **Uplift vs Zero-Prefix Baseline** that pairs each synthetic reuse scenario with the matching `baseline` run, with Δ% on mean TTFT/TPOT/E2EL.
-- `data/aiperf_prefix_cache_stats_<report_id>.csv` - full schema for auditing.
-
-### Requirements coverage
-
-| Requirement | Where it lives |
-|-------------|----------------|
-| Configurable concurrency | `concurrencies` list per preset |
-| Tunable prefix re-use ratio | `prefix_pool.reuse_ratios` → AIPerf `--num-prefix-prompts` plus `mooncake_trace` synthesis multipliers |
-| Content / sequence diversity | `isl_profiles` with mean+stddev → AIPerf synthetic ISL distribution; `mooncake_trace` replays trace-native ISL/OSL distributions |
-| CI vs full sweeps | `--prefix-cache-preset ci\|full` |
-| Variable arrival rates | `arrival_patterns` per scenario / `--prefix-cache-arrival` (`constant`, `poisson`, `gamma` w/ smoothness <1 = bursty) |
-| Mixed short/long context | `short` + `long` ISL profiles inside same sweep; `mooncake_trace.synthesis_grid` with `max_isl`/`max_osl` for context filtering |
-| Cache hit rate | `vllm:prefix_cache_hits_total` / `vllm:prefix_cache_queries_total` delta from `server_metrics_export.jsonl` |
-| Production-trace replay | `mooncake_trace` scenario + `--prefix-cache-trace /path/to/prod.jsonl` |
-| Theoretical (achievable) hit rate | `aiperf analyze-trace` runs pre-sweep; report shows theoretical-vs-measured side by side |
-| TPOT / ITL / Output Tput / E2EL with P50/P95/P99 | `parse_aiperf_output()` (extracts mean/p50/p95/p99/std) |
-| Open-source, reproducible, auditable | AIPerf Apache 2.0 + JSON scenario manifest + in-tree sample trace checked into the repo |
+See [tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
+for flags, report layout, and TT hardware notes (prefix caching may be disabled
+in `tt-vllm-plugin` until lifted).
 
 ---
 
