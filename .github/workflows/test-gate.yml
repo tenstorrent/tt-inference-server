@@ -710,14 +710,8 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
-      - name: Extract C++ build
-        run: |
-          cd cpp_server
-          tar -xzf cpp-server-build.tar.gz
-          rm cpp-server-build.tar.gz
-
-      - name: Make binaries executable
-        run: chmod +x cpp_server/build/tt_media_server_cpp
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -726,15 +720,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python test dependencies
-        run: |
-          uv venv
-          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
-          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
-          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
-          # Track upstream and remove pin once 5.6.x is fixed or bench is
-          # made resilient to client tokenizer cost.
-          uv pip install vllm 'transformers<5.6'
-          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
 
       # ── Mock backend benchmarks ──────────────────────────────────────
       - name: Start C++ server (mock backend)
@@ -743,19 +729,7 @@ jobs:
           LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "Server ready."
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock backend"
 
       # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
       # tokenizer init cost (#3179) before the measured bench starts. Without
@@ -851,19 +825,7 @@ jobs:
           LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "Server ready."
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock_pipeline backend"
 
       - name: Warm up mock_pipeline backend
         env:
@@ -905,77 +867,18 @@ jobs:
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
         run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
-          ERRORS=""
-
-          check_thresholds() {
-            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
-            if [ ! -f "$FILE" ]; then
-              echo "❌ [$LABEL] Result file not found: $FILE"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
-              FAIL=1
-              return
-            fi
-
-            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
-            COMPLETED=$(jq -r '.completed // 0' "$FILE")
-            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
-            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
-            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
-
-            if [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              FAIL=1
-            fi
-
-            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
-              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
-                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                FAIL=1
-              fi
-            fi
-            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
-              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
-                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                FAIL=1
-              fi
-            fi
-
-            {
-              echo "## $LABEL"
-              echo ""
-              echo "| Metric | Value | Threshold |"
-              echo "|--------|-------|-----------|"
-              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
-              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
-              echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | 0 |"
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
-          }
-
-          check_thresholds "C++ Server vLLM Bench (mock)" \
-            "vllm-bench-mock.json" 1 150
-
-          check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
-            "vllm-bench-structured-output-json-object.json" 5 150
-
-          check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
-            "vllm-bench-structured-output-json-schema.json" 3 250
-
-          check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
-            "vllm-bench-mock-pipeline.json" 3 395
-
-          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
-          {
-            echo "BENCH_ERRORS<<BENCHERRORSEOF"
-            printf '%s\n' "$ERRORS"
-            echo "BENCHERRORSEOF"
-          } >> $GITHUB_ENV
-
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
+            --result vllm-bench-mock.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
+            --result vllm-bench-structured-output-json-object.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
+            --result vllm-bench-structured-output-json-schema.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
+            --result vllm-bench-mock-pipeline.json || FAIL=1
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
         if: always()
@@ -1012,12 +915,7 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: |
-          if [ "${BENCH_FAIL:-0}" != "1" ]; then
-            exit 0
-          fi
-          printf '%s\n' "$BENCH_ERRORS"
-          exit 1
+        run: exit "${BENCH_FAIL:-0}"
 
   cpp-server-prefill-decode-split:
     needs: [detect-changes, cpp-build]
@@ -1047,14 +945,8 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
-      - name: Extract C++ build
-        run: |
-          cd cpp_server
-          tar -xzf cpp-server-build.tar.gz
-          rm cpp-server-build.tar.gz
-
-      - name: Make binaries executable
-        run: chmod +x cpp_server/build/tt_media_server_cpp
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -1063,15 +955,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python test dependencies
-        run: |
-          uv venv
-          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
-          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
-          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
-          # Track upstream and remove pin once 5.6.x is fixed or bench is
-          # made resilient to client tokenizer cost.
-          uv pip install vllm 'transformers<5.6'
-          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
 
       # ── Round 1a: TCP Decode + Prefill split ─────────────────────────
       - name: "[TCP] Start Decode server (direct split)"
@@ -1400,74 +1284,16 @@ jobs:
 
       - name: Check benchmark thresholds
         run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
-          ERRORS=""
-
-          check_thresholds() {
-            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
-            if [ ! -f "$FILE" ]; then
-              echo "❌ [$LABEL] Result file not found: $FILE"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
-              FAIL=1
-              return
-            fi
-
-            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
-            COMPLETED=$(jq -r '.completed // 0' "$FILE")
-            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
-            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
-            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
-
-            if [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
-              FAIL=1
-            fi
-
-            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
-              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
-                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                FAIL=1
-              fi
-            fi
-            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
-              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
-                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                FAIL=1
-              fi
-            fi
-
-            {
-              echo "## $LABEL"
-              echo ""
-              echo "| Metric | Value | Threshold |"
-              echo "|--------|-------|-----------|"
-              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
-              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
-              echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | 0 |"
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
-          }
-
-          check_thresholds "C++ Server Prefill/Decode Split (TCP)" \
-            "vllm-bench-split-tcp-result.json" 10 650
-
-          check_thresholds "C++ Server Prefill/Decode Split (ZMQ)" \
-            "vllm-bench-split-zmq-result.json" 10 650
-
-          check_thresholds "C++ Server Prefill/Decode Split (mock_prefill_runner)" \
-            "vllm-bench-split-runner-result.json" 10 650
-
-          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
-          {
-            echo "BENCH_ERRORS<<BENCHERRORSEOF"
-            printf '%s\n' "$ERRORS"
-            echo "BENCHERRORSEOF"
-          } >> $GITHUB_ENV
-
+          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_tcp \
+            --result vllm-bench-split-tcp-result.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_zmq \
+            --result vllm-bench-split-zmq-result.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
+            --result vllm-bench-split-runner-result.json || FAIL=1
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
       - name: Show server logs
         if: always()
         run: |
@@ -1550,12 +1376,7 @@ jobs:
 
       - name: Check benchmark result
         if: always()
-        run: |
-          if [ "${BENCH_FAIL:-0}" != "1" ]; then
-            exit 0
-          fi
-          printf '%s\n' "$BENCH_ERRORS"
-          exit 1
+        run: exit "${BENCH_FAIL:-0}"
 
   prefill-gateway-build:
     needs: detect-changes
@@ -1721,11 +1542,8 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
-      - name: Extract C++ server build
-        run: |
-          cd cpp_server
-          tar -xzf cpp-server-build.tar.gz
-          rm cpp-server-build.tar.gz
+      - name: Set up C++ server build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
 
       - name: Download prefill_gateway binary
         uses: actions/download-artifact@v4
@@ -1733,10 +1551,8 @@ jobs:
           name: prefill-gateway-build
           path: tt-media-server/prefill_gateway/build
 
-      - name: Make binaries executable
-        run: |
-          chmod +x cpp_server/build/tt_media_server_cpp
-          chmod +x prefill_gateway/build/prefill_gateway
+      - name: Make prefill_gateway executable
+        run: chmod +x prefill_gateway/build/prefill_gateway
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -1745,10 +1561,7 @@ jobs:
           enable-cache: true
 
       - name: Install Python test dependencies
-        run: |
-          uv venv
-          uv pip install vllm 'transformers<5.6'
-          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
 
       # ── Round 1: TCP transport ────────────────────────────────────────────
       # Startup order: prefill-1 → prefill-2 → gateway → decode.
@@ -2121,47 +1934,14 @@ jobs:
 
       - name: Check benchmark thresholds
         run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
-          check_file() {
-            local FILE="$1"
-            local LABEL="$2"
-            if [ ! -f "$FILE" ]; then
-              echo "❌ Result file not found: $FILE"
-              FAIL=1
-              return
-            fi
-            COMPLETED=$(jq -r '.completed // 0' "$FILE")
-            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
-            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
-            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
-            if [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED)"
-              FAIL=1
-            fi
-            if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= 10 else 1)"; then
-              echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds 10ms threshold"
-              FAIL=1
-            fi
-            if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= 650 else 1)"; then
-              echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds 650ms threshold"
-              FAIL=1
-            fi
-            {
-              echo "## C++ Server Gateway Split ($LABEL)"
-              echo ""
-              echo "| Metric | Value | Threshold |"
-              echo "|--------|-------|-----------|"
-              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ 10ms |"
-              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ 650ms |"
-              echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | 0 |"
-              echo ""
-            } >> $GITHUB_STEP_SUMMARY
-          }
-          check_file "vllm-bench-gateway-split-tcp-result.json" "TCP"
-          check_file "vllm-bench-gateway-split-zmq-result.json" "ZMQ"
-          [ "$FAIL" -eq 0 ] || exit 1
-
+          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_tcp \
+            --result vllm-bench-gateway-split-tcp-result.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
+            --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
       - name: Show server logs
         if: always()
         run: |
@@ -2199,6 +1979,10 @@ jobs:
             tt-media-server/gw_zmq_decode.log
           retention-days: 1
           if-no-files-found: warn
+
+      - name: Check benchmark result
+        if: always()
+        run: exit "${BENCH_FAIL:-0}"
 
   dynamo-frontend-integration:
     needs: [detect-changes, cpp-build]
@@ -2247,14 +2031,8 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
-      - name: Extract C++ build
-        run: |
-          cd cpp_server
-          tar -xzf cpp-server-build.tar.gz
-          rm cpp-server-build.tar.gz
-
-      - name: Make binary executable
-        run: chmod +x cpp_server/build/tt_media_server_cpp
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
 
       # No-docker etcd: grab the upstream signed binary tarball from the
       # etcd-io GitHub release. Two cpp_server backends registering under the
@@ -2305,14 +2083,11 @@ jobs:
       - name: Create dynamo venv with ai-dynamo + vllm
         run: |
           mkdir -p "$HOME/.venvs"
-          uv venv --python 3.12 "$HOME/.venvs/dynamo"
-          # vllm is the bench client. transformers<5.6 mirrors the other
-          # cpp-server bench jobs — 5.6.x regresses tokenizer cost and
-          # inflates client-side TTFT/TPOT independently of the backend.
-          uv pip install --python "$HOME/.venvs/dynamo/bin/python" \
-            ai-dynamo uvloop vllm 'transformers<5.6'
-          # Expose vllm on PATH for subsequent bench step.
-          echo "$HOME/.venvs/dynamo/bin" >> "$GITHUB_PATH"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python 3.12 \
+            --package ai-dynamo \
+            --package uvloop
 
       # Two cpp_server backends + one Dynamo frontend. The frontend
       # discovers both backends through the shared etcd store (one instance
@@ -2514,38 +2289,14 @@ jobs:
 
       - name: Check benchmark result
         run: |
-          FILE="vllm-bench-dynamo.json"
-          if [ ! -f "$FILE" ]; then
-            echo "::error::Result file not found: $FILE"
-            exit 1
-          fi
-          COMPLETED=$(jq -r '.completed // 0' "$FILE")
-          FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
-          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
-          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
-          {
-            echo "## Dynamo Frontend + cpp_server Integration"
-            echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| **completed** | $COMPLETED |"
-            echo "| **failed** | $FAILED_REQ |"
-            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS |"
-            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS |"
-            echo ""
-          } >> $GITHUB_STEP_SUMMARY
           # Integration gate: every request must succeed. Latency is not
           # asserted here — the backend is a mock and the value of this job
           # is proving the wiring (Dynamo frontend -> etcd discovery ->
           # cpp_server TCP transport) works end-to-end.
-          if [ "$FAILED_REQ" -gt 0 ]; then
-            echo "::error::$FAILED_REQ request(s) failed (completed=$COMPLETED)"
-            exit 1
-          fi
-          if [ "$COMPLETED" -lt 1000 ]; then
-            echo "::error::Only $COMPLETED/1000 requests completed"
-            exit 1
-          fi
+          python3 cpp_server/scripts/ci/check_vllm_result.py \
+            --config cpp_server/scripts/ci/vllm_thresholds.json \
+            --scenario dynamo_frontend \
+            --result vllm-bench-dynamo.json
 
       - name: Show server logs
         if: always()
