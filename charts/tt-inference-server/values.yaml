@@ -47,8 +47,8 @@ defaults:
     annotations: {}
   resources:
     limits:
-      cpu: "8"
-      memory: 128Gi
+#      cpu: "8"
+#      memory: 480Gi #~90% of RAM available on Galaxy servers
       hugepages-1Gi: 32Gi
     requests:
       cpu: "6"
