@@ -28,10 +28,6 @@ class GrpcInferenceService final : public inference::Inference::Service {
       ::grpc::ServerContext* ctx, const inference::GenerateRequest* request,
       ::grpc::ServerWriter<inference::TokenChunk>* writer) override;
 
-  ::grpc::Status Health(::grpc::ServerContext* ctx,
-                        const inference::HealthRequest* request,
-                        inference::HealthResponse* response) override;
-
  private:
   std::shared_ptr<tt::services::LLMService> llmService;
 

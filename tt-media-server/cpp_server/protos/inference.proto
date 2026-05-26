@@ -11,7 +11,6 @@ package inference;
 
 service Inference {
   rpc Generate(GenerateRequest) returns (stream TokenChunk);
-  rpc Health(HealthRequest) returns (HealthResponse);
 }
 
 message StopConditions {
@@ -42,10 +41,4 @@ message GenerateRequest {
 message TokenChunk {
   repeated uint32 token_ids = 1;
   optional string finish_reason = 2;
-}
-
-message HealthRequest {}
-
-message HealthResponse {
-  required bool ready = 1;
 }
