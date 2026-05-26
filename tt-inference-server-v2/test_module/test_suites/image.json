@@ -23,7 +23,7 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 11
+                            "image_generation_time": 20
                         }
                     }
                 },
@@ -37,7 +37,7 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 15
+                            "image_generation_time": 28
                         }
                     }
                 },
@@ -51,7 +51,7 @@
                     },
                     "model_targets": {
                         "sdxl+galaxy": {
-                            "image_generation_time": 25
+                            "image_generation_time": 45
                         }
                     }
                 },
