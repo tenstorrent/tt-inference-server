@@ -3123,6 +3123,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                max_concurrent=16,
                 model_kwargs={
                     "timeout": "14400",
                 },
@@ -3160,6 +3161,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                max_concurrent=16,
                 model_kwargs={
                     "timeout": "14400",
                 },
