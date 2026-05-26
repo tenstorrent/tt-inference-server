@@ -3645,7 +3645,7 @@ cnn_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
@@ -3656,7 +3656,7 @@ cnn_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
@@ -3691,26 +3691,26 @@ cnn_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                    "MAX_NUM_SEQS": "2",
+                    "MAX_NUM_SEQS": "4",
                 },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                    "MAX_NUM_SEQS": "2",
+                    "MAX_NUM_SEQS": "4",
                 },
             ),
             DeviceModelSpec(
@@ -3740,7 +3740,7 @@ cnn_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
@@ -3751,7 +3751,7 @@ cnn_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
@@ -3786,7 +3786,7 @@ cnn_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
@@ -3797,7 +3797,7 @@ cnn_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
@@ -3832,7 +3832,7 @@ cnn_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
@@ -3843,7 +3843,7 @@ cnn_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
-                max_concurrency=2,
+                max_concurrency=4,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
