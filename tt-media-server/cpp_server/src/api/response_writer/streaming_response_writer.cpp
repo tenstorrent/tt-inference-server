@@ -13,6 +13,11 @@ namespace tt::api {
 
 using namespace tt::domain::llm;
 
+namespace {
+constexpr double STREAM_HEARTBEAT_INTERVAL_SECONDS = 1.0;
+constexpr const char* STREAM_HEARTBEAT_SSE = ":\n\n";
+}  // namespace
+
 StreamingResponseWriter::StreamingResponseWriter(
     trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
     std::shared_ptr<StreamEventFormatter> formatter)
@@ -116,6 +121,7 @@ void StreamingResponseWriter::finalize() {
       std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
   loop->queueInLoop([self]() {
     if (!self->done.exchange(true) && *self->streamPtr) {
+      self->stopHeartbeat();
       self->flushAccumulated();
 
       auto usage = self->buildUsage();
@@ -132,12 +138,36 @@ void StreamingResponseWriter::finalize() {
 
 void StreamingResponseWriter::abort() {
   if (!done.exchange(true)) {
+    stopHeartbeat();
     TT_LOG_INFO(
         "[StreamingResponseWriter] Client disconnected, aborting task {}",
         params.taskId);
-    if (params.service) params.service->abortRequest(params.taskId);
+    if (params.onAbortRequest) {
+      params.onAbortRequest(params.taskId);
+    }
     if (params.onSessionRelease) params.onSessionRelease();
   }
+}
+
+void StreamingResponseWriter::startHeartbeat() {
+  if (heartbeatTimerId != trantor::InvalidTimerId) return;
+
+  auto self =
+      std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
+  heartbeatTimerId =
+      loop->runEvery(STREAM_HEARTBEAT_INTERVAL_SECONDS, [self]() {
+        if (self->done.load() || !*self->streamPtr) return;
+
+        bool ok = (*self->streamPtr)->send(STREAM_HEARTBEAT_SSE);
+        if (!ok) self->abort();
+      });
+}
+
+void StreamingResponseWriter::stopHeartbeat() {
+  if (heartbeatTimerId == trantor::InvalidTimerId) return;
+
+  loop->invalidateTimer(heartbeatTimerId);
+  heartbeatTimerId = trantor::InvalidTimerId;
 }
 
 drogon::HttpResponsePtr StreamingResponseWriter::buildResponse() {
@@ -152,6 +182,10 @@ drogon::HttpResponsePtr StreamingResponseWriter::buildResponse() {
         self->earlyBuffer->clear();
         if (self->done.load()) {
           (*self->streamPtr)->close();
+          return;
+        }
+        if (self->params.enableDisconnectHeartbeat) {
+          self->startHeartbeat();
         }
       });
 

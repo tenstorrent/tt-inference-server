@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include <deque>
 #include <memory>
 #include <sstream>
 
 #include "domain/llm/sequence.hpp"
+#include "ipc/in_memory/detail/concurrent_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 
 namespace tt::ipc::in_memory {
@@ -23,28 +23,30 @@ class TaskQueue : public tt::ipc::ITaskQueue {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue.push_back(std::make_unique<tt::domain::llm::Sequence>(
+    queue.push(std::make_unique<tt::domain::llm::Sequence>(
         tt::domain::llm::Sequence::deserialize(is)));
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> tryPop() override {
-    if (queue.empty()) return nullptr;
-    auto seq = std::move(queue.front());
-    queue.pop_front();
+    std::unique_ptr<tt::domain::llm::Sequence> seq;
+    if (!queue.tryPop(seq)) return nullptr;
     return seq;
   }
 
   std::unique_ptr<tt::domain::llm::Sequence> receive() override {
-    if (queue.empty()) return nullptr;
-    auto seq = std::move(queue.front());
-    queue.pop_front();
+    std::unique_ptr<tt::domain::llm::Sequence> seq;
+    // Keep in-memory test semantics non-blocking to avoid deadlocks in loops
+    // that expect polling behavior (e.g. scheduler/runner tests).
+    if (!queue.tryPop(seq)) return nullptr;
     return seq;
   }
 
   bool empty() const override { return queue.empty(); }
 
  private:
-  std::deque<std::unique_ptr<tt::domain::llm::Sequence>> queue;
+  tt::ipc::in_memory::detail::ConcurrentQueue<
+      std::unique_ptr<tt::domain::llm::Sequence>>
+      queue;
 };
 
 }  // namespace tt::ipc::in_memory

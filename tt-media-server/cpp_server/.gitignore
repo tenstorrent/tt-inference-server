@@ -24,6 +24,9 @@ logs/
 
 deps/
 
+# Profiling output (flamegraph-capture[-offcpu].sh writes here)
+bench_results/
+
 # Override root-level *.json ignore
 !resources/openapi.json
 !.mcp.json

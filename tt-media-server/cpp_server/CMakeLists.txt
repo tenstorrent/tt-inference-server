@@ -10,6 +10,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
 add_compile_options(-g)
 
+# Keep the frame pointer (rbp on x86-64) in every translation unit so that
+# perf/eBPF/profilers can walk stacks via `--call-graph fp` instead of paying
+# the cost of DWARF unwinding. Runtime cost on this workload is <1% (mutex /
+# IPC / HTTP-framing dominated, not register-pressure-bound numeric loops);
+# capture-time win is ~10x smaller perf.data and stacks that don't truncate
+# across -O2 optimization boundaries. Fedora 38+ and Ubuntu 24.04+ ship
+# distro-wide with this flag for the same reason.
+add_compile_options(-fno-omit-frame-pointer)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -548,6 +557,12 @@ target_include_directories(test_image_generate_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
+target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(media_payload_ipc_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Reasoning parser test
 add_executable(test_reasoning_parser
     tests/test_reasoning_parser.cpp
@@ -622,6 +637,7 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
@@ -634,6 +650,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -653,7 +671,7 @@ target_include_directories(llm_service_test PRIVATE
 )
 
 add_executable(main_integration_test
-    tests/main_integration_test.cpp
+    tests/integration/main_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -672,11 +690,14 @@ add_executable(main_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -689,6 +710,7 @@ add_executable(main_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
@@ -717,6 +739,75 @@ target_include_directories(main_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(tool_calling_integration_test
+    tests/integration/tool_calling_integration_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/domain/session.cpp
+    src/runtime/worker/worker_manager.cpp
+    src/runtime/worker/process_liveness.cpp
+    src/runtime/worker/single_process_worker.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+    src/utils/ipc_runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
+    src/utils/image_codec.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
+)
+target_link_libraries(tool_calling_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(tool_calling_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 # main_integration_test boots the whole server stack (services, IPC queues,
 # Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
@@ -724,6 +815,8 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
+add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
+set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
 # Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
 # fails with ctest's captured stdout instead of hanging the job indefinitely.
 set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
@@ -747,6 +840,7 @@ gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(test_image_generate_request)
+gtest_discover_tests(media_payload_ipc_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
@@ -846,13 +940,17 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -864,6 +962,10 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
+    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/discovery.cpp
+    src/dynamo/etcd_client.cpp
+    src/dynamo/dynamo_endpoint.cpp
 )
 
 # Create executable

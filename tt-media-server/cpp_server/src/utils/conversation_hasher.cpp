@@ -6,6 +6,8 @@
 #include <algorithm>
 
 #define XXH_INLINE_ALL
+#include "config/settings.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "xxhash.h"
 
@@ -124,6 +126,146 @@ PrefixCachingInfo computePrefixCachingInfo(
   info.registrationHash = hashConversationPrefix(turns);
 
   return info;
+}
+
+uint64_t hashTokenPrefix(std::span<const int> tokens) {
+  if (tokens.empty()) {
+    return 0;
+  }
+  return XXH64(tokens.data(), tokens.size_bytes(), 0);
+}
+
+namespace {
+
+/// Naive substring search over int sequences. Returns the END indices
+/// (exclusive) of every match — i.e. the position one past the last token
+/// of each occurrence. Empty needle returns no matches.
+std::vector<size_t> findSequenceEndPositions(std::span<const int> tokens,
+                                             std::span<const int> needle) {
+  std::vector<size_t> out;
+  if (needle.empty() || tokens.size() < needle.size()) return out;
+  const size_t n = needle.size();
+  for (size_t i = 0; i + n <= tokens.size(); ++i) {
+    bool match = true;
+    for (size_t j = 0; j < n; ++j) {
+      if (tokens[i + j] != needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) out.push_back(i + n);
+  }
+  return out;
+}
+
+}  // namespace
+
+std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
+    std::span<const int> tokens, std::span<const int> assistantHeaderSequence) {
+  auto ends = findSequenceEndPositions(tokens, assistantHeaderSequence);
+  if (ends.size() < 2) {
+    return std::nullopt;
+  }
+  // Prior prefix runs through (inclusive) the SECOND-TO-LAST assistant
+  // header — that's the gen prompt the previous turn registered against.
+  const size_t end = ends[ends.size() - 2];
+  return std::vector<int>(tokens.begin(), tokens.begin() + end);
+}
+
+PrefixCachingInfo computePrefixCachingInfoFromTokens(
+    std::span<const int> tokens) {
+  PrefixCachingInfo info;
+
+  // Read from the static per-model table so this hot path NEVER touches
+  // a Tokenizer instance. Critical on the Dynamo path: the TCP server
+  // spawns a fresh std::thread per request (dynamo/dynamo_protocol.cpp);
+  // any thread_local activeTokenizer() call there would synchronously
+  // parse tokenizer.json (~500ms for DeepSeek-R1) and show up directly
+  // as TTFT.
+  const auto& headerSeq = tokenizers::staticInfo().assistantHeaderSequence;
+  auto ends = findSequenceEndPositions(tokens, headerSeq);
+
+  // Registration hashes the conversation through the LAST assistant-header
+  // sequence — i.e. through the trailing generation prompt — so that next
+  // turn's lookup (see below) can hash an identical byte range.
+  size_t regEnd = tokens.size();
+  if (ends.empty()) {
+    info.registrationHash = hashTokenPrefix(tokens);
+  } else {
+    regEnd = ends.back();
+    info.registrationHash = hashTokenPrefix({tokens.data(), regEnd});
+  }
+
+  // A prior assistant turn exists when at least two assistant-header
+  // sequences are present:
+  //   [...] <asst>{a_{n-1}}<user>{u_n}<asst>
+  //         ^^^^^^                    ^^^^^^
+  //         prior gen prompt          current gen prompt
+  // Lookup hashes through (inclusive) the prior gen prompt — exactly what
+  // turn n-1 registered. Delta starts right after, so the engine re-prefills
+  // {a_{n-1}}<user>{u_n}<asst> on top of its existing KV cache.
+  size_t priorEnd = 0;
+  size_t deltaStart = 0;
+  if (ends.size() >= 2) {
+    priorEnd = ends[ends.size() - 2];
+    deltaStart = priorEnd;
+    info.hasPriorTurn = true;
+    info.lookupHash = hashTokenPrefix({tokens.data(), priorEnd});
+    info.deltaPrompt =
+        std::vector<int>(tokens.begin() + deltaStart, tokens.end());
+  } else {
+    info.deltaPrompt = std::vector<int>{};
+  }
+
+  TT_LOG_INFO(
+      "[TokenHasher] tokens={} asstHeaderLen={} asstHeaderHits={} "
+      "regHashRange=[0,{}) lookupHashRange={} deltaRange={} hasPriorTurn={} "
+      "regHash={} lookupHash={}",
+      tokens.size(), headerSeq.size(), ends.size(), regEnd,
+      info.hasPriorTurn ? std::string("[0,") + std::to_string(priorEnd) + ")"
+                        : std::string("none"),
+      info.hasPriorTurn ? std::string("[") + std::to_string(deltaStart) + "," +
+                              std::to_string(tokens.size()) + ")"
+                        : std::string("[]"),
+      info.hasPriorTurn, info.registrationHash,
+      info.lookupHash.has_value() ? std::to_string(*info.lookupHash) : "none");
+
+  return info;
+}
+
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(
+    std::span<const int> tokens) {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+  if (firstBlockSize == 0 || blockSize == 0 || tokens.size() < firstBlockSize) {
+    return {};
+  }
+
+  std::vector<uint64_t> hashes;
+
+  // vLLM-style chained hashing: each block's hash uses the previous block's
+  // hash as the xxHash seed. This guarantees that two sequences sharing a
+  // common token prefix produce identical hashes for their shared blocks.
+  // The first block uses a larger size (e.g. system prompt) to capture the
+  // common prefix shared across conversations with the same model config.
+  uint64_t parentHash = 0;
+
+  // First block (larger, covers system prompt / preamble)
+  const size_t firstBlockBytes = firstBlockSize * sizeof(int);
+  parentHash = XXH64(tokens.data(), firstBlockBytes, parentHash);
+  hashes.push_back(parentHash);
+
+  // Remaining blocks use the standard block size
+  size_t offset = firstBlockSize;
+  while (offset + blockSize <= tokens.size()) {
+    const int* blockStart = tokens.data() + offset;
+    const size_t blockBytes = blockSize * sizeof(int);
+    parentHash = XXH64(blockStart, blockBytes, parentHash);
+    hashes.push_back(parentHash);
+    offset += blockSize;
+  }
+
+  return hashes;
 }
 
 }  // namespace tt::utils

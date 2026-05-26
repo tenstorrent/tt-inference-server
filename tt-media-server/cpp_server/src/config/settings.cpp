@@ -221,6 +221,14 @@ std::string ttCancelQueueName() {
   return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
 }
 
+std::string ttMediaTaskQueueName() {
+  return envString("TT_MEDIA_TASK_QUEUE", defaults::TT_MEDIA_TASK_QUEUE);
+}
+
+std::string ttMediaResultQueueName() {
+  return envString("TT_MEDIA_RESULT_QUEUE", defaults::TT_MEDIA_RESULT_QUEUE);
+}
+
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
@@ -268,7 +276,7 @@ int decodeMaxTokenIds() {
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
@@ -393,6 +401,22 @@ ImageConfig imageEngineConfig() {
     return cfg;
   }();
   return cached;
+}
+
+RunnerConfig workerRunnerConfig(size_t workerIndex) {
+  switch (modelService()) {
+    case ModelService::IMAGE: {
+      auto cfg = imageEngineConfig();
+      cfg.worker_id = workerIndex;
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::EMBEDDING:
+      return EmbeddingConfig{};
+    case ModelService::LLM:
+    default:
+      return llmEngineConfig();
+  }
 }
 
 ModelType modelType() {
@@ -528,6 +552,18 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t kvCacheBlockSize() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
+  return cached;
+}
+
+size_t kvCacheFirstBlockSize() {
+  static const size_t cached = static_cast<size_t>(envUlong(
+      "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
+  return cached;
+}
+
 bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
@@ -553,6 +589,50 @@ unsigned sessionAllocationMaxRetries() {
 unsigned prefillTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
+}
+
+bool dynamoEndpointEnabled() {
+  return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
+}
+
+std::string dynamoBindHost() {
+  return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+std::string dynamoEtcdEndpoints() {
+  // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
+  // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single
+  // export propagates to both processes when start_dynamo.sh wires them
+  // together.
+  if (const char* v = std::getenv("DYNAMO_ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  if (const char* v = std::getenv("ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  return defaults::DYNAMO_ETCD_ENDPOINTS;
+}
+
+int64_t dynamoEtcdLeaseTtlSecs() {
+  const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
+  if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  try {
+    return std::stoll(v);
+  } catch (const std::exception&) {
+    return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  }
+}
+
+std::string dynamoNamespace() {
+  return envString("DYNAMO_NAMESPACE", defaults::DYNAMO_NAMESPACE);
+}
+
+std::string dynamoComponent() {
+  return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
+}
+
+std::string dynamoEndpointName() {
+  return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
 }
 
 }  // namespace tt::config

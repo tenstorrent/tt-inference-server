@@ -78,9 +78,11 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
 
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
+    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
     return (
         model_spec.inference_engine == InferenceEngine.MEDIA.value
         and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+        and defaults is not None
     )
 
 

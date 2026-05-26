@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+# ==============================================================================
+# Dynamo Frontend - lightweight container
+# with owned_by patched to "TT Inc"
+# ==============================================================================
+FROM python:3.12-slim AS runtime
+
+LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Minimal runtime deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast pip operations
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && ln -s /root/.local/bin/uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Install ai-dynamo
+RUN uv venv .venv --python 3.12 \
+    && . .venv/bin/activate \
+    && uv pip install ai-dynamo
+
+# Patch owned_by: "nvidia" -> "TT Inc" in the compiled binary
+COPY patch_owned_by.sh /app/patch_owned_by.sh
+RUN chmod +x /app/patch_owned_by.sh && /app/patch_owned_by.sh
+
+# Install huggingface_hub for model downloads
+RUN . .venv/bin/activate && uv pip install huggingface_hub
+
+# Environment for Dynamo (all overridable at runtime via -e).
+# Defaults to etcd-backed discovery; ETCD_ENDPOINTS is the var Dynamo's
+# Python frontend reads (see cpp_server/scripts/start_dynamo.sh).
+ENV DYN_DISCOVERY_BACKEND=etcd \
+    ETCD_ENDPOINTS=http://etcd:2379 \
+    DYN_REQUEST_PLANE=tcp \
+    DYN_EVENT_PLANE=zmq \
+    MODEL_NAME=mock-model \
+    MODEL_PATH=/app/model \
+    HF_MODEL_ID=deepseek-ai/DeepSeek-R1-0528 \
+    HTTP_PORT=8000 \
+    VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8000
+
+# Startup script: download model config/tokenizer if not present, then launch frontend
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]

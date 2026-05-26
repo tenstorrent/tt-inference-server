@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <unordered_set>
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
@@ -27,9 +28,10 @@ namespace ds = tt_llm_engine::scheduler::decode;
 
 class BlazeRunner : public IRunner {
  public:
-  BlazeRunner(const tt::config::LLMConfig& config,
-              ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
-              tt::ipc::ICancelQueue* cancelQueue);
+  BlazeRunner(
+      const tt::config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+      tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* cancelQueue,
+      std::unique_ptr<tt::services::MemoryManager> memoryManager = nullptr);
   ~BlazeRunner() override;
 
   void run() override;
@@ -42,8 +44,8 @@ class BlazeRunner : public IRunner {
 
   void drainAndHandleMemoryResponses();
   void drainAndHandleOutputs();
-  void drainAndHandleCancelRequests();
-  inline void handleCancelRequest(uint32_t taskId);
+  void drainAndHandleStopRequests();
+  inline void handleStopRequest(uint32_t taskId);
   inline std::optional<tt::domain::ManageMemoryTask> getMemoryRequest();
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleAllocateRequest(
@@ -64,7 +66,7 @@ class BlazeRunner : public IRunner {
   tt::config::LLMConfig config;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
-  tt::ipc::ICancelQueue* cancelQueue;
+  tt::ipc::ICancelQueue* stopQueue;
   std::unique_ptr<ds::DecodeScheduler> decodeScheduler;
   PendingRequests pendingRequests;
   SlotManager slotManager;

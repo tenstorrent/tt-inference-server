@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
@@ -17,14 +18,14 @@
 #include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 namespace tt::runners::blaze {
-BlazeRunner::BlazeRunner(const config::LLMConfig& config,
-                         ipc::IResultQueue* resultQueue,
-                         tt::ipc::ITaskQueue* taskQueue,
-                         tt::ipc::ICancelQueue* cancelQueue)
+BlazeRunner::BlazeRunner(
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+    tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* stopQueue,
+    std::unique_ptr<tt::services::MemoryManager> injectedMemoryManager)
     : config(config),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
-      cancelQueue(cancelQueue),
+      stopQueue(stopQueue),
       slotManager(tt::config::dsMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
@@ -38,7 +39,9 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
   decodeScheduler->start();
   TT_LOG_INFO(
       "BlazeRunner: PipelineManager started, creating MemoryManager...");
-  memoryManager = std::make_unique<tt::services::MemoryManager>();
+  memoryManager = injectedMemoryManager
+                      ? std::move(injectedMemoryManager)
+                      : std::make_unique<tt::services::MemoryManager>();
   TT_LOG_INFO("BlazeRunner: Constructor complete");
 }
 
@@ -157,7 +160,7 @@ void BlazeRunner::step() {
                  static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
-  drainAndHandleCancelRequests();
+  drainAndHandleStopRequests();
   auto request = getRequest();
   if (request) {
     TT_LOG_DEBUG(
@@ -236,6 +239,18 @@ inline void BlazeRunner::handleEvictRequest(
         pendingRequests.pendingMemoryTask = request;
         return;
       }
+      if (pendingRequests.pendingTask &&
+          pendingRequests.pendingTask->getKVCacheSlot() == request.slotId) {
+        auto droppedTaskId = pendingRequests.pendingTask->taskId;
+        pendingRequests.pendingTask.reset();
+        TT_LOG_DEBUG(
+            "[BlazeRunner] handleEvictRequest: dropping pending task for "
+            "taskId={} on slotId={} (EVICT wins)",
+            droppedTaskId, request.slotId);
+        ipc::helpers::pushToken(
+            *resultQueue, droppedTaskId, 0,
+            ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+      }
       // Capture before setSlotState changes the state.
       bool wasRunning = (slotContext.state == SlotState::RUNNING);
       if (wasRunning) {
@@ -258,11 +273,12 @@ inline void BlazeRunner::handleEvictRequest(
       // the controller has already set done=true and the stream is being
       // swallowed. Here the client is innocent — they're still waiting on the
       // SSE — so the runner has to close the stream itself with an error.
-      if (slotContext.deferredSubmit) {
-        auto droppedTaskId = slotContext.deferredSubmit->taskId;
-        slotContext.deferredSubmit.reset();
+      if (slotContext.deferredContinue) {
+        auto droppedTaskId = slotContext.deferredContinue->taskId;
+        slotContext.deferredContinue.reset();
         TT_LOG_DEBUG(
-            "[BlazeRunner] handleEvictRequest: superseding deferredSubmit for "
+            "[BlazeRunner] handleEvictRequest: superseding deferredContinue "
+            "for "
             "taskId={} on slotId={} (DEALLOCATE wins)",
             droppedTaskId, request.slotId);
         ipc::helpers::pushToken(
@@ -319,7 +335,7 @@ inline void BlazeRunner::handleMemoryResponse(
       handleAllocateAck(taskId, slotId);
       break;
     }
-    case ds::RequestType::CANCEL: {
+    case ds::RequestType::EVICT: {
       handleEvictAck(taskId, slotId);
       break;
     }
@@ -387,7 +403,7 @@ inline void BlazeRunner::handleStopAck(uint32_t taskId, uint32_t slotId) {
       "[BlazeRunner] handleStopAck: taskId={}, slotId={}; draining "
       "(deferredEvict={}, deferredSubmit={})",
       taskId, slotId, slot->deferredEvict.has_value(),
-      static_cast<bool>(slot->deferredSubmit));
+      static_cast<bool>(slot->deferredContinue));
   slotManager.setSlotAsIdle(slot->slotId);
   handleDeferred(*slot);
 }
@@ -400,13 +416,14 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
   //   - deferredSubmit (and no deferredEvict): replay the SUBMIT now that
   //     the slot is IDLE again.
   if (slot.deferredEvict.has_value()) {
-    if (slot.deferredSubmit) {
-      // Capture taskId before reset (deferredSubmit is a unique_ptr;
+    if (slot.deferredContinue) {
+      // Capture taskId before reset (deferredContinue is a unique_ptr;
       // reading through it after .reset() is a null deref).
-      auto droppedTaskId = slot.deferredSubmit->taskId;
-      slot.deferredSubmit.reset();
+      auto droppedTaskId = slot.deferredContinue->taskId;
+      slot.deferredContinue.reset();
       TT_LOG_DEBUG(
-          "[BlazeRunner] handleDeferred: dropping deferredSubmit taskId={} on "
+          "[BlazeRunner] handleDeferred: dropping deferredContinue taskId={} "
+          "on "
           "slotId={} (deferredEvict wins)",
           droppedTaskId, slot.slotId);
       // FINAL|ERROR (not ABORT) — see handleEvictRequest's comment.
@@ -421,9 +438,9 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
         .action = tt::domain::MemoryManagementAction::DEALLOCATE,
         .slotId = evictReq.slot_id,
     });
-  } else if (slot.deferredSubmit) {
-    // move clears slot.deferredSubmit
-    handleRequest(std::move(slot.deferredSubmit));
+  } else if (slot.deferredContinue) {
+    // move clears slot.deferredContinue
+    handleRequest(std::move(slot.deferredContinue));
   }
 }
 
@@ -437,7 +454,7 @@ BlazeRunner::getMemoryRequest() {
   return memoryManager->getRequest();
 }
 
-void BlazeRunner::drainAndHandleCancelRequests() {
+void BlazeRunner::drainAndHandleStopRequests() {
   if (pendingRequests.pendingCancelTaskId.has_value()) {
     auto retryTaskId = *pendingRequests.pendingCancelTaskId;
     pendingRequests.pendingCancelTaskId = std::nullopt;
@@ -445,16 +462,16 @@ void BlazeRunner::drainAndHandleCancelRequests() {
         "[BlazeRunner] drainAndHandleCancelRequests: retrying deferred cancel "
         "for taskId={}",
         retryTaskId);
-    handleCancelRequest(retryTaskId);
+    handleStopRequest(retryTaskId);
   }
   std::vector<uint32_t> taskIds;
-  cancelQueue->tryPopAll(taskIds);
+  stopQueue->tryPopAll(taskIds);
   for (auto taskId : taskIds) {
-    handleCancelRequest(taskId);
+    handleStopRequest(taskId);
   }
 }
 
-inline void BlazeRunner::handleCancelRequest(uint32_t taskId) {
+inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
   if (pendingRequests.pendingTask &&
       pendingRequests.pendingTask->taskId == taskId) {
     TT_LOG_DEBUG(
@@ -612,11 +629,18 @@ void BlazeRunner::handleRequest(
       break;
     }
     case SlotState::AWAITING_STOP_ACK: {
+      if (slotContext.deferredContinue) {
+        TT_LOG_WARN(
+            "[BlazeRunner] handleRequest: overwriting deferred taskId={} with "
+            "taskId={} on slotId={} — the dropped task's stream will not "
+            "finalize",
+            slotContext.deferredContinue->taskId, request->taskId, slotId);
+      }
       TT_LOG_DEBUG(
           "[BlazeRunner] handleRequest: latching deferredSubmit for taskId={} "
           "on slotId={} (waiting for STOP ack)",
           request->taskId, slotId);
-      slotContext.deferredSubmit = std::move(request);
+      slotContext.deferredContinue = std::move(request);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {

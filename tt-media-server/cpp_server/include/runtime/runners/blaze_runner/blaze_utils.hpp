@@ -25,7 +25,7 @@ inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
 }
 
 inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
-  return {.type = ds::RequestType::CANCEL,
+  return {.type = ds::RequestType::EVICT,
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},

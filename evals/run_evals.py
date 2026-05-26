@@ -47,6 +47,39 @@ from workflows.workflow_venvs import VENV_CONFIGS
 logger = logging.getLogger(__name__)
 SMOKE_TEST_EVAL_LIMIT = 3
 
+# Per-request budget reserved for the prompt when clamping max_gen_toks against
+# device_model_spec.max_context. A floor prevents pathological clamps on
+# devices with very small max_context.
+_MAX_GEN_TOKS_PROMPT_RESERVE = 1024
+_MIN_OUTPUT_TOKENS = 256
+
+
+def _clamp_max_gen_toks(
+    gen_kwargs: dict, device_max_context: Optional[int], task_name: str
+) -> dict:
+    """Return a copy of gen_kwargs with max_gen_toks clamped to fit within
+    device_max_context after reserving room for the prompt. Returns the
+    original dict (no copy) when there is nothing to clamp."""
+    if not device_max_context or gen_kwargs.get("max_gen_toks") is None:
+        return gen_kwargs
+    try:
+        requested = int(gen_kwargs["max_gen_toks"])
+    except (TypeError, ValueError):
+        return gen_kwargs
+    ceiling = max(_MIN_OUTPUT_TOKENS, device_max_context - _MAX_GEN_TOKS_PROMPT_RESERVE)
+    if requested <= ceiling:
+        return gen_kwargs
+    out = dict(gen_kwargs)
+    out["max_gen_toks"] = ceiling
+    logger.info(
+        f"Clamping {task_name} max_gen_toks: "
+        f"{requested} -> {ceiling} "
+        f"(device_model_spec.max_context={device_max_context}, "
+        f"reserving {_MAX_GEN_TOKS_PROMPT_RESERVE} tokens for the prompt)"
+    )
+    return out
+
+
 # fmt: off
 IMAGE_RESOLUTIONS = [
     (512, 512),
@@ -432,9 +465,51 @@ def build_eval_command(
     else:
         api_url = f"{base_url}/completions"
 
+    # Clamp client concurrency/batch_size to the server's device_model_spec.max_concurrency.
+    # lm-eval / lmms-eval default to num_concurrent=32, which can exceed the server's
+    # max_num_seqs when the (model, device, engine) tuple supports a smaller batch —
+    # e.g. some forge LLMs currently in bring-up run with a smaller max_num_seqs. When
+    # that happens, the client over-subscribes the server, the queue serializes, and
+    # the client's read timeout fires. Source the correct ceiling from ModelSpec.
+    device_max_concurrency = getattr(
+        getattr(model_spec, "device_model_spec", None), "max_concurrency", None
+    )
+
+    effective_max_concurrent = task.max_concurrent
+    if effective_max_concurrent and device_max_concurrency:
+        effective_max_concurrent = min(effective_max_concurrent, device_max_concurrency)
+        if effective_max_concurrent != task.max_concurrent:
+            logger.info(
+                f"Clamping {task.task_name} num_concurrent: "
+                f"{task.max_concurrent} -> {effective_max_concurrent} "
+                f"(device_model_spec.max_concurrency={device_max_concurrency})"
+            )
+
+    effective_batch_size = task.batch_size
+    if effective_batch_size and device_max_concurrency:
+        effective_batch_size = min(effective_batch_size, device_max_concurrency)
+        if effective_batch_size != task.batch_size:
+            logger.info(
+                f"Clamping {task.task_name} batch_size: "
+                f"{task.batch_size} -> {effective_batch_size} "
+                f"(device_model_spec.max_concurrency={device_max_concurrency})"
+            )
+
+    # Clamp gen_kwargs.max_gen_toks so prompt + max_tokens fits within the
+    # server's max_context. lm-eval tasks tuned for the model's full context
+    # (e.g. Qwen3 with max_gen_toks=32768 assuming 65K) otherwise over-subscribe
+    # a forge entry in bring-up with a smaller max_context and trigger 100%
+    # server-side rejection (`prompt + max_tokens > max_model_len`).
+    device_max_context = getattr(
+        getattr(model_spec, "device_model_spec", None), "max_context", None
+    )
+    effective_gen_kwargs = _clamp_max_gen_toks(
+        task.gen_kwargs, device_max_context, task.task_name
+    )
+
     optional_model_args = []
-    if task.max_concurrent:
-        optional_model_args.append(f"num_concurrent={task.max_concurrent}")
+    if effective_max_concurrent:
+        optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
 
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
@@ -466,7 +541,7 @@ def build_eval_command(
     model_kwargs_str = ",".join(model_kwargs_list)
 
     # build gen_kwargs string
-    gen_kwargs_list = [f"{k}={v}" for k, v in task.gen_kwargs.items()]
+    gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
 
     # set output_dir
@@ -489,7 +564,7 @@ def build_eval_command(
             "--output_path", output_dir_path,
             "--seed", task.seed,
             "--num_fewshot", task.num_fewshot,
-            "--batch_size", task.batch_size,
+            "--batch_size", effective_batch_size,
             "--log_samples",
             "--show_config",
         ]
@@ -503,7 +578,7 @@ def build_eval_command(
                 f"{model_kwargs_str}"
             ),
             "--tasks", task.task_name,
-            "--batch_size", str(task.batch_size),
+            "--batch_size", str(effective_batch_size),
             "--output_path", str(output_dir_path),
             "--log_samples",
         ]
@@ -522,7 +597,7 @@ def build_eval_command(
             "--output_path", output_dir_path,
             "--seed", task.seed,
             "--num_fewshot", task.num_fewshot,
-            "--batch_size", task.batch_size,
+            "--batch_size", effective_batch_size,
             "--log_samples",
             "--show_config",
         ]

@@ -430,6 +430,82 @@ class TestInitializeDeviceWorker:
                     mock_device_runner.close_device.assert_called_once()
                     mock_loop.close.assert_called_once()
 
+    def test_warmup_returning_false_raises_and_closes_device(self):
+        """``warmup()`` returning ``False`` (the contract for SPRunner when
+        the pipeline ping fails) must abort worker init so the scheduler does
+        not flip the worker to ``is_ready=True`` and /health stays red.
+
+        This is the missing link in the eventually-consistent readiness
+        contract: without it, a warmup that returned False would still get
+        signalled to ``warmup_signals_queue`` and the API would lie.
+        """
+        mock_device_runner = Mock()
+        mock_device_runner.set_device = Mock()
+        mock_device_runner.warmup = Mock()
+        mock_device_runner.close_device = Mock()
+
+        mock_get_device_runner = Mock(return_value=mock_device_runner)
+
+        mock_loop = Mock()
+        # warmup() returns False -> initialize_device_worker should raise.
+        mock_loop.run_until_complete = Mock(return_value=False)
+        mock_loop.close = Mock()
+
+        with patch(
+            "device_workers.worker_utils.get_device_runner", mock_get_device_runner
+        ):
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop"):
+                    with pytest.raises(RuntimeError, match="warmup did not complete"):
+                        initialize_device_worker("0", mock_logger)
+
+                    mock_device_runner.close_device.assert_called_once()
+                    mock_loop.close.assert_called_once()
+
+    def test_warmup_returning_true_proceeds_normally(self):
+        """Sanity: explicit ``True`` return from warmup keeps existing
+        runners (which historically return True) working unchanged."""
+        mock_device_runner = Mock()
+        mock_device_runner.set_device = Mock()
+        mock_device_runner.warmup = Mock()
+        mock_get_device_runner = Mock(return_value=mock_device_runner)
+
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=True)
+
+        with patch(
+            "device_workers.worker_utils.get_device_runner", mock_get_device_runner
+        ):
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop"):
+                    device_runner, loop = initialize_device_worker("0", mock_logger)
+
+                    assert device_runner is mock_device_runner
+                    assert loop is mock_loop
+
+    def test_warmup_returning_none_proceeds_normally(self):
+        """Some runners have a bare ``return`` (implicit ``None``). Only
+        explicit ``False`` should abort init; ``None`` is treated as
+        successful for back-compat with runners that pre-date the
+        readiness contract."""
+        mock_device_runner = Mock()
+        mock_device_runner.set_device = Mock()
+        mock_device_runner.warmup = Mock()
+        mock_get_device_runner = Mock(return_value=mock_device_runner)
+
+        mock_loop = Mock()
+        mock_loop.run_until_complete = Mock(return_value=None)
+
+        with patch(
+            "device_workers.worker_utils.get_device_runner", mock_get_device_runner
+        ):
+            with patch("asyncio.new_event_loop", return_value=mock_loop):
+                with patch("asyncio.set_event_loop"):
+                    device_runner, loop = initialize_device_worker("0", mock_logger)
+
+                    assert device_runner is mock_device_runner
+                    assert loop is mock_loop
+
 
 # Pytest fixtures for module-level setup
 @pytest.fixture(autouse=True)
@@ -467,7 +543,7 @@ class TestSetupBlackholeMeshConfig:
                 assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
 
     def test_sets_p300_mesh_descriptor(self):
-        """Test mesh descriptor is set for p300 device"""
+        """Test mesh descriptor is set for p300 device (maps to p150 descriptor)"""
         mock_settings_bh = Mock()
         mock_settings_bh.device = "p300"
 
@@ -477,7 +553,7 @@ class TestSetupBlackholeMeshConfig:
 
                 expected_path = (
                     "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
-                    "p300_mesh_graph_descriptor.textproto"
+                    "p150_mesh_graph_descriptor.textproto"
                 )
                 assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
 
