@@ -147,7 +147,7 @@ class SpecTestsWorkflow(WorkflowExecution):
 
 class ReleaseWorkflow(WorkflowExecution):
     name = "release"
-    children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests", "agentic")
+    children: ClassVar[Sequence[str]] = ("evals", "benchmarks", "spec_tests")
 
     def run_tasks(self) -> List[TaskOutcome]:
         outcomes: List[TaskOutcome] = []
