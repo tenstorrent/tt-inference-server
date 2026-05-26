@@ -36,13 +36,19 @@ def test_impl_registry_is_populated():
 
 
 def test_build_system_requirements_full():
-    out = _build_system_requirements({
-        "firmware": {"specifier": ">=19.2.0", "mode": "STRICT"},
-        "kmd": {"specifier": ">=2.5.0", "mode": "SUGGESTED"},
-    })
+    out = _build_system_requirements(
+        {
+            "firmware": {"specifier": ">=19.2.0", "mode": "STRICT"},
+            "kmd": {"specifier": ">=2.5.0", "mode": "SUGGESTED"},
+        }
+    )
     assert isinstance(out, SystemRequirements)
-    assert out.firmware == VersionRequirement(specifier=">=19.2.0", mode=VersionMode.STRICT)
-    assert out.kmd == VersionRequirement(specifier=">=2.5.0", mode=VersionMode.SUGGESTED)
+    assert out.firmware == VersionRequirement(
+        specifier=">=19.2.0", mode=VersionMode.STRICT
+    )
+    assert out.kmd == VersionRequirement(
+        specifier=">=2.5.0", mode=VersionMode.SUGGESTED
+    )
 
 
 def test_build_system_requirements_none_returns_none():
@@ -50,44 +56,67 @@ def test_build_system_requirements_none_returns_none():
 
 
 def test_build_device_model_spec_with_known_issues_and_overrides():
-    spec = _build_device_model_spec({
-        "device": "T3K",
-        "max_concurrency": 32,
-        "max_context": 32768,
-        "default_impl": True,
-        "vllm_args": {"data_parallel_size": 4, "limit-mm-per-prompt": '{"image": 1}'},
-        "override_tt_config": {"trace_region_size": 90000000},
-        "env_vars": {"TT_MM_THROTTLE_PERF": 5, "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1"},
-        "known_issues": [
-            {"workflow_type": "EVALS", "reason": "broken on this device", "task_name": "ifeval"},
-        ],
-    })
+    spec = _build_device_model_spec(
+        {
+            "device": "T3K",
+            "max_concurrency": 32,
+            "max_context": 32768,
+            "default_impl": True,
+            "vllm_args": {
+                "data_parallel_size": 4,
+                "limit-mm-per-prompt": '{"image": 1}',
+            },
+            "override_tt_config": {"trace_region_size": 90000000},
+            "env_vars": {
+                "TT_MM_THROTTLE_PERF": 5,
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+            },
+            "known_issues": [
+                {
+                    "workflow_type": "EVALS",
+                    "reason": "broken on this device",
+                    "task_name": "ifeval",
+                },
+            ],
+        }
+    )
     assert isinstance(spec, DeviceModelSpec)
     assert spec.device == DeviceTypes.T3K
     assert spec.vllm_args["data_parallel_size"] == 4
     assert spec.override_tt_config["trace_region_size"] == 90000000
     assert spec.known_issues == [
-        KnownIssue(workflow_type=WorkflowType.EVALS, reason="broken on this device", task_name="ifeval"),
+        KnownIssue(
+            workflow_type=WorkflowType.EVALS,
+            reason="broken on this device",
+            task_name="ifeval",
+        ),
     ]
 
 
 def test_build_template_resolves_all_enum_and_impl_references():
-    template = _build_template({
-        "weights": ["Qwen/Qwen3-8B"],
-        "impl": "tt_transformers",
-        "version": "0.10.0",
-        "tt_metal_commit": "abc1234",
-        "vllm_commit": "def5678",
-        "inference_engine": "VLLM",
-        "device_model_specs": [
-            {"device": "N150", "max_concurrency": 32, "max_context": 32768, "default_impl": True},
-        ],
-        "status": "FUNCTIONAL",
-        "model_type": "LLM",
-        "supported_modalities": ["text"],
-        "env_vars": {"VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1"},
-        "metadata": {"Qwen/Qwen3-8B": {"reasoning_parser_name": "qwen3"}},
-    })
+    template = _build_template(
+        {
+            "weights": ["Qwen/Qwen3-8B"],
+            "impl": "tt_transformers",
+            "version": "0.10.0",
+            "tt_metal_commit": "abc1234",
+            "vllm_commit": "def5678",
+            "inference_engine": "VLLM",
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "default_impl": True,
+                },
+            ],
+            "status": "FUNCTIONAL",
+            "model_type": "LLM",
+            "supported_modalities": ["text"],
+            "env_vars": {"VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1"},
+            "metadata": {"Qwen/Qwen3-8B": {"reasoning_parser_name": "qwen3"}},
+        }
+    )
     assert isinstance(template, ModelSpecTemplate)
     assert template.impl is _IMPL_REGISTRY["tt_transformers"]
     assert template.inference_engine == InferenceEngine.VLLM.value
@@ -123,9 +152,7 @@ templates:
 
 import pytest
 
-MODEL_SPECS_DIR = (
-    Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
-)
+MODEL_SPECS_DIR = Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
 EXPECTED_CATALOG_FILES = (
     "llm.yaml",
     "vlm.yaml",
