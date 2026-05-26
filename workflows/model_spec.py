@@ -1078,6 +1078,16 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 
+# Catalog environments live in sibling directories under _MODEL_SPECS_DIR.
+# Set MODEL_SPECS_ENV=dev to load the dev set instead of prod.
+_VALID_MODEL_SPECS_ENVS = ("prod", "dev")
+_MODEL_SPECS_ENV = os.getenv("MODEL_SPECS_ENV", "prod")
+if _MODEL_SPECS_ENV not in _VALID_MODEL_SPECS_ENVS:
+    raise ValueError(
+        f"MODEL_SPECS_ENV must be one of {_VALID_MODEL_SPECS_ENVS}, "
+        f"got {_MODEL_SPECS_ENV!r}"
+    )
+
 # One catalog file per model category. Load order determines spec_templates
 # order, which in turn determines MODEL_SPECS dict insertion order.
 _CATALOG_FILES = (
@@ -1093,7 +1103,9 @@ _CATALOG_FILES = (
 spec_templates: List["ModelSpecTemplate"] = [
     template
     for fname in _CATALOG_FILES
-    for template in load_templates_from_yaml(_MODEL_SPECS_DIR / fname)
+    for template in load_templates_from_yaml(
+        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
+    )
 ]
 
 
