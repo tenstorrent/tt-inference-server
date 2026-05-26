@@ -38,7 +38,7 @@ templates:
     status: EXPERIMENTAL
     has_builtin_warmup: true
     env_vars:
-      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
     metadata:
       openai/gpt-oss-20b:
         reasoning_parser_name: openai_gptoss
@@ -77,7 +77,7 @@ templates:
     status: EXPERIMENTAL
     has_builtin_warmup: true
     env_vars:
-      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
     metadata:
       openai/gpt-oss-120b:
         reasoning_parser_name: openai_gptoss
