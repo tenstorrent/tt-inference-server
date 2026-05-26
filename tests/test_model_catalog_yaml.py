@@ -5,8 +5,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 
 GOLDEN_PATH = Path(__file__).parent / "fixtures" / "model_specs_golden.json"
