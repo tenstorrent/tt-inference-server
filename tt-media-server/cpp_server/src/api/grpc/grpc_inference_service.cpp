@@ -117,7 +117,7 @@ void GrpcInferenceService::handleStreamChunk(
     tt::utils::BlockingQueue<inference::TokenChunk>& queue) {
   queue.push(toGrpcTokenChunk(chunk, isFinal));
   if (isFinal) {
-    queue.markDone();
+    queue.shutdown();
   }
 }
 
@@ -125,19 +125,20 @@ void GrpcInferenceService::handleStreamChunk(
     ::grpc::ServerContext* ctx,
     ::grpc::ServerWriter<inference::TokenChunk>* writer, uint32_t taskId,
     tt::utils::BlockingQueue<inference::TokenChunk>& queue) {
-  while (auto chunkOpt = queue.pop()) {
+  inference::TokenChunk chunk;
+  while (queue.waitPop(chunk)) {
     if (ctx->IsCancelled()) {
       llmService->abortRequest(taskId);
       return ::grpc::Status::CANCELLED;
     }
 
-    if (!writer->Write(*chunkOpt)) {
+    if (!writer->Write(chunk)) {
       llmService->abortRequest(taskId);
       return ::grpc::Status(::grpc::StatusCode::ABORTED,
                             "Failed to write chunk");
     }
 
-    if (chunkOpt->has_finish_reason()) {
+    if (chunk.has_finish_reason()) {
       return ::grpc::Status::OK;
     }
   }
