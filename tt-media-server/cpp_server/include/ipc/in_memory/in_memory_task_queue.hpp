@@ -7,7 +7,7 @@
 #include <sstream>
 
 #include "domain/llm/sequence.hpp"
-#include "ipc/in_memory/detail/concurrent_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
 
 namespace tt::ipc::in_memory {
