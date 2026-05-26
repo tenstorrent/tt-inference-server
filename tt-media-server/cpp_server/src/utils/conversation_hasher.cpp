@@ -113,64 +113,15 @@ uint64_t hashTokenPrefix(std::span<const int> tokens) {
   return XXH64(tokens.data(), tokens.size_bytes(), 0);
 }
 
-namespace {
-
-/// Naive substring search over int sequences. Returns the END indices
-/// (exclusive) of every match — i.e. the position one past the last token
-/// of each occurrence. Empty needle returns no matches.
-std::vector<size_t> findSequenceEndPositions(std::span<const int> tokens,
-                                             std::span<const int> needle) {
-  std::vector<size_t> out;
-  if (needle.empty() || tokens.size() < needle.size()) return out;
-  const size_t n = needle.size();
-  for (size_t i = 0; i + n <= tokens.size(); ++i) {
-    bool match = true;
-    for (size_t j = 0; j < n; ++j) {
-      if (tokens[i + j] != needle[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) out.push_back(i + n);
-  }
-  return out;
-}
-
-}  // namespace
-
-std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
-    std::span<const int> tokens, std::span<const int> assistantHeaderSequence) {
-  auto ends = findSequenceEndPositions(tokens, assistantHeaderSequence);
-  if (ends.size() < 2) {
-    return std::nullopt;
-  }
-  // Prior prefix runs through (inclusive) the SECOND-TO-LAST assistant
-  // header — that's the gen prompt the previous turn registered against.
-  const size_t end = ends[ends.size() - 2];
-  return std::vector<int>(tokens.begin(), tokens.begin() + end);
-}
-
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens) {
   PrefixCachingInfo info;
 
-  // Read from the static per-model table so this hot path NEVER touches
-  // a Tokenizer instance. Critical on the Dynamo path: the TCP server
-  // spawns a fresh std::thread per request (dynamo/dynamo_protocol.cpp);
-  // any thread_local activeTokenizer() call there would synchronously
-  // parse tokenizer.json (~500ms for DeepSeek-R1) and show up directly
-  // as TTFT.
-  const auto& headerSeq = tokenizers::staticInfo().assistantHeaderSequence;
-  auto ends = findSequenceEndPositions(tokens, headerSeq);
-
   // Hash all tokens into per-block hashes.
   info.hashes = getPrefixCacheHashesByBlocks(tokens);
-  info.deltaPrompt = std::vector<int>{};
 
-  TT_LOG_INFO(
-      "[TokenHasher] tokens={} asstHeaderLen={} asstHeaderHits={} "
-      "hashes={}",
-      tokens.size(), headerSeq.size(), ends.size(), info.hashes.size());
+  TT_LOG_INFO("[TokenHasher] tokens={} hashes={}", tokens.size(),
+              info.hashes.size());
 
   return info;
 }
