@@ -298,6 +298,7 @@ def build_context(args: argparse.Namespace) -> MediaContext:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
 
     device = DeviceTypes.from_string(args.device)
+    runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
     output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
     output_path.mkdir(parents=True, exist_ok=True)
@@ -312,6 +313,7 @@ def build_context(args: argparse.Namespace) -> MediaContext:
         output_path=str(output_path),
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
+        runtime_config=runtime_config,
     )
 
 
@@ -439,7 +441,7 @@ def _maybe_reexec_in_evals_agentic_venv(args: argparse.Namespace) -> None:
     Reuses v1's existing ``WorkflowVenvType.EVALS_AGENTIC`` venv config
     (harbor + mini-swe-agent + SWE-bench, declared in
     workflows/workflow_venvs.py). Idempotent: no-op when already inside
-    the venv. Mirrors ``_maybe_reexec_in_prefix_cache_venv`` from PR #3698.
+    the venv.
     """
     if args.workflow != "agentic":
         return

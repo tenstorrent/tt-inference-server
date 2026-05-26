@@ -1,123 +1,126 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Tests for agentic_eval_tests runner internals.
-
-These tests cover the pure-Python helper functions (config building,
-result parsing, accuracy mapping, task selection) and do NOT require
-the EVALS_AGENTIC venv to be active — the harness imports are mocked
-at the module level so tests run in the standard v2 venv.
-"""
+"""Tests for v2 agentic eval parser, drivers, and bridge helpers."""
 
 from __future__ import annotations
 
-import importlib.util as _importlib_util
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-# ---------------------------------------------------------------------------
-# Stub the v2 agentic harness modules before importing the runner so we
-# don't need harbor / swe-agent installed in the test venv.
-#
-# report.py is pure stdlib — load the real module via importlib so tests
-# exercise the actual parsing logic rather than a mock.
-# ---------------------------------------------------------------------------
-
-_V2_ROOT = Path(__file__).resolve().parents[3]
-
-# Load the real report module directly from disk (no heavy deps needed).
-_report_spec = _importlib_util.spec_from_file_location(
-    "llm_module.agentic.report",
-    _V2_ROOT / "llm_module" / "agentic" / "report.py",
+from llm_module import DriverContext, ServerConnection
+from llm_module.drivers.agentic import (
+    build_swebench_config,
+    build_terminal_bench_config,
+    resolve_instance_ids,
+    resolve_n_tasks,
+    resolve_task_names,
 )
-_real_report_module = _importlib_util.module_from_spec(_report_spec)
-_report_spec.loader.exec_module(_real_report_module)
-
-_stub_swebench = SimpleNamespace(
-    SWEbenchRunConfig=None,
-    run=lambda cfg: 0,
-)
-_stub_terminal_bench = SimpleNamespace(
-    TerminalBenchRunConfig=None,
-    run=lambda cfg: 0,
-)
-
-sys.modules.setdefault("llm_module", MagicMock())
-sys.modules.setdefault("llm_module.agentic", MagicMock())
-sys.modules["llm_module.agentic.report"] = _real_report_module
-sys.modules["llm_module.agentic.swebench"] = _stub_swebench
-sys.modules["llm_module.agentic.terminal_bench"] = _stub_terminal_bench
+from llm_module.parsers.agentic import AgenticEvalParser, compute_accuracy_check
+from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
+from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
 
-# Now we can safely import the runner helpers. Import only the pure helpers
-# that don't trigger the harness imports at module scope.
-from test_module.llm_tests.agentic_eval_tests import (  # noqa: E402
-    _agentic_output_dir,
-    _compute_accuracy_check,
-    _parse_harbor_result,
-    _select_agentic_tasks,
-)
+@dataclass
+class FakeScore:
+    published_score: float = 0.5
+    published_score_ref: str = "https://example.com"
+    gpu_reference_score: Optional[float] = 0.45
+    tolerance: float = 0.05
 
 
-# ---------------------------------------------------------------------------
-# Minimal fakes
-# ---------------------------------------------------------------------------
+@dataclass
+class FakeTerminalBenchConfig:
+    dataset: str = "terminal-bench/terminal-bench-2"
+    agent: str = "terminus-2"
+    model: Optional[str] = None
+    n_concurrent_trials: int = 5
+    n_attempts: int = 1
+    n_tasks: Optional[int] = 89
+    task_names: List[str] = field(default_factory=list)
+    exclude_task_names: List[str] = field(default_factory=list)
+    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    environment_type: str = "docker"
+    override_cpus: Optional[int] = 16
+    override_memory_mb: Optional[int] = 48 * 1024
+    timeout_multiplier: Optional[float] = None
+    agent_timeout_sec: Optional[float] = 3 * 60 * 60
+    quiet: bool = True
+    yes: bool = True
+    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
-def _fake_ctx(model_id="Qwen__Qwen3.6-27B", service_port=8000, output_path="/tmp/out"):
-    ctx = MagicMock()
-    ctx.model_spec.model_id = model_id
-    ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
-    ctx.service_port = service_port
-    ctx.output_path = output_path
-    return ctx
+
+@dataclass
+class FakeSWEbenchConfig:
+    dataset_name: str = "SWE-bench/SWE-bench_Verified"
+    sweagent_subset: str = "verified"
+    dataset_split: str = "test"
+    agent_backend: str = "mini-swe-agent"
+    model: Optional[str] = None
+    n_concurrent_trials: int = 5
+    max_workers: int = 8
+    n_tasks: Optional[int] = None
+    temperature: float = 1.0
+    top_p: float = 0.95
+    max_input_tokens: int = 200 * 1024
+    max_output_tokens: Optional[int] = 32 * 1024
+    completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    sweagent_config: str = "config/default.yaml"
+    mini_config: str = "swebench.yaml"
+    mini_model_class: str = "litellm"
+    mini_environment_class: str = "docker"
+    swebench_timeout_sec: Optional[int] = None
+    shuffle: bool = True
+    random_delay_multiplier: float = 0.3
+    instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
 
-def _make_eval_task(task_name, venv_type, has_swebench=False, has_terminal=False):
-    from workflows.workflow_types import WorkflowVenvType
+def _runtime(limit_samples_mode: Optional[str] = None):
+    return SimpleNamespace(limit_samples_mode=limit_samples_mode)
 
-    task = MagicMock()
-    task.task_name = task_name
-    task.workflow_venv_type = venv_type
-    task.swebench_eval_config = MagicMock() if has_swebench else None
-    task.agentic_eval_config = MagicMock() if has_terminal else None
-    task.score = MagicMock()
-    task.score.tolerance = 0.05
-    task.score.published_score = 0.5
-    task.score.gpu_reference_score = 0.45
-    task.score.published_score_ref = "https://example.com"
+
+def _terminal_task(**overrides):
+    task = SimpleNamespace(
+        task_name="terminal_bench_2",
+        workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        score=FakeScore(),
+        agentic_eval_config=FakeTerminalBenchConfig(),
+        swebench_eval_config=None,
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+    )
+    for key, value in overrides.items():
+        setattr(task, key, value)
     return task
 
 
-# ---------------------------------------------------------------------------
-# _agentic_output_dir
-# ---------------------------------------------------------------------------
-
-class TestAgenticOutputDir:
-    def test_path_structure(self):
-        ctx = _fake_ctx(model_id="Qwen/Qwen3.6-27B", output_path="/out")
-        task = MagicMock()
-        task.task_name = "terminal_bench_2"
-        result = _agentic_output_dir(ctx, task)
-        assert result == Path("/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2")
-
-    def test_slash_replaced(self):
-        ctx = _fake_ctx(model_id="org/model-name", output_path="/out")
-        task = MagicMock()
-        task.task_name = "swe_bench"
-        result = _agentic_output_dir(ctx, task)
-        assert "__" in str(result)
-        assert "/" not in result.name
+def _swebench_task(**overrides):
+    task = SimpleNamespace(
+        task_name="swe_bench_verified",
+        workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        score=FakeScore(),
+        agentic_eval_config=None,
+        swebench_eval_config=FakeSWEbenchConfig(),
+        limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+    )
+    for key, value in overrides.items():
+        setattr(task, key, value)
+    return task
 
 
-# ---------------------------------------------------------------------------
-# _parse_harbor_result
-# ---------------------------------------------------------------------------
+def _server():
+    return ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="Qwen/Qwen3.6-27B",
+    )
+
+
+def _driver_context():
+    return DriverContext(output_dir=Path("/tmp/out"), device="N150")
+
 
 HARBOR_RESULT_FIXTURE = {
     "stats": {
@@ -135,63 +138,108 @@ HARBOR_RESULT_FIXTURE = {
             }
         }
     },
-    "trial_results": [
-        {"verifier_result": {"rewards": {"reward": 1.0}}},
-        {"verifier_result": {"rewards": {"reward": 0.0}}},
-    ],
 }
 
 
-class TestParseHarborResult:
-    def test_happy_path(self):
-        metrics = _parse_harbor_result(HARBOR_RESULT_FIXTURE)
-        assert "accuracy" in metrics
-        assert metrics["accuracy"] == pytest.approx(0.62)
-        assert "n_trials" in metrics
+class TestAgenticParser:
+    def test_parse_harbor_result_to_evals_block(self):
+        parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
+        block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
 
-    def test_empty_dict_does_not_raise(self):
-        metrics = _parse_harbor_result({})
-        assert isinstance(metrics, dict)
+        assert block.kind == "evals"
+        assert block.task_type == "llm"
+        assert block.targets["task_name"] == "terminal_bench_2"
+        assert abs(block.data["accuracy"] - 0.62) < 1e-9
+        assert block.data["n_trials"] == 89
+        assert block.data["n_resolved"] == 3
+        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
 
+    def test_failure_block_uses_failing_accuracy_check(self):
+        parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
+        block = parser.failure_block(return_code=7, device="N150")
 
-# ---------------------------------------------------------------------------
-# _compute_accuracy_check
-# ---------------------------------------------------------------------------
+        assert block.kind == "evals"
+        assert block.data == {
+            "success": False,
+            "accuracy_check": 3,
+            "subprocess_rc": 7,
+        }
 
-class TestComputeAccuracyCheck:
-    def _task_with_score(self, published=0.5, gpu_ref=0.45, tol=0.05):
-        task = MagicMock()
-        task.score.published_score = published
-        task.score.gpu_reference_score = gpu_ref
-        task.score.tolerance = tol
-        return task
+    def test_compute_accuracy_check_boundaries(self):
+        score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)
 
-    def test_pass_within_tolerance(self):
-        task = self._task_with_score(gpu_ref=0.5, tol=0.05)
-        assert _compute_accuracy_check({"accuracy": 0.49}, task) == 1
+        assert compute_accuracy_check({"accuracy": 0.49}, score) == ReportCheckTypes.PASS
+        assert compute_accuracy_check({"accuracy": 0.40}, score) == ReportCheckTypes.FAIL
+        assert compute_accuracy_check({}, score) == ReportCheckTypes.NA
+        assert compute_accuracy_check({"accuracy": 0.90}, None) == ReportCheckTypes.NA
 
-    def test_marginal_between_one_and_two_tol(self):
-        task = self._task_with_score(gpu_ref=0.5, tol=0.05)
-        # 0.5 * (1 - 0.05) = 0.475; 0.5 * (1 - 0.10) = 0.45
-        assert _compute_accuracy_check({"accuracy": 0.46}, task) == 2
+    def test_compute_accuracy_check_preserves_percent_accuracy(self):
+        score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)
 
-    def test_fail_below_two_tol(self):
-        task = self._task_with_score(gpu_ref=0.5, tol=0.05)
-        assert _compute_accuracy_check({"accuracy": 0.40}, task) == 3
-
-    def test_no_accuracy_returns_marginal(self):
-        task = self._task_with_score()
-        assert _compute_accuracy_check({}, task) == 2
-
-    def test_no_score_returns_marginal(self):
-        task = MagicMock()
-        task.score = None
-        assert _compute_accuracy_check({"accuracy": 0.9}, task) == 2
+        assert compute_accuracy_check({"accuracy": 49.0}, score) == ReportCheckTypes.PASS
 
 
-# ---------------------------------------------------------------------------
-# _select_agentic_tasks
-# ---------------------------------------------------------------------------
+class TestAgenticDriverConfigMapping:
+    def test_terminal_bench_config_uses_limit_mode_task_names_and_n_tasks(self):
+        task = _terminal_task()
+        task.agentic_eval_config.task_names_map = {
+            EvalLimitMode.CI_NIGHTLY: ["terminal-bench/caffe-cifar-10"]
+        }
+
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            _driver_context(),
+            runtime_config=_runtime("ci-nightly"),
+            n_tasks=resolve_n_tasks(task, _runtime("smoke-test")),
+        )
+
+        assert cfg.n_tasks == 5
+        assert cfg.task_names == ["terminal-bench/caffe-cifar-10"]
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+        assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+    def test_swebench_config_uses_limit_mode_instance_ids_and_n_tasks(self):
+        task = _swebench_task()
+        task.swebench_eval_config.instance_ids_map = {
+            EvalLimitMode.CI_NIGHTLY: ["django__django-11299"]
+        }
+
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            _driver_context(),
+            runtime_config=_runtime("ci-nightly"),
+            n_tasks=resolve_n_tasks(task, _runtime("smoke-test")),
+        )
+
+        assert cfg.n_tasks == 5
+        assert cfg.instance_ids == ["django__django-11299"]
+        assert cfg.output_dir == Path(
+            "/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified"
+        )
+        assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+
+class TestAgenticLimitResolution:
+    def test_fractional_agentic_limits_become_one_task(self):
+        task = _terminal_task(limit_samples_map={EvalLimitMode.CI_COMMIT: 0.01})
+
+        assert resolve_n_tasks(task, _runtime("ci-commit")) == 1
+
+    def test_zero_limit_means_skip(self):
+        task = _terminal_task(limit_samples_map={EvalLimitMode.CI_COMMIT: 0})
+
+        assert resolve_n_tasks(task, _runtime("ci-commit")) == 0
+
+    def test_default_task_names_and_instance_ids(self):
+        terminal = _terminal_task()
+        terminal.agentic_eval_config.task_names = ["default-task"]
+        swe = _swebench_task()
+
+        assert resolve_task_names(terminal, None) == ["default-task"]
+        assert resolve_instance_ids(swe, None) == []
+
 
 class TestSelectAgenticTasks:
     def _ctx_with_tasks(self, tasks):
@@ -201,31 +249,61 @@ class TestSelectAgenticTasks:
         return ctx
 
     def test_returns_only_agentic_tasks(self):
-        from workflows.workflow_types import WorkflowVenvType
-
-        t1 = _make_eval_task("tb2", WorkflowVenvType.EVALS_AGENTIC)
-        t2 = _make_eval_task("swe", WorkflowVenvType.EVALS_AGENTIC)
+        t1 = _terminal_task()
+        t2 = _swebench_task()
         ctx = self._ctx_with_tasks([t1, t2])
-        result = _select_agentic_tasks(ctx)
-        assert result == [t1, t2]
+
+        assert _select_agentic_tasks(ctx) == [t1, t2]
 
     def test_empty_task_list_returns_empty(self):
-        ctx = self._ctx_with_tasks([])
-        assert _select_agentic_tasks(ctx) == []
+        assert _select_agentic_tasks(self._ctx_with_tasks([])) == []
 
     def test_mixed_tasks_raises(self):
-        from workflows.workflow_types import WorkflowVenvType
-
-        t_agentic = _make_eval_task("tb2", WorkflowVenvType.EVALS_AGENTIC)
-        t_other = _make_eval_task("mmlu", WorkflowVenvType.EVALS_META)
+        t_agentic = _terminal_task()
+        t_other = _terminal_task(
+            task_name="mmlu",
+            workflow_venv_type=WorkflowVenvType.EVALS_META,
+        )
         ctx = self._ctx_with_tasks([t_agentic, t_other])
-        with pytest.raises(RuntimeError, match="non-agentic tasks"):
+
+        try:
             _select_agentic_tasks(ctx)
+        except RuntimeError as exc:
+            assert "non-agentic tasks" in str(exc)
+        else:
+            raise AssertionError("Expected mixed agentic task selection to fail")
 
-    def test_all_non_agentic_returns_empty(self):
-        from workflows.workflow_types import WorkflowVenvType
 
-        t = _make_eval_task("mmlu", WorkflowVenvType.EVALS_META)
-        ctx = self._ctx_with_tasks([t])
-        result = _select_agentic_tasks(ctx)
-        assert result == []
+class TestAgenticBridge:
+    def test_bridge_delegates_to_driver_and_accepts_blocks(self):
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_terminal_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2",
+            score=FakeScore(),
+        ).parse(HARBOR_RESULT_FIXTURE, device="N150")
+        driver = MagicMock()
+        driver.name = "terminal_bench"
+        driver.run.return_value.return_code = 0
+        driver.run.return_value.raw = HARBOR_RESULT_FIXTURE
+        driver.parse.return_value = block
+
+        with patch("test_module.llm_tests.agentic_eval_tests._require_openai_server"), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            return_value=driver,
+        ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:
+            blocks = run_llm_agentic_eval(ctx)
+
+        assert blocks == [block]
+        driver.run.assert_called_once()
+        driver.parse.assert_called_once_with(HARBOR_RESULT_FIXTURE, device="N150")
+        accept.assert_called_once()
