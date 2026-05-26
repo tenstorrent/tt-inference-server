@@ -1074,10 +1074,23 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 
-
-spec_templates: List["ModelSpecTemplate"] = load_templates_from_yaml(
-    _MODEL_SPECS_DIR / "catalog.yaml"
+# One catalog file per model category. Load order determines spec_templates
+# order, which in turn determines MODEL_SPECS dict insertion order.
+_CATALOG_FILES = (
+    "llm.yaml",
+    "vlm.yaml",
+    "video.yaml",
+    "image.yaml",
+    "audio_tts.yaml",
+    "embedding.yaml",
+    "cnn.yaml",
 )
+
+spec_templates: List["ModelSpecTemplate"] = [
+    template
+    for fname in _CATALOG_FILES
+    for template in load_templates_from_yaml(_MODEL_SPECS_DIR / fname)
+]
 
 
 def get_model_spec_map(
