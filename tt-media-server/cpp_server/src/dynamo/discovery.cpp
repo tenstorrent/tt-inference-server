@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -72,6 +73,53 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   instance["transport"] = std::move(transport);
   instance["device_type"] = "cuda";
   return instance;
+}
+
+/// Dynamo frontend parser names advertised in the MDC runtime_config.
+struct RuntimeParsers {
+  const char* reasoning = nullptr;
+  const char* tool_call = nullptr;
+};
+
+/// Read HuggingFace `model_type` from config.json (empty if missing/unreadable).
+std::string readModelType(const std::string& config_path) {
+  std::ifstream f(config_path);
+  if (!f) {
+    return {};
+  }
+  Json::Value cfg;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, f, &cfg, &errs) ||
+      !cfg.isMember("model_type") || !cfg["model_type"].isString()) {
+    return {};
+  }
+  return cfg["model_type"].asString();
+}
+
+/// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
+RuntimeParsers runtimeParsersForModelType(const std::string& model_type) {
+  if (model_type == "kimi_k25") {
+    return {"kimi_k25", "kimi_k2"};
+  }
+  if (model_type == "llama") {
+    return {nullptr, nullptr};
+  }
+  // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
+  return {"deepseek_r1", nullptr};
+}
+
+RuntimeParsers runtimeParsersForModelPath(const std::string& model_path) {
+  return runtimeParsersForModelType(readModelType(model_path + "/config.json"));
+}
+
+void setRuntimeParserField(Json::Value& runtime, const char* field,
+                           const char* value) {
+  if (value != nullptr) {
+    runtime[field] = value;
+  } else {
+    runtime[field] = Json::Value::null;
+  }
 }
 
 /// Build the Model Descriptor Card JSON the frontend uses to tokenize and
@@ -149,8 +197,9 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["total_kv_blocks"] = Json::Value::null;
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
-  runtime["tool_call_parser"] = Json::Value::null;
-  runtime["reasoning_parser"] = "deepseek_r1";
+  const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
+  setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
+  setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;
