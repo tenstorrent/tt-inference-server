@@ -44,9 +44,7 @@ class TaskQueue : public tt::ipc::ITaskQueue {
   bool empty() const override { return queue.empty(); }
 
  private:
-  tt::utils::ConcurrentQueue<
-      std::unique_ptr<tt::domain::llm::Sequence>>
-      queue;
+  tt::utils::BlockingQueue<std::unique_ptr<tt::domain::llm::Sequence>> queue;
 };
 
 }  // namespace tt::ipc::in_memory

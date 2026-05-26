@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "utils/concurrent_queue.hpp"
 #include "ipc/interface/cancel_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace tt::ipc::in_memory {
 

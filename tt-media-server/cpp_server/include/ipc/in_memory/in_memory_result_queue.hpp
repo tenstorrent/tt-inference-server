@@ -5,7 +5,6 @@
 
 #include <chrono>
 
-
 #include "ipc/interface/result_queue.hpp"
 #include "utils/concurrent_queue.hpp"
 
