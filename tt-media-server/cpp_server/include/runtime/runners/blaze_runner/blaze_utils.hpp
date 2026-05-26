@@ -69,12 +69,13 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq, uint32_t currentPosition) {
+                                         const tt::domain::llm::Sequence& seq,
+                                         uint32_t currentPosition) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
-  if (seq.getKVCacheOffset().has_value()) { // override position id
+  if (seq.getKVCacheOffset().has_value()) {  // override position id
     req.gen.position_id = *seq.getKVCacheOffset();
   } else {
     req.gen.position_id = currentPosition;

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <stdexcept>
 
 #include "config/runner_config.hpp"
@@ -90,12 +91,16 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&status), sizeof(status));
   os.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
   os.write(reinterpret_cast<const char*>(&kvCacheSlot), sizeof(kvCacheSlot));
-  os.write(reinterpret_cast<const char*>(&continuation), sizeof(continuation));
-  os.write(reinterpret_cast<const char*>(&disaggregated),
-           sizeof(disaggregated));
+  uint8_t continuationFlag = continuation ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&continuationFlag),
+           sizeof(continuationFlag));
+  uint8_t disaggregatedFlag = disaggregated ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&disaggregatedFlag),
+           sizeof(disaggregatedFlag));
   samplingParams->serialize(os);
-  bool hasKvCacheOffset = kvCacheOffset.has_value();
-  os.write(reinterpret_cast<const char*>(&hasKvCacheOffset), sizeof(bool));
+  uint8_t hasKvCacheOffset = kvCacheOffset.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasKvCacheOffset),
+           sizeof(hasKvCacheOffset));
   if (hasKvCacheOffset) {
     uint32_t kvCacheOffsetValue = kvCacheOffset.value();
     os.write(reinterpret_cast<const char*>(&kvCacheOffsetValue),
@@ -132,11 +137,15 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.kvCacheSlot), sizeof(seq.kvCacheSlot));
-  is.read(reinterpret_cast<char*>(&seq.continuation), sizeof(seq.continuation));
-  is.read(reinterpret_cast<char*>(&seq.disaggregated),
-          sizeof(seq.disaggregated));
+  uint8_t continuationFlag = 0;
+  is.read(reinterpret_cast<char*>(&continuationFlag), sizeof(continuationFlag));
+  seq.continuation = continuationFlag != 0;
+  uint8_t disaggregatedFlag = 0;
+  is.read(reinterpret_cast<char*>(&disaggregatedFlag),
+          sizeof(disaggregatedFlag));
+  seq.disaggregated = disaggregatedFlag != 0;
   seq.samplingParams = SamplingParams::deserialize(is);
-  auto hasKvCacheOffset = false;
+  uint8_t hasKvCacheOffset = 0;
   is.read(reinterpret_cast<char*>(&hasKvCacheOffset), sizeof(hasKvCacheOffset));
   if (hasKvCacheOffset) {
     seq.kvCacheOffset = std::make_optional<uint32_t>(0);

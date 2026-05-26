@@ -41,7 +41,8 @@ class Sequence {
   Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
            size_t numPromptTokens, std::optional<uint32_t> slotId,
            bool continuation, bool disaggregated,
-           std::unique_ptr<SamplingParams> samplingParams, std::optional<uint32_t> kvCacheOffset = std::nullopt);
+           std::unique_ptr<SamplingParams> samplingParams,
+           std::optional<uint32_t> kvCacheOffset = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
