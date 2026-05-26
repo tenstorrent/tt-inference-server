@@ -19,7 +19,7 @@ class MemoryRequestQueue : public tt::ipc::IMemoryRequestQueue {
   }
 
  private:
-  tt::utils::ConcurrentQueue<tt::domain::ManageMemoryTask> queue;
+  tt::utils::BlockingQueue<tt::domain::ManageMemoryTask> queue;
 };
 
 class MemoryResultQueue : public tt::ipc::IMemoryResultQueue {
@@ -33,7 +33,7 @@ class MemoryResultQueue : public tt::ipc::IMemoryResultQueue {
   }
 
  private:
-  tt::utils : ConcurrentQueue<tt::domain::ManageMemoryResult> queue;
+  tt::utils::BlockingQueue<tt::domain::ManageMemoryResult> queue;
 };
 
 }  // namespace tt::ipc::in_memory

@@ -34,7 +34,7 @@ class ResultQueue : public tt::ipc::IResultQueue {
   }
 
  private:
-  tt::utils::ConcurrentQueue<tt::ipc::SharedToken> queue;
+  tt::utils::BlockingQueue<tt::ipc::SharedToken> queue;
 };
 
 }  // namespace tt::ipc::in_memory
