@@ -7,8 +7,8 @@
 #include <sstream>
 
 #include "domain/llm/sequence.hpp"
-#include "ipc/in_memory/detail/concurrent_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace tt::ipc::in_memory {
 
@@ -44,9 +44,7 @@ class TaskQueue : public tt::ipc::ITaskQueue {
   bool empty() const override { return queue.empty(); }
 
  private:
-  tt::ipc::in_memory::detail::ConcurrentQueue<
-      std::unique_ptr<tt::domain::llm::Sequence>>
-      queue;
+  tt::utils::BlockingQueue<std::unique_ptr<tt::domain::llm::Sequence>> queue;
 };
 
 }  // namespace tt::ipc::in_memory
