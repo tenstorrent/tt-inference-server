@@ -27,10 +27,10 @@ classifiers = [
 dependencies = [
     "vllm==0.18.1",
     ## Pin torch/numpy to versions compatible with tt-metal
-    #"torch>=2.7.1,<2.8",
-    #"numpy>=1.24.4,<2",
+    #"torch==2.10.0",
+    #"numpy==2.2,6",
     ## Pin transformers to match requirements.txt
-    #"transformers==4.55.0",
+    #"transformers==4.57.6",
 ]
 
 [project.optional-dependencies]
