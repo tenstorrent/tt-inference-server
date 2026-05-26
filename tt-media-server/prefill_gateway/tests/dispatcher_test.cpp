@@ -20,6 +20,11 @@ struct CapturedRequest {
   size_t registrationHash;
 };
 
+struct CapturedCancel {
+  std::string prefillServerId;
+  uint32_t taskId;
+};
+
 // Test fixture wires the dispatcher to capture-only senders that record
 // each outbound message in vectors. No sockets, no threads.
 class DispatcherTest : public ::testing::Test {
@@ -35,6 +40,12 @@ class DispatcherTest : public ::testing::Test {
                const tt::sockets::PrefillRequestMessage& m) {
           requests.push_back({serverId, m.task_id, m.registration_hash});
           return prefillSendSucceeds;
+        };
+    senders.sendCancelToPrefill =
+        [this](const std::string& serverId,
+               const tt::sockets::CancelPrefillMessage& m) {
+          cancels.push_back({serverId, m.task_id});
+          return prefillCancelSucceeds;
         };
     senders.sendAssignmentToDecode =
         [this](const tt::sockets::PrefillAssignmentMessage& m) {
@@ -68,9 +79,11 @@ class DispatcherTest : public ::testing::Test {
   std::unique_ptr<Dispatcher> dispatcher;
 
   std::vector<CapturedRequest> requests;
+  std::vector<CapturedCancel> cancels;
   std::vector<tt::sockets::PrefillAssignmentMessage> assignments;
   std::vector<tt::sockets::PrefillResultMessage> results;
   bool prefillSendSucceeds = true;
+  bool prefillCancelSucceeds = true;
 };
 
 TEST_F(DispatcherTest, NoHealthyPrefillsFailsTaskToDecode) {
@@ -218,6 +231,55 @@ TEST_F(DispatcherTest, PrefillDownLeavesOtherPrefillsTasksAlone) {
   ASSERT_EQ(results.size(), 1u);
   EXPECT_EQ(results[0].task_id, 1u);
   EXPECT_TRUE(affinity.lookup(88).has_value());  // B's affinity intact
+}
+
+TEST_F(DispatcherTest, CancelKnownTaskForwardsToAssignedPrefill) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(11, /*hash=*/77));
+  ASSERT_EQ(requests.size(), 1u);
+  const std::string chosen = requests[0].prefillServerId;
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 11;
+  dispatcher->onPrefillCancel(cancel);
+
+  ASSERT_EQ(cancels.size(), 1u);
+  EXPECT_EQ(cancels[0].taskId, 11u);
+  EXPECT_EQ(cancels[0].prefillServerId, chosen);
+
+  uint32_t sum = 0;
+  for (const auto& s : registry.snapshot()) sum += s.in_flight;
+  EXPECT_EQ(sum, 0u);
+}
+
+TEST_F(DispatcherTest, CancelUnknownTaskIsSilent) {
+  markAllHealthy();
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 404;
+  dispatcher->onPrefillCancel(cancel);
+
+  EXPECT_TRUE(cancels.empty());
+  EXPECT_TRUE(results.empty());
+}
+
+TEST_F(DispatcherTest, LateResultAfterCancelIsDropped) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(21, /*hash=*/99));
+  ASSERT_EQ(requests.size(), 1u);
+  const std::string chosen = requests[0].prefillServerId;
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 21;
+  dispatcher->onPrefillCancel(cancel);
+
+  tt::sockets::PrefillResultMessage late(21);
+  late.finished = true;
+  late.generated_text = "late";
+  dispatcher->onPrefillResult(chosen, late);
+
+  EXPECT_TRUE(results.empty());
+  EXPECT_FALSE(affinity.lookup(99).has_value());
 }
 
 TEST_F(DispatcherTest, SendFailureToPrefillRollsBackAndFailsTask) {

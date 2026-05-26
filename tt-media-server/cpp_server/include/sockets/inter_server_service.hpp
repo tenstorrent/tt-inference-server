@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
@@ -36,6 +39,9 @@ class InterServerService {
    */
   using PrefillRequestedCallback =
       std::function<void(const PrefillRequestMessage& message)>;
+
+  using PrefillCancelCallback =
+      std::function<void(const CancelPrefillMessage& message)>;
 
   /**
    * @brief Health info callback type
@@ -95,6 +101,12 @@ class InterServerService {
   bool sendPrefillResult(const PrefillResultMessage& message);
 
   /**
+   * @brief Best-effort cancellation for an in-flight prefill task.
+   * @return true if sent successfully
+   */
+  bool sendPrefillCancel(uint32_t taskId);
+
+  /**
    * @brief Send health check information
    * @param server_id This server's identifier
    * @param cpu_usage CPU usage percentage
@@ -110,6 +122,11 @@ class InterServerService {
    * @param callback Function to call when prefill request is received
    */
   void onPrefillRequested(PrefillRequestedCallback callback);
+
+  /**
+   * @brief Set callback for when prefill server receives a cancellation.
+   */
+  void onPrefillCancelled(PrefillCancelCallback callback);
 
   /**
    * @brief Set callback for when decode server receives prefill completion
@@ -148,14 +165,21 @@ class InterServerService {
   // Prefill-side, gateway-mode only: send PrefillRegistrationMessage in
   // response to a RegistrationProbeMessage from the gateway. No-op otherwise.
   void sendRegistrationIfGatewayModeIsEnabled();
+  void startRegistrationThread();
+  void stopRegistrationThread();
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
+  PrefillCancelCallback prefill_cancel_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
+  bool registration_stop_ = false;
+  std::mutex registration_mutex_;
+  std::condition_variable registration_cv_;
+  std::thread registration_thread_;
 };
 
 }  // namespace tt::sockets

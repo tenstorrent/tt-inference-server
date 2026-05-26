@@ -506,10 +506,13 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
   // before touching the sessions map (acquireInFlight takes that lock, and we
   // avoid holding both simultaneously).
   std::vector<std::string> candidateIds;
-  prefixIndex.modify(prefixHash,
-                     [&candidateIds](const std::list<std::string>& ids) {
-                       candidateIds.assign(ids.begin(), ids.end());
-                     });
+  prefixIndex.modify(
+      prefixHash, [&candidateIds](std::vector<PrefixIndexEntry>& entries) {
+        for (const auto& e : entries) {
+          candidateIds.insert(candidateIds.end(), e.sessionIds.begin(),
+                              e.sessionIds.end());
+        }
+      });
 
   if (candidateIds.empty()) {
     TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: hash={} miss",
@@ -612,10 +615,17 @@ void SessionManager::addToPrefixIndex(const std::string& sessionId,
                                       uint64_t prefixHash) {
   if (prefixHash == 0) return;
   bool exists = prefixIndex.modify(
-      prefixHash,
-      [&sessionId](std::list<std::string>& ids) { ids.push_back(sessionId); });
+      prefixHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
+        if (entries.empty()) {
+          entries.push_back(PrefixIndexEntry{{sessionId}, {}});
+        } else {
+          entries.front().sessionIds.push_back(sessionId);
+        }
+      });
   if (!exists) {
-    prefixIndex.insert(prefixHash, std::list<std::string>{sessionId});
+    std::vector<PrefixIndexEntry> entries;
+    entries.push_back(PrefixIndexEntry{{sessionId}, {}});
+    prefixIndex.insert(prefixHash, std::move(entries));
   }
 }
 
@@ -623,11 +633,20 @@ void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
                                            uint64_t prefixHash) {
   if (prefixHash == 0) return;
   bool becameEmpty = false;
-  prefixIndex.modify(prefixHash,
-                     [&sessionId, &becameEmpty](std::list<std::string>& ids) {
-                       ids.remove(sessionId);
-                       becameEmpty = ids.empty();
-                     });
+  prefixIndex.modify(prefixHash, [&sessionId, &becameEmpty](
+                                     std::vector<PrefixIndexEntry>& entries) {
+    for (auto& entry : entries) {
+      auto& ids = entry.sessionIds;
+      ids.erase(std::remove(ids.begin(), ids.end(), sessionId), ids.end());
+    }
+    // Remove entries with no sessions left
+    entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                 [](const PrefixIndexEntry& e) {
+                                   return e.sessionIds.empty();
+                                 }),
+                  entries.end());
+    becameEmpty = entries.empty();
+  });
   if (becameEmpty) {
     prefixIndex.erase(prefixHash);
   }

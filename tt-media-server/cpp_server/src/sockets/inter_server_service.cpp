@@ -3,12 +3,18 @@
 
 #include "sockets/inter_server_service.hpp"
 
+#include <chrono>
 #include <string>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
+namespace {
+
+constexpr auto REGISTRATION_INTERVAL = std::chrono::milliseconds(1000);
+
+}  // namespace
 
 InterServerService::InterServerService() { setupMessageHandlers(); }
 
@@ -61,6 +67,7 @@ bool InterServerService::initializeFromConfig() {
             "for gateway",
             port);
         success = socket_manager_.initializeAsServer(port);
+        periodic_registration_mode_ = success;
       }
       gateway_mode_ = success;
     } else {
@@ -90,12 +97,19 @@ void InterServerService::start() {
     return;
   }
 
-  socket_manager_.start();
   if (periodic_registration_mode_) {
-    // Register once on connect (and again on any reconnect) — no polling thread
-    // needed. The ZMQ monitor fires this callback from its existing thread.
+    // Register once on connect (and again on any reconnect). The registration
+    // thread below keeps the gateway's registry fresh after the initial send.
     socket_manager_.setConnectionEstablishedCallback(
         [this] { sendRegistration(); });
+  }
+
+  socket_manager_.start();
+  if (periodic_registration_mode_ && socket_manager_.isConnected()) {
+    sendRegistration();
+  }
+  if (periodic_registration_mode_) {
+    startRegistrationThread();
   }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
@@ -105,6 +119,7 @@ void InterServerService::stop() {
     return;
   }
 
+  stopRegistrationThread();
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -142,6 +157,16 @@ bool InterServerService::sendPrefillResult(
   return socket_manager_.sendObject("prefill_result", message);
 }
 
+bool InterServerService::sendPrefillCancel(uint32_t taskId) {
+  if (!enabled_) {
+    return false;
+  }
+
+  CancelPrefillMessage message;
+  message.task_id = taskId;
+  return socket_manager_.sendObject(tags::CANCEL_PREFILL, message);
+}
+
 bool InterServerService::sendHealthCheck(const std::string& serverId,
                                          double cpuUsage, double memoryUsage,
                                          int activeTasks) {
@@ -160,6 +185,10 @@ bool InterServerService::sendHealthCheck(const std::string& serverId,
 
 void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
   prefill_requested_callback_ = callback;
+}
+
+void InterServerService::onPrefillCancelled(PrefillCancelCallback callback) {
+  prefill_cancel_callback_ = callback;
 }
 
 void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
@@ -195,6 +224,15 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
+        }
+      });
+
+  socket_manager_.registerHandler<CancelPrefillMessage>(
+      tags::CANCEL_PREFILL, [this](const CancelPrefillMessage& message) {
+        TT_LOG_INFO("[InterServerService] Received prefill cancel: {}",
+                    message.task_id);
+        if (prefill_cancel_callback_) {
+          prefill_cancel_callback_(message);
         }
       });
 
@@ -277,6 +315,38 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
     return;
   }
   sendRegistration();
+}
+
+void InterServerService::startRegistrationThread() {
+  stopRegistrationThread();
+  {
+    std::lock_guard<std::mutex> lock(registration_mutex_);
+    registration_stop_ = false;
+  }
+
+  registration_thread_ = std::thread([this] {
+    std::unique_lock<std::mutex> lock(registration_mutex_);
+    while (!registration_stop_) {
+      lock.unlock();
+      if (socket_manager_.isConnected()) {
+        sendRegistration();
+      }
+      lock.lock();
+      registration_cv_.wait_for(lock, REGISTRATION_INTERVAL,
+                                [this] { return registration_stop_; });
+    }
+  });
+}
+
+void InterServerService::stopRegistrationThread() {
+  {
+    std::lock_guard<std::mutex> lock(registration_mutex_);
+    registration_stop_ = true;
+  }
+  registration_cv_.notify_all();
+  if (registration_thread_.joinable()) {
+    registration_thread_.join();
+  }
 }
 
 }  // namespace tt::sockets

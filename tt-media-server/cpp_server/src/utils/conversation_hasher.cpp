@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #define XXH_INLINE_ALL
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "xxhash.h"
@@ -230,6 +231,41 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
       info.lookupHash.has_value() ? std::to_string(*info.lookupHash) : "none");
 
   return info;
+}
+
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(
+    std::span<const int> tokens) {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+  if (firstBlockSize == 0 || blockSize == 0 || tokens.size() < firstBlockSize) {
+    return {};
+  }
+
+  std::vector<uint64_t> hashes;
+
+  // vLLM-style chained hashing: each block's hash uses the previous block's
+  // hash as the xxHash seed. This guarantees that two sequences sharing a
+  // common token prefix produce identical hashes for their shared blocks.
+  // The first block uses a larger size (e.g. system prompt) to capture the
+  // common prefix shared across conversations with the same model config.
+  uint64_t parentHash = 0;
+
+  // First block (larger, covers system prompt / preamble)
+  const size_t firstBlockBytes = firstBlockSize * sizeof(int);
+  parentHash = XXH64(tokens.data(), firstBlockBytes, parentHash);
+  hashes.push_back(parentHash);
+
+  // Remaining blocks use the standard block size
+  size_t offset = firstBlockSize;
+  while (offset + blockSize <= tokens.size()) {
+    const int* blockStart = tokens.data() + offset;
+    const size_t blockBytes = blockSize * sizeof(int);
+    parentHash = XXH64(blockStart, blockBytes, parentHash);
+    hashes.push_back(parentHash);
+    offset += blockSize;
+  }
+
+  return hashes;
 }
 
 }  // namespace tt::utils

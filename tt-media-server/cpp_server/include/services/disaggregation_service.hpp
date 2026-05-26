@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
-#include <string>
 
 #include "config/types.hpp"
 #include "domain/llm/llm_request.hpp"
@@ -36,8 +36,9 @@ class DisaggregationService {
   void start();
   void stop();
 
-  void handleStreamingRequest(LLMRequest& request, const size_t hash,
+  void handleStreamingRequest(LLMRequest& request, size_t requestHash,
                               const StreamCallback& callback);
+  void abortRequest(uint32_t taskId);
 
  private:
   void setupSocketHandlers();

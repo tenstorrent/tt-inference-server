@@ -25,10 +25,12 @@ def video_worker_function(video_manager, video_frames, should_discard_file=True)
 
             try:
                 os.remove(path)
-                video_manager._logger.info(f"Deleted warmup video file: {path}")
+                video_manager._logger.info(
+                    f"Discarded CPU-primer ffmpeg artifact: {path}"
+                )
             except Exception as e:
                 video_manager._logger.warning(
-                    f"Failed to delete warmup video file: {e}"
+                    f"Failed to discard CPU-primer artifact: {e}"
                 )
             return None
         return path
@@ -38,9 +40,11 @@ def video_worker_function(video_manager, video_frames, should_discard_file=True)
 
         try:
             os.remove(output_path)
-            video_manager._logger.info(f"Deleted warmup video file: {output_path}")
+            video_manager._logger.info(
+                f"Discarded CPU-primer ffmpeg artifact: {output_path}"
+            )
         except Exception as e:
-            video_manager._logger.warning(f"Failed to delete warmup video file: {e}")
+            video_manager._logger.warning(f"Failed to discard CPU-primer artifact: {e}")
         return None
     return output_path
 
