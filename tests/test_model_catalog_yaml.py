@@ -145,3 +145,21 @@ templates:
     assert len(templates) == 1
     assert templates[0].weights == ["Qwen/Qwen3-8B"]
     assert templates[0].impl is _IMPL_REGISTRY["tt_transformers"]
+
+
+CATALOG_YAML = (
+    Path(__file__).resolve().parent.parent / "workflows" / "model_specs" / "catalog.yaml"
+)
+
+
+def test_catalog_yaml_loads_and_every_template_expands():
+    """catalog.yaml must load and every template must expand to >=1 spec.
+
+    Surfaces typos and missing-field errors with a per-template assertion
+    message instead of one opaque import-time exception.
+    """
+    templates = load_templates_from_yaml(CATALOG_YAML)
+    assert templates, "catalog.yaml produced zero templates"
+    for t in templates:
+        specs = t.expand_to_specs()
+        assert specs, f"template {t.weights} expanded to zero specs"
