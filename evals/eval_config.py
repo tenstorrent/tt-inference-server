@@ -1113,7 +1113,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -1187,7 +1187,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -2156,6 +2156,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="meta_math",
@@ -2175,6 +2179,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="livecodebench",
@@ -2192,6 +2200,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -2387,6 +2399,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="meta_gpqa_cot",
@@ -2405,6 +2421,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_code_e",
@@ -2419,6 +2439,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
@@ -2433,6 +2457,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_multi_e",
@@ -2447,6 +2475,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_single_e",
@@ -2461,6 +2493,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
@@ -2475,6 +2511,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
@@ -2489,6 +2529,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),
@@ -3224,6 +3268,10 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
@@ -3241,7 +3289,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
