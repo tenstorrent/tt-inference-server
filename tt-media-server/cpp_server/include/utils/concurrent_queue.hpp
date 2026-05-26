@@ -145,7 +145,7 @@ class LockFreeSPSCQueue {
   size_t mask;
   std::vector<T> buffer;
   alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> head{0};
-  alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t>  tail{0};
+  alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
 };
 
 template <typename T>
