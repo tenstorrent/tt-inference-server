@@ -54,6 +54,14 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
 - `--prefill-stale-timeout-ms=MS` controls how long the ZMQ gateway waits
   without a prefill registration before marking that prefill down. Default:
   `3000`.
+- `--request-timeout-ms=MS` controls how long the gateway lets a prefill
+  request stay in-flight before failing it back to decode with
+  `generated_text="timeout"`. Use `0` to disable. Default: `300000`.
+- `--timeout-window-ms=MS`, `--timeout-threshold=N`, and
+  `--timeout-cooldown-ms=MS` control repeated-timeout protection. By default,
+  if a prefill times out `3` requests within `60000`ms, the gateway stops
+  assigning new requests to it for `30000`ms. Use `--timeout-threshold=0` to
+  disable this protection.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
@@ -95,6 +103,7 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --request-timeout-ms=2000 \
   --prefill=127.0.0.1:7200 \
   --prefill=127.0.0.1:7201
 ```
@@ -224,6 +233,14 @@ If a prefill goes down mid-request, the gateway emits a
 `PrefillResultMessage` with `error=true` and `generated_text="prefill_down"`
 to the decode for any task that was on that prefill, plus evicts the
 affected affinity entries.
+
+If a prefill accepts a request but does not return a result before
+`--request-timeout-ms`, the gateway emits a `PrefillResultMessage` with
+`error=true` and `generated_text="timeout"`, then drops any later result for
+that task. The gateway also sends a best-effort `CancelPrefillMessage` to the
+assigned prefill so it can stop the slow request if possible. Repeated timeouts
+temporarily make that prefill ineligible for new tasks according to
+`--timeout-window-ms`, `--timeout-threshold`, and `--timeout-cooldown-ms`.
 
 ---
 

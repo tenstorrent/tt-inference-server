@@ -12,6 +12,7 @@ namespace {
 
 bool isEligible(const PrefillSnapshot& p) {
   if (!p.healthy) return false;
+  if (!p.accepting_tasks) return false;
   if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
   return true;
 }

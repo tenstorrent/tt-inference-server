@@ -35,6 +35,17 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenAllAtMaxInFlight) {
   EXPECT_FALSE(chosen.has_value());
 }
 
+TEST(PrefillSelectorTest, NoPeersAvailableWhenNotAcceptingTasks) {
+  auto disabled = prefill("A", true);
+  disabled.accepting_tasks = false;
+  std::vector<PrefillSnapshot> prefills = {disabled};
+  size_t cursor = 0;
+
+  auto chosen = selectPrefill(prefills, 0, std::nullopt, cursor);
+
+  EXPECT_FALSE(chosen.has_value());
+}
+
 TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, /*inFlight=*/5),
                                            prefill("B", true, /*inFlight=*/0)};
@@ -43,6 +54,18 @@ TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
   auto chosen = selectPrefill(prefills, /*hash=*/42, std::string{"A"}, cursor);
   ASSERT_TRUE(chosen.has_value());
   EXPECT_EQ(*chosen, "A");
+}
+
+TEST(PrefillSelectorTest, StickyFallsBackWhenTargetIsNotAcceptingTasks) {
+  auto disabled = prefill("A", true);
+  disabled.accepting_tasks = false;
+  std::vector<PrefillSnapshot> prefills = {disabled, prefill("B", true)};
+  size_t cursor = 0;
+
+  auto chosen = selectPrefill(prefills, 42, std::string{"A"}, cursor);
+
+  ASSERT_TRUE(chosen.has_value());
+  EXPECT_EQ(*chosen, "B");
 }
 
 TEST(PrefillSelectorTest, StickyFallsBackToLeastLoadedWhenTargetUnhealthy) {

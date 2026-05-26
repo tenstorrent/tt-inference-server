@@ -14,6 +14,7 @@ namespace tt::gateway {
 struct PrefillSnapshot {
   std::string server_id;
   bool healthy = false;
+  bool accepting_tasks = true;
   uint32_t in_flight = 0;
   uint32_t max_in_flight = 0;  // 0 = unlimited
 };
