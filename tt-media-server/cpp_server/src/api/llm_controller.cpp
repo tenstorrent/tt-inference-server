@@ -81,7 +81,7 @@ void LLMController::chatCompletions(
 
   TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
-  if (chatReq.messages.empty() && !chatReq.token_ids.has_value()) {
+  if (chatReq.messages.empty()) {
     callback(errorResponse(drogon::k400BadRequest,
                            "messages is required and must be a non-empty array",
                            "invalid_request_error", Json::Value("messages")));
