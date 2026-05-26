@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "ipc/in_memory/detail/concurrent_queue.hpp"
 #include "ipc/interface/cancel_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace tt::ipc::in_memory {
 
@@ -20,7 +20,7 @@ class CancelQueue : public tt::ipc::ICancelQueue {
   void remove() override { queue.clear(); }
 
  private:
-  tt::ipc::in_memory::detail::ConcurrentQueue<uint32_t> queue;
+  tt::utils::BlockingQueue<uint32_t> queue;
 };
 
 }  // namespace tt::ipc::in_memory

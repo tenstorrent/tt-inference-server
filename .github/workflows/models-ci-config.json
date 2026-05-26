@@ -468,7 +468,8 @@
       "ci": {
         "nightly": {
           "devices": [
-            "T3K"
+            "T3K",
+            "P300X2"
           ]
         },
         "weekly": {
@@ -483,8 +484,10 @@
       "ci": {
         "nightly": {
           "devices": [
+            "N150",
             "N300",
-            "N150"
+            "T3K",
+            "P150"
           ]
         }
       }
@@ -495,6 +498,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
+            "P300X2",
             "T3K"
           ]
         },
