@@ -7,7 +7,6 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
-#include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
@@ -57,11 +56,7 @@ inline ds::GenerationParams makeGenerationParams(
 
 inline void fillSequenceFields(ds::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
-  if (seq.isDisaggregated()) {
-    req.tokens = {static_cast<uint32_t>(seq.getLastToken())};
-  } else {
-    req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
-  }
+  req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 

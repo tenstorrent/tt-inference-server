@@ -72,7 +72,7 @@ void DisaggregationService::setupSocketHandlers() {
             }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+            request.prompt.emplace<std::vector<int>>(message.token_ids.end() - 1,
                                                      message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             request.slotId = message.slot_id;
