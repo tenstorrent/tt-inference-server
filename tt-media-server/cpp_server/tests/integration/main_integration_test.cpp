@@ -146,10 +146,10 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
       << "expected at least one content delta";
 
   // 7. Follow-up with the same opener but a long claimed assistant turn
-  //    in between. If the controller sent the full conversation to the
-  //    worker (no cache hit), the prompt would include all those tokens.
-  //    With the cache HIT, only the delta — the trailing user turn —
-  //    is sent; the prompt token count stays close to a single-turn one.
+  //    in between. The block-based prefix cache matches the first block
+  //    (the "hello" turn), and the remaining tokens are sent to the worker.
+  //    With block size 4, the first 4 tokens are matched, leaving
+  //    (full_prompt - 4) tokens to prefill.
   const std::string longPriorAssistant =
       "this is intentionally a long assistant turn so that if the controller "
       "sent the full conversation history to the worker the prompt would "
@@ -165,13 +165,16 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(followUpSeq, nullptr);
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
-  // With block-based prefix caching the delta is everything after the longest
-  // matched token prefix (the shared first blocks from the seed request).
-  // The matched prefix covers the first few blocks of the "hello" prompt, so
-  // the delta still includes the long assistant turn. The key assertion is that
-  // this IS a continuation (cache HIT) — token trimming is validated in unit
-  // tests.
-  EXPECT_GT(followUpSeq->getNumPromptTokens(), 0u);
+  // Block-based prefix caching: the first block (4 tokens with test config)
+  // is matched and trimmed. The remaining tokens (full prompt minus matched)
+  // are sent to the worker. Full prompt is ~45 tokens, so we expect ~41 sent.
+  // The key verification is that it's a continuation (cache hit) and fewer
+  // tokens than the full prompt are sent.
+  const size_t fullPromptTokens = 45;  // approximate, depends on tokenizer
+  EXPECT_TRUE(followUpSeq->getNumPromptTokens() < fullPromptTokens)
+      << "continuation should send fewer tokens than full prompt";
+  EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
+      << "continuation should still send some tokens";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -213,9 +216,10 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   // Each turn appends a new user message to the running conversation. Turn
   // N+1's controller-side prefix lookup hash matches turn N's history, so
   // every turn after the first must be flagged as a continuation.
+  // Use a unique opener to avoid hitting sessions registered by other tests.
   ChatRequest convo;
   const std::vector<std::string> userMessages = {
-      "hello",
+      "multi-turn-test-unique-opener",
       "how are you",
       "tell me a joke",
       "thanks",
@@ -286,16 +290,19 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 
 TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Two identical first-turn requests. Same content, same registration hash
-  // — but neither has a prior turn, so both bypass prefix-cache routing and
-  // each hits the Layer-2 ALLOCATE path. Verify they're independent: two
-  // distinct ALLOCATE requests, two distinct mocked slots, both flowing
-  // back to the Sequences pushed onto the task queue.
+  // — but when all candidate sessions are in-flight, both fall through to
+  // the ALLOCATE path. Verify they're independent: two distinct ALLOCATE
+  // requests, two distinct mocked slots, both flowing back to the Sequences
+  // pushed onto the task queue.
+  //
+  // Uses a unique opener to avoid acquiring sessions registered by earlier
+  // tests in this suite.
   server->setMemoryAutoRespond(false);
 
-  auto future1 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
-  auto future2 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future1 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+  auto future2 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.

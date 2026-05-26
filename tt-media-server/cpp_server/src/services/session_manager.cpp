@@ -605,10 +605,9 @@ SessionManager::tryAcquireByPrefixHash(const std::vector<uint64_t>& blockHashes,
   }
 
   if (anyBusy) {
-    TT_LOG_WARN(
+    TT_LOG_INFO(
         "[SessionManager] tryAcquireByPrefixHash: all candidate sessions "
-        "are in-flight");
-    throw SessionInFlightException();
+        "are in-flight → falling through to allocate new session");
   }
 
   TT_LOG_DEBUG(
