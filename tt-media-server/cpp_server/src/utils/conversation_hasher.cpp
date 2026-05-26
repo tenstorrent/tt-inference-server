@@ -106,28 +106,6 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
   return rendered;
 }
 
-PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<ChatMessage>& messages) {
-  PrefixCachingInfo info;
-
-  // Drop tool/function turns before hashing; system/developer messages stay
-  // as part of the stable prefix identity.
-  auto turns = stripToolMessages(messages);
-
-  // Determine prior-turn status first; the renderer needs it to decide
-  // whether to keep the BOS token in the delta prompt.
-  auto priorPrefix = extractPriorTurnPrefix(messages);
-  info.hasPriorTurn = priorPrefix.has_value();
-  if (info.hasPriorTurn) {
-    info.lookupHash = hashConversationPrefix(*priorPrefix);
-  }
-
-  info.deltaPrompt = renderLastUserTurn(turns, info.hasPriorTurn);
-  info.registrationHash = hashConversationPrefix(turns);
-
-  return info;
-}
-
 uint64_t hashTokenPrefix(std::span<const int> tokens) {
   if (tokens.empty()) {
     return 0;
@@ -185,50 +163,14 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
   const auto& headerSeq = tokenizers::staticInfo().assistantHeaderSequence;
   auto ends = findSequenceEndPositions(tokens, headerSeq);
 
-  // Registration hashes the conversation through the LAST assistant-header
-  // sequence — i.e. through the trailing generation prompt — so that next
-  // turn's lookup (see below) can hash an identical byte range.
-  size_t regEnd = tokens.size();
-  if (ends.empty()) {
-    info.registrationHash = hashTokenPrefix(tokens);
-  } else {
-    regEnd = ends.back();
-    info.registrationHash = hashTokenPrefix({tokens.data(), regEnd});
-  }
-
-  // A prior assistant turn exists when at least two assistant-header
-  // sequences are present:
-  //   [...] <asst>{a_{n-1}}<user>{u_n}<asst>
-  //         ^^^^^^                    ^^^^^^
-  //         prior gen prompt          current gen prompt
-  // Lookup hashes through (inclusive) the prior gen prompt — exactly what
-  // turn n-1 registered. Delta starts right after, so the engine re-prefills
-  // {a_{n-1}}<user>{u_n}<asst> on top of its existing KV cache.
-  size_t priorEnd = 0;
-  size_t deltaStart = 0;
-  if (ends.size() >= 2) {
-    priorEnd = ends[ends.size() - 2];
-    deltaStart = priorEnd;
-    info.hasPriorTurn = true;
-    info.lookupHash = hashTokenPrefix({tokens.data(), priorEnd});
-    info.deltaPrompt =
-        std::vector<int>(tokens.begin() + deltaStart, tokens.end());
-  } else {
-    info.deltaPrompt = std::vector<int>{};
-  }
+  // Hash all tokens into per-block hashes.
+  info.hashes = getPrefixCacheHashesByBlocks(tokens);
+  info.deltaPrompt = std::vector<int>{};
 
   TT_LOG_INFO(
       "[TokenHasher] tokens={} asstHeaderLen={} asstHeaderHits={} "
-      "regHashRange=[0,{}) lookupHashRange={} deltaRange={} hasPriorTurn={} "
-      "regHash={} lookupHash={}",
-      tokens.size(), headerSeq.size(), ends.size(), regEnd,
-      info.hasPriorTurn ? std::string("[0,") + std::to_string(priorEnd) + ")"
-                        : std::string("none"),
-      info.hasPriorTurn ? std::string("[") + std::to_string(deltaStart) + "," +
-                              std::to_string(tokens.size()) + ")"
-                        : std::string("[]"),
-      info.hasPriorTurn, info.registrationHash,
-      info.lookupHash.has_value() ? std::to_string(*info.lookupHash) : "none");
+      "hashes={}",
+      tokens.size(), headerSeq.size(), ends.size(), info.hashes.size());
 
   return info;
 }

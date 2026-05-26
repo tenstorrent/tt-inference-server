@@ -98,26 +98,10 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
  *     the worker still needs to prefill on a continuation.
  */
 struct PrefixCachingInfo {
-  std::optional<uint64_t>
-      lookupHash;  // Hash of prior-turn prefix (for session lookup)
-  uint64_t registrationHash =
-      0;  // Hash of current conversation (for next turn's lookup)
+  std::vector<uint64_t> hashes;  // Per-block prefix cache hashes
   std::variant<std::string, std::vector<int>>
       deltaPrompt;  // Last user turn rendered (string) or delta token ids
-  bool hasPriorTurn =
-      false;  // True if a prior assistant turn exists (enables lookup)
 };
-
-/**
- * Compute prefix caching routing information from conversation messages.
- * This is the entry point for controllers to extract all routing data needed
- * for hash-based session lookup and registration.
- *
- * @param messages Input chat messages (should end with user message)
- * @return Complete routing information for prefix caching
- */
-PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<ChatMessage>& messages);
 
 // ---------------------------------------------------------------------------
 // Token-level helpers (used by the Dynamo backend, where the frontend has
