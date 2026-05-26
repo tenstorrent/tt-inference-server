@@ -38,8 +38,12 @@ void Dispatcher::onPrefillRequest(
   auto chosenOpt = selectPrefill(prefills, msg.registration_hash, sticky,
                                  round_robin_cursor_);
   if (!chosenOpt.has_value()) {
-    TT_LOG_WARN("[Dispatcher] taskId={} no eligible prefill (healthy={})",
-                msg.task_id, prefills.size());
+    const auto summary = summarizePrefillEligibility(prefills);
+    TT_LOG_WARN(
+        "[Dispatcher] taskId={} no eligible prefill (total={}, healthy={}, "
+        "accepting={}, capacity_available={})",
+        msg.task_id, summary.total, summary.healthy, summary.accepting,
+        summary.capacity_available);
     failTaskToDecode(msg.task_id, "no_prefill_available");
     return;
   }

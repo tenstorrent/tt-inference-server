@@ -19,6 +19,16 @@ struct PrefillSnapshot {
   uint32_t max_in_flight = 0;  // 0 = unlimited
 };
 
+struct PrefillEligibilitySummary {
+  size_t total = 0;
+  size_t healthy = 0;
+  size_t accepting = 0;
+  size_t capacity_available = 0;
+};
+
+PrefillEligibilitySummary summarizePrefillEligibility(
+    const std::vector<PrefillSnapshot>& prefills);
+
 // Choose a prefill. Order: sticky-by-hash → least-inflight → round-robin.
 // `round_robin_cursor` is caller-owned so the selector stays pure.
 std::optional<std::string> selectPrefill(

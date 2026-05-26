@@ -46,6 +46,24 @@ TEST(PrefillSelectorTest, NoPeersAvailableWhenNotAcceptingTasks) {
   EXPECT_FALSE(chosen.has_value());
 }
 
+TEST(PrefillSelectorTest, SummarizesEligibilityReasons) {
+  auto disabled = prefill("B", true);
+  disabled.accepting_tasks = false;
+  std::vector<PrefillSnapshot> prefills = {
+      prefill("A", /*healthy=*/false),
+      disabled,
+      prefill("C", true, /*inFlight=*/4, /*maxInFlight=*/4),
+      prefill("D", true, /*inFlight=*/1, /*maxInFlight=*/4),
+  };
+
+  const auto summary = summarizePrefillEligibility(prefills);
+
+  EXPECT_EQ(summary.total, 4u);
+  EXPECT_EQ(summary.healthy, 3u);
+  EXPECT_EQ(summary.accepting, 2u);
+  EXPECT_EQ(summary.capacity_available, 1u);
+}
+
 TEST(PrefillSelectorTest, EqualityMatchPicksStickyTarget) {
   std::vector<PrefillSnapshot> prefills = {prefill("A", true, /*inFlight=*/5),
                                            prefill("B", true, /*inFlight=*/0)};

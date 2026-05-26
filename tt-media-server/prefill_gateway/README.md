@@ -104,6 +104,9 @@ cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
   --request-timeout-ms=2000 \
+  --timeout-window-ms=10000 \
+  --timeout-threshold=2 \
+  --timeout-cooldown-ms=15000 \
   --prefill=127.0.0.1:7200 \
   --prefill=127.0.0.1:7201
 ```
@@ -170,6 +173,10 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --request-timeout-ms=2000 \
+  --timeout-window-ms=10000 \
+  --timeout-threshold=2 \
+  --timeout-cooldown-ms=15000 \
   --prefill-bind=127.0.0.1:7200
 ```
 
