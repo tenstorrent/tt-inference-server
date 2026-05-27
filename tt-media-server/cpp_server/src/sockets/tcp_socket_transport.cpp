@@ -256,10 +256,10 @@ void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
 }
 
 void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
-  uint32_t delayMs = reconnectInitialDelayMs_;
+  auto delay = reconnectInitialDelay_;
   auto backoff = [&]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-    delayMs = std::min(delayMs * 2, reconnectMaxDelayMs_);
+    std::this_thread::sleep_for(delay);
+    delay = std::min(delay * 2, reconnectMaxDelay_);
   };
 
   while (running_ && !stopToken.stop_requested()) {
@@ -284,7 +284,7 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
 
     TT_LOG_INFO(
         "[TcpSocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
-        host_, port_, delayMs);
+        host_, port_, delay.count());
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
@@ -299,7 +299,7 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
 
     peerSocket_.store(clientSocket_.get(), std::memory_order_release);
     connected_ = true;
-    delayMs = reconnectInitialDelayMs_;  // reset on success
+    delay = reconnectInitialDelay_;  // reset on success
 
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
     notifyConnectionEstablished();
@@ -320,7 +320,7 @@ void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
   }
 }
 
-bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+bool TcpSocketTransport::sendRawData(std::span<const uint8_t> data) {
   std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return false;
 
@@ -450,9 +450,10 @@ void TcpSocketTransport::setConnectionEstablishedCallback(
   setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
-void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
-                                             uint32_t maxDelayMs) {
-  setReconnectBackoffCommon(initialDelayMs, maxDelayMs);
+void TcpSocketTransport::setReconnectBackoff(
+    std::chrono::milliseconds initialDelay,
+    std::chrono::milliseconds maxDelay) {
+  setReconnectBackoffCommon(initialDelay, maxDelay);
 }
 
 }  // namespace tt::sockets

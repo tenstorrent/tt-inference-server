@@ -26,8 +26,7 @@ void SocketManager::applyPendingSettings() {
         std::move(pendingConnectionEstablishedCallback_));
   }
   if (reconnectBackoffSet_) {
-    transport_->setReconnectBackoff(reconnectInitialDelayMs_,
-                                    reconnectMaxDelayMs_);
+    transport_->setReconnectBackoff(reconnectInitialDelay_, reconnectMaxDelay_);
   }
 }
 
@@ -105,7 +104,7 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
 }
 
 std::function<void(const std::vector<uint8_t>&)> SocketManager::getHandler(
-    const std::string& messageType) const {
+    std::string_view messageType) const {
   std::lock_guard<std::mutex> lock(handlersMutex_);
   auto it = handlers_.find(messageType);
   if (it == handlers_.end()) {
@@ -139,14 +138,14 @@ void SocketManager::setConnectionEstablishedCallback(
   }
 }
 
-void SocketManager::setReconnectBackoff(uint32_t initialDelayMs,
-                                        uint32_t maxDelayMs) {
+void SocketManager::setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                                        std::chrono::milliseconds maxDelay) {
   if (transport_) {
-    transport_->setReconnectBackoff(initialDelayMs, maxDelayMs);
+    transport_->setReconnectBackoff(initialDelay, maxDelay);
   } else {
     reconnectBackoffSet_ = true;
-    reconnectInitialDelayMs_ = initialDelayMs;
-    reconnectMaxDelayMs_ = maxDelayMs;
+    reconnectInitialDelay_ = initialDelay;
+    reconnectMaxDelay_ = maxDelay;
   }
 }
 
