@@ -1327,29 +1327,6 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
-        weights=["Qwen/Qwen3.6-27B"],
-        impl=tt_transformers_impl,
-        version="0.9.0",
-        tt_metal_commit="25305db",
-        vllm_commit="6e67d2d",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.GPU,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-            ),
-        ],
-        status=ModelStatusTypes.EXPERIMENTAL,
-        metadata={
-            "Qwen/Qwen3.6-27B": {
-                "reasoning_parser_name": "qwen3",
-                "tool_call_parser_name": "hermes",
-            },
-        },
-    ),
-    ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
         version="0.9.0",
