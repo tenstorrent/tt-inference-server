@@ -16,7 +16,6 @@ from workflow_module.workflows import (
     WORKFLOW_REGISTRY,
     get_workflow_class,
 )
-from workflow_module.execution import TaskOutcome
 
 
 def _fake_block() -> Block:
