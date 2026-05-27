@@ -1,0 +1,79 @@
+name: tt-llm-engine pull smoke test
+
+# Quick smoke test: can this repo's workflow pull the tt-llm-engine image
+# from ghcr.io using only the default secrets.GITHUB_TOKEN?
+#
+# If this succeeds, no PAT/extra wiring is needed for Phase 3 of the
+# Dockerfile.blaze split. If it fails with 'denied' / 'unauthorized',
+# the tt-llm-engine package on GHCR is still Private and either needs
+# to be set to Internal OR have this repo added under
+# "Manage Actions access" with role Read.
+
+on:
+  push:
+    branches:
+      - vcankovic/test-tt-llm-engine-pull
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read   # required so GITHUB_TOKEN gets pull scope for GHCR
+
+env:
+  IMAGE: ghcr.io/tenstorrent/tt-llm-engine/test:latest
+
+jobs:
+  pull:
+    name: Pull image with GITHUB_TOKEN
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull tt-llm-engine image
+        run: |
+          set -euo pipefail
+          echo "Attempting: docker pull ${IMAGE}"
+          docker pull "$IMAGE"
+          echo ""
+          echo "=== Pull succeeded ==="
+          docker image ls "$IMAGE"
+          docker image inspect "$IMAGE" --format 'Digest: {{.Id}}'
+
+      - name: Smoke-check expected paths exist
+        run: |
+          set -euo pipefail
+          docker run --rm "$IMAGE" bash -c '
+            echo "--- /opt/tt-llm-engine/lib (engine .so + cmake) ---"
+            ls -lh /opt/tt-llm-engine/lib/libtt_llm_engine*.so* 2>/dev/null || echo "MISSING"
+            ls /opt/tt-llm-engine/lib/cmake/tt-llm-engine/ 2>/dev/null || echo "MISSING"
+            echo ""
+            echo "--- /opt/tt-llm-engine-src/tt-metal/build_Release/lib (metal .so) ---"
+            ls -lh /opt/tt-llm-engine-src/tt-metal/build_Release/lib/ 2>/dev/null | head -10 || echo "MISSING"
+            echo ""
+            echo "--- baked SHAs ---"
+            cat /opt/tt-llm-engine/SHA 2>/dev/null && echo "(engine)"
+            cat /opt/tt-llm-engine-src/tt-metal/SHA 2>/dev/null && echo "(metal)"
+          '
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## tt-llm-engine pull smoke test"
+            echo ""
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Result: ${{ job.status }}"
+            echo ""
+            echo "If status is **success**, \`secrets.GITHUB_TOKEN\` is sufficient — no PAT needed for Dockerfile.blaze Phase 3."
+            echo ""
+            echo "If status is **failure** with \`denied\` / \`unauthorized\`, the tt-llm-engine package on GHCR needs to be:"
+            echo "  - set to **Internal** (any org member can pull), OR"
+            echo "  - kept **Private** but with this repo added under *Manage Actions access* → role *Read*"
+          } >> "$GITHUB_STEP_SUMMARY"
