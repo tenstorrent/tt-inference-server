@@ -1381,6 +1381,7 @@ def render_spec_decode_sections(
     sections: List[str] = []
 
     if spec_decode_results:
+
         def sort_key(r):
             return (
                 r.get("public_dataset", ""),
@@ -1401,6 +1402,7 @@ def render_spec_decode_sections(
         sections.append(f"{title}\n\n{get_markdown_table(rows)}")
 
     if spec_decode_pair_results:
+
         def pair_sort_key(r):
             return (
                 r.get("public_dataset", ""),

@@ -56,7 +56,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import urlparse
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -120,14 +119,6 @@ def parse_workflow_args(workflow_args_str: Optional[str]) -> Dict[str, str]:
     return parsed
 
 
-def parse_endpoint_url(url: str, *, default_port: int = 8000) -> Tuple[str, int]:
-    """Return (host, port) parsed from ``url``."""
-    parsed = urlparse(url if "://" in url else f"http://{url}")
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or default_port
-    return host, port
-
-
 def select_profile(runtime_config: RuntimeConfig) -> List[SpecDecodeRunSpec]:
     """Pick the smoke or full profile from SPEC_DECODE_PROFILES."""
     if runtime_config.limit_samples_mode:
@@ -155,9 +146,7 @@ def build_result_filename(
     ``role`` is one of ``"baseline"``, ``"spec"``, or ``"pair"``.
     """
     ts = run_timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return (
-        f"benchmark_spec_decode_{role}_{model_id}_{device}_{ts}_{run_spec.slug}.json"
-    )
+    return f"benchmark_spec_decode_{role}_{model_id}_{device}_{ts}_{run_spec.slug}.json"
 
 
 def build_pair_filename(
@@ -219,23 +208,31 @@ def build_aiperf_cmd(
         "-m",
         "aiperf",
         "profile",
-        "--model", hf_model_repo,
-        "--tokenizer", hf_model_repo,
+        "--model",
+        hf_model_repo,
+        "--tokenizer",
+        hf_model_repo,
         "--endpoint-type",
         "chat",
         "--streaming",
-        "--url", url,
-        "--public-dataset", run_spec.public_dataset,
-        "--concurrency", str(run_spec.max_concurrency),
-        "--request-count", str(run_spec.num_prompts),
-        "--output-tokens-mean", str(run_spec.output_len),
+        "--url",
+        url,
+        "--public-dataset",
+        run_spec.public_dataset,
+        "--concurrency",
+        str(run_spec.max_concurrency),
+        "--request-count",
+        str(run_spec.num_prompts),
+        "--output-tokens-mean",
+        str(run_spec.output_len),
         "--output-tokens-stddev",
         "0",
         "--extra-inputs",
         "ignore_eos:true",
         "--extra-inputs",
         "temperature:0",
-        "--artifact-dir", str(artifact_dir),
+        "--artifact-dir",
+        str(artifact_dir),
     ]
     if jwt_token:
         cmd += ["--api-key", jwt_token]
@@ -410,12 +407,16 @@ def warmup_endpoint(
     successes = 0
     for i in range(num_requests):
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            response = requests.post(
+                url, headers=headers, json=payload, timeout=timeout
+            )
             response.raise_for_status()
             successes += 1
         except requests.exceptions.RequestException as exc:
             logger.warning("warmup request %d/%d failed: %s", i + 1, num_requests, exc)
-    logger.info("warmup: %d/%d requests succeeded at %s", successes, num_requests, base_url)
+    logger.info(
+        "warmup: %d/%d requests succeeded at %s", successes, num_requests, base_url
+    )
     return successes
 
 
@@ -600,9 +601,7 @@ def pair_phase(output_dir: Path) -> List[Path]:
         try:
             pair = pair_and_compute_speedup(baseline_path, spec_path)
         except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "Could not compute speedup pair for %s: %s", slug, exc
-            )
+            logger.warning("Could not compute speedup pair for %s: %s", slug, exc)
             continue
         pair["benchmark_kind"] = "spec_decode_pair"
         pair["slug"] = slug
@@ -649,7 +648,9 @@ def main() -> int:
     service_port = int(runtime_config.service_port)
     url = workflow_args.get("url", f"http://127.0.0.1:{service_port}")
     try:
-        warmup_requests = int(workflow_args.get("warmup-requests", DEFAULT_WARMUP_REQUESTS))
+        warmup_requests = int(
+            workflow_args.get("warmup-requests", DEFAULT_WARMUP_REQUESTS)
+        )
     except ValueError:
         warmup_requests = DEFAULT_WARMUP_REQUESTS
     device = runtime_config.device

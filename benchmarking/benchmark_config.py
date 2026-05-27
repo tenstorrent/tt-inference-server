@@ -102,24 +102,16 @@ BENCHMARK_ISL_OSL_PAIRS = [
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
-
-# Profile definitions for the speculative-decoding benchmark
-# (--workflow benchmarks --tools spec_decode). Selection happens at run time:
-# --limit-samples-mode smoke-test → "smoke"; otherwise → "full".
-#
-# Slugs are aiperf ``--public-dataset`` values. Three families are used:
-#
-#   * ``spec_bench`` — hemingkx Spec-Bench, 480 prompts. aiperf exposes only
-#     the whole-dataset slug (no per-category), so we sweep it at two output
-#     lengths and accept one averaged acceptance rate across all 13 row
-#     categories.
-#   * ``speed_bench_<category>`` — nvidia SPEED-Bench Qualitative split,
+#   * ``spec_bench`` — hemingkx Spec-Bench, 480 prompts, 13 categories: writing, roleplay,
+#      reasoning, math, coding, extraction, stem, humanities, translation, summarization, qa,
+#       math_reasoning, rag.
+#       aiperf exposes only the whole-dataset (13 splits is treated as one dataset)
+#   * ``speed_bench_<category>`` — nvidia Speed Bench Qualitative split for speed bench.
 #     ~80 prompts per category. 11 categories: coding, humanities, math,
 #     multilingual, qa, rag, reasoning, roleplay, stem, summarization,
-#     writing. Per-category sweeps give the per-content-type AR breakdown
-#     that the per-category Spec-Bench sweeps used to provide.
+#     writing.
 #   * ``speed_bench_throughput_{1k,2k,8k,16k,32k}`` — SPEED-Bench Throughput
-#     split, fixed-ISL prompts for system-level throughput at concurrency.
+#     split
 
 SPEED_BENCH_QUALITATIVE_CATEGORIES = (
     "coding",
@@ -137,15 +129,9 @@ SPEED_BENCH_QUALITATIVE_CATEGORIES = (
 
 SPEED_BENCH_THROUGHPUT_ISLS = ("1k", "2k", "8k", "16k", "32k")
 
-# Concurrency points for the throughput sweep. Spans single-stream to
-# moderate batching so the diminishing-returns curve — where the workload
-# becomes compute-bound and speculative decoding stops winning — is visible.
 THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
 
 SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
-    # CI-level smoke profile: tiny, finishes in seconds. Touches both the
-    # Spec-Bench and SPEED-Bench code paths so a misconfigured aiperf slug
-    # fails loudly instead of silently loading 0 prompts.
     "smoke": [
         SpecDecodeRunSpec(
             public_dataset="spec_bench",
@@ -161,13 +147,9 @@ SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
         ),
     ],
     # Full sweep:
-    #   - spec_bench whole-dataset × 2 OSLs × conc=1
-    #     → averaged AR across the 480-prompt mixed-category set
+    #   - spec_bench whole-dataset times OSL=(128, 512) times conc=1
     #   - speed_bench_<category> × 11 categories × conc=1 × osl=2048
-    #     → per-content-type AR on the 880-prompt diverse split
     #   - speed_bench_throughput_{1k..32k} × conc{1,16,64} × osl=1024
-    #     → maps E2E speedup across ISL and concurrency so the compute-bound
-    #       regime is observable
     "full": [
         SpecDecodeRunSpec(
             public_dataset="spec_bench",

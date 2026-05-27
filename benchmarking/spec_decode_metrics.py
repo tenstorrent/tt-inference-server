@@ -125,8 +125,11 @@ def scrape_spec_decode_metrics(
     Returns a dict with:
         - ``acceptance_rate``: accepted / draft (0.0 if no draft tokens)
         - ``accepted_tokens``, ``draft_tokens``: deltas in this window
-        - ``mean_accepted_length``: accepted / num_drafts, or None if the
-          server doesn't expose ``vllm:spec_decode_num_drafts_total``
+        - ``mean_accepted_length``: ``1 + accepted / num_drafts`` (the ``+1``
+          is the bonus token verified by the target model at the end of
+          every draft round — matches vLLM's ``SpecDecodingLogging`` and the
+          ``SpecDecodingProm`` doc convention). ``None`` if the server
+          doesn't expose ``vllm:spec_decode_num_drafts_total``.
         - ``accepted_per_pos``: sorted list of ``(position, count)`` tuples
     """
     after = fetch_prometheus_counters(base_url)
@@ -140,7 +143,7 @@ def scrape_spec_decode_metrics(
 
     acceptance_rate = (accepted / draft) if draft > 0 else 0.0
     mean_accepted_length: Optional[float] = (
-        accepted / num_drafts if num_drafts > 0 else None
+        1 + (accepted / num_drafts) if num_drafts > 0 else None
     )
 
     return {

@@ -29,17 +29,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SpecDecodeRunSpec:
-    """One sweep config for a spec-decode benchmark run.
-
-    ``public_dataset`` is an aiperf ``--public-dataset`` slug. Examples:
-
-      - ``"spec_bench"`` — hemingkx Spec-Bench (480 prompts, no category breakdown)
-      - ``"speed_bench_qualitative"`` — nvidia SPEED-Bench qualitative split (whole)
-      - ``"speed_bench_coding"`` (and the other 10 per-category SPEED-Bench slugs)
-
-    See ``aiperf/plugin/plugins.yaml`` for the full list of registered slugs.
-    """
-
     public_dataset: str
     output_len: int
     max_concurrency: int
