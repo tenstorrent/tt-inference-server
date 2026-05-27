@@ -446,7 +446,7 @@ def process_sha_combination(args_tuple):
 
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
-        for image_type in ["tt_metal_base", "dev", "release", "multihost"]:
+        for image_type in ["tt_metal_base", "release", "multihost"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
@@ -461,18 +461,10 @@ def process_sha_combination(args_tuple):
 
         # Determine what images need to be built
         build_tt_metal_base_flag = True
-        build_dev_image_flag = True
         build_release_image_flag = True
         build_multihost_image_flag = True
 
         if not force_build:
-            if (
-                image_status["dev"]["local_exists"]
-                or image_status["dev"]["remote_exists"]
-            ):
-                build_dev_image_flag = False
-                process_logger.info("Dev image already exists, skipping build")
-
             if (
                 image_status["release"]["local_exists"]
                 or image_status["release"]["remote_exists"]
@@ -494,17 +486,6 @@ def process_sha_combination(args_tuple):
                 build_tt_metal_base_flag = False
 
             if (
-                release
-                and build_release_image_flag
-                and not image_status["dev"]["local_exists"]
-            ):
-                # Release image is tagged from dev, so dev must be built
-                process_logger.info(
-                    "Dev image does not exist locally, building dev image to safely build release image"
-                )
-                build_dev_image_flag = True
-
-            if (
                 multihost
                 and build_multihost_image_flag
                 and not image_status["release"]["local_exists"]
@@ -514,11 +495,9 @@ def process_sha_combination(args_tuple):
                     "Release image does not exist locally, building release image to build multihost image"
                 )
                 build_release_image_flag = True
-                if not image_status["dev"]["local_exists"]:
-                    build_dev_image_flag = True
 
         # Build tt-metal base image only if needed
-        if build_dev_image_flag and build_tt_metal_base_flag:
+        if build_release_image_flag and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
@@ -545,35 +524,8 @@ def process_sha_combination(args_tuple):
                 "All final images exist, skipping tt-metal base image build"
             )
 
-        # Build dev image
-        if build_dev_image_flag:
-            image_status["dev"]["build_attempted"] = True
-            if dry_run:
-                process_logger.info(
-                    f"[DRY-RUN] Would build dev image: {image_tags['dev']} "
-                    f"(simulating {dry_run_build_duration}s build)"
-                )
-                time.sleep(dry_run_build_duration)
-            else:
-                process_logger.info("Building dev image...")
-                try:
-                    build_dev_image(
-                        image_tags,
-                        resolved_tt_metal_commit,
-                        vllm_commit,
-                        container_app_uid,
-                        process_logger,
-                    )
-                    image_status["dev"]["build_succeeded"] = True
-                except Exception as e:
-                    process_logger.error(f"Failed to build dev image: {e}")
-                    image_status["dev"]["build_succeeded"] = False
-                    raise
-        else:
-            process_logger.info(f"Skipping dev image build: {image_tags['dev']}")
-
-        # Build release image (only if release=True)
-        if release and build_release_image_flag:
+        # Build release image
+        if build_release_image_flag:
             image_status["release"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
@@ -584,7 +536,13 @@ def process_sha_combination(args_tuple):
             else:
                 process_logger.info("Building release image...")
                 try:
-                    build_release_image(image_tags, process_logger)
+                    build_release_image(
+                        image_tags,
+                        resolved_tt_metal_commit,
+                        vllm_commit,
+                        container_app_uid,
+                        process_logger,
+                    )
                     image_status["release"]["build_succeeded"] = True
                 except Exception as e:
                     process_logger.error(f"Failed to build release image: {e}")
@@ -627,10 +585,10 @@ def process_sha_combination(args_tuple):
             else:
                 process_logger.info("Pushing images to registry...")
 
-            for image_type in ["dev", "release", "multihost"]:
+            for image_type in ["release", "multihost"]:
                 image_tag = image_tags[image_type]
 
-                # Skip release image unless explicitly marked as a release
+                # Skip release image push unless explicitly marked as a release
                 if image_type == "release" and not release:
                     process_logger.info(
                         f"Skipping push for {image_tag}, release={release}"
@@ -865,13 +823,11 @@ def get_image_tags(
 
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     multihost_image_tag = f"{image_repo}/vllm-tt-metal-src-multihost-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
-        "dev": dev_image_tag,
         "release": release_image_tag,
         "multihost": multihost_image_tag,
         "tt_metal_base": tt_metal_base_tag,
@@ -1097,11 +1053,11 @@ def should_push_image(image_tag, force_push=False):
     return local_exists and (not remote_exists or force_push)
 
 
-def build_dev_image(
+def build_release_image(
     image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
 ):
     """
-    Build the dev Docker image from the Dockerfile.
+    Build the release Docker image from the Dockerfile.
 
     Args:
         image_tags: Dictionary of image tags
@@ -1111,20 +1067,20 @@ def build_dev_image(
         logger: Logger instance
     """
     repo_root = get_repo_root_path()
-    dev_image_tag = image_tags["dev"]
+    release_image_tag = image_tags["release"]
     tt_metal_base_tag = image_tags["tt_metal_base"]
 
     # Generate model_spec.json before building (COPY'd into image)
     model_specs_json_path = generate_model_specs_json()
     logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
-    logger.info(f"Building dev image: {dev_image_tag}")
+    logger.info(f"Building release image: {release_image_tag}")
 
     build_command = [
         "docker",
         "build",
         "-t",
-        dev_image_tag,
+        release_image_tag,
         "--build-arg",
         f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
         "--build-arg",
@@ -1139,23 +1095,7 @@ def build_dev_image(
     ]
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
-    logger.info(f"Successfully built dev image: {dev_image_tag}")
-
-
-def build_release_image(image_tags, logger):
-    """
-    Tag the dev image as the release image.
-
-    Release image is identical to the dev image — just a different tag.
-    """
-    release_image_tag = image_tags["release"]
-    dev_image_tag = image_tags["dev"]
-
-    logger.info(f"Tagging dev image as release: {dev_image_tag} -> {release_image_tag}")
-
-    tag_command = ["docker", "tag", dev_image_tag, release_image_tag]
-    run_command_with_logging(tag_command, logger=logger, check=True)
-    logger.info(f"Successfully tagged release image: {release_image_tag}")
+    logger.info(f"Successfully built release image: {release_image_tag}")
 
 
 def build_multihost_image(image_tags, logger):
@@ -1480,13 +1420,13 @@ def build_docker_images(
             logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
-    build_attempted = {"dev": [], "release": [], "multihost": []}
-    build_succeeded = {"dev": [], "release": [], "multihost": []}
-    remote_exists = {"dev": [], "release": [], "multihost": []}
+    build_attempted = {"release": [], "multihost": []}
+    build_succeeded = {"release": [], "multihost": []}
+    remote_exists = {"release": [], "multihost": []}
 
     for result in results:
         images = result.get("images", {})
-        for image_type in ["dev", "release", "multihost"]:
+        for image_type in ["release", "multihost"]:
             if image_type in images:
                 image_info = images[image_type]
                 if image_info.get("build_attempted", False):
