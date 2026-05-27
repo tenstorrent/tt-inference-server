@@ -159,7 +159,7 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
-        req->kv_position_id = acquired->numberOfMatchedTokens;
+        req->kv_position_id = --acquired->numberOfMatchedTokens;
         applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.hashes);
