@@ -38,7 +38,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.TT_LLM_ENGINE }}
+          password: ${{ secrets.SHIELD_TT_LLM_ENGINE }}
 
       - name: Pull tt-llm-engine image
         run: |
