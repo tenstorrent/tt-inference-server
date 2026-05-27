@@ -12,6 +12,7 @@ namespace {
 
 bool isEligible(const PrefillSnapshot& p) {
   if (!p.healthy) return false;
+  if (!p.accepting_tasks) return false;
   if (p.max_in_flight > 0 && p.in_flight >= p.max_in_flight) return false;
   return true;
 }
@@ -25,6 +26,27 @@ const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
 }
 
 }  // namespace
+
+PrefillEligibilitySummary summarizePrefillEligibility(
+    const std::vector<PrefillSnapshot>& prefills) {
+  PrefillEligibilitySummary summary;
+  summary.total = prefills.size();
+  for (const auto& prefill : prefills) {
+    if (!prefill.healthy) {
+      continue;
+    }
+    ++summary.healthy;
+    if (!prefill.accepting_tasks) {
+      continue;
+    }
+    ++summary.accepting;
+    if (prefill.max_in_flight == 0 ||
+        prefill.in_flight < prefill.max_in_flight) {
+      ++summary.capacity_available;
+    }
+  }
+  return summary;
+}
 
 std::optional<std::string> selectPrefill(
     const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,

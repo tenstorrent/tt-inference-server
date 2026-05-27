@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -9,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -36,6 +36,10 @@ struct GatewayConfig {
   std::string prefillBindHost = "*";
   uint16_t prefillBindPort = 0;
   uint32_t prefillStaleTimeoutMs = 3000;
+  uint32_t requestTimeoutMs = 300000;
+  uint32_t timeoutWindowMs = 60000;
+  uint32_t timeoutCooldownMs = 30000;
+  uint32_t timeoutThreshold = 3;
 };
 
 void printUsage(const char* prog) {
@@ -50,6 +54,20 @@ void printUsage(const char* prog) {
       << "  --prefill-stale-timeout-ms=MS\n"
       << "                        ZMQ prefill registration timeout. Default: "
          "3000.\n"
+      << "  --request-timeout-ms=MS\n"
+      << "                        In-flight prefill request timeout. Use 0 to "
+         "disable. Default: 300000.\n"
+      << "  --timeout-window-ms=MS\n"
+      << "                        Window for repeated timeout detection. "
+         "Default: "
+         "60000.\n"
+      << "  --timeout-cooldown-ms=MS\n"
+      << "                        Time to stop routing new tasks to a prefill "
+         "after repeated timeouts. Default: 30000.\n"
+      << "  --timeout-threshold=N\n"
+      << "                        Timeouts in the window before cooldown. Use "
+         "0 to "
+         "disable. Default: 3.\n"
       << "  --help               Print this message.\n\n"
       << "Example:\n"
       << "  " << prog
@@ -100,6 +118,50 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
         return std::nullopt;
       }
       cfg.prefillStaleTimeoutMs = static_cast<uint32_t>(timeoutMs);
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--request-timeout-ms=")) {
+      int timeoutMs = std::stoi(std::string(*v));
+      if (timeoutMs < 0) {
+        std::cerr << "Invalid --request-timeout-ms value: " << *v
+                  << " (expected non-negative milliseconds)\n";
+        return std::nullopt;
+      }
+      cfg.requestTimeoutMs = static_cast<uint32_t>(timeoutMs);
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--timeout-window-ms=")) {
+      int timeoutMs = std::stoi(std::string(*v));
+      if (timeoutMs < 0) {
+        std::cerr << "Invalid --timeout-window-ms value: " << *v
+                  << " (expected non-negative milliseconds)\n";
+        return std::nullopt;
+      }
+      cfg.timeoutWindowMs = static_cast<uint32_t>(timeoutMs);
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--timeout-cooldown-ms=")) {
+      int timeoutMs = std::stoi(std::string(*v));
+      if (timeoutMs < 0) {
+        std::cerr << "Invalid --timeout-cooldown-ms value: " << *v
+                  << " (expected non-negative milliseconds)\n";
+        return std::nullopt;
+      }
+      cfg.timeoutCooldownMs = static_cast<uint32_t>(timeoutMs);
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--timeout-threshold=")) {
+      int threshold = std::stoi(std::string(*v));
+      if (threshold < 0) {
+        std::cerr << "Invalid --timeout-threshold value: " << *v
+                  << " (expected non-negative count)\n";
+        return std::nullopt;
+      }
+      cfg.timeoutThreshold = static_cast<uint32_t>(threshold);
       continue;
     }
 
@@ -262,8 +324,12 @@ int main(int argc, char** argv) {
     return decodeSm.sendObject("prefill_result", msg);
   };
 
-  dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(registry, affinity,
-                                                            std::move(senders));
+  tt::gateway::Dispatcher::Options dispatcherOptions{
+      std::chrono::milliseconds(cfg.requestTimeoutMs),
+      std::chrono::milliseconds(cfg.timeoutWindowMs),
+      std::chrono::milliseconds(cfg.timeoutCooldownMs), cfg.timeoutThreshold};
+  dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(
+      registry, affinity, std::move(senders), dispatcherOptions);
 
   registry.setOnPrefillDown([&dispatcherPtr](const std::string& id) {
     dispatcherPtr->onPrefillDown(id);
@@ -296,32 +362,43 @@ int main(int argc, char** argv) {
   for (auto& sm : prefillSms) sm->start();
   decodeSm.start();
 
-  std::atomic<bool> proberStop{false};
   constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
-  std::thread proberThread([&prefillSms, &proberStop, probeIntervalMs]() {
-    while (!proberStop.load()) {
-      for (auto& sm : prefillSms) {
-        sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
-                       tt::sockets::RegistrationProbeMessage{});
-      }
-      std::this_thread::sleep_for(probeIntervalMs);
-    }
-  });
+  std::jthread proberThread(
+      [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
+        while (!stopToken.stop_requested()) {
+          for (auto& sm : prefillSms) {
+            sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                           tt::sockets::RegistrationProbeMessage{});
+          }
+          std::this_thread::sleep_for(probeIntervalMs);
+        }
+      });
 
-  std::atomic<bool> watchdogStop{false};
   const auto prefillStaleTimeout =
       std::chrono::milliseconds(cfg.prefillStaleTimeoutMs);
-  std::thread watchdogThread;
+  std::jthread watchdogThread;
   if (useZmqPrefillRouter) {
-    watchdogThread = std::thread(
-        [&registry, &zmqPrefillRouter, &watchdogStop, prefillStaleTimeout] {
-          while (!watchdogStop.load()) {
+    watchdogThread =
+        std::jthread([&registry, &zmqPrefillRouter,
+                      prefillStaleTimeout](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
             for (const auto& serverId :
                  zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
               TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out",
                           serverId);
               registry.markDown(serverId);
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+          }
+        });
+  }
+
+  std::jthread requestTimeoutThread;
+  if (cfg.requestTimeoutMs > 0) {
+    requestTimeoutThread =
+        std::jthread([&dispatcherPtr](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
+            dispatcherPtr->onRequestTimeouts();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
           }
         });
@@ -337,9 +414,11 @@ int main(int argc, char** argv) {
   }
 
   TT_LOG_INFO("[Gateway] Shutting down…");
-  proberStop = true;
+  proberThread.request_stop();
   if (proberThread.joinable()) proberThread.join();
-  watchdogStop = true;
+  requestTimeoutThread.request_stop();
+  if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
+  watchdogThread.request_stop();
   if (watchdogThread.joinable()) watchdogThread.join();
   decodeSm.stop();
   for (auto& sm : prefillSms) sm->stop();
