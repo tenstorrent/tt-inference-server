@@ -17,9 +17,7 @@ permissions:
   contents: read
 
 env:
-  PYTHON_VERSION_DEFAULT: "3.10"
-  PYTHON_VERSION_DYNAMO: "3.12"
-  PYTHON_VERSION_FORGE: "3.12"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   detect-changes:
@@ -64,7 +62,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install ruff
         run: pip install ruff==0.15.0
@@ -90,7 +88,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Install media-server requirements (strict, no fallback)
@@ -208,7 +206,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: |
             requirements-dev.txt
@@ -262,7 +260,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: |
             requirements-dev.txt
@@ -460,7 +458,7 @@ jobs:
             | **Overall** | ${FINAL_TOTAL_TESTS} | ${FINAL_TOTAL_PASSED} | ${FINAL_TOTAL_SKIPPED} | ${FINAL_TOTAL_FAILED} | ${statusIcon} |
 
             ### Details
-            - **Python Version**: ${{ env.PYTHON_VERSION_DEFAULT }}
+            - **Python Version**: ${{ env.PYTHON_VERSION }}
             - **Workflow**: \`${context.workflow}\`
             - **Commit**: \`${context.sha.substring(0, 7)}\`
             - **Run ID**: [${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
@@ -515,7 +513,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: 'tt-media-server/requirements.txt'
 
@@ -804,7 +802,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -1038,7 +1036,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -1671,7 +1669,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Install Python test dependencies
@@ -2190,7 +2188,7 @@ jobs:
       - name: Set up uv for Dynamo
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DYNAMO }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Create dynamo venv with ai-dynamo + vllm
@@ -2201,7 +2199,7 @@ jobs:
           # inflates client-side TTFT/TPOT independently of the backend.
           bash cpp_server/scripts/ci/install_bench_client.sh \
             --venv "$HOME/.venvs/dynamo" \
-            --python ${{ env.PYTHON_VERSION_DYNAMO }} \
+            --python ${{ env.PYTHON_VERSION }} \
             --package ai-dynamo \
             --package uvloop
 
@@ -2501,7 +2499,7 @@ jobs:
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
 
       - name: Install guidellm
@@ -2664,7 +2662,7 @@ jobs:
       - name: Set up Forge Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_FORGE }}
+          python-version: ${{ env.PYTHON_VERSION }}
           # Dissable pip caching for now, it take longer than install sometimes
           # cache: 'pip'
           # cache-dependency-path: |
@@ -2674,8 +2672,8 @@ jobs:
       - name: Create venv, install dependencies
         shell: bash
         run: |
-          python${{ env.PYTHON_VERSION_FORGE }} -m venv venv-${{ env.PYTHON_VERSION_FORGE }}
-          source venv-${{ env.PYTHON_VERSION_FORGE }}/bin/activate
+          python${{ env.PYTHON_VERSION }} -m venv venv-${{ env.PYTHON_VERSION }}
+          source venv-${{ env.PYTHON_VERSION }}/bin/activate
           export VLLM_TARGET_DEVICE="empty"
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -2685,7 +2683,7 @@ jobs:
       - name: Run CPU-only tests
         shell: bash
         run: |
-          source venv-${{ env.PYTHON_VERSION_FORGE }}/bin/activate
+          source venv-${{ env.PYTHON_VERSION }}/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
   test-coverage:
@@ -2707,7 +2705,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION_DEFAULT }}
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install diff-cover
         run: pip install diff-cover
