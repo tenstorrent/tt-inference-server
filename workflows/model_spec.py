@@ -3716,6 +3716,52 @@ embedding_templates = [
             ),
         ],
     ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-Embedding-0.6B"],
+        tt_metal_commit="NONE",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-Embedding-4B"],
+        tt_metal_commit="NONE",
+        impl=tt_transformers_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "1",
+                },
+            ),
+        ],
+    ),
 ]
 
 # =============================================================================
@@ -3894,6 +3940,17 @@ cnn_templates = [
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MIN_MODEL_LENGTH": "32",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=4,
+                max_context=2048,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "2048",
+                    "VLLM__MAX_MODEL_LENGTH": "2048",
                     "VLLM__MIN_MODEL_LENGTH": "32",
                 },
             ),

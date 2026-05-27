@@ -95,7 +95,8 @@
               "devices": [
                 "N150",
                 "N300",
-                "T3K"
+                "T3K",
+                "P300X2"
               ]
             }
           }
@@ -322,15 +323,33 @@
         }
       }
     },
-    "Qwen3-Embedding-4B": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "N150"
-          ]
+    "Qwen3-Embedding-0.6B": {
+      "implementations": [
+        {
+          "inference_engine": "MEDIA",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
+    },
+    "Qwen3-Embedding-4B": {
+      "implementations": [
+        {
+          "inference_engine": "MEDIA",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
+        }
+      ]
     },
     "Qwen3-Embedding-8B": {
       "inference_engine": "MEDIA",
@@ -356,7 +375,8 @@
             "GALAXY",
             "N150",
             "N300",
-            "T3K"
+            "T3K",
+            "P300X2"
           ]
         }
       }

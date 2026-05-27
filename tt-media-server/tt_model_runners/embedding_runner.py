@@ -156,11 +156,11 @@ class BGEM3Runner(EmbeddingRunner):
 
 
 class Qwen3Embedding8BRunner(EmbeddingRunner):
-    def __init__(self, device_id: str):
+    def __init__(self, device_id: str, model_name: str):
         super().__init__(device_id)
         self.max_model_len = self.settings.vllm.max_model_length
         self.max_num_seqs = self.settings.vllm.max_num_seqs
-        self.model_name = SupportedModels.QWEN_3_EMBEDDING_8B.value
+        self.model_name = model_name
         self.tokenizer = EmbeddingTokenizer(self.model_name)
 
     def get_pipeline_device_params(self):
