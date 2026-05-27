@@ -274,12 +274,12 @@ struct ChatCompletionRequest : BaseRequest {
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(
         messages, true, tools, enable_reasoning, skip_apply_chat_template);
-    out.full_prompt_tokens_count =
-        static_cast<int>(tokenizer.encode(promptStr).size());
-    out.prompt_tokens_count = out.full_prompt_tokens_count;
     TT_LOG_INFO("Prompt: {}",
                 detail::truncate(promptStr, detail::MAX_PROMPT_LOG_LENGTH));
-    out.prompt = std::move(promptStr);
+    auto promptTokens = tokenizer.encode(promptStr);
+    out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
+    out.prompt = std::move(promptTokens);
     out.echo = echo;
     out.max_tokens = max_tokens;
     out.n = n;

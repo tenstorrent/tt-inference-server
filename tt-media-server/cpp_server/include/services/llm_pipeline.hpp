@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
@@ -54,7 +56,7 @@ class LLMPipeline {
 
   struct SessionInfo {
     bool validSessionFound = false;
-    std::optional<size_t> registrationHash;
+    std::vector<uint64_t> registrationHashes;
   };
 
   LLMPipeline(std::shared_ptr<LLMService> service,
