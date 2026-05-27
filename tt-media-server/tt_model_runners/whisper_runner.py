@@ -780,7 +780,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             generation_params=generation_params,
                             language=self.settings.audio_language,
                             task=self.settings.audio_task,
-                            prompt=prompt,
+                            prompt=prompt or None,
                             stream_generation=stream,
                             return_perf_metrics=False,
                         )
