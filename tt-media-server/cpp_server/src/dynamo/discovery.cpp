@@ -67,7 +67,12 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   instance["instance_id"] = static_cast<Json::UInt64>(c.instance_id);
 
   Json::Value transport(Json::objectValue);
-  transport["tcp"] = c.tcp_address;
+  if (!c.tcp_address.empty()) {
+    transport["tcp"] = c.tcp_address;
+  }
+  if (!c.grpc_address.empty()) {
+    transport["grpc"] = c.grpc_address;
+  }
   instance["transport"] = std::move(transport);
   instance["device_type"] = "cuda";
   return instance;

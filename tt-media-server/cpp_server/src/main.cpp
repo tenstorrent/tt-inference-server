@@ -234,10 +234,21 @@ int main(int argc, char* argv[]) {
             tt::services::ServiceContainer::instance().sessionManager(),
             tt::services::ServiceContainer::instance().disaggregation(),
             tt::services::ServiceContainer::instance().socket());
-        grpcServer =
-            tt::api::grpc::startGrpcServer(grpcPipeline, grpcListenEnv);
+
+        tt::api::grpc::GrpcEndpointOptions grpcOpts;
+        grpcOpts.bind_addr = grpcListenEnv;
+        if (tt::config::dynamoEndpointEnabled()) {
+          grpcOpts.etcd_endpoints = tt::config::dynamoEtcdEndpoints();
+          grpcOpts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
+          grpcOpts.namespace_name = tt::config::dynamoNamespace();
+          grpcOpts.component = tt::config::dynamoComponent();
+          grpcOpts.endpoint = tt::config::dynamoEndpointName();
+        }
+
+        grpcServer = tt::api::grpc::startGrpcServer(grpcPipeline, grpcOpts);
         if (grpcServer) {
-          TT_LOG_INFO("[gRPC] Listening on {}", grpcListenEnv);
+          TT_LOG_INFO("[gRPC] Listening on {} (port {})", grpcListenEnv,
+                      grpcServer->port());
         } else {
           TT_LOG_ERROR("[gRPC] Failed to start server on {}", grpcListenEnv);
         }

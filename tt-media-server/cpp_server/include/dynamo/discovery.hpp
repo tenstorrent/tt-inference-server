@@ -36,8 +36,11 @@ struct DiscoveryConfig {
   std::string instance_id_hex;
   uint64_t instance_id = 0;
   /// "host:port/instance_id_hex/endpoint" — the address Dynamo dials to send
-  /// us a request.
+  /// us a request over TCP.
   std::string tcp_address;
+  /// "host:port" — the address for gRPC transport. If non-empty, registered
+  /// alongside tcp_address in the transport object.
+  std::string grpc_address;
   /// Display name in /v1/models (e.g. "deepseek-ai/DeepSeek-R1-0528").
   std::string model_name;
   /// Filesystem directory containing config.json + tokenizer.json +
