@@ -332,6 +332,11 @@ class DeviceModelSpec:
     tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
+    # When set, run_evals.py appends `max_retries=<N>` to lm-eval's --model_args.
+    # Lm-eval's default is 3 with 1s→10s exponential backoff per failed request;
+    # for device+model pairs known to produce permanent 4xx for prompts they
+    # can't fit, set to 1 to fast-fail and avoid hours of retry-burn in CI.
+    eval_max_retries: Optional[int] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -968,6 +973,7 @@ class ModelSpecTemplate:
                     tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
                     system_requirements=device_model_spec.system_requirements,
                     known_issues=device_model_spec.known_issues,
+                    eval_max_retries=device_model_spec.eval_max_retries,
                 )
                 spec = ModelSpec(
                     # Core identity

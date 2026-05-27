@@ -96,6 +96,14 @@ class EvalTask:
     include_path: str = None
     # Optional: kwargs passed to task custom_dataset loaders (e.g., RULER sequence length configs)
     custom_dataset_kwargs: Dict[str, Union[str, List[int]]] = None
+    # Optional: minimum device_model_spec.max_context required to run this task.
+    # When set and the device's max_context is smaller, run_evals.py skips the
+    # task with a logged "Skipping <task>: requires max_context >= N, device
+    # provides M" line rather than attempting it and burning hours on HTTP 400
+    # prompt-overflow retry storms. Use for tasks that genuinely need long
+    # context (longbench_*, RULER) — those can't be salvaged by max_gen_toks
+    # clamping since the prompt itself exceeds the device cap.
+    min_context_required: Optional[int] = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
@@ -2238,6 +2246,7 @@ _eval_config_list = [
             # ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2252,6 +2261,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2266,6 +2276,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2280,6 +2291,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2294,6 +2306,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2308,6 +2321,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2408,6 +2422,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2422,6 +2437,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2436,6 +2452,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2450,6 +2467,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2464,6 +2482,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2478,6 +2497,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
