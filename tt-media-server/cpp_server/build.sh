@@ -17,6 +17,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
+FRESH_CONFIGURE="ON"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
+        --no-fresh)
+            FRESH_CONFIGURE="OFF"
+            shift
+            ;;
         --toolchain-path)
             TOOLCHAIN_PATH_ARG="$2"
             shift 2
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
+            echo "  --no-fresh           Reuse existing CMake configure state"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -96,6 +102,7 @@ echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
+echo "  Fresh configure: ${FRESH_CONFIGURE}"
 echo "=============================================="
 
 # Ensure cargo (Rust) is in PATH for tokenizers-cpp
@@ -327,6 +334,10 @@ CMAKE_ARGS=(
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
+[ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")
+if [ "${CI_CCACHE:-0}" = "1" ] && command -v ccache >/dev/null 2>&1; then
+    CMAKE_ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
 
 # Compiler/toolchain: --cxx-compiler-path overrides --toolchain-path overrides auto-detection (match build_metal.sh)
 if [ -n "${CXX_COMPILER_PATH}" ]; then
@@ -345,7 +356,11 @@ fi
 
 echo ""
 echo "Configuring CMake..."
-cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+if [ "${FRESH_CONFIGURE}" = "ON" ]; then
+    cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+else
+    cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+fi
 
 # Symlink compile_commands.json to project root for intellisense (clangd, VSCode C++)
 if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
