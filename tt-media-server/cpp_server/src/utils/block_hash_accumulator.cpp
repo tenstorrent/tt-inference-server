@@ -39,18 +39,4 @@ std::optional<std::vector<uint64_t>> BlockHashAccumulator::addToken(
   return hashes_;
 }
 
-std::vector<uint64_t> BlockHashAccumulator::finalize() {
-  if (blockBuffer_.empty()) {
-    return hashes_;
-  }
-
-  // Hash the partial block (even if incomplete)
-  uint64_t newHash = XXH64(blockBuffer_.data(),
-                           blockBuffer_.size() * sizeof(int64_t), parentHash_);
-  hashes_.push_back(newHash);
-  blockBuffer_.clear();
-
-  return hashes_;
-}
-
 }  // namespace tt::utils
