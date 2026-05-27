@@ -511,9 +511,11 @@ inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
     pendingRequests.pendingCancelTaskId = taskId;
     return;
   }
-  TT_LOG_DEBUG(
-      "[BlazeRunner] handleCancelRequest: pushed STOP taskId={}, slotId={}",
-      taskId, slot->slotId);
+  TT_LOG_INFO(
+      "[BlazeRunner] handleCancelRequest: pushed STOP taskId={}, slotId={}, "
+      "lastForwardedPosition={} (this is where the client's view of "
+      "generation ends; a follow-up CONTINUE will resume at this+1)",
+      taskId, slot->slotId, slot->currentPosition);
   slot->pendingAckRequestId = taskId;
   slotManager.setSlotState(slot->slotId, SlotState::AWAITING_STOP_ACK);
   slotManager.unbindTaskFromSlot(taskId);
@@ -616,6 +618,20 @@ void BlazeRunner::handleRequest(
           isNew ? utils::makeSubmitRequest(slotId, *request)
                 : utils::makeContinueRequest(slotId, *request,
                                              slotContext.currentPosition);
+      if (!isNew) {
+        // CONTINUE path always sets req.gen.position_id: disagg path takes
+        // it from seq.getKVPositionId(); local path takes slotContext.
+        // currentPosition (= position of last token forwarded to the client).
+        assert(req.gen.position_id.has_value());
+        const bool fromDisaggOverride = request->getKVPositionId().has_value();
+        TT_LOG_INFO(
+            "[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}, "
+            "disaggregated={}, position_id={}, source={} (prev message ended "
+            "here; engine will resume writing at position_id+1)",
+            request->taskId, slotId, request->isDisaggregated(),
+            req.gen.position_id.has_value() ? *req.gen.position_id : slotContext.currentPosition,
+            fromDisaggOverride ? "disaggOverride" : "slotCurrentPosition");
+      }
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
