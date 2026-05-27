@@ -32,8 +32,12 @@ logger = logging.getLogger(__name__)
 def _select_agentic_tasks(ctx: MediaContext) -> list:
     """Return EVALS_AGENTIC tasks; raise loudly if mixed with non-agentic."""
     tasks = getattr(ctx.all_params, "tasks", []) or []
-    agentic = [t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC]
-    non_agentic = [t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC]
+    agentic = [
+        t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    ]
+    non_agentic = [
+        t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+    ]
     if agentic and non_agentic:
         raise RuntimeError(
             f"v2 agentic runner only supports EVALS_AGENTIC tasks. "
@@ -72,10 +76,14 @@ def _require_openai_server(ctx: MediaContext) -> None:
     try:
         with urlopen(url, timeout=30) as response:
             if response.status != 200:
-                raise RuntimeError(f"Expected status 200 from {url}, got {response.status}")
+                raise RuntimeError(
+                    f"Expected status 200 from {url}, got {response.status}"
+                )
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, URLError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"OpenAI-compatible server health check failed: {url}") from exc
+        raise RuntimeError(
+            f"OpenAI-compatible server health check failed: {url}"
+        ) from exc
 
     model_ids = [
         item.get("id")

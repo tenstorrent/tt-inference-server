@@ -168,15 +168,21 @@ class TestAgenticParser:
     def test_compute_accuracy_check_boundaries(self):
         score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)
 
-        assert compute_accuracy_check({"accuracy": 0.49}, score) == ReportCheckTypes.PASS
-        assert compute_accuracy_check({"accuracy": 0.40}, score) == ReportCheckTypes.FAIL
+        assert (
+            compute_accuracy_check({"accuracy": 0.49}, score) == ReportCheckTypes.PASS
+        )
+        assert (
+            compute_accuracy_check({"accuracy": 0.40}, score) == ReportCheckTypes.FAIL
+        )
         assert compute_accuracy_check({}, score) == ReportCheckTypes.NA
         assert compute_accuracy_check({"accuracy": 0.90}, None) == ReportCheckTypes.NA
 
     def test_compute_accuracy_check_preserves_percent_accuracy(self):
         score = FakeScore(gpu_reference_score=50.0, tolerance=0.05)
 
-        assert compute_accuracy_check({"accuracy": 49.0}, score) == ReportCheckTypes.PASS
+        assert (
+            compute_accuracy_check({"accuracy": 49.0}, score) == ReportCheckTypes.PASS
+        )
 
 
 class TestAgenticDriverConfigMapping:
@@ -297,7 +303,9 @@ class TestAgenticBridge:
         driver.run.return_value.raw = HARBOR_RESULT_FIXTURE
         driver.parse.return_value = block
 
-        with patch("test_module.llm_tests.agentic_eval_tests._require_openai_server"), patch(
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
             "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
             return_value=driver,
         ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:

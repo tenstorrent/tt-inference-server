@@ -50,9 +50,7 @@ class AgenticWorkflow(WorkflowExecution):
             blocks = run_llm_agentic_eval(self.ctx)
         except Exception as e:
             elapsed = time.time() - started
-            self.logger.exception(
-                "✘ agentic raised after %.1fs: %s", elapsed, e
-            )
+            self.logger.exception("✘ agentic raised after %.1fs: %s", elapsed, e)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
         elapsed = time.time() - started

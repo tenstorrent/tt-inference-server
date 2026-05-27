@@ -236,7 +236,9 @@ def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
 
 
 def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
-    if runtime_config is None or not getattr(runtime_config, "limit_samples_mode", None):
+    if runtime_config is None or not getattr(
+        runtime_config, "limit_samples_mode", None
+    ):
         return None
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
 

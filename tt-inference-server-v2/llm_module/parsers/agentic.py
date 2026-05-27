@@ -113,7 +113,8 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         (
             metric.get("mean")
             for metric in metrics_list
-            if isinstance(metric, Mapping) and isinstance(metric.get("mean"), (int, float))
+            if isinstance(metric, Mapping)
+            and isinstance(metric.get("mean"), (int, float))
         ),
         None,
     )
@@ -149,7 +150,9 @@ def _add_harbor_pass_at_metrics(
 
 def _count_harbor_resolved_trials(eval_stats: Mapping[str, Any]) -> Optional[int]:
     reward_stats = eval_stats.get("reward_stats", {})
-    rewards = reward_stats.get("reward", {}) if isinstance(reward_stats, Mapping) else {}
+    rewards = (
+        reward_stats.get("reward", {}) if isinstance(reward_stats, Mapping) else {}
+    )
     if not isinstance(rewards, Mapping):
         return None
 
