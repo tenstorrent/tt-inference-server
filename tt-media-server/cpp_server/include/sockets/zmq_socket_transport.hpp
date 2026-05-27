@@ -10,6 +10,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -65,10 +66,10 @@ class ZmqSocketTransport : public ISocketTransport,
   };
 
   bool startIoThread();
-  void ioLoop(std::promise<bool> initialized);
+  void ioLoop(std::stop_token stopToken, std::promise<bool> initialized);
   bool initializeSocket();
   void setupMonitor();
-  void monitorLoop(std::promise<void> ready);
+  void monitorLoop(std::stop_token stopToken, std::promise<void> ready);
   bool processPendingSends();
   bool receiveAvailableMessages();
   void waitForIoWork();
@@ -90,8 +91,8 @@ class ZmqSocketTransport : public ISocketTransport,
   std::atomic<bool> ioActive_{false};
   std::atomic<bool> monitorActive_{false};
 
-  std::thread ioThread_;
-  std::thread monitorThread_;
+  std::jthread ioThread_;
+  std::jthread monitorThread_;
 
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
