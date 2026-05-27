@@ -3734,25 +3734,16 @@ cnn_templates = [
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=2,
+                device=DeviceTypes.P150,
+                max_concurrency=16,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=2,
-                max_context=4096,
-                default_impl=True,
-                env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
-                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "16",
+                    "GPU_MEMORY_UTILIZATION": "0.7",
                 },
             ),
         ],
@@ -3769,27 +3760,16 @@ cnn_templates = [
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=2,
-                max_context=4096,
+                device=DeviceTypes.P150,
+                max_concurrency=16,
+                max_context=8192,
                 default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
+                    "VLLM__MAX_MODEL_LENGTH": "8192",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                    "MAX_NUM_SEQS": "2",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=2,
-                max_context=4096,
-                default_impl=False,
-                env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
-                    "VLLM__MIN_MODEL_LENGTH": "32",
-                    "MAX_NUM_SEQS": "2",
+                    "MAX_NUM_SEQS": "16",
+                    "GPU_MEMORY_UTILIZATION": "0.7",
                 },
             ),
         ],
@@ -3806,25 +3786,16 @@ cnn_templates = [
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=2,
+                device=DeviceTypes.P150,
+                max_concurrency=16,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=2,
-                max_context=4096,
-                default_impl=False,
-                env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
-                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "16",
+                    "GPU_MEMORY_UTILIZATION": "0.6",
                 },
             ),
         ],
@@ -3841,25 +3812,16 @@ cnn_templates = [
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=2,
+                device=DeviceTypes.P150,
+                max_concurrency=16,
                 max_context=4096,
                 default_impl=False,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=2,
-                max_context=4096,
-                default_impl=False,
-                env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
-                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "16",
+                    "GPU_MEMORY_UTILIZATION": "0.6",
                 },
             ),
         ],
@@ -3876,25 +3838,16 @@ cnn_templates = [
         uses_tensor_model_cache=False,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=2,
+                device=DeviceTypes.P150,
+                max_concurrency=16,
                 max_context=4096,
                 default_impl=True,
                 env_vars={
                     "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
                     "VLLM__MAX_MODEL_LENGTH": "4096",
                     "VLLM__MIN_MODEL_LENGTH": "32",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.N300,
-                max_concurrency=2,
-                max_context=4096,
-                default_impl=True,
-                env_vars={
-                    "VLLM__MAX_NUM_BATCHED_TOKENS": "4096",
-                    "VLLM__MAX_MODEL_LENGTH": "4096",
-                    "VLLM__MIN_MODEL_LENGTH": "32",
+                    "MAX_NUM_SEQS": "16",
+                    "GPU_MEMORY_UTILIZATION": "0.6",
                 },
             ),
         ],
