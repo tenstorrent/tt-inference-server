@@ -31,6 +31,8 @@ jobs:
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
       prefill-gateway: ${{ steps.filter.outputs.prefill_gateway }}
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
+      charts: ${{ steps.filter.outputs.charts }}
+      helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -51,6 +53,13 @@ jobs:
               - 'tt-media-server/uv-overrides.txt'
               - 'tt-media-server/fix_dependencies.sh'
               - 'tt-media-server/Dockerfile*'
+            charts:
+              - 'charts/**'
+            helm_inputs:
+              - 'workflows/model_spec.py'
+              - 'workflows/helm_generator/**'
+              - 'charts/tt-inference-server/values.yaml'
+              - 'tests/test_helm_generator/test_values_in_sync.py'
 
   lint:
     needs: detect-changes
@@ -496,6 +505,7 @@ jobs:
 
   llm-streaming-performance:
     needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
     name: LLM Streaming Performance Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -594,6 +604,9 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -606,11 +619,22 @@ jobs:
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
+        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
         run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
+
+      - name: Cache C++ dependency sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tt-media-server/.cache/ccache
+          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          restore-keys: |
+            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -635,7 +659,7 @@ jobs:
       - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
-          ./build.sh --clang-tidy --blaze
+          ./build.sh --clang-tidy --blaze --no-fresh
 
   prefill-gateway-format-check:
     needs: detect-changes
@@ -653,10 +677,13 @@ jobs:
       - name: Install clang-format-20
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends curl
-          curl -sSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 20
+          sudo apt-get install -y --no-install-recommends curl gnupg ca-certificates
+          . /etc/os-release
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/llvm-snapshot.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] https://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-20 main" \
+            | sudo tee "/etc/apt/sources.list.d/llvm-toolchain-${VERSION_CODENAME}-20.list" >/dev/null
+          sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends clang-format-20
 
       - name: C++ format check (.clang-format)
@@ -679,9 +706,9 @@ jobs:
     # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
     # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
     # find every shared lib the binary was linked against. Splitting build
-    # (ubuntu-latest = noble, Python 3.12) from bench (jammy, Python 3.10)
+    # (ubuntu-latest = noble, newer Python) from bench (jammy, default Python)
     # has produced repeated runtime "missing libfoo.so" failures (libpq5,
-    # libpython3.12, ...). Same OS image on both sides eliminates the class.
+    # libpython from the build runner, ...). Same OS image on both sides eliminates the class.
     runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
@@ -696,6 +723,8 @@ jobs:
       # Actions treats env keys as case-insensitive, so we set only the
       # lowercase form (which curl and Python requests both read).
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -708,11 +737,22 @@ jobs:
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
+        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
         run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
+
+      - name: Cache C++ dependency sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tt-media-server/.cache/ccache
+          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          restore-keys: |
+            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -720,7 +760,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh --blaze --no-fresh
           cd ..
 
       - name: Run C++ unit tests
@@ -761,9 +801,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
-
       - name: Download C++ build
         uses: actions/download-artifact@v4
         with:
@@ -771,7 +808,7 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -939,6 +976,7 @@ jobs:
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
             --result vllm-bench-mock-pipeline.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
         if: always()
@@ -997,9 +1035,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
-
       - name: Download C++ build
         uses: actions/download-artifact@v4
         with:
@@ -1007,7 +1042,7 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -1355,6 +1390,7 @@ jobs:
           python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
             --result vllm-bench-split-runner-result.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+
       - name: Show server logs
         if: always()
         run: |
@@ -1451,6 +1487,8 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -1459,17 +1497,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache C++ dependency sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tt-media-server/.cache/ccache
+          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          restore-keys: |
+            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
-
-      - name: Install clang-tidy-20
-        working-directory: .
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends clang-tidy-20
 
       - name: Configure prefill_gateway
         run: |
           cmake -S prefill_gateway -B prefill_gateway/build \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
       - name: Build prefill_gateway
         run: cmake --build prefill_gateway/build -j "$(nproc)"
@@ -1508,6 +1555,8 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -1516,6 +1565,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache C++ dependency sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tt-media-server/.cache/ccache
+          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          restore-keys: |
+            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
@@ -1523,6 +1583,8 @@ jobs:
         run: |
           cmake -S prefill_gateway -B prefill_gateway/tsan_build \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
 
@@ -1597,17 +1659,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
-
       - name: Download C++ server build
         uses: actions/download-artifact@v4
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server
 
-      - name: Set up C++ server build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
 
       - name: Download prefill_gateway binary
         uses: actions/download-artifact@v4
@@ -1615,7 +1674,7 @@ jobs:
           name: prefill-gateway-build
           path: tt-media-server/prefill_gateway/build
 
-      - name: Make prefill_gateway executable
+      - name: Make binaries executable
         run: chmod +x prefill_gateway/build/prefill_gateway
 
       - name: Set up uv
@@ -2006,6 +2065,7 @@ jobs:
           python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
             --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+
       - name: Show server logs
         if: always()
         run: |
@@ -2087,9 +2147,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
-
       - name: Download C++ build
         uses: actions/download-artifact@v4
         with:
@@ -2097,7 +2154,7 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh --skip-deps
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
 
       # No-docker etcd: grab the upstream signed binary tarball from the
       # etcd-io GitHub release. Two cpp_server backends registering under the
@@ -2139,7 +2196,7 @@ jobs:
           done
           etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
 
-      - name: Set up uv (Python 3.12 for Dynamo)
+      - name: Set up uv for Dynamo
         uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ env.PYTHON_VERSION_DYNAMO }}
@@ -2148,6 +2205,9 @@ jobs:
       - name: Create dynamo venv with ai-dynamo + vllm
         run: |
           mkdir -p "$HOME/.venvs"
+          # vllm is the bench client. transformers<5.6 mirrors the other
+          # cpp-server bench jobs — 5.6.x regresses tokenizer cost and
+          # inflates client-side TTFT/TPOT independently of the backend.
           bash cpp_server/scripts/ci/install_bench_client.sh \
             --venv "$HOME/.venvs/dynamo" \
             --python ${{ env.PYTHON_VERSION_DYNAMO }} \
@@ -2404,6 +2464,8 @@ jobs:
       contents: read
     env:
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     # Gating: any TSan race report after suppressions fails this job and the
     # whole pipeline. Known issues are listed in tsan_suppressions.txt with
     # their tracking issue IDs; remove the corresponding suppression line
@@ -2420,11 +2482,22 @@ jobs:
 
       - name: Configure git for private submodules
         working-directory: .
-        run: git config --global url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
+        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
 
       - name: Init tt-llm-engine submodule (without tt-metal)
         working-directory: .
         run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
+
+      - name: Cache C++ dependency sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tt-media-server/.cache/ccache
+          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          restore-keys: |
+            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -2432,7 +2505,7 @@ jobs:
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan
+          ./build.sh --tsan --no-fresh
 
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
@@ -2807,6 +2880,68 @@ jobs:
             diff-cover-output.txt
           retention-days: 14
 
+  helm-chart-validate:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' || needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install "ruamel.yaml==0.18.6" pytest pyyaml
+
+      - name: Verify values.yaml matches workflows/model_spec.py
+        run: pytest tests/test_helm_generator/test_values_in_sync.py -v
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION=v0.6.7
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Generate model-device matrix
+        run: |
+          python3 - <<'EOF' > /tmp/helm-matrix.txt
+          import yaml
+          with open('charts/tt-inference-server/values.yaml') as f:
+              v = yaml.safe_load(f)
+          for model, cfg in v['models'].items():
+              for key in cfg:
+                  if key != 'serverType':
+                      print(f"{model},{key}")
+          EOF
+
+      - name: Helm template validation
+        run: |
+          FAILED=0
+          while IFS=',' read -r model device; do
+            echo "--- Validating: $model / $device"
+            if ! helm template ci-test charts/tt-inference-server \
+                --set "model=$model" \
+                --set "device=$device" \
+                | kubeconform -strict -summary; then
+              echo "FAILED: $model / $device"
+              FAILED=1
+            fi
+          done < /tmp/helm-matrix.txt
+          exit $FAILED
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -2830,8 +2965,9 @@ jobs:
       - prefill-gateway-build
       - prefill-gateway-tsan
       - cpp-server-gateway-split
-      - dynamo-frontend-integration
       - cpp-tsan
+      - dynamo-frontend-integration
+      - helm-chart-validate
     if: always()
     steps:
       - name: Check results
@@ -2858,6 +2994,7 @@ jobs:
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
             [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
+            [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"
