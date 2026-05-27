@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -61,7 +62,7 @@ class ZmqPrefillRouter {
   static std::string peerKey(const PeerIdentity& peerId);
 
   bool startIoThread();
-  void ioLoop(std::promise<bool> initialized);
+  void ioLoop(std::stop_token stopToken, std::promise<bool> initialized);
   bool initializeSocket();
   bool processPendingSends();
   bool receiveAvailableMessages();
@@ -78,7 +79,7 @@ class ZmqPrefillRouter {
   std::unique_ptr<Impl> impl_;
 
   std::atomic<bool> running_{false};
-  std::thread io_thread_;
+  std::jthread io_thread_;
 
   mutable std::mutex peer_mutex_;
   std::unordered_map<std::string, PeerIdentity> server_to_peer_;

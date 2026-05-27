@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -103,7 +104,7 @@ class SocketManager {
   void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
 
  private:
-  void messageLoop();
+  void messageLoop(std::stop_token stopToken);
   void handleIncomingMessage(const std::vector<uint8_t>& data);
   std::function<void(const std::vector<uint8_t>&)> getHandler(
       const std::string& messageType) const;
@@ -111,7 +112,7 @@ class SocketManager {
   std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
-  std::thread messageThread_;
+  std::jthread messageThread_;
 
   mutable std::mutex handlersMutex_;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>

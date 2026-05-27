@@ -52,17 +52,21 @@ bool ZmqSocketTransport::startIoThread() {
 
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  ioThread_ =
-      std::thread(&ZmqSocketTransport::ioLoop, this, std::move(initialized));
+  ioThread_ = std::jthread([this, initialized = std::move(initialized)](
+                               std::stop_token stopToken) mutable {
+    ioLoop(stopToken, std::move(initialized));
+  });
 
   bool initializedOk = fut.get();
   if (!initializedOk && ioThread_.joinable()) {
+    ioThread_.request_stop();
     ioThread_.join();
   }
   return initializedOk;
 }
 
-void ZmqSocketTransport::ioLoop(std::promise<bool> initialized) {
+void ZmqSocketTransport::ioLoop(std::stop_token stopToken,
+                                std::promise<bool> initialized) {
   if (!initializeSocket()) {
     initialized.set_value(false);
     return;
@@ -70,7 +74,7 @@ void ZmqSocketTransport::ioLoop(std::promise<bool> initialized) {
 
   initialized.set_value(true);
 
-  while (ioActive_) {
+  while (ioActive_ && !stopToken.stop_requested()) {
     const bool sent = processPendingSends();
     const bool received = receiveAvailableMessages();
 
@@ -114,6 +118,7 @@ bool ZmqSocketTransport::initializeSocket() {
     ioActive_ = false;
     monitorActive_ = false;
     if (monitorThread_.joinable()) {
+      monitorThread_.request_stop();
       monitorThread_.join();
     }
     return false;
@@ -137,8 +142,10 @@ void ZmqSocketTransport::setupMonitor() {
   monitorActive_ = true;
   std::promise<void> ready;
   auto fut = ready.get_future();
-  monitorThread_ =
-      std::thread(&ZmqSocketTransport::monitorLoop, this, std::move(ready));
+  monitorThread_ = std::jthread(
+      [this, ready = std::move(ready)](std::stop_token stopToken) mutable {
+        monitorLoop(stopToken, std::move(ready));
+      });
   fut.wait();
 }
 
@@ -161,10 +168,12 @@ void ZmqSocketTransport::stop() {
   sendCv_.notify_all();
 
   if (ioThread_.joinable()) {
+    ioThread_.request_stop();
     ioThread_.join();
   }
 
   if (monitorThread_.joinable()) {
+    monitorThread_.request_stop();
     monitorThread_.join();
   }
 
@@ -175,7 +184,8 @@ void ZmqSocketTransport::stop() {
   TT_LOG_INFO("[ZmqSocketTransport] Stopped");
 }
 
-void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
+void ZmqSocketTransport::monitorLoop(std::stop_token stopToken,
+                                     std::promise<void> ready) {
   zmq::socket_t monitorSocket(*context_, zmq::socket_type::pair);
   try {
     monitorSocket.set(zmq::sockopt::linger, 0);
@@ -188,7 +198,7 @@ void ZmqSocketTransport::monitorLoop(std::promise<void> ready) {
   }
   ready.set_value();
 
-  while (monitorActive_) {
+  while (monitorActive_ && !stopToken.stop_requested()) {
     try {
       zmq::message_t eventMsg;
       auto eventResult = monitorSocket.recv(eventMsg, zmq::recv_flags::none);

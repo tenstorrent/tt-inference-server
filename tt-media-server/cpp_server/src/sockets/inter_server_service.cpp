@@ -319,30 +319,23 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
 
 void InterServerService::startRegistrationThread() {
   stopRegistrationThread();
-  {
-    std::lock_guard<std::mutex> lock(registration_mutex_);
-    registration_stop_ = false;
-  }
 
-  registration_thread_ = std::thread([this] {
-    std::unique_lock<std::mutex> lock(registration_mutex_);
-    while (!registration_stop_) {
-      lock.unlock();
+  registration_thread_ = std::jthread([this](std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
       if (socket_manager_.isConnected()) {
         sendRegistration();
       }
-      lock.lock();
-      registration_cv_.wait_for(lock, REGISTRATION_INTERVAL,
-                                [this] { return registration_stop_; });
+
+      std::unique_lock<std::mutex> lock(registration_mutex_);
+      registration_cv_.wait_for(lock, REGISTRATION_INTERVAL, [&stopToken] {
+        return stopToken.stop_requested();
+      });
     }
   });
 }
 
 void InterServerService::stopRegistrationThread() {
-  {
-    std::lock_guard<std::mutex> lock(registration_mutex_);
-    registration_stop_ = true;
-  }
+  registration_thread_.request_stop();
   registration_cv_.notify_all();
   if (registration_thread_.joinable()) {
     registration_thread_.join();
