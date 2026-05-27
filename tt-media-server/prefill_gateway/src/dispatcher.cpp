@@ -3,7 +3,9 @@
 
 #include "gateway/dispatcher.hpp"
 
+#include <chrono>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -16,9 +18,16 @@ namespace tt::gateway {
 
 Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
                        Senders senders)
+    : Dispatcher(registry, affinityCache, std::move(senders),
+                 Options{std::chrono::minutes(5), std::chrono::minutes(1),
+                         std::chrono::seconds(30), 3}) {}
+
+Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
+                       Senders senders, Options options)
     : registry_(registry),
       affinity_cache_(affinityCache),
-      senders_(std::move(senders)) {}
+      senders_(std::move(senders)),
+      options_(options) {}
 
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
@@ -30,8 +39,12 @@ void Dispatcher::onPrefillRequest(
   auto chosenOpt = selectPrefill(prefills, msg.registration_hash, sticky,
                                  round_robin_cursor_);
   if (!chosenOpt.has_value()) {
-    TT_LOG_WARN("[Dispatcher] taskId={} no eligible prefill (healthy={})",
-                msg.task_id, prefills.size());
+    const auto summary = summarizePrefillEligibility(prefills);
+    TT_LOG_WARN(
+        "[Dispatcher] taskId={} no eligible prefill (total={}, healthy={}, "
+        "accepting={}, capacity_available={})",
+        msg.task_id, summary.total, summary.healthy, summary.accepting,
+        summary.capacity_available);
     failTaskToDecode(msg.task_id, "no_prefill_available");
     return;
   }
@@ -44,7 +57,7 @@ void Dispatcher::onPrefillRequest(
   registry_.incrementInflight(chosen);
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    in_flight_[msg.task_id] = {chosen, msg.registration_hash};
+    in_flight_[msg.task_id] = {chosen, msg.registration_hash, Clock::now()};
   }
 
   // Send assignment first so decode can prep KV-transfer ahead of the result.
@@ -166,14 +179,13 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
   std::vector<uint32_t> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    for (auto it = in_flight_.begin(); it != in_flight_.end();) {
-      if (it->second.prefill_id == serverId) {
-        orphaned.push_back(it->first);
-        it = in_flight_.erase(it);
-      } else {
-        ++it;
+    std::erase_if(in_flight_, [&orphaned, &serverId](const auto& task) {
+      if (task.second.prefill_id != serverId) {
+        return false;
       }
-    }
+      orphaned.push_back(task.first);
+      return true;
+    });
   }
 
   if (!orphaned.empty()) {
@@ -183,6 +195,84 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
 
   for (uint32_t taskId : orphaned) {
     failTaskToDecode(taskId, "prefill_down");
+  }
+}
+
+void Dispatcher::onRequestTimeouts(Clock::time_point now) {
+  std::vector<std::string> recoveredPrefills;
+  {
+    std::lock_guard<std::mutex> lock(timeout_state_mutex_);
+    std::erase_if(prefill_blocked_until_,
+                  [&recoveredPrefills, now](const auto& blockedPrefill) {
+                    if (now < blockedPrefill.second) {
+                      return false;
+                    }
+                    recoveredPrefills.push_back(blockedPrefill.first);
+                    return true;
+                  });
+  }
+  for (const auto& prefillId : recoveredPrefills) {
+    TT_LOG_INFO(
+        "[Dispatcher] prefill='{}' accepting tasks after timeout "
+        "cooldown",
+        prefillId);
+    registry_.setAcceptingTasks(prefillId, true);
+  }
+
+  if (options_.request_timeout.count() <= 0) {
+    return;
+  }
+
+  std::vector<std::pair<uint32_t, InFlightEntry>> timedOut;
+  {
+    std::lock_guard<std::mutex> lock(inflight_mutex_);
+    std::erase_if(in_flight_, [&timedOut, now, this](auto& task) {
+      if (now - task.second.started_at < options_.request_timeout) {
+        return false;
+      }
+      timedOut.emplace_back(task.first, std::move(task.second));
+      return true;
+    });
+  }
+
+  for (const auto& [taskId, entry] : timedOut) {
+    TT_LOG_WARN("[Dispatcher] taskId={} timed out on prefill='{}'", taskId,
+                entry.prefill_id);
+    registry_.decrementInflight(entry.prefill_id);
+
+    tt::sockets::CancelPrefillMessage cancel;
+    cancel.task_id = taskId;
+    if (senders_.sendCancelToPrefill &&
+        !senders_.sendCancelToPrefill(entry.prefill_id, cancel)) {
+      TT_LOG_WARN(
+          "[Dispatcher] taskId={} timeout cancel send to prefill='{}' "
+          "failed",
+          taskId, entry.prefill_id);
+    }
+
+    if (options_.timeout_threshold > 0 && options_.timeout_window.count() > 0 &&
+        options_.timeout_cooldown.count() > 0) {
+      std::lock_guard<std::mutex> lock(timeout_state_mutex_);
+      auto& history = prefill_timeout_history_[entry.prefill_id];
+      history.push_back(now);
+      while (!history.empty() &&
+             now - history.front() > options_.timeout_window) {
+        history.pop_front();
+      }
+      if (history.size() >= options_.timeout_threshold) {
+        const auto blockedUntil = now + options_.timeout_cooldown;
+        prefill_blocked_until_[entry.prefill_id] = blockedUntil;
+        registry_.setAcceptingTasks(entry.prefill_id, false);
+        history.clear();
+        TT_LOG_WARN(
+            "[Dispatcher] prefill='{}' disabled for new tasks after "
+            "{} timeouts in {}ms",
+            entry.prefill_id, options_.timeout_threshold,
+            options_.timeout_window.count());
+      }
+    }
+
+    failTaskToDecode(taskId, "timeout");
   }
 }
 

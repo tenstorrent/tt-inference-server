@@ -29,6 +29,8 @@ jobs:
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
       prefill-gateway: ${{ steps.filter.outputs.prefill_gateway }}
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
+      charts: ${{ steps.filter.outputs.charts }}
+      helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -49,6 +51,13 @@ jobs:
               - 'tt-media-server/uv-overrides.txt'
               - 'tt-media-server/fix_dependencies.sh'
               - 'tt-media-server/Dockerfile*'
+            charts:
+              - 'charts/**'
+            helm_inputs:
+              - 'workflows/model_spec.py'
+              - 'workflows/helm_generator/**'
+              - 'charts/tt-inference-server/values.yaml'
+              - 'tests/test_helm_generator/test_values_in_sync.py'
 
   lint:
     needs: detect-changes
@@ -2869,6 +2878,68 @@ jobs:
             diff-cover-output.txt
           retention-days: 14
 
+  helm-chart-validate:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' || needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install "ruamel.yaml==0.18.6" pytest pyyaml
+
+      - name: Verify values.yaml matches workflows/model_spec.py
+        run: pytest tests/test_helm_generator/test_values_in_sync.py -v
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION=v0.6.7
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Generate model-device matrix
+        run: |
+          python3 - <<'EOF' > /tmp/helm-matrix.txt
+          import yaml
+          with open('charts/tt-inference-server/values.yaml') as f:
+              v = yaml.safe_load(f)
+          for model, cfg in v['models'].items():
+              for key in cfg:
+                  if key != 'serverType':
+                      print(f"{model},{key}")
+          EOF
+
+      - name: Helm template validation
+        run: |
+          FAILED=0
+          while IFS=',' read -r model device; do
+            echo "--- Validating: $model / $device"
+            if ! helm template ci-test charts/tt-inference-server \
+                --set "model=$model" \
+                --set "device=$device" \
+                | kubeconform -strict -summary; then
+              echo "FAILED: $model / $device"
+              FAILED=1
+            fi
+          done < /tmp/helm-matrix.txt
+          exit $FAILED
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -2892,8 +2963,9 @@ jobs:
       - prefill-gateway-build
       - prefill-gateway-tsan
       - cpp-server-gateway-split
-      - dynamo-frontend-integration
       - cpp-tsan
+      - dynamo-frontend-integration
+      - helm-chart-validate
     if: always()
     steps:
       - name: Check results
@@ -2920,6 +2992,7 @@ jobs:
             [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
             [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
+            [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"

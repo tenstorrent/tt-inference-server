@@ -1,0 +1,60 @@
+{{- /*
+chart.supportedModelsSection — auto-generated Supported Models tables.
+
+Reads values.yaml via .Files.Get, groups every entry under `models:` by
+its `serverType`, and emits one Markdown table per engine. The label is
+derived from the engine key (vllm → vLLM, media → Media, forge → Forge);
+any unmapped engine falls back to its capitalised key.
+
+Adding a new engine or model in values.yaml is reflected here on the
+next helm-docs run — no manual edit to this file or README.md.gotmpl.
+*/ -}}
+{{- define "chart.supportedModelsSection" -}}
+{{- $values := .Files.Get "values.yaml" | fromYaml -}}
+{{- $labels := dict "vllm" "vLLM" "media" "Media" "forge" "Forge" -}}
+{{- $engineOrder := list "vllm" "media" "forge" -}}
+{{- $groups := dict -}}
+{{- range $name, $cfg := $values.models -}}
+  {{- $engine := default "unknown" $cfg.serverType -}}
+  {{- $entries := default (list) (index $groups $engine) -}}
+  {{- $_ := set $groups $engine (append $entries (dict "name" $name "cfg" $cfg)) -}}
+{{- end -}}
+## Supported Models
+{{- range $engineOrder }}
+{{- $engine := . }}
+{{- if hasKey $groups $engine }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range (index $groups $engine) }}
+{{- $name := .name }}
+{{- range $key, $_ := .cfg }}
+{{- if ne $key "serverType" }}
+| `{{ $name }}` | {{ $key }} |
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $engine, $entries := $groups }}
+{{- if not (has $engine $engineOrder) }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range $entries }}
+{{- $name := .name }}
+{{- range $key, $_ := .cfg }}
+{{- if ne $key "serverType" }}
+| `{{ $name }}` | {{ $key }} |
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
+{{- end -}}
