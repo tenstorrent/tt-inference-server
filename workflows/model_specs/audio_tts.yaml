@@ -32,19 +32,6 @@ templates:
       max_concurrency: 4
       max_context: 65536  # 64 * 1024
       default_impl: true
-  status: COMPLETE
-
-- weights:
-    - openai/whisper-large-v3
-    - distil-whisper/distil-large-v3
-  version: "0.11.1"
-  tt_metal_commit: "2508216"
-  impl: whisper
-  min_disk_gb: 15
-  min_ram_gb: 6
-  model_type: AUDIO
-  inference_engine: MEDIA
-  device_model_specs:
     - device: P150
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
