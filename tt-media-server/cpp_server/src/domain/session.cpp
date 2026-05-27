@@ -34,7 +34,16 @@ bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
   cancelFn_ = nullptr;
-  prefixAccumulator_.reset();  // Clean up accumulator when request completes
+
+  // Finalize any partial block and register the final hash vector
+  if (prefixAccumulator_ && onBlockComplete_) {
+    auto finalHashes = prefixAccumulator_->finalize();
+    if (!finalHashes.empty()) {
+      onBlockComplete_(session_id_, finalHashes);
+    }
+  }
+
+  prefixAccumulator_.reset();
   onBlockComplete_ = nullptr;
   return true;
 }

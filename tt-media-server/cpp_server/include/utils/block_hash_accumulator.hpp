@@ -32,6 +32,13 @@ class BlockHashAccumulator {
    */
   std::optional<std::vector<uint64_t>> addToken(int64_t tokenId);
 
+  /**
+   * Finalize any remaining partial block. If there are tokens in the buffer
+   * that haven't formed a complete block, hash them and add to the vector.
+   * Returns the final hash vector (which may be unchanged if buffer was empty).
+   */
+  std::vector<uint64_t> finalize();
+
   const std::vector<uint64_t>& hashes() const { return hashes_; }
 
  private:
