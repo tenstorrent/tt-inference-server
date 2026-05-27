@@ -332,6 +332,9 @@ class DeviceModelSpec:
     tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
+    # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
+    # Default 3 × exponential backoff = hours of burn on permanent 4xx.
+    eval_max_retries: Optional[int] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -968,6 +971,7 @@ class ModelSpecTemplate:
                     tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
                     system_requirements=device_model_spec.system_requirements,
                     known_issues=device_model_spec.known_issues,
+                    eval_max_retries=device_model_spec.eval_max_retries,
                 )
                 spec = ModelSpec(
                     # Core identity

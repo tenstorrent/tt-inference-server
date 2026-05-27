@@ -20,6 +20,7 @@ templates:
       max_concurrency: 16
       max_context: 4096
       default_impl: true
+      eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
         MAX_NUM_SEQS: "16"
@@ -41,6 +42,7 @@ templates:
       max_concurrency: 16
       max_context: 8192
       default_impl: false
+      eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "8192"
         MAX_NUM_SEQS: "16"
@@ -61,6 +63,7 @@ templates:
       max_concurrency: 16
       max_context: 4096
       default_impl: false
+      eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
         MAX_NUM_SEQS: "16"
@@ -81,6 +84,7 @@ templates:
       max_concurrency: 16
       max_context: 4096
       default_impl: false
+      eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
         MAX_NUM_SEQS: "16"
@@ -101,6 +105,7 @@ templates:
       max_concurrency: 16
       max_context: 4096
       default_impl: true
+      eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
         MAX_NUM_SEQS: "16"
