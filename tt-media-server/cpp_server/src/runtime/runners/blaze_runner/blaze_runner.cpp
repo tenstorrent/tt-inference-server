@@ -628,6 +628,7 @@ void BlazeRunner::handleRequest(
           .incrementActiveRequests();
       break;
     }
+
     case SlotState::AWAITING_STOP_ACK: {
       if (slotContext.deferredContinue) {
         TT_LOG_WARN(
