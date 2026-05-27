@@ -7,7 +7,6 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
-#include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
@@ -70,11 +69,17 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq) {
+                                         const tt::domain::llm::Sequence& seq,
+                                         uint32_t currentPosition) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.gen.position_id = *seq.getKVPositionId();
+  } else {
+    req.gen.position_id = currentPosition;
+  }
   return req;
 }
 

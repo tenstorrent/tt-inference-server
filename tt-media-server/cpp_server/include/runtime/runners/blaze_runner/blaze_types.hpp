@@ -51,6 +51,7 @@ struct SlotContext {
   std::optional<uint32_t> pendingAckRequestId = std::nullopt;
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
   std::unique_ptr<tt::domain::llm::Sequence> deferredContinue = nullptr;
+  uint32_t currentPosition = 0;
 
   void setState(SlotState newState) {
     if (newState == state) return;

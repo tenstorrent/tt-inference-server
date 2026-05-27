@@ -554,6 +554,7 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   auto taskId = slotContext.taskId.value();
 
   slotContext.tokensGenerated++;
+  slotContext.currentPosition = output.position_id;
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
@@ -611,8 +612,10 @@ void BlazeRunner::handleRequest(
           request->taskId, slotId, isNew, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
           slotManager.activeRunningCount());
-      ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
-                                : utils::makeContinueRequest(slotId, *request);
+      ds::ISRequest req =
+          isNew ? utils::makeSubmitRequest(slotId, *request)
+                : utils::makeContinueRequest(slotId, *request,
+                                             slotContext.currentPosition);
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
