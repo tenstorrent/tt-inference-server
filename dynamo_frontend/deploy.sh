@@ -217,7 +217,7 @@ docker run -d --name "$WORKER_NAME" \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     --entrypoint /bin/bash \
     "$WORKER_IMAGE" \
-    -c 'cd cpp_server && LD_PRELOAD=$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0 ./build/tt_media_server_cpp' \
+    -c 'cd cpp_server && ./build/tt_media_server_cpp' \
     >/dev/null
 
 log "waiting for worker to register against etcd (up to 60s)"

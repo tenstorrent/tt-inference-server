@@ -3,30 +3,43 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 # ==============================================================================
-# BUILDER STAGE - build tt-metal and inference server
+# Slim Dockerfile.blaze
+# ------------------------------------------------------------------------------
+# Consumes a prebuilt tt-llm-engine image (built and published by
+# tenstorrent/tt-llm-engine's CI) and only compiles the tt-media-server
+# cpp_server on top. Replaces the previous "clone tt-llm-engine + build tt-metal
+# + build engine + build cpp_server" monolithic flow, which rebuilt tt-metal
+# and tt-llm-engine on every blaze build even when nothing upstream had changed.
+#
+# Build args:
+#   TT_LLM_ENGINE_IMAGE                 — full image ref of the prebuilt engine.
+#                                         Defaults to `:latest`; override with
+#                                         a `:<sha>` tag for reproducible builds.
+#   TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG — stamped into /info for debugging.
+#
+# Required runtime auth for the build host:
+#   docker login ghcr.io with a token that has read access on
+#   ghcr.io/tenstorrent/tt-llm-engine/test.
 # ==============================================================================
-# Note: Dependencies installed in this stage are NOT included in the final image.
-# Only the built artifacts and files are copied to the runtime stage.
-# Runtime dependencies must be installed separately in the runtime stage.
+
+ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/test:latest
+
+# ==============================================================================
+# ENGINE STAGE - prebuilt tt-llm-engine + tt-metal artifacts.
+# Used purely as a file source for COPY --from=engine; never actually run.
+# ==============================================================================
+FROM ${TT_LLM_ENGINE_IMAGE} AS engine
+
+# ==============================================================================
+# BUILDER STAGE - compile cpp_server against the prebuilt engine.
+# ==============================================================================
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
 
-# Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
-# connect Github repo with package
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
 ARG DEBIAN_FRONTEND=noninteractive
-# WARNING: TT_METAL_COMMIT_SHA_OR_TAG is documentation only — it does NOT pin
-# tt-metal. tt-metal is pulled in as a submodule of tt-llm-engine (cloned by
-# branch below), so the SHA actually compiled in is whatever the latest
-# tt-llm-engine branch tip resolves to at build time. Expect this default to
-# drift from reality. /info exposes the real tt-metal SHA from the cloned
-# submodule's .git tree at build time.
-ARG TT_METAL_COMMIT_SHA_OR_TAG=unknown
 ARG TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=unknown
-
-# make build commit SHA available in the image for reference and debugging
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 ENV TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=${TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG}
 
 ENV ENVIRONMENT=development
@@ -37,28 +50,26 @@ ENV CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
-# tt-metal build vars — tt-metal is a submodule of tt-llm-engine (cloned
-# further below). Its python_env is created by `./create_venv.sh` in that
-# same RUN step, so paths referenced here only have to exist before they
-# are actually used (cpp_server build, runtime).
-ENV TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal
+
+# tt-metal + tt-llm-engine now live at fixed /opt paths inside the engine
+# image and are COPY --from=engine'd in below. TT_METAL_HOME is read by
+# cpp_server/build.sh (clang-20 toolchain detection, Metal C++ API includes).
+ENV TT_METAL_HOME=/opt/tt-llm-engine-src/tt-metal
 ENV CONFIG=Release
 ENV TT_METAL_ENV=dev
 ENV LOGURU_LEVEL=INFO
-# derived vars
 ENV PYTHONPATH=${TT_METAL_HOME}
-# note: PYTHON_ENV_DIR is used by create_venv.sh
 ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
-ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
+# Cover both build/ and build_Release/ — tt-metal uses build_Release by default
+# but some configs symlink build/ → build_Release/.
+ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build_Release/lib:${TT_METAL_HOME}/build/lib:/opt/tt-llm-engine/lib
+# Lets cpp_server's CMake find_package(tt-llm-engine CONFIG) succeed.
+ENV CMAKE_PREFIX_PATH=/opt/tt-llm-engine:${TT_METAL_HOME}/build_Release
 
-# apt-get might have an outdated keyring, preventing it to download packages, so we fetch the latest
-RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
-    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
-
-
-# extra system deps
+# System deps for the cpp_server build itself (Drogon + tokenizers-cpp + misc).
+# The heavy engine-build deps (protobuf-compiler, libprotobuf-dev) are no longer
+# needed because tt-llm-engine is consumed prebuilt.
 RUN apt-get update && apt-get install -y \
-    # required
     gosu \
     libgl1 \
     libsndfile1 \
@@ -68,13 +79,10 @@ RUN apt-get update && apt-get install -y \
     acl \
     jq \
     vim \
-    # pyluwen build dependencies (Rust package with protobuf)
     build-essential \
     python3-dev \
     libffi-dev \
     libssl-dev \
-    protobuf-compiler \
-    libprotobuf-dev \
     pkg-config \
     htop \
     screen \
@@ -84,16 +92,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
-    && rm -rf /var/lib/apt/lists/* \
-    && protoc --version
+    && rm -rf /var/lib/apt/lists/*
 
-# Install CMake 3.26.4 to ensure compatibility with CMP0169
-RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh \
-    && chmod +x cmake.sh \
-    && ./cmake.sh --skip-license --prefix=/usr/local \
-    && rm cmake.sh \
+# CMake 3.26 — cpp_server's CMakeLists requires >= 3.24; the tt-metalium base
+# ships 3.22. Same CMake the engine image uses, so consumers stay in sync.
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o /tmp/cmake.sh \
+    && chmod +x /tmp/cmake.sh \
+    && /tmp/cmake.sh --skip-license --prefix=/usr/local \
+    && rm /tmp/cmake.sh \
     && /usr/local/bin/cmake --version
-
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -101,88 +108,76 @@ RUN mkdir -p ${HOME_DIR} \
 
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-# install tt-smi
-# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-#     && export CARGO_HOME=${HOME_DIR}/.cargo \
-#     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-#     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-#     && . ${HOME_DIR}/.cargo/env \
-#     && rustup update \
-#     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-#     && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
-
 WORKDIR ${HOME_DIR}
 
-# install inference server requirements
+# ----- tt-media-server source (tt-inference-server's own code) -----
 WORKDIR ${APP_DIR}
-# ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${APP_DIR}/server"
 COPY VERSION ${APP_DIR}/VERSION
 
-# Remove any local build artifacts that were copied
+# Scrub any leftover build artifacts or stale tt-llm-engine submodule clone
+# from the build context (relevant only if a dev built the repo locally
+# before triggering the docker build).
 RUN rm -rf ${APP_DIR}/server/cpp_server/build \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine
 
-# cpp_server deps (apt + Rust if needed + Drogon)
+# cpp_server build deps (Drogon, libboost, libjsoncpp, clang-format-20).
+# Idempotent — apt packages it overlaps with above are no-ops.
 RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
 
-# Install Rust (needed for tokenizers-cpp)
+# Rust toolchain — needed by cpp_server's CMake which FetchContent's
+# tokenizers-cpp directly (separate from tt-llm-engine's tokenizers).
 RUN export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
     && . ${HOME_DIR}/.cargo/env \
     && rustup default stable
 
-# add tt-llm-engine (clone using GitHub token from secret)
-RUN --mount=type=secret,id=github_token \
-    rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
-    && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
-    && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
-    && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
-    && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
-    && ./setup.sh --ds-full \
-    && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
+# ----- Pull prebuilt tt-llm-engine + tt-metal from the engine image -----
+# These COPYs replace the entire `git clone tt-llm-engine + git submodule update
+# + build_metal.sh + create_venv.sh + setup.sh --ds-full` chunk of the original
+# Dockerfile.blaze. Everything that step used to produce in ~25-30 min is now
+# delivered in seconds as image layers.
+COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
+COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
+# uv's Python interpreter store - the venv at python_env/ symlinks into here.
+COPY --from=engine /root/.local/share/uv  /root/.local/share/uv
 
-# Build C++ server (requires Rust for tokenizers-cpp)
-# Use existing Python venv, temporarily point TT_METAL_HOME to tt-llm-engine's tt-metal for the build
+# ----- Build cpp_server with ENABLE_BLAZE=ON (uses find_package now) -----
+# Phase 2 edit in tt-media-server/cpp_server/CMakeLists.txt switched from
+# add_subdirectory(tt-llm-engine) to find_package(tt-llm-engine CONFIG QUIET),
+# so this build links against /opt/tt-llm-engine instead of recompiling
+# tt-llm-engine in-tree.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
-    && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal \
     && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh --blaze"
 
-# Add script for running C++ server
+# Runtime helper that picks Python vs C++ server mode.
 COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"
 RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 
-# Cleanup build-only directories
+# Cleanup build-only directories before COPY to runtime stage.
+# Much smaller scope than the old Dockerfile.blaze since we no longer have a
+# tt-metal/.cpmcache or tt-llm-engine tree under ${APP_DIR}.
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
-    && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/.cpmcache \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/docs \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/tests \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/tech_reports \
-    && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine/tt-metal/.github \
-    && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
+    && rm -rf ${HOME_DIR}/.cache
 
 
 # ==============================================================================
-# RUNTIME STAGE - final lightweight image
+# RUNTIME STAGE - final lightweight image.
+# Same shape as the previous Dockerfile.blaze runtime stage; only path
+# expectations changed (TT_METAL_HOME now under /opt, LD_LIBRARY_PATH points
+# at the engine artifact dirs).
 # ==============================================================================
-# This is the final image that will be used. Only the built artifacts from the builder stage
-# are copied here. Any runtime dependencies needed by the application must be installed in this stage.
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
 
-# Reuse all args and environment variables
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_UID=1000
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -193,50 +188,49 @@ ENV ENVIRONMENT=development \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     APP_DIR=${HOME_DIR}/app \
-    TT_METAL_HOME=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
-    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
+    TT_METAL_HOME=/opt/tt-llm-engine-src/tt-metal \
+    TT_METAL_RUNTIME_ROOT=/opt/tt-llm-engine-src/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-llm-engine/tt-metal/build/lib \
+    PYTHONPATH=/opt/tt-llm-engine-src/tt-metal \
+    PYTHON_ENV_DIR=/opt/tt-llm-engine-src/tt-metal/python_env \
+    LD_LIBRARY_PATH=/opt/tt-llm-engine-src/tt-metal/build_Release/lib:/opt/tt-llm-engine-src/tt-metal/build/lib:/opt/tt-llm-engine/lib \
+    CMAKE_PREFIX_PATH=/opt/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
-# Install runtime dependencies
-# These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
     libjsoncpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
     && mkdir -p ${HOME_DIR} ${HOME_DIR}/logs \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR} \
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy everything from builder
+# cpp_server build outputs + tt-media-server source + .bashrc.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-# Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
+# Engine artifacts - COPY straight from the engine image so the runtime image's
+# /opt tree is byte-identical to engine's final stage, no detour through builder.
+COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
+COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
+COPY --from=engine /root/.local/share/uv  /root/.local/share/uv
 RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
-# Fix venv permissions (COPY --chown can break symlink permissions)
+# Fix venv permissions (COPY --chown above can break symlink permissions).
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
 
 USER ${CONTAINER_APP_USERNAME}
-WORKDIR ${HOME_DIR}/tt-metal
 
-# Set up bashrc
+# Bashrc venv activation for interactive `docker exec` shells.
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-# Switch back to root for entrypoint (it will drop to non-root user via gosu)
+# Switch back to root so the entrypoint can `gosu` drop to the non-root user.
 USER root
 COPY docker-entrypoint.sh ${HOME_DIR}/app/server/docker-entrypoint.sh
 RUN chmod +x ${HOME_DIR}/app/server/docker-entrypoint.sh
