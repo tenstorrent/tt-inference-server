@@ -203,11 +203,27 @@ FetchContent_MakeAvailable(cppzmq)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
 
 if(ENABLE_BLAZE)
-    # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
-    # the Full target adds SocketPipeline support when Metalium is available).
-    set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(tt-llm-engine)
-    message(STATUS "tt-llm-engine: ENABLED")
+    # Prefer a pre-built tt-llm-engine discovered via find_package — this is
+    # the path used by the Docker build, which pulls /opt/tt-llm-engine out
+    # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
+    # package is locatable. Fall back to building the in-tree submodule for
+    # local-dev workflows that don't go through Docker.
+    find_package(tt-llm-engine CONFIG QUIET)
+    if(tt-llm-engine_FOUND)
+        message(STATUS "tt-llm-engine: using pre-built package at ${tt-llm-engine_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        # Legacy path — local dev with the submodule checked out under cpp_server/
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        add_subdirectory(tt-llm-engine)
+        message(STATUS "tt-llm-engine: building from in-tree submodule (legacy path)")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine is neither installed "
+            "(find_package failed) nor present in source tree at "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
+            "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
+            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+    endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
 endif()
@@ -1037,13 +1053,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 # absolute build-time path into RUNPATH and ld.so fails to find
 # libtt_llm_engine_core.so.0 elsewhere.
 if(ENABLE_BLAZE)
-    # $ORIGIN/tt-llm-engine keeps libtt_llm_engine_core.so.0 / libtt_llm_engine.so.0
-    # resolvable when the build artifact is unpacked on a different machine.
-    # INSTALL_RPATH_USE_LINK_PATH TRUE additionally appends the absolute link
-    # directories (e.g. tt-llm-engine/tt-metal/build_Release/lib where libfmt.so.11,
-    # libtt_metal.so, libtt_stl.so live) so local dev runs don't need a manual
-    # LD_LIBRARY_PATH. Those absolute paths are harmless for the CI case since
-    # they just won't resolve on a different runner, while $ORIGIN still does.
+    # Dual-mode RPATH that supports both code paths above:
+    #
+    #   1. Legacy add_subdirectory case (local dev with submodule):
+    #      tt-llm-engine .so files are built at cpp_server/build/tt-llm-engine/.
+    #      `$ORIGIN/tt-llm-engine` (relative to the binary) resolves there.
+    #
+    #   2. find_package case (Docker build using the prebuilt engine image):
+    #      tt-llm-engine .so files live at /opt/tt-llm-engine/lib/, and that
+    #      path is added automatically by INSTALL_RPATH_USE_LINK_PATH TRUE
+    #      (because the imported targets carry IMPORTED_LOCATION = that dir).
+    #      The unused `$ORIGIN/tt-llm-engine` is a harmless no-op — the loader
+    #      tries it, finds no .so, falls through to /opt/tt-llm-engine/lib.
+    #
+    # INSTALL_RPATH_USE_LINK_PATH TRUE also picks up tt-metal's lib dir
+    # (where libtt_metal.so / libtt_stl.so / libfmt.so.11 live) so local
+    # dev runs don't need a manual LD_LIBRARY_PATH for tt-metal either.
     set_target_properties(${PROJECT_NAME} PROPERTIES
         BUILD_WITH_INSTALL_RPATH TRUE
         INSTALL_RPATH "$ORIGIN/tt-llm-engine"
