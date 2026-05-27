@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -9,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -362,26 +362,26 @@ int main(int argc, char** argv) {
   for (auto& sm : prefillSms) sm->start();
   decodeSm.start();
 
-  std::atomic<bool> proberStop{false};
   constexpr auto probeIntervalMs = std::chrono::milliseconds(1000);
-  std::thread proberThread([&prefillSms, &proberStop, probeIntervalMs]() {
-    while (!proberStop.load()) {
-      for (auto& sm : prefillSms) {
-        sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
-                       tt::sockets::RegistrationProbeMessage{});
-      }
-      std::this_thread::sleep_for(probeIntervalMs);
-    }
-  });
+  std::jthread proberThread(
+      [&prefillSms, probeIntervalMs](std::stop_token stopToken) {
+        while (!stopToken.stop_requested()) {
+          for (auto& sm : prefillSms) {
+            sm->sendObject(tt::sockets::tags::REGISTRATION_PROBE,
+                           tt::sockets::RegistrationProbeMessage{});
+          }
+          std::this_thread::sleep_for(probeIntervalMs);
+        }
+      });
 
-  std::atomic<bool> watchdogStop{false};
   const auto prefillStaleTimeout =
       std::chrono::milliseconds(cfg.prefillStaleTimeoutMs);
-  std::thread watchdogThread;
+  std::jthread watchdogThread;
   if (useZmqPrefillRouter) {
-    watchdogThread = std::thread(
-        [&registry, &zmqPrefillRouter, &watchdogStop, prefillStaleTimeout] {
-          while (!watchdogStop.load()) {
+    watchdogThread =
+        std::jthread([&registry, &zmqPrefillRouter,
+                      prefillStaleTimeout](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
             for (const auto& serverId :
                  zmqPrefillRouter.takeStaleServers(prefillStaleTimeout)) {
               TT_LOG_WARN("[Gateway] Prefill '{}' registration timed out",
@@ -393,15 +393,15 @@ int main(int argc, char** argv) {
         });
   }
 
-  std::atomic<bool> requestTimeoutStop{false};
-  std::thread requestTimeoutThread;
+  std::jthread requestTimeoutThread;
   if (cfg.requestTimeoutMs > 0) {
-    requestTimeoutThread = std::thread([&dispatcherPtr, &requestTimeoutStop] {
-      while (!requestTimeoutStop.load()) {
-        dispatcherPtr->onRequestTimeouts();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      }
-    });
+    requestTimeoutThread =
+        std::jthread([&dispatcherPtr](std::stop_token stopToken) {
+          while (!stopToken.stop_requested()) {
+            dispatcherPtr->onRequestTimeouts();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+          }
+        });
   }
 
   TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
@@ -414,11 +414,11 @@ int main(int argc, char** argv) {
   }
 
   TT_LOG_INFO("[Gateway] Shutting down…");
-  proberStop = true;
+  proberThread.request_stop();
   if (proberThread.joinable()) proberThread.join();
-  requestTimeoutStop = true;
+  requestTimeoutThread.request_stop();
   if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
-  watchdogStop = true;
+  watchdogThread.request_stop();
   if (watchdogThread.joinable()) watchdogThread.join();
   decodeSm.stop();
   for (auto& sm : prefillSms) sm->stop();
