@@ -3211,16 +3211,13 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="tiiuae/Falcon3-7B-Instruct",
         tasks=[
-            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
-            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
-            # and send them as List[List[int]] to /v1/completions, which the forge
-            # server's pydantic schema rejects with HTTP 422 (it only accepts
-            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
-            # chat template host-side, sends prompts as strings, and the server
-            # tokenizes them — schema-compatible.
+            # tokenizer_backend defaults to "huggingface" — matches the Qwen3-*
+            # configs below. Don't set "none" here: without a tokenizer loaded
+            # lm-eval can't apply_chat_template host-side and instead sends the
+            # raw chat message list, which the server's CompletionRequest schema
+            # rejects with HTTP 422.
             EvalTask(
                 task_name="ifeval",
-                tokenizer_backend="none",
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
@@ -3236,7 +3233,6 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
-                tokenizer_backend="none",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
