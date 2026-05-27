@@ -20,29 +20,36 @@ mock_settings.device_mesh_shape = (1, 1)
 
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
-sys.modules["config.settings"] = mock_settings_module
+if "config.settings" not in sys.modules:
+    sys.modules["config.settings"] = mock_settings_module
 
 
 # Mock telemetry
-sys.modules["telemetry.telemetry_client"] = Mock()
-sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
+if "telemetry.telemetry_client" not in sys.modules:
+    sys.modules["telemetry.telemetry_client"] = Mock()
+    sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
 
 # Mock vllm_settings (needed by config.constants at import time)
-sys.modules["config.vllm_settings"] = Mock()
+if "config.vllm_settings" not in sys.modules:
+    sys.modules["config.vllm_settings"] = Mock()
 
 # Mock torch utils
 mock_set_torch_thread_limits = Mock()
-sys.modules["utils.torch_utils"] = Mock()
-sys.modules["utils.torch_utils"].set_torch_thread_limits = mock_set_torch_thread_limits
+if "utils.torch_utils" not in sys.modules:
+    sys.modules["utils.torch_utils"] = Mock()
+    sys.modules["utils.torch_utils"].set_torch_thread_limits = mock_set_torch_thread_limits
 
 # Mock logger
 mock_logger = Mock()
-sys.modules["utils.logger"] = Mock()
-sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
+if "utils.logger" not in sys.modules:
+    sys.modules["utils.logger"] = Mock()
+    sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
 # Mock device runner
-sys.modules["tt_model_runners.base_device_runner"] = Mock()
-sys.modules["tt_model_runners.runner_fabric"] = Mock()
+if "tt_model_runners.base_device_runner" not in sys.modules:
+    sys.modules["tt_model_runners.base_device_runner"] = Mock()
+if "tt_model_runners.runner_fabric" not in sys.modules:
+    sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
 # Now import the modules under test
 from device_workers.worker_utils import initialize_device_worker
