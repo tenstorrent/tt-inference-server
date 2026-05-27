@@ -34,11 +34,11 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::optional<uint32_t> slotId, bool continuation,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
-                   std::optional<uint32_t> kvCacheOffset)
+                   std::optional<uint32_t> kvPositionId)
     : taskId(taskId),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
-      kvCacheOffset(std::move(kvCacheOffset)),
+      kvPositionId(std::move(kvPositionId)),
       numPromptTokens(numPromptTokens),
       samplingParams(std::move(inputSamplingParams)),
       blockSize(blockSize),
@@ -98,12 +98,12 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&disaggregatedFlag),
            sizeof(disaggregatedFlag));
   samplingParams->serialize(os);
-  uint8_t hasKvCacheOffset = kvCacheOffset.has_value() ? 1 : 0;
-  os.write(reinterpret_cast<const char*>(&hasKvCacheOffset),
-           sizeof(hasKvCacheOffset));
-  if (hasKvCacheOffset) {
-    uint32_t kvCacheOffsetValue = kvCacheOffset.value();
-    os.write(reinterpret_cast<const char*>(&kvCacheOffsetValue),
+  uint8_t hasKvPositionId = kvPositionId.has_value() ? 1 : 0;
+  os.write(reinterpret_cast<const char*>(&hasKvPositionId),
+           sizeof(hasKvPositionId));
+  if (hasKvPositionId) {
+    uint32_t kvPositionIdValue = kvPositionId.value();
+    os.write(reinterpret_cast<const char*>(&kvPositionIdValue),
              sizeof(uint32_t));
   }
 }
@@ -148,11 +148,11 @@ Sequence Sequence::deserialize(std::istream& is) {
   uint8_t hasKvCacheOffset = 0;
   is.read(reinterpret_cast<char*>(&hasKvCacheOffset), sizeof(hasKvCacheOffset));
   if (hasKvCacheOffset) {
-    seq.kvCacheOffset = std::make_optional<uint32_t>(0);
-    is.read(reinterpret_cast<char*>(&(*seq.kvCacheOffset)),
-            sizeof(*seq.kvCacheOffset));
+    seq.kvPositionId = std::make_optional<uint32_t>(0);
+    is.read(reinterpret_cast<char*>(&(*seq.kvPositionId)),
+            sizeof(*seq.kvPositionId));
   } else {
-    seq.kvCacheOffset = std::nullopt;
+    seq.kvPositionId = std::nullopt;
   }
   return seq;
 }

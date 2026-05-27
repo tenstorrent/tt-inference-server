@@ -75,8 +75,8 @@ inline ds::ISRequest makeContinueRequest(uint32_t slotId,
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
-  if (seq.getKVCacheOffset().has_value()) {  // override position id
-    req.gen.position_id = *seq.getKVCacheOffset();
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.gen.position_id = *seq.getKVPositionId();
   } else {
     req.gen.position_id = currentPosition;
   }

@@ -42,7 +42,7 @@ class Sequence {
            size_t numPromptTokens, std::optional<uint32_t> slotId,
            bool continuation, bool disaggregated,
            std::unique_ptr<SamplingParams> samplingParams,
-           std::optional<uint32_t> kvCacheOffset = std::nullopt);
+           std::optional<uint32_t> kvPositionId = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
@@ -102,14 +102,14 @@ class Sequence {
   bool isDisaggregated() const { return disaggregated; }
   void setDisaggregated(bool d) { disaggregated = d; }
 
-  std::optional<uint32_t> getKVCacheOffset() const { return kvCacheOffset; }
-  void setKVCacheOffset(uint32_t offset) { kvCacheOffset = offset; }
+  std::optional<uint32_t> getKVPositionId() const { return kvPositionId; }
+  void setKVPositionId(uint32_t positionId) { kvPositionId = positionId; }
 
  private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
   int64_t lastToken = 0;
-  std::optional<uint32_t> kvCacheOffset = std::nullopt;
+  std::optional<uint32_t> kvPositionId = std::nullopt;
   size_t numPromptTokens = 0;
   size_t numCachedTokens = 0;
   std::vector<int> blockTable;
