@@ -135,7 +135,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setKVCacheSlot(42);
   orig.setContinuation(true);
   orig.setDisaggregated(true);
-  orig.setKVCacheOffset(17);
+  orig.setKVPositionId(17);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -153,8 +153,8 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.getKVCacheSlot(), orig.getKVCacheSlot());
   EXPECT_EQ(restored.isContinuation(), orig.isContinuation());
   EXPECT_EQ(restored.isDisaggregated(), orig.isDisaggregated());
-  ASSERT_TRUE(restored.getKVCacheOffset().has_value());
-  EXPECT_EQ(*restored.getKVCacheOffset(), *orig.getKVCacheOffset());
+  ASSERT_TRUE(restored.getKVPositionId().has_value());
+  EXPECT_EQ(*restored.getKVPositionId(), *orig.getKVPositionId());
   EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
 
   const auto& sp = restored.getSamplingParams();
@@ -185,7 +185,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_TRUE(restored.getTokenIds().empty());
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
   EXPECT_EQ(restored.getLastToken(), 0);
-  EXPECT_FALSE(restored.getKVCacheOffset().has_value());
+  EXPECT_FALSE(restored.getKVPositionId().has_value());
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
