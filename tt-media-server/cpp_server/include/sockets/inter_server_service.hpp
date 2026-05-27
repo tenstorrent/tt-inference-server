@@ -176,10 +176,9 @@ class InterServerService {
   bool enabled_ = false;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
-  bool registration_stop_ = false;
   std::mutex registration_mutex_;
   std::condition_variable registration_cv_;
-  std::thread registration_thread_;
+  std::jthread registration_thread_;
 };
 
 }  // namespace tt::sockets

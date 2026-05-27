@@ -11,6 +11,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -58,8 +59,8 @@ class TcpSocketTransport : public ISocketTransport,
  private:
   enum class ReceiveResult { COMPLETE, NO_DATA, DISCONNECTED };
 
-  void serverLoop();
-  void clientLoop();
+  void serverLoop(std::stop_token stopToken);
+  void clientLoop(std::stop_token stopToken);
   bool sendAll(int fd, const void* buffer, size_t size);
   ReceiveResult receiveExact(int fd, uint8_t* buffer, size_t size,
                              int maxRetries, bool returnIfNoInitialData);
@@ -71,7 +72,7 @@ class TcpSocketTransport : public ISocketTransport,
   tt::utils::ScopedFd clientSocket_;
   std::atomic<int> peerSocket_{-1};
 
-  std::thread connectionThread_;
+  std::jthread connectionThread_;
 
   mutable std::mutex socketMutex_;
 };

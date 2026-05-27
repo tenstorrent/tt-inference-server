@@ -40,11 +40,6 @@ namespace {
  */
 tt::utils::PrefixCachingInfo computeRoutingInfo(
     const tt::domain::llm::LLMRequest& req) {
-  if (!req.messages.empty()) {
-    TT_LOG_INFO("[LLMPipeline] Hashing path=messages messages={} taskId={}",
-                req.messages.size(), req.task_id);
-    return tt::utils::computePrefixCachingInfo(req.messages);
-  }
   if (auto* tokens = std::get_if<std::vector<int>>(&req.prompt)) {
     // Full token-id dump: capped so we don't blow up the log line on long
     // prompts but keeps the head/tail context that matters for diagnosing
@@ -88,29 +83,23 @@ tt::utils::PrefixCachingInfo computeRoutingInfo(
 
     return tt::utils::computePrefixCachingInfoFromTokens(*tokens);
   }
-  TT_LOG_INFO(
-      "[LLMPipeline] Hashing path=none (string prompt, no messages) "
-      "taskId={}",
-      req.task_id);
   return {};
 }
 
 /**
- * Apply the resolved delta prompt to the request. The hasher returns either
- * a rendered string (message path) or a token id vector (Dynamo path); both
- * variants slot directly into `req.prompt`.
+ * Trim the first `matchedTokens` from the prompt token vector so the worker
+ * only prefills the uncached suffix. Expects prompt to already be a
+ * vector<int> at this point. No-op if matchedTokens >= prompt size.
  */
 void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
-                      tt::utils::PrefixCachingInfo& info) {
-  if (auto* s = std::get_if<std::string>(&info.deltaPrompt)) {
-    req.prompt_tokens_count = static_cast<int>(
-        tt::utils::tokenizers::activeTokenizer().encode(*s).size());
-    req.prompt = std::move(*s);
-  } else {
-    auto& tok = std::get<std::vector<int>>(info.deltaPrompt);
-    req.prompt_tokens_count = static_cast<int>(tok.size());
-    req.prompt = std::move(tok);
+                      uint32_t matchedTokens) {
+  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  const size_t skip = static_cast<size_t>(matchedTokens);
+  if (skip >= tokens.size()) {
+    return;
   }
+  tokens.erase(tokens.begin(), tokens.begin() + static_cast<ptrdiff_t>(skip));
+  req.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
 }  // namespace
@@ -141,24 +130,17 @@ void LLMPipeline::resolveSession(
   }
 
   auto routingInfo = computeRoutingInfo(*req);
-  TT_LOG_INFO(
-      "[LLMPipeline] Routing taskId={} hasPriorTurn={} lookupHash={} "
-      "registrationHash={}",
-      req->task_id, routingInfo.hasPriorTurn,
-      routingInfo.lookupHash.has_value()
-          ? std::to_string(*routingInfo.lookupHash)
-          : "none",
-      routingInfo.registrationHash);
+  TT_LOG_INFO("[LLMPipeline] Routing taskId={} hashes={}", req->task_id,
+              routingInfo.hashes.size());
 
-  // Layer 1: Prefix-cache routing. Requires a prior turn and a lookup hash.
-  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value()) {
+  // Layer 1: Prefix-cache routing. Always attempt lookup.
+  if (!routingInfo.hashes.empty()) {
     try {
-      // Time the synchronous SessionManager acquire. Under burst load this
-      // is where prefixIndex / sessions mutex contention shows up; per-req
-      // µs lets you spot tail latency events without a profiler.
       const auto tAcquireStart = std::chrono::steady_clock::now();
-      auto acquired = sessionManager_->tryAcquireByPrefixHash(
-          *routingInfo.lookupHash, cancelFn);
+
+      auto acquired =
+          sessionManager_->tryAcquireByPrefixHash(routingInfo.hashes, cancelFn);
+
       const auto acquireUs =
           std::chrono::duration_cast<std::chrono::microseconds>(
               std::chrono::steady_clock::now() - tAcquireStart)
@@ -170,40 +152,38 @@ void LLMPipeline::resolveSession(
       if (acquired.has_value()) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
         TT_LOG_INFO(
-            "[LLMPipeline] Prefix cache HIT taskId={} hash={} sessionId={} "
-            "slotId={}",
-            req->task_id, *routingInfo.lookupHash, acquired->sessionId,
-            acquired->slotId);
+            "[LLMPipeline] Prefix cache HIT taskId={} sessionId={} "
+            "slotId={} matchedTokens={}",
+            req->task_id, acquired->sessionId, acquired->slotId,
+            acquired->numberOfMatchedTokens);
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
-        applyDeltaPrompt(*req, routingInfo);
+        applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
         sessionManager_->registerPrefixHash(acquired->sessionId,
-                                            routingInfo.registrationHash);
+                                            routingInfo.hashes);
         info.validSessionFound = true;
-        info.registrationHash = routingInfo.registrationHash;
+        info.registrationHashes = routingInfo.hashes;
         onResolved(info);
         return;
       }
 
       tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
       TT_LOG_INFO(
-          "[LLMPipeline] Prefix cache MISS taskId={} hash={} → allocating "
+          "[LLMPipeline] Prefix cache MISS taskId={} hashes={} → allocating "
           "new session",
-          req->task_id, *routingInfo.lookupHash);
+          req->task_id, routingInfo.hashes.size());
     } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMPipeline] All sessions busy for hash={}: {}",
-                  *routingInfo.lookupHash, e.what());
+      TT_LOG_WARN("[LLMPipeline] All sessions busy: {}", e.what());
       onError({SessionErrorType::RATE_LIMIT, e.what()});
       return;
     }
   }
 
-  if (!routingInfo.hasPriorTurn || !routingInfo.lookupHash.has_value()) {
+  if (routingInfo.hashes.empty()) {
     TT_LOG_INFO(
-        "[LLMPipeline] No prior turn detected taskId={} → allocating new "
-        "session (registrationHash={})",
-        req->task_id, routingInfo.registrationHash);
+        "[LLMPipeline] No hashes for taskId={} → allocating new session",
+        req->task_id);
   }
 
   // Layer 2: Allocate a new session. Async — onCompletion runs on `loop`.
@@ -232,28 +212,26 @@ void LLMPipeline::resolveSession(
 
         req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
-        mgr->registerPrefixHash(session.getSessionId(),
-                                routingInfo.registrationHash);
+        mgr->registerPrefixHash(session.getSessionId(), routingInfo.hashes);
 
         TT_LOG_INFO(
             "[SessionTimer] taskId={} createSession_us={} "
             "acquireInFlight_us={}",
             req->task_id, createUs, acqInFlightUs);
         TT_LOG_INFO(
-            "[LLMPipeline] New session: sessionId={}, slotId={}, "
-            "registered under hash={}",
+            "[LLMPipeline] New session: sessionId={}, slotId={}, hashes={}",
             session.getSessionId(),
             req->slotId.has_value() ? std::to_string(*req->slotId) : "none",
-            routingInfo.registrationHash);
+            routingInfo.hashes.size());
 
         SessionInfo info;
-        info.registrationHash = routingInfo.registrationHash;
+        info.registrationHashes = routingInfo.hashes;
         onResolved(info);
       },
       [onError](std::string_view err) {
         onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});
       },
-      loop, routingInfo.registrationHash);
+      loop, routingInfo.hashes);
 }
 
 void LLMPipeline::dispatchGeneration(
@@ -277,7 +255,11 @@ void LLMPipeline::dispatchGeneration(
           "sessionId: {}",
           request.sessionId.value_or("none"));
       disaggregationService_->handleStreamingRequest(
-          request, sessionInfo.registrationHash.value_or(0), cb);
+          request,
+          sessionInfo.registrationHashes.empty()
+              ? 0
+              : sessionInfo.registrationHashes.front(),
+          cb);
     }
     return;
   }
