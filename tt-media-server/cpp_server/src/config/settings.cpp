@@ -71,6 +71,17 @@ bool envBool(const char* name, bool defaultValue) {
   return defaultValue;
 }
 
+/** Read a KV cache block size env var; value must be divisible by 32. */
+size_t kvCacheSizeFromEnv(const char* envName, size_t defaultValue) {
+  size_t value = static_cast<size_t>(envUlong(envName, defaultValue));
+  if (value % 32) {
+    TT_LOG_WARN("[Config] {}={} is not divisible by 32, using default={}",
+                envName, value, defaultValue);
+    return defaultValue;
+  }
+  return value;
+}
+
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
  * "4,5,6,7"]. */
 std::vector<std::string> parseDeviceIds(const std::string& raw) {
@@ -555,32 +566,16 @@ size_t maxContextLength() {
 
 size_t kvCacheBlockSize() {
   static const size_t cached = []() {
-    size_t value = static_cast<size_t>(
-        envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
-    if (value % 32) {
-      TT_LOG_WARN(
-          "[Config] KV_CACHE_BLOCK_SIZE={} is not divisible by 32, using "
-          "default={}",
-          value, defaults::KV_CACHE_BLOCK_SIZE);
-      return defaults::KV_CACHE_BLOCK_SIZE;
-    }
-    return value;
+    return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
+                              defaults::KV_CACHE_BLOCK_SIZE);
   }();
   return cached;
 }
 
 size_t kvCacheFirstBlockSize() {
   static const size_t cached = []() {
-    size_t value = static_cast<size_t>(envUlong(
-        "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
-    if (value % 32) {
-      TT_LOG_WARN(
-          "[Config] KV_CACHE_FIRST_BLOCK_SIZE={} is not divisible by 32, using "
-          "default={}",
-          value, defaults::KV_CACHE_FIRST_BLOCK_SIZE);
-      return defaults::KV_CACHE_FIRST_BLOCK_SIZE;
-    }
-    return value;
+    return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
+                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
 }
