@@ -2810,7 +2810,7 @@ vlm_templates = [
             "meta-llama/Llama-3.2-11B-Vision-Instruct",
         ],
         impl=tt_transformers_impl,
-        version="0.9.0",
+        version="0.10.0",
         tt_metal_commit="v0.61.1-rc1",
         vllm_commit="5cbc982",
         inference_engine=InferenceEngine.VLLM.value,
@@ -2869,7 +2869,7 @@ video_templates = [
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
-        min_ram_gb=32,
+        min_ram_gb=34,
         model_type=ModelType.VIDEO,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
