@@ -16,7 +16,9 @@ class VLLMSettings(BaseModel):
     max_num_batched_tokens: int = max_model_length * max_num_seqs
     # Fraction of TT-device memory allocated for model weights + KV cache.
     # Env-driven so it can be flipped per-run without rebuilding the image.
-    # README already documents the GPU_MEMORY_UTILIZATION knob; this re-wires
-    # the field that became hardcoded at some point. Raise above 0.1 when
-    # boosting max_num_seqs — KV cache scales linearly with batch.
-    gpu_memory_utilization: float = float(os.environ.get("GPU_MEMORY_UTILIZATION", 0.1))
+    # README documents the GPU_MEMORY_UTILIZATION knob (bare, not VLLM__-
+    # prefixed — VLLMSettings is a BaseModel, not BaseSettings, and reads
+    # env via os.environ.get only). Empty / whitespace env values fall back
+    # to the 0.1 default to avoid `float("")` crashing module import.
+    _gmu_env = os.environ.get("GPU_MEMORY_UTILIZATION", "").strip()
+    gpu_memory_utilization: float = float(_gmu_env) if _gmu_env else 0.1
