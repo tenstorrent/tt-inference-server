@@ -23,6 +23,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
@@ -553,14 +554,34 @@ size_t maxContextLength() {
 }
 
 size_t kvCacheBlockSize() {
-  static const size_t cached = static_cast<size_t>(
-      envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
+  static const size_t cached = []() {
+    size_t value = static_cast<size_t>(
+        envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
+    if (value % 32) {
+      TT_LOG_WARN(
+          "[Config] KV_CACHE_BLOCK_SIZE={} is not divisible by 32, using "
+          "default={}",
+          value, defaults::KV_CACHE_BLOCK_SIZE);
+      return defaults::KV_CACHE_BLOCK_SIZE;
+    }
+    return value;
+  }();
   return cached;
 }
 
 size_t kvCacheFirstBlockSize() {
-  static const size_t cached = static_cast<size_t>(envUlong(
-      "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
+  static const size_t cached = []() {
+    size_t value = static_cast<size_t>(envUlong(
+        "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
+    if (value % 32) {
+      TT_LOG_WARN(
+          "[Config] KV_CACHE_FIRST_BLOCK_SIZE={} is not divisible by 32, using "
+          "default={}",
+          value, defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+      return defaults::KV_CACHE_FIRST_BLOCK_SIZE;
+    }
+    return value;
+  }();
   return cached;
 }
 
