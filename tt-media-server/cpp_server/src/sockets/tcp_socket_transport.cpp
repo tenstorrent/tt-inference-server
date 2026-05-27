@@ -171,9 +171,11 @@ void TcpSocketTransport::start() {
   running_ = true;
 
   if (mode_ == Mode::SERVER) {
-    connectionThread_ = std::thread(&TcpSocketTransport::serverLoop, this);
+    connectionThread_ = std::jthread(
+        [this](std::stop_token stopToken) { serverLoop(stopToken); });
   } else {
-    connectionThread_ = std::thread(&TcpSocketTransport::clientLoop, this);
+    connectionThread_ = std::jthread(
+        [this](std::stop_token stopToken) { clientLoop(stopToken); });
   }
 }
 
@@ -199,6 +201,7 @@ void TcpSocketTransport::stop() {
   }
 
   if (connectionThread_.joinable()) {
+    connectionThread_.request_stop();
     connectionThread_.join();
   }
 
@@ -211,8 +214,8 @@ void TcpSocketTransport::stop() {
   TT_LOG_INFO("[TcpSocketTransport] Stopped");
 }
 
-void TcpSocketTransport::serverLoop() {
-  while (running_) {
+void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
+  while (running_ && !stopToken.stop_requested()) {
     TT_LOG_INFO("[TcpSocketTransport] Waiting for client connection...");
 
     struct sockaddr_in clientAddr;
@@ -221,7 +224,7 @@ void TcpSocketTransport::serverLoop() {
     tt::utils::ScopedFd accepted =
         acceptClient(serverSocket_.get(), &clientAddr, &clientLen);
     if (!accepted) {
-      if (running_) {
+      if (running_ && !stopToken.stop_requested()) {
         TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
       }
       break;
@@ -236,7 +239,7 @@ void TcpSocketTransport::serverLoop() {
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
     notifyConnectionEstablished();
 
-    while (running_ && connected_) {
+    while (running_ && connected_ && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
@@ -252,14 +255,14 @@ void TcpSocketTransport::serverLoop() {
   }
 }
 
-void TcpSocketTransport::clientLoop() {
+void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
   uint32_t delayMs = reconnectInitialDelayMs_;
   auto backoff = [&]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
     delayMs = std::min(delayMs * 2, reconnectMaxDelayMs_);
   };
 
-  while (running_) {
+  while (running_ && !stopToken.stop_requested()) {
     clientSocket_ = createTcpSocket();
     if (!clientSocket_) {
       TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
@@ -301,7 +304,7 @@ void TcpSocketTransport::clientLoop() {
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
     notifyConnectionEstablished();
 
-    while (running_ && connected_) {
+    while (running_ && connected_ && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
