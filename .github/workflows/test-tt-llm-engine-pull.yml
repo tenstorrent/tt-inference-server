@@ -12,7 +12,7 @@ name: tt-llm-engine pull smoke test
 on:
   push:
     branches:
-      - vcankovic/test-tt-llm-engine-pull
+      - vcankovic/test-tt-llm-engine-docker
   workflow_dispatch:
 
 permissions:
