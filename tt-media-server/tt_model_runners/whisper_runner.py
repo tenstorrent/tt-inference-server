@@ -157,6 +157,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     request._audio_array,
                     request.stream,
                     self._create_generation_params(request),
+                    prompt=request.prompt,
                 )
 
                 if request.stream:
@@ -184,12 +185,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             generation_params.no_speech_threshold = request.no_speech_threshold
         if request.return_timestamps is not None:
             generation_params.return_timestamps = request.return_timestamps
-        if request.prompt is not None:
-            generation_params.prompt = request.prompt
-        if self.settings.audio_language is not None:
-            generation_params.language = self.settings.audio_language
-        if self.settings.audio_task is not None:
-            generation_params.task = self.settings.audio_task
 
         return generation_params
 
@@ -227,16 +222,20 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
         return request
 
-    async def _execute_pipeline(self, audio_data, stream, generation_params):
+    async def _execute_pipeline(
+        self, audio_data, stream, generation_params, prompt=None
+    ):
         """Main pipeline execution method"""
         try:
             if stream:
                 # Return the async generator
-                return self._execute_pipeline_streaming(audio_data, generation_params)
+                return self._execute_pipeline_streaming(
+                    audio_data, generation_params, prompt
+                )
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(
-                    audio_data, generation_params
+                    audio_data, generation_params, prompt
                 )
 
         except Exception as e:
@@ -268,10 +267,20 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             else:
                 audio_data = audio_arrays
 
+            # prompt is batch-homogeneous in tt-metal's WhisperGenerator: take the
+            # first request's prompt and warn if requests disagree.
+            prompts = {req.prompt for req in requests if req.prompt is not None}
+            if len(prompts) > 1:
+                self.logger.warning(
+                    f"Device {self.device_id}: Batch contains differing prompts; using only the first request's prompt."
+                )
+            prompt = requests[0].prompt if requests else None
+
             result = await self.pipeline(
                 audio_data,
                 stream=False,
                 generation_params=generation_params,
+                prompt=prompt,
             )
 
             responses = []
@@ -296,23 +305,29 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             )
             raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
-    async def _execute_pipeline_streaming(self, audio_data, generation_params):
+    async def _execute_pipeline_streaming(
+        self, audio_data, generation_params, prompt=None
+    ):
         """Async generator for streaming results"""
         generator = await self.pipeline(
             audio_data,
             stream=True,
             generation_params=generation_params,
+            prompt=prompt,
         )
 
         for item in generator:
             yield item
 
-    async def _execute_pipeline_non_streaming(self, audio_data, generation_params):
+    async def _execute_pipeline_non_streaming(
+        self, audio_data, generation_params, prompt=None
+    ):
         """Non-streaming pipeline execution"""
         result = await self.pipeline(
             audio_data,
             stream=False,
             generation_params=generation_params,
+            prompt=prompt,
         )
 
         if result is None:
@@ -351,6 +366,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 segment_audio,
                 request.stream,
                 self._create_generation_params(request),
+                prompt=request.prompt,
             )
 
             segment_prefix = f"[{speaker}] "
@@ -452,6 +468,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 segment_audio,
                 request.stream,
                 self._create_generation_params(request),
+                prompt=request.prompt,
             )
 
             cleaned_text, start, end = TextUtils.extract_text(segment_result)
@@ -719,6 +736,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 generation_params: Optional[
                     Union[GenerationParams, List[GenerationParams]]
                 ] = None,
+                prompt: Optional[str] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -760,6 +778,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                         return generator.generate(
                             current_batch=current_batch,
                             generation_params=generation_params,
+                            language=self.settings.audio_language,
+                            task=self.settings.audio_task,
+                            prompt=prompt,
                             stream_generation=stream,
                             return_perf_metrics=False,
                         )
