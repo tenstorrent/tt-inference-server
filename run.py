@@ -169,7 +169,18 @@ def parse_arguments():
         action="store_true",
         help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
-    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help=(
+            "Resolve the model spec from the dev catalog "
+            "(workflows/model_specs/dev/) and forward it into the Docker "
+            "container, overriding its prebuilt prod catalog. Also bind-mounts "
+            "host source dirs (benchmarking/, evals/, utils/, tests/, plus "
+            "vllm-tt-metal/src or tt-media-server/) so live host edits are "
+            "picked up. Has no effect when --runtime-model-spec-json is given."
+        ),
+    )
     parser.add_argument(
         "--override-docker-image",
         type=str,
@@ -549,6 +560,10 @@ def resolve_runtime(args):
 
     Returns ``(runtime_config, model_spec)`` with impl/engine fully resolved.
     """
+    # Spec-source precedence:
+    #   1. --runtime-model-spec-json wins outright (taken as-is, no overrides applied).
+    #   2. --dev-mode resolves from the dev catalog (workflows/model_specs/dev/).
+    #   3. Default: the prod catalog already loaded into MODEL_SPECS at import time.
     if args.runtime_model_spec_json:
         logger.warning(
             f"No validation is done, loading runtime model spec from JSON: "
@@ -557,11 +572,13 @@ def resolve_runtime(args):
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         runtime_config = RuntimeConfig.from_args(args)
     else:
+        catalog_env = "dev" if args.dev_mode else None
         model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
             model=args.model,
             device=args.device,
             engine=args.engine,
             impl=args.impl,
+            env=catalog_env,
         )
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
