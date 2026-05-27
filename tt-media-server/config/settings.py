@@ -193,6 +193,18 @@ class Settings(BaseSettings):
             f"model_weights_path={self.model_weights_path!r}, "
             f"max_batch_size={self.max_batch_size}"
         )
+        logger.info(
+            f"VLLM settings resolved: "
+            f"gpu_memory_utilization={self.vllm.gpu_memory_utilization}, "
+            f"max_model_length={self.vllm.max_model_length}, "
+            f"max_num_seqs={self.vllm.max_num_seqs}, "
+            f"max_num_batched_tokens={self.vllm.max_num_batched_tokens}, "
+            f"cpu_sampling={self.vllm.cpu_sampling}, "
+            f"enable_trace={self.vllm.enable_trace}, "
+            f"enable_const_eval={self.vllm.enable_const_eval}, "
+            f"experimental_weight_dtype={self.vllm.experimental_weight_dtype!r}, "
+            f"enable_chunked_prefill={self.vllm.enable_chunked_prefill}"
+        )
         if (
             self.model_service == ModelServices.AUDIO.value
             and self.audio_chunk_duration_seconds is None
