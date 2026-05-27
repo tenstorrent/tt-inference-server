@@ -42,9 +42,7 @@ def test_parse_keeps_only_spec_decode_keys():
 
 
 def test_parse_handles_unlabeled_lines():
-    parsed = parse_prometheus_text(
-        "vllm:spec_decode_num_accepted_tokens_total 42.0\n"
-    )
+    parsed = parse_prometheus_text("vllm:spec_decode_num_accepted_tokens_total 42.0\n")
     assert parsed == {"vllm:spec_decode_num_accepted_tokens_total": 42.0}
 
 
@@ -79,7 +77,7 @@ def test_scrape_returns_deltas(monkeypatch):
     assert metrics["draft_tokens"] == pytest.approx(250.0)
     assert metrics["num_drafts"] == pytest.approx(50.0)
     assert metrics["acceptance_rate"] == pytest.approx(200.0 / 250.0)
-    assert metrics["mean_accepted_length"] == pytest.approx(200.0 / 50.0)
+    assert metrics["mean_accepted_length"] == pytest.approx(1 + 200.0 / 50.0)
 
 
 def test_scrape_per_position_includes_new_buckets(monkeypatch):
@@ -110,8 +108,8 @@ def test_scrape_handles_zero_draft(monkeypatch):
 def test_scrape_handles_missing_num_drafts_counter(monkeypatch):
     # Some vLLM releases don't expose vllm:spec_decode_num_drafts_total.
     after_no_drafts = parse_prometheus_text(
-        'vllm:spec_decode_num_accepted_tokens_total 10.0\n'
-        'vllm:spec_decode_num_draft_tokens_total 20.0\n'
+        "vllm:spec_decode_num_accepted_tokens_total 10.0\n"
+        "vllm:spec_decode_num_draft_tokens_total 20.0\n"
     )
     monkeypatch.setattr(
         spec_decode_metrics,

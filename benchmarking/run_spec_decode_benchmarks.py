@@ -2,46 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-"""
-Speculative-Decoding Benchmark Runner for tt-inference-server.
+"""Speculative-Decoding Benchmark Runner for tt-inference-server.
 
 Drives ``aiperf profile`` against the upstream Spec-Bench and SPEED-Bench
 ``--public-dataset`` slugs, scrapes per-run acceptance-rate metrics from the
 vLLM server's Prometheus ``/metrics`` endpoint, and merges them into each
-result JSON.
+result JSON. Designed for **sequential, one-server-at-a-time** use so the
+same workflow fits limited-memory targets and bigger models.
 
-aiperf auto-fetches its datasets from HuggingFace Hub on first use, so there
-is no manual data-download step. The vLLM server still emits the
-``vllm:spec_decode_*`` Prometheus counters that drive acceptance-rate
-measurement regardless of which client tool sends the load.
+Each benchmarking phase begins with an identical **warmup**: 4 short
+chat-completion requests against the endpoint. 
 
-Designed for **sequential, one-server-at-a-time** use so the same workflow
-fits limited-memory targets (Tenstorrent chips, smaller GPUs) and bigger
-models. A speedup comparison runs as three phases against a single endpoint
-at a time:
-
-1. ``phase=baseline``: run all sweeps against a non-speculative server,
-   write ``benchmark_spec_decode_baseline_*.json``.
-2. ``phase=spec`` (default): tear down the baseline, bring up a
-   speculative-decoding server, run all sweeps, write
-   ``benchmark_spec_decode_spec_*.json``. At the end this phase
-   automatically pairs any matched baseline files in ``output_path`` and
-   writes ``benchmark_spec_decode_pair_*.json`` sidecars.
-3. ``phase=pair`` (optional explicit re-pair): no benchmarking — just scan
-   ``output_path`` for matched baseline+spec pairs (matched by sweep slug)
-   and rewrite the pair sidecars.
-
-Each benchmarking phase begins with an identical **warmup**: N short
-chat-completion requests against the endpoint. Same prompt, same count for
-both baseline and spec → comparable kernel/KV-cache state at measurement
-time across runs, even when the two servers run in different processes
-hours apart.
-
-Phase selection comes from ``--workflow-args``, e.g.::
-
-    --workflow-args "phase=baseline url=http://127.0.0.1:8000"
-    --workflow-args "phase=spec     url=http://127.0.0.1:8000 warmup-requests=8"
-    --workflow-args "phase=pair"
 """
 
 import argparse
@@ -49,13 +20,12 @@ import glob
 import json
 import logging
 import os
-import re
 import shutil
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -67,7 +37,6 @@ from benchmarking.benchmark_config import SPEC_DECODE_PROFILES
 from benchmarking.spec_decode_common import (
     SpecDecodeRunSpec,
     merge_acceptance_rate,
-    pair_and_compute_speedup,
 )
 from benchmarking.spec_decode_metrics import (
     fetch_prometheus_counters,
@@ -85,8 +54,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_WARMUP_REQUESTS = 4
 PHASE_BASELINE = "baseline"
 PHASE_SPEC = "spec"
-PHASE_PAIR = "pair"
-VALID_PHASES = (PHASE_BASELINE, PHASE_SPEC, PHASE_PAIR)
+VALID_PHASES = (PHASE_BASELINE, PHASE_SPEC)
 
 
 def parse_args() -> argparse.Namespace:
@@ -129,56 +97,6 @@ def select_profile(runtime_config: RuntimeConfig) -> List[SpecDecodeRunSpec]:
         if mode == EvalLimitMode.SMOKE_TEST:
             return list(SPEC_DECODE_PROFILES["smoke"])
     return list(SPEC_DECODE_PROFILES["full"])
-
-
-def build_result_filename(
-    model_id: str,
-    device: str,
-    run_spec: SpecDecodeRunSpec,
-    *,
-    role: str = PHASE_SPEC,
-    run_timestamp: Optional[str] = None,
-) -> str:
-    """Build the result-JSON filename for one run.
-
-    Prefixed with ``benchmark_spec_decode_`` so the existing
-    ``benchmark_*.json`` glob in ``summary_report.py`` picks the files up.
-    ``role`` is one of ``"baseline"``, ``"spec"``, or ``"pair"``.
-    """
-    ts = run_timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return f"benchmark_spec_decode_{role}_{model_id}_{device}_{ts}_{run_spec.slug}.json"
-
-
-def build_pair_filename(
-    model_id: str,
-    device: str,
-    run_spec: SpecDecodeRunSpec,
-    *,
-    run_timestamp: Optional[str] = None,
-) -> str:
-    """Convenience wrapper for the speedup sidecar filename."""
-    return build_result_filename(
-        model_id, device, run_spec, role=PHASE_PAIR, run_timestamp=run_timestamp
-    )
-
-
-_FILENAME_RE = re.compile(
-    r"^benchmark_spec_decode_(?P<role>baseline|spec|pair)_"
-    r"(?P<model_id>.+?)_(?P<device>.+?)_"
-    r"(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_"
-    r"(?P<slug>.+)\.json$"
-)
-
-
-def extract_slug_from_filename(filename: str) -> Optional[Dict[str, str]]:
-    """Pull (role, model_id, device, timestamp, slug) from a result filename.
-
-    Returns None if the filename doesn't match the spec_decode pattern.
-    """
-    match = _FILENAME_RE.match(filename)
-    if not match:
-        return None
-    return match.groupdict()
 
 
 def build_aiperf_cmd(
@@ -271,10 +189,11 @@ def translate_aiperf_to_vllm_bench_json(
 ) -> bool:
     """Read aiperf's summary JSON and write a vllm-bench-shaped result JSON.
 
-    Downstream code (``pair_and_compute_speedup``, ``summary_report``) reads
-    field names from the historical vllm-bench schema (``mean_e2el_ms``,
-    ``p50_e2el_ms``, ``output_throughput``, ...). This normaliser keeps that
-    contract stable across tool swaps.
+    Downstream code (``summary_report.render_spec_decode_sections``, which
+    calls ``spec_decode_common.compute_speedup``) reads field names from
+    the historical vllm-bench schema (``mean_e2el_ms``, ``p50_e2el_ms``,
+    ``output_throughput``, ...). This normaliser keeps that contract
+    stable across tool swaps.
     """
     summary_path = _find_aiperf_summary(artifact_dir)
     if summary_path is None:
@@ -309,13 +228,11 @@ def translate_aiperf_to_vllm_bench_json(
         "completed": int(request_count),
         "total_input_tokens": int(input_len_mean * request_count),
         "total_output_tokens": int(output_len_mean * request_count),
-        # TTFT (Time To First Token)
         "mean_ttft_ms": _stat("time_to_first_token", "avg"),
         "median_ttft_ms": _stat("time_to_first_token", "p50"),
         "p50_ttft_ms": _stat("time_to_first_token", "p50"),
         "p95_ttft_ms": _stat("time_to_first_token", "p95"),
         "p99_ttft_ms": _stat("time_to_first_token", "p99"),
-        # TPOT / ITL (aiperf reports inter_token_latency for both)
         "mean_tpot_ms": _stat("inter_token_latency", "avg"),
         "median_tpot_ms": _stat("inter_token_latency", "p50"),
         "p50_tpot_ms": _stat("inter_token_latency", "p50"),
@@ -325,14 +242,11 @@ def translate_aiperf_to_vllm_bench_json(
         "p50_itl_ms": _stat("inter_token_latency", "p50"),
         "p95_itl_ms": _stat("inter_token_latency", "p95"),
         "p99_itl_ms": _stat("inter_token_latency", "p99"),
-        # E2EL (End-to-End request Latency)
         "mean_e2el_ms": _stat("request_latency", "avg"),
         "median_e2el_ms": _stat("request_latency", "p50"),
         "p50_e2el_ms": _stat("request_latency", "p50"),
         "p95_e2el_ms": _stat("request_latency", "p95"),
         "p99_e2el_ms": _stat("request_latency", "p99"),
-        # Throughput. ``output_throughput`` is the historical vllm-bench
-        # field name read by ``pair_and_compute_speedup``.
         "output_throughput": _stat("output_token_throughput", "avg"),
         "total_token_throughput": _stat("total_token_throughput", "avg"),
         "request_throughput": _stat("request_throughput", "avg"),
@@ -547,8 +461,13 @@ def run_benchmark_phase(
     return_codes: List[int] = []
     for i, run_spec in enumerate(profile, 1):
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_path = output_dir / build_result_filename(
-            model_id, device, run_spec, role=role, run_timestamp=run_timestamp
+        # Filename prefix ``benchmark_spec_decode_<role>_`` is load-bearing:
+        # ``summary_report.py``'s spec-decode regex matches on it and routes
+        # baseline vs. spec rows for the per-run table and the in-memory
+        # speedup pairing.
+        result_path = output_dir / (
+            f"benchmark_spec_decode_{role}_{model_id}_{device}_"
+            f"{run_timestamp}_{run_spec.slug}.json"
         )
         artifact_dir = artifact_root / f"{role}_{run_timestamp}_{run_spec.slug}"
         logger.info("[%s %d/%d] running %s", role, i, len(profile), run_spec.slug)
@@ -566,67 +485,6 @@ def run_benchmark_phase(
             )
         )
     return return_codes
-
-
-def pair_phase(output_dir: Path) -> List[Path]:
-    """Scan ``output_dir`` for matched baseline+spec JSONs and write pair sidecars.
-
-    Files are matched by (model_id, device, slug). When multiple baseline or
-    spec files exist for the same key (e.g. re-runs), the most recent by
-    timestamp is used. Returns the list of pair sidecar paths written.
-    """
-    by_key: Dict[Tuple[str, str, str], Dict[str, Tuple[str, Path]]] = {}
-    for path in sorted(output_dir.glob("benchmark_spec_decode_*.json")):
-        parts = extract_slug_from_filename(path.name)
-        if parts is None or parts["role"] == PHASE_PAIR:
-            continue
-        key = (parts["model_id"], parts["device"], parts["slug"])
-        bucket = by_key.setdefault(key, {})
-        prior = bucket.get(parts["role"])
-        if prior is None or parts["timestamp"] > prior[0]:
-            bucket[parts["role"]] = (parts["timestamp"], path)
-
-    written: List[Path] = []
-    for (model_id, device, slug), bucket in sorted(by_key.items()):
-        if PHASE_BASELINE not in bucket or PHASE_SPEC not in bucket:
-            continue
-        baseline_ts, baseline_path = bucket[PHASE_BASELINE]
-        spec_ts, spec_path = bucket[PHASE_SPEC]
-        # Use the newer of the two timestamps for the pair file
-        pair_ts = max(baseline_ts, spec_ts)
-        pair_filename = (
-            f"benchmark_spec_decode_pair_{model_id}_{device}_{pair_ts}_{slug}.json"
-        )
-        pair_path = output_dir / pair_filename
-        try:
-            pair = pair_and_compute_speedup(baseline_path, spec_path)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning("Could not compute speedup pair for %s: %s", slug, exc)
-            continue
-        pair["benchmark_kind"] = "spec_decode_pair"
-        pair["slug"] = slug
-        # Lift dataset metadata from the spec file's annotation if present
-        with open(spec_path) as f:
-            spec_data = json.load(f)
-        spec_meta = spec_data.get("spec_decode_metrics", {})
-        if spec_meta.get("public_dataset") is not None:
-            pair["public_dataset"] = spec_meta["public_dataset"]
-        with open(pair_path, "w") as f:
-            json.dump(pair, f, indent=2)
-        speedup = pair.get("speedup_p50_e2el")
-        if speedup is not None:
-            logger.info(
-                "[pair] speedup_p50_e2el=%.3f, output_tput_ratio=%s for %s",
-                speedup,
-                pair.get("output_tput_ratio"),
-                slug,
-            )
-        written.append(pair_path)
-    if not written:
-        logger.info(
-            "pair_phase: no matching baseline+spec pairs found in %s", output_dir
-        )
-    return written
 
 
 def main() -> int:
@@ -662,16 +520,10 @@ def main() -> int:
     logger.info("phase:           %s", phase)
     logger.info("model:           %s", model_spec.model_name)
     logger.info("device:          %s", device)
-    if phase != PHASE_PAIR:
-        logger.info("url:             %s", url)
-        logger.info("warmup_requests: %d", warmup_requests)
+    logger.info("url:             %s", url)
+    logger.info("warmup_requests: %d", warmup_requests)
     logger.info("output_path:     %s", output_dir)
     logger.info("=" * 60)
-
-    if phase == PHASE_PAIR:
-        written = pair_phase(output_dir)
-        logger.info("pair_phase wrote %d pair JSON(s)", len(written))
-        return 0
 
     profile = select_profile(runtime_config)
     if not profile:
@@ -706,11 +558,6 @@ def main() -> int:
         jwt_token=jwt_token,
         warmup_requests=warmup_requests,
     )
-
-    # After a spec phase, opportunistically pair any matched baseline files.
-    # This is a no-op if no baseline files are present in output_dir.
-    if phase == PHASE_SPEC and all(rc == 0 for rc in return_codes):
-        pair_phase(output_dir)
 
     if all(rc == 0 for rc in return_codes):
         logger.info("✅ phase=%s completed.", phase)

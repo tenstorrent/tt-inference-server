@@ -4,20 +4,12 @@
 
 """Unit tests for benchmarking.run_spec_decode_benchmarks helpers."""
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
-
-import pytest
 
 from benchmarking import run_spec_decode_benchmarks as runner
 from benchmarking.run_spec_decode_benchmarks import (
     build_aiperf_cmd,
-    build_pair_filename,
-    build_result_filename,
-    extract_slug_from_filename,
-    pair_phase,
-    parse_endpoint_url,
     parse_workflow_args,
     select_profile,
     warmup_endpoint,
@@ -55,62 +47,6 @@ def test_parse_workflow_args_key_value_pairs():
     assert parsed["phase"] == "baseline"
     assert parsed["url"] == "http://localhost:8000"
     assert parsed["warmup-requests"] == "8"
-
-
-def test_parse_endpoint_url_with_port():
-    assert parse_endpoint_url("http://example.com:9000") == ("example.com", 9000)
-
-
-def test_parse_endpoint_url_uses_default_port_when_missing():
-    assert parse_endpoint_url("http://example.com") == ("example.com", 8000)
-
-
-def test_parse_endpoint_url_handles_missing_scheme():
-    assert parse_endpoint_url("127.0.0.1:1234") == ("127.0.0.1", 1234)
-
-
-def test_build_result_filename_uses_prefix_and_slug():
-    name = build_result_filename(
-        "tt-vllm-plugin_Llama-3.1-8B-Instruct_n300",
-        "n300",
-        _spec_bench_run(),
-        run_timestamp="2026-05-20_10-00-00",
-    )
-    assert name.startswith("benchmark_spec_decode_spec_")
-    assert "n300" in name
-    assert "spec_bench_osl-128" in name
-
-
-def test_build_result_filename_baseline_role():
-    name = build_result_filename(
-        "modelid", "n300", _spec_bench_run(),
-        role="baseline", run_timestamp="2026-05-20_10-00-00",
-    )
-    assert name.startswith("benchmark_spec_decode_baseline_")
-
-
-def test_build_pair_filename_uses_pair_role():
-    name = build_pair_filename(
-        "modelid", "n300", _spec_bench_run(), run_timestamp="2026-05-20_10-00-00"
-    )
-    assert name.startswith("benchmark_spec_decode_pair_")
-
-
-def test_extract_slug_from_filename_round_trip():
-    name = build_result_filename(
-        "model123", "gpu", _spec_bench_run(), run_timestamp="2026-05-20_10-00-00"
-    )
-    parts = extract_slug_from_filename(name)
-    assert parts is not None
-    assert parts["role"] == "spec"
-    assert parts["model_id"] == "model123"
-    assert parts["device"] == "gpu"
-    assert parts["slug"] == "spec_bench_osl-128_maxcon-4_n-16"
-
-
-def test_extract_slug_returns_none_for_other_filenames():
-    assert extract_slug_from_filename("benchmark_id_x_2026-04-01_y.json") is None
-    assert extract_slug_from_filename("random.json") is None
 
 
 def test_build_aiperf_cmd_spec_bench():
@@ -214,7 +150,9 @@ def test_warmup_endpoint_sends_n_requests(monkeypatch):
     assert url == "http://x:8000/v1/chat/completions"
     assert headers["Authorization"] == "Bearer tok"
     assert payload["model"] == "meta/llama"
-    assert payload["temperature"] == 0.0  # apples-to-apples requires deterministic output
+    assert (
+        payload["temperature"] == 0.0
+    )  # apples-to-apples requires deterministic output
 
 
 def test_warmup_endpoint_counts_only_successes(monkeypatch):
@@ -233,68 +171,3 @@ def test_warmup_endpoint_counts_only_successes(monkeypatch):
     assert successes == 2  # first and third succeed; second raised
 
 
-def _write_result(path: Path, **fields) -> None:
-    with open(path, "w") as f:
-        json.dump(fields, f)
-
-
-def test_pair_phase_writes_pair_when_baseline_and_spec_match(tmp_path):
-    spec = _spec_bench_run()
-    baseline_path = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="baseline", run_timestamp="2026-05-20_10-00-00"
-    )
-    spec_path = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="spec", run_timestamp="2026-05-20_10-05-00"
-    )
-    _write_result(
-        baseline_path,
-        mean_e2el_ms=200.0, p50_e2el_ms=180.0, p95_e2el_ms=250.0,
-        output_throughput=100.0,
-    )
-    _write_result(
-        spec_path,
-        mean_e2el_ms=100.0, p50_e2el_ms=90.0, p95_e2el_ms=125.0,
-        output_throughput=200.0,
-        spec_decode_metrics={
-            "acceptance_rate": 0.8,
-            "public_dataset": "spec_bench",
-        },
-    )
-    written = pair_phase(tmp_path)
-    assert len(written) == 1
-    pair_data = json.loads(written[0].read_text())
-    assert pair_data["speedup_p50_e2el"] == pytest.approx(2.0)
-    assert pair_data["output_tput_ratio"] == pytest.approx(2.0)
-    assert pair_data["slug"] == spec.slug
-    assert pair_data["public_dataset"] == "spec_bench"
-
-
-def test_pair_phase_skips_when_only_one_role_present(tmp_path):
-    spec = _spec_bench_run()
-    spec_path = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="spec", run_timestamp="2026-05-20_10-00-00"
-    )
-    _write_result(spec_path, mean_e2el_ms=100.0)
-    written = pair_phase(tmp_path)
-    assert written == []
-
-
-def test_pair_phase_uses_latest_timestamp_per_role(tmp_path):
-    spec = _spec_bench_run()
-    older_baseline = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="baseline", run_timestamp="2026-05-20_09-00-00"
-    )
-    newer_baseline = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="baseline", run_timestamp="2026-05-20_10-00-00"
-    )
-    spec_path = tmp_path / build_result_filename(
-        "mid", "gpu", spec, role="spec", run_timestamp="2026-05-20_10-05-00"
-    )
-    # Older baseline has 4x latency, newer has 2x — newer should be chosen.
-    _write_result(older_baseline, mean_e2el_ms=400.0)
-    _write_result(newer_baseline, mean_e2el_ms=200.0)
-    _write_result(spec_path, mean_e2el_ms=100.0)
-    written = pair_phase(tmp_path)
-    assert len(written) == 1
-    pair_data = json.loads(written[0].read_text())
-    assert pair_data["speedup_mean_e2el"] == pytest.approx(2.0)

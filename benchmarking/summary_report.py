@@ -12,6 +12,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
+from benchmarking.spec_decode_common import compute_speedup
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
@@ -299,12 +300,14 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         return params
 
     # Try speculative-decoding benchmark pattern. Filename shape (no isl):
-    # benchmark_spec_decode_{baseline|spec|pair}_<model>_<device>_<timestamp>_
+    # benchmark_spec_decode_{baseline|spec}_<model>_<device>_<timestamp>_
     #   <public_dataset>_osl-X_maxcon-Y_n-N.json
     # ``<public_dataset>`` is the aiperf ``--public-dataset`` slug, always
-    # starting with ``spec_bench`` or ``speed_bench``. Examples:
+    # starting with ``spec_bench`` or ``speed_bench``. Example:
     #   benchmark_spec_decode_spec_id_x_gpu_2026-05-20_10-00-00_spec_bench_osl-128_maxcon-1_n-4.json
-    #   benchmark_spec_decode_pair_id_x_gpu_2026-05-20_10-00-00_speed_bench_throughput_1k_osl-1024_maxcon-16_n-64.json
+    # The legacy ``pair`` role is accepted by the regex so old sidecars
+    # produced before pairing moved in-memory don't break a fresh report;
+    # they're skipped below.
     spec_decode_pattern = r"""
         ^benchmark_spec_decode_
         (?P<role>baseline|spec|pair)
@@ -320,6 +323,16 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
     match = re.search(spec_decode_pattern, filename, re.VERBOSE)
     if match:
         role = match.group("role")
+        if role == "pair":
+            # Pair sidecars are no longer generated — speedup pairing happens
+            # in-memory in render_spec_decode_sections. Raising here surfaces
+            # a clear log line in process_benchmark_files' per-file try/except
+            # and the file is skipped, so a stale sidecar in the dir doesn't
+            # poison the report.
+            raise ValueError(
+                f"Legacy spec-decode pair sidecar (now derived in-memory); "
+                f"skipping: {filename}"
+            )
         logger.info(
             f"Found spec-decode benchmark pattern (role={role}) in filename: {filename}"
         )
@@ -332,7 +345,7 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "num_requests": int(match.group("n")),
             "public_dataset": match.group("public_dataset"),
             "endpoint_role": role,
-            "task_type": "spec_decode_pair" if role == "pair" else "spec_decode",
+            "task_type": "spec_decode",
         }
 
     # Try structured-output benchmark pattern (no isl in filename; dataset+ratio instead)
@@ -691,36 +704,6 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         }
         return format_metrics(metrics)
 
-    if params.get("task_type") == "spec_decode_pair":
-        # Sidecar JSON written by run_spec_decode_benchmarks.pair_phase — it
-        # carries only the per-percentile speedup ratios, not a vllm-bench
-        # result schema, so it gets its own branch and short-circuits the
-        # default vLLM processing below.
-        logger.info(f"Processing SPEC DECODE PAIR file: {filename}")
-        metrics = {
-            "task_type": "spec_decode_pair",
-            "timestamp": params["timestamp"],
-            "device": params.get("device", ""),
-            "model_name": params["model_name"],
-            "filename": filename,
-            "endpoint_role": params["endpoint_role"],
-            "public_dataset": data.get("public_dataset") or params["public_dataset"],
-            "output_sequence_length": params["output_sequence_length"],
-            "max_con": params["max_con"],
-            "num_requests": params["num_requests"],
-            "speedup_mean_e2el": data.get("speedup_mean_e2el"),
-            "speedup_p50_e2el": data.get("speedup_p50_e2el"),
-            "speedup_p95_e2el": data.get("speedup_p95_e2el"),
-            "speedup_p99_e2el": data.get("speedup_p99_e2el"),
-            "tpot_ratio_p50": data.get("tpot_ratio_p50"),
-            "tpot_ratio_p95": data.get("tpot_ratio_p95"),
-            "tpot_ratio_p99": data.get("tpot_ratio_p99"),
-            "output_tput_ratio": data.get("output_tput_ratio"),
-            "baseline_acceptance_rate": data.get("baseline_acceptance_rate"),
-            "spec_acceptance_rate": data.get("spec_acceptance_rate"),
-        }
-        return format_metrics(metrics)
-
     if params.get("task_type") in ("structured_output", "spec_decode"):
         logger.info(
             f"Processing {params['task_type'].upper()} benchmark file: {filename}"
@@ -807,6 +790,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     if params["task_type"] == "spec_decode":
         # Lift spec_decode_metrics (annotated by merge_acceptance_rate at
         # benchmark time) into top-level fields so display/CSV pick them up.
+        # Also carry forward the percentile + throughput fields raw —
+        # render_spec_decode_sections pairs baseline+spec dicts via
+        # compute_speedup and that function reads these names directly.
         spec_meta = data.get("spec_decode_metrics") or {}
         metrics.update(
             {
@@ -818,6 +804,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "accepted_tokens": spec_meta.get("accepted_tokens"),
                 "draft_tokens": spec_meta.get("draft_tokens"),
                 "num_drafts": spec_meta.get("num_drafts"),
+                "p50_e2el_ms": data.get("p50_e2el_ms"),
+                "p95_e2el_ms": data.get("p95_e2el_ms"),
+                "p99_e2el_ms": data.get("p99_e2el_ms"),
+                "p50_tpot_ms": data.get("p50_tpot_ms"),
+                "p95_tpot_ms": data.get("p95_tpot_ms"),
+                "p99_tpot_ms": data.get("p99_tpot_ms"),
+                "output_throughput": data.get("output_throughput"),
             }
         )
 
@@ -1366,17 +1359,65 @@ def render_structured_output_sections(
     return [f"{title}\n\n{table_md}"]
 
 
+def _pair_spec_decode_results(
+    spec_decode_results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Match baseline/spec rows by sweep config and compute speedup dicts.
+
+    The processed per-run dicts already carry the vllm-bench percentile and
+    throughput fields lifted by ``process_benchmark_file``, so we can hand
+    them straight to ``compute_speedup`` without re-reading anything from
+    disk. When multiple baseline or spec runs share the same sweep config
+    (e.g. re-runs in the same output dir), the most recent by timestamp
+    wins so the speedup reflects the latest measurement on each side.
+    """
+    sweep_key = lambda r: (  # noqa: E731
+        r.get("model_name"),
+        r.get("device"),
+        r.get("public_dataset"),
+        r.get("output_sequence_length"),
+        r.get("max_con"),
+        r.get("num_requests"),
+    )
+    by_key: Dict[Any, Dict[str, Dict[str, Any]]] = {}
+    for r in spec_decode_results:
+        role = r.get("endpoint_role")
+        if role not in ("baseline", "spec"):
+            continue
+        bucket = by_key.setdefault(sweep_key(r), {})
+        prior = bucket.get(role)
+        if prior is None or r.get("timestamp", "") > prior.get("timestamp", ""):
+            bucket[role] = r
+
+    pairs: List[Dict[str, Any]] = []
+    for key, bucket in by_key.items():
+        baseline = bucket.get("baseline")
+        spec = bucket.get("spec")
+        if baseline is None or spec is None:
+            continue
+        pair = compute_speedup(baseline, spec)
+        pair.update(
+            {
+                "public_dataset": key[2],
+                "output_sequence_length": key[3],
+                "max_con": key[4],
+            }
+        )
+        pairs.append(pair)
+    return pairs
+
+
 def render_spec_decode_sections(
     spec_decode_results: List[Dict[str, Any]],
-    spec_decode_pair_results: List[Dict[str, Any]],
     model_name: str,
     device: str,
 ) -> List[str]:
     """Render one or two markdown sections for speculative-decoding results.
 
     Emits a per-run table (baseline + spec rows side by side, sorted so each
-    sweep's baseline immediately precedes its spec row), and — if any pair
-    sidecars exist — a second table with the per-percentile speedup ratios.
+    sweep's baseline immediately precedes its spec row), and — when both
+    baseline and spec runs exist for the same sweep config — a second table
+    with the per-percentile speedup ratios computed in-memory.
     """
     sections: List[str] = []
 
@@ -1401,7 +1442,8 @@ def render_spec_decode_sections(
         )
         sections.append(f"{title}\n\n{get_markdown_table(rows)}")
 
-    if spec_decode_pair_results:
+    pair_results = _pair_spec_decode_results(spec_decode_results)
+    if pair_results:
 
         def pair_sort_key(r):
             return (
@@ -1412,7 +1454,7 @@ def render_spec_decode_sections(
 
         rows = [
             create_spec_decode_pair_display_dict(r)
-            for r in sorted(spec_decode_pair_results, key=pair_sort_key)
+            for r in sorted(pair_results, key=pair_sort_key)
         ]
         title = (
             f"#### Speculative Decoding Speedup vs Baseline "
@@ -1509,9 +1551,6 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
         r for r in results if r.get("task_type") == "structured_output"
     ]
     spec_decode_results = [r for r in results if r.get("task_type") == "spec_decode"]
-    spec_decode_pair_results = [
-        r for r in results if r.get("task_type") == "spec_decode_pair"
-    ]
 
     markdown_sections = []
 
@@ -1530,12 +1569,11 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
             )
         )
 
-    # Generate speculative-decoding sections (per-run + speedup pair tables)
-    if spec_decode_results or spec_decode_pair_results:
+    # Generate speculative-decoding sections (per-run + in-memory speedup pair)
+    if spec_decode_results:
         markdown_sections.extend(
             render_spec_decode_sections(
                 spec_decode_results,
-                spec_decode_pair_results,
                 model_name,
                 device,
             )

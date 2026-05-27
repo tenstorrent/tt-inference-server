@@ -6,16 +6,17 @@
 
 `SpecDecodeRunSpec` describes a single sweep config (dataset, output length,
 concurrency). `merge_acceptance_rate` annotates the per-sweep result JSON in
-place with metrics scraped from Prometheus. `pair_and_compute_speedup`
-consumes two such annotated results (baseline + speculative) and emits a
-sidecar dict with per-percentile speedup ratios.
+place with metrics scraped from Prometheus. `compute_speedup` takes two
+already-loaded baseline+spec result dicts (vllm-bench schema) and returns the
+per-percentile speedup ratios; `pair_and_compute_speedup` is a thin wrapper
+that loads two JSON files from disk and delegates.
 
 Kept separate from the aiperf-specific runner so a future
 ``run_sglang_spec_decode_benchmarks.py`` (or any other client tool) can reuse
 the same sweep specs, result annotation, and pairing math. The runner is
 responsible for normalising tool-specific output JSON into the vllm-bench
 field names (``mean_e2el_ms``, ``p50_e2el_ms``, ``output_throughput``, etc.)
-that ``pair_and_compute_speedup`` reads here.
+that ``compute_speedup`` reads here.
 """
 
 import json
@@ -78,31 +79,28 @@ def _safe_ratio(
     return numerator / denominator
 
 
-def pair_and_compute_speedup(
-    baseline_path: Union[str, Path], spec_path: Union[str, Path]
+def compute_speedup(
+    baseline: Dict[str, Any], spec: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Compute per-percentile speedup from a baseline and speculative result.
+    """Compute per-percentile speedup from two already-loaded result dicts.
 
-    Reads each per-sweep result JSON (normalised to vllm-bench field names by
-    the runner) and produces a dict with E2EL speedups (baseline / spec —
-    values > 1 mean spec is faster) plus an output-throughput ratio
-    (spec / baseline). Returns ``None`` for any ratio whose numerator or
-    denominator is missing or zero, so callers can distinguish "not measured"
-    from a legitimate zero.
+    Each dict must use the vllm-bench field names (``mean_e2el_ms``,
+    ``p50_e2el_ms``, ``output_throughput``, ...) — the runner is responsible
+    for that normalisation regardless of which client tool produced the raw
+    output. E2EL ratios are baseline/spec (values > 1 mean spec is faster);
+    throughput is spec/baseline (also > 1 when spec is faster). Returns
+    ``None`` for any ratio whose numerator or denominator is missing or
+    zero, so callers can distinguish "not measured" from a legitimate zero.
+
+    Acceptance rates are read out of each side's ``spec_decode_metrics``
+    block when present — typically the baseline lacks one (it ran without
+    speculation), so ``baseline_acceptance_rate`` is usually ``None``.
     """
-    baseline_path = Path(baseline_path)
-    spec_path = Path(spec_path)
-    with open(baseline_path) as f:
-        baseline = json.load(f)
-    with open(spec_path) as f:
-        spec = json.load(f)
 
     def latency_speedup(field: str) -> Optional[float]:
         return _safe_ratio(baseline.get(field), spec.get(field))
 
     return {
-        "baseline_path": str(baseline_path),
-        "spec_path": str(spec_path),
         "speedup_mean_e2el": latency_speedup("mean_e2el_ms"),
         "speedup_p50_e2el": latency_speedup("p50_e2el_ms"),
         "speedup_p95_e2el": latency_speedup("p95_e2el_ms"),
@@ -120,4 +118,21 @@ def pair_and_compute_speedup(
         "spec_acceptance_rate": (
             (spec.get("spec_decode_metrics") or {}).get("acceptance_rate")
         ),
+    }
+
+
+def pair_and_compute_speedup(
+    baseline_path: Union[str, Path], spec_path: Union[str, Path]
+) -> Dict[str, Any]:
+    """File-based wrapper over ``compute_speedup`` for tests / ad-hoc use."""
+    baseline_path = Path(baseline_path)
+    spec_path = Path(spec_path)
+    with open(baseline_path) as f:
+        baseline = json.load(f)
+    with open(spec_path) as f:
+        spec = json.load(f)
+    return {
+        "baseline_path": str(baseline_path),
+        "spec_path": str(spec_path),
+        **compute_speedup(baseline, spec),
     }
