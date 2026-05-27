@@ -1112,6 +1112,41 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        tt_metal_commit="747215b",  # handrew/gpt-oss-p150 branch
+        vllm_commit="7678b70",  # stable branch
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=128 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                env_vars={
+                    "MESH_DEVICE": "(1, 4)",
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "trace_region_size": 58000000,
+                    "sample_on_device_mode": "decode_only",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        metadata={
+            "openai/gpt-oss-120b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
+    ),
+    ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
         version="0.3.0",
@@ -2468,6 +2503,35 @@ vlm_templates = [
                     "fabric_config": "FABRIC_1D",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "data_parallel_size": 8,
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                },
+            ),
         ],
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2537,6 +2601,32 @@ vlm_templates = [
                     "fabric_config": "FABRIC_1D_RING",
                     "sample_on_device_mode": "decode_only",
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "mm-processor-cache-gb": 0,
+                },
+                override_tt_config={
+                    "l1_small_size": 4096,
+                    "fabric_config": "FABRIC_1D",
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 384 * 1024 * 1024,
+                },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=19.2.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         model_type=ModelType.VLM,

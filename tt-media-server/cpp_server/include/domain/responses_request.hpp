@@ -382,10 +382,10 @@ struct ResponsesRequest : BaseRequest {
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
                                                  std::nullopt, true, false);
-    out.full_prompt_tokens_count =
-        static_cast<int>(tokenizer.encode(promptStr).size());
+    auto promptTokens = tokenizer.encode(promptStr);
+    out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;
-    out.prompt = std::move(promptStr);
+    out.prompt = std::move(promptTokens);
 
     out.max_tokens = max_output_tokens;
     out.presence_penalty = presence_penalty.value_or(0.0f);
