@@ -177,7 +177,7 @@ class TestSetupRunnerEnvironment:
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
 
     def test_skips_galaxy_setup_for_non_qualifying_runner(self):
-        """Test that galaxy mesh config is NOT set up for runners like tt-sdxl-trace"""
+        """Test that galaxy mesh config is NOT set up for non-qualifying runners"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch("utils.runner_utils.get_telemetry_client"):
@@ -187,7 +187,7 @@ class TestSetupRunnerEnvironment:
                         mock_settings_galaxy = Mock()
                         mock_settings_galaxy.enable_telemetry = False
                         mock_settings_galaxy.is_galaxy = True
-                        mock_settings_galaxy.model_runner = "tt-sdxl-trace"
+                        mock_settings_galaxy.model_runner = "tt-flux.1-dev"
                         mock_settings_galaxy.default_throttle_level = None
 
                         with patch("utils.runner_utils.settings", mock_settings_galaxy):
@@ -612,8 +612,8 @@ class TestSetupRunnerEnvironmentBlackhole:
 
                             mock_bh.assert_called_once_with("/opt/tt-metal")
 
-    def test_skips_blackhole_setup_for_sdxl_on_bh_device(self):
-        """Test that _setup_blackhole_mesh_config is NOT called for tt-sdxl-trace on BH"""
+    def test_calls_blackhole_setup_for_sdxl_on_bh_device(self):
+        """Test that _setup_blackhole_mesh_config IS called for tt-sdxl-trace on a BH device (p150x8)"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch("utils.runner_utils.get_telemetry_client"):
@@ -630,7 +630,7 @@ class TestSetupRunnerEnvironmentBlackhole:
                         with patch("utils.runner_utils.settings", mock_settings_bh):
                             setup_runner_environment("0")
 
-                            mock_bh.assert_not_called()
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
 
     def test_skips_blackhole_setup_for_flux_on_bh_device(self):
         """Test that _setup_blackhole_mesh_config is NOT called for flux on BH"""
