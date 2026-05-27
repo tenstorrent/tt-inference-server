@@ -21,9 +21,9 @@ GrpcServerHandle::~GrpcServerHandle() {
 }
 
 std::unique_ptr<GrpcServerHandle> startGrpcServer(
-    std::shared_ptr<tt::services::LLMService> llmService,
+    std::shared_ptr<tt::services::LLMPipeline> pipeline,
     std::string listenAddr) {
-  auto svc = std::make_unique<GrpcInferenceService>(std::move(llmService));
+  auto svc = std::make_unique<GrpcInferenceService>(std::move(pipeline));
 
   ::grpc::ServerBuilder builder;
   builder.AddListeningPort(listenAddr, ::grpc::InsecureServerCredentials());

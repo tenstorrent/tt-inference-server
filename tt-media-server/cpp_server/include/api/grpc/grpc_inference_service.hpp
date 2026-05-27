@@ -4,11 +4,12 @@
 #pragma once
 
 #include <grpcpp/grpcpp.h>
+#include <trantor/net/EventLoopThreadPool.h>
 
 #include <memory>
 
 #include "inference.grpc.pb.h"
-#include "services/llm_service.hpp"
+#include "services/llm_pipeline.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::api::grpc {
@@ -16,8 +17,8 @@ namespace tt::api::grpc {
 class GrpcInferenceService final : public inference::Inference::Service {
  public:
   explicit GrpcInferenceService(
-      std::shared_ptr<tt::services::LLMService> service);
-  ~GrpcInferenceService() override = default;
+      std::shared_ptr<tt::services::LLMPipeline> pipeline);
+  ~GrpcInferenceService() override;
 
   GrpcInferenceService(const GrpcInferenceService&) = delete;
   GrpcInferenceService& operator=(const GrpcInferenceService&) = delete;
@@ -29,10 +30,11 @@ class GrpcInferenceService final : public inference::Inference::Service {
       ::grpc::ServerWriter<inference::TokenChunk>* writer) override;
 
  private:
-  std::shared_ptr<tt::services::LLMService> llmService;
+  std::shared_ptr<tt::services::LLMPipeline> pipeline_;
+  std::unique_ptr<trantor::EventLoopThreadPool> loopPool_;
 
   void handleStreamChunk(
-      tt::domain::llm::LLMStreamChunk& chunk, bool isFinal,
+      const tt::domain::llm::LLMStreamChunk& chunk, bool isFinal,
       tt::utils::BlockingQueue<inference::TokenChunk>& queue);
 
   ::grpc::Status drainQueueToWriter(

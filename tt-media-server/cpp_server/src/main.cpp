@@ -229,7 +229,13 @@ int main(int argc, char* argv[]) {
           tt::services::ServiceContainer::instance().getService(
               tt::config::ModelService::LLM));
       if (llmForGrpc) {
-        grpcServer = tt::api::grpc::startGrpcServer(llmForGrpc, grpcListenEnv);
+        auto grpcPipeline = std::make_shared<tt::services::LLMPipeline>(
+            llmForGrpc,
+            tt::services::ServiceContainer::instance().sessionManager(),
+            tt::services::ServiceContainer::instance().disaggregation(),
+            tt::services::ServiceContainer::instance().socket());
+        grpcServer =
+            tt::api::grpc::startGrpcServer(grpcPipeline, grpcListenEnv);
         if (grpcServer) {
           TT_LOG_INFO("[gRPC] Listening on {}", grpcListenEnv);
         } else {

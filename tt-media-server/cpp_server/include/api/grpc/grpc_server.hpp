@@ -10,7 +10,7 @@
 #include <thread>
 
 #include "api/grpc/grpc_inference_service.hpp"
-#include "services/llm_service.hpp"
+#include "services/llm_pipeline.hpp"
 
 namespace tt::api::grpc {
 
@@ -32,7 +32,7 @@ class GrpcServerHandle {
 };
 
 std::unique_ptr<GrpcServerHandle> startGrpcServer(
-    std::shared_ptr<tt::services::LLMService> llmService,
+    std::shared_ptr<tt::services::LLMPipeline> pipeline,
     std::string listenAddr);
 
 }  // namespace tt::api::grpc
