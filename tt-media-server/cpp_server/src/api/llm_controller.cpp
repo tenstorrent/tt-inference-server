@@ -268,6 +268,12 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
   return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
                                                bool isFinal) {
     if (writer->isDone()) return;
+
+    // Feed token to prefix accumulator for incremental index updates
+    if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
+      session->addGeneratedToken(*chunk.choices[0].token_id);
+    }
+
     if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
     if (isFinal) {
       if (session) session->clearInFlight();

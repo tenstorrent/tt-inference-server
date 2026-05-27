@@ -8,11 +8,17 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "domain/manage_memory.hpp"
 #include "domain/slot_types.hpp"
+
+namespace tt::utils {
+class BlockHashAccumulator;
+}
 
 namespace tt::domain {
 
@@ -83,6 +89,26 @@ class Session {
     last_activity_time_ = std::chrono::system_clock::now();
   }
 
+  /**
+   * Initialize prefix hash accumulator for streaming token registration.
+   * Called once per request when session routing is resolved.
+   *
+   * @param initialHashes Block hashes computed from the prompt
+   * @param partialBlockTokens Tokens from prompt's incomplete final block
+   * @param onBlockComplete Callback invoked when a block hash is computed
+   */
+  void initPrefixAccumulator(
+      std::vector<uint64_t> initialHashes,
+      std::vector<int64_t> partialBlockTokens,
+      std::function<void(const std::string&, const std::vector<uint64_t>&)>
+          onBlockComplete);
+
+  /**
+   * Add a generated token to the prefix accumulator.
+   * If this completes a block, the onBlockComplete callback is invoked.
+   */
+  void addGeneratedToken(int64_t tokenId);
+
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
@@ -97,6 +123,12 @@ class Session {
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
+
+  // Streaming prefix accumulator (initialized per-request)
+  // shared_ptr because Session must remain copyable for ConcurrentMap usage
+  std::shared_ptr<utils::BlockHashAccumulator> prefixAccumulator_;
+  std::function<void(const std::string&, const std::vector<uint64_t>&)>
+      onBlockComplete_;
 
   static std::string generateUuid();
 };

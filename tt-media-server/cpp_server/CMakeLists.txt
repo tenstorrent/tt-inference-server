@@ -350,6 +350,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -601,7 +602,7 @@ add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -687,6 +688,7 @@ add_executable(main_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -724,6 +726,7 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -756,6 +759,7 @@ add_executable(tool_calling_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
+    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -816,10 +820,12 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
-set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 if(ENABLE_BLAZE)
