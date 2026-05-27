@@ -37,7 +37,9 @@ if "config.vllm_settings" not in sys.modules:
 mock_set_torch_thread_limits = Mock()
 if "utils.torch_utils" not in sys.modules:
     sys.modules["utils.torch_utils"] = Mock()
-    sys.modules["utils.torch_utils"].set_torch_thread_limits = mock_set_torch_thread_limits
+    sys.modules[
+        "utils.torch_utils"
+    ].set_torch_thread_limits = mock_set_torch_thread_limits
 
 # Mock logger
 mock_logger = Mock()
