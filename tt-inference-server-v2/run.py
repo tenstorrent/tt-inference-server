@@ -108,6 +108,35 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
+    # Spec-decode benchmark options (only consumed by the
+    # spec_decode_benchmarks workflow; ignored by other workflows).
+    parser.add_argument(
+        "--spec-decode-profile",
+        choices=("smoke", "full"),
+        default="full",
+        help=(
+            "Spec-decode sweep profile: 'smoke' (1 short run) or "
+            "'full' (all SPEED-Bench categories + throughput sweep)."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-venv-python",
+        type=Path,
+        default=None,
+        help=(
+            "Python interpreter to invoke 'python -m aiperf profile' with. "
+            "Defaults to <repo>/.workflow_venvs/.venv_benchmarks_spec_decode/"
+            "bin/python (the v1 BENCHMARKS_SPEC_DECODE venv that has "
+            "aiperf>=0.8.0); falls back to sys.executable if that path is "
+            "missing."
+        ),
+    )
+    parser.add_argument(
+        "--spec-decode-warmup-requests",
+        type=int,
+        default=4,
+        help="Warmup chat-completion requests fired before each phase.",
+    )
     return parser.parse_args()
 
 
@@ -153,7 +182,33 @@ def build_context(args: argparse.Namespace) -> MediaContext:
         output_path=str(output_path),
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
+        spec_decode_profile=args.spec_decode_profile,
+        spec_decode_venv_python=_resolve_spec_decode_venv_python(
+            args.spec_decode_venv_python
+        ),
+        spec_decode_warmup_requests=args.spec_decode_warmup_requests,
     )
+
+
+def _resolve_spec_decode_venv_python(override: Optional[Path]) -> Optional[Path]:
+    """Resolve which Python to invoke aiperf with for the spec-decode driver.
+
+    Priority:
+      1. ``--spec-decode-venv-python`` CLI override (no existence check —
+         the user knows what they want).
+      2. v1's BENCHMARKS_SPEC_DECODE venv at
+         ``<repo>/.workflow_venvs/.venv_benchmarks_spec_decode/bin/python``.
+         Used only if it exists (the v1 workflow runner materialises it).
+      3. ``None`` → ``AIPerfSpecDecodeDriver`` falls back to ``sys.executable``.
+    """
+    if override is not None:
+        return override
+    candidate = (
+        _REPO_ROOT / ".workflow_venvs" / ".venv_benchmarks_spec_decode" / "bin" / "python"
+    )
+    if candidate.exists():
+        return candidate
+    return None
 
 
 def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:

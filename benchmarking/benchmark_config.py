@@ -147,6 +147,7 @@ SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
         SpecDecodeRunSpec(
             public_dataset=f"speed_bench_{category}",
             max_concurrency=1,
+            num_prompts=None,  # use full dataset
         )
         for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
     ]

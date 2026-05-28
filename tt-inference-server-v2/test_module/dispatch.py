@@ -55,6 +55,7 @@ class MediaTaskType(Enum):
     EVALUATION = "evaluation"
     BENCHMARK = "benchmark"
     SPEC_TESTS = "spec_tests"
+    SPEC_DECODE_BENCHMARK = "spec_decode_benchmark"
 
 
 EVAL_DISPATCH: dict[str, MediaRunner] = {
@@ -94,6 +95,9 @@ def run_media_task(
     """
     if task_type == MediaTaskType.SPEC_TESTS:
         return run_spec_tests(ctx)
+
+    if task_type == MediaTaskType.SPEC_DECODE_BENCHMARK:
+        return run_spec_decode_benchmark(ctx)
 
     model_type_name = ctx.model_spec.model_type.name
     logger.info(
@@ -263,10 +267,41 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
     return exit_code, blocks[-1]
 
 
+def run_spec_decode_benchmark(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
+    """Run the two-phase spec-decode sweep and return ``(exit_code, last_block)``.
+
+    The runner already drops every Block into the accumulator via
+    ``accept_blocks``; we just need to translate its ``(blocks, rcs)``
+    return into ``run_media_task``'s ``(int, Optional[Block])`` contract.
+    Exit code is non-zero if any aiperf invocation failed or if either
+    phase yielded zero usable blocks.
+    """
+    from .llm_tests import run_llm_spec_decode_benchmark
+
+    logger.info(
+        "Running spec_decode_benchmark for model=%s device=%s",
+        ctx.model_spec.model_name,
+        ctx.device.name,
+    )
+    try:
+        blocks, return_codes = run_llm_spec_decode_benchmark(ctx)
+    except Exception as e:
+        logger.exception("spec_decode_benchmark raised: %s", e)
+        return 1, None
+
+    if not blocks:
+        logger.error("spec_decode_benchmark produced no blocks")
+        return 1, None
+
+    exit_code = 0 if all(rc == 0 for rc in return_codes) else 1
+    return exit_code, blocks[-1]
+
+
 __all__ = [
     "MediaTaskType",
     "EVAL_DISPATCH",
     "BENCHMARK_DISPATCH",
     "run_media_task",
+    "run_spec_decode_benchmark",
     "run_spec_tests",
 ]

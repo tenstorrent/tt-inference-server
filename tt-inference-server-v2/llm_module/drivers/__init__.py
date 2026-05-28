@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
 from .aiperf import AIPerfDriver
+from .aiperf_spec_decode import AIPerfSpecDecodeDriver
 from .base import DriverResult, LLMDriver
 from .genai_perf import GenAIPerfDriver
 from .guidellm import GuideLLMDriver
@@ -13,6 +14,7 @@ __all__ = [
     "LLMDriver",
     "DriverResult",
     "AIPerfDriver",
+    "AIPerfSpecDecodeDriver",
     "GenAIPerfDriver",
     "GuideLLMDriver",
     "InferenceMaxDriver",

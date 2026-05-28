@@ -34,6 +34,10 @@ class MediaContext:
     output_path: str
     service_port: int
     spec_tests_num_prompts_cap: Optional[int] = None
+    # Spec-decode benchmark options (only used by run_llm_spec_decode_benchmark).
+    spec_decode_profile: Optional[str] = None
+    spec_decode_venv_python: Optional[Path] = None
+    spec_decode_warmup_requests: Optional[int] = None
 
     @property
     def base_url(self) -> str:
