@@ -40,8 +40,8 @@ class Sequence {
 
   Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
            size_t numPromptTokens, std::optional<uint32_t> slotId,
-           bool continuation, bool disaggregated,
-           std::unique_ptr<SamplingParams> samplingParams,
+           std::optional<uint32_t> prefillSlotId, bool continuation,
+           bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt);
 
   void serialize(std::ostream& os) const;
@@ -68,6 +68,9 @@ class Sequence {
 
   void setKVCacheSlot(uint32_t slot) { kvCacheSlot = slot; }
   uint32_t getKVCacheSlot() const { return kvCacheSlot; }
+
+  void setPrefillKVCacheSlot(uint32_t slot) { prefillKvCacheSlot = slot; }
+  uint32_t getPrefillKVCacheSlot() const { return prefillKvCacheSlot; }
 
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
@@ -116,6 +119,7 @@ class Sequence {
   std::unique_ptr<SamplingParams> samplingParams;
   int blockSize;
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
+  uint32_t prefillKvCacheSlot = tt::domain::INVALID_SLOT_ID;
   bool continuation = false;   // True if this continues an existing session
   bool disaggregated = false;  // True if this is a disaggregated request
 };
