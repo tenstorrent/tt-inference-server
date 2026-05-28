@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

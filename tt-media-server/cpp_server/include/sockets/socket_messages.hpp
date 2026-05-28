@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "domain/slot_types.hpp"
@@ -309,12 +310,13 @@ struct PrefillCacheBlocksEvictedMessage
 // Wire-protocol tags for the new gateway messages. Existing tags
 // ("prefill_request", etc.) remain string literals at their call sites.
 namespace tags {
-constexpr const char* PREFILL_REGISTRATION = "prefill_registration";
-constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";
-constexpr const char* PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
-constexpr const char* PREFILL_CACHE_BLOCKS_EVICTED = "prefill_cache_evicted";
-constexpr const char* REGISTRATION_PROBE = "registration_probe";
-constexpr const char* CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
+constexpr std::string_view PREFILL_ASSIGNMENT = "prefill_assignment";
+constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
+constexpr std::string_view PREFILL_CACHE_BLOCKS_EVICTED =
+    "prefill_cache_evicted";
+constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
+constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
 }  // namespace tags
 
 }  // namespace tt::sockets

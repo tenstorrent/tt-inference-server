@@ -81,7 +81,8 @@ struct RuntimeParsers {
   const char* tool_call = nullptr;
 };
 
-/// Read HuggingFace `model_type` from config.json (empty if missing/unreadable).
+/// Read HuggingFace `model_type` from config.json (empty if
+/// missing/unreadable).
 std::string readModelType(const std::string& config_path) {
   std::ifstream f(config_path);
   if (!f) {

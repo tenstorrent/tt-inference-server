@@ -72,8 +72,12 @@ void DisaggregationService::setupSocketHandlers() {
             }
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
-            request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
-                                                     message.token_ids.end());
+            // -2 because last token doesnt count, and we need current pos in kv
+            // cache.
+            request.kv_position_id =
+                static_cast<uint32_t>(message.token_ids.size() - 2);
+            request.prompt.emplace<std::vector<int>>(
+                message.token_ids.end() - 1, message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             request.slotId = message.slot_id;
             // Restore the sampling subset echoed back from the prefill server.

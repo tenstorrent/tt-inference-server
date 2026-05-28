@@ -157,7 +157,8 @@ class FakeDecode {
  public:
   FakeDecode(const std::string& gatewayHost, uint16_t gatewayPort) {
     sm_.initializeAsClient(gatewayHost, gatewayPort);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
 
     sm_.registerHandler<tt::sockets::PrefillResultMessage>(
         "prefill_result", [this](const tt::sockets::PrefillResultMessage& msg) {
@@ -228,7 +229,8 @@ class GatewayHarness {
 
     for (const auto& [host, port] : prefills) {
       auto sm = std::make_unique<tt::sockets::SocketManager>();
-      sm->setReconnectBackoff(50, 500);
+      sm->setReconnectBackoff(std::chrono::milliseconds(50),
+                              std::chrono::milliseconds(500));
       sm->initializeAsClient(host, port);
       prefillSms_.push_back(std::move(sm));
     }
@@ -324,6 +326,7 @@ class GatewayHarness {
 
   PrefillRegistry& registry() { return registry_; }
   AffinityCache& affinity() { return affinity_; }
+  Dispatcher& dispatcher() { return *dispatcher_; }
 
  private:
   uint16_t decodePort_;
@@ -345,7 +348,8 @@ class FakeZmqPrefill {
         routerPort_(routerPort),
         maxInFlight_(maxInFlight) {
     sm_.initializeAsClient(routerHost_, routerPort_);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
   }
 
   ~FakeZmqPrefill() { stop(); }
@@ -615,6 +619,34 @@ TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   EXPECT_EQ(cancelled[0], 88u);
   EXPECT_EQ(prefillB_->cancelCount(), 0u);
   EXPECT_EQ(decode_->resultCount(), 0u);
+}
+
+TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
+  prefillA_->setAutoReply(false);
+  prefillB_->setAutoReply(false);
+
+  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  decode_->sendRequest(/*task_id=*/89, /*hash=*/77);
+
+  ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
+  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
+  EXPECT_EQ(decode_->resultCount(), 0u);
+
+  gateway_->dispatcher().onRequestTimeouts(Dispatcher::Clock::now() +
+                                           std::chrono::minutes(6));
+
+  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
+  ASSERT_TRUE(waitFor([&] { return prefillA_->cancelCount() >= 1; }));
+  auto results = decode_->results();
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].task_id, 89u);
+  EXPECT_TRUE(results[0].error);
+  EXPECT_TRUE(results[0].finished);
+  EXPECT_EQ(results[0].generated_text, "timeout");
+
+  auto cancelled = prefillA_->cancelledTaskIds();
+  ASSERT_EQ(cancelled.size(), 1u);
+  EXPECT_EQ(cancelled[0], 89u);
 }
 
 TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
