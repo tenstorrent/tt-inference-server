@@ -10,9 +10,8 @@
 
 namespace tt::utils {
 
-BlockHashAccumulator::BlockHashAccumulator(
-    std::vector<uint64_t> initialHashes,
-    std::vector<int> partialBlockTokens)
+BlockHashAccumulator::BlockHashAccumulator(std::vector<uint64_t> initialHashes,
+                                           std::vector<int> partialBlockTokens)
     : hashes_(std::move(initialHashes)),
       blockBuffer_(std::move(partialBlockTokens)),
       firstBlockSize_(config::kvCacheFirstBlockSize()),

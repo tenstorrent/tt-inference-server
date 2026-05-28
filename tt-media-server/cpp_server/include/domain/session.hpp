@@ -98,8 +98,7 @@ class Session {
    * @param onBlockComplete Callback invoked when a block hash is computed
    */
   void initPrefixAccumulator(
-      std::vector<uint64_t> initialHashes,
-      std::vector<int> partialBlockTokens,
+      std::vector<uint64_t> initialHashes, std::vector<int> partialBlockTokens,
       std::function<void(const std::string&, const std::vector<uint64_t>&)>
           onBlockComplete);
 

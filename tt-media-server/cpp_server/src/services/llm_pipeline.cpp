@@ -27,8 +27,8 @@ namespace {
  * These are tokens that don't fit into a complete block and need to be
  * passed to the streaming accumulator.
  */
-std::vector<int> extractPartialBlockTokens(
-    const std::vector<int>& promptTokens, size_t completedBlockCount) {
+std::vector<int> extractPartialBlockTokens(const std::vector<int>& promptTokens,
+                                           size_t completedBlockCount) {
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
   const size_t blockSize = tt::config::kvCacheBlockSize();
 
