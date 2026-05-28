@@ -3,10 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import atexit
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -619,8 +622,32 @@ def build_eval_command(
 
     if task.include_path:
         cmd.append("--include_path")
-        cmd.append(task_venv_config.venv_path / task.include_path)
-        os.chdir(task_venv_config.venv_path)
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_META:
+            # lm-eval meta_* task YAMLs hardcode `./work_dir/joined_*.parquet`
+            # relative to cwd. The model-specific data lives at
+            # `<venv>/llama-cookbook/.../meta_eval/work_dir_<model>/`. To
+            # support parallel invocations against different models without
+            # racing on a single shared work_dir/, give each invocation its
+            # own staging dir containing a symlink that masquerades as it.
+            meta_data_dir = (
+                task_venv_config.venv_path
+                / "llama-cookbook/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval"
+                / f"work_dir_{model_spec.model_name}"
+            )
+            staging_dir = Path(
+                tempfile.mkdtemp(
+                    prefix=f"meta_eval_{model_spec.model_name}_",
+                    dir=task_venv_config.venv_path,
+                )
+            )
+            atexit.register(shutil.rmtree, staging_dir, ignore_errors=True)
+            staging_work_dir = staging_dir / "work_dir"
+            os.symlink(meta_data_dir, staging_work_dir)
+            cmd.append(staging_work_dir)
+            os.chdir(staging_dir)
+        else:
+            cmd.append(task_venv_config.venv_path / task.include_path)
+            os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
