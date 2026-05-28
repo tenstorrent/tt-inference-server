@@ -182,7 +182,8 @@ class FakeDecode {
 
   void sendRequest(uint32_t taskId, size_t registrationHash = 0) {
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.registration_hash = registrationHash;
+    if (registrationHash != 0)
+      req.registration_hashes = {static_cast<uint64_t>(registrationHash)};
     sm_.sendObject("prefill_request", req);
   }
 
