@@ -138,7 +138,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
+    && git clone --depth 1 --branch knovokmetTT/expose-pos-id https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
     && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
