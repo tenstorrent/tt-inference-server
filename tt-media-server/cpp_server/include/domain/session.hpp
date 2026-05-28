@@ -99,7 +99,7 @@ class Session {
    */
   void initPrefixAccumulator(
       std::vector<uint64_t> initialHashes,
-      std::vector<int64_t> partialBlockTokens,
+      std::vector<int> partialBlockTokens,
       std::function<void(const std::string&, const std::vector<uint64_t>&)>
           onBlockComplete);
 
@@ -107,7 +107,7 @@ class Session {
    * Add a generated token to the prefix accumulator.
    * If this completes a block, the onBlockComplete callback is invoked.
    */
-  void addGeneratedToken(int64_t tokenId);
+  void addGeneratedToken(int tokenId);
 
   Json::Value toJson() const {
     Json::Value json;

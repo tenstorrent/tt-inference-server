@@ -41,7 +41,7 @@ bool Session::clearInFlight() {
 
 void Session::initPrefixAccumulator(
     std::vector<uint64_t> initialHashes,
-    std::vector<int64_t> partialBlockTokens,
+    std::vector<int> partialBlockTokens,
     std::function<void(const std::string&, const std::vector<uint64_t>&)>
         onBlockComplete) {
   prefixAccumulator_ = std::make_shared<utils::BlockHashAccumulator>(
@@ -49,7 +49,7 @@ void Session::initPrefixAccumulator(
   onBlockComplete_ = std::move(onBlockComplete);
 }
 
-void Session::addGeneratedToken(int64_t tokenId) {
+void Session::addGeneratedToken(int tokenId) {
   if (!prefixAccumulator_) return;
 
   if (auto newHashes = prefixAccumulator_->addToken(tokenId)) {

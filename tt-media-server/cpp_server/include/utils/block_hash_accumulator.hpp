@@ -24,19 +24,19 @@ class BlockHashAccumulator {
    *        (if any). Empty if prompt ended on a block boundary.
    */
   BlockHashAccumulator(std::vector<uint64_t> initialHashes,
-                       std::vector<int64_t> partialBlockTokens);
+                       std::vector<int> partialBlockTokens);
 
   /**
    * Add a generated token. Returns the updated hash vector if a new block
    * was completed, otherwise nullopt.
    */
-  std::optional<std::vector<uint64_t>> addToken(int64_t tokenId);
+  std::optional<std::vector<uint64_t>> addToken(int tokenId);
 
   const std::vector<uint64_t>& hashes() const { return hashes_; }
 
  private:
   std::vector<uint64_t> hashes_;
-  std::vector<int64_t> blockBuffer_;
+  std::vector<int> blockBuffer_;
   uint64_t parentHash_;
   size_t firstBlockSize_;
   size_t blockSize_;
