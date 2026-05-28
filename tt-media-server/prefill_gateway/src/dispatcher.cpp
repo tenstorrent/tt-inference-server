@@ -32,12 +32,13 @@ Dispatcher::Dispatcher(PrefillRegistry& registry, AffinityCache& affinityCache,
 void Dispatcher::onPrefillRequest(
     const tt::sockets::PrefillRequestMessage& msg) {
   auto prefills = registry_.snapshot();
-  auto sticky = (msg.registration_hash != 0)
-                    ? affinity_cache_.lookup(msg.registration_hash)
-                    : std::nullopt;
+  const uint64_t affinityKey =
+      msg.registration_hashes.empty() ? 0 : msg.registration_hashes.front();
+  auto sticky =
+      (affinityKey != 0) ? affinity_cache_.lookup(affinityKey) : std::nullopt;
 
-  auto chosenOpt = selectPrefill(prefills, msg.registration_hash, sticky,
-                                 round_robin_cursor_);
+  auto chosenOpt =
+      selectPrefill(prefills, affinityKey, sticky, round_robin_cursor_);
   if (!chosenOpt.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(
@@ -52,12 +53,12 @@ void Dispatcher::onPrefillRequest(
   const std::string& chosen = *chosenOpt;
   const bool usedSticky = sticky.has_value() && *sticky == chosen;
   TT_LOG_INFO("[Dispatcher] taskId={} -> prefill='{}' sticky={} hash={}",
-              msg.task_id, chosen, usedSticky, msg.registration_hash);
+              msg.task_id, chosen, usedSticky, affinityKey);
 
   registry_.incrementInflight(chosen);
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
-    in_flight_[msg.task_id] = {chosen, msg.registration_hash, Clock::now()};
+    in_flight_[msg.task_id] = {chosen, affinityKey, Clock::now()};
   }
 
   // Send assignment first so decode can prep KV-transfer ahead of the result.
@@ -110,8 +111,8 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   registry_.decrementInflight(fromServerId);
 
   // Don't cache failures — they'd resend to the same broken prefill.
-  if (!msg.error && entry->registration_hash != 0) {
-    affinity_cache_.record(entry->registration_hash, fromServerId);
+  if (!msg.error && entry->affinity_key != 0) {
+    affinity_cache_.record(entry->affinity_key, fromServerId);
   }
 
   if (msg.error) {

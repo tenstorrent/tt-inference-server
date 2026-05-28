@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "config/types.hpp"
 #include "domain/llm/llm_request.hpp"
@@ -36,7 +37,8 @@ class DisaggregationService {
   void start();
   void stop();
 
-  void handleStreamingRequest(LLMRequest& request, size_t requestHash,
+  void handleStreamingRequest(LLMRequest& request,
+                              const std::vector<uint64_t>& registrationHashes,
                               const StreamCallback& callback);
   void abortRequest(uint32_t taskId);
 

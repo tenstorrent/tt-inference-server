@@ -98,7 +98,7 @@ void SessionManager::readerLoop() {
 
 void SessionManager::finalizeSessionClose(const std::string& sessionId,
                                           const domain::Session& session) {
-  if (session.getSlotId() != domain::INVALID_SLOT_ID) {
+  if (session.getSlotId() != tt::domain::INVALID_SLOT_ID) {
     sendDeallocRequest(sessionId, session.getSlotId());
   }
   TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
@@ -147,7 +147,7 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
-  uint32_t result = domain::INVALID_SLOT_ID;
+  uint32_t result = tt::domain::INVALID_SLOT_ID;
   sessions.modify(sessionId, [&result](domain::Session& s) {
     s.updateActivityTime();
     result = s.getSlotId();
@@ -160,7 +160,7 @@ uint32_t SessionManager::getSlotIdBySessionId(
 
 uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
                                          std::function<void()> cancelFn) {
-  uint32_t result = domain::INVALID_SLOT_ID;
+  uint32_t result = tt::domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
 
   bool found = sessions.modify(
@@ -177,7 +177,7 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   if (!found) {
     TT_LOG_WARN("[SessionManager] acquireSessionSlot: sessionId={} not found",
                 sessionId);
-    return domain::INVALID_SLOT_ID;
+    return tt::domain::INVALID_SLOT_ID;
   }
 
   if (wasInFlight) {
@@ -326,7 +326,7 @@ void SessionManager::createSession(
   }
 
   PendingAllocation pendingAllocation{
-      .session = domain::Session(domain::INVALID_SLOT_ID, keyHash),
+      .session = domain::Session(tt::domain::INVALID_SLOT_ID, keyHash),
       .onCompletion = std::move(onCompletion),
       .onError = std::move(onError),
       .eventLoop = callerEventLoop,
@@ -449,7 +449,7 @@ void SessionManager::handleMemoryResult(
   }
   auto& pendingAllocation = allocation.value();
   bool success = result.status == domain::ManageMemoryStatus::SUCCESS &&
-                 result.slotId != domain::INVALID_SLOT_ID;
+                 result.slotId != tt::domain::INVALID_SLOT_ID;
   if (success) {
     pendingAllocation.session.setSlotId(result.slotId);
     pendingAllocation.session.markPrepared();

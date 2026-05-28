@@ -156,6 +156,7 @@ struct LLMRequest : BaseRequest {
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  std::optional<uint32_t> prefillSlotId;
   tt::domain::Session* session =
       nullptr;  // Pointer to session in SessionManager
   bool continuation =
