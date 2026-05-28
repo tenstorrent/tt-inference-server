@@ -83,8 +83,8 @@ struct RuntimeParsers {
 
 /// Read HuggingFace `model_type` from config.json (empty if
 /// missing/unreadable).
-std::string readModelType(const std::string& config_path) {
-  std::ifstream f(config_path);
+std::string readModelType(const std::string& configPath) {
+  std::ifstream f(configPath);
   if (!f) {
     return {};
   }
@@ -99,19 +99,19 @@ std::string readModelType(const std::string& config_path) {
 }
 
 /// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
-RuntimeParsers runtimeParsersForModelType(const std::string& model_type) {
-  if (model_type == "kimi_k25") {
+RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
+  if (modelType == "kimi_k25") {
     return {"kimi_k25", "kimi_k2"};
   }
-  if (model_type == "llama") {
+  if (modelType == "llama") {
     return {nullptr, nullptr};
   }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }
 
-RuntimeParsers runtimeParsersForModelPath(const std::string& model_path) {
-  return runtimeParsersForModelType(readModelType(model_path + "/config.json"));
+RuntimeParsers runtimeParsersForModelPath(const std::string& modelPath) {
+  return runtimeParsersForModelType(readModelType(modelPath + "/config.json"));
 }
 
 void setRuntimeParserField(Json::Value& runtime, const char* field,
