@@ -6,6 +6,7 @@
 #include <tokenizers_cpp.h>
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,6 +21,10 @@
 namespace tt::utils::tokenizers {
 
 using namespace tt::domain::llm;
+
+// Matches tt_llm_engine EMPTY_TOKEN: disables thinking-phase token matching.
+constexpr int64_t kNoThinkTokenId =
+    static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -205,7 +210,13 @@ struct StaticTokenizerInfo {
   std::string_view modelName;
   std::vector<int64_t> stopTokenIds;
   std::vector<int> assistantHeaderSequence;
+  int64_t thinkStartTokenId = kNoThinkTokenId;
+  int64_t thinkEndTokenId = kNoThinkTokenId;
 };
+
+/** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */
+std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model);
+std::pair<int64_t, int64_t> thinkTokenIds();
 
 /**
  * Static constants for `model`. Throws std::invalid_argument if no entry

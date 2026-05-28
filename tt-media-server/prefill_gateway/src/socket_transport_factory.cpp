@@ -14,7 +14,7 @@ namespace tt::sockets {
 namespace {
 std::string socketTransportFromEnv() {
   const char* v = std::getenv("SOCKET_TRANSPORT");
-  return v ? std::string(v) : transport_names::TCP;
+  return v ? std::string(v) : std::string(transport_names::TCP);
 }
 }  // namespace
 

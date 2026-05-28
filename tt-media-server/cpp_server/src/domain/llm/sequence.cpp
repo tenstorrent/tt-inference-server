@@ -31,7 +31,8 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
 
 Sequence::Sequence(uint32_t taskId, int blockSize,
                    std::vector<int64_t> inputTokenIds, size_t numPromptTokens,
-                   std::optional<uint32_t> slotId, bool continuation,
+                   std::optional<uint32_t> slotId,
+                   std::optional<uint32_t> prefillSlotId, bool continuation,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId)
@@ -43,6 +44,7 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       samplingParams(std::move(inputSamplingParams)),
       blockSize(blockSize),
       kvCacheSlot(slotId.value_or(tt::domain::INVALID_SLOT_ID)),
+      prefillKvCacheSlot(prefillSlotId.value_or(tt::domain::INVALID_SLOT_ID)),
       continuation(continuation),
       disaggregated(disaggregated) {
   if (!tokenIds.empty()) {
@@ -91,6 +93,8 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&status), sizeof(status));
   os.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
   os.write(reinterpret_cast<const char*>(&kvCacheSlot), sizeof(kvCacheSlot));
+  os.write(reinterpret_cast<const char*>(&prefillKvCacheSlot),
+           sizeof(prefillKvCacheSlot));
   uint8_t continuationFlag = continuation ? 1 : 0;
   os.write(reinterpret_cast<const char*>(&continuationFlag),
            sizeof(continuationFlag));
@@ -137,6 +141,8 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.kvCacheSlot), sizeof(seq.kvCacheSlot));
+  is.read(reinterpret_cast<char*>(&seq.prefillKvCacheSlot),
+          sizeof(seq.prefillKvCacheSlot));
   uint8_t continuationFlag = 0;
   is.read(reinterpret_cast<char*>(&continuationFlag), sizeof(continuationFlag));
   seq.continuation = continuationFlag != 0;

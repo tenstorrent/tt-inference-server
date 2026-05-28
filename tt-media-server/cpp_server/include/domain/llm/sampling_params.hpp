@@ -37,7 +37,7 @@ struct SamplingParams {
   std::optional<float> repetition_penalty;
   float length_penalty = 1.0f;
 
-  std::vector<int> stop_token_ids;
+  std::vector<uint32_t> stop_token_ids;
   bool include_stop_str_in_output = false;
   int min_tokens = 0;
   bool skip_special_tokens = true;

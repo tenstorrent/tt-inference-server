@@ -249,6 +249,39 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      p300x2:
+        defaultImpl: gpt_oss
+        impls:
+          gpt_oss:
+            progressDeadlineSeconds: 7200
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.14.0-747215b-7678b70
+            probes:
+              liveness:
+                initialDelaySeconds: 3600
+              readiness:
+                initialDelaySeconds: 3600
+            resources:
+              requests:
+                memory: 300Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: (1, 4)
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   AFM-4.5B:
     vllm:
@@ -3659,6 +3692,66 @@ models:
                 value: tt
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   medgemma-4b-it:
     vllm:
@@ -3722,6 +3815,66 @@ models:
                 value: tt
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   gemma-3-27b-it:
     vllm:
@@ -3822,6 +3975,35 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      p300x2:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   medgemma-27b-it:
     vllm:
@@ -3916,6 +4098,35 @@ models:
                 value: '1'
               - name: TT_MM_THROTTLE_PERF
                 value: '5'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      p300x2:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.9.0-aecd1d7-0da90eb
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
               - name: VLLM_CONFIGURE_LOGGING
                 value: '1'
               - name: VLLM_RPC_TIMEOUT

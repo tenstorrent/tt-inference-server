@@ -10,6 +10,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -50,14 +51,14 @@ class ZmqSocketTransport : public ISocketTransport,
   bool isConnected() const override;
   std::string getStatus() const override;
 
-  bool sendRawData(const std::vector<uint8_t>& data) override;
+  bool sendRawData(std::span<const uint8_t> data) override;
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
   void setConnectionEstablishedCallback(
       std::function<void()> callback) override;
-  void setReconnectBackoff(uint32_t initialDelayMs,
-                           uint32_t maxDelayMs) override;
+  void setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                           std::chrono::milliseconds maxDelay) override;
 
  private:
   struct SendRequest {

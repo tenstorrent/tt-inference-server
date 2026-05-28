@@ -23,6 +23,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
@@ -68,6 +69,17 @@ bool envBool(const char* name, bool defaultValue) {
     return false;
   }
   return defaultValue;
+}
+
+/** Read a KV cache block size env var; value must be divisible by 32. */
+size_t kvCacheSizeFromEnv(const char* envName, size_t defaultValue) {
+  size_t value = static_cast<size_t>(envUlong(envName, defaultValue));
+  if (value % 32) {
+    TT_LOG_WARN("[Config] {}={} is not divisible by 32, using default={}",
+                envName, value, defaultValue);
+    return defaultValue;
+  }
+  return value;
 }
 
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
@@ -553,14 +565,18 @@ size_t maxContextLength() {
 }
 
 size_t kvCacheBlockSize() {
-  static const size_t cached = static_cast<size_t>(
-      envUlong("KV_CACHE_BLOCK_SIZE", defaults::KV_CACHE_BLOCK_SIZE));
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
+                              defaults::KV_CACHE_BLOCK_SIZE);
+  }();
   return cached;
 }
 
 size_t kvCacheFirstBlockSize() {
-  static const size_t cached = static_cast<size_t>(envUlong(
-      "KV_CACHE_FIRST_BLOCK_SIZE", defaults::KV_CACHE_FIRST_BLOCK_SIZE));
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
+                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+  }();
   return cached;
 }
 

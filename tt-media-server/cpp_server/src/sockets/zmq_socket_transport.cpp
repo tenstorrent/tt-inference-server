@@ -26,8 +26,7 @@ std::string makeMonitorEndpoint(const void* self) {
 }  // namespace
 
 ZmqSocketTransport::ZmqSocketTransport()
-    : SocketTransportState(/*reconnectInitialDelayMs=*/1000,
-                           /*reconnectMaxDelayMs=*/5000),
+    : SocketTransportState(std::chrono::seconds(1), std::chrono::seconds(5)),
       context_(
           std::make_unique<zmq::context_t>(zmq_options::CONTEXT_IO_THREADS)) {}
 
@@ -98,9 +97,9 @@ bool ZmqSocketTransport::initializeSocket() {
     zmq_options::applyCommonOptions(*socket_);
     if (mode_ == Mode::CLIENT) {
       socket_->set(zmq::sockopt::reconnect_ivl,
-                   static_cast<int>(reconnectInitialDelayMs_));
+                   static_cast<int>(reconnectInitialDelay_.count()));
       socket_->set(zmq::sockopt::reconnect_ivl_max,
-                   static_cast<int>(reconnectMaxDelayMs_));
+                   static_cast<int>(reconnectMaxDelay_.count()));
     }
     setupMonitor();
     if (mode_ == Mode::SERVER) {
@@ -239,11 +238,11 @@ bool ZmqSocketTransport::isConnected() const { return isConnectedState(); }
 
 std::string ZmqSocketTransport::getStatus() const { return getStatusString(); }
 
-bool ZmqSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   if (!running_ || !ioActive_) return false;
 
   auto request = std::make_shared<SendRequest>();
-  request->data = data;
+  request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
   {
@@ -397,9 +396,10 @@ void ZmqSocketTransport::setConnectionEstablishedCallback(
   setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
-void ZmqSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
-                                             uint32_t maxDelayMs) {
-  setReconnectBackoffCommon(initialDelayMs, maxDelayMs);
+void ZmqSocketTransport::setReconnectBackoff(
+    std::chrono::milliseconds initialDelay,
+    std::chrono::milliseconds maxDelay) {
+  setReconnectBackoffCommon(initialDelay, maxDelay);
 }
 
 }  // namespace tt::sockets

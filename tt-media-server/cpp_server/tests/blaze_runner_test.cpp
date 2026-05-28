@@ -247,6 +247,7 @@ TEST(BlazeRunnerIntegrationTest, StopsOnConfiguredStopToken) {
   tt::domain::llm::SamplingParams samplingParams;
   samplingParams.max_tokens = 1000;
   samplingParams.ignore_eos = false;
+  samplingParams.stop_token_ids = {MOCK_PIPELINE_TOKEN_ID};
 
   harness.submitSequence(taskId, allocateResponse.slotId, {77}, samplingParams);
   const auto producedTokens = harness.collectTaskTokensUntilFinal(taskId);

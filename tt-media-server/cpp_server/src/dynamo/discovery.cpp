@@ -6,6 +6,7 @@
 #include <json/json.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -90,9 +91,11 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["source_path"] = c.model_path;
 
   const std::string configPath = c.model_path + "/config.json";
-  const std::string tokenizerPath = c.model_path + "/tokenizer.json";
+  const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";
+  const std::string tiktokenModelPath = c.model_path + "/tiktoken.model";
   const std::string tokenizerConfigPath =
       c.model_path + "/tokenizer_config.json";
+  const std::string chatTemplatePath = c.model_path + "/chat_template.jinja";
 
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
@@ -102,11 +105,31 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["model_info"] = std::move(modelInfo);
 
   Json::Value tokenizer(Json::objectValue);
-  Json::Value hfTok(Json::objectValue);
-  hfTok["path"] = tokenizerPath;
-  hfTok["checksum"] = K_BLAKE3_PLACEHOLDER;
-  tokenizer["hf_tokenizer_json"] = std::move(hfTok);
+  Json::Value tokFile(Json::objectValue);
+  const bool hasTiktoken = std::filesystem::exists(tiktokenModelPath) &&
+                           !std::filesystem::exists(tokenizerJsonPath);
+  if (hasTiktoken) {
+    tokFile["path"] = tiktokenModelPath;
+    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokenizer["tik_token_model"] = std::move(tokFile);
+  } else {
+    tokFile["path"] = tokenizerJsonPath;
+    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokenizer["hf_tokenizer_json"] = std::move(tokFile);
+  }
   card["tokenizer"] = std::move(tokenizer);
+
+  if (std::filesystem::exists(chatTemplatePath)) {
+    Json::Value chatTemplateFile(Json::objectValue);
+    Json::Value hfChatTemplate(Json::objectValue);
+    hfChatTemplate["is_custom"] = false;
+    Json::Value jinjaFile(Json::objectValue);
+    jinjaFile["path"] = chatTemplatePath;
+    jinjaFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    hfChatTemplate["file"] = std::move(jinjaFile);
+    chatTemplateFile["hf_chat_template_jinja"] = std::move(hfChatTemplate);
+    card["chat_template_file"] = std::move(chatTemplateFile);
+  }
 
   Json::Value promptFormatter(Json::objectValue);
   Json::Value hfTokCfg(Json::objectValue);
