@@ -1215,7 +1215,8 @@ def get_runtime_model_spec(
     device_type = DeviceTypes.from_string(device)
 
     specs_map = (
-        MODEL_SPECS if env is None or env == _MODEL_SPECS_ENV
+        MODEL_SPECS
+        if env is None or env == _MODEL_SPECS_ENV
         else _load_model_specs_for_env(env)
     )
     env_label = env or _MODEL_SPECS_ENV

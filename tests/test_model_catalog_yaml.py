@@ -186,6 +186,4 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     assert templates, f"{env}/{yaml_name} produced zero templates"
     for t in templates:
         specs = t.expand_to_specs()
-        assert specs, (
-            f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
-        )
+        assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
