@@ -83,11 +83,18 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     && /usr/local/bin/cmake --version
 
 # build tt-metal
+# Keep Kitware's manually fetched signing key in place and skip the keyring
+# package install in tt-metal's dependency script. CI proxies can serve stale
+# .deb contents during Kitware mirror syncs, while the key itself is enough for
+# this image build.
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
+    && mkdir -p /usr/share/doc/kitware-archive-keyring \
+    && touch /usr/share/doc/kitware-archive-keyring/copyright \
+    && sed -i '/apt-get install -y --no-install-recommends kitware-archive-keyring/d' install_dependencies.sh \
     && ./install_dependencies.sh --docker \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
@@ -97,7 +104,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
     && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -113,7 +120,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 
@@ -136,10 +143,10 @@ COPY "tt-media-server/uv-overrides.txt" "${TT_METAL_HOME}/uv-overrides.txt"
 #       numpy<2 pin already installed in the venv.
 #   See tt-media-server/uv-overrides.txt for full details.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r requirements.txt || \
+    && cd ${TT_METAL_HOME} && (uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r requirements.txt || \
     (echo 'Requirements installation failed, trying without pyluwen...' && \
     grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r requirements_no_pyluwen.txt) \
+    uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r requirements_no_pyluwen.txt)) \
     && echo 'Running dependency fixes...' \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
@@ -152,10 +159,10 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 
 # Fix GPG keys before installing cpp_server dependencies
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && apt-get update --allow-insecure-repositories || true \
+    && (apt-get update --allow-insecure-repositories || true) \
     && apt-get install -y --allow-unauthenticated gnupg2 ca-certificates \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6AF7F09730B3F0A4 || true \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421 || true
+    && (apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6AF7F09730B3F0A4 || true) \
+    && (apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421 || true)
 
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
