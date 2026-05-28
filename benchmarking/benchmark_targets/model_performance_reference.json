@@ -4390,6 +4390,27 @@
             }
         ]
     },
+    "Falcon3-7B-Instruct": {
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26.0,
+                        "tput_user": 43.0,
+                        "tput": 1328.0
+                    }
+                }
+            }
+        ]
+    },
     "Falcon3-10B-Base": {
         "t3k": [
             {
@@ -5139,6 +5160,25 @@
                     "theoretical": {
                         "ttft_ms": 17,
                         "tput_user": 61
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13.0,
+                        "tput_user": 99.0,
+                        "tput": 2991.0
                     }
                 }
             }
