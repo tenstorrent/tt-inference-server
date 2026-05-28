@@ -162,9 +162,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
