@@ -513,6 +513,17 @@ def build_eval_command(
     optional_model_args = []
     if effective_max_concurrent:
         optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
+    # Fast-fail 4xx when DeviceModelSpec opts in (forge LLMs at tight
+    # max_context). EVALS_COMMON only: lm-eval 0.4.3 in EVALS_META rejects
+    # the kwarg.
+    eval_max_retries = getattr(
+        getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
+    )
+    if (
+        eval_max_retries is not None
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+    ):
+        optional_model_args.append(f"max_retries={eval_max_retries}")
 
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
@@ -960,8 +971,21 @@ def main():
 
         # Execute lm_eval for each task.
         logger.info("Running vLLM evals client ...")
+        device_max_context = getattr(
+            getattr(model_spec, "device_model_spec", None), "max_context", None
+        )
         return_codes = []
         for task in eval_config.tasks:
+            # Skip if device can't fit this task's prompts (avoids 4xx retry-storm).
+            min_ctx = getattr(task, "min_context_required", None)
+            if min_ctx and device_max_context and device_max_context < min_ctx:
+                logger.warning(
+                    f"Skipping {task.task_name}: requires max_context >= {min_ctx}, "
+                    f"device provides {device_max_context}."
+                )
+                return_codes.append(0)
+                continue
+
             health_check = prompt_client.get_health()
             if health_check.status_code != 200:
                 logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
