@@ -12,7 +12,6 @@
 #include <thread>
 
 #include "domain/session.hpp"
-#include "domain/slot_types.hpp"
 
 namespace {
 
