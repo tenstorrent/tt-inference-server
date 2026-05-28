@@ -19,7 +19,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONTAINER="tt-wh-glxy-qwen3"
-IMAGE="ghcr.io/tenstorrent/tt-inference-server/tt-voice-assistant:push-button"
+IMAGE="ghcr.io/tenstorrent/tt-inference-server/tt-voice-assistant:wh-glxy-weights"
 LOCAL_APP="$SCRIPT_DIR"
 TT_METAL_SRC="/home/tt-admin/teja/tt-metal"
 
