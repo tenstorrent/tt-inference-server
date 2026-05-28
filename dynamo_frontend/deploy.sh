@@ -212,6 +212,7 @@ docker run -d --name "$WORKER_NAME" \
     -e DYNAMO_COMPONENT=backend \
     -e DYNAMO_ENDPOINT_NAME=generate \
     -e SERVER_MODE=cpp \
+    -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
     -e USE_DEEPSEEK_MD_FORMAT=1 \
