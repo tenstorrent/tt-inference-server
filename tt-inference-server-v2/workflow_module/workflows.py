@@ -81,14 +81,15 @@ class BenchmarksWorkflow(WorkflowExecution):
             )
             return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 1, elapsed, None)
 
+        block_kind = blocks[0].kind
         self.logger.info(
             "✓ task=%s blocks=%d kind=%s (%.1fs)",
             _PREFIX_CACHE_TASK_LABEL,
             len(blocks),
-            blocks[0].kind,
+            block_kind,
             elapsed,
         )
-        return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 0, elapsed, blocks[0].kind)
+        return TaskOutcome(_PREFIX_CACHE_TASK_LABEL, 0, elapsed, block_kind)
 
 
 class SpecTestsWorkflow(WorkflowExecution):
