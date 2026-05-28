@@ -256,11 +256,7 @@ void LLMPipeline::dispatchGeneration(
           "sessionId: {}",
           request.sessionId.value_or("none"));
       disaggregationService_->handleStreamingRequest(
-          request,
-          sessionInfo.registrationHashes.empty()
-              ? 0
-              : sessionInfo.registrationHashes.front(),
-          cb);
+          request, sessionInfo.registrationHashes, cb);
     }
     return;
   }
