@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::domain::llm {
 

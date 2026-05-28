@@ -4,8 +4,18 @@
 #include "services/reasoning_parser.hpp"
 
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::services {
+
+ReasoningParser::ReasoningParser() {
+  const auto [thinkStart, thinkEnd] = tt::utils::tokenizers::thinkTokenIds();
+  thinkStartToken_ = thinkStart;
+  thinkEndToken_ = thinkEnd;
+  thinkTokensEnabled_ =
+      thinkStart != tt::utils::tokenizers::kNoThinkTokenId &&
+      thinkEnd != tt::utils::tokenizers::kNoThinkTokenId;
+}
 
 void ReasoningParser::initializeTask(uint32_t taskId) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -33,14 +43,14 @@ TokenParseResult ReasoningParser::processToken(uint32_t taskId, int64_t tokenId,
 
   TaskState& state = it->second;
 
-  if (tokenId == THINK_START_TOKEN) {
+  if (thinkTokensEnabled_ && tokenId == thinkStartToken_) {
     // Entering reasoning block
     state.in_reasoning = true;
     state.seen_think_start = true;
     TT_LOG_DEBUG("[ReasoningParser] Task {} entered reasoning block", taskId);
     return {ContentType::REASONING, "", false};
 
-  } else if (tokenId == THINK_END_TOKEN) {
+  } else if (thinkTokensEnabled_ && tokenId == thinkEndToken_) {
     // Exiting reasoning block
     if (!state.in_reasoning) {
       TT_LOG_WARN(

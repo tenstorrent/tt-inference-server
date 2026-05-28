@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::sockets {
 
