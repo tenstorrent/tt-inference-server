@@ -12,7 +12,7 @@ import os
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
-    from vllm.inputs import ProcessorInputs, PromptType
+    from vllm.inputs import ProcessorInputs
     from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None

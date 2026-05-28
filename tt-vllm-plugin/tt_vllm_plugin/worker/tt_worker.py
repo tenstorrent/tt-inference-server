@@ -8,7 +8,6 @@ from typing import Optional
 
 import ttnn
 
-import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 

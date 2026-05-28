@@ -440,7 +440,8 @@ class AscendScheduler(Scheduler):
                 )
 
         # Generate grammar bitmask for structured output requests
-        grammar_bitmask = self.structured_output_manager.grammar_bitmask(
+        # TODO: use grammar_bitmask for structured output decoding
+        _grammar_bitmask = self.structured_output_manager.grammar_bitmask(
             self.requests,
             structured_output_request_ids,
             scheduled_spec_decode_tokens,
