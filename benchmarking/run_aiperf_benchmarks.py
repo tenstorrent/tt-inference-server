@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import jwt
 import requests
@@ -43,44 +43,6 @@ from workflows.workflow_types import DeviceTypes
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_path_component(value: str, *, fallback: str = "unknown") -> str:
-    """Return a filesystem-safe single path component.
-
-    Strips directory separators, NUL bytes, and any leading dots so the
-    result can never be ``..`` or an absolute path fragment. Used when
-    interpolating workflow-derived values (model id, scenario name, run
-    label) into output filenames so that a future change which exposes one
-    of those values to external input cannot escape the output directory.
-    """
-    if not value:
-        return fallback
-    cleaned = (
-        value.replace("/", "_")
-        .replace("\\", "_")
-        .replace("\x00", "")
-        .replace("..", "_")
-        .strip()
-        .lstrip(".")
-    )
-    cleaned = "".join(c for c in cleaned if c.isalnum() or c in ("-", "_", "."))
-    return cleaned or fallback
-
-
-def _safe_join_within(base_dir: str, *components: str) -> str:
-    """Join ``components`` under ``base_dir`` and enforce containment.
-
-    Raises ``ValueError`` if the resolved path escapes ``base_dir`` after
-    normalization. Defense-in-depth against tainted filename components.
-    """
-    base_abs = os.path.abspath(base_dir)
-    candidate = os.path.abspath(os.path.join(base_abs, *components))
-    if os.path.commonpath([base_abs, candidate]) != base_abs:
-        raise ValueError(
-            f"Refusing to write outside output directory: {candidate} not under {base_abs}"
-        )
-    return candidate
 
 
 @dataclass
@@ -177,48 +139,29 @@ def parse_aiperf_output(artifact_dir: str) -> Dict[str, float]:
         with open(json_path, "r") as f:
             summary = json.load(f)
 
-        # AIPerf 0.5 inconsistently emits the median: most latency blocks
-        # include "p50", but `time_to_first_token` (and occasionally
-        # others) use "median" instead. Fall back across both spellings
-        # so the report stops rendering "N/A" for an otherwise-populated
-        # row. The aliases are tried left-to-right; the first hit wins.
-        def _pct(metric_block: Dict[str, Any], *keys: str, default: float = 0) -> float:
-            for k in keys:
-                if k in metric_block:
-                    return metric_block[k]
-            return default
-
-        ttft = summary.get("time_to_first_token", {})
-        itl = summary.get("inter_token_latency", {})
-        e2el = summary.get("request_latency", {})
-
-        # Map AIPerf metrics to vLLM-compatible format.
-        # AIPerf summary format: {"metric_name": {"unit": "...", "avg": X, "p50"|"median": Y, ...}}
+        # Map AIPerf metrics to vLLM-compatible format
+        # AIPerf summary format: {"metric_name": {"unit": "...", "avg": X, "p50": Y, ...}}
         metrics = {
             # TTFT metrics (Time To First Token)
-            "mean_ttft_ms": _pct(ttft, "avg", "mean"),
-            "median_ttft_ms": _pct(ttft, "p50", "median"),
-            "p95_ttft_ms": _pct(ttft, "p95"),
-            "p99_ttft_ms": _pct(ttft, "p99"),
-            "std_ttft_ms": _pct(ttft, "std"),
+            "mean_ttft_ms": summary.get("time_to_first_token", {}).get("avg", 0),
+            "median_ttft_ms": summary.get("time_to_first_token", {}).get("p50", 0),
+            "p99_ttft_ms": summary.get("time_to_first_token", {}).get("p99", 0),
+            "std_ttft_ms": summary.get("time_to_first_token", {}).get("std", 0),
             # TPOT metrics (Time Per Output Token)
-            "mean_tpot_ms": _pct(itl, "avg", "mean"),
-            "median_tpot_ms": _pct(itl, "p50", "median"),
-            "p95_tpot_ms": _pct(itl, "p95"),
-            "p99_tpot_ms": _pct(itl, "p99"),
-            "std_tpot_ms": _pct(itl, "std"),
-            # ITL metrics (Inter-Token Latency) -- same source as TPOT.
-            "mean_itl_ms": _pct(itl, "avg", "mean"),
-            "median_itl_ms": _pct(itl, "p50", "median"),
-            "p95_itl_ms": _pct(itl, "p95"),
-            "p99_itl_ms": _pct(itl, "p99"),
-            "std_itl_ms": _pct(itl, "std"),
+            "mean_tpot_ms": summary.get("inter_token_latency", {}).get("avg", 0),
+            "median_tpot_ms": summary.get("inter_token_latency", {}).get("p50", 0),
+            "p99_tpot_ms": summary.get("inter_token_latency", {}).get("p99", 0),
+            "std_tpot_ms": summary.get("inter_token_latency", {}).get("std", 0),
+            # ITL metrics (Inter-Token Latency)
+            "mean_itl_ms": summary.get("inter_token_latency", {}).get("avg", 0),
+            "median_itl_ms": summary.get("inter_token_latency", {}).get("p50", 0),
+            "p99_itl_ms": summary.get("inter_token_latency", {}).get("p99", 0),
+            "std_itl_ms": summary.get("inter_token_latency", {}).get("std", 0),
             # E2EL metrics (End-to-End Latency)
-            "mean_e2el_ms": _pct(e2el, "avg", "mean"),
-            "median_e2el_ms": _pct(e2el, "p50", "median"),
-            "p95_e2el_ms": _pct(e2el, "p95"),
-            "p99_e2el_ms": _pct(e2el, "p99"),
-            "std_e2el_ms": _pct(e2el, "std"),
+            "mean_e2el_ms": summary.get("request_latency", {}).get("avg", 0),
+            "median_e2el_ms": summary.get("request_latency", {}).get("p50", 0),
+            "p99_e2el_ms": summary.get("request_latency", {}).get("p99", 0),
+            "std_e2el_ms": summary.get("request_latency", {}).get("std", 0),
             # Throughput metrics
             "output_token_throughput": summary.get("output_token_throughput", {}).get(
                 "avg", 0
@@ -536,13 +479,7 @@ def send_warmup_requests(
             if prompt_client.env_config.jwt_secret:
                 import jwt as jwt_lib
 
-                # Must match the token_id the inference server's JWT validator
-                # accepts; the rest of the repo uses "debug-test" (see
-                # utils/prompt_client.py, utils/vllm_run_utils.py). The previous
-                # "warmup" value caused every warm-up request to 401 against
-                # the vLLM TT image, which left the model cold for the first
-                # real benchmark run.
-                json_payload = {"team_id": "tenstorrent", "token_id": "debug-test"}
+                json_payload = {"team_id": "tenstorrent", "token_id": "warmup"}
                 token = jwt_lib.encode(
                     json_payload, prompt_client.env_config.jwt_secret, algorithm="HS256"
                 )
@@ -722,18 +659,11 @@ def main():
     else:
         logger.info("Warm-up completed successfully")
 
-    # Create artifact directory (sanitize HF-style "namespace/name" model ids).
-    artifact_base = (
-        venv_config.venv_path
-        / "artifacts"
-        / _safe_path_component(model_spec.model_id, fallback="model")
-    )
+    # Create artifact directory
+    artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
     artifact_base.mkdir(parents=True, exist_ok=True)
 
-    # Normalize output path before mkdir so any relative/symlink segment
-    # is resolved up-front; downstream file writes use _safe_join_within
-    # against this resolved base.
-    args.output_path = os.path.abspath(args.output_path)
+    # Ensure output path exists
     os.makedirs(args.output_path, exist_ok=True)
 
     # Run benchmarks
