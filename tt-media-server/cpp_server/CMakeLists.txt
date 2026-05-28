@@ -208,20 +208,6 @@ if(ENABLE_BLAZE)
     set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     add_subdirectory(tt-llm-engine)
     message(STATUS "tt-llm-engine: ENABLED")
-
-    # FTXUI for the standalone decode_scheduler_tui tool. Header-light, BSD-3.
-    # Only fetched when ENABLE_BLAZE=ON because the tool drives tt-llm-engine.
-    FetchContent_Declare(
-        ftxui
-        GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
-        GIT_TAG        v5.0.0
-        GIT_SHALLOW    TRUE
-    )
-    set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(FTXUI_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-    set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(ftxui)
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
 endif()
@@ -488,35 +474,6 @@ if(ENABLE_BLAZE)
     target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
     target_include_directories(blaze_runner_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    # Standalone TUI for exercising DecodeScheduler without the full server.
-    # Links directly against tt-llm-engine (not llm_runner_lib) so it stays
-    # decoupled from server-side domain/config types.
-    add_executable(decode_scheduler_tui
-        tools/decode_scheduler_tui/main.cpp
-    )
-    if(TARGET TtLlmEngine::Full)
-        target_link_libraries(decode_scheduler_tui PRIVATE TtLlmEngine::Full)
-    elseif(TARGET TtLlmEngine::Core)
-        target_link_libraries(decode_scheduler_tui PRIVATE TtLlmEngine::Core)
-    endif()
-    target_link_libraries(decode_scheduler_tui PRIVATE
-        ftxui::screen
-        ftxui::dom
-        ftxui::component
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(decode_scheduler_tui PRIVATE spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(decode_scheduler_tui PRIVATE spdlog::spdlog)
-    endif()
-    # Same RPATH treatment as the main server so libtt_llm_engine_*.so resolve
-    # without LD_LIBRARY_PATH gymnastics in dev workflows.
-    set_target_properties(decode_scheduler_tui PROPERTIES
-        BUILD_WITH_INSTALL_RPATH TRUE
-        INSTALL_RPATH "$ORIGIN/tt-llm-engine"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 endif()
 
