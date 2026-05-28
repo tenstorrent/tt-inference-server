@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <unordered_set>
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"

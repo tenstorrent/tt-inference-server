@@ -17,6 +17,7 @@
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::blaze {
 BlazeRunner::BlazeRunner(
     const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
@@ -31,8 +32,12 @@ BlazeRunner::BlazeRunner(
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePipelineConfig(config);
+  auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   ds::SchedulerParams managerParams{
-      .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers())};
+      .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers()),
+      .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
+      .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
+  };
   decodeScheduler =
       std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: DecodeScheduler constructed, calling start()...");

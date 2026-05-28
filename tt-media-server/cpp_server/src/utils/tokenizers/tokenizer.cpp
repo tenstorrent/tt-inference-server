@@ -237,6 +237,8 @@ const StaticTokenizerInfo& deepseekR1Info() {
       /*modelName=*/"deepseek-ai/DeepSeek-R1-0528",
       /*stopTokenIds=*/{1},
       /*assistantHeaderSequence=*/{128804},
+      /*thinkStartTokenId=*/128798,
+      /*thinkEndTokenId=*/128799,
   };
   return kInfo;
 }
@@ -266,6 +268,15 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
 
 const StaticTokenizerInfo& staticInfo() {
   return staticInfoFor(config::modelType());
+}
+
+std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model) {
+  const auto& info = staticInfoFor(model);
+  return {info.thinkStartTokenId, info.thinkEndTokenId};
+}
+
+std::pair<int64_t, int64_t> thinkTokenIds() {
+  return thinkTokenIdsFor(config::modelType());
 }
 
 }  // namespace tt::utils::tokenizers
