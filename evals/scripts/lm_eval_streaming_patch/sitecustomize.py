@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+"""Patch lm_eval compatibility issues for external OpenAI-compatible evals.
+
+This module is loaded through PYTHONPATH by the external eval helper to avoid
+editing the installed lm_eval package in-place.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import copy
+import multiprocessing
+import re
+from typing import Dict
+
+
+LOGGER = logging.getLogger(__name__)
+
+MMLU_PRO_REGEX_PATTERNS = {
+    r"answer is \(?([ABCDEFGHIJ])\)?",
+    r"[tT]he best answer is ([A-Z])",
+}
+MMLU_PRO_DEFAULT_FALLBACK = "[invalid]"
+MMLU_PRO_MAX_CHOICES = 10
+
+_ANSWER_LETTER = (
+    r"(?:\*\*)?"
+    r"[\(\[]?\s*([A-J])\s*[\)\]]?"
+    r"(?:\*\*)?"
+    r"(?=[^A-Za-z]|$)"
+)
+_OPTION_PREFIX = r"(?:(?:option|choice)\s*)?"
+_MMLU_PRO_ANSWER_PATTERNS = [
+    re.compile(rf"(?is)\bfinal\s+answer\s*(?:is|:)\s*{_OPTION_PREFIX}{_ANSWER_LETTER}"),
+    re.compile(
+        rf"(?is)\b(?:final\s+)?answer\s*:\s*(?:\*\*)?\s*"
+        rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
+    ),
+    re.compile(
+        rf"(?is)\bthe\s+(?:best\s+|correct\s+)?answer\s+is\s*"
+        rf"{_OPTION_PREFIX}{_ANSWER_LETTER}"
+    ),
+    re.compile(rf"(?is)\b(?:the\s+)?(?:correct|best)\s+option\s+is\s*{_ANSWER_LETTER}"),
+    re.compile(
+        rf"(?is)\b(?:option|choice)\s*{_ANSWER_LETTER}\s*"
+        rf"(?:is\s+)?(?:the\s+)?(?:correct|right|best)\b"
+    ),
+    re.compile(
+        r"\\boxed\s*\{\s*(?:\\(?:text|mathrm|mathbf)\s*\{\s*)?"
+        r"([A-J])\s*(?:\}\s*)?\}"
+    ),
+]
+
+
+def _strip_think_blocks(text: str) -> str:
+    return re.sub(r"(?is)<think>.*?</think>", "", text)
+
+
+def _allowed_mmlu_pro_letters(doc: dict) -> set[str]:
+    options = doc.get("options") or doc.get("choices") or []
+    if not isinstance(options, list):
+        return set("ABCDEFGHIJ")
+    if not options:
+        return set("ABCDEFGHIJ")
+    return {
+        chr(ord("A") + idx) for idx in range(min(len(options), MMLU_PRO_MAX_CHOICES))
+    }
+
+
+def _extract_mmlu_pro_answer(
+    response: str,
+    doc: dict,
+    fallback: str = MMLU_PRO_DEFAULT_FALLBACK,
+) -> str:
+    """Extract the final MMLU-Pro answer letter from common R1 formats.
+
+    The upstream MMLU-Pro task uses a very narrow regex for ``answer is (X)``.
+    DeepSeek-R1 commonly emits equivalent endings such as ``**Answer: X**``,
+    ``Final Answer: X``, or ``\\boxed{\\text{X}}``. Use anchored final-answer
+    forms and select the last valid letter so chain-of-thought alternatives do
+    not win over the final answer.
+    """
+
+    if not isinstance(response, str):
+        return fallback
+
+    text = _strip_think_blocks(response)
+    allowed_letters = _allowed_mmlu_pro_letters(doc)
+    matches: list[tuple[int, str]] = []
+    for pattern in _MMLU_PRO_ANSWER_PATTERNS:
+        for match in pattern.finditer(text):
+            answer = match.group(1).upper()
+            if answer in allowed_letters:
+                matches.append((match.start(), answer))
+
+    if not matches:
+        return fallback
+
+    return sorted(matches, key=lambda item: item[0])[-1][1]
+
+
+def _choice_delta_text(choice: dict) -> tuple[str, str]:
+    """Return (visible_content, reasoning_content) from an SSE choice chunk."""
+
+    if "text" in choice:
+        return str(choice.get("text") or ""), ""
+
+    message = choice.get("message") or {}
+    delta = choice.get("delta") or {}
+
+    content = message.get("content") or delta.get("content") or ""
+    reasoning = (
+        message.get("reasoning")
+        or message.get("reasoning_content")
+        or delta.get("reasoning")
+        or delta.get("reasoning_content")
+        or ""
+    )
+    return str(content), str(reasoning)
+
+
+def _accumulate_sse_line(
+    line: str, visible: Dict[int, str], reasoning: Dict[int, str]
+) -> bool:
+    """Accumulate one SSE line. Return True when the stream is done."""
+
+    line = line.strip()
+    if not line or not line.startswith("data:"):
+        return False
+
+    data = line[len("data:") :].strip()
+    if data == "[DONE]":
+        return True
+
+    try:
+        chunk = json.loads(data)
+    except json.JSONDecodeError:
+        return False
+
+    for choice in chunk.get("choices", []):
+        idx = int(choice.get("index", 0))
+        content_text, reasoning_text = _choice_delta_text(choice)
+        if content_text:
+            visible[idx] = visible.get(idx, "") + content_text
+        if reasoning_text:
+            reasoning[idx] = reasoning.get(idx, "") + reasoning_text
+
+    return False
+
+
+def _consume_sync_sse_stream(response) -> dict:
+    visible: Dict[int, str] = {}
+    reasoning: Dict[int, str] = {}
+
+    try:
+        for line in response.iter_lines(decode_unicode=True):
+            if _accumulate_sse_line(line or "", visible, reasoning):
+                break
+    except Exception as exc:
+        if visible or reasoning:
+            LOGGER.warning(
+                "Streaming interrupted (%r). Returning partial output for %d choice(s).",
+                exc,
+                len(set(visible) | set(reasoning)),
+            )
+            return _as_generation_response(visible, reasoning, partial_error=repr(exc))
+        raise
+
+    return _as_generation_response(visible, reasoning)
+
+
+async def _consume_sse_stream(self, response) -> dict:
+    """Read SSE chunks and return a shape usable by lm_eval parsers.
+
+    The stock lm_eval parser accumulates completion-style ``choice.text`` only.
+    TT Console's chat endpoint streams OpenAI-compatible chat deltas, where
+    text arrives as ``choice.delta.content`` and DeepSeek reasoning may arrive as
+    ``choice.delta.reasoning``.
+    """
+
+    visible: Dict[int, str] = {}
+    reasoning: Dict[int, str] = {}
+
+    try:
+        while True:
+            line_bytes = await response.content.readline()
+            if not line_bytes:
+                break
+
+            line = line_bytes.decode("utf-8")
+            if _accumulate_sse_line(line, visible, reasoning):
+                break
+    except Exception as exc:
+        if visible or reasoning:
+            LOGGER.warning(
+                "Streaming interrupted (%r). Returning partial output for %d choice(s).",
+                exc,
+                len(set(visible) | set(reasoning)),
+            )
+            return _as_generation_response(visible, reasoning, partial_error=repr(exc))
+        raise
+
+    return _as_generation_response(visible, reasoning)
+
+
+def _model_call(
+    self,
+    messages,
+    *,
+    generate: bool = True,
+    gen_kwargs=None,
+    **kwargs,
+):
+    import requests
+    from tenacity import RetryError
+
+    gen_kwargs_copy = copy.deepcopy(gen_kwargs)
+    payload = self._create_payload(
+        self.create_message(messages),
+        generate=generate,
+        gen_kwargs=gen_kwargs_copy,
+        seed=self._seed,
+        eos=self.eos_string,
+        **kwargs,
+    )
+    is_streaming = generate and str(payload.get("stream", False)).lower() == "true"
+
+    if not is_streaming:
+        return self._tt_original_model_call(
+            messages,
+            generate=generate,
+            gen_kwargs=gen_kwargs,
+            **kwargs,
+        )
+
+    try:
+        response = requests.post(
+            self.base_url,
+            json=payload,
+            headers=self.header,
+            verify=self.verify_certificate,
+            stream=True,
+        )
+        if not response.ok:
+            LOGGER.warning(
+                "API request failed with error message: %s. Retrying...",
+                response.text,
+            )
+        response.raise_for_status()
+        return _consume_sync_sse_stream(response)
+    except RetryError:
+        LOGGER.error(
+            "API request failed after multiple retries. Please check the API status."
+        )
+        return None
+
+
+def _as_generation_response(
+    visible: Dict[int, str],
+    reasoning: Dict[int, str],
+    *,
+    partial_error: str | None = None,
+) -> dict:
+    choices = []
+    for idx in sorted(set(visible) | set(reasoning)):
+        # Preserve reasoning traces in samples so generation-length reports can
+        # measure total output. When visible content is available, wrap reasoning
+        # in a standard think block; the R1 eval postprocessor strips that block
+        # before answer extraction, avoiding slow symbolic checks on the trace.
+        visible_text = visible.get(idx, "")
+        reasoning_text = reasoning.get(idx, "")
+        if visible_text and reasoning_text:
+            text = f"<think>\n{reasoning_text}\n</think>\n{visible_text}"
+        else:
+            text = visible_text or reasoning_text
+        if partial_error is not None:
+            text = f"__PARTIAL_OUTPUT__ ({partial_error}): {text}"
+        choices.append(
+            {
+                "index": idx,
+                "text": text,
+                "message": {
+                    "role": "assistant",
+                    "content": text,
+                },
+            }
+        )
+    return {"choices": choices}
+
+
+def _filter_livecodebench_sample(self, sample: dict) -> dict:
+    """Keep LiveCodeBench sample logs useful without dumping every test field.
+
+    Some lm_eval builds call this hook but do not define it, causing
+    ``samples_livecodebench_*.jsonl`` to be created empty. The prompt, response,
+    metrics, and core problem statement are enough for smoke/debug workflows.
+    """
+
+    doc = sample.get("doc")
+    if isinstance(doc, dict):
+        keep_doc_keys = [
+            "question_id",
+            "question_title",
+            "question_content",
+            "starter_code",
+            "difficulty",
+            "platform",
+            "contest_date",
+        ]
+        sample = dict(sample)
+        sample["doc"] = {key: doc[key] for key in keep_doc_keys if key in doc}
+    return sample
+
+
+def _codegen_check_correctness_spawn_safe(sample, generation, timeout, debug=False):
+    """LiveCodeBench scorer fix for platforms where multiprocessing uses spawn.
+
+    The installed task defines its process target as a nested function, which is
+    not pickleable under macOS's default ``spawn`` multiprocessing mode. The
+    same module already provides an equivalent top-level helper, so use that.
+    """
+
+    try:
+        from lm_eval.tasks.livecodebench import utils as livecodebench_utils
+    except ImportError:
+        from . import utils as livecodebench_utils  # type: ignore
+
+    manager = multiprocessing.Manager()
+    result = manager.list()
+    metadata_list = manager.list()
+    process = multiprocessing.Process(
+        target=livecodebench_utils._temp_run_helper,
+        args=(sample, generation, debug, result, metadata_list, timeout),
+    )
+    process.start()
+
+    in_outs = json.loads(sample["input_output"])
+    global_timeout = (timeout + 1) * len(in_outs["inputs"])
+    if debug:
+        LOGGER.info("LiveCodeBench global timeout = %s", global_timeout)
+    process.join(timeout=global_timeout)
+    if process.is_alive():
+        process.kill()
+
+    if not result:
+        return [-1 for _ in range(len(in_outs["inputs"]))], {
+            "error_code": -1,
+            "error_message": "No result returned before timeout",
+        }
+
+    metadata = metadata_list[0] if metadata_list else {}
+    return result[0], metadata
+
+
+def _patch_livecodebench_utils_globals(globals_dict: dict | None) -> None:
+    if not isinstance(globals_dict, dict):
+        return
+    if "codegen_check_correctness" not in globals_dict:
+        return
+    if "codegen_metrics" not in globals_dict:
+        return
+    if "postprocess_generation" not in globals_dict:
+        return
+
+    current = globals_dict["codegen_check_correctness"]
+    if getattr(current, "_tt_spawn_safe_patch", False):
+        return
+
+    _codegen_check_correctness_spawn_safe._tt_spawn_safe_patch = True
+    globals_dict["codegen_check_correctness"] = _codegen_check_correctness_spawn_safe
+
+
+def _patch_configurable_task_process_results(ConfigurableTask) -> None:
+    original = ConfigurableTask.process_results
+    if getattr(original, "_tt_livecodebench_process_results_patch", False):
+        return
+
+    def process_results_with_livecodebench_patch(self, doc, results):
+        task_process_results = getattr(
+            getattr(self, "config", None),
+            "process_results",
+            None,
+        )
+        if callable(task_process_results):
+            _patch_livecodebench_utils_globals(
+                getattr(task_process_results, "__globals__", None)
+            )
+        return original(self, doc, results)
+
+    process_results_with_livecodebench_patch._tt_livecodebench_process_results_patch = (
+        True
+    )
+    process_results_with_livecodebench_patch._tt_original_process_results = original
+    ConfigurableTask.process_results = process_results_with_livecodebench_patch
+
+
+def _patch_mmlu_pro_regex_filter(RegexFilter) -> None:
+    original = RegexFilter.apply
+    if getattr(original, "_tt_mmlu_pro_robust_extract_patch", False):
+        return
+
+    def apply_with_mmlu_pro_robust_extract(self, resps, docs):
+        if getattr(self, "regex_pattern", None) not in MMLU_PRO_REGEX_PATTERNS:
+            return original(self, resps, docs)
+
+        filtered_resps = []
+        fallback = getattr(self, "fallback", MMLU_PRO_DEFAULT_FALLBACK)
+        for response_set, doc in zip(resps, docs):
+            filtered_resps.append(
+                [
+                    _extract_mmlu_pro_answer(response, doc, fallback=fallback)
+                    for response in response_set
+                ]
+            )
+        return filtered_resps
+
+    apply_with_mmlu_pro_robust_extract._tt_mmlu_pro_robust_extract_patch = True
+    apply_with_mmlu_pro_robust_extract._tt_original_apply = original
+    RegexFilter.apply = apply_with_mmlu_pro_robust_extract
+
+
+def _patch_lm_eval() -> None:
+    try:
+        from lm_eval.models.api_models import TemplateAPI
+        from lm_eval.api.task import ConfigurableTask
+        from lm_eval.loggers.evaluation_tracker import EvaluationTracker
+        from lm_eval.filters.extraction import RegexFilter
+    except ModuleNotFoundError:
+        # PYTHONPATH also reaches helper Python tools such as the redactor, which
+        # may run outside the lm_eval venv. Only lm_eval processes need this.
+        return
+    except Exception as exc:  # pragma: no cover - startup safety
+        LOGGER.warning("Could not install lm_eval streaming patch: %r", exc)
+        return
+
+    if getattr(TemplateAPI, "_tt_chat_streaming_patch", False):
+        return
+
+    TemplateAPI._tt_original_model_call = TemplateAPI.model_call
+    TemplateAPI.model_call = _model_call
+    TemplateAPI._consume_sse_stream = _consume_sse_stream
+    TemplateAPI._tt_chat_streaming_patch = True
+
+    if not hasattr(EvaluationTracker, "_filter_livecodebench_sample"):
+        EvaluationTracker._filter_livecodebench_sample = _filter_livecodebench_sample
+
+    _patch_configurable_task_process_results(ConfigurableTask)
+    _patch_mmlu_pro_regex_filter(RegexFilter)
+
+    try:
+        from lm_eval.tasks.livecodebench import utils as livecodebench_utils
+    except ModuleNotFoundError:
+        return
+
+    _patch_livecodebench_utils_globals(vars(livecodebench_utils))
+
+
+_patch_lm_eval()
