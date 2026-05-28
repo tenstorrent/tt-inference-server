@@ -159,6 +159,7 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
+        req->kv_position_id = --acquired->numberOfMatchedTokens;
         applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.hashes);
@@ -255,11 +256,7 @@ void LLMPipeline::dispatchGeneration(
           "sessionId: {}",
           request.sessionId.value_or("none"));
       disaggregationService_->handleStreamingRequest(
-          request,
-          sessionInfo.registrationHashes.empty()
-              ? 0
-              : sessionInfo.registrationHashes.front(),
-          cb);
+          request, sessionInfo.registrationHashes, cb);
     }
     return;
   }

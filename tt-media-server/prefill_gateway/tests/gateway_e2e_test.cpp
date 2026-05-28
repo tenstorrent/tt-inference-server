@@ -157,7 +157,8 @@ class FakeDecode {
  public:
   FakeDecode(const std::string& gatewayHost, uint16_t gatewayPort) {
     sm_.initializeAsClient(gatewayHost, gatewayPort);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
 
     sm_.registerHandler<tt::sockets::PrefillResultMessage>(
         "prefill_result", [this](const tt::sockets::PrefillResultMessage& msg) {
@@ -181,7 +182,14 @@ class FakeDecode {
 
   void sendRequest(uint32_t taskId, size_t registrationHash = 0) {
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.registration_hash = registrationHash;
+    if (registrationHash != 0)
+      req.registration_hashes = {static_cast<uint64_t>(registrationHash)};
+    sm_.sendObject("prefill_request", req);
+  }
+
+  void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.registration_hashes = std::move(registrationHashes);
     sm_.sendObject("prefill_request", req);
   }
 
@@ -228,7 +236,8 @@ class GatewayHarness {
 
     for (const auto& [host, port] : prefills) {
       auto sm = std::make_unique<tt::sockets::SocketManager>();
-      sm->setReconnectBackoff(50, 500);
+      sm->setReconnectBackoff(std::chrono::milliseconds(50),
+                              std::chrono::milliseconds(500));
       sm->initializeAsClient(host, port);
       prefillSms_.push_back(std::move(sm));
     }
@@ -346,7 +355,8 @@ class FakeZmqPrefill {
         routerPort_(routerPort),
         maxInFlight_(maxInFlight) {
     sm_.initializeAsClient(routerHost_, routerPort_);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
   }
 
   ~FakeZmqPrefill() { stop(); }
@@ -595,6 +605,28 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   uint32_t total =
       prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount();
   EXPECT_EQ(total, 1u);
+}
+
+TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
+  const std::vector<uint64_t> hashes = {11, 22, 33};
+  decode_->sendRequest(/*taskId=*/2, hashes);
+
+  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
+  auto assignments = decode_->assignments();
+  ASSERT_EQ(assignments.size(), 1u);
+  ASSERT_TRUE(assignments[0].server_id == prefillA_->serverId() ||
+              assignments[0].server_id == prefillB_->serverId());
+
+  FakePrefill* assignedPrefill =
+      assignments[0].server_id == prefillA_->serverId() ? prefillA_.get()
+                                                        : prefillB_.get();
+  ASSERT_TRUE(
+      waitFor([&] { return assignedPrefill->receivedTaskCount() >= 1; }));
+
+  auto request = assignedPrefill->takeLastRequest();
+  ASSERT_TRUE(request.has_value());
+  EXPECT_EQ(request->task_id, 2u);
+  EXPECT_EQ(request->registration_hashes, hashes);
 }
 
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {

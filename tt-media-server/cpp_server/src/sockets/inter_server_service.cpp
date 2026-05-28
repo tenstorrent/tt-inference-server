@@ -127,7 +127,7 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    uint32_t taskId, size_t registrationHash,
+    uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling) {
@@ -136,7 +136,7 @@ bool InterServerService::sendPrefillRequest(
   }
 
   PrefillRequestMessage message(taskId);
-  message.registration_hash = registrationHash;
+  message.registration_hashes = registrationHashes;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
   message.slot_id = slotId;

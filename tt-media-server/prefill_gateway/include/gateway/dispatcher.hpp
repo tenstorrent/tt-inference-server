@@ -86,7 +86,7 @@ class Dispatcher {
 
   struct InFlightEntry {
     std::string prefill_id;
-    size_t registration_hash = 0;
+    uint64_t affinity_key = 0;
     Clock::time_point started_at;
   };
 
