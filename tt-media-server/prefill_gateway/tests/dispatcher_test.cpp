@@ -18,7 +18,7 @@ namespace {
 struct CapturedRequest {
   std::string prefillServerId;
   uint32_t taskId;
-  size_t registrationHash;
+  std::vector<uint64_t> registrationHashes;
 };
 
 struct CapturedCancel {
@@ -39,10 +39,7 @@ class DispatcherTest : public ::testing::Test {
     senders.sendRequestToPrefill =
         [this](const std::string& serverId,
                const tt::sockets::PrefillRequestMessage& m) {
-          requests.push_back({serverId, m.task_id,
-                              m.registration_hashes.empty()
-                                  ? 0
-                                  : m.registration_hashes.front()});
+          requests.push_back({serverId, m.task_id, m.registration_hashes});
           return prefillSendSucceeds;
         };
     senders.sendCancelToPrefill =
@@ -75,6 +72,13 @@ class DispatcherTest : public ::testing::Test {
                                                  uint64_t hash = 0) {
     tt::sockets::PrefillRequestMessage m(taskId);
     if (hash != 0) m.registration_hashes = {hash};
+    return m;
+  }
+
+  tt::sockets::PrefillRequestMessage makeRequest(uint32_t taskId,
+                                                 std::vector<uint64_t> hashes) {
+    tt::sockets::PrefillRequestMessage m(taskId);
+    m.registration_hashes = std::move(hashes);
     return m;
   }
 
@@ -112,6 +116,17 @@ TEST_F(DispatcherTest, HealthyPrefillReceivesRequestAndDecodeGetsAssignment) {
   EXPECT_TRUE(results.empty());
   EXPECT_EQ(assignments[0].task_id, 42u);
   EXPECT_EQ(assignments[0].server_id, requests[0].prefillServerId);
+}
+
+TEST_F(DispatcherTest, ForwardsAllRegistrationHashesToPrefill) {
+  markAllHealthy();
+  const std::vector<uint64_t> hashes = {11, 22, 33};
+
+  dispatcher->onPrefillRequest(makeRequest(42, hashes));
+
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].taskId, 42u);
+  EXPECT_EQ(requests[0].registrationHashes, hashes);
 }
 
 TEST_F(DispatcherTest, AffinityCacheHitDrivesStickyRouting) {

@@ -187,6 +187,12 @@ class FakeDecode {
     sm_.sendObject("prefill_request", req);
   }
 
+  void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.registration_hashes = std::move(registrationHashes);
+    sm_.sendObject("prefill_request", req);
+  }
+
   void sendCancel(uint32_t taskId) {
     tt::sockets::CancelPrefillMessage cancel;
     cancel.task_id = taskId;
@@ -599,6 +605,28 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   uint32_t total =
       prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount();
   EXPECT_EQ(total, 1u);
+}
+
+TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
+  const std::vector<uint64_t> hashes = {11, 22, 33};
+  decode_->sendRequest(/*taskId=*/2, hashes);
+
+  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
+  auto assignments = decode_->assignments();
+  ASSERT_EQ(assignments.size(), 1u);
+  ASSERT_TRUE(assignments[0].server_id == prefillA_->serverId() ||
+              assignments[0].server_id == prefillB_->serverId());
+
+  FakePrefill* assignedPrefill =
+      assignments[0].server_id == prefillA_->serverId() ? prefillA_.get()
+                                                        : prefillB_.get();
+  ASSERT_TRUE(
+      waitFor([&] { return assignedPrefill->receivedTaskCount() >= 1; }));
+
+  auto request = assignedPrefill->takeLastRequest();
+  ASSERT_TRUE(request.has_value());
+  EXPECT_EQ(request->task_id, 2u);
+  EXPECT_EQ(request->registration_hashes, hashes);
 }
 
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
