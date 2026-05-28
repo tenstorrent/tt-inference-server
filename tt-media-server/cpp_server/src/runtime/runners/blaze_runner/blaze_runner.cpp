@@ -551,7 +551,8 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   auto taskId = slotContext.taskId.value();
 
   slotContext.tokensGenerated++;
-  slotContext.currentPosition = output.position_id;
+  slotContext.currentPosition =
+      decodeScheduler->get_current_position(output.slot_id);
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,

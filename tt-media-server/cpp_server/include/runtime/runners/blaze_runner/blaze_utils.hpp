@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
@@ -72,14 +74,17 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
                                          const tt::domain::llm::Sequence& seq,
                                          uint32_t currentPosition) {
+  (void)currentPosition;
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    req.gen.position_id = *seq.getKVPositionId();
-  } else {
-    req.gen.position_id = currentPosition;
+  if (seq.getKVPositionId().has_value() && !req.tokens.empty()) {
+    // Newer tt-llm-engine derives disaggregated CONTINUE position from
+    // tokens.size() - 1 instead of GenerationParams::position_id.
+    std::vector<uint32_t> tokens(*seq.getKVPositionId() + 1, ds::EMPTY_TOKEN);
+    tokens.back() = req.tokens.back();
+    req.tokens = std::move(tokens);
   }
   return req;
 }

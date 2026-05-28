@@ -125,10 +125,10 @@ struct LLMRequest : BaseRequest {
   bool disaggregated = false;  // True if this is a disaggregated request
 
   // For disaggregated decode: position in KV Cache of the migrated token (the
-  // first token produced by the prefill server) in the per-user KV cache. The
-  // decode scheduler uses this as `position_id` so the migrated token lands at
-  // the correct KV slot and `current_position` advances to it + 1. Set iff
-  // `disaggregated == true`.
+  // first token produced by the prefill server) in the per-user KV cache.
+  // The Blaze adapter maps this to the scheduler's CONTINUE position contract
+  // so the migrated token lands at the correct KV slot and current_position
+  // advances to it + 1. Set iff `disaggregated == true`.
   std::optional<uint32_t> kv_position_id;
 
   std::optional<bool> disaggregation_override;
