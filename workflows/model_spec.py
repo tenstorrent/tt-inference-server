@@ -1168,44 +1168,19 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
 
-# Cache of additional catalog environments loaded on demand. Avoids paying the
-# YAML-load cost up front for environments that may never be used in a given run.
-_MODEL_SPECS_BY_ENV: Dict[str, Dict[str, ModelSpec]] = {_MODEL_SPECS_ENV: MODEL_SPECS}
-
-
-def _load_model_specs_for_env(env: str) -> Dict[str, ModelSpec]:
-    """Return the model_id->ModelSpec dict for a given catalog env, loading
-    YAMLs from workflows/model_specs/<env>/ on first access."""
-    if env not in _VALID_MODEL_SPECS_ENVS:
-        raise ValueError(
-            f"Unknown catalog env {env!r}; must be one of {_VALID_MODEL_SPECS_ENVS}"
-        )
-    cached = _MODEL_SPECS_BY_ENV.get(env)
-    if cached is not None:
-        return cached
-    templates = [
-        template
-        for fname in _CATALOG_FILES
-        for template in load_templates_from_yaml(_MODEL_SPECS_DIR / env / fname)
-    ]
-    specs_map = get_model_spec_map(templates)
-    _MODEL_SPECS_BY_ENV[env] = specs_map
-    return specs_map
-
-
 def get_runtime_model_spec(
     model: str,
     device: str,
     engine: Optional[str] = None,
     impl: Optional[str] = None,
-    env: Optional[str] = None,
 ) -> Tuple[ModelSpec, str, str]:
-    """Select a ModelSpec from the catalog for the given env.
+    """Select a ModelSpec from the active catalog.
 
-    When *env* is None or matches the import-time MODEL_SPECS_ENV, this reads
-    from the already-loaded MODEL_SPECS dict. When *env* names a different
-    catalog environment (e.g. "dev" when the host default is "prod"), the
-    YAMLs under workflows/model_specs/<env>/ are loaded lazily on first call.
+    The active catalog is whatever was loaded into MODEL_SPECS at module
+    import time, controlled by MODEL_SPECS_ENV (default "prod"). Callers that
+    want the dev catalog must set MODEL_SPECS_ENV=dev in the environment
+    before importing this module -- run.py does this automatically when
+    --dev-mode is on the command line.
 
     Pure function -- does **not** mutate any external state.
 
@@ -1214,16 +1189,9 @@ def get_runtime_model_spec(
     """
     device_type = DeviceTypes.from_string(device)
 
-    specs_map = (
-        MODEL_SPECS
-        if env is None or env == _MODEL_SPECS_ENV
-        else _load_model_specs_for_env(env)
-    )
-    env_label = env or _MODEL_SPECS_ENV
-
     candidate_specs = [
         spec
-        for spec in specs_map.values()
+        for spec in MODEL_SPECS.values()
         if spec.model_name == model
         and spec.device_type == device_type
         and (not engine or spec.inference_engine == engine)
@@ -1235,7 +1203,7 @@ def get_runtime_model_spec(
         impl_msg = f", impl={impl}" if impl else ""
         raise ValueError(
             f"Model:={model} does not support device:={device}{engine_msg}{impl_msg} "
-            f"in the {env_label!r} catalog"
+            f"in the {_MODEL_SPECS_ENV!r} catalog"
         )
 
     default_spec = next(
@@ -1247,12 +1215,12 @@ def get_runtime_model_spec(
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine} in the {env_label!r} catalog; "
+            f"device:={device}, engine:={engine} in the {_MODEL_SPECS_ENV!r} catalog; "
             f"you must pass --impl or --engine"
         )
 
     resolved_impl = selected_spec.impl.impl_name
     resolved_engine = engine if engine else selected_spec.inference_engine
 
-    model_spec = specs_map[selected_spec.model_id]
+    model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine

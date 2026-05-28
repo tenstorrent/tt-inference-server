@@ -3,20 +3,28 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import argparse
-import getpass
-import logging
 import os
-import shutil
-import subprocess
 import sys
-from datetime import datetime
-from pathlib import Path
 
-from workflows.bootstrap_uv import bootstrap_uv
-from workflows.device_utils import infer_default_device
-from workflows.log_setup import setup_run_logger
-from workflows.model_spec import (
+# Pre-argparse: translate --dev-mode to MODEL_SPECS_ENV=dev before importing
+# workflows.model_spec, which builds MODEL_SPECS at module import time.
+# This keeps every consumer of MODEL_SPECS (argparse choices, eval_config,
+# stress_tests, subprocess inheritance) on the same catalog as the resolver.
+if "--dev-mode" in sys.argv[1:]:
+    os.environ["MODEL_SPECS_ENV"] = "dev"
+
+import argparse  # noqa: E402
+import getpass  # noqa: E402
+import logging  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from datetime import datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from workflows.bootstrap_uv import bootstrap_uv  # noqa: E402
+from workflows.device_utils import infer_default_device  # noqa: E402
+from workflows.log_setup import setup_run_logger  # noqa: E402
+from workflows.model_spec import (  # noqa: E402
     MODEL_SPECS,
     ModelSpec,
     export_model_specs_json,
@@ -562,8 +570,9 @@ def resolve_runtime(args):
     """
     # Spec-source precedence:
     #   1. --runtime-model-spec-json wins outright (taken as-is, no overrides applied).
-    #   2. --dev-mode resolves from the dev catalog (workflows/model_specs/dev/).
-    #   3. Default: the prod catalog already loaded into MODEL_SPECS at import time.
+    #   2. Otherwise resolve from MODEL_SPECS. MODEL_SPECS is loaded from
+    #      workflows/model_specs/<env>/ where env is set by the top-of-file
+    #      argv pre-scan: --dev-mode → MODEL_SPECS_ENV=dev, else prod.
     if args.runtime_model_spec_json:
         logger.warning(
             f"No validation is done, loading runtime model spec from JSON: "
@@ -572,13 +581,11 @@ def resolve_runtime(args):
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         runtime_config = RuntimeConfig.from_args(args)
     else:
-        catalog_env = "dev" if args.dev_mode else None
         model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
             model=args.model,
             device=args.device,
             engine=args.engine,
             impl=args.impl,
-            env=catalog_env,
         )
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
