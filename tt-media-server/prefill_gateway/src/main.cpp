@@ -35,10 +35,10 @@ struct GatewayConfig {
   std::vector<PrefillEndpoint> prefills;
   std::string prefillBindHost = "*";
   uint16_t prefillBindPort = 0;
-  uint32_t prefillStaleTimeoutMs = 3000;
-  uint32_t requestTimeoutMs = 300000;
-  uint32_t timeoutWindowMs = 60000;
-  uint32_t timeoutCooldownMs = 30000;
+  std::chrono::milliseconds prefillStaleTimeout{3000};
+  std::chrono::milliseconds requestTimeout{300000};
+  std::chrono::milliseconds timeoutWindow{60000};
+  std::chrono::milliseconds timeoutCooldown{30000};
   uint32_t timeoutThreshold = 3;
 };
 
@@ -75,13 +75,13 @@ void printUsage(const char* prog) {
          "--prefill=192.168.1.2:7200\n";
 }
 
-std::optional<PrefillEndpoint> parsePrefillArg(const std::string& value) {
+std::optional<PrefillEndpoint> parsePrefillArg(std::string_view value) {
   auto colon = value.rfind(':');
   if (colon == std::string::npos || colon == 0 || colon == value.size() - 1) {
     return std::nullopt;
   }
-  std::string host = value.substr(0, colon);
-  int portInt = std::stoi(value.substr(colon + 1));
+  std::string host(value.substr(0, colon));
+  int portInt = std::stoi(std::string(value.substr(colon + 1)));
   if (portInt <= 0 || portInt > 65535) return std::nullopt;
   return PrefillEndpoint{std::move(host), static_cast<uint16_t>(portInt)};
 }
@@ -92,6 +92,18 @@ std::optional<std::string_view> flagValue(std::string_view arg,
     return arg.substr(prefix.size());
   }
   return std::nullopt;
+}
+
+std::optional<std::chrono::milliseconds> parseMilliseconds(
+    std::string_view value, std::string_view flagName, bool allowZero) {
+  const int timeoutMs = std::stoi(std::string(value));
+  if (timeoutMs < 0 || (!allowZero && timeoutMs == 0)) {
+    std::cerr << "Invalid " << flagName << " value: " << value << " (expected "
+              << (allowZero ? "non-negative" : "positive")
+              << " milliseconds)\n";
+    return std::nullopt;
+  }
+  return std::chrono::milliseconds(timeoutMs);
 }
 
 std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
@@ -111,46 +123,42 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
     }
 
     if (auto v = flagValue(arg, "--prefill-stale-timeout-ms=")) {
-      int timeoutMs = std::stoi(std::string(*v));
-      if (timeoutMs <= 0) {
-        std::cerr << "Invalid --prefill-stale-timeout-ms value: " << *v
-                  << " (expected positive milliseconds)\n";
+      auto timeout = parseMilliseconds(*v, "--prefill-stale-timeout-ms",
+                                       /*allowZero=*/false);
+      if (!timeout) {
         return std::nullopt;
       }
-      cfg.prefillStaleTimeoutMs = static_cast<uint32_t>(timeoutMs);
+      cfg.prefillStaleTimeout = *timeout;
       continue;
     }
 
     if (auto v = flagValue(arg, "--request-timeout-ms=")) {
-      int timeoutMs = std::stoi(std::string(*v));
-      if (timeoutMs < 0) {
-        std::cerr << "Invalid --request-timeout-ms value: " << *v
-                  << " (expected non-negative milliseconds)\n";
+      auto timeout =
+          parseMilliseconds(*v, "--request-timeout-ms", /*allowZero=*/true);
+      if (!timeout) {
         return std::nullopt;
       }
-      cfg.requestTimeoutMs = static_cast<uint32_t>(timeoutMs);
+      cfg.requestTimeout = *timeout;
       continue;
     }
 
     if (auto v = flagValue(arg, "--timeout-window-ms=")) {
-      int timeoutMs = std::stoi(std::string(*v));
-      if (timeoutMs < 0) {
-        std::cerr << "Invalid --timeout-window-ms value: " << *v
-                  << " (expected non-negative milliseconds)\n";
+      auto timeout =
+          parseMilliseconds(*v, "--timeout-window-ms", /*allowZero=*/true);
+      if (!timeout) {
         return std::nullopt;
       }
-      cfg.timeoutWindowMs = static_cast<uint32_t>(timeoutMs);
+      cfg.timeoutWindow = *timeout;
       continue;
     }
 
     if (auto v = flagValue(arg, "--timeout-cooldown-ms=")) {
-      int timeoutMs = std::stoi(std::string(*v));
-      if (timeoutMs < 0) {
-        std::cerr << "Invalid --timeout-cooldown-ms value: " << *v
-                  << " (expected non-negative milliseconds)\n";
+      auto timeout =
+          parseMilliseconds(*v, "--timeout-cooldown-ms", /*allowZero=*/true);
+      if (!timeout) {
         return std::nullopt;
       }
-      cfg.timeoutCooldownMs = static_cast<uint32_t>(timeoutMs);
+      cfg.timeoutCooldown = *timeout;
       continue;
     }
 
@@ -166,7 +174,7 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
     }
 
     if (auto v = flagValue(arg, "--prefill=")) {
-      auto ep = parsePrefillArg(std::string(*v));
+      auto ep = parsePrefillArg(*v);
       if (!ep) {
         std::cerr << "Invalid --prefill value: " << *v
                   << " (expected HOST:PORT)\n";
@@ -177,7 +185,7 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
     }
 
     if (auto v = flagValue(arg, "--prefill-bind=")) {
-      auto ep = parsePrefillArg(std::string(*v));
+      auto ep = parsePrefillArg(*v);
       if (!ep) {
         std::cerr << "Invalid --prefill-bind value: " << *v
                   << " (expected HOST:PORT)\n";
@@ -202,9 +210,9 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
   return cfg;
 }
 
-std::string socketTransportFromEnv() {
+std::string_view socketTransportFromEnv() {
   const char* value = std::getenv("SOCKET_TRANSPORT");
-  return value ? std::string(value) : tt::sockets::transport_names::TCP;
+  return value ? std::string_view(value) : tt::sockets::transport_names::TCP;
 }
 
 volatile sig_atomic_t gStop = 0;
@@ -263,7 +271,7 @@ int main(int argc, char** argv) {
   if (!useZmqPrefillRouter) {
     for (const auto& ep : cfg.prefills) {
       auto sm = std::make_unique<tt::sockets::SocketManager>();
-      sm->setReconnectBackoff(/*initial_ms=*/1000, /*max_ms=*/5000);
+      sm->setReconnectBackoff(std::chrono::seconds(1), std::chrono::seconds(5));
       if (!sm->initializeAsClient(ep.host, ep.port)) {
         TT_LOG_ERROR("[Gateway] Failed to init client socket to {}:{}", ep.host,
                      ep.port);
@@ -325,9 +333,8 @@ int main(int argc, char** argv) {
   };
 
   tt::gateway::Dispatcher::Options dispatcherOptions{
-      std::chrono::milliseconds(cfg.requestTimeoutMs),
-      std::chrono::milliseconds(cfg.timeoutWindowMs),
-      std::chrono::milliseconds(cfg.timeoutCooldownMs), cfg.timeoutThreshold};
+      cfg.requestTimeout, cfg.timeoutWindow, cfg.timeoutCooldown,
+      cfg.timeoutThreshold};
   dispatcherPtr = std::make_unique<tt::gateway::Dispatcher>(
       registry, affinity, std::move(senders), dispatcherOptions);
 
@@ -374,8 +381,7 @@ int main(int argc, char** argv) {
         }
       });
 
-  const auto prefillStaleTimeout =
-      std::chrono::milliseconds(cfg.prefillStaleTimeoutMs);
+  const auto prefillStaleTimeout = cfg.prefillStaleTimeout;
   std::jthread watchdogThread;
   if (useZmqPrefillRouter) {
     watchdogThread =
@@ -394,7 +400,7 @@ int main(int argc, char** argv) {
   }
 
   std::jthread requestTimeoutThread;
-  if (cfg.requestTimeoutMs > 0) {
+  if (cfg.requestTimeout.count() > 0) {
     requestTimeoutThread =
         std::jthread([&dispatcherPtr](std::stop_token stopToken) {
           while (!stopToken.stop_requested()) {

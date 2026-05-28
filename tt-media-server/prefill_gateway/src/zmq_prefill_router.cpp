@@ -99,21 +99,19 @@ std::vector<std::string> ZmqPrefillRouter::takeStaleServers(
   std::vector<std::string> staleServers;
 
   std::lock_guard<std::mutex> lock(peer_mutex_);
-  for (auto it = last_seen_by_server_.begin();
-       it != last_seen_by_server_.end();) {
-    if (now - it->second <= timeout) {
-      ++it;
-      continue;
+  std::erase_if(last_seen_by_server_, [&](const auto& lastSeen) {
+    if (now - lastSeen.second <= timeout) {
+      return false;
     }
 
-    staleServers.push_back(it->first);
-    auto peerIt = server_to_peer_.find(it->first);
+    staleServers.push_back(lastSeen.first);
+    auto peerIt = server_to_peer_.find(lastSeen.first);
     if (peerIt != server_to_peer_.end()) {
       peer_to_server_.erase(peerKey(peerIt->second));
       server_to_peer_.erase(peerIt);
     }
-    it = last_seen_by_server_.erase(it);
-  }
+    return true;
+  });
 
   return staleServers;
 }

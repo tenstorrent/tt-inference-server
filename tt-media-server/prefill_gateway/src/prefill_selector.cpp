@@ -4,7 +4,6 @@
 #include "gateway/prefill_selector.hpp"
 
 #include <algorithm>
-#include <limits>
 
 namespace tt::gateway {
 
@@ -19,9 +18,9 @@ bool isEligible(const PrefillSnapshot& p) {
 
 const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
                                 const std::string& serverId) {
-  auto it = std::find_if(
-      prefills.begin(), prefills.end(),
-      [&](const PrefillSnapshot& p) { return p.server_id == serverId; });
+  auto it = std::ranges::find_if(prefills, [&](const PrefillSnapshot& p) {
+    return p.server_id == serverId;
+  });
   return it == prefills.end() ? nullptr : &*it;
 }
 
@@ -29,22 +28,22 @@ const PrefillSnapshot* findById(const std::vector<PrefillSnapshot>& prefills,
 
 PrefillEligibilitySummary summarizePrefillEligibility(
     const std::vector<PrefillSnapshot>& prefills) {
+  auto healthy = [](const PrefillSnapshot& prefill) { return prefill.healthy; };
+  auto accepting = [](const PrefillSnapshot& prefill) {
+    return prefill.healthy && prefill.accepting_tasks;
+  };
+  auto capacityAvailable = [](const PrefillSnapshot& prefill) {
+    return prefill.healthy && prefill.accepting_tasks &&
+           (prefill.max_in_flight == 0 ||
+            prefill.in_flight < prefill.max_in_flight);
+  };
+
   PrefillEligibilitySummary summary;
   summary.total = prefills.size();
-  for (const auto& prefill : prefills) {
-    if (!prefill.healthy) {
-      continue;
-    }
-    ++summary.healthy;
-    if (!prefill.accepting_tasks) {
-      continue;
-    }
-    ++summary.accepting;
-    if (prefill.max_in_flight == 0 ||
-        prefill.in_flight < prefill.max_in_flight) {
-      ++summary.capacity_available;
-    }
-  }
+  summary.healthy = std::ranges::count_if(prefills, healthy);
+  summary.accepting = std::ranges::count_if(prefills, accepting);
+  summary.capacity_available =
+      std::ranges::count_if(prefills, capacityAvailable);
   return summary;
 }
 
@@ -68,10 +67,10 @@ std::optional<std::string> selectPrefill(
     return std::nullopt;
   }
 
-  uint32_t minInFlight = std::numeric_limits<uint32_t>::max();
-  for (const auto* p : eligible) {
-    minInFlight = std::min(minInFlight, p->in_flight);
-  }
+  const auto minInFlight =
+      (*std::ranges::min_element(eligible, {}, [](const PrefillSnapshot* p) {
+        return p->in_flight;
+      }))->in_flight;
 
   std::vector<const PrefillSnapshot*> leastLoaded;
   leastLoaded.reserve(eligible.size());

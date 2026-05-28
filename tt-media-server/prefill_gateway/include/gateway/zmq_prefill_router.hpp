@@ -15,6 +15,7 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -36,12 +37,12 @@ class ZmqPrefillRouter {
   void stop();
 
   template <typename T>
-  bool sendObject(const std::string& serverId, const std::string& messageType,
+  bool sendObject(const std::string& serverId, std::string_view messageType,
                   const T& obj);
 
   template <typename T>
   void registerHandler(
-      const std::string& messageType,
+      std::string_view messageType,
       std::function<void(const PeerIdentity&, const T&)> handler);
 
   void rememberRegistration(const std::string& serverId,
@@ -97,8 +98,7 @@ class ZmqPrefillRouter {
 
 template <typename T>
 bool ZmqPrefillRouter::sendObject(const std::string& serverId,
-                                  const std::string& messageType,
-                                  const T& obj) {
+                                  std::string_view messageType, const T& obj) {
   auto peerId = peerIdForServer(serverId);
   if (!peerId.has_value()) {
     return false;
@@ -126,14 +126,14 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
 
 template <typename T>
 void ZmqPrefillRouter::registerHandler(
-    const std::string& messageType,
+    std::string_view messageType,
     std::function<void(const PeerIdentity&, const T&)> handler) {
   std::lock_guard<std::mutex> lock(handlers_mutex_);
-  handlers_[messageType] = [handler](const PeerIdentity& peerId,
-                                     const std::vector<uint8_t>& data) {
-    T payload = tt::sockets::wire::deserializePayload<T>(data);
-    handler(peerId, payload);
-  };
+  handlers_[std::string(messageType)] =
+      [handler](const PeerIdentity& peerId, const std::vector<uint8_t>& data) {
+        T payload = tt::sockets::wire::deserializePayload<T>(data);
+        handler(peerId, payload);
+      };
 }
 
 }  // namespace tt::gateway
