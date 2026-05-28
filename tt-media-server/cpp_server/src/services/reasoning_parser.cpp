@@ -12,9 +12,8 @@ ReasoningParser::ReasoningParser() {
   const auto [thinkStart, thinkEnd] = tt::utils::tokenizers::thinkTokenIds();
   thinkStartToken_ = thinkStart;
   thinkEndToken_ = thinkEnd;
-  thinkTokensEnabled_ =
-      thinkStart != tt::utils::tokenizers::kNoThinkTokenId &&
-      thinkEnd != tt::utils::tokenizers::kNoThinkTokenId;
+  thinkTokensEnabled_ = thinkStart != tt::utils::tokenizers::kNoThinkTokenId &&
+                        thinkEnd != tt::utils::tokenizers::kNoThinkTokenId;
 }
 
 void ReasoningParser::initializeTask(uint32_t taskId) {

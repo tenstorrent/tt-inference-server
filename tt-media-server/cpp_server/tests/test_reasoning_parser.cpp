@@ -32,8 +32,7 @@ void testStreamingTokens() {
 
   // <think> marker: state flips, not emitted
   {
-    auto r =
-        parser.processToken(taskId, thinkTokens().first, "");
+    auto r = parser.processToken(taskId, thinkTokens().first, "");
     assert(!r.should_emit);
     assert(r.type == ContentType::REASONING);
     assert(parser.isInReasoning(taskId));
@@ -184,8 +183,7 @@ void testEdgeCases() {
     parser.processToken(taskId, thinkTokens().first, "");
     assert(parser.isInReasoning(taskId));
 
-    auto r =
-        parser.processToken(taskId, thinkTokens().first, "");
+    auto r = parser.processToken(taskId, thinkTokens().first, "");
     assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
 
@@ -262,14 +260,10 @@ void testReasoningSuppression() {
   // Test 1: Suppression ON – reasoning tokens dropped, answer tokens kept
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {thinkTokens().first, "", false},
-        {201, "\n", false},
-        {12345, "reasoning", false},
-        {67890, " text", false},
-        {thinkTokens().second, "", false},
-        {201, "\n", false},
-        {11111, "answer", false},
-        {22222, " text", true},
+        {thinkTokens().first, "", false},  {201, "\n", false},
+        {12345, "reasoning", false},       {67890, " text", false},
+        {thinkTokens().second, "", false}, {201, "\n", false},
+        {11111, "answer", false},          {22222, " text", true},
     };
 
     auto emitted = simulateConsumerLoop(parser, 100, true, tokens);
@@ -355,10 +349,8 @@ void testReasoningSuppression() {
   // <think>\n</think>\n pattern from DeepSeek chat template)
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {thinkTokens().first, "", false},
-        {201, "\n", false},
-        {thinkTokens().second, "", false},
-        {201, "\n", false},
+        {thinkTokens().first, "", false},  {201, "\n", false},
+        {thinkTokens().second, "", false}, {201, "\n", false},
         {11111, "The answer is 4.", true},
     };
 
