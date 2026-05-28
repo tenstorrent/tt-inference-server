@@ -22,6 +22,7 @@ docker network connect tt_net <your-inference-container-name>
 # at the inference container. Pick SERVER_SERVICE=cpp or python.
 SERVER_TARGET=$(hostname):8000 \
 SERVER_SERVICE=cpp \
+GATEWAY_TARGET=$(hostname):9091 \
   docker compose -f monitoring/docker-compose.yml up -d
 ```
 
@@ -32,10 +33,13 @@ If you're already inside `tt-media-server/monitoring/`, pass the file as
 ```bash
 SERVER_TARGET=$(hostname):8000 \
 SERVER_SERVICE=cpp \
+GATEWAY_TARGET=$(hostname):9091 \
   docker compose -f ./docker-compose.yml up -d
 ```
 
 `SERVER_TARGET` defaults to `tt-inference-server:8000` if omitted.
+`GATEWAY_TARGET` defaults to `prefill-gateway:9091` and should point at the
+PrefillGateway `--metrics-port` endpoint when the gateway is enabled.
 `SERVER_SERVICE` defaults to `python` (kept for backwards compatibility
 with the original setup). Using `$(hostname)` is convenient when the
 inference server container shares the host's name.
@@ -44,14 +48,17 @@ The cpp dashboard is the default Grafana home. To make the python
 dashboard the default home instead, set
 `GF_HOME_DASHBOARD=/etc/grafana/provisioning/dashboards/tt_media_server_python.json`.
 
-Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads automatically.
+Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads
+automatically. PrefillGateway panels are available in the `TT Prefill Gateway`
+dashboard.
 
 ## Directory layout
 
 ```
 monitoring/
 ├── docker-compose.yml                        # Prometheus + Grafana + process-exporter services
-├── prometheus.yml                            # scrape config (server /metrics + process metrics)
+├── prometheus.yml                            # scrape config (server, gateway + process metrics)
+├── prometheus/rules/prefill_gateway.yml      # PrefillGateway alert rules
 ├── process-exporter.yml                      # which host processes to expose CPU/memory/threads for
 └── grafana/
     ├── provisioning/
@@ -59,7 +66,8 @@ monitoring/
     │   └── dashboards/default.yml            # tells Grafana where to load dashboards from
     └── dashboards/
         ├── tt_media_server_cpp.json          # C++ server dashboard (latency, throughput, queue)
-        └── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
+        ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
+        └── tt_prefill_gateway.json           # PrefillGateway routing, latency, heartbeat dashboard
 ```
 
 ## Ports
@@ -68,6 +76,7 @@ monitoring/
 |------------------|------|
 | Grafana          | 3000 |
 | Prometheus       | 9090 |
+| PrefillGateway   | 9091 by default (`--metrics-port`) |
 | process-exporter | internal only (9256 on `monitoring` net) |
 
 ## Process metrics (CPU / memory / threads per binary)
@@ -87,7 +96,16 @@ Python server (uvicorn) gets its own group:
 |----------------------------------|----------------------------------------------------------|
 | `tt_media_server_cpp_worker`     | `...tt_media_server_cpp --worker N` processes            |
 | `tt_media_server_cpp_main`       | main C++ server (comm `tt_media_server`, truncated)      |
+| `prefill_gateway`                | PrefillGateway binary                                    |
 | `tt_media_server_python`         | uvicorn / `python tt-media-server/main.py` processes     |
+
+## PrefillGateway Alerts
+
+Prometheus loads gateway rules from
+[`prometheus/rules/prefill_gateway.yml`](./prometheus/rules/prefill_gateway.yml).
+The initial rules cover stale prefill heartbeats, low prefix-match rate, high
+prefill latency, and observed request timeouts. They appear in Prometheus and
+Grafana as long as the gateway scrape target is reachable.
 
 These are rendered by the "Infrastructure" row at the bottom of the
 relevant Grafana dashboard: CPU %, memory RSS (MB), threads, open fds,

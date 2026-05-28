@@ -3,9 +3,11 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace tt::gateway {
@@ -17,6 +19,21 @@ struct PrefillSnapshot {
   bool accepting_tasks = true;
   uint32_t in_flight = 0;
   uint32_t max_in_flight = 0;  // 0 = unlimited
+  size_t cached_blocks = 0;
+  std::chrono::steady_clock::time_point last_heartbeat{};
+};
+
+enum class PrefillRoutingReason {
+  PrefixMatch,
+  StickyFallback,
+  LeastInflight,
+  RoundRobin,
+  NoEligiblePrefill,
+};
+
+struct PrefillSelection {
+  std::optional<std::string> server_id;
+  PrefillRoutingReason reason = PrefillRoutingReason::NoEligiblePrefill;
 };
 
 struct PrefillEligibilitySummary {
@@ -28,6 +45,13 @@ struct PrefillEligibilitySummary {
 
 PrefillEligibilitySummary summarizePrefillEligibility(
     const std::vector<PrefillSnapshot>& prefills);
+
+std::string_view routingReasonName(PrefillRoutingReason reason);
+
+PrefillSelection selectPrefillWithReason(
+    const std::vector<PrefillSnapshot>& prefills, size_t registration_hash,
+    const std::optional<std::string>& sticky_target,
+    size_t& round_robin_cursor);
 
 // Choose a prefill. Order: sticky-by-hash → least-inflight → round-robin.
 // `round_robin_cursor` is caller-owned so the selector stays pure.
