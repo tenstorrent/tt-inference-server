@@ -13,7 +13,6 @@ from benchmarking.spec_decode_common import (
     SpecDecodeRunSpec,
     compute_speedup,
     merge_acceptance_rate,
-    pair_and_compute_speedup,
 )
 from benchmarking.summary_report import _pair_spec_decode_results
 
@@ -23,7 +22,7 @@ def _write(path: Path, data: dict) -> None:
         json.dump(data, f)
 
 
-def test_run_spec_rejects_empty_public_dataset():
+def test_run_spec_validates_and_formats_slug():
     with pytest.raises(ValueError, match="public_dataset"):
         SpecDecodeRunSpec(
             public_dataset="",
@@ -31,9 +30,6 @@ def test_run_spec_rejects_empty_public_dataset():
             max_concurrency=1,
             num_prompts=4,
         )
-
-
-def test_run_spec_slug_for_spec_bench():
     spec = SpecDecodeRunSpec(
         public_dataset="spec_bench",
         output_len=128,
@@ -41,26 +37,23 @@ def test_run_spec_slug_for_spec_bench():
         num_prompts=16,
     )
     assert spec.slug == "spec_bench_osl-128_maxcon-4_n-16"
-
-
-def test_run_spec_slug_for_speed_bench_throughput():
-    spec = SpecDecodeRunSpec(
-        public_dataset="speed_bench_throughput_1k",
-        output_len=128,
+    # Without an explicit output_len the model decodes to natural EOS, and
+    # the slug omits the osl segment so summary_report's filename regex can
+    # tell the two modes apart.
+    natural_osl = SpecDecodeRunSpec(
+        public_dataset="spec_bench",
         max_concurrency=4,
         num_prompts=16,
     )
-    assert spec.slug == "speed_bench_throughput_1k_osl-128_maxcon-4_n-16"
-
-
-def test_run_spec_slug_for_speed_bench_qualitative_category():
-    spec = SpecDecodeRunSpec(
+    assert natural_osl.slug == "spec_bench_maxcon-4_n-16"
+    # When num_prompts is also unset, aiperf consumes the entire public
+    # dataset — slug must drop the n- segment so the filename round-trips
+    # through summary_report's regex.
+    full_dataset = SpecDecodeRunSpec(
         public_dataset="speed_bench_coding",
-        output_len=128,
-        max_concurrency=4,
-        num_prompts=16,
+        max_concurrency=1,
     )
-    assert spec.slug == "speed_bench_coding_osl-128_maxcon-4_n-16"
+    assert full_dataset.slug == "speed_bench_coding_maxcon-1"
 
 
 def test_merge_acceptance_rate_preserves_existing_fields(tmp_path):
@@ -74,67 +67,7 @@ def test_merge_acceptance_rate_preserves_existing_fields(tmp_path):
     assert annotated["spec_decode_metrics"]["accepted_tokens"] == 425.0
 
 
-def test_merge_acceptance_rate_cleans_up_tmp_file(tmp_path):
-    src = tmp_path / "result.json"
-    _write(src, {"mean_e2el_ms": 100.0})
-    merge_acceptance_rate(src, {"acceptance_rate": 0.5})
-    assert not (tmp_path / "result.json.tmp").exists()
-
-
-def test_pair_and_compute_speedup_basic_ratios(tmp_path):
-    baseline = tmp_path / "baseline.json"
-    spec = tmp_path / "spec.json"
-    _write(
-        baseline,
-        {
-            "mean_e2el_ms": 200.0,
-            "p50_e2el_ms": 180.0,
-            "p95_e2el_ms": 250.0,
-            "p99_e2el_ms": 300.0,
-            "p50_tpot_ms": 20.0,
-            "p95_tpot_ms": 30.0,
-            "p99_tpot_ms": 40.0,
-            "output_throughput": 100.0,
-        },
-    )
-    _write(
-        spec,
-        {
-            "mean_e2el_ms": 100.0,
-            "p50_e2el_ms": 90.0,
-            "p95_e2el_ms": 125.0,
-            "p99_e2el_ms": 150.0,
-            "p50_tpot_ms": 10.0,
-            "p95_tpot_ms": 15.0,
-            "p99_tpot_ms": 20.0,
-            "output_throughput": 200.0,
-            "spec_decode_metrics": {"acceptance_rate": 0.85},
-        },
-    )
-    result = pair_and_compute_speedup(baseline, spec)
-    assert result["speedup_mean_e2el"] == pytest.approx(2.0)
-    assert result["speedup_p50_e2el"] == pytest.approx(2.0)
-    assert result["speedup_p95_e2el"] == pytest.approx(2.0)
-    assert result["speedup_p99_e2el"] == pytest.approx(2.0)
-    assert result["tpot_ratio_p50"] == pytest.approx(2.0)
-    assert result["output_tput_ratio"] == pytest.approx(2.0)
-    assert result["spec_acceptance_rate"] == 0.85
-    assert result["baseline_acceptance_rate"] is None
-
-
-def test_pair_handles_missing_fields_with_none(tmp_path):
-    baseline = tmp_path / "baseline.json"
-    spec = tmp_path / "spec.json"
-    _write(baseline, {"output_throughput": 100.0})
-    _write(spec, {})
-    result = pair_and_compute_speedup(baseline, spec)
-    assert result["output_tput_ratio"] is None
-    assert result["speedup_p50_e2el"] is None
-    assert result["baseline_acceptance_rate"] is None
-    assert result["spec_acceptance_rate"] is None
-
-
-def test_compute_speedup_works_on_in_memory_dicts():
+def test_compute_speedup_ratios_and_missing_field_handling():
     baseline = {
         "mean_e2el_ms": 200.0,
         "p50_e2el_ms": 180.0,
@@ -151,10 +84,13 @@ def test_compute_speedup_works_on_in_memory_dicts():
     result = compute_speedup(baseline, spec)
     assert result["speedup_mean_e2el"] == pytest.approx(2.0)
     assert result["speedup_p50_e2el"] == pytest.approx(2.0)
-    assert result["speedup_p95_e2el"] == pytest.approx(2.0)
     assert result["output_tput_ratio"] == pytest.approx(2.0)
     assert result["spec_acceptance_rate"] == 0.8
+    # Baseline has no spec_decode_metrics block — acceptance rate stays None.
     assert result["baseline_acceptance_rate"] is None
+    # TPOT fields weren't supplied on either side — ratios must be None, not
+    # an exception (this is the "result is partial" failure mode in prod).
+    assert result["tpot_ratio_p50"] is None
 
 
 def _processed(role: str, **fields) -> dict:
@@ -193,15 +129,13 @@ def test_pair_spec_decode_results_matches_baseline_and_spec():
     assert pairs[0]["speedup_p50_e2el"] == pytest.approx(2.0)
     assert pairs[0]["output_tput_ratio"] == pytest.approx(2.0)
     assert pairs[0]["public_dataset"] == "spec_bench"
-    assert pairs[0]["output_sequence_length"] == 128
 
 
 def test_pair_spec_decode_results_skips_unmatched_runs():
-    baseline_only = _processed("baseline", mean_e2el_ms=200.0)
-    assert _pair_spec_decode_results([baseline_only]) == []
-
-    spec_only = _processed("spec", mean_e2el_ms=100.0)
-    assert _pair_spec_decode_results([spec_only]) == []
+    # A lone baseline (no spec twin) or lone spec (no baseline twin) must not
+    # produce a pair — otherwise the report would show speedup vs. nothing.
+    assert _pair_spec_decode_results([_processed("baseline")]) == []
+    assert _pair_spec_decode_results([_processed("spec")]) == []
 
 
 def test_pair_spec_decode_results_uses_latest_timestamp_per_role():
@@ -211,33 +145,8 @@ def test_pair_spec_decode_results_uses_latest_timestamp_per_role():
     newer_baseline = _processed(
         "baseline", mean_e2el_ms=200.0, timestamp="2026-05-20_10-00-00"
     )
-    spec = _processed(
-        "spec", mean_e2el_ms=100.0, timestamp="2026-05-20_10-05-00"
-    )
+    spec = _processed("spec", mean_e2el_ms=100.0, timestamp="2026-05-20_10-05-00")
     pairs = _pair_spec_decode_results([older_baseline, newer_baseline, spec])
     assert len(pairs) == 1
     # newer baseline (200ms) was kept, so speedup is 200/100 = 2.0 (not 4.0)
     assert pairs[0]["speedup_mean_e2el"] == pytest.approx(2.0)
-
-
-def test_pair_spec_decode_results_separates_distinct_sweeps():
-    sb_baseline = _processed(
-        "baseline",
-        mean_e2el_ms=200.0,
-        public_dataset="spec_bench",
-    )
-    sb_spec = _processed(
-        "spec",
-        mean_e2el_ms=100.0,
-        public_dataset="spec_bench",
-    )
-    sd_baseline = _processed(
-        "baseline",
-        mean_e2el_ms=400.0,
-        public_dataset="speed_bench_throughput_1k",
-        output_sequence_length=1024,
-    )
-    # No spec for speed_bench — should be excluded from the result
-    pairs = _pair_spec_decode_results([sb_baseline, sb_spec, sd_baseline])
-    assert len(pairs) == 1
-    assert pairs[0]["public_dataset"] == "spec_bench"

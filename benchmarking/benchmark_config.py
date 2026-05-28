@@ -134,44 +134,25 @@ THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
 SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
     "smoke": [
         SpecDecodeRunSpec(
-            public_dataset="spec_bench",
-            output_len=128,
-            max_concurrency=1,
-            num_prompts=4,
-        ),
-        SpecDecodeRunSpec(
             public_dataset="speed_bench_coding",
-            output_len=128,
             max_concurrency=1,
             num_prompts=4,
         ),
     ],
-    # Full sweep:
-    #   - spec_bench whole-dataset times OSL=(128, 512) times conc=1
-    #   - speed_bench_<category> × 11 categories × conc=1 × osl=2048
-    #   - speed_bench_throughput_{1k..32k} × conc{1,16,64} × osl=1024
+    # Full sweep — output length is left natural
+    #   - speed_bench_<category> × 11 categories × conc=1 (every prompt in
+    #     the category; aiperf defaults --request-count to dataset size)
+    #   - speed_bench_throughput_{1k..32k} × conc{1,16,64}
     "full": [
         SpecDecodeRunSpec(
-            public_dataset="spec_bench",
-            output_len=output_len,
-            max_concurrency=1,
-            num_prompts=64,
-        )
-        for output_len in (128, 512)
-    ]
-    + [
-        SpecDecodeRunSpec(
             public_dataset=f"speed_bench_{category}",
-            output_len=2048,
             max_concurrency=1,
-            num_prompts=32,
         )
         for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
     ]
     + [
         SpecDecodeRunSpec(
             public_dataset=f"speed_bench_throughput_{isl}",
-            output_len=1024,
             max_concurrency=concurrency,
             num_prompts=max(32, 4 * concurrency),
         )

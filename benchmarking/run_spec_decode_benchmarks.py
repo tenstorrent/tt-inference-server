@@ -11,7 +11,7 @@ result JSON. Designed for **sequential, one-server-at-a-time** use so the
 same workflow fits limited-memory targets and bigger models.
 
 Each benchmarking phase begins with an identical **warmup**: 4 short
-chat-completion requests against the endpoint. 
+chat-completion requests against the endpoint.
 
 """
 
@@ -113,11 +113,13 @@ def build_aiperf_cmd(
     Spec-decode-specific knobs vs. the general aiperf perf runner:
       - ``--public-dataset <slug>`` instead of synthetic-token prompts (real
         prompts are required for meaningful draft/target acceptance rates).
-      - ``--extra-inputs ignore_eos:true`` so each request emits exactly
-        ``output_len`` tokens (otherwise short EOS-terminated responses skew
-        TPOT/throughput).
       - ``--extra-inputs temperature:0`` so draft/target sampling is
         deterministic; matches the spec-decode comparison convention.
+      - When ``run_spec.output_len`` is set, ``--output-tokens-mean/-stddev``
+        and ``ignore_eos:true`` force each request to emit exactly that many
+        tokens. When unset (the default), the model decodes to its natural
+        EOS — variable-length outputs that better exercise real decode
+        behavior across prompt types.
     """
     if not url.startswith("http"):
         url = f"http://{url}"
@@ -139,14 +141,19 @@ def build_aiperf_cmd(
         run_spec.public_dataset,
         "--concurrency",
         str(run_spec.max_concurrency),
-        "--request-count",
-        str(run_spec.num_prompts),
-        "--output-tokens-mean",
-        str(run_spec.output_len),
-        "--output-tokens-stddev",
-        "0",
-        "--extra-inputs",
-        "ignore_eos:true",
+    ]
+    if run_spec.num_prompts is not None:
+        cmd += ["--request-count", str(run_spec.num_prompts)]
+    if run_spec.output_len is not None:
+        cmd += [
+            "--output-tokens-mean",
+            str(run_spec.output_len),
+            "--output-tokens-stddev",
+            "0",
+            "--extra-inputs",
+            "ignore_eos:true",
+        ]
+    cmd += [
         "--extra-inputs",
         "temperature:0",
         "--artifact-dir",
@@ -334,19 +341,6 @@ def warmup_endpoint(
     return successes
 
 
-def _snapshot_counters_safe(base_url: str) -> Dict[str, float]:
-    try:
-        return fetch_prometheus_counters(base_url)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Could not snapshot /metrics at %s (continuing without "
-            "acceptance-rate baseline): %s",
-            base_url,
-            exc,
-        )
-        return {}
-
-
 def _annotate_with_metrics(
     base_url: str,
     before: Dict[str, float],
@@ -401,7 +395,14 @@ def _run_one_sweep(
         shutil.rmtree(artifact_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    before = _snapshot_counters_safe(url)
+    # Snapshot /metrics so _annotate_with_metrics can diff against post-run
+    # counters. A missing endpoint is non-fatal: empty baseline → the eventual
+    # acceptance_rate just reflects cumulative-since-server-start counters.
+    try:
+        before = fetch_prometheus_counters(url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not snapshot /metrics at %s: %s", url, exc)
+        before = {}
     cmd = build_aiperf_cmd(
         venv_python=venv_python,
         hf_model_repo=hf_model_repo,

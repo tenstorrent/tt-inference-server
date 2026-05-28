@@ -7,9 +7,9 @@
 `SpecDecodeRunSpec` describes a single sweep config (dataset, output length,
 concurrency). `merge_acceptance_rate` annotates the per-sweep result JSON in
 place with metrics scraped from Prometheus. `compute_speedup` takes two
-already-loaded baseline+spec result dicts (vllm-bench schema) and returns the
-per-percentile speedup ratios; `pair_and_compute_speedup` is a thin wrapper
-that loads two JSON files from disk and delegates.
+already-loaded baseline+spec result dicts (vllm-bench schema) and returns
+the per-percentile speedup ratios — called in-memory by
+``summary_report._pair_spec_decode_results`` during report generation.
 
 Kept separate from the aiperf-specific runner so a future
 ``run_sglang_spec_decode_benchmarks.py`` (or any other client tool) can reuse
@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class SpecDecodeRunSpec:
     public_dataset: str
-    output_len: int
     max_concurrency: int
-    num_prompts: int
+    num_prompts: Optional[int] = None
+    output_len: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not self.public_dataset:
@@ -41,15 +41,23 @@ class SpecDecodeRunSpec:
 
     @property
     def slug(self) -> str:
-        """Short identifier for use in result filenames."""
-        return "_".join(
-            [
-                self.public_dataset,
-                f"osl-{self.output_len}",
-                f"maxcon-{self.max_concurrency}",
-                f"n-{self.num_prompts}",
-            ]
-        )
+        """Short identifier for use in result filenames.
+
+        ``osl-<N>`` is included only when ``output_len`` is set; omitting it
+        signals that the run let the model decode to its natural EOS.
+        ``n-<N>`` is included only when ``num_prompts`` is set; omitting it
+        signals the run consumed every prompt in the public dataset (aiperf
+        defaults ``--request-count`` to the dataset size). Together this
+        keeps the spec-decode sweeps stress-testing real decode behavior
+        without a fixed token or prompt budget when not explicitly requested.
+        """
+        parts = [self.public_dataset]
+        if self.output_len is not None:
+            parts.append(f"osl-{self.output_len}")
+        parts.append(f"maxcon-{self.max_concurrency}")
+        if self.num_prompts is not None:
+            parts.append(f"n-{self.num_prompts}")
+        return "_".join(parts)
 
 
 def merge_acceptance_rate(
@@ -79,9 +87,7 @@ def _safe_ratio(
     return numerator / denominator
 
 
-def compute_speedup(
-    baseline: Dict[str, Any], spec: Dict[str, Any]
-) -> Dict[str, Any]:
+def compute_speedup(baseline: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
     """Compute per-percentile speedup from two already-loaded result dicts.
 
     Each dict must use the vllm-bench field names (``mean_e2el_ms``,
@@ -118,21 +124,4 @@ def compute_speedup(
         "spec_acceptance_rate": (
             (spec.get("spec_decode_metrics") or {}).get("acceptance_rate")
         ),
-    }
-
-
-def pair_and_compute_speedup(
-    baseline_path: Union[str, Path], spec_path: Union[str, Path]
-) -> Dict[str, Any]:
-    """File-based wrapper over ``compute_speedup`` for tests / ad-hoc use."""
-    baseline_path = Path(baseline_path)
-    spec_path = Path(spec_path)
-    with open(baseline_path) as f:
-        baseline = json.load(f)
-    with open(spec_path) as f:
-        spec = json.load(f)
-    return {
-        "baseline_path": str(baseline_path),
-        "spec_path": str(spec_path),
-        **compute_speedup(baseline, spec),
     }

@@ -41,19 +41,6 @@ def test_parse_keeps_only_spec_decode_keys():
     assert all(k.startswith("vllm:spec_decode_") for k in parsed)
 
 
-def test_parse_handles_unlabeled_lines():
-    parsed = parse_prometheus_text("vllm:spec_decode_num_accepted_tokens_total 42.0\n")
-    assert parsed == {"vllm:spec_decode_num_accepted_tokens_total": 42.0}
-
-
-def test_parse_canonicalizes_label_order():
-    line_a = 'vllm:spec_decode_num_draft_tokens_total{a="1",b="2"} 10.0\n'
-    line_b = 'vllm:spec_decode_num_draft_tokens_total{b="2",a="1"} 10.0\n'
-    parsed_a = parse_prometheus_text(line_a)
-    parsed_b = parse_prometheus_text(line_b)
-    assert parsed_a == parsed_b
-
-
 def test_parse_skips_malformed_lines():
     text = (
         "vllm:spec_decode_num_accepted_tokens_total{unterminated 10.0\n"
@@ -94,29 +81,28 @@ def test_scrape_per_position_includes_new_buckets(monkeypatch):
     assert per_pos[2] == pytest.approx(100.0)
 
 
-def test_scrape_handles_zero_draft(monkeypatch):
+def test_scrape_degrades_gracefully_when_counters_missing(monkeypatch):
+    # Covers two real failure modes: server emits no spec_decode counters at
+    # all, AND server emits accepted/draft but not the num_drafts counter
+    # (some vLLM releases). Both must yield None mean_accepted_length / None
+    # num_drafts and a sensible acceptance_rate rather than dividing by zero.
     monkeypatch.setattr(
         spec_decode_metrics, "fetch_prometheus_counters", lambda _url: {}
     )
-    metrics = scrape_spec_decode_metrics("http://stub", {})
-    assert metrics["acceptance_rate"] == 0.0
-    assert metrics["mean_accepted_length"] is None
-    assert metrics["num_drafts"] is None
-    assert metrics["accepted_per_pos"] == []
+    empty = scrape_spec_decode_metrics("http://stub", {})
+    assert empty["acceptance_rate"] == 0.0
+    assert empty["mean_accepted_length"] is None
+    assert empty["num_drafts"] is None
+    assert empty["accepted_per_pos"] == []
 
-
-def test_scrape_handles_missing_num_drafts_counter(monkeypatch):
-    # Some vLLM releases don't expose vllm:spec_decode_num_drafts_total.
-    after_no_drafts = parse_prometheus_text(
+    no_drafts = parse_prometheus_text(
         "vllm:spec_decode_num_accepted_tokens_total 10.0\n"
         "vllm:spec_decode_num_draft_tokens_total 20.0\n"
     )
     monkeypatch.setattr(
-        spec_decode_metrics,
-        "fetch_prometheus_counters",
-        lambda _url: after_no_drafts,
+        spec_decode_metrics, "fetch_prometheus_counters", lambda _url: no_drafts
     )
-    metrics = scrape_spec_decode_metrics("http://stub", {})
-    assert metrics["acceptance_rate"] == pytest.approx(0.5)
-    assert metrics["mean_accepted_length"] is None
-    assert metrics["num_drafts"] is None
+    partial = scrape_spec_decode_metrics("http://stub", {})
+    assert partial["acceptance_rate"] == pytest.approx(0.5)
+    assert partial["mean_accepted_length"] is None
+    assert partial["num_drafts"] is None

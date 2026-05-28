@@ -301,10 +301,13 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
 
     # Try speculative-decoding benchmark pattern. Filename shape (no isl):
     # benchmark_spec_decode_{baseline|spec}_<model>_<device>_<timestamp>_
-    #   <public_dataset>_osl-X_maxcon-Y_n-N.json
+    #   <public_dataset>[_osl-X]_maxcon-Y[_n-N].json
     # ``<public_dataset>`` is the aiperf ``--public-dataset`` slug, always
-    # starting with ``spec_bench`` or ``speed_bench``. Example:
-    #   benchmark_spec_decode_spec_id_x_gpu_2026-05-20_10-00-00_spec_bench_osl-128_maxcon-1_n-4.json
+    # starting with ``spec_bench`` or ``speed_bench``. ``osl-X`` is present
+    # only when the run forced a fixed output length (otherwise natural EOS).
+    # ``n-N`` is present only when the run capped the prompt count (otherwise
+    # aiperf consumed the full dataset). Example with both omitted:
+    #   benchmark_spec_decode_spec_id_x_gpu_2026-05-20_10-00-00_speed_bench_coding_maxcon-1.json
     # The legacy ``pair`` role is accepted by the regex so old sidecars
     # produced before pairing moved in-memory don't break a fresh report;
     # they're skipped below.
@@ -315,9 +318,9 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy|gpu|cpu|GPU|CPU))?
         _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
         _(?P<public_dataset>(?:spec_bench|speed_bench)(?:_[a-zA-Z0-9]+)*)
-        _osl-(?P<osl>\d+)
+        (?:_osl-(?P<osl>\d+))?
         _maxcon-(?P<maxcon>\d+)
-        _n-(?P<n>\d+)
+        (?:_n-(?P<n>\d+))?
         \.json$
     """
     match = re.search(spec_decode_pattern, filename, re.VERBOSE)
@@ -336,13 +339,17 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
         logger.info(
             f"Found spec-decode benchmark pattern (role={role}) in filename: {filename}"
         )
+        osl_match = match.group("osl")
+        n_match = match.group("n")
         return {
             "model_name": match.group("model"),
             "timestamp": match.group("timestamp"),
             "device": match.group("device"),
-            "output_sequence_length": int(match.group("osl")),
+            "output_sequence_length": (
+                int(osl_match) if osl_match is not None else None
+            ),
             "max_con": int(match.group("maxcon")),
-            "num_requests": int(match.group("n")),
+            "num_requests": int(n_match) if n_match is not None else None,
             "public_dataset": match.group("public_dataset"),
             "endpoint_role": role,
             "task_type": "spec_decode",
@@ -1127,7 +1134,9 @@ def create_spec_decode_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     ]
     display_dict: Dict[str, str] = {}
     for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
+        value = result.get(col_name)
+        if value is None:
+            value = NOT_MEASURED_STR
         display_dict[display_header] = str(value)
     return display_dict
 
@@ -1146,7 +1155,9 @@ def create_spec_decode_pair_display_dict(result: Dict[str, Any]) -> Dict[str, st
     ]
     display_dict: Dict[str, str] = {}
     for col_name, display_header in display_cols:
-        value = result.get(col_name, NOT_MEASURED_STR)
+        value = result.get(col_name)
+        if value is None:
+            value = NOT_MEASURED_STR
         display_dict[display_header] = str(value)
     return display_dict
 
@@ -1426,7 +1437,7 @@ def render_spec_decode_sections(
         def sort_key(r):
             return (
                 r.get("public_dataset", ""),
-                r.get("output_sequence_length", 0),
+                r.get("output_sequence_length") or 0,
                 r.get("max_con", 0),
                 # baseline before spec for visual pairing
                 0 if r.get("endpoint_role") == "baseline" else 1,
@@ -1448,7 +1459,7 @@ def render_spec_decode_sections(
         def pair_sort_key(r):
             return (
                 r.get("public_dataset", ""),
-                r.get("output_sequence_length", 0),
+                r.get("output_sequence_length") or 0,
                 r.get("max_con", 0),
             )
 
