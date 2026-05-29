@@ -48,9 +48,9 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 
 std::string_view routingReasonName(PrefillRoutingReason reason);
 
-PrefillSelection selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills, size_t registration_hash,
-    const std::optional<std::string>& sticky_target,
-    size_t& round_robin_cursor);
+PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
+                               size_t registration_hash,
+                               const std::optional<std::string>& sticky_target,
+                               size_t& round_robin_cursor);
 
 }  // namespace tt::gateway

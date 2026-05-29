@@ -63,9 +63,10 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   return "unknown";
 }
 
-PrefillSelection selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
-    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
+PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
+                               size_t registrationHash,
+                               const std::optional<std::string>& stickyTarget,
+                               size_t& roundRobinCursor) {
   const bool hasStickyHint = registrationHash != 0 && stickyTarget.has_value();
   if (hasStickyHint) {
     const PrefillSnapshot* hit = findById(prefills, *stickyTarget);

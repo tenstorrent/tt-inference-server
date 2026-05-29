@@ -176,9 +176,9 @@ class GatewayMetrics::Impl {
     routing_table_size_->Set(static_cast<double>(size));
   }
 
-  void recordRequestCompleted(
-      std::string_view serverId, std::string_view outcome,
-      std::chrono::steady_clock::duration latency) {
+  void recordRequestCompleted(std::string_view serverId,
+                              std::string_view outcome,
+                              std::chrono::steady_clock::duration latency) {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto key = labelKey(serverId, outcome);
     const std::map<std::string, std::string> labels{
