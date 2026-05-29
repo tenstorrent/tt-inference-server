@@ -85,7 +85,12 @@ constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
 constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
-constexpr int CALLBACK_POOL_THREADS = 16;
+// Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
+// the legacy default (16) for small (1-16 worker) deployments.
+constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
+// Safety ceiling for the dispatch thread pool to avoid pathological configs
+// (e.g. accidental CALLBACK_POOL_THREADS=100000).
+constexpr size_t CALLBACK_POOL_THREADS_MAX = 32;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
 
