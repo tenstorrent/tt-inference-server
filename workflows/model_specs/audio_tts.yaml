@@ -40,7 +40,7 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: COMPLETE
 
-  - weights:
+- weights:
     - openai/whisper-large-v3
     - distil-whisper/distil-large-v3
   version: "0.15.0"
