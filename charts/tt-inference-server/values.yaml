@@ -900,7 +900,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-9e3b1b3-1d0aa18
+              tag: 0.15.0-9e3b1b3-1d0aa18
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5794,7 +5794,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5842,7 +5842,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5961,7 +5961,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6009,7 +6009,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6082,7 +6082,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6130,7 +6130,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6302,7 +6302,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
+              tag: 0.15.0-ec28d12
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6336,7 +6336,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
+              tag: 0.15.0-ec28d12
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6372,7 +6372,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
+              tag: 0.15.0-ec28d12
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6408,7 +6408,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
+              tag: 0.15.0-ec28d12
             probes:
               liveness:
                 initialDelaySeconds: 2400
