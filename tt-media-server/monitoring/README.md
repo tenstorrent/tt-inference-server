@@ -9,20 +9,21 @@ server to scrape at start time via `SERVER_SERVICE`. Lives at the
 (which is the Python instrumentation that emits `/metrics`) and
 [`cpp_server/`](../cpp_server) (which contains the C++ instrumentation).
 
-## Quick start
+## Quick Start
 
 The inference server must be on the shared `tt_net` Docker network so Prometheus can reach it by container name:
 
 ```bash
 # One-time: create the network and attach the inference container
-docker network create tt_net
+docker network create tt_net 2>/dev/null || true
 docker network connect tt_net <your-inference-container-name>
 
 # From the tt-media-server/ directory, start Prometheus + Grafana pointing
-# at the inference container. Pick SERVER_SERVICE=cpp or python.
-SERVER_TARGET=$(hostname):8000 \
+# at the inference container. Pick SERVER_SERVICE=cpp or python. If
+# PrefillGateway is running, set GATEWAY_TARGET to its --metrics-port endpoint.
+SERVER_TARGET=<your-inference-container-name>:8000 \
 SERVER_SERVICE=cpp \
-GATEWAY_TARGET=$(hostname):9091 \
+GATEWAY_TARGET=<your-inference-container-name>:9091 \
   docker compose -f monitoring/docker-compose.yml up -d
 ```
 
@@ -31,9 +32,9 @@ If you're already inside `tt-media-server/monitoring/`, pass the file as
 `docker-compose.yml` is not resolved as a path):
 
 ```bash
-SERVER_TARGET=$(hostname):8000 \
+SERVER_TARGET=<your-inference-container-name>:8000 \
 SERVER_SERVICE=cpp \
-GATEWAY_TARGET=$(hostname):9091 \
+GATEWAY_TARGET=<your-inference-container-name>:9091 \
   docker compose -f ./docker-compose.yml up -d
 ```
 
@@ -41,8 +42,30 @@ GATEWAY_TARGET=$(hostname):9091 \
 `GATEWAY_TARGET` defaults to `prefill-gateway:9091` and should point at the
 PrefillGateway `--metrics-port` endpoint when the gateway is enabled.
 `SERVER_SERVICE` defaults to `python` (kept for backwards compatibility
-with the original setup). Using `$(hostname)` is convenient when the
-inference server container shares the host's name.
+with the original setup).
+
+### Docker Scrape Targets
+
+Prometheus runs in Docker, so `localhost` inside Prometheus refers to the
+Prometheus container, not the host or dev container running the server. Make
+sure the server or gateway container is attached to `tt_net`, then use that
+container name in `SERVER_TARGET` and `GATEWAY_TARGET`:
+
+```bash
+docker network create tt_net 2>/dev/null || true
+docker network connect tt_net <server-container-name> 2>/dev/null || true
+
+SERVER_TARGET=<server-container-name>:8001 \
+SERVER_SERVICE=cpp \
+GATEWAY_TARGET=<server-container-name>:9091 \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+Verify Prometheus can see all targets:
+
+```bash
+docker exec tt_prometheus wget -qO- http://localhost:9090/api/v1/targets
+```
 
 The cpp dashboard is the default Grafana home. To make the python
 dashboard the default home instead, set

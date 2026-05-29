@@ -32,6 +32,8 @@ services:
       - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
       - SERVER_SERVICE=${SERVER_SERVICE:-python}
       - GATEWAY_TARGET=${GATEWAY_TARGET:-prefill-gateway:9091}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro

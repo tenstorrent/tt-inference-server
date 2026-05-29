@@ -74,6 +74,11 @@ decode/prefill sockets:
 curl http://127.0.0.1:9091/metrics
 ```
 
+To view the `TT Prefill Gateway` dashboard in Grafana, run the monitoring stack
+from [`monitoring/README.md`](../monitoring/README.md). If the gateway is
+running inside a Cursor/dev container, use that README's dev-container setup so
+Prometheus can scrape the gateway over Docker's `tt_net` network.
+
 Key metrics include:
 
 - `tt_gateway_routing_decisions_total{reason=...}` for prefix-match,
@@ -127,6 +132,7 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -197,6 +203,7 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
