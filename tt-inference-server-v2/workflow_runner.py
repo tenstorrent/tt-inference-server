@@ -55,13 +55,13 @@ class WorkflowRunner:
             self.results.append(result)
             if not result.succeeded:
                 logger.error(
-                    "✘ command=%s rc=%d error=%s",
+                    "❌ command=%s rc=%d error=%s",
                     cmd.name,
                     result.return_code,
                     result.error,
                 )
                 return result.return_code
-            logger.info("✓ command=%s rc=0", cmd.name)
+            logger.info("✅ command=%s rc=0", cmd.name)
         return 0
 
 
