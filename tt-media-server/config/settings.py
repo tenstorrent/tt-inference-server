@@ -86,6 +86,28 @@ class Settings(BaseSettings):
     # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
     sp_warmup_timeout_seconds: float = 6000.0
 
+    # Gas monitor settings (see health_monitoring/). Named after the electronic
+    # gas monitor that replaced the coal-mine canary.
+    gas_monitor_enabled: bool = True
+    # Observe-only by default-OFF: when False the monitor records state, metrics
+    # and logs but never drives /health to 503. Flip to True to gate readiness.
+    gas_monitor_gate_readiness: bool = False
+    # Idle dwell before a probe fires (system considered idle this long).
+    gas_monitor_wait_seconds: float = 5.0
+    # Per-probe round-trip deadline. A probe exceeding this counts as one miss.
+    gas_monitor_probe_timeout_seconds: float = 3.0
+    # Monitor loop cadence.
+    gas_monitor_tick_seconds: float = 1.0
+    # Consecutive misses before the model is declared Dead. Tuned for tolerance
+    # over raw speed (~10s to Dead at defaults); lower to 2 for ~6-7s detection
+    # at the cost of less headroom for a transient GC pause / network blip.
+    gas_monitor_dead_misses: int = 3
+    # Grace after is_ready before the first probe. NOTE: with the default
+    # SP_REQUIRE_WARMUP_PING=false, is_ready flips before a multihost pipeline
+    # finishes its 4-node compile, so operators running multihost should set
+    # this >= sp_warmup_timeout_seconds to avoid probing a still-warming peer.
+    gas_monitor_startup_grace_seconds: float = 30.0
+
     # Job management settings
     max_jobs: int = 10000
     job_cleanup_interval_seconds: int = 300
