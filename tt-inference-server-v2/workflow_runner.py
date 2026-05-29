@@ -66,11 +66,11 @@ class WorkflowRunner:
 
 
 def parse_args() -> argparse.Namespace:
-    from workflow_module import WORKFLOW_REGISTRY
+    from workflow_module.isolation import WORKFLOW_VENV_TYPES
 
     valid_models = sorted({spec.model_name for spec in MODEL_SPECS.values()})
     valid_devices = sorted({d.name.lower() for d in DeviceTypes})
-    valid_workflows = sorted(WORKFLOW_REGISTRY)
+    valid_workflows = sorted(WORKFLOW_VENV_TYPES)
 
     parser = argparse.ArgumentParser(
         description=(
