@@ -285,6 +285,18 @@ std::string dynamoComponent();
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
+/** Request plane mode: "tcp" or "http". From DYN_REQUEST_PLANE, falling back
+ * to DYNAMO_REQUEST_PLANE. Default: defaults::DYNAMO_REQUEST_PLANE. */
+std::string dynamoRequestPlane();
+
+/** HTTP RPC root path when request plane is http. From DYN_HTTP_RPC_ROOT_PATH.
+ * Default: defaults::DYNAMO_HTTP_RPC_ROOT_PATH. */
+std::string dynamoHttpRpcRootPath();
+
+/** HTTP RPC listen port when request plane is http. From DYN_HTTP_RPC_PORT; 0
+ * means OS-assigned. Default: defaults::DYNAMO_HTTP_RPC_PORT. */
+uint16_t dynamoHttpRpcPort();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

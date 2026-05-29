@@ -68,6 +68,15 @@ Performance knobs (read from the calling shell, optional):
                           info,dynamo_llm::preprocessor=debug,dynamo_runtime::transport=debug
                         to see per-request spans and find where the
                         ~600 ms TTFT delta is hiding.
+  DYN_REQUEST_PLANE     Request plane between frontend and worker: tcp
+                        (default), http (HTTP/2 client to worker RPC), or
+                        nats. When http, also set DYN_HTTP_RPC_PORT and
+                        DYN_HTTP_RPC_ROOT_PATH consistently on frontend
+                        and worker containers.
+  DYN_HTTP_RPC_PORT     Worker HTTP RPC port when DYN_REQUEST_PLANE=http
+                        (default 8888).
+  DYN_HTTP_RPC_ROOT_PATH
+                        Worker HTTP RPC path prefix (default /v1/rpc).
   DYN_TX_TRACE          Enable per-token send tracing on the worker
                         (cpp_server) side. When set to '1' (or any
                         non-zero/non-'false' value) the worker emits a
@@ -195,6 +204,7 @@ docker run -d --name "$WORKER_NAME" \
     --ulimit nproc=65536:65536 \
     -p "${WORKER_HOST_PORT}:8000" \
     -p 9000:9000 \
+    -p "${DYN_HTTP_RPC_PORT:-8888}:${DYN_HTTP_RPC_PORT:-8888}" \
     -v /dev/hugepages:/dev/hugepages \
     -v /dev/hugepages-1G:/dev/hugepages-1G \
     -v /etc/udev/rules.d:/etc/udev/rules.d \
@@ -206,6 +216,10 @@ docker run -d --name "$WORKER_NAME" \
     -e DYNAMO_NAMESPACE=default \
     -e DYNAMO_COMPONENT=backend \
     -e DYNAMO_ENDPOINT_NAME=generate \
+    -e DYN_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}" \
+    -e DYNAMO_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}" \
+    -e DYN_HTTP_RPC_ROOT_PATH="${DYN_HTTP_RPC_ROOT_PATH:-/v1/rpc}" \
+    -e DYN_HTTP_RPC_PORT="${DYN_HTTP_RPC_PORT:-8888}" \
     -e SERVER_MODE=cpp \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
@@ -329,6 +343,9 @@ docker run -d --name "$FRONTEND_NAME" \
     "${TOKENIZER_MOUNT[@]}" \
     "${FRONTEND_MODEL_PATH_ENV[@]}" \
     -e DYN_DISCOVERY_BACKEND=etcd \
+    -e DYN_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}" \
+    -e DYN_HTTP_RPC_ROOT_PATH="${DYN_HTTP_RPC_ROOT_PATH:-/v1/rpc}" \
+    -e DYN_HTTP_RPC_PORT="${DYN_HTTP_RPC_PORT:-8888}" \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e MODEL_NAME="$MODEL_NAME" \
     -e HF_MODEL_ID="$HF_MODEL_ID" \

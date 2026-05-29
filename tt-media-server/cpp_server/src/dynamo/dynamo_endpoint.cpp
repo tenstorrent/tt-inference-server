@@ -23,6 +23,8 @@
 #include <variant>
 
 #include "config/settings.hpp"
+
+#include <cctype>
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
 #include "domain/session.hpp"
@@ -96,6 +98,13 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
 /// tokenizer. `tokenizerPath()` is the absolute path to tokenizer.json so we
 /// strip the filename to get the directory the discovery MDC needs.
+bool requestPlaneIsHttp() {
+  std::string mode = tt::config::dynamoRequestPlane();
+  std::transform(mode.begin(), mode.end(), mode.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return mode == "http";
+}
+
 std::string detectModelPath() {
   std::string tokJson = tt::config::tokenizerPath();
   if (tokJson.empty()) return {};
@@ -125,7 +134,11 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
 DynamoEndpoint::~DynamoEndpoint() { stop(); }
 
 std::string DynamoEndpoint::detectAdvertiseHost() const {
-  if (const char* env = std::getenv("DYN_TCP_RPC_HOST")) {
+  if (requestPlaneIsHttp()) {
+    if (const char* env = std::getenv("DYN_HTTP_RPC_HOST")) {
+      return env;
+    }
+  } else if (const char* env = std::getenv("DYN_TCP_RPC_HOST")) {
     return env;
   }
 
@@ -304,6 +317,8 @@ void DynamoEndpoint::start() {
     return;
   }
 
+  use_http_request_plane_ = requestPlaneIsHttp();
+
   // Pool of trantor loops, one per logical CPU by default, clamped to
   // [4, 64]. makeGenerateHandler() round-robins requests across them.
   size_t requestedLoops = options_.num_loops;
@@ -316,37 +331,79 @@ void DynamoEndpoint::start() {
       static_cast<size_t>(requestedLoops), "DynamoEndpointLoop");
   loop_pool_->start();
 
-  ServerConfig sc;
-  sc.bind_host = options_.bind_host;
-  sc.bind_port = 0;  // OS-assigned: the discovery file advertises the
-                     // resolved port.
-  sc.namespace_name = options_.namespace_name;
-  sc.component = options_.component;
-  sc.endpoint = options_.endpoint;
-  sc.model_name = options_.model_name;
-  sc.model_path = options_.model_path;
+  const auto handler = makeGenerateHandler();
+  uint16_t bound_port = 0;
+  uint64_t instance_id = 0;
+  std::string instance_id_hex;
 
-  server_ = std::make_unique<DynamoServer>(sc, makeGenerateHandler());
+  if (use_http_request_plane_) {
+    HttpServerConfig hsc;
+    hsc.bind_host = options_.bind_host;
+    hsc.bind_port = tt::config::dynamoHttpRpcPort();
+    hsc.rpc_root_path = tt::config::dynamoHttpRpcRootPath();
+    hsc.endpoint_name = options_.endpoint;
 
-  // Spawn the accept loop in its own thread so we can fall through to
-  // discovery registration once the port is bound.
-  server_thread_ = std::thread([this]() {
-    try {
-      server_->run();
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[DynamoEndpoint] server thread terminated: {}", e.what());
+    http_server_ = std::make_unique<DynamoHttpServer>(hsc, handler);
+
+    server_thread_ = std::thread([this]() {
+      try {
+        http_server_->run();
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[DynamoEndpoint] HTTP server thread terminated: {}",
+                     e.what());
+      }
+    });
+
+    for (int i = 0; i < 50 && http_server_->port() == 0 && running_; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
-  });
+    if (http_server_->port() == 0) {
+      running_ = false;
+      throw std::runtime_error(
+          "DynamoEndpoint: HTTP server failed to bind within timeout");
+    }
+    bound_port = http_server_->port();
+    // Discovery instance_id is not embedded in the HTTP URL; use a stable
+    // id for MDC keys only.
+    std::srand(static_cast<unsigned>(std::time(nullptr) ^ ::getpid()));
+    instance_id = (static_cast<uint64_t>(std::rand()) << 32) |
+                  static_cast<uint64_t>(std::rand());
+    std::ostringstream oss;
+    oss << std::hex << instance_id;
+    instance_id_hex = oss.str();
+  } else {
+    ServerConfig sc;
+    sc.bind_host = options_.bind_host;
+    sc.bind_port = 0;  // OS-assigned: the discovery file advertises the
+                       // resolved port.
+    sc.namespace_name = options_.namespace_name;
+    sc.component = options_.component;
+    sc.endpoint = options_.endpoint;
+    sc.model_name = options_.model_name;
+    sc.model_path = options_.model_path;
 
-  // Wait for the listener to bind (port becomes non-zero). Bounded poll —
-  // bind is synchronous in run() right after socket creation.
-  for (int i = 0; i < 50 && server_->port() == 0 && running_; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  }
-  if (server_->port() == 0) {
-    running_ = false;
-    throw std::runtime_error(
-        "DynamoEndpoint: server failed to bind within timeout");
+    tcp_server_ = std::make_unique<DynamoServer>(sc, handler);
+    instance_id = tcp_server_->config().instance_id;
+    instance_id_hex = tcp_server_->config().instance_id_hex;
+
+    server_thread_ = std::thread([this]() {
+      try {
+        tcp_server_->run();
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[DynamoEndpoint] TCP server thread terminated: {}",
+                     e.what());
+      }
+    });
+
+    for (int i = 0; i < 50 && tcp_server_->port() == 0 && running_; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (tcp_server_->port() == 0) {
+      running_ = false;
+      throw std::runtime_error(
+          "DynamoEndpoint: TCP server failed to bind within timeout");
+    }
+    bound_port = tcp_server_->port();
   }
 
   DiscoveryConfig dc;
@@ -355,24 +412,37 @@ void DynamoEndpoint::start() {
   dc.namespace_name = options_.namespace_name;
   dc.component = options_.component;
   dc.endpoint = options_.endpoint;
-  dc.instance_id = server_->config().instance_id;
-  dc.instance_id_hex = server_->config().instance_id_hex;
-  // Dynamo's TCP dialer parses `IP:port/endpoint_name`: the left half
-  // must be a numeric SocketAddr, and the right half is required for the
-  // x-endpoint-path header. The instance id is already carried in the
-  // instance JSON, so only the endpoint name goes here.
-  dc.tcp_address = options_.advertise_host + ":" +
-                   std::to_string(server_->port()) + "/" + options_.endpoint;
+  dc.instance_id = instance_id;
+  dc.instance_id_hex = instance_id_hex;
+  dc.use_http_transport = use_http_request_plane_;
+  if (use_http_request_plane_) {
+    std::string root = tt::config::dynamoHttpRpcRootPath();
+    if (root.empty()) root = "/v1/rpc";
+    if (root.front() != '/') root.insert(root.begin(), '/');
+    while (root.size() > 1 && root.back() == '/') root.pop_back();
+    dc.http_address = "http://" + options_.advertise_host + ":" +
+                      std::to_string(bound_port) + root + "/" +
+                      options_.endpoint;
+  } else {
+    // Dynamo's TCP dialer parses `IP:port/endpoint_name`: the left half
+    // must be a numeric SocketAddr, and the right half is required for the
+    // x-endpoint-path header.
+    dc.tcp_address = options_.advertise_host + ":" +
+                     std::to_string(bound_port) + "/" + options_.endpoint;
+  }
   dc.model_name = options_.model_name;
   dc.model_path = options_.model_path;
 
   discovery_ = DiscoveryRegistration::create(dc);
   discovery_->registerSelf();
 
+  const char* plane = use_http_request_plane_ ? "http" : "tcp";
+  const std::string& advertise =
+      use_http_request_plane_ ? dc.http_address : dc.tcp_address;
   TT_LOG_INFO(
-      "[DynamoEndpoint] Ready: bind={}:{} advertise={} model={} "
+      "[DynamoEndpoint] Ready: plane={} bind={}:{} advertise={} model={} "
       "discovery=etcd({})",
-      options_.bind_host, server_->port(), dc.tcp_address, dc.model_name,
+      plane, options_.bind_host, bound_port, advertise, dc.model_name,
       dc.etcd_endpoints);
 
   // Refresh the registration periodically so a frontend that prunes stale
@@ -394,8 +464,11 @@ void DynamoEndpoint::stop() {
   }
 
   TT_LOG_INFO("[DynamoEndpoint] Shutting down");
-  if (server_) {
-    server_->shutdown();
+  if (tcp_server_) {
+    tcp_server_->shutdown();
+  }
+  if (http_server_) {
+    http_server_->shutdown();
   }
   if (discovery_) {
     discovery_->unregisterSelf();
@@ -408,7 +481,8 @@ void DynamoEndpoint::stop() {
     // threads.
     loop_pool_.reset();
   }
-  server_.reset();
+  tcp_server_.reset();
+  http_server_.reset();
   discovery_.reset();
 }
 

@@ -38,6 +38,10 @@ fi
 export DYN_DISCOVERY_BACKEND="${DYN_DISCOVERY_BACKEND:-file}"
 export DYN_REQUEST_PLANE="${DYN_REQUEST_PLANE:-tcp}"
 export DYN_EVENT_PLANE="${DYN_EVENT_PLANE:-zmq}"
+# HTTP request plane (when DYN_REQUEST_PLANE=http). Must match on frontend + worker.
+export DYN_HTTP_RPC_ROOT_PATH="${DYN_HTTP_RPC_ROOT_PATH:-/v1/rpc}"
+export DYN_HTTP_RPC_PORT="${DYN_HTTP_RPC_PORT:-8888}"
+export DYNAMO_REQUEST_PLANE="${DYN_REQUEST_PLANE}"
 export DYN_FILE_STORE="${DYN_FILE_STORE:-/tmp/dynamo_store_kv}"
 export ETCD_ENDPOINTS="${ETCD_ENDPOINTS:-http://localhost:2379}"
 export DYNAMO_ENDPOINT_ENABLED=1

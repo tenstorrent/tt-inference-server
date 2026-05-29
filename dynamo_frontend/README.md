@@ -37,7 +37,10 @@ the worker, etcd, and the frontend are on the same network.
 | `HTTP_PORT` | `8000` | HTTP listen port |
 | `DYN_DISCOVERY_BACKEND` | `etcd` | Discovery backend (`etcd` or `file`) |
 | `ETCD_ENDPOINTS` | `http://etcd:2379` | Comma-separated etcd v3 client URLs |
-| `DYN_REQUEST_PLANE` | `tcp` | Request plane transport (`tcp` or `nats`) |
+| `DYN_REQUEST_PLANE` | `tcp` | Request plane transport (`tcp`, `http`, or `nats`) |
+| `DYN_HTTP_RPC_HOST` | _(auto)_ | HTTP RPC bind/advertise host when `DYN_REQUEST_PLANE=http` |
+| `DYN_HTTP_RPC_PORT` | `8888` | HTTP RPC port on the worker (use `0` for OS-assigned) |
+| `DYN_HTTP_RPC_ROOT_PATH` | `/v1/rpc` | HTTP RPC path prefix (must match worker) |
 | `DYN_EVENT_PLANE` | `zmq` | Event plane transport (`zmq` or `nats`) |
 
 ## Notes

@@ -122,4 +122,9 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://localhost:2379";
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
+// Request plane: "tcp" (default) or "http". Mirrors DYN_REQUEST_PLANE.
+constexpr const char* DYNAMO_REQUEST_PLANE = "tcp";
+constexpr const char* DYNAMO_HTTP_RPC_ROOT_PATH = "/v1/rpc";
+constexpr uint16_t DYNAMO_HTTP_RPC_PORT = 8888;
+
 }  // namespace tt::config::defaults

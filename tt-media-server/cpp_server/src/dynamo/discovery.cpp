@@ -57,7 +57,8 @@ std::string instanceKey(const DiscoveryConfig& c) {
          c.instance_id_hex;
 }
 
-/// Build the instance JSON document the frontend dials over (transport.tcp).
+/// Build the instance JSON document the frontend dials (transport.tcp or
+/// transport.http depending on DYN_REQUEST_PLANE).
 Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   Json::Value instance(Json::objectValue);
   instance["type"] = "Endpoint";
@@ -67,7 +68,11 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   instance["instance_id"] = static_cast<Json::UInt64>(c.instance_id);
 
   Json::Value transport(Json::objectValue);
-  transport["tcp"] = c.tcp_address;
+  if (c.use_http_transport) {
+    transport["http"] = c.http_address;
+  } else {
+    transport["tcp"] = c.tcp_address;
+  }
   instance["transport"] = std::move(transport);
   instance["device_type"] = "cuda";
   return instance;

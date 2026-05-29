@@ -328,39 +328,12 @@ bool DynamoServer::read_request(int fd, TcpRequestMessage& msg) {
   return true;
 }
 
-void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
-  TwoPartMessage twoPart = decode_two_part(msg.payload);
-  auto ctrl = parse_control_message(twoPart.header);
-  auto genReq = parse_generate_request(twoPart.body);
-  auto connInfo = parse_connection_info(ctrl.connection_info);
+namespace {
 
-  TT_LOG_DEBUG(
-      "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
-      ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
-
-  // ACK on the inbound connection (caller is still in the read loop on
-  // `fd`, so ACKs stay in the same order the frontend pipelined the
-  // requests in — Dynamo's reader task on the frontend matches ACKs to
-  // pending requests in FIFO order on a per-connection basis).
-  auto ack = encode_tcp_response();
-  if (!writeAll(fd, ack)) {
-    TT_LOG_WARN("[DynamoServer] Failed to send ACK for id={}", ctrl.id);
-    return;
-  }
-
-  // Off-thread the slow path (LLMService dispatch + call-home streaming)
-  // so the read loop on `fd` can immediately consume the next pipelined
-  // request. `stream_response` opens its own outbound socket and never
-  // touches `fd`, so concurrent streams don't share state.
-  std::thread([this, connInfo = std::move(connInfo), requestId = ctrl.id,
-               genReq = std::move(genReq)]() {
-    stream_response(connInfo, requestId, genReq);
-  }).detach();
-}
-
-void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
-                                   const std::string& requestId,
-                                   const GenerateRequest& genReq) {
+void stream_response(GenerateHandler& handler,
+                     const TcpStreamConnectionInfo& connInfo,
+                     const std::string& requestId,
+                     const GenerateRequest& genReq) {
   auto colonPos = connInfo.address.rfind(':');
   if (colonPos == std::string::npos) {
     TT_LOG_ERROR("[DynamoServer] Invalid response address: {}",
@@ -462,7 +435,7 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
   SteadyClock::time_point tPrevChunk{};
   bool sawFirstChunk = false;
 
-  handler_(genReq, [&](const TokenChunk& chunk) -> bool {
+  handler(genReq, [&](const TokenChunk& chunk) -> bool {
     auto chunkBytes = encode_stream_chunk(chunk);
     const size_t bytesOut = chunkBytes.size() + sizeof(uint64_t) * 3;
     TwoPartMessage tp;
@@ -536,6 +509,39 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
   }
 
   ::close(sock);
+}
+
+}  // namespace
+
+void process_two_part_payload(const std::vector<uint8_t>& payload,
+                              GenerateHandler handler) {
+  TwoPartMessage twoPart = decode_two_part(payload);
+  auto ctrl = parse_control_message(twoPart.header);
+  auto genReq = parse_generate_request(twoPart.body);
+  auto connInfo = parse_connection_info(ctrl.connection_info);
+
+  TT_LOG_DEBUG(
+      "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
+      ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
+
+  std::thread([handler = std::move(handler), connInfo = std::move(connInfo),
+               requestId = ctrl.id, genReq = std::move(genReq)]() mutable {
+    stream_response(handler, connInfo, requestId, genReq);
+  }).detach();
+}
+
+void DynamoServer::process_request(int fd, const TcpRequestMessage& msg) {
+  // ACK on the inbound connection (caller is still in the read loop on
+  // `fd`, so ACKs stay in the same order the frontend pipelined the
+  // requests in — Dynamo's reader task on the frontend matches ACKs to
+  // pending requests in FIFO order on a per-connection basis).
+  auto ack = encode_tcp_response();
+  if (!writeAll(fd, ack)) {
+    TT_LOG_WARN("[DynamoServer] Failed to send ACK");
+    return;
+  }
+
+  process_two_part_payload(msg.payload, handler_);
 }
 
 void DynamoServer::handle_connection(int clientFd) {

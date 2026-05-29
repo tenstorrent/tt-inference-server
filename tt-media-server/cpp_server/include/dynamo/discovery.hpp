@@ -35,9 +35,12 @@ struct DiscoveryConfig {
   std::string endpoint = "generate";
   std::string instance_id_hex;
   uint64_t instance_id = 0;
-  /// "host:port/instance_id_hex/endpoint" — the address Dynamo dials to send
-  /// us a request.
+  /// TCP request plane: "host:port/instance_id_hex/endpoint".
   std::string tcp_address;
+  /// HTTP request plane: "http://host:port/v1/rpc/endpoint".
+  std::string http_address;
+  /// When true, publish transport.http instead of transport.tcp.
+  bool use_http_transport = false;
   /// Display name in /v1/models (e.g. "deepseek-ai/DeepSeek-R1-0528").
   std::string model_name;
   /// Filesystem directory containing config.json + tokenizer.json +

@@ -4,7 +4,7 @@
 #pragma once
 
 /**
- * Dynamo TCP Wire Protocol
+ * Dynamo request-plane wire protocol (TCP and HTTP/2 ingress).
  *
  * Implements NVIDIA Dynamo's request plane so this C++ server can register
  * as a native backend worker without a Python bridge. Originally adapted
@@ -12,8 +12,9 @@
  * sibling repo.
  *
  * Wire formats implemented:
- *   - TCP request frame (ingress from frontend)
- *   - TCP response frame (ACK back to frontend)
+ *   - TCP request frame (ingress when DYN_REQUEST_PLANE=tcp)
+ *   - HTTP POST body = TwoPartCodec bytes (when DYN_REQUEST_PLANE=http)
+ *   - TCP response frame (ACK back to frontend on TCP ingress)
  *   - TwoPartCodec (header+body framing for control + data)
  *   - Call-home response stream (streaming tokens back to the frontend)
  */
@@ -195,6 +196,13 @@ using GenerateHandler =
     std::function<void(const GenerateRequest& request,
                        std::function<bool(const TokenChunk&)> send_chunk)>;
 
+/// Decode a TwoPartCodec payload and dispatch generation. Opens the TCP
+/// call-home response stream described in the request control message.
+/// Safe to call from any thread; the handler and stream work run on a
+/// detached thread.
+void process_two_part_payload(const std::vector<uint8_t>& payload,
+                              GenerateHandler handler);
+
 struct ServerConfig {
   std::string bind_host = "0.0.0.0";
   uint16_t bind_port = 0;  // 0 = OS-assigned (recommended)
@@ -239,9 +247,6 @@ class DynamoServer {
   bool read_exact(int fd, std::vector<uint8_t>& buf, size_t n);
   bool read_request(int fd, TcpRequestMessage& msg);
   void process_request(int fd, const TcpRequestMessage& msg);
-  void stream_response(const TcpStreamConnectionInfo& conn_info,
-                       const std::string& request_id,
-                       const GenerateRequest& gen_req);
 };
 
 }  // namespace tt::dynamo

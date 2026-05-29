@@ -42,6 +42,8 @@ RUN . .venv/bin/activate && uv pip install huggingface_hub
 ENV DYN_DISCOVERY_BACKEND=etcd \
     ETCD_ENDPOINTS=http://etcd:2379 \
     DYN_REQUEST_PLANE=tcp \
+    DYN_HTTP_RPC_ROOT_PATH=/v1/rpc \
+    DYN_HTTP_RPC_PORT=8888 \
     DYN_EVENT_PLANE=zmq \
     MODEL_NAME=mock-model \
     MODEL_PATH=/app/model \

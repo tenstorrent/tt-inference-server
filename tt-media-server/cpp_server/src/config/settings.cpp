@@ -635,4 +635,30 @@ std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
 }
 
+std::string dynamoRequestPlane() {
+  if (const char* v = std::getenv("DYN_REQUEST_PLANE"); v && *v) {
+    return v;
+  }
+  return envString("DYNAMO_REQUEST_PLANE", defaults::DYNAMO_REQUEST_PLANE);
+}
+
+std::string dynamoHttpRpcRootPath() {
+  if (const char* v = std::getenv("DYN_HTTP_RPC_ROOT_PATH"); v && *v) {
+    return v;
+  }
+  return defaults::DYNAMO_HTTP_RPC_ROOT_PATH;
+}
+
+uint16_t dynamoHttpRpcPort() {
+  const char* v = std::getenv("DYN_HTTP_RPC_PORT");
+  if (!v || !*v) return defaults::DYNAMO_HTTP_RPC_PORT;
+  try {
+    const int p = std::stoi(v);
+    if (p < 0 || p > 65535) return defaults::DYNAMO_HTTP_RPC_PORT;
+    return static_cast<uint16_t>(p);
+  } catch (const std::exception&) {
+    return defaults::DYNAMO_HTTP_RPC_PORT;
+  }
+}
+
 }  // namespace tt::config

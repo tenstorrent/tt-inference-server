@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "dynamo/discovery.hpp"
+#include "dynamo/dynamo_http_server.hpp"
 #include "dynamo/dynamo_protocol.hpp"
 
 namespace trantor {
@@ -24,11 +25,10 @@ namespace tt::dynamo {
 /**
  * Dedicated Dynamo `generate` endpoint.
  *
- * Hosts a TCP listener that speaks the Dynamo wire protocol and dispatches
- * each inbound request through the same `LLMPipeline` used by HTTP
- * `/v1/chat/completions` and `/v1/responses` — so Dynamo traffic benefits
- * from session management, prefix-cache routing, and (when configured)
- * disaggregated prefill, with no mock detour.
+ * Hosts a request-plane listener (TCP or HTTP, per DYN_REQUEST_PLANE) that
+ * speaks the Dynamo wire protocol and dispatches each inbound request
+ * through the same `LLMPipeline` used by OpenAI HTTP
+ * `/v1/chat/completions` and `/v1/responses`.
  *
  * One instance per process. Construct in main.cpp once the LLMPipeline /
  * SessionManager are ready, call `start()` after the worker manager is up.
@@ -86,8 +86,10 @@ class DynamoEndpoint {
   std::shared_ptr<services::LLMPipeline> pipeline_;
   Options options_;
 
-  std::unique_ptr<DynamoServer> server_;
+  std::unique_ptr<DynamoServer> tcp_server_;
+  std::unique_ptr<DynamoHttpServer> http_server_;
   std::thread server_thread_;
+  bool use_http_request_plane_ = false;
   std::thread keepalive_thread_;
   std::unique_ptr<trantor::EventLoopThreadPool> loop_pool_;
   std::atomic<bool> running_{false};
