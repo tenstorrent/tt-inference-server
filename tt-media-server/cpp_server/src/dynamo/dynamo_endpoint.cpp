@@ -94,8 +94,9 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
 }
 
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
-/// tokenizer. `tokenizerPath()` is the absolute path to tokenizer.json so we
-/// strip the filename to get the directory the discovery MDC needs.
+/// tokenizer. `tokenizerPath()` returns an absolute tokenizer file path
+/// (`tokenizer.json` or `tiktoken.model`), so we strip the filename to get the
+/// directory the discovery MDC needs.
 std::string detectModelPath() {
   std::string tokJson = tt::config::tokenizerPath();
   if (tokJson.empty()) return {};
@@ -114,8 +115,8 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
     options_.advertise_host = detectAdvertiseHost();
   }
   if (options_.model_name.empty()) {
-    options_.model_name =
-        std::string(tt::utils::tokenizers::staticInfo().modelName);
+    // Use MODEL env var value for etcd registration (frontend routes by model)
+    options_.model_name = tt::config::toString(tt::config::model());
   }
   if (options_.model_path.empty()) {
     options_.model_path = detectModelPath();

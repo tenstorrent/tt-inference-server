@@ -4390,6 +4390,27 @@
             }
         ]
     },
+    "Falcon3-7B-Instruct": {
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26.0,
+                        "tput_user": 43.0,
+                        "tput": 1328.0
+                    }
+                }
+            }
+        ]
+    },
     "Falcon3-10B-Base": {
         "t3k": [
             {
@@ -5139,6 +5160,25 @@
                     "theoretical": {
                         "ttft_ms": 17,
                         "tput_user": 61
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13.0,
+                        "tput_user": 99.0,
+                        "tput": 2991.0
                     }
                 }
             }
@@ -5995,10 +6035,10 @@
                 "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400.0,
+                        "ttft_ms": 2700.0,
                         "ttft_streaming_ms": null,
-                        "tput_user": 65.0,
-                        "rtr": 17.0,
+                        "tput_user": 47.0,
+                        "rtr": 11.5,
                         "tolerance": 0.05
                     }
                 }
@@ -6011,10 +6051,10 @@
                 "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400.0,
+                        "ttft_ms": 1900.0,
                         "ttft_streaming_ms": null,
-                        "tput_user": 65.0,
-                        "rtr": 17.0,
+                        "tput_user": 62.0,
+                        "rtr": 16.0,
                         "tolerance": 0.05
                     }
                 }
@@ -6077,10 +6117,10 @@
                 "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 200.0,
+                        "ttft_ms": 1250.0,
                         "ttft_streaming_ms": null,
                         "tput_user": 130.0,
-                        "rtr": 34.0,
+                        "rtr": 25.0,
                         "tolerance": 0.05
                     }
                 }
@@ -6093,10 +6133,10 @@
                 "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 200.0,
+                        "ttft_ms": 800.0,
                         "ttft_streaming_ms": null,
-                        "tput_user": 130.0,
-                        "rtr": 34.0,
+                        "tput_user": 380.0,
+                        "rtr": 38.0,
                         "tolerance": 0.05
                     }
                 }

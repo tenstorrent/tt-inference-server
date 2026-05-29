@@ -848,6 +848,13 @@ add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
 
+add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
+target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(test_apply_delta_prompt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ApplyDeltaPrompt COMMAND test_apply_delta_prompt)
+
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
 target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib)

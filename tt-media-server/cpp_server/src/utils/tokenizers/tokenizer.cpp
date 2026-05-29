@@ -198,6 +198,8 @@ std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder(
 
 std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
+    case config::ModelType::KIMI_K2_6:
+      return "moonshotai/Kimi-K2.6";
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
     case config::ModelType::DEEPSEEK_R1_0528:
@@ -211,6 +213,11 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
+    case config::ModelType::KIMI_K2_6:
+      // Kimi K2.6 uses model-specific files, but currently shares the same
+      // chat-template/tool-call behavior as DeepSeek until a dedicated
+      // Kimi tokenizer implementation is added.
+      return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return std::make_unique<DeepseekTokenizer>(path);
@@ -252,6 +259,15 @@ const StaticTokenizerInfo& llama31Info() {
   return kInfo;
 }
 
+const StaticTokenizerInfo& kimiK26Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"moonshotai/Kimi-K2.6",
+      /*stopTokenIds=*/{163586},
+      /*assistantHeaderSequence=*/{163588},
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -260,6 +276,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return deepseekR1Info();
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return llama31Info();
+    case config::ModelType::KIMI_K2_6:
+      return kimiK26Info();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +
