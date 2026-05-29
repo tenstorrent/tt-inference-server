@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <unordered_set>
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
@@ -64,7 +63,6 @@ class BlazeRunner : public IRunner {
   void checkOutputHang();
 
   tt::config::LLMConfig config;
-  std::unordered_set<int64_t> stopTokenIds;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* stopQueue;

@@ -8,9 +8,10 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::sockets {
 
@@ -35,7 +36,7 @@ struct SerializableMessage {
  */
 struct PrefillRequestMessage {
   uint32_t task_id;
-  size_t registration_hash = 0;
+  std::vector<uint64_t> registration_hashes;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
@@ -56,15 +57,14 @@ struct PrefillRequestMessage {
     float topPVal = top_p.value_or(0.0f);
     bool hasTopK = top_k.has_value();
     int topKVal = top_k.value_or(0);
-    uint64_t hash64 = static_cast<uint64_t>(registration_hash);
-    ar(task_id, hash64, token_ids, mt, sid, hasTemp, tempVal, hasTopP, topPVal,
-       hasTopK, topKVal, fast_mode);
+    ar(task_id, registration_hashes, token_ids, mt, sid, hasTemp, tempVal,
+       hasTopP, topPVal, hasTopK, topKVal, fast_mode);
   }
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
     uint32_t tid;
-    uint64_t hash64;
+    std::vector<uint64_t> hashes;
     std::vector<int64_t> tids;
     int mt;
     uint32_t sid;
@@ -75,10 +75,10 @@ struct PrefillRequestMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
-    ar(tid, hash64, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
+    ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
        topKVal, fastMode);
     PrefillRequestMessage msg(tid);
-    msg.registration_hash = static_cast<size_t>(hash64);
+    msg.registration_hashes = std::move(hashes);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
     msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
@@ -309,12 +309,13 @@ struct PrefillCacheBlocksEvictedMessage
 // Wire-protocol tags for the new gateway messages. Existing tags
 // ("prefill_request", etc.) remain string literals at their call sites.
 namespace tags {
-constexpr const char* PREFILL_REGISTRATION = "prefill_registration";
-constexpr const char* PREFILL_ASSIGNMENT = "prefill_assignment";
-constexpr const char* PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
-constexpr const char* PREFILL_CACHE_BLOCKS_EVICTED = "prefill_cache_evicted";
-constexpr const char* REGISTRATION_PROBE = "registration_probe";
-constexpr const char* CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
+constexpr std::string_view PREFILL_ASSIGNMENT = "prefill_assignment";
+constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
+constexpr std::string_view PREFILL_CACHE_BLOCKS_EVICTED =
+    "prefill_cache_evicted";
+constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
+constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
 }  // namespace tags
 
 }  // namespace tt::sockets

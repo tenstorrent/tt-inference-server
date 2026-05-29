@@ -17,13 +17,13 @@
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::blaze {
 BlazeRunner::BlazeRunner(
     const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::ipc::ITaskQueue* taskQueue, tt::ipc::ICancelQueue* stopQueue,
     std::unique_ptr<tt::services::MemoryManager> injectedMemoryManager)
     : config(config),
-      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       stopQueue(stopQueue),
@@ -32,8 +32,12 @@ BlazeRunner::BlazeRunner(
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePipelineConfig(config);
+  auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   ds::SchedulerParams managerParams{
-      .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers())};
+      .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers()),
+      .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
+      .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
+  };
   decodeScheduler =
       std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: DecodeScheduler constructed, calling start()...");
@@ -548,16 +552,15 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
     assert(false && "scheduler output for slot not RUNNING/AWAITING_*_ACK");
     return;
   }
-  bool hitStop =
-      !slotContext.ignoreEos && stopTokenIds.count(output.token_id) > 0;
-  bool finished = output.is_complete || hitStop;
+  bool finished = output.is_complete;
   auto taskId = slotContext.taskId.value();
 
   slotContext.tokensGenerated++;
+  slotContext.currentPosition = output.position_id;
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
-                                         taskId, hitStop);
+                                         taskId);
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
@@ -611,8 +614,10 @@ void BlazeRunner::handleRequest(
           request->taskId, slotId, isNew, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
           slotManager.activeRunningCount());
-      ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
-                                : utils::makeContinueRequest(slotId, *request);
+      ds::ISRequest req =
+          isNew ? utils::makeSubmitRequest(slotId, *request)
+                : utils::makeContinueRequest(slotId, *request,
+                                             slotContext.currentPosition);
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
@@ -631,6 +636,7 @@ void BlazeRunner::handleRequest(
           .incrementActiveRequests();
       break;
     }
+
     case SlotState::AWAITING_STOP_ACK: {
       if (slotContext.deferredContinue) {
         TT_LOG_WARN(

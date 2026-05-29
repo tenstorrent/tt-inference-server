@@ -7,7 +7,6 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <variant>
 #include <vector>
 
 #include "domain/llm/chat_message.hpp"
@@ -90,44 +89,14 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
 /**
  * Routing information computed from conversation messages for prefix caching.
  * Used by the controller to determine session lookup and registration.
- *
- * `deltaPrompt` is a variant so the same struct serves both inputs:
- *   - message-path (HTTP /v1/chat/completions, /v1/responses): a rendered
- *     string ready for tokenization.
- *   - tokens-path (Dynamo `generate`): the suffix of pre-tokenized ids that
- *     the worker still needs to prefill on a continuation.
  */
 struct PrefixCachingInfo {
-  std::optional<uint64_t>
-      lookupHash;  // Hash of prior-turn prefix (for session lookup)
-  uint64_t registrationHash =
-      0;  // Hash of current conversation (for next turn's lookup)
-  std::variant<std::string, std::vector<int>>
-      deltaPrompt;  // Last user turn rendered (string) or delta token ids
-  bool hasPriorTurn =
-      false;  // True if a prior assistant turn exists (enables lookup)
+  std::vector<uint64_t> hashes;  // Per-block prefix cache hashes
 };
-
-/**
- * Compute prefix caching routing information from conversation messages.
- * This is the entry point for controllers to extract all routing data needed
- * for hash-based session lookup and registration.
- *
- * @param messages Input chat messages (should end with user message)
- * @return Complete routing information for prefix caching
- */
-PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<ChatMessage>& messages);
 
 // ---------------------------------------------------------------------------
 // Token-level helpers (used by the Dynamo backend, where the frontend has
 // already applied the chat template and we receive only token ids).
-//
-// Conceptually these mirror the message-level helpers above:
-//   stripToolMessages    -> N/A (tool turns are already templated into tokens)
-//   extractPriorTurnPrefix -> extractPriorTurnPrefixTokens
-//   hashConversationPrefix -> hashTokenPrefix
-//   computePrefixCachingInfo -> computePrefixCachingInfoFromTokens
 // ---------------------------------------------------------------------------
 
 /**
@@ -138,38 +107,11 @@ PrefixCachingInfo computePrefixCachingInfo(
 uint64_t hashTokenPrefix(std::span<const int> tokens);
 
 /**
- * Return the prefix used to LOOK UP a continuing session for a tokenized
- * prompt. The "assistant header sequence" is the multi-token marker that
- * ends every assistant generation prompt in the chat template (e.g.
- * `<|start_header_id|>assistant<|end_header_id|>\n\n` for Llama-3,
- * `<｜Assistant｜>` for DeepSeek). The PROMPT contains:
- *
- *   [...prior turns...] <asst> {a_{n-1}} <user> {u_n} <asst>
- *                       ^^^^^^                       ^^^^^^
- *                       second-to-last               last (current gen prompt)
- *
- * The prior-turn prefix is everything up to and INCLUDING the second-to-last
- * occurrence of the assistant-header sequence. That hash matches what the
- * previous turn registered (its sole `<asst>` becomes the second-to-last
- * here).
- *
- * Returns std::nullopt when:
- *   - assistantHeaderSequence is empty (tokenizer doesn't expose it), or
- *   - the prompt contains fewer than two assistant-header occurrences (no
- *     prior turn).
- */
-std::optional<std::vector<int>> extractPriorTurnPrefixTokens(
-    std::span<const int> tokens, std::span<const int> assistantHeaderSequence);
-
-/**
- * Compute prefix caching routing information from a tokenized prompt. Mirrors
- * `computePrefixCachingInfo` but operates on token ids: the assistant-header
- * sequence is read from the active tokenizer strategy.
+ * Compute prefix caching routing information from a tokenized prompt.
+ * The assistant-header sequence is read from the active tokenizer strategy.
  *
  * @param tokens Full token-id sequence from the request.
- * @return Complete routing information for prefix caching. `deltaPrompt`
- *         holds the suffix tokens (vector<int> variant) on a continuation,
- *         or an empty vector<int> when there is no prior turn.
+ * @return Complete routing information for prefix caching (per-block hashes).
  */
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens);
@@ -186,10 +128,14 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
  * Only FULL blocks are hashed — any trailing partial block is ignored (it
  * hasn't been committed to the KV cache yet).
  *
- * @param tokens Full token-id sequence.
+ * @param tokens Token-id sequence to hash.
+ * @param parentHash Optional seed hash from a prior block. When non-zero,
+ *        hashing uses standard block size (not first block size) and chains
+ *        from this seed. Use `hashes.back()` from a prior call to continue.
  * @return Vector of per-block hashes (one per full block). Empty if the
  *         sequence is shorter than one block.
  */
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash = 0);
 
 }  // namespace tt::utils
