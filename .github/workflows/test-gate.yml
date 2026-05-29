@@ -2075,13 +2075,22 @@ jobs:
   dynamo-frontend-integration:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server + Dynamo Frontend Integration
+    name: C++ Server + Dynamo Frontend Integration (${{ matrix.plane }})
     # Same jammy runner as the cpp-server bench jobs so the artifact built by
     # cpp-build links against the same glibc / libstdc++ at runtime.
     runs-on: tt-ubuntu-2204-xlarge-stable
     timeout-minutes: 60
     permissions:
       contents: read
+    # Exercise both Dynamo request planes end-to-end. `tcp` is the default
+    # plane; `http` routes worker RPCs over the cpp_server's embedded HTTP
+    # RPC server (DynamoHttpServer). Both legs run the identical frontend +
+    # two-backend topology — only the transport differs. fail-fast: false so
+    # an http regression doesn't mask a tcp pass (and vice versa).
+    strategy:
+      fail-fast: false
+      matrix:
+        plane: [tcp, http]
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       no_proxy: "localhost,127.0.0.1,::1"
@@ -2093,7 +2102,20 @@ jobs:
       # repeating the env block on every step.
       DYN_DISCOVERY_BACKEND: etcd
       ETCD_ENDPOINTS: http://127.0.0.1:2379
-      DYN_REQUEST_PLANE: tcp
+      # Request plane under test (tcp or http), driven by the matrix. The
+      # frontend reads DYN_REQUEST_PLANE; cpp_server reads the same var (see
+      # config::dynamoRequestPlane in src/config/settings.cpp).
+      DYN_REQUEST_PLANE: ${{ matrix.plane }}
+      DYNAMO_REQUEST_PLANE: ${{ matrix.plane }}
+      # HTTP request-plane settings (ignored when plane=tcp). Root path must
+      # match on frontend + every worker. DYN_HTTP_RPC_HOST is the address
+      # workers advertise in etcd; pin it to loopback since the whole stack
+      # runs on this single runner. The per-backend DYN_HTTP_RPC_PORT is set
+      # in each backend's start step below — both backends share this host so
+      # they cannot reuse the same HTTP RPC port (TCP uses OS-assigned ports,
+      # so it has no such collision).
+      DYN_HTTP_RPC_ROOT_PATH: /v1/rpc
+      DYN_HTTP_RPC_HOST: 127.0.0.1
       DYN_EVENT_PLANE: zmq
       DYNAMO_DISCOVERY_BACKEND: etcd
       DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
@@ -2187,6 +2209,10 @@ jobs:
       # and their etcd lease id; the frontend's display model_name is set
       # once for the whole fleet.
       - name: Start cpp_server backend 1 (port 8001)
+        env:
+          # HTTP request plane: each backend needs its own RPC port since both
+          # run on this host. Unused (harmless) when plane=tcp.
+          DYN_HTTP_RPC_PORT: "8881"
         run: |
           cd cpp_server
           ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
@@ -2204,6 +2230,9 @@ jobs:
             || { echo "ERROR: backend 1 not ready"; cat backend1.log; exit 1; }
 
       - name: Start cpp_server backend 2 (port 8002)
+        env:
+          # HTTP request plane: distinct RPC port from backend 1 (see above).
+          DYN_HTTP_RPC_PORT: "8882"
         run: |
           cd cpp_server
           ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
@@ -2400,7 +2429,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dynamo-frontend-integration-result
+          name: dynamo-frontend-integration-result-${{ matrix.plane }}
           path: tt-media-server/vllm-bench-dynamo.json
           retention-days: 1
           if-no-files-found: warn
@@ -2409,7 +2438,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dynamo-frontend-integration-logs
+          name: dynamo-frontend-integration-logs-${{ matrix.plane }}
           path: |
             tt-media-server/etcd.log
             tt-media-server/frontend.log
