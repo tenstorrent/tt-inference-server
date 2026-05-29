@@ -126,10 +126,31 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
   return info;
 }
 
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(
-    std::span<const int> tokens) {
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash) {
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
   const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  // When continuing from a parent hash, use standard block size for all blocks
+  if (parentHash != 0) {
+    if (blockSize == 0 || tokens.size() < blockSize) {
+      return {};
+    }
+
+    std::vector<uint64_t> hashes;
+    size_t offset = 0;
+    while (offset + blockSize <= tokens.size()) {
+      const int* blockStart = tokens.data() + offset;
+      const size_t blockBytes = blockSize * sizeof(int);
+      parentHash = XXH64(blockStart, blockBytes, parentHash);
+      hashes.push_back(parentHash);
+      offset += blockSize;
+    }
+
+    return hashes;
+  }
+
+  // Fresh hashing: first block uses larger size
   if (firstBlockSize == 0 || blockSize == 0 || tokens.size() < firstBlockSize) {
     return {};
   }
@@ -141,7 +162,6 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
   // common token prefix produce identical hashes for their shared blocks.
   // The first block uses a larger size (e.g. system prompt) to capture the
   // common prefix shared across conversations with the same model config.
-  uint64_t parentHash = 0;
 
   // First block (larger, covers system prompt / preamble)
   const size_t firstBlockBytes = firstBlockSize * sizeof(int);
