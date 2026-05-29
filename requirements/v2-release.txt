@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the V2_RELEASE workflow venv.
+# Used by tt-inference-server-v2/workflow_module/isolation.py.
+#
+# The v2 release workflow (workflow_module.workflows.ReleaseWorkflow)
+# dispatches its children — evals, benchmarks, spec_tests — within a single
+# process to produce one combined report, so this venv must be the union of
+# v2-{evals,benchmarks,spec-tests}.txt. That union is dominated by the
+# FID/CLIP accuracy stack (torch / torchvision / open-clip / scipy).
+#
+# If release is ever changed to run each child as its own
+# SubprocessWorkflowCommand (one venv + one report per child, as in v1),
+# this file and WorkflowVenvType.V2_RELEASE can be dropped.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+aiohttp
+numpy
+open-clip-torch
+pillow
+requests
+scipy
+torch
+torchvision

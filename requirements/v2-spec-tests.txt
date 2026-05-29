@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the V2_SPEC_TESTS workflow venv.
+# Used by tt-inference-server-v2/workflow_module/isolation.py.
+#
+# Scope: whatever the spec test classes matched for the model import. Spec
+# tests are loaded dynamically (test_module.dispatch._instantiate_spec_test
+# importlib-imports each case["module"]), so this venv must cover the union
+# of those modules' deps. For SDXL the matched suite includes the
+# generation param tests (aiohttp / pillow / numpy) AND
+# image_generation_eval_test, which pulls the same FID/CLIP scoring stack
+# as v2-evals.txt (torch / torchvision / open-clip / scipy).
+#
+# NOTE: this is the union for the *current* SDXL suite. If a future suite
+# adds a test whose module imports something new, add it here — there is no
+# auto-discovery from the JSON suite definitions.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+aiohttp
+numpy
+open-clip-torch
+pillow
+requests
+scipy
+torch
+torchvision

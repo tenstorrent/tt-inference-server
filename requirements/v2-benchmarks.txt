@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the V2_BENCHMARKS workflow venv.
+# Used by tt-inference-server-v2/workflow_module/isolation.py.
+#
+# Scope: the image benchmark client chain only —
+# test_module.benchmark_tests.image_benchmark_tests (requests) plus the
+# health-check path test_module.context -> health_tests (aiohttp). This is
+# a pure HTTP client against an already-running server: NO torch / scoring
+# stack. Kept separate from v2-evals.txt precisely so a throughput run
+# doesn't install the accuracy stack. Relies on the lazy dispatch in
+# test_module (dispatch.py + the test_module/*/__init__.py facades) to
+# avoid eager-loading the eval modules.
+
+-c constraints.txt
+
+aiohttp
+numpy
+pillow
+requests

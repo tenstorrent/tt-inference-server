@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the V2_EVALS workflow venv.
+# Used by tt-inference-server-v2/workflow_module/isolation.py.
+#
+# Scope: the image eval chain
+# test_module.eval_tests.image_eval_tests ->
+# utils.sdxl_accuracy_utils.{sdxl_accuracy_utils,clip_encoder,fid_score,
+# inception}. The FID + CLIP accuracy scoring is what forces
+# torch / torchvision / open-clip / scipy here. This is the heavy venv by
+# necessity — but it no longer bleeds into benchmarks.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+aiohttp
+numpy
+open-clip-torch
+pillow
+requests
+scipy
+torch
+torchvision
