@@ -138,6 +138,7 @@ if [[ -z "$ETCD_IMAGE" || -z "$WORKER_IMAGE" || -z "$FRONTEND_IMAGE" ]]; then
     usage
 fi
 
+
 log() { printf '[deploy] %s\n' "$*"; }
 
 cleanup() {
