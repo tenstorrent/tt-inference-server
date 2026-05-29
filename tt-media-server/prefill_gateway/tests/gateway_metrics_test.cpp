@@ -5,9 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <string>
-#include <vector>
 
 namespace tt::gateway {
 namespace {
@@ -25,8 +25,9 @@ TEST(GatewayMetricsTest, RendersGatewayCountersAndGauges) {
   metrics.recordTimeout("prefill-a");
   metrics.recordCancel(true);
   metrics.setDecodeConnected(true);
-  metrics.setPrefillSnapshots(
-      {GatewayPrefillMetricSnapshot{"prefill-a", true, true, 2, 11, 1.5}});
+  const std::array snapshots{
+      GatewayPrefillMetricSnapshot{"prefill-a", true, true, 2, 11, 1.5}};
+  metrics.setPrefillSnapshots(snapshots);
 
   const std::string text = metrics.renderText();
 

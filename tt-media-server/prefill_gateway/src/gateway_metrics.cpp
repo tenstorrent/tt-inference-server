@@ -262,7 +262,7 @@ void GatewayMetrics::setDecodeConnected(bool connected) {
 }
 
 void GatewayMetrics::setPrefillSnapshots(
-    const std::vector<GatewayPrefillMetricSnapshot>& snapshots) {
+    std::span<const GatewayPrefillMetricSnapshot> snapshots) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& snapshot : snapshots) {
     const std::map<std::string, std::string> labels{

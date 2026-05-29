@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <sstream>
@@ -21,9 +22,8 @@ namespace {
 constexpr int SOCKET_BACKLOG = 16;
 constexpr size_t REQUEST_BUFFER_SIZE = 2048;
 
-std::string httpResponse(int status, const std::string& statusText,
-                         const std::string& contentType,
-                         const std::string& body) {
+std::string httpResponse(int status, std::string_view statusText,
+                         std::string_view contentType, std::string_view body) {
   std::ostringstream out;
   out << "HTTP/1.1 " << status << " " << statusText << "\r\n"
       << "Content-Type: " << contentType << "\r\n"
@@ -152,14 +152,14 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
 }
 
 void GatewayMetricsServer::serveClient(int clientFd) {
-  char buffer[REQUEST_BUFFER_SIZE] = {};
-  const ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
+  std::array<char, REQUEST_BUFFER_SIZE> buffer{};
+  const ssize_t bytesRead = recv(clientFd, buffer.data(), buffer.size() - 1, 0);
   if (bytesRead <= 0) {
     closeFd(clientFd);
     return;
   }
 
-  const std::string_view request(buffer, static_cast<size_t>(bytesRead));
+  const std::string_view request(buffer.data(), static_cast<size_t>(bytesRead));
   const std::string response =
       isMetricsRequest(request)
           ? httpResponse(200, "OK", "text/plain; version=0.0.4",

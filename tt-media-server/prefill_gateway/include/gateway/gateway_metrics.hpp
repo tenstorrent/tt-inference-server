@@ -13,10 +13,10 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace tt::gateway {
 
@@ -52,7 +52,7 @@ class GatewayMetrics {
 
   void setDecodeConnected(bool connected);
   void setPrefillSnapshots(
-      const std::vector<GatewayPrefillMetricSnapshot>& snapshots);
+      std::span<const GatewayPrefillMetricSnapshot> snapshots);
 
   std::string renderText() const;
   void resetForTests();

@@ -179,12 +179,10 @@ void Dispatcher::onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg) {
                 entry->prefill_id);
     return;
   }
-  if (!sent) {
-    TT_LOG_WARN(
-        "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
-        "cancellation is best-effort",
-        msg.task_id, entry->prefill_id);
-  }
+  TT_LOG_WARN(
+      "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
+      "cancellation is best-effort",
+      msg.task_id, entry->prefill_id);
 }
 
 void Dispatcher::onCacheBlocksAdded(
