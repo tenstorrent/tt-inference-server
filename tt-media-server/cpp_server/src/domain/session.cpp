@@ -34,19 +34,21 @@ bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
   cancelFn_ = nullptr;
-  promptTokens_.clear();
+  deltaTokens_.clear();
   generatedTokens_.clear();
   initialHashes_.clear();
+  parentHash_ = 0;
   onComplete_ = nullptr;
   return true;
 }
 
 void Session::initTokenAccumulator(
-    std::vector<int> promptTokens, std::vector<uint64_t> initialHashes,
+    std::vector<int> deltaTokens, std::vector<uint64_t> initialHashes,
     std::function<void(const std::string&, const std::vector<uint64_t>&)>
         onComplete) {
-  promptTokens_ = std::move(promptTokens);
+  deltaTokens_ = std::move(deltaTokens);
   initialHashes_ = std::move(initialHashes);
+  parentHash_ = initialHashes_.empty() ? 0 : initialHashes_.back();
   onComplete_ = std::move(onComplete);
   generatedTokens_.clear();
 }
@@ -56,19 +58,24 @@ void Session::addGeneratedToken(int tokenId) {
 }
 
 void Session::finalizeAndRegisterHashes() {
-  if (!onComplete_ || promptTokens_.empty()) return;
+  if (!onComplete_) return;
 
-  // Combine prompt + generated tokens
-  std::vector<int> allTokens = promptTokens_;
-  allTokens.insert(allTokens.end(), generatedTokens_.begin(),
-                   generatedTokens_.end());
+  // Combine delta prompt + generated tokens
+  std::vector<int> allDeltaTokens = deltaTokens_;
+  allDeltaTokens.insert(allDeltaTokens.end(), generatedTokens_.begin(),
+                        generatedTokens_.end());
 
-  // Compute hashes for all complete blocks
-  auto newHashes = utils::getPrefixCacheHashesByBlocks(allTokens);
+  // Compute new hashes continuing from parentHash (avoids re-hashing matched
+  // prefix)
+  auto newHashes =
+      utils::getPrefixCacheHashesByBlocks(allDeltaTokens, parentHash_);
 
-  // Only register if we have more hashes than initial (new blocks formed)
-  if (newHashes.size() > initialHashes_.size()) {
-    onComplete_(session_id_, newHashes);
+  // Only register if new blocks were formed
+  if (!newHashes.empty()) {
+    // Prepend initial hashes to form complete hash list
+    std::vector<uint64_t> allHashes = initialHashes_;
+    allHashes.insert(allHashes.end(), newHashes.begin(), newHashes.end());
+    onComplete_(session_id_, allHashes);
   }
 }
 

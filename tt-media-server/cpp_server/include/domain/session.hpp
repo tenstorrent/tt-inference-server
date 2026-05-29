@@ -9,17 +9,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "domain/manage_memory.hpp"
 #include "domain/sentinel_values.hpp"
-
-namespace tt::utils {
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
-}
 
 namespace tt::domain {
 
@@ -94,12 +89,12 @@ class Session {
    * Initialize token accumulator for streaming hash computation.
    * Called once per request when session routing is resolved.
    *
-   * @param promptTokens Full prompt tokens (before delta trim)
-   * @param initialHashes Block hashes computed from the prompt
+   * @param deltaTokens Delta prompt tokens (after matched prefix trimmed)
+   * @param initialHashes Block hashes computed from the prompt (for prepending)
    * @param onComplete Callback invoked at stream end with final hashes
    */
   void initTokenAccumulator(
-      std::vector<int> promptTokens, std::vector<uint64_t> initialHashes,
+      std::vector<int> deltaTokens, std::vector<uint64_t> initialHashes,
       std::function<void(const std::string&, const std::vector<uint64_t>&)>
           onComplete);
 
@@ -130,9 +125,10 @@ class Session {
   std::function<void()> cancelFn_;
 
   // Streaming token accumulator (initialized per-request)
-  std::vector<int> promptTokens_;
+  std::vector<int> deltaTokens_;
   std::vector<int> generatedTokens_;
   std::vector<uint64_t> initialHashes_;
+  uint64_t parentHash_ = 0;
   std::function<void(const std::string&, const std::vector<uint64_t>&)>
       onComplete_;
 

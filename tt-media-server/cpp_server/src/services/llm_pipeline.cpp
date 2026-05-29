@@ -159,20 +159,20 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
-        // Initialize token accumulator with FULL prompt tokens (before delta
-        // trim). At stream end, finalizeAndRegisterHashes() will compute hashes
-        // for all complete blocks including generated tokens.
-        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        req->kv_position_id = --acquired->numberOfMatchedTokens;
+        applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
+
+        // Initialize token accumulator with DELTA tokens (after trim).
+        // At stream end, finalizeAndRegisterHashes() continues hashing from
+        // initialHashes using delta + generated tokens.
+        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
           req->session->initTokenAccumulator(
-              *promptTokens, routingInfo.hashes,
+              *deltaTokens, routingInfo.hashes,
               [mgr = sessionManager_](const std::string& sessionId,
                                       const std::vector<uint64_t>& hashes) {
                 mgr->registerPrefixHash(sessionId, hashes);
               });
         }
-
-        req->kv_position_id = --acquired->numberOfMatchedTokens;
-        applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.hashes);
         info.validSessionFound = true;

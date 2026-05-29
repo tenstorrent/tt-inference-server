@@ -128,10 +128,14 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
  * Only FULL blocks are hashed — any trailing partial block is ignored (it
  * hasn't been committed to the KV cache yet).
  *
- * @param tokens Full token-id sequence.
+ * @param tokens Token-id sequence to hash.
+ * @param parentHash Optional seed hash from a prior block. When non-zero,
+ *        hashing uses standard block size (not first block size) and chains
+ *        from this seed. Use `hashes.back()` from a prior call to continue.
  * @return Vector of per-block hashes (one per full block). Empty if the
  *         sequence is shorter than one block.
  */
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash = 0);
 
 }  // namespace tt::utils
