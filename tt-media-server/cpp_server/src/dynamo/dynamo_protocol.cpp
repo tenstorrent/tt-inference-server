@@ -374,8 +374,8 @@ void stream_response(GenerateHandler& handler,
     return;
   }
   const auto tConnected = SteadyClock::now();
-  TT_LOG_INFO("[DynamoTx] id={} stage=connected connect_us={}", requestId,
-              microsBetween(tConnectStart, tConnected));
+  TT_LOG_DEBUG("[DynamoTx] id={} stage=connected connect_us={}", requestId,
+               microsBetween(tConnectStart, tConnected));
 
   // 1. CallHomeHandshake (header-only TwoPartMessage).
   {
@@ -393,7 +393,7 @@ void stream_response(GenerateHandler& handler,
       return;
     }
     const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
+    TT_LOG_DEBUG(
         "[DynamoTx] id={} stage=handshake_sent write_us={} since_start_us={}",
         requestId, microsBetween(tBefore, tAfter),
         microsBetween(tStart, tAfter));
@@ -414,7 +414,7 @@ void stream_response(GenerateHandler& handler,
       return;
     }
     const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
+    TT_LOG_DEBUG(
         "[DynamoTx] id={} stage=prologue_sent write_us={} since_start_us={}",
         requestId, microsBetween(tBefore, tAfter),
         microsBetween(tStart, tAfter));
@@ -494,12 +494,21 @@ void stream_response(GenerateHandler& handler,
     const auto tBefore = SteadyClock::now();
     writeAll(sock, encode_two_part(tp));
     const auto tAfter = SteadyClock::now();
-    TT_LOG_INFO(
-        "[DynamoTx] id={} stage=complete_final chunks={} tokens={} bytes={} "
-        "stream_us={} write_us={}",
-        requestId, chunkSeq, totalTokens, totalBytes,
-        sawFirstChunk ? microsBetween(tFirstChunk, tBefore) : 0,
-        microsBetween(tBefore, tAfter));
+    if (txTrace) {
+      TT_LOG_INFO(
+          "[DynamoTx] id={} stage=complete_final chunks={} tokens={} bytes={} "
+          "stream_us={} write_us={}",
+          requestId, chunkSeq, totalTokens, totalBytes,
+          sawFirstChunk ? microsBetween(tFirstChunk, tBefore) : 0,
+          microsBetween(tBefore, tAfter));
+    } else {
+      TT_LOG_DEBUG(
+          "[DynamoTx] id={} stage=complete_final chunks={} tokens={} bytes={} "
+          "stream_us={} write_us={}",
+          requestId, chunkSeq, totalTokens, totalBytes,
+          sawFirstChunk ? microsBetween(tFirstChunk, tBefore) : 0,
+          microsBetween(tBefore, tAfter));
+    }
   }
 
   // 5. End-of-stream sentinel (empty TwoPartMessage).
@@ -521,7 +530,7 @@ void process_two_part_payload(const std::vector<uint8_t>& payload,
   auto connInfo = parse_connection_info(ctrl.connection_info);
 
   TT_LOG_DEBUG(
-      "[DynamoServer] Request id={} input_tokens={} max_tokens={} address={}",
+      "[Dynamo] Request id={} input_tokens={} max_tokens={} address={}",
       ctrl.id, genReq.token_ids.size(), genReq.max_tokens, connInfo.address);
 
   std::thread([handler = std::move(handler), connInfo = std::move(connInfo),

@@ -110,6 +110,7 @@ trap cleanup EXIT INT TERM
 
 echo "=== Dynamo + cpp_server ==="
 echo "  Frontend HTTP : ${HTTP_PORT}"
+echo "  Request plane : ${DYN_REQUEST_PLANE}"
 echo "  cpp_server    : http://0.0.0.0:${SERVER_PORT}"
 echo "  Discovery     : ${DISCOVERY_LABEL}"
 echo "  Model name    : ${MODEL_NAME}"

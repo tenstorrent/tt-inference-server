@@ -144,6 +144,8 @@ void DynamoHttpServer::handle_connection(int client_fd) {
   std::vector<uint8_t> body;
   const bool ok = read_http_request(client_fd, body);
   if (ok) {
+    TT_LOG_DEBUG("[DynamoHttpServer] Accepted POST payload_bytes={}",
+                 body.size());
     static constexpr char kAccepted[] =
         "HTTP/1.1 202 Accepted\r\n"
         "Content-Length: 0\r\n"

@@ -39,6 +39,27 @@ namespace tt::dynamo {
 
 namespace {
 
+/// Per-request worker latency breakdown. Set DYN_LATENCY_TRACE=1 for INFO.
+bool latencyTraceEnabled() {
+  static const bool kEnabled = [] {
+    const char* v = std::getenv("DYN_LATENCY_TRACE");
+    if (v == nullptr) return false;
+    std::string s(v);
+    return !(s.empty() || s == "0" || s == "false" || s == "FALSE" ||
+             s == "False" || s == "off" || s == "OFF");
+  }();
+  return kEnabled;
+}
+
+#define DYNAMO_LATENCY_LOG(level, ...) \
+  do {                                 \
+    if (latencyTraceEnabled()) {       \
+      TT_LOG_INFO(__VA_ARGS__);        \
+    } else {                           \
+      TT_LOG_##level(__VA_ARGS__);     \
+    }                                  \
+  } while (0)
+
 /// Shape an LLMRequest from a Dynamo PreprocessedRequest. The frontend has
 /// already applied the chat template, so we forward token ids directly and
 /// leave `messages` empty — the pipeline picks up that signal and routes
@@ -192,8 +213,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     // the warm-up (e.g. consumer thread spawned later in LLMService).
     const auto loopTid =
         std::hash<std::thread::id>{}(std::this_thread::get_id());
-    TT_LOG_INFO("[DynamoLatency] id={} stage=dispatched loop_tid={}",
-                probeId.empty() ? "?" : probeId, loopTid);
+    DYNAMO_LATENCY_LOG(DEBUG, "[DynamoLatency] id={} stage=dispatched loop_tid={}",
+                       probeId.empty() ? "?" : probeId, loopTid);
 
     // Block the dynamo per-request worker thread until the streaming
     // callback signals completion. Using a shared_ptr + future lets the
@@ -224,7 +245,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                                                                     recvT)
                   .count() /
               1000.0;
-          TT_LOG_INFO(
+          DYNAMO_LATENCY_LOG(
+              DEBUG,
               "[DynamoLatency] id={} stage=session_ready ms_since_recv={:.3f}",
               probeId.empty() ? "?" : probeId, sessionMs);
 
@@ -246,7 +268,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   SteadyClock::now() - tPreStart)
                   .count() /
               1000.0;
-          TT_LOG_INFO(
+          DYNAMO_LATENCY_LOG(
+              DEBUG,
               "[DynamoLatency] id={} stage=preprocessed preprocess_ms={:.3f}",
               probeId.empty() ? "?" : probeId, preProcessMs);
 
@@ -273,7 +296,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                       firstChunkT - tDispatch)
                       .count() /
                   1000.0;
-              TT_LOG_INFO(
+              DYNAMO_LATENCY_LOG(
+                  DEBUG,
                   "[DynamoLatency] id={} stage=first_chunk "
                   "worker_recv_to_first_chunk_ms={:.3f} "
                   "dispatch_to_first_chunk_ms={:.3f}",
