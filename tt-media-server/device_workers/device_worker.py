@@ -5,7 +5,7 @@
 import threading
 from multiprocessing import Queue
 
-from config.constants import SHUTDOWN_SIGNAL
+from config.constants import GAS_PROBE_TASK_ID, SHUTDOWN_SIGNAL, GasProbeRequest
 from config.settings import settings
 from device_workers.worker_utils import initialize_device_worker
 from utils.logger import TTLogger
@@ -59,6 +59,20 @@ def device_worker(
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
+
+        # Gas-monitor probe: The monitor only
+        # submits a probe when idle, so it arrives as its own singleton batch.
+        # A raised health_check is converted to a False result (not an
+        # error_queue entry) so a probe miss does not inflate the worker's
+        # error_count / restart accounting.
+        if isinstance(requests[0], GasProbeRequest):
+            try:
+                is_alive = bool(device_runner.health_check())
+            except Exception as e:
+                logger.warning(f"Worker {worker_id} gas-probe health_check raised: {e}")
+                is_alive = False
+            result_queue.put((worker_id, GAS_PROBE_TASK_ID, is_alive))
+            continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None

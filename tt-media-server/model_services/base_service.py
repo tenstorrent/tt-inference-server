@@ -7,6 +7,7 @@ from abc import ABC
 
 from config.settings import settings
 from domain.base_request import BaseRequest
+from fastapi import HTTPException
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent, jobs_in_progress
@@ -85,8 +86,10 @@ class BaseService(ABC):
             in_flight.dec()
 
     def check_is_model_ready(self) -> dict:
-        """Detailed system status for monitoring"""
-        return {
+        """Detailed system status for monitoring."""
+        monitor = getattr(self.scheduler, "gas_monitor", None)
+        gas_monitor_alive = monitor.is_alive() if monitor else True
+        status = {
             "model_ready": self.scheduler.check_is_model_ready(),
             "queue_size": self.scheduler.task_queue.qsize()
             if hasattr(self.scheduler.task_queue, "qsize")
@@ -96,7 +99,14 @@ class BaseService(ABC):
             "device": settings.device or "Not defined",
             "worker_info": self.scheduler.get_worker_info(),
             "runner_in_use": settings.model_runner,
+            "gas_monitor_alive": gas_monitor_alive,
+            "gas_monitor_state": monitor.current_state.value if monitor else "disabled",
         }
+        if monitor and not gas_monitor_alive and settings.gas_monitor_gate_readiness:
+            raise HTTPException(
+                status_code=503, detail="Gas monitor: model not serving"
+            )
+        return status
 
     async def deep_reset(self) -> bool:
         """Reset the device and all the scheduler workers and processes"""
