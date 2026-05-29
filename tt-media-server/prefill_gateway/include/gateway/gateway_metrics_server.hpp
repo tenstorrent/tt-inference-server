@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 #include <future>
-#include <string>
 #include <thread>
 
 namespace tt::gateway {
@@ -33,7 +32,7 @@ class GatewayMetricsServer {
   GatewayMetrics& metrics_;
   std::atomic<bool> running_{false};
   std::atomic<uint16_t> port_{0};
-  int server_fd_ = -1;
+  std::atomic<int> server_fd_{-1};
   std::jthread server_thread_;
 };
 

@@ -75,10 +75,10 @@ void GatewayMetricsServer::stop() {
   }
 
   running_ = false;
-  if (server_fd_ >= 0) {
-    shutdown(server_fd_, SHUT_RDWR);
-    closeFd(server_fd_);
-    server_fd_ = -1;
+  const int serverFd = server_fd_.exchange(-1);
+  if (serverFd >= 0) {
+    shutdown(serverFd, SHUT_RDWR);
+    closeFd(serverFd);
   }
   if (server_thread_.joinable()) {
     server_thread_.request_stop();
@@ -91,8 +91,9 @@ uint16_t GatewayMetricsServer::port() const { return port_; }
 
 void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
                                  std::promise<bool> initialized) {
-  server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_fd_ < 0) {
+  const int serverFd = socket(AF_INET, SOCK_STREAM, 0);
+  server_fd_ = serverFd;
+  if (serverFd < 0) {
     TT_LOG_ERROR("[GatewayMetricsServer] socket() failed: {}", strerror(errno));
     running_ = false;
     initialized.set_value(false);
@@ -100,29 +101,27 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
   }
 
   int reuse = 1;
-  setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_ANY);
   address.sin_port = htons(port);
 
-  if (bind(server_fd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) <
+  if (bind(serverFd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) <
       0) {
     TT_LOG_ERROR("[GatewayMetricsServer] bind(:{}) failed: {}", port,
                  strerror(errno));
-    closeFd(server_fd_);
-    server_fd_ = -1;
+    closeFd(server_fd_.exchange(-1));
     running_ = false;
     initialized.set_value(false);
     return;
   }
 
-  if (listen(server_fd_, SOCKET_BACKLOG) < 0) {
+  if (listen(serverFd, SOCKET_BACKLOG) < 0) {
     TT_LOG_ERROR("[GatewayMetricsServer] listen(:{}) failed: {}", port,
                  strerror(errno));
-    closeFd(server_fd_);
-    server_fd_ = -1;
+    closeFd(server_fd_.exchange(-1));
     running_ = false;
     initialized.set_value(false);
     return;
@@ -134,8 +133,13 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
   while (running_ && !stopToken.stop_requested()) {
     sockaddr_in clientAddress{};
     socklen_t clientLength = sizeof(clientAddress);
-    const int clientFd = accept(
-        server_fd_, reinterpret_cast<sockaddr*>(&clientAddress), &clientLength);
+    const int activeServerFd = server_fd_.load();
+    if (activeServerFd < 0) {
+      break;
+    }
+    const int clientFd =
+        accept(activeServerFd, reinterpret_cast<sockaddr*>(&clientAddress),
+               &clientLength);
     if (clientFd < 0) {
       if (running_ && errno != EINTR && errno != EBADF && errno != EINVAL) {
         TT_LOG_WARN("[GatewayMetricsServer] accept() failed: {}",
