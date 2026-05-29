@@ -519,8 +519,8 @@ SessionManager::tryAcquireByPrefixHash(const std::vector<uint64_t>& blockHashes,
   // Pick the entry with the longest match.
   struct Candidate {
     std::string sessionId;
-    size_t matchedBlocks;   // matched blocks (1 for key + matched remaining)
-    size_t sessionBlocks;   // total blocks in the cached session
+    size_t matchedBlocks;  // matched blocks (1 for key + matched remaining)
+    size_t sessionBlocks;  // total blocks in the cached session
   };
   std::vector<Candidate> candidates;
 

@@ -605,8 +605,8 @@ float prefixCacheHitThreshold() {
       }
       return val;
     } catch (...) {
-      TT_LOG_WARN(
-          "[Config] PREFIX_CACHE_HIT_THRESHOLD={} invalid, using 80", v);
+      TT_LOG_WARN("[Config] PREFIX_CACHE_HIT_THRESHOLD={} invalid, using 80",
+                  v);
       return 80.0f;
     }
   }();

@@ -513,14 +513,14 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
   server->setMemoryAutoRespond(false);
 
   // Step 1: Create a long conversation to build up many blocks.
-  // Each message should be long enough to form blocks.
+  // The opener must be long enough to form at least one block (32 tokens).
   const std::string opener =
-      "prefix-threshold-test-unique-opener with enough tokens to form exactly "
-      "one block when tokenized this needs thirty two tokens minimum";
+      "prefix-threshold-test-unique-opener-v2 with enough tokens to form "
+      "exactly one block when tokenized this needs at least thirty two tokens "
+      "after tokenization so we add more words here";
 
   // First turn: establishes the session with opener
-  auto future1 =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto future1 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
   tt::domain::ManageMemoryTask memReq1{};
   server->memoryRequestQueue().receive(memReq1);
@@ -534,14 +534,18 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
 
   auto seq1 = server->taskQueue().receive();
   ASSERT_NE(seq1, nullptr);
-  EXPECT_FALSE(seq1->isContinuation()) << "First turn should not be continuation";
+  EXPECT_FALSE(seq1->isContinuation())
+      << "First turn should not be continuation";
 
-  tt::test::WorkerResponse(seq1->taskId).token(100).finalize().sendTo(
-      server->resultQueue());
+  tt::test::WorkerResponse(seq1->taskId)
+      .token(100)
+      .finalize()
+      .sendTo(server->resultQueue());
   future1.get();
 
   // Step 2: Add several more turns to grow the session's block count.
-  // Each turn adds more blocks, making the session much longer than just opener.
+  // Each turn adds more blocks, making the session much longer than just
+  // opener.
   ChatRequest convo;
   convo.user(opener).assistant("ok");
 
@@ -556,10 +560,13 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
     auto future = asyncRequest(convo);
     auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr);
-    EXPECT_TRUE(seq->isContinuation()) << "Turn " << i << " should be continuation";
+    EXPECT_TRUE(seq->isContinuation())
+        << "Turn " << i << " should be continuation";
 
-    tt::test::WorkerResponse(seq->taskId).token(101 + i).finalize().sendTo(
-        server->resultQueue());
+    tt::test::WorkerResponse(seq->taskId)
+        .token(101 + i)
+        .finalize()
+        .sendTo(server->resultQueue());
     future.get();
 
     convo.assistant("got it");
@@ -568,31 +575,30 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
   // Step 3: Send a NEW request with only the opener (no history).
   // This matches only the first block of the multi-block session.
   // With 80% threshold, this ~10-20% match should be rejected.
-  auto future2 =
-      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+  auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
-  // Should allocate a NEW session because match percentage is below threshold
+  // Should allocate a NEW session because match percentage is below threshold.
+  // An ALLOCATE request indicates the prefix cache candidate was rejected.
   tt::domain::ManageMemoryTask memReq2{};
-  bool gotAlloc = server->memoryRequestQueue().tryReceive(memReq2,
-      std::chrono::milliseconds(1000));
-  EXPECT_TRUE(gotAlloc)
+  server->memoryRequestQueue().receive(memReq2);
+  EXPECT_EQ(memReq2.action, tt::domain::MemoryManagementAction::ALLOCATE)
       << "Low match percentage should trigger new ALLOCATE, not reuse session";
 
-  if (gotAlloc) {
-    tt::domain::ManageMemoryResult memRes2{};
-    memRes2.taskId = memReq2.taskId;
-    memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
-    memRes2.slotId = 1;  // Different slot
-    server->memoryResultQueue().push(memRes2);
-  }
+  tt::domain::ManageMemoryResult memRes2{};
+  memRes2.taskId = memReq2.taskId;
+  memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes2.slotId = 1;  // Different slot
+  server->memoryResultQueue().push(memRes2);
 
   auto seq2 = server->taskQueue().receive();
   ASSERT_NE(seq2, nullptr);
   EXPECT_FALSE(seq2->isContinuation())
       << "Short request should NOT be continuation due to threshold rejection";
 
-  tt::test::WorkerResponse(seq2->taskId).token(200).finalize().sendTo(
-      server->resultQueue());
+  tt::test::WorkerResponse(seq2->taskId)
+      .token(200)
+      .finalize()
+      .sendTo(server->resultQueue());
   future2.get();
 
   server->setMemoryAutoRespond(true);
