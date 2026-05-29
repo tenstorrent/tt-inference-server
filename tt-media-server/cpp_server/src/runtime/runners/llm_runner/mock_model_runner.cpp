@@ -23,7 +23,7 @@ namespace {
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
 constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
-constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;  // "thinking"
+constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;    // "thinking"
 constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID = 15329;  // "response"
 constexpr size_t K_THINK_TOKENS_COUNT = 10;
 
@@ -106,13 +106,15 @@ class MockModelRunner : public IModelRunner {
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
-        // Reset counter on prefill (new request)
+        // Reset counter on prefill (new request), start at 0 so first decode
+        // emits think start
         {
           std::lock_guard<std::mutex> lock(tokenCountMutex_);
           tokenCounts_[seq->taskId] = 0;
         }
+        // Prefill emits think start token
         decodeCallback(
-            TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));
+            TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -124,25 +126,26 @@ class MockModelRunner : public IModelRunner {
   }
 
   // Generates a sequence: <think> + 10 tokens + </think> + visible tokens
-  // Position 0: think start, 1-10: think content, 11: think end, 12+: visible
-  // Visible tokens alternate: "response" + space + "response" + space + ...
+  // Prefill emits think start (position 0 already used).
+  // Decode positions: 0-9: think content, 10: think end, 11+: visible
+  // Both think and visible tokens alternate with spaces.
   uint64_t pickThinkingToken(Sequence* seq) {
     size_t generated = 0;
     {
       std::lock_guard<std::mutex> lock(tokenCountMutex_);
       generated = tokenCounts_[seq->taskId]++;
     }
-    if (generated == 0) {
-      return K_THINK_START_TOKEN_ID;
+    // Positions 0-9: think content with spaces
+    if (generated < K_THINK_TOKENS_COUNT) {
+      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID
+                                  : K_WHITESPACE_TOKEN_ID;
     }
-    if (generated <= K_THINK_TOKENS_COUNT) {
-      return K_THINK_CONTENT_TOKEN_ID;
-    }
-    if (generated == K_THINK_TOKENS_COUNT + 1) {
+    // Position 10: think end
+    if (generated == K_THINK_TOKENS_COUNT) {
       return K_THINK_END_TOKEN_ID;
     }
-    // Alternate between "response" and space
-    size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 2;
+    // Position 11+: visible content with spaces
+    size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
     return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
                                  : K_WHITESPACE_TOKEN_ID;
   }
