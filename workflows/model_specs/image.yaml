@@ -205,3 +205,18 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: FUNCTIONAL
+
+- weights:
+    - Tongyi-MAI/Z-Image-Turbo
+  tt_metal_commit: 1e0dc0f
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
