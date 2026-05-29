@@ -17,7 +17,7 @@ import time
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, ClassVar, List, Optional, Sequence, Tuple
 
 from report_module import (
     GenerateResult,
@@ -26,7 +26,10 @@ from report_module import (
     acceptance_criteria_check,
     format_acceptance_summary_markdown,
 )
-from test_module import MediaContext, MediaTaskType, run_media_task
+from test_module.task_types import MediaTaskType
+
+if TYPE_CHECKING:
+    from test_module.context import MediaContext
 
 from .blocks_sink import BlockAccumulator, get_default_accumulator
 
@@ -188,6 +191,8 @@ class WorkflowExecution(ABC):
         return [self._dispatch_task(t) for t in self.task_types]
 
     def _dispatch_task(self, task_type: MediaTaskType) -> TaskOutcome:
+        from test_module.dispatch import run_media_task
+
         self.logger.info("→ task=%s", task_type.value)
         started = time.time()
         try:

@@ -4,10 +4,19 @@
 #
 # Dependencies for the V2_PREFIX_CACHE workflow venv (Python 3.11).
 # Used by direct invocations of tt-inference-server-v2/run.py when
-# --prefix-cache is set. Mirrors requirements/benchmarks-aiperf.txt plus
-# the v2 orchestrator's transitive needs (workflow_module imports
-# test_module which eagerly loads aiohttp + torch via the audio/image
-# runners).
+# --prefix-cache is set.
+#
+# This is a strict superset of requirements/benchmarks-aiperf.txt: the
+# v2 orchestrator additionally imports aiohttp at module-load time via
+# workflow_module -> test_module.context -> health_tests. Every other
+# v2 test runner (audio / image / video / CNN / TTS / embedding evals
+# and benchmarks, plus run_llm_performance) is lazy-loaded via PEP 562
+# __getattr__ in test_module/__init__.py and
+# test_module/llm_tests/__init__.py and is NEVER imported on the
+# prefix-cache code path -- so their transitive deps (torchvision,
+# open-clip-torch, pillow, scipy, numpy) intentionally do NOT appear
+# below. pip will still pull in numpy via transformers / aiperf, but
+# we leave that to pip's resolver instead of pinning it ourselves.
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
@@ -23,11 +32,6 @@ pyjwt
 requests
 datasets
 
-# v2 orchestrator eager-import chain (workflow_module -> test_module ->
-# audio/image runners). Keep in sync with requirements/v2-run-script.txt.
+# v2 orchestrator eager-import: workflow_module -> test_module.context ->
+# health_tests uses aiohttp at module top.
 aiohttp
-numpy
-scipy
-torchvision
-open-clip-torch
-pillow
