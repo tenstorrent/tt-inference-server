@@ -1389,3 +1389,13 @@ _DEFAULT_SAMPLING_PARAMS = {
 
 # Sentinel object for worker shutdown signaling
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
+
+
+# Reserved task_id for the gas-monitor probe (see health_monitoring/).
+# Constraints it must satisfy:
+#   - a string (result_listener/error_listener route by string task_id),
+#   - no "_chunk_" substring (error_listener splits on it, scheduler.py),
+#   - cannot collide with the UUID4 task_ids the API emits,
+#   - <= VideoShm.TASK_ID_SIZE (36) bytes, since SPRunner reuses it as the
+#     SHM-wire task_id for its gas-probe round-trip.
+GAS_PROBE_TASK_ID = "__gas_probe__"
