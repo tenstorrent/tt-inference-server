@@ -3,7 +3,9 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 #include <thread>
+#include <unordered_map>
 
 #include "profiling/tracy.hpp"
 #include "runtime/runners/llm_runner/model_runner.hpp"
@@ -19,6 +21,11 @@ using Config = tt::config::LLMConfig;
 namespace {
 
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
+constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
+constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
+constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;  // "thinking"
+constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID = 15329;  // "response"
+constexpr size_t K_THINK_TOKENS_COUNT = 10;
 
 std::chrono::milliseconds mockPrefillDelay() {
   const char* value = std::getenv("MOCK_PREFILL_SLEEP_MS");
@@ -99,16 +106,45 @@ class MockModelRunner : public IModelRunner {
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
+        // Reset counter on prefill (new request)
+        {
+          std::lock_guard<std::mutex> lock(tokenCountMutex_);
+          tokenCounts_[seq->taskId] = 0;
+        }
         decodeCallback(
             TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
-        uint64_t defaultToken = static_cast<uint64_t>(seq->getLastToken() + 1);
-        decodeCallback(TokenResult(seq->taskId, pickToken(seq, defaultToken)));
+        uint64_t token = pickThinkingToken(seq);
+        decodeCallback(TokenResult(seq->taskId, pickToken(seq, token)));
       }
     }
+  }
+
+  // Generates a sequence: <think> + 10 tokens + </think> + visible tokens
+  // Position 0: think start, 1-10: think content, 11: think end, 12+: visible
+  // Visible tokens alternate: "response" + space + "response" + space + ...
+  uint64_t pickThinkingToken(Sequence* seq) {
+    size_t generated = 0;
+    {
+      std::lock_guard<std::mutex> lock(tokenCountMutex_);
+      generated = tokenCounts_[seq->taskId]++;
+    }
+    if (generated == 0) {
+      return K_THINK_START_TOKEN_ID;
+    }
+    if (generated <= K_THINK_TOKENS_COUNT) {
+      return K_THINK_CONTENT_TOKEN_ID;
+    }
+    if (generated == K_THINK_TOKENS_COUNT + 1) {
+      return K_THINK_END_TOKEN_ID;
+    }
+    // Alternate between "response" and space
+    size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 2;
+    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
+                                 : K_WHITESPACE_TOKEN_ID;
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
@@ -189,6 +225,8 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
+  std::mutex tokenCountMutex_;
+  std::unordered_map<uint32_t, size_t> tokenCounts_;
 };
 
 }  // namespace
