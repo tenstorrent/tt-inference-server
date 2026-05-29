@@ -2269,9 +2269,9 @@ jobs:
           ls -la "${MODEL_DIR}"
 
       - name: Start single Dynamo frontend (port 8000)
-        env:
-          # The CI runner sits behind a Squid forward proxy (HTTP_PROXY /
-          # HTTPS_PROXY injected at the runner level). In the http request
+        run: |
+          # The CI runner sits behind a Squid forward proxy (http_proxy /
+          # https_proxy injected at the runner level). In the http request
           # plane the frontend POSTs each worker RPC to the backend's
           # advertised loopback URL (http://127.0.0.1:<DYN_HTTP_RPC_PORT>/...).
           # The frontend's reqwest client does NOT honor the job-level
@@ -2279,17 +2279,13 @@ jobs:
           # which rejects them with 403 ERR_ACCESS_DENIED — every request 500s
           # and no tokens ever stream back (active_backends=0). Past the
           # dependency-install steps this job is entirely loopback (workers,
-          # etcd, local tokenizer files), so disabling the proxy for the
+          # etcd, local tokenizer files), so unsetting the proxy for the
           # frontend process is safe and forces a direct connection. The tcp
           # plane is unaffected (raw socket, no outbound HTTP), hence only the
-          # http matrix leg was failing.
-          HTTP_PROXY: ""
-          HTTPS_PROXY: ""
-          http_proxy: ""
-          https_proxy: ""
-          ALL_PROXY: ""
-          all_proxy: ""
-        run: |
+          # http matrix leg was failing. (unset rather than a step-level env:
+          # block because GitHub Actions treats env keys case-insensitively and
+          # rejects defining both HTTP_PROXY and http_proxy.)
+          unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
           # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
           # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
           # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
