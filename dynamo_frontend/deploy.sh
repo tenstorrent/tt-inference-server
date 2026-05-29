@@ -11,6 +11,9 @@ Required:
   --frontend-image <img>      Dynamo frontend Docker image (e.g. dynamo-frontend)
 
 Optional:
+  --local-build               bind-mount local cpp_server directory and use
+                              local build instead of the worker image's binary.
+                              Requires --cpp-server-dir to specify the path.
   --network-name <name>       (default: dynamo-net)
   --etcd-name <name>          (default: etcd)
   --worker-name <name>        (default: tt-cpp-worker)
@@ -32,6 +35,9 @@ Optional:
                               TT-hardware launches use the comma-only form.
                               (default: "10,11,14,15,18,19,22,23" — the
                               local 8-device DeepSeek-R1 mesh)
+  --cpp-server-dir <dir>     path to local cpp_server directory (required when
+                              using --local-build). The directory must contain
+                              a built binary at build/tt_media_server_cpp.
   --tokenizers-host-dir <dir> host directory containing the tokenizers tree
                               (must hold <hf-model-id>/config.json,
                               tokenizer_config.json, and either tokenizer.json
@@ -110,6 +116,8 @@ TOKENIZERS_HOST_DIR=""
 SKIP_TOKENIZER_SHARE=""
 WORKER_TOKENIZER_DIR="/home/container_app_user/app/server/cpp_server/tokenizers"
 TOKENIZERS_TEMP_DIR=""
+LOCAL_BUILD=""
+CPP_SERVER_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -128,6 +136,8 @@ while [[ $# -gt 0 ]]; do
         --device-ids)         DEVICE_IDS="$2";         shift 2 ;;
         --tokenizers-host-dir) TOKENIZERS_HOST_DIR="$2"; shift 2 ;;
         --skip-tokenizer-share) SKIP_TOKENIZER_SHARE=1; shift ;;
+        --local-build)        LOCAL_BUILD=1; shift ;;
+        --cpp-server-dir)     CPP_SERVER_DIR="$2"; shift 2 ;;
         -h|--help)            usage ;;
         *) echo "Unknown argument: $1" >&2; usage ;;
     esac
@@ -138,8 +148,25 @@ if [[ -z "$ETCD_IMAGE" || -z "$WORKER_IMAGE" || -z "$FRONTEND_IMAGE" ]]; then
     usage
 fi
 
-
 log() { printf '[deploy] %s\n' "$*"; }
+
+if [[ -n "$LOCAL_BUILD" ]]; then
+    if [[ -z "$CPP_SERVER_DIR" ]]; then
+        echo "--local-build requires --cpp-server-dir <path>" >&2
+        usage
+    fi
+    CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
+    if [[ -z "$CPP_SERVER_DIR_ABS" || ! -d "$CPP_SERVER_DIR_ABS" ]]; then
+        echo "cpp_server directory not found: $CPP_SERVER_DIR" >&2
+        exit 1
+    fi
+    if [[ ! -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]]; then
+        echo "cpp_server binary not found at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" >&2
+        echo "  run ./build.sh in the cpp_server directory first" >&2
+        exit 1
+    fi
+    log "using local build from $CPP_SERVER_DIR_ABS"
+fi
 
 cleanup() {
     log "tearing down"
@@ -186,26 +213,29 @@ log "publishing worker HTTP: host:${WORKER_HOST_PORT} -> container:8000"
 log "publishing worker blaze socket: host:9000 -> container:9000"
 
 log "starting worker ($WORKER_IMAGE)"
-# --privileged + the /dev/hugepages + /var/run/tenstorrent + /lib/modules
-# mounts give cpp_server access to the TT devices. --ipc=host shares the
-# host's /dev/shm so Boost.Interprocess queues between the supervisor and
-# the fork+exec'd worker processes are not capped by the 64 MiB container
-# default. The ulimits keep the supervisor from running out of fds/threads
-# at high session counts. These flags mirror the standalone cpp_server
-# launch script.
+
+# Device args for TT hardware
+DEVICE_ARGS=()
+if [[ -e /dev/tenstorrent ]]; then
+    DEVICE_ARGS+=(--device /dev/tenstorrent --cap-add=SYS_NICE)
+fi
+
+# Build mount args for local build - only mount the build directory to preserve
+# container's tt-llm-engine and other dependencies
+LOCAL_BUILD_MOUNT=()
+WORKER_ENTRYPOINT=()
+if [[ -n "$LOCAL_BUILD" ]]; then
+    log "bind-mounting local build: $CPP_SERVER_DIR_ABS/build -> container cpp_server/build"
+    LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
+    WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
+fi
+
 docker run -d --name "$WORKER_NAME" \
     --network "$NETWORK_NAME" \
-    --privileged \
-    --ipc=host \
-    --ulimit nofile=65536:65536 \
-    --ulimit nproc=65536:65536 \
-    -p "${WORKER_HOST_PORT}:8000" \
-    -p 9000:9000 \
-    -v /dev/hugepages:/dev/hugepages \
-    -v /dev/hugepages-1G:/dev/hugepages-1G \
-    -v /etc/udev/rules.d:/etc/udev/rules.d \
-    -v /lib/modules:/lib/modules \
-    -v /var/run/tenstorrent:/var/run/tenstorrent \
+    --shm-size=2g \
+    "${DEVICE_ARGS[@]}" \
+    "${LOCAL_BUILD_MOUNT[@]}" \
+    "${WORKER_ENTRYPOINT[@]}" \
     -e DYNAMO_ENDPOINT_ENABLED=1 \
     -e DYNAMO_DISCOVERY_BACKEND=etcd \
     -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
@@ -222,9 +252,8 @@ docker run -d --name "$WORKER_NAME" \
     -e TT_LOG_LEVEL=debug \
     -e USE_FAST_MODE=1 \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
-    --entrypoint /bin/bash \
     "$WORKER_IMAGE" \
-    -c 'cd cpp_server && LD_PRELOAD=$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0 ./build/tt_media_server_cpp' \
+    ${LOCAL_BUILD:+-c 'cd cpp_server && LD_PRELOAD=$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0 ./build/tt_media_server_cpp'} \
     >/dev/null
 
 log "waiting for worker to register against etcd (up to 60s)"
