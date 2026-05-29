@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from typing import ClassVar, Dict, List, Sequence, Type
 
-from test_module import MediaTaskType
+from test_module.task_types import MediaTaskType
 
 from .execution import PrefixCacheOptions, TaskOutcome, WorkflowExecution
 
@@ -42,12 +42,18 @@ class BenchmarksWorkflow(WorkflowExecution):
     def _run_prefix_cache_task(self, opts: PrefixCacheOptions) -> TaskOutcome:
         """Drive the AIPerf prefix-cache sweep in place of media benchmarks.
 
-        Delegates to :func:`test_module.llm_tests.run_prefix_cache`, which
-        builds the scenario plan, runs each AIPerf invocation, and forwards
-        the resulting Blocks to the accumulator. We only need to translate
-        its ``list[Block]`` return into a single :class:`TaskOutcome`.
+        Delegates to :func:`test_module.llm_tests.prefix_cache_tests.run_prefix_cache`,
+        which builds the scenario plan, runs each AIPerf invocation, and
+        forwards the resulting Blocks to the accumulator. We only need
+        to translate its ``list[Block]`` return into a single
+        :class:`TaskOutcome`.
+
+        Imported from the leaf submodule (not ``test_module``) so the
+        prefix-cache code path skips the audio/image/video/CNN/TTS/
+        embedding runner imports that ``test_module/__init__.py`` would
+        otherwise trigger.
         """
-        from test_module import run_prefix_cache
+        from test_module.llm_tests.prefix_cache_tests import run_prefix_cache
 
         self.logger.info("→ task=%s preset=%s", _PREFIX_CACHE_TASK_LABEL, opts.preset)
         started = time.time()
