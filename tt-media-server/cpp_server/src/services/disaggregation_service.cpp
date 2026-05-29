@@ -86,7 +86,7 @@ void DisaggregationService::setupSocketHandlers() {
                 message.token_ids.end() - 1, message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             request.slotId = message.slot_id;
-            // Restore the sampling subset echoed back from the prefill server.
+            // Restore the sampling subset echoed back from the prefill server
             request.temperature = message.temperature;
             request.top_p = message.top_p;
             request.top_k = message.top_k;
