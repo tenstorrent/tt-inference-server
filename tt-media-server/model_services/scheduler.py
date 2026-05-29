@@ -8,7 +8,7 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
-from config.constants import SHUTDOWN_SIGNAL, QueueType
+from config.constants import GAS_PROBE_TASK_ID, SHUTDOWN_SIGNAL, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
@@ -73,6 +73,9 @@ class Scheduler:
         self.worker_info = {}
         self.monitor_running = True
         self.result_queues = {}
+        # Model-agnostic gas monitor; started after the first worker is ready
+        # (see device_warmup_listener) and stopped in stop_workers.
+        self.gas_monitor = None
         # Task references for asyncio tasks
         self.monitor_task_ref = None
         self.listener_task_ref = None
@@ -296,6 +299,15 @@ class Scheduler:
 
                             if queue_obj:
                                 await queue_obj.put(input_data)
+                            elif result_key == GAS_PROBE_TASK_ID:
+                                # Expected: the gas monitor pops its result
+                                # queue the moment a probe times out, so a late
+                                # health_check() result arrives after the queue
+                                # is gone. Already counted as a miss — debug only.
+                                self.logger.debug(
+                                    f"Late gas-probe result for {result_key} after "
+                                    f"probe timeout; already counted as a miss"
+                                )
                             else:
                                 current_queues = list(self.result_queues.keys())
                                 self.logger.warning(
@@ -389,6 +401,7 @@ class Scheduler:
                     self.monitor_task_ref = asyncio.create_task(
                         self.worker_health_monitor()
                     )
+                    self._start_gas_monitor()
 
                 all_devices_ready = all(
                     info["is_ready"] for info in self.worker_info.values()
@@ -416,6 +429,10 @@ class Scheduler:
             self.monitor_running = False
             if self.monitor_task_ref:
                 self.monitor_task_ref.cancel()
+
+            if self.gas_monitor:
+                self.gas_monitor.stop()
+                self.gas_monitor = None
 
             self.is_ready = False
 
@@ -519,6 +536,21 @@ class Scheduler:
             raise HTTPException(
                 status_code=500, detail="Max queue size not provided in settings"
             )
+
+    def _start_gas_monitor(self) -> None:
+        """Instantiate and start the model-agnostic gas monitor."""
+        if not self.settings.gas_monitor_enabled:
+            return
+        if self.gas_monitor is not None:
+            return
+        try:
+            from health_monitoring.gas_monitor import GasMonitor
+
+            self.gas_monitor = GasMonitor(self)
+            self.gas_monitor.start()
+        except Exception as e:
+            self.logger.error(f"Failed to start gas monitor: {e}")
+            self.gas_monitor = None
 
     async def worker_health_monitor(self):
         """Monitor worker health and restart dead workers"""

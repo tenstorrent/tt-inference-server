@@ -64,6 +64,16 @@ class BaseDeviceRunner(ABC):
     def run(self, *args, **kwargs):
         pass
 
+    def health_check(self) -> bool:
+        """Liveness probe answered in the worker process by the gas monitor.
+
+        Called by the device worker when it dequeues a ``GasProbeRequest``,
+        instead of ``run()``. The cheap default returns ``True`` unconditionally:
+        reaching this method already proves the worker process and its dequeue
+        loop are alive, which is all a single-process runner needs to certify.
+        """
+        return True
+
     def set_device(self):
         return {}
 
