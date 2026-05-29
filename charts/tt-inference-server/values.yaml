@@ -651,11 +651,13 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.6'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '16'
   Qwen3-32B:
     vllm:
       galaxy:
@@ -2665,11 +2667,13 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.7'
               - name: MAX_MODEL_LENGTH
-                value: '8192'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '16'
     defaultEngine: vllm
   Llama-3.2-3B-Instruct:
     vllm:
@@ -2851,11 +2855,13 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.7'
               - name: MAX_MODEL_LENGTH
-                value: '8192'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '16'
   Llama-3.1-8B:
     vllm:
       n150:
@@ -3664,11 +3670,13 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.6'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '16'
   Qwen2.5-Coder-32B-Instruct:
     vllm:
       t3k:
@@ -7114,11 +7122,13 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.7'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '16'
     defaultEngine: forge
   resnet-50:
     forge:
@@ -7661,9 +7671,11 @@ models:
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.6'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '12'
     defaultEngine: forge
