@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -24,8 +25,6 @@
 #include <variant>
 
 #include "config/settings.hpp"
-
-#include <cctype>
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
 #include "domain/session.hpp"
@@ -123,8 +122,9 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
 /// directory the discovery MDC needs.
 bool requestPlaneIsHttp() {
   std::string mode = tt::config::dynamoRequestPlane();
-  std::transform(mode.begin(), mode.end(), mode.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
   return mode == "http";
 }
 
@@ -213,7 +213,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     // the warm-up (e.g. consumer thread spawned later in LLMService).
     const auto loopTid =
         std::hash<std::thread::id>{}(std::this_thread::get_id());
-    DYNAMO_LATENCY_LOG(DEBUG, "[DynamoLatency] id={} stage=dispatched loop_tid={}",
+    DYNAMO_LATENCY_LOG(DEBUG,
+                       "[DynamoLatency] id={} stage=dispatched loop_tid={}",
                        probeId.empty() ? "?" : probeId, loopTid);
 
     // Block the dynamo per-request worker thread until the streaming
@@ -296,13 +297,12 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                       firstChunkT - tDispatch)
                       .count() /
                   1000.0;
-              DYNAMO_LATENCY_LOG(
-                  DEBUG,
-                  "[DynamoLatency] id={} stage=first_chunk "
-                  "worker_recv_to_first_chunk_ms={:.3f} "
-                  "dispatch_to_first_chunk_ms={:.3f}",
-                  probeId.empty() ? "?" : probeId, sinceRecvMs,
-                  sinceDispatchMs);
+              DYNAMO_LATENCY_LOG(DEBUG,
+                                 "[DynamoLatency] id={} stage=first_chunk "
+                                 "worker_recv_to_first_chunk_ms={:.3f} "
+                                 "dispatch_to_first_chunk_ms={:.3f}",
+                                 probeId.empty() ? "?" : probeId, sinceRecvMs,
+                                 sinceDispatchMs);
             }
             sendChunk(toTokenChunk(chunk, isFinal));
             if (isFinal) {

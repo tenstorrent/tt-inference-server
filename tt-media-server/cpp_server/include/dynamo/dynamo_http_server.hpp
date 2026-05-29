@@ -15,11 +15,11 @@
  * stack supports it; HTTP/1.1 is accepted on this listener.
  */
 
-#include "dynamo/dynamo_protocol.hpp"
-
 #include <atomic>
 #include <cstdint>
 #include <string>
+
+#include "dynamo/dynamo_protocol.hpp"
 
 namespace tt::dynamo {
 

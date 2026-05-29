@@ -32,8 +32,9 @@ bool writeAll(int fd, const char* data, size_t len) {
 }
 
 std::string toLower(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
   return s;
 }
 
@@ -167,7 +168,8 @@ void DynamoHttpServer::handle_connection(int client_fd) {
 void DynamoHttpServer::run() {
   listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
   if (listen_fd_ < 0) {
-    throw std::runtime_error("DynamoHttpServer: failed to create listen socket");
+    throw std::runtime_error(
+        "DynamoHttpServer: failed to create listen socket");
   }
 
   int opt = 1;
@@ -193,10 +195,9 @@ void DynamoHttpServer::run() {
   }
 
   running_.store(true);
-  TT_LOG_INFO(
-      "[DynamoHttpServer] Listening on {}:{} path={}/{}",
-      config_.bind_host, actual_port_, config_.rpc_root_path,
-      config_.endpoint_name);
+  TT_LOG_INFO("[DynamoHttpServer] Listening on {}:{} path={}/{}",
+              config_.bind_host, actual_port_, config_.rpc_root_path,
+              config_.endpoint_name);
 
   while (running_.load()) {
     int client_fd = ::accept(listen_fd_, nullptr, nullptr);
