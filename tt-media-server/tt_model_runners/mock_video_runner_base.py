@@ -136,6 +136,7 @@ def runMockBridge(
     contract violation. The T2V mock passes ``None`` (no validation);
     the I2V mock passes a validator that opens + parses the side-file.
     """
+    from config.constants import GAS_PROBE_TASK_ID
     from ipc.video_shm import (
         SP_WARMUP_TASK_ID,
         VideoResponse,
@@ -297,16 +298,21 @@ def runMockBridge(
                     )
                 )
             warmupAckCount[0] += 1
-            logger.info(f"{cfg.label} replied to SP warmup ping (#{warmupAckCount[0]})")
+            logger.info(
+                f"{cfg.label} replied to control ping {taskId} (#{warmupAckCount[0]})"
+            )
         except Exception as err:
-            logger.error(f"{cfg.label} failed writing warmup-ping response: {err}")
+            logger.error(f"{cfg.label} failed writing control-ping response: {err}")
 
     try:
         while not _shutdown:
             req = inputShm.read_request()
             if req is None:
                 break
-            if req.task_id == SP_WARMUP_TASK_ID:
+            if req.task_id in (SP_WARMUP_TASK_ID, GAS_PROBE_TASK_ID):
+                # Single-process mock has no MPI ranks, so the gas probe has no
+                # collective to run — an immediate SUCCESS ack is the right
+                # mock of a healthy pipeline.
                 replyWarmupPing(req.task_id)
                 continue
             pool.submit(handleRequest, req)

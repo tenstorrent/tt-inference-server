@@ -54,7 +54,7 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from config.constants import ModelRunners
+from config.constants import GAS_PROBE_TASK_ID, ModelRunners
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -340,15 +340,18 @@ def _encoder_loop(
             _log.info("Encoder thread: shutdown sentinel received, exiting")
             return
 
-        # Warmup ping: respond SUCCESS with empty file_path. No ffmpeg, no
-        # frames — the round-trip itself is the readiness signal.
-        if job.task_id == SP_WARMUP_TASK_ID:
+        # Warmup ping and gas probe: respond SUCCESS with empty file_path.
+        # No ffmpeg, no frames — the round-trip itself is the signal. (The
+        # gas probe's cross-rank collective already ran in the inference loop;
+        # here rank 0 just acks.)
+        if job.task_id in (SP_WARMUP_TASK_ID, GAS_PROBE_TASK_ID):
             try:
                 _write_response_to_shm(output_shm, job.task_id, "")
-                _log.info("Encoder thread: replied to SP warmup ping")
+                _log.info(f"Encoder thread: replied to {job.task_id}")
             except Exception as write_err:
                 _log.error(
-                    f"Encoder thread: failed to write SP warmup response: {write_err}"
+                    f"Encoder thread: failed to write {job.task_id} response: "
+                    f"{write_err}"
                 )
             continue
 
@@ -417,6 +420,12 @@ def _run_inference_loop(
                     _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
                 )
                 rank0_skip = True
+            elif raw_req is not None and raw_req.task_id == GAS_PROBE_TASK_ID:
+                # Gas probe: unlike warmup, do NOT skip. We broadcast the
+                # request (skip=False) so every rank joins the collective below
+                # in lockstep — that is what lets the probe catch a wedged
+                # sub-rank. No image-prompt loading for the gas probe.
+                _log.info("Rank 0: received gas probe, broadcasting to all ranks")
             else:
                 rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
                     raw_req, encode_queue
@@ -438,6 +447,22 @@ def _run_inference_loop(
                 _log.info(
                     f"Rank 0: skipping inference for task {req.task_id} "
                     f"(rank 0 already submitted response)"
+                )
+            continue
+
+        if req.task_id == GAS_PROBE_TASK_ID:
+            # Gas probe: every rank joins one bare MPI collective to prove
+            # the whole job's host loops are responsive, then rank 0 acks. The
+            # broadcast above (skip=False) guarantees all ranks reach this
+            # barrier in lockstep, so a wedged sub-rank stalls the collective
+            # and fails the probe — which the warmup short-circuit cannot do.
+            #
+            # INTENTIONAL TRADE-OFF: a bare collective proves host-side rank liveness, NOT
+            # device responsiveness.
+            comm.barrier()
+            if rank == 0:
+                encode_queue.put(
+                    _EncodeJob(task_id=GAS_PROBE_TASK_ID, frames=None, error=None)
                 )
             continue
 
