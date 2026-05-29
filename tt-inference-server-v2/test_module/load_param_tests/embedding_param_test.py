@@ -72,7 +72,7 @@ class EmbeddingParamTest(BaseTest):
         # Check if same requests produce identical results
         base_match = response_data_list[0]["data"] == response_data_list[1]["data"]
         results["same_requests_match"] = base_match
-        logger.info(f"✓ Same requests match: {base_match}")
+        logger.info(f"✅ Same requests match: {base_match}")
 
         # Check if different parameters produce different results
         param_tests = []
