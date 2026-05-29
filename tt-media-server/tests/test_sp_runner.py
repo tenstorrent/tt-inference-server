@@ -747,6 +747,56 @@ class TestSPRunnerWarmup:
         # zero-second chunks and exhaust mock side_effect → StopIteration.
         assert mock_output.read_response.call_count == 2
 
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_stale_gas_probe_ack_is_skipped_then_warmup_succeeds(
+        self, MockVideoShm, _enable_warmup_ping, monkeypatch
+    ):
+        """A gas-probe ack left in the output ring by a prior session must be
+        discarded, not treated as a fatal desync. The one-shot drain in
+        set_device() races with gas-probe requests still queued in the input
+        ring, which the peer answers after the drain. Before the fix this
+        surfaced as ``unexpected response task_id='__gas_probe__'`` and warmup
+        failed, wedging the worker at is_ready=False. After the fix the loop
+        skips the stale gas-probe ack and waits for the real ``__sp_warmup__``
+        ack."""
+        from config.constants import GAS_PROBE_TASK_ID
+        from ipc.video_shm import SP_WARMUP_TASK_ID
+
+        monkeypatch.setattr(_mock_settings, "sp_warmup_timeout_seconds", 5.0)
+        # Pin the heartbeat so the ack-wait loop's chunking is deterministic and
+        # independent of whatever a sibling suite left on the module global.
+        monkeypatch.setattr("tt_model_runners.sp_runner._WARMUP_HEARTBEAT_SECONDS", 1.0)
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_input.queue_depth.return_value = 0
+        mock_input.INPUT_SLOTS = 8
+        mock_input.write_request.return_value = True
+        mock_output.read_response.side_effect = [
+            VideoResponse(
+                task_id=GAS_PROBE_TASK_ID,
+                status=VideoStatus.SUCCESS,
+                file_path="",
+                error_message="",
+            ),
+            VideoResponse(
+                task_id=SP_WARMUP_TASK_ID,
+                status=VideoStatus.SUCCESS,
+                file_path="",
+                error_message="",
+            ),
+        ]
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import asyncio
+
+        result = asyncio.run(runner.warmup())
+
+        assert result is True, "stale gas-probe ack must not fail warmup"
+        # First read = stale gas probe (skipped), second = the real warmup ack.
+        assert mock_output.read_response.call_count == 2
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
