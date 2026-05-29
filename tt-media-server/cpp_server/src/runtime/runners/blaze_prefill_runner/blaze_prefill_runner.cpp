@@ -3,16 +3,22 @@
 
 #include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 
+#include "config/settings.hpp"
 #include "ipc/helpers/token_push.hpp"
+#include "services/memory_services/memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
+
+static constexpr size_t MAX_MEMORY_DRAIN_PER_STEP = 8;
 
 BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
                                        ipc::IResultQueue* resultQueue,
                                        tt::ipc::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = blaze_prefill::makeModelRunner(config);
+  memoryManager = std::make_unique<tt::services::MemoryManager>();
+  TT_LOG_INFO("[BlazePrefillRunner] MemoryManager created");
 }
 
 BlazePrefillRunner::~BlazePrefillRunner() {
@@ -24,6 +30,9 @@ BlazePrefillRunner::~BlazePrefillRunner() {
 
 void BlazePrefillRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
+    // Service memory allocation requests from SessionManager
+    drainMemoryRequests();
+
     // Get next sequence from task queue
     auto sequence = taskQueue->tryPop();
     if (!sequence) {
@@ -83,4 +92,30 @@ void BlazePrefillRunner::stop() {
   TT_LOG_INFO("[BlazePrefillRunner] Stopping");
   stopped.store(true, std::memory_order_relaxed);
 }
+
+void BlazePrefillRunner::drainMemoryRequests() {
+  for (size_t i = 0; i < MAX_MEMORY_DRAIN_PER_STEP; ++i) {
+    auto request = memoryManager->getRequest();
+    if (!request) return;
+
+    if (request->action == domain::MemoryManagementAction::ALLOCATE) {
+      uint32_t slotId = nextSlotId++;
+      if (nextSlotId >= static_cast<uint32_t>(tt::config::dsMaxUsers())) {
+        nextSlotId = 0;
+      }
+      TT_LOG_DEBUG(
+          "[BlazePrefillRunner] drainMemoryRequests: ALLOCATE taskId={}, "
+          "assigned slotId={}",
+          request->taskId, slotId);
+      memoryManager->replyAllocateSuccess(request->taskId, slotId);
+    } else if (request->action == domain::MemoryManagementAction::DEALLOCATE) {
+      TT_LOG_DEBUG(
+          "[BlazePrefillRunner] drainMemoryRequests: DEALLOCATE taskId={}, "
+          "slotId={} (no-op)",
+          request->taskId, request->slotId);
+      // No real deallocation needed in prefill-only mode
+    }
+  }
+}
+
 }  // namespace tt::runners
