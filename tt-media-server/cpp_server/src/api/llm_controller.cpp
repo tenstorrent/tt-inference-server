@@ -276,7 +276,10 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
 
     if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
     if (isFinal) {
-      if (session) session->clearInFlight();
+      if (session) {
+        session->finalizeAndRegisterHashes();
+        session->clearInFlight();
+      }
       writer->finalize();
     }
   };

@@ -20,36 +20,6 @@
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-namespace {
-
-/**
- * Extract partial block tokens from the end of a prompt.
- * These are tokens that don't fit into a complete block and need to be
- * passed to the streaming accumulator.
- */
-std::vector<int> extractPartialBlockTokens(const std::vector<int>& promptTokens,
-                                           size_t completedBlockCount) {
-  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
-  const size_t blockSize = tt::config::kvCacheBlockSize();
-
-  // Calculate where complete blocks end
-  size_t completeTokens = 0;
-  if (completedBlockCount > 0) {
-    completeTokens = firstBlockSize + (completedBlockCount - 1) * blockSize;
-  }
-
-  if (completeTokens >= promptTokens.size()) {
-    return {};  // No partial block
-  }
-
-  // Extract partial tokens
-  std::vector<int> partial(promptTokens.begin() + completeTokens,
-                           promptTokens.end());
-  return partial;
-}
-
-}  // namespace
-
 namespace tt::services {
 
 LLMPipeline::LLMPipeline(
@@ -189,15 +159,12 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
-        // Initialize streaming prefix accumulator with FULL prompt state.
-        // After the worker prefills the delta, the KV cache will have ALL
-        // prompt tokens, not just the matched ones. The accumulator should
-        // start with all prompt hashes and only the true partial-block tokens.
+        // Initialize token accumulator with FULL prompt tokens (before delta
+        // trim). At stream end, finalizeAndRegisterHashes() will compute hashes
+        // for all complete blocks including generated tokens.
         if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
-          auto partial = extractPartialBlockTokens(*promptTokens,
-                                                   routingInfo.hashes.size());
-          req->session->initPrefixAccumulator(
-              routingInfo.hashes, std::move(partial),
+          req->session->initTokenAccumulator(
+              *promptTokens, routingInfo.hashes,
               [mgr = sessionManager_](const std::string& sessionId,
                                       const std::vector<uint64_t>& hashes) {
                 mgr->registerPrefixHash(sessionId, hashes);
@@ -260,12 +227,10 @@ void LLMPipeline::resolveSession(
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.hashes);
 
-        // Initialize streaming prefix accumulator
+        // Initialize token accumulator for end-of-stream hash computation
         if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
-          auto partial = extractPartialBlockTokens(*promptTokens,
-                                                   routingInfo.hashes.size());
-          req->session->initPrefixAccumulator(
-              routingInfo.hashes, std::move(partial),
+          req->session->initTokenAccumulator(
+              *promptTokens, routingInfo.hashes,
               [mgr](const std::string& sessionId,
                     const std::vector<uint64_t>& hashes) {
                 mgr->registerPrefixHash(sessionId, hashes);

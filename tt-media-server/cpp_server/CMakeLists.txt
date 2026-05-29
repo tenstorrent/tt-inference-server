@@ -350,7 +350,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
-    src/utils/block_hash_accumulator.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -688,7 +687,6 @@ add_executable(main_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
-    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -759,7 +757,6 @@ add_executable(tool_calling_integration_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/conversation_hasher.cpp
-    src/utils/block_hash_accumulator.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp

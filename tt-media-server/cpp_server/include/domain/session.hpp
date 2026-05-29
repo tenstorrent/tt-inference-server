@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,7 +18,7 @@
 #include "domain/sentinel_values.hpp"
 
 namespace tt::utils {
-class BlockHashAccumulator;
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
 }
 
 namespace tt::domain {
@@ -90,23 +91,28 @@ class Session {
   }
 
   /**
-   * Initialize prefix hash accumulator for streaming token registration.
+   * Initialize token accumulator for streaming hash computation.
    * Called once per request when session routing is resolved.
    *
+   * @param promptTokens Full prompt tokens (before delta trim)
    * @param initialHashes Block hashes computed from the prompt
-   * @param partialBlockTokens Tokens from prompt's incomplete final block
-   * @param onBlockComplete Callback invoked when a block hash is computed
+   * @param onComplete Callback invoked at stream end with final hashes
    */
-  void initPrefixAccumulator(
-      std::vector<uint64_t> initialHashes, std::vector<int> partialBlockTokens,
+  void initTokenAccumulator(
+      std::vector<int> promptTokens, std::vector<uint64_t> initialHashes,
       std::function<void(const std::string&, const std::vector<uint64_t>&)>
-          onBlockComplete);
+          onComplete);
 
   /**
-   * Add a generated token to the prefix accumulator.
-   * If this completes a block, the onBlockComplete callback is invoked.
+   * Add a generated token to the accumulator.
    */
   void addGeneratedToken(int tokenId);
+
+  /**
+   * Compute final hashes and register any new blocks.
+   * Called at stream end before clearInFlight().
+   */
+  void finalizeAndRegisterHashes();
 
   Json::Value toJson() const {
     Json::Value json;
@@ -123,11 +129,12 @@ class Session {
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
 
-  // Streaming prefix accumulator (initialized per-request)
-  // shared_ptr because Session must remain copyable for ConcurrentMap usage
-  std::shared_ptr<utils::BlockHashAccumulator> prefixAccumulator_;
+  // Streaming token accumulator (initialized per-request)
+  std::vector<int> promptTokens_;
+  std::vector<int> generatedTokens_;
+  std::vector<uint64_t> initialHashes_;
   std::function<void(const std::string&, const std::vector<uint64_t>&)>
-      onBlockComplete_;
+      onComplete_;
 
   static std::string generateUuid();
 };

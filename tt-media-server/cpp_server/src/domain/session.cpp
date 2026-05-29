@@ -7,7 +7,7 @@
 #include <mutex>
 #include <random>
 
-#include "utils/block_hash_accumulator.hpp"
+#include "utils/conversation_hasher.hpp"
 
 namespace tt::domain {
 
@@ -34,27 +34,41 @@ bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
   cancelFn_ = nullptr;
-  prefixAccumulator_.reset();
-  onBlockComplete_ = nullptr;
+  promptTokens_.clear();
+  generatedTokens_.clear();
+  initialHashes_.clear();
+  onComplete_ = nullptr;
   return true;
 }
 
-void Session::initPrefixAccumulator(
-    std::vector<uint64_t> initialHashes, std::vector<int> partialBlockTokens,
+void Session::initTokenAccumulator(
+    std::vector<int> promptTokens, std::vector<uint64_t> initialHashes,
     std::function<void(const std::string&, const std::vector<uint64_t>&)>
-        onBlockComplete) {
-  prefixAccumulator_ = std::make_shared<utils::BlockHashAccumulator>(
-      std::move(initialHashes), std::move(partialBlockTokens));
-  onBlockComplete_ = std::move(onBlockComplete);
+        onComplete) {
+  promptTokens_ = std::move(promptTokens);
+  initialHashes_ = std::move(initialHashes);
+  onComplete_ = std::move(onComplete);
+  generatedTokens_.clear();
 }
 
 void Session::addGeneratedToken(int tokenId) {
-  if (!prefixAccumulator_) return;
+  generatedTokens_.push_back(tokenId);
+}
 
-  if (auto newHashes = prefixAccumulator_->addToken(tokenId)) {
-    if (onBlockComplete_) {
-      onBlockComplete_(session_id_, *newHashes);
-    }
+void Session::finalizeAndRegisterHashes() {
+  if (!onComplete_ || promptTokens_.empty()) return;
+
+  // Combine prompt + generated tokens
+  std::vector<int> allTokens = promptTokens_;
+  allTokens.insert(allTokens.end(), generatedTokens_.begin(),
+                   generatedTokens_.end());
+
+  // Compute hashes for all complete blocks
+  auto newHashes = utils::getPrefixCacheHashesByBlocks(allTokens);
+
+  // Only register if we have more hashes than initial (new blocks formed)
+  if (newHashes.size() > initialHashes_.size()) {
+    onComplete_(session_id_, newHashes);
   }
 }
 
