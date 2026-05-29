@@ -302,9 +302,10 @@ download_tokenizer \
     '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
 
 # Kimi K2.6 (public tiktoken tokenizer + jinja chat template; no tokenizer.json on HF)
+# Uses /resolve/main for tiktoken.model (LFS file) but /raw/main for text files
 download_tokenizer \
     "moonshotai/Kimi-K2.6" \
-    "https://huggingface.co/moonshotai/Kimi-K2.6/raw/main" \
+    "https://huggingface.co/moonshotai/Kimi-K2.6/resolve/main" \
     "false" \
     '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
     "tiktoken"

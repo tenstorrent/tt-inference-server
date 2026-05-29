@@ -3,10 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import atexit
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -510,6 +513,17 @@ def build_eval_command(
     optional_model_args = []
     if effective_max_concurrent:
         optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
+    # Fast-fail 4xx when DeviceModelSpec opts in (forge LLMs at tight
+    # max_context). EVALS_COMMON only: lm-eval 0.4.3 in EVALS_META rejects
+    # the kwarg.
+    eval_max_retries = getattr(
+        getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
+    )
+    if (
+        eval_max_retries is not None
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+    ):
+        optional_model_args.append(f"max_retries={eval_max_retries}")
 
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
@@ -605,8 +619,32 @@ def build_eval_command(
 
     if task.include_path:
         cmd.append("--include_path")
-        cmd.append(task_venv_config.venv_path / task.include_path)
-        os.chdir(task_venv_config.venv_path)
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_META:
+            # lm-eval meta_* task YAMLs hardcode `./work_dir/joined_*.parquet`
+            # relative to cwd. The model-specific data lives at
+            # `<venv>/llama-cookbook/.../meta_eval/work_dir_<model>/`. To
+            # support parallel invocations against different models without
+            # racing on a single shared work_dir/, give each invocation its
+            # own staging dir containing a symlink that masquerades as it.
+            meta_data_dir = (
+                task_venv_config.venv_path
+                / "llama-cookbook/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval"
+                / f"work_dir_{model_spec.model_name}"
+            )
+            staging_dir = Path(
+                tempfile.mkdtemp(
+                    prefix=f"meta_eval_{model_spec.model_name}_",
+                    dir=task_venv_config.venv_path,
+                )
+            )
+            atexit.register(shutil.rmtree, staging_dir, ignore_errors=True)
+            staging_work_dir = staging_dir / "work_dir"
+            os.symlink(meta_data_dir, staging_work_dir)
+            cmd.append(staging_work_dir)
+            os.chdir(staging_dir)
+        else:
+            cmd.append(task_venv_config.venv_path / task.include_path)
+            os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
@@ -933,8 +971,21 @@ def main():
 
         # Execute lm_eval for each task.
         logger.info("Running vLLM evals client ...")
+        device_max_context = getattr(
+            getattr(model_spec, "device_model_spec", None), "max_context", None
+        )
         return_codes = []
         for task in eval_config.tasks:
+            # Skip if device can't fit this task's prompts (avoids 4xx retry-storm).
+            min_ctx = getattr(task, "min_context_required", None)
+            if min_ctx and device_max_context and device_max_context < min_ctx:
+                logger.warning(
+                    f"Skipping {task.task_name}: requires max_context >= {min_ctx}, "
+                    f"device provides {device_max_context}."
+                )
+                return_codes.append(0)
+                continue
+
             health_check = prompt_client.get_health()
             if health_check.status_code != 200:
                 logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")

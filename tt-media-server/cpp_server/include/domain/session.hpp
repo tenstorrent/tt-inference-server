@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "domain/manage_memory.hpp"
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::domain {
 
