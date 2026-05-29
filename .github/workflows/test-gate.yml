@@ -615,33 +615,16 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Validate OpenAPI spec against registered routes
         run: |
           pip install openapi-spec-validator --quiet
           cd cpp_server
           python3 tools/validate_openapi.py
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
 
       - name: C++ format check (.clang-format)
         run: |
@@ -733,27 +716,10 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Build C++ server
         run: |
@@ -2478,27 +2444,10 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Build C++ server with ThreadSanitizer
         run: |
@@ -2525,21 +2474,12 @@ jobs:
           ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..
-          # 180s timeout (TSan startup is slower than Release)
-          for i in $(seq 1 90); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ TSan-instrumented server ready (after ${i}*2s)"
-              break
-            fi
-            sleep 2
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: TSan server did not become ready within 180s"
-            tail -100 tsan_server.log
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 180 \
+            --interval 2 \
+            --pid-file tsan_server.pid \
+            --label "TSan-instrumented server"
 
       - name: Run concurrent multi-turn workload (8 users x 8 turns)
         env:
