@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Tuple
 
@@ -1399,3 +1400,25 @@ SHUTDOWN_SIGNAL = {"__shutdown__": True}
 #   - <= VideoShm.TASK_ID_SIZE (36) bytes, since SPRunner reuses it as the
 #     SHM-wire task_id for its gas-probe round-trip.
 GAS_PROBE_TASK_ID = "__gas_probe__"
+
+
+@dataclass(frozen=True)
+class GasProbeRequest:
+    """Sentinel request the gas monitor puts on the scheduler ``task_queue``.
+
+    The device workers recognise it by ``isinstance`` before calling
+    ``runner.run()`` and route it to ``runner.health_check()`` instead, so the
+    probe never enters the model forward path. It lives here next to
+    ``GAS_PROBE_TASK_ID`` (and ``SHUTDOWN_SIGNAL``) so the workers can import the
+    whole reserved-probe contract from one light module, without pulling the
+    monitor's telemetry/asyncio dependencies into every worker process. It is a
+    plain frozen dataclass so it pickles cleanly across the multiprocessing
+    queue.
+
+    It carries the two attributes the worker loop reads off every request:
+    ``_task_id`` (for result routing) and ``stream`` (to stay on the
+    non-streaming path).
+    """
+
+    _task_id: str = field(default=GAS_PROBE_TASK_ID)
+    stream: bool = field(default=False)
