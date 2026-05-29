@@ -766,6 +766,13 @@ def main():
         disable_trace_capture=args.disable_trace_capture,
     )
 
+    try:
+        from weight_update_api import install as install_weight_update_routes
+
+        install_weight_update_routes()
+    except Exception as exc:  # noqa: BLE001 - never block server startup on this
+        logger.warning("Could not install weight-update routes: %s", exc)
+
     # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available
     runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")
