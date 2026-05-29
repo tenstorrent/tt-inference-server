@@ -33,8 +33,10 @@ Optional:
                               (default: "10,11,14,15,18,19,22,23" — the
                               local 8-device DeepSeek-R1 mesh)
   --tokenizers-host-dir <dir> host directory containing the tokenizers tree
-                              (must hold <hf-model-id>/{config,tokenizer,
-                              tokenizer_config}.json). Bind-mounted into the
+                              (must hold <hf-model-id>/config.json,
+                              tokenizer_config.json, and either tokenizer.json
+                              or tiktoken.model for tiktoken-based models such
+                              as Kimi K2.6). Bind-mounted into the
                               frontend at the path the worker advertises in
                               the MDC. (default: auto — extracts tokenizer
                               assets out of the worker image into a host
@@ -87,6 +89,9 @@ Performance knobs (read from the calling shell, optional):
                         backend->frontend wire or downstream of it. High
                         log volume (~one line per generated token), keep
                         off in normal runs.
+  DYN_ENABLE_ANTHROPIC_API
+                        Enable experimental Anthropic Messages API endpoint
+                        (/v1/messages). (default: true)
 
 Example:
   $0 \\
@@ -141,6 +146,7 @@ if [[ -z "$ETCD_IMAGE" || -z "$WORKER_IMAGE" || -z "$FRONTEND_IMAGE" ]]; then
     echo "Missing required argument(s)." >&2
     usage
 fi
+
 
 log() { printf '[deploy] %s\n' "$*"; }
 
@@ -221,6 +227,7 @@ docker run -d --name "$WORKER_NAME" \
     -e DYN_HTTP_RPC_ROOT_PATH="${DYN_HTTP_RPC_ROOT_PATH:-/v1/rpc}" \
     -e DYN_HTTP_RPC_PORT="${DYN_HTTP_RPC_PORT:-8888}" \
     -e SERVER_MODE=cpp \
+    -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
     -e USE_DEEPSEEK_MD_FORMAT=1 \
@@ -303,28 +310,26 @@ if [[ -z "$SKIP_TOKENIZER_SHARE" ]]; then
     MODEL_SUBDIR="$TOKENIZERS_HOST_DIR_ABS/$HF_MODEL_ID"
     mkdir -p "$MODEL_SUBDIR"
 
-    # Backfill config.json. cpp_server/build.sh's pre-fetch grabs only
-    # tokenizer{.json,_config.json}, so the image ships without the HF
-    # model config. Frontend's model_card loader needs it.
-    if [[ ! -f "$MODEL_SUBDIR/config.json" ]]; then
-        log "fetching $HF_MODEL_ID/config.json from HuggingFace"
-        if ! curl -fsSL --max-time 30 \
-            "https://huggingface.co/${HF_MODEL_ID}/raw/main/config.json" \
-            -o "$MODEL_SUBDIR/config.json" 2>/dev/null; then
-            log "  HF fetch failed; writing a minimal placeholder config.json"
-            cat > "$MODEL_SUBDIR/config.json" <<'CONF'
-{"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}
-CONF
-        fi
-    fi
-
-    for f in config.json tokenizer.json tokenizer_config.json; do
+    # Validate required tokenizer files exist (expected to be in worker image)
+    for f in config.json tokenizer_config.json; do
         if [[ ! -f "$MODEL_SUBDIR/$f" ]]; then
             log "missing $f under $MODEL_SUBDIR"
-            log "  the worker's MDC will advertise a path the frontend can't read"
+            log "  ensure tokenizer files are included in the worker image"
             exit 1
         fi
     done
+    if [[ ! -f "$MODEL_SUBDIR/tokenizer.json" && ! -f "$MODEL_SUBDIR/tiktoken.model" ]]; then
+        log "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
+        log "  ensure tokenizer files are included in the worker image"
+        exit 1
+    fi
+    if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
+        if [[ ! -f "$MODEL_SUBDIR/chat_template.jinja" ]]; then
+            log "missing chat_template.jinja under $MODEL_SUBDIR"
+            log "  ensure tokenizer files are included in the worker image"
+            exit 1
+        fi
+    fi
 
     log "mounting tokenizers: $TOKENIZERS_HOST_DIR_ABS -> $WORKER_TOKENIZER_DIR"
     log "  using $HF_MODEL_ID:"
@@ -357,6 +362,7 @@ docker run -d --name "$FRONTEND_NAME" \
     -e RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-}" \
     -e DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
     -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
+    -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null
 

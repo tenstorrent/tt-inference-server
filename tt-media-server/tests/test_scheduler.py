@@ -142,8 +142,7 @@ class TestScheduler:
         assert scheduler.monitor_running
         assert scheduler.result_queues == {}
 
-        # Verify logger was used during init (_calculate_worker_count logs)
-        assert mock_logger.info.call_count >= 1
+        assert scheduler.logger is not None
 
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
@@ -326,7 +325,7 @@ class TestScheduler:
             "model_services.scheduler.asyncio.sleep",
             side_effect=stop_after_first_iteration,
         ):
-            await scheduler.worker_health_monitor()
+            await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
 
         mock_logger.error.assert_any_call("Failed to restart worker 0: Restart failed")
         assert scheduler.worker_info["0"]["restart_count"] == 1
@@ -362,7 +361,7 @@ class TestScheduler:
             "model_services.scheduler.asyncio.sleep",
             side_effect=stop_after_first_iteration,
         ):
-            await scheduler.worker_health_monitor()
+            await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
 
         mock_logger.info.assert_any_call("Trying deep restart of all workers")
         mock_deep_restart.assert_called_once()

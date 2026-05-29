@@ -45,12 +45,18 @@ inline ModelService modelServiceFromString(const std::string& v) {
 enum class ModelType {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  KIMI_K2_6,
 };
 
-/** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" ->
- * LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. Expects lowercase input. */
+/** Map lowercase `LLM_DEVICE_BACKEND` values to `ModelType`:
+ * "llama" -> `LLAMA_3_1_8B_INSTRUCT`,
+ * "kimi" -> `KIMI_K2_6`,
+ * otherwise -> `DEEPSEEK_R1_0528`. */
 inline ModelType modelTypeFromDeviceBackend(const std::string& v) {
-  if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
+  if (v == "llama")
+    return ModelType::LLAMA_3_1_8B_INSTRUCT;
+  else if (v == "kimi")
+    return ModelType::KIMI_K2_6;
   return ModelType::DEEPSEEK_R1_0528;
 }
 
@@ -94,6 +100,7 @@ enum class ModelRunnerType {
 enum class Model {
   DEEPSEEK_R1_0528,
   LLAMA_3_1_8B_INSTRUCT,
+  KIMI_K2_6,
 };
 
 struct ModelMapping {
@@ -104,6 +111,7 @@ struct ModelMapping {
 static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::DEEPSEEK_R1_0528, "deepseek-ai/DeepSeek-R1-0528"},
     {Model::LLAMA_3_1_8B_INSTRUCT, "meta-llama/Llama-3.1-8B-Instruct"},
+    {Model::KIMI_K2_6, "moonshotai/Kimi-K2.6"},
 };
 
 inline std::string toString(Model m) {

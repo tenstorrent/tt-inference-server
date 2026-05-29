@@ -171,9 +171,11 @@ void TcpSocketTransport::start() {
   running_ = true;
 
   if (mode_ == Mode::SERVER) {
-    connectionThread_ = std::thread(&TcpSocketTransport::serverLoop, this);
+    connectionThread_ = std::jthread(
+        [this](std::stop_token stopToken) { serverLoop(stopToken); });
   } else {
-    connectionThread_ = std::thread(&TcpSocketTransport::clientLoop, this);
+    connectionThread_ = std::jthread(
+        [this](std::stop_token stopToken) { clientLoop(stopToken); });
   }
 }
 
@@ -199,6 +201,7 @@ void TcpSocketTransport::stop() {
   }
 
   if (connectionThread_.joinable()) {
+    connectionThread_.request_stop();
     connectionThread_.join();
   }
 
@@ -211,8 +214,8 @@ void TcpSocketTransport::stop() {
   TT_LOG_INFO("[TcpSocketTransport] Stopped");
 }
 
-void TcpSocketTransport::serverLoop() {
-  while (running_) {
+void TcpSocketTransport::serverLoop(std::stop_token stopToken) {
+  while (running_ && !stopToken.stop_requested()) {
     TT_LOG_INFO("[TcpSocketTransport] Waiting for client connection...");
 
     struct sockaddr_in clientAddr;
@@ -221,7 +224,7 @@ void TcpSocketTransport::serverLoop() {
     tt::utils::ScopedFd accepted =
         acceptClient(serverSocket_.get(), &clientAddr, &clientLen);
     if (!accepted) {
-      if (running_) {
+      if (running_ && !stopToken.stop_requested()) {
         TT_LOG_ERROR("[TcpSocketTransport] Accept failed: {}", strerror(errno));
       }
       break;
@@ -236,7 +239,7 @@ void TcpSocketTransport::serverLoop() {
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
     notifyConnectionEstablished();
 
-    while (running_ && connected_) {
+    while (running_ && connected_ && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
@@ -252,14 +255,14 @@ void TcpSocketTransport::serverLoop() {
   }
 }
 
-void TcpSocketTransport::clientLoop() {
-  uint32_t delayMs = reconnectInitialDelayMs_;
+void TcpSocketTransport::clientLoop(std::stop_token stopToken) {
+  auto delay = reconnectInitialDelay_;
   auto backoff = [&]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-    delayMs = std::min(delayMs * 2, reconnectMaxDelayMs_);
+    std::this_thread::sleep_for(delay);
+    delay = std::min(delay * 2, reconnectMaxDelay_);
   };
 
-  while (running_) {
+  while (running_ && !stopToken.stop_requested()) {
     clientSocket_ = createTcpSocket();
     if (!clientSocket_) {
       TT_LOG_ERROR("[TcpSocketTransport] Failed to create client socket: {}",
@@ -281,7 +284,7 @@ void TcpSocketTransport::clientLoop() {
 
     TT_LOG_INFO(
         "[TcpSocketTransport] Attempting to connect to {}:{} (backoff {}ms)",
-        host_, port_, delayMs);
+        host_, port_, delay.count());
 
     if (connect(clientSocket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
@@ -296,12 +299,12 @@ void TcpSocketTransport::clientLoop() {
 
     peerSocket_.store(clientSocket_.get(), std::memory_order_release);
     connected_ = true;
-    delayMs = reconnectInitialDelayMs_;  // reset on success
+    delay = reconnectInitialDelay_;  // reset on success
 
     TT_LOG_INFO("[TcpSocketTransport] Connected to server");
     notifyConnectionEstablished();
 
-    while (running_ && connected_) {
+    while (running_ && connected_ && !stopToken.stop_requested()) {
       std::this_thread::sleep_for(CONNECTION_POLL_INTERVAL);
     }
 
@@ -317,7 +320,7 @@ void TcpSocketTransport::clientLoop() {
   }
 }
 
-bool TcpSocketTransport::sendRawData(const std::vector<uint8_t>& data) {
+bool TcpSocketTransport::sendRawData(std::span<const uint8_t> data) {
   std::lock_guard<std::mutex> lock(socketMutex_);
   if (!connected_) return false;
 
@@ -447,9 +450,10 @@ void TcpSocketTransport::setConnectionEstablishedCallback(
   setConnectionEstablishedCallbackCommon(std::move(callback));
 }
 
-void TcpSocketTransport::setReconnectBackoff(uint32_t initialDelayMs,
-                                             uint32_t maxDelayMs) {
-  setReconnectBackoffCommon(initialDelayMs, maxDelayMs);
+void TcpSocketTransport::setReconnectBackoff(
+    std::chrono::milliseconds initialDelay,
+    std::chrono::milliseconds maxDelay) {
+  setReconnectBackoffCommon(initialDelay, maxDelay);
 }
 
 }  // namespace tt::sockets

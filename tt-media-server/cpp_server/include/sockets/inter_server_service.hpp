@@ -76,7 +76,7 @@ class InterServerService {
   /**
    * @brief Send prefill request to the prefill server
    * @param task_id Unique task identifier
-   * @param registrationHash Prefix-cache registration hash for the conversation
+   * @param registrationHashes Prefix-cache block hashes for the conversation
    * @param token_ids Pre-tokenized prompt token IDs
    * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
    * @param slot_id KV cache slot allocated by decode server's memory manager
@@ -87,7 +87,8 @@ class InterServerService {
    *                 means "use prefill-side defaults".
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(uint32_t taskId, size_t registrationHash,
+  bool sendPrefillRequest(uint32_t taskId,
+                          const std::vector<uint64_t>& registrationHashes,
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
@@ -176,10 +177,9 @@ class InterServerService {
   bool enabled_ = false;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
-  bool registration_stop_ = false;
   std::mutex registration_mutex_;
   std::condition_variable registration_cv_;
-  std::thread registration_thread_;
+  std::jthread registration_thread_;
 };
 
 }  // namespace tt::sockets

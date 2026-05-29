@@ -6,6 +6,8 @@
 #include <json/json.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -78,6 +80,54 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   return instance;
 }
 
+/// Dynamo frontend parser names advertised in the MDC runtime_config.
+struct RuntimeParsers {
+  const char* reasoning = nullptr;
+  const char* tool_call = nullptr;
+};
+
+/// Read HuggingFace `model_type` from config.json (empty if
+/// missing/unreadable).
+std::string readModelType(const std::string& configPath) {
+  std::ifstream f(configPath);
+  if (!f) {
+    return {};
+  }
+  Json::Value cfg;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, f, &cfg, &errs) ||
+      !cfg.isMember("model_type") || !cfg["model_type"].isString()) {
+    return {};
+  }
+  return cfg["model_type"].asString();
+}
+
+/// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
+RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
+  if (modelType == "kimi_k25") {
+    return {"kimi_k25", "kimi_k2"};
+  }
+  if (modelType == "llama") {
+    return {nullptr, nullptr};
+  }
+  // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
+  return {"deepseek_r1", nullptr};
+}
+
+RuntimeParsers runtimeParsersForModelPath(const std::string& modelPath) {
+  return runtimeParsersForModelType(readModelType(modelPath + "/config.json"));
+}
+
+void setRuntimeParserField(Json::Value& runtime, const char* field,
+                           const char* value) {
+  if (value != nullptr) {
+    runtime[field] = value;
+  } else {
+    runtime[field] = Json::Value::null;
+  }
+}
+
 /// Build the Model Descriptor Card JSON the frontend uses to tokenize and
 /// list the model. Paths point at the same files cpp_server itself loads so
 /// the frontend tokenization matches exactly.
@@ -95,9 +145,11 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["source_path"] = c.model_path;
 
   const std::string configPath = c.model_path + "/config.json";
-  const std::string tokenizerPath = c.model_path + "/tokenizer.json";
+  const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";
+  const std::string tiktokenModelPath = c.model_path + "/tiktoken.model";
   const std::string tokenizerConfigPath =
       c.model_path + "/tokenizer_config.json";
+  const std::string chatTemplatePath = c.model_path + "/chat_template.jinja";
 
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
@@ -107,11 +159,31 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["model_info"] = std::move(modelInfo);
 
   Json::Value tokenizer(Json::objectValue);
-  Json::Value hfTok(Json::objectValue);
-  hfTok["path"] = tokenizerPath;
-  hfTok["checksum"] = K_BLAKE3_PLACEHOLDER;
-  tokenizer["hf_tokenizer_json"] = std::move(hfTok);
+  Json::Value tokFile(Json::objectValue);
+  const bool hasTiktoken = std::filesystem::exists(tiktokenModelPath) &&
+                           !std::filesystem::exists(tokenizerJsonPath);
+  if (hasTiktoken) {
+    tokFile["path"] = tiktokenModelPath;
+    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokenizer["tik_token_model"] = std::move(tokFile);
+  } else {
+    tokFile["path"] = tokenizerJsonPath;
+    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokenizer["hf_tokenizer_json"] = std::move(tokFile);
+  }
   card["tokenizer"] = std::move(tokenizer);
+
+  if (std::filesystem::exists(chatTemplatePath)) {
+    Json::Value chatTemplateFile(Json::objectValue);
+    Json::Value hfChatTemplate(Json::objectValue);
+    hfChatTemplate["is_custom"] = false;
+    Json::Value jinjaFile(Json::objectValue);
+    jinjaFile["path"] = chatTemplatePath;
+    jinjaFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    hfChatTemplate["file"] = std::move(jinjaFile);
+    chatTemplateFile["hf_chat_template_jinja"] = std::move(hfChatTemplate);
+    card["chat_template_file"] = std::move(chatTemplateFile);
+  }
 
   Json::Value promptFormatter(Json::objectValue);
   Json::Value hfTokCfg(Json::objectValue);
@@ -131,8 +203,9 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["total_kv_blocks"] = Json::Value::null;
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
+  const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
+  setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
   runtime["tool_call_parser"] = Json::Value::null;
-  runtime["reasoning_parser"] = "deepseek_r1";
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;

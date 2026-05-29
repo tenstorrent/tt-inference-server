@@ -5,8 +5,8 @@
 
 #include <chrono>
 
-#include "ipc/in_memory/detail/concurrent_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace tt::ipc::in_memory {
 
@@ -34,7 +34,7 @@ class ResultQueue : public tt::ipc::IResultQueue {
   }
 
  private:
-  tt::ipc::in_memory::detail::ConcurrentQueue<tt::ipc::SharedToken> queue;
+  tt::utils::BlockingQueue<tt::ipc::SharedToken> queue;
 };
 
 }  // namespace tt::ipc::in_memory

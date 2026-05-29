@@ -268,7 +268,7 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 add_library(stb_image_write INTERFACE)
-target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
+target_include_directories(stb_image_write SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)

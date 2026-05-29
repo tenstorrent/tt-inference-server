@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
 """List all model-device combinations and their docker images from release_model_spec.json.
 
 Checks if each docker image exists remotely and splits output into two sections:
