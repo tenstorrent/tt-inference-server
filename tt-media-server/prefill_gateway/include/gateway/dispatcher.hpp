@@ -77,6 +77,12 @@ class Dispatcher {
   void onRequestTimeouts(Clock::time_point now = Clock::now());
 
  private:
+  struct InFlightEntry {
+    std::string prefill_id;
+    uint64_t affinity_key = 0;
+    Clock::time_point started_at;
+  };
+
   void failTaskToDecode(uint32_t task_id, const std::string& reason,
                         const InFlightEntry* entry = nullptr);
 
@@ -84,11 +90,6 @@ class Dispatcher {
   AffinityCache& affinity_cache_;
   Senders senders_;
   Options options_;
-  struct InFlightEntry {
-    std::string prefill_id;
-    uint64_t affinity_key = 0;
-    Clock::time_point started_at;
-  };
 
   std::mutex inflight_mutex_;
   std::unordered_map<uint32_t, InFlightEntry> in_flight_;
