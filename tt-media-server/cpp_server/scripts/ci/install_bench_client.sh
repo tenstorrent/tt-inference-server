@@ -42,4 +42,6 @@ if [[ "${#PACKAGES[@]}" -gt 0 ]]; then
 fi
 
 venv_abs="$(cd "$(dirname "$VENV_PATH")" && pwd)/$(basename "$VENV_PATH")"
-echo "PATH=${venv_abs}/bin:${PATH}" >> "$GITHUB_ENV"
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  echo "PATH=${venv_abs}/bin:${PATH}" >> "${GITHUB_ENV}"
+fi

@@ -67,6 +67,16 @@
       "label": "Dynamo Frontend + cpp_server Integration",
       "min_completed": 1000,
       "max_failed": 0
+    },
+    "dynamo_plane_tcp": {
+      "label": "Dynamo request plane (TCP)",
+      "min_completed": 1000,
+      "max_failed": 0
+    },
+    "dynamo_plane_http": {
+      "label": "Dynamo request plane (HTTP)",
+      "min_completed": 1000,
+      "max_failed": 0
     }
   }
 }
