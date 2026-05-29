@@ -20,12 +20,12 @@ using namespace tt::domain::llm;
 DisaggregationService::DisaggregationService(
     tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
     std::shared_ptr<sockets::InterServerService> socketService,
-    std::shared_ptr<SessionManager> sessionManager)
+    std::shared_ptr<SessionManager> sessionMgr)
     : mode(mode),
       llmService(std::move(llmService)),
       socketService(std::move(socketService)),
-      sessionManager_(std::move(sessionManager)) {
-  eventLoopThread_.run();
+      sessionManager(std::move(sessionMgr)) {
+  eventLoopThread.run();
   setupSocketHandlers();
 }
 
@@ -257,12 +257,12 @@ void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
 
 void DisaggregationService::resolvePrefillSession(
     LLMRequest& request, const std::vector<uint64_t>& routingHashes) {
-  if (!sessionManager_ || routingHashes.empty()) {
+  if (!sessionManager || routingHashes.empty()) {
     return;
   }
 
   auto acquired =
-      sessionManager_->tryAcquireByPrefixHash(routingHashes, nullptr);
+      sessionManager->tryAcquireByPrefixHash(routingHashes, nullptr);
 
   if (acquired.has_value()) {
     TT_LOG_INFO(
@@ -272,15 +272,15 @@ void DisaggregationService::resolvePrefillSession(
         acquired->numberOfMatchedTokens);
     request.prefillSlotId = acquired->slotId;
     applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
-    sessionManager_->registerPrefixHash(acquired->sessionId, routingHashes);
+    sessionManager->registerPrefixHash(acquired->sessionId, routingHashes);
   } else {
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request.task_id, routingHashes.size());
-    sessionManager_->createSession(
+    sessionManager->createSession(
         [taskId = request.task_id, hashes = routingHashes,
-         sm = sessionManager_](const tt::domain::Session& session) {
+         sm = sessionManager](const tt::domain::Session& session) {
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
@@ -293,7 +293,7 @@ void DisaggregationService::resolvePrefillSession(
               "taskId={}: {}",
               taskId, errorMessage);
         },
-        /*eventLoop=*/eventLoopThread_.getLoop(), routingHashes);
+        /*eventLoop=*/eventLoopThread.getLoop(), routingHashes);
   }
 }
 

@@ -52,7 +52,7 @@ class DisaggregationService {
                              const std::vector<uint64_t>& routingHashes);
 
   void setSessionManager(std::shared_ptr<SessionManager> sm) {
-    sessionManager_ = std::move(sm);
+    sessionManager = std::move(sm);
   }
 
  private:
@@ -62,8 +62,8 @@ class DisaggregationService {
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;
   std::shared_ptr<sockets::InterServerService> socketService;
-  std::shared_ptr<SessionManager> sessionManager_;
-  trantor::EventLoopThread eventLoopThread_;
+  std::shared_ptr<SessionManager> sessionManager;
+  trantor::EventLoopThread eventLoopThread;
   utils::ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
 };
 
