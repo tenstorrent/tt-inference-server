@@ -558,6 +558,11 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   slotContext.tokensGenerated++;
   slotContext.currentPosition = output.position_id;
   utils::SpecDelta spec{};
+  TT_LOG_DEBUG(
+      "[BlazeRunner] handleOutput: taskId={}, slotId={}, finished={}, "
+      "token_id={}, position_id={}, tokensGenerated={}, currentPosition={}",
+      taskId, output.slot_id, finished, output.token_id, output.position_id,
+      slotContext.tokensGenerated, slotContext.currentPosition);
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
                                          taskId);
