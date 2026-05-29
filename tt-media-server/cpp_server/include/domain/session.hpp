@@ -8,11 +8,13 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "domain/manage_memory.hpp"
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::domain {
 
@@ -83,6 +85,30 @@ class Session {
     last_activity_time_ = std::chrono::system_clock::now();
   }
 
+  /**
+   * Initialize token accumulator for streaming hash computation.
+   * Called once per request when session routing is resolved.
+   *
+   * @param deltaTokens Delta prompt tokens (after matched prefix trimmed)
+   * @param initialHashes Block hashes computed from the prompt (for prepending)
+   * @param onComplete Callback invoked at stream end with final hashes
+   */
+  void initTokenAccumulator(
+      std::vector<int> deltaTokens, std::vector<uint64_t> initialHashes,
+      std::function<void(const std::string&, const std::vector<uint64_t>&)>
+          onComplete);
+
+  /**
+   * Add a generated token to the accumulator.
+   */
+  void addGeneratedToken(int tokenId);
+
+  /**
+   * Compute final hashes and register any new blocks.
+   * Called at stream end before clearInFlight().
+   */
+  void finalizeAndRegisterHashes();
+
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
@@ -97,6 +123,14 @@ class Session {
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
+
+  // Streaming token accumulator (initialized per-request)
+  std::vector<int> deltaTokens_;
+  std::vector<int> generatedTokens_;
+  std::vector<uint64_t> initialHashes_;
+  uint64_t parentHash_ = 0;
+  std::function<void(const std::string&, const std::vector<uint64_t>&)>
+      onComplete_;
 
   static std::string generateUuid();
 };

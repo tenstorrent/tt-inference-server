@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #include "runtime/runners/llm_runner.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -36,7 +40,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
     std::vector<int32_t> stopIds;
-    for (int64_t id : tok.stopTokenIds()) {
+    for (int64_t id : tt::utils::tokenizers::staticInfo().stopTokenIds) {
       stopIds.push_back(static_cast<int32_t>(id));
     }
     guidedDecoder = std::make_unique<GuidedDecoderManager>(encodedVocab,
@@ -94,7 +98,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     }
 
     ipc::helpers::pushToken(*this->resultQueue, result.taskId, result.tokenId,
-                            finished);
+                            finished ? tt::ipc::SharedToken::FLAG_FINAL : 0);
 
     if (finished) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
@@ -128,12 +132,26 @@ void LLMRunner::run() {
 void LLMRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::memoryLoop() {
+  // Synchronous gate: ALLOCATE always succeeds (the legacy LLM scheduler
+  // manages its own block table; the returned slotId is opaque and unused).
+  // DEALLOCATE is a no-op for the same reason.
   while (!stopped.load(std::memory_order_relaxed)) {
     auto task = memoryManager->getRequest();
-    if (task) {
-      memoryManager->handleRequest(*task);
-    } else {
+    if (!task) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
+    }
+    switch (task->action) {
+      case tt::domain::MemoryManagementAction::ALLOCATE:
+        memoryManager->replyAllocateSuccess(task->taskId, /*slotId=*/0);
+        break;
+      case tt::domain::MemoryManagementAction::DEALLOCATE:
+        break;
+      default:
+        TT_LOG_WARN("[LLMRunner] Unsupported memory action {} for taskId={}",
+                    static_cast<int>(task->action), task->taskId);
+        memoryManager->replyAllocateFailure(task->taskId);
+        break;
     }
   }
 }

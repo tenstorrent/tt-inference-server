@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # SHM response deadline in SPRunner (server-side proxy to video_runner).
     # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
     video_request_timeout_seconds: float = 300.0
+    # Deadline for SPRunner's warmup round-trip against the video pipeline.
+    # The ping is only sent when SP_REQUIRE_WARMUP_PING=true; default is a full
+    # hour because cold-start WAN with weight load + first compile across a
+    # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
+    sp_warmup_timeout_seconds: float = 6000.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -116,7 +121,7 @@ class Settings(BaseSettings):
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

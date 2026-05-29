@@ -74,7 +74,7 @@ void LLMService::init(std::shared_ptr<tt::ipc::ITaskQueue> taskQueue,
   this->queueManager = std::move(queueManager);
   this->maxQueueSize = maxQueueSize;
 
-  const auto stopIds = tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  const auto& stopIds = tt::utils::tokenizers::staticInfo().stopTokenIds;
   stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})",
@@ -318,10 +318,36 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       uint32_t taskId = token.task_id;
       bool isError = token.isError();
       bool isFinal = token.isFinal();
+      bool isAbort = token.isAbort();
+
+      if (isAbort && !isFinal) {
+        // Client-initiated abort: LLMService::abortRequest has already taken
+        // the callback, set the controller's done=true, and emitted the final
+        // abort chunk. Just drop our local decoder state and move on.
+        streamDecoders.erase(taskId);
+        continue;
+      }
 
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {
         streamDecoders.erase(taskId);
+        continue;
+      }
+      if (isAbort) {
+        // Runner-initiated preemption (isAbort && isFinal): the request was
+        // dropped server-side (e.g. EVICT superseded an in-flight SUBMIT).
+        // The client never aborted, so we must close the SSE stream ourselves
+        // with a final abort chunk.
+        streamDecoders.erase(taskId);
+        reasoningSuppressedMap.take(taskId);
+        toolChoiceMap.take(taskId);
+        if (reasoningParser) reasoningParser->finalizeTask(taskId);
+        if (jsonToolCallParser) jsonToolCallParser->finalizeTask(taskId);
+        if (toolCallParser) toolCallParser->finalizeTask(taskId);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  "abort");
+        auto abortChunk = makeAbortChunk(taskId);
+        entry->callback(abortChunk, /*isFinal=*/true);
         continue;
       }
       if (isError) {
@@ -354,6 +380,43 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         toolChoiceMap.take(taskId);  // Clean up
         auto errorChunk = makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
+        continue;
+      }
+
+      // Dynamo path short-circuit. The wire-level TokenChunk only carries
+      // raw token_ids (see dynamo/dynamo_protocol.hpp), so decoding the
+      // token to text and running it through reasoning / tool-call
+      // parsers here would be dead work. Skipping the decode also avoids
+      // ever calling createStreamDecoder() — the only remaining
+      // request-path call site that would synchronously parse
+      // tokenizer.json on a cold consumer thread.
+      //
+      // resolveCallback() above has already pulled the StreamCallbackEntry
+      // off streamCallbacks and decremented pendingTasks when isFinal=true,
+      // so the per-task bookkeeping here only needs to mirror the cleanup
+      // that the regular branch does at the end of this iteration: clear
+      // the small per-task maps. Reasoning / tool-call parsers were never
+      // initialized for this task in the first place (Dynamo requests
+      // don't go through processStreamingRequest's parser init paths in
+      // a way that matters here) so no finalize calls are needed either.
+      if (entry->skip_text_decode) {
+        tt::metrics::ServerMetrics::instance().onToken(taskId);
+        TokenParseResult emptyResult{ContentType::ANSWER, /*text=*/"",
+                                     /*should_emit=*/true};
+        auto response = buildStreamChunk(token, emptyResult, stopTokenSet);
+        entry->callback(response, isFinal);
+        if (isFinal) {
+          std::optional<std::string> finalReason;
+          if (!response.choices.empty() &&
+              response.choices[0].finish_reason.has_value()) {
+            finalReason = response.choices[0].finish_reason.value();
+          }
+          tt::metrics::ServerMetrics::instance().onRequestCompleted(
+              taskId, finalReason.value_or("error"));
+          streamDecoders.erase(taskId);
+          reasoningSuppressedMap.take(taskId);
+          toolChoiceMap.take(taskId);
+        }
         continue;
       }
 
@@ -509,7 +572,8 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pendingTasks.load()));
 
-  StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
+  StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens,
+                            request.skip_text_decode};
   streamCallbacks.insert(taskId, std::move(entry));
 
   if (!request.enable_reasoning) {
@@ -560,15 +624,16 @@ void LLMService::processStreamingRequest(
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
-      taskId, static_cast<int>(prompt.size()));
+      taskId, static_cast<int>(tokenIds.size()));
 
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.continuation,
-      request.disaggregated,
+      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
+      request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
-          tt::utils::mapper::mapSamplingParams(request)));
+          tt::utils::mapper::mapSamplingParams(request)),
+      request.kv_position_id);
   taskQueue->push(*std::move(sequence));
 }
 
@@ -592,11 +657,8 @@ void LLMService::abortRequest(uint32_t taskId) {
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (entry.has_value()) {
-    LLMStreamChunk abortResponse{taskId};
-    LLMChoice choice;
-    choice.finish_reason = "abort";
-    abortResponse.choices.push_back(std::move(choice));
-    entry->callback(abortResponse, /*isFinal=*/true);
+    auto abortChunk = makeAbortChunk(taskId);
+    entry->callback(abortChunk, /*isFinal=*/true);
   }
 
   // Clean up parser state so task_states_ maps do not leak.

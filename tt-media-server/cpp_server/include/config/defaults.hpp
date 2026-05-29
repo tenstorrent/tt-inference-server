@@ -20,6 +20,7 @@ constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
+constexpr const char* SOCKET_TRANSPORT = "zmq";  // "tcp" or "zmq"
 
 // PrefillGateway integration. When true, decode connects as CLIENT to the
 // gateway and prefill listens as SERVER for the gateway to dial in.
@@ -42,6 +43,8 @@ constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
+constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
+constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
@@ -54,6 +57,8 @@ constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
+constexpr const char* TT_MEDIA_TASK_QUEUE = "tt_media_tasks";
+constexpr const char* TT_MEDIA_RESULT_QUEUE = "tt_media_results";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
@@ -100,5 +105,21 @@ constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 constexpr int SHM_SLOTS = 64;
 constexpr int PREFILL_MAX_TOKEN_IDS = 131072;  // upper bound for prefill prompt
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
+
+// Dynamo backend (TCP `generate` endpoint that registers with NVIDIA Dynamo
+// frontends). All defaults are overridable via env vars; the endpoint is
+// off unless DYNAMO_ENDPOINT_ENABLED=1.
+constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr const char* DYNAMO_NAMESPACE = "default";
+constexpr const char* DYNAMO_COMPONENT = "backend";
+constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
+
+// Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
+constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://localhost:2379";
+// Lease TTL for instance + MDC entries in etcd. The keep-alive thread
+// refreshes the lease at half this interval so a missed tick doesn't trip
+// the reaper.
+constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
 }  // namespace tt::config::defaults

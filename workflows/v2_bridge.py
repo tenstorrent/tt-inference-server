@@ -17,7 +17,8 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     run_command,
 )
-from workflows.workflow_types import WorkflowType
+from workflows.workflow_types import WorkflowType, WorkflowVenvType
+from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
@@ -58,7 +59,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    v2_run_py = repo_root / "tt-inference-server-v2" / "run.py"
+    v2_run_py = repo_root / "tt-inference-server-v2" / "workflow_runner.py"
     if not v2_run_py.is_file():
         raise FileNotFoundError(
             f"v2 entry point not found at {v2_run_py}. "
@@ -68,8 +69,10 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
     ensure_readwriteable_dir(output_dir)
 
+    venv_python = _ensure_v2_venv(model_spec)
+
     cmd = [
-        sys.executable,
+        str(venv_python),
         str(v2_run_py),
         "--model",
         model_spec.model_name,
@@ -104,6 +107,21 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     else:
         logger.info(f"✅ Completed v2 workflow: {v2_workflow}")
     return [WorkflowResult(workflow_name=v2_workflow, return_code=return_code)]
+
+
+def _ensure_v2_venv(model_spec) -> Path:
+    """Materialize the V2_RUN_SCRIPT venv and return its interpreter path.
+
+    Mirrors the per-venv body of ``WorkflowSetup.create_required_venvs``
+    (workflows/run_workflows.py) but skips the v1 task-config expansion:
+    v2 owns its own sub-workflow dispatch and has no v1 ``task.workflow_venv_type``
+    entries to pull in. ``VenvConfig.setup`` is idempotent, so calling
+    this on every dispatch is cheap once the venv exists.
+    """
+    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_RUN_SCRIPT]
+    setup_completed = venv_config.setup(model_spec=model_spec)
+    assert setup_completed, "Failed to setup venv: V2_RUN_SCRIPT"
+    return venv_config.venv_python
 
 
 def _warn_on_unsupported_args(runtime_config) -> None:

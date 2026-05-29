@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 project(tt_media_server_cpp CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -9,6 +9,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
 add_compile_options(-g)
+
+# Keep the frame pointer (rbp on x86-64) in every translation unit so that
+# perf/eBPF/profilers can walk stacks via `--call-graph fp` instead of paying
+# the cost of DWARF unwinding. Runtime cost on this workload is <1% (mutex /
+# IPC / HTTP-framing dominated, not register-pressure-bound numeric loops);
+# capture-time win is ~10x smaller perf.data and stacks that don't truncate
+# across -O2 optimization boundaries. Fedora 38+ and Ubuntu 24.04+ ship
+# distro-wide with this flag for the same reason.
+add_compile_options(-fno-omit-frame-pointer)
 
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
@@ -151,6 +160,45 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)
 
+# ZeroMQ for optional inter-server transport (alternative to raw TCP sockets)
+# First try to find system-installed libzmq; if not found, build from source.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(ZMQ IMPORTED_TARGET libzmq)
+endif()
+if(NOT ZMQ_FOUND)
+    find_package(ZeroMQ QUIET)
+    if(ZeroMQ_FOUND)
+        set(ZMQ_FOUND TRUE)
+    endif()
+endif()
+if(NOT ZMQ_FOUND)
+    message(STATUS "libzmq not found on system; building from source via FetchContent")
+    FetchContent_Declare(
+        libzmq
+        GIT_REPOSITORY https://github.com/zeromq/libzmq.git
+        GIT_TAG        v4.3.5
+        GIT_SHALLOW    TRUE
+    )
+    set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(WITH_DOCS OFF CACHE BOOL "" FORCE)
+    set(WITH_PERF_TOOL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(libzmq)
+    set(ZMQ_FROM_SOURCE TRUE)
+endif()
+# cppzmq (header-only C++ bindings for libzmq)
+FetchContent_Declare(
+    cppzmq
+    GIT_REPOSITORY https://github.com/zeromq/cppzmq.git
+    GIT_TAG        v4.11.0
+    GIT_SHALLOW    TRUE
+)
+set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cppzmq)
+
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
 
@@ -220,7 +268,7 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 add_library(stb_image_write INTERFACE)
-target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
+target_include_directories(stb_image_write SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -323,7 +371,6 @@ set(LLM_RUNNER_LIB_SOURCES
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_runner.cpp
-        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -418,6 +465,18 @@ target_include_directories(llm_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+if(ENABLE_BLAZE)
+    add_executable(blaze_runner_test
+        tests/blaze_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+endif()
+
 add_executable(sequence_test tests/sequence_test.cpp)
 target_link_libraries(sequence_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(sequence_test PRIVATE
@@ -498,6 +557,12 @@ target_include_directories(test_image_generate_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
+target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(media_payload_ipc_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Reasoning parser test
 add_executable(test_reasoning_parser
     tests/test_reasoning_parser.cpp
@@ -536,7 +601,7 @@ add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -572,6 +637,7 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
@@ -584,6 +650,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -603,7 +671,7 @@ target_include_directories(llm_service_test PRIVATE
 )
 
 add_executable(main_integration_test
-    tests/main_integration_test.cpp
+    tests/integration/main_integration_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -622,11 +690,14 @@ add_executable(main_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -639,9 +710,12 @@ add_executable(main_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/socket_transport.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
 )
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
@@ -650,9 +724,87 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(main_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(main_integration_test PRIVATE libzmq)
+endif()
 target_include_directories(main_integration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+add_executable(tool_calling_integration_test
+    tests/integration/tool_calling_integration_test.cpp
+    src/services/llm_service.cpp
+    src/services/embedding_service.cpp
+    src/services/model_service_registration.cpp
+    src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/services/memory_services/memory_manager.cpp
+    src/domain/session.cpp
+    src/runtime/worker/worker_manager.cpp
+    src/runtime/worker/process_liveness.cpp
+    src/runtime/worker/single_process_worker.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+    src/utils/ipc_runner_factory.cpp
+    src/utils/mapper.cpp
+    src/utils/conversation_hasher.cpp
+    src/utils/service_factory.cpp
+    src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
+    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
+    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
+    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
+    src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
+    src/utils/image_codec.cpp
+    src/metrics/metrics.cpp
+    src/profiling/tracy.cpp
+    src/api/llm_controller.cpp
+    src/api/stream_event_formatter.cpp
+    src/api/health_controller.cpp
+    src/api/response_writer/response_writer.cpp
+    src/api/response_writer/non_stream_response_writer.cpp
+    src/api/response_writer/streaming_response_writer.cpp
+    src/api/route_registry.cpp
+    src/services/service_container.cpp
+    src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
+    src/sockets/inter_server_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
+)
+target_link_libraries(tool_calling_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(tool_calling_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
@@ -664,11 +816,18 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
+if(ENABLE_BLAZE)
+    gtest_discover_tests(blaze_runner_test)
+endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
@@ -684,12 +843,20 @@ gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(test_image_generate_request)
+gtest_discover_tests(media_payload_ipc_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
+
+add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
+target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(test_apply_delta_prompt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ApplyDeltaPrompt COMMAND test_apply_delta_prompt)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -783,15 +950,21 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
+    src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/socket_transport.cpp
+    src/sockets/tcp_socket_transport.cpp
+    src/sockets/zmq_socket_transport.cpp
+    src/sockets/socket_transport_factory.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
@@ -799,6 +972,10 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
+    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/discovery.cpp
+    src/dynamo/etcd_client.cpp
+    src/dynamo/dynamo_endpoint.cpp
 )
 
 # Create executable
@@ -836,6 +1013,16 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
+
+# Link ZeroMQ
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(${PROJECT_NAME} PRIVATE libzmq)
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE ${cppzmq_SOURCE_DIR})
 
 # Link Kafka messaging if enabled
 if(KAFKA_ENABLED)

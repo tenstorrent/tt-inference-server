@@ -63,8 +63,10 @@ std::string tokenizerConfigPath(ModelType model);
  */
 std::string visibleDevicesForWorker(size_t workerIndex);
 
-/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT,
- * else DEEPSEEK_R1_0528). */
+/** Model type derived from LLM_DEVICE_BACKEND:
+ * "llama" -> LLAMA_3_1_8B_INSTRUCT,
+ * "kimi" -> KIMI_K2_6,
+ * otherwise -> DEEPSEEK_R1_0528. */
 ModelType modelType();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
@@ -75,6 +77,10 @@ std::string socketHost();
 
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
+
+/** Socket transport type from SOCKET_TRANSPORT. Values: "tcp", "zmq".
+ * Default: defaults::SOCKET_TRANSPORT. */
+std::string socketTransport();
 
 /** Whether the inter-server socket integrates with PrefillGateway. From
  * USE_PREFILL_GATEWAY. */
@@ -132,6 +138,14 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_BLOCK_SIZE. */
+size_t kvCacheBlockSize();
+
+/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
+size_t kvCacheFirstBlockSize();
+
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
 
@@ -188,6 +202,12 @@ std::string ttResultQueueName();
  */
 std::string ttCancelQueueName();
 
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
+
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
 std::string ttMemoryRequestQueueName();
@@ -234,6 +254,39 @@ int prefillMaxTokenIds();
  * defaults::DECODE_MAX_TOKEN_IDS. */
 int decodeMaxTokenIds();
 
+// ---------------------------------------------------------------------------
+// Dynamo TCP backend (NVIDIA Dynamo frontend integration)
+// ---------------------------------------------------------------------------
+
+/** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
+ * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+bool dynamoEndpointEnabled();
+
+/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
+ * defaults::DYNAMO_BIND_HOST. */
+std::string dynamoBindHost();
+
+/** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
+ * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
+ * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
+std::string dynamoEtcdEndpoints();
+
+/** Lease TTL (seconds) for etcd-backed discovery. From
+ * DYNAMO_ETCD_LEASE_TTL_SECS. Default: defaults::DYNAMO_ETCD_LEASE_TTL_SECS. */
+int64_t dynamoEtcdLeaseTtlSecs();
+
+/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
+ * defaults::DYNAMO_NAMESPACE. */
+std::string dynamoNamespace();
+
+/** Discovery component key. From DYNAMO_COMPONENT. Default:
+ * defaults::DYNAMO_COMPONENT. */
+std::string dynamoComponent();
+
+/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
+ * defaults::DYNAMO_ENDPOINT_NAME. */
+std::string dynamoEndpointName();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
@@ -242,6 +295,10 @@ LLMConfig llmEngineConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

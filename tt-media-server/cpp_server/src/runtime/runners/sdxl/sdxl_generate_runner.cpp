@@ -25,7 +25,7 @@ py::object SDXLGenerateRunner::loadDiffusersPipeline() {
                          ? std::string(SDXL_BASE_REPO)
                          : config_.model_weights_path;
   py::dict kwargs;
-  kwargs["torch_dtype"] = torch_module_.attr("float32");
+  kwargs["torch_dtype"] = torch_module().attr("float32");
   kwargs["use_safetensors"] = py::bool_(true);
   return diffusers.attr("DiffusionPipeline")
       .attr("from_pretrained")(repo, **kwargs);
@@ -46,10 +46,10 @@ void SDXLGenerateRunner::distributeBlock() {
   py::object cfg = cfgClass(**cfgKwargs);
 
   py::dict pipelineKwargs;
-  pipelineKwargs["ttnn_device"] = ttnn_device_;
-  pipelineKwargs["torch_pipeline"] = pipeline_;
+  pipelineKwargs["ttnn_device"] = ttnn_device();
+  pipelineKwargs["torch_pipeline"] = pipeline();
   pipelineKwargs["pipeline_config"] = cfg;
-  tt_sdxl_ = pipelineMod.attr("TtSDXLPipeline")(**pipelineKwargs);
+  tt_sdxl() = pipelineMod.attr("TtSDXLPipeline")(**pipelineKwargs);
 }
 
 void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
@@ -57,7 +57,7 @@ void SDXLGenerateRunner::prepareInputTensorsForIteration(py::object tensors) {
   args.append(tensors[py::int_(0)]);
   args.append(tensors[py::int_(1)][py::int_(0)]);
   args.append(tensors[py::int_(2)][py::int_(0)]);
-  tt_sdxl_.attr("prepare_input_tensors")(args);
+  tt_sdxl().attr("prepare_input_tensors")(args);
 }
 
 py::object SDXLGenerateRunner::generateInputTensors(
@@ -73,7 +73,7 @@ py::object SDXLGenerateRunner::generateInputTensors(
       head.timesteps.has_value() ? py::cast(*head.timesteps) : py::none();
   kwargs["sigmas"] =
       head.sigmas.has_value() ? py::cast(*head.sigmas) : py::none();
-  return tt_sdxl_.attr("generate_input_tensors")(**kwargs);
+  return tt_sdxl().attr("generate_input_tensors")(**kwargs);
 }
 
 domain::ImageGenerateRequest SDXLGenerateRunner::warmupRequest() const {

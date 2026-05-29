@@ -17,19 +17,20 @@
 #include "domain/llm/sequence.hpp"
 #include "domain/response_format.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
-#include "runtime/runners/llm_runner/in_memory_task_queue.hpp"
+#include "ipc/in_memory/in_memory_task_queue.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 namespace tt::runners::llm_engine {
 
 using namespace tt::domain::llm;
+using tt::ipc::in_memory::TaskQueue;
 
 using Config = tt::config::LLMConfig;
 
 namespace {
 
 std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
-  return std::make_shared<InMemoryTaskQueue>();
+  return std::make_shared<TaskQueue>();
 }
 
 Config makeEngineConfig(int numBlocks = 128, int blockSize = 8, int eos = 32) {
@@ -93,18 +94,38 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   ASSERT_EQ(finishedCount.load(), totalRequests);
 
-  // 1st published token in the mocked prefill is always whitespace token id=223
-  // The followed tokens using the mocked runner are increments of 223
+  // Mock runner generates: <think_start> + 10 think tokens + <think_end> +
+  // visible tokens. Think/visible tokens alternate with whitespace (223).
+  // Think content = 77291, visible content = 15329.
+  constexpr int64_t kThinkStart = 128798;
+  constexpr int64_t kThinkEnd = 128799;
+  constexpr int64_t kThinkContent = 77291;
+  constexpr int64_t kVisibleContent = 15329;
+  constexpr int64_t kWhitespace = 223;
+
+  // 30 tokens: think_start + 10 think + think_end + 18 visible
   const std::vector<int64_t> expectedSeq0 = {
-      223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237,
-      238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252,
+      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,
   };
+  // 10 tokens: think_start + 9 think
   const std::vector<int64_t> expectedSeq1 = {
-      223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
+      kThinkStart,   kThinkContent, kWhitespace,   kThinkContent, kWhitespace,
+      kThinkContent, kWhitespace,   kThinkContent, kWhitespace,   kThinkContent,
   };
+  // 20 tokens: think_start + 10 think + think_end + 8 visible
   const std::vector<int64_t> expectedSeq2 = {
-      223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
-      233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
   };
 
   EXPECT_EQ(receivedTokens[taskIds[0]], expectedSeq0);

@@ -3,12 +3,18 @@
 
 #include "sockets/inter_server_service.hpp"
 
+#include <chrono>
 #include <string>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
+namespace {
+
+constexpr auto REGISTRATION_INTERVAL = std::chrono::milliseconds(1000);
+
+}  // namespace
 
 InterServerService::InterServerService() { setupMessageHandlers(); }
 
@@ -27,11 +33,13 @@ bool InterServerService::initializeFromConfig() {
   auto host = tt::config::socketHost();
   auto port = tt::config::socketPort();
   const bool gatewayMode = tt::config::usePrefillGateway();
+  const bool zmqTransport =
+      tt::config::socketTransport() == tt::sockets::transport_names::ZMQ;
 
   bool success = false;
 
-  // Gateway mode inverts roles: decode becomes CLIENT, prefill becomes SERVER,
-  // and the gateway sits between them.
+  // Gateway mode always makes decode dial the gateway. TCP prefills listen for
+  // the gateway, while ZMQ prefills dial the gateway's shared ROUTER socket.
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (gatewayMode) {
       TT_LOG_INFO(
@@ -46,17 +54,28 @@ bool InterServerService::initializeFromConfig() {
     }
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     if (gatewayMode) {
-      TT_LOG_INFO(
-          "[InterServerService] Prefill (gateway mode): listening on port {} "
-          "for gateway",
-          port);
-      success = socket_manager_.initializeAsServer(port);
+      if (zmqTransport) {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway ZMQ mode): connecting to "
+            "{}:{}",
+            host, port);
+        success = socket_manager_.initializeAsClient(host, port);
+        periodic_registration_mode_ = success;
+      } else {
+        TT_LOG_INFO(
+            "[InterServerService] Prefill (gateway mode): listening on port {} "
+            "for gateway",
+            port);
+        success = socket_manager_.initializeAsServer(port);
+        periodic_registration_mode_ = success;
+      }
       gateway_mode_ = success;
     } else {
       TT_LOG_INFO(
           "[InterServerService] Prefill (direct mode): connecting to {}:{}",
           host, port);
       success = socket_manager_.initializeAsClient(host, port);
+      periodic_registration_mode_ = success;
     }
   }
 
@@ -78,7 +97,20 @@ void InterServerService::start() {
     return;
   }
 
+  if (periodic_registration_mode_) {
+    // Register once on connect (and again on any reconnect). The registration
+    // thread below keeps the gateway's registry fresh after the initial send.
+    socket_manager_.setConnectionEstablishedCallback(
+        [this] { sendRegistration(); });
+  }
+
   socket_manager_.start();
+  if (periodic_registration_mode_ && socket_manager_.isConnected()) {
+    sendRegistration();
+  }
+  if (periodic_registration_mode_) {
+    startRegistrationThread();
+  }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
 
@@ -87,6 +119,7 @@ void InterServerService::stop() {
     return;
   }
 
+  stopRegistrationThread();
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -94,7 +127,7 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    uint32_t taskId, size_t registrationHash,
+    uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling) {
@@ -103,7 +136,7 @@ bool InterServerService::sendPrefillRequest(
   }
 
   PrefillRequestMessage message(taskId);
-  message.registration_hash = registrationHash;
+  message.registration_hashes = registrationHashes;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
   message.slot_id = slotId;
@@ -124,6 +157,16 @@ bool InterServerService::sendPrefillResult(
   return socket_manager_.sendObject("prefill_result", message);
 }
 
+bool InterServerService::sendPrefillCancel(uint32_t taskId) {
+  if (!enabled_) {
+    return false;
+  }
+
+  CancelPrefillMessage message;
+  message.task_id = taskId;
+  return socket_manager_.sendObject(tags::CANCEL_PREFILL, message);
+}
+
 bool InterServerService::sendHealthCheck(const std::string& serverId,
                                          double cpuUsage, double memoryUsage,
                                          int activeTasks) {
@@ -142,6 +185,10 @@ bool InterServerService::sendHealthCheck(const std::string& serverId,
 
 void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
   prefill_requested_callback_ = callback;
+}
+
+void InterServerService::onPrefillCancelled(PrefillCancelCallback callback) {
+  prefill_cancel_callback_ = callback;
 }
 
 void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
@@ -180,6 +227,15 @@ void InterServerService::setupMessageHandlers() {
         }
       });
 
+  socket_manager_.registerHandler<CancelPrefillMessage>(
+      tags::CANCEL_PREFILL, [this](const CancelPrefillMessage& message) {
+        TT_LOG_INFO("[InterServerService] Received prefill cancel: {}",
+                    message.task_id);
+        if (prefill_cancel_callback_) {
+          prefill_cancel_callback_(message);
+        }
+      });
+
   // Decode-side no-op handler so the gateway's PrefillAssignment doesn't log
   // "no handler" warnings. Useful for KV-transfer routing in a follow-up.
   socket_manager_.registerHandler<PrefillAssignmentMessage>(
@@ -189,8 +245,17 @@ void InterServerService::setupMessageHandlers() {
             message.task_id, message.server_id);
       });
 
-  socket_manager_.setConnectionEstablishedCallback(
-      [this]() { sendRegistrationIfGatewayModeIsEnabled(); });
+  socket_manager_.registerHandler<RegistrationProbeMessage>(
+      tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
+        sendRegistrationIfGatewayModeIsEnabled();
+      });
+
+  socket_manager_.registerHandler<PrefillRegistrationMessage>(
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {
+        TT_LOG_DEBUG(
+            "[InterServerService] Prefill '{}' announced (direct mode)",
+            msg.server_id);
+      });
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
@@ -229,23 +294,51 @@ void InterServerService::setupMessageHandlers() {
       });
 }
 
-void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
-  if (!gateway_mode_) {
-    return;
-  }
+void InterServerService::sendRegistration() {
   PrefillRegistrationMessage msg;
   msg.server_id = tt::config::prefillServerId();
   msg.max_in_flight = tt::config::prefillMaxInFlight();
 
   bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
   if (ok) {
-    TT_LOG_INFO(
+    TT_LOG_DEBUG(
         "[InterServerService] Sent PrefillRegistration: id='{}' "
         "max_in_flight={}",
         msg.server_id, msg.max_in_flight);
   } else {
-    TT_LOG_WARN(
-        "[InterServerService] Failed to send PrefillRegistration to gateway");
+    TT_LOG_WARN("[InterServerService] Failed to send PrefillRegistration");
+  }
+}
+
+void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
+  if (!gateway_mode_) {
+    return;
+  }
+  sendRegistration();
+}
+
+void InterServerService::startRegistrationThread() {
+  stopRegistrationThread();
+
+  registration_thread_ = std::jthread([this](std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
+      if (socket_manager_.isConnected()) {
+        sendRegistration();
+      }
+
+      std::unique_lock<std::mutex> lock(registration_mutex_);
+      registration_cv_.wait_for(lock, REGISTRATION_INTERVAL, [&stopToken] {
+        return stopToken.stop_requested();
+      });
+    }
+  });
+}
+
+void InterServerService::stopRegistrationThread() {
+  registration_thread_.request_stop();
+  registration_cv_.notify_all();
+  if (registration_thread_.joinable()) {
+    registration_thread_.join();
   }
 }
 

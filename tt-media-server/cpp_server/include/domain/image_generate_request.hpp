@@ -50,6 +50,43 @@ struct ImageGenerateRequest : BaseRequest {
   std::optional<std::string> mask;
   std::optional<float> strength;
 
+  Json::Value toJson() const {
+    Json::Value json;
+    json["prompt"] = prompt;
+    if (prompt_2) json["prompt_2"] = *prompt_2;
+    if (negative_prompt) json["negative_prompt"] = *negative_prompt;
+    if (negative_prompt_2) json["negative_prompt_2"] = *negative_prompt_2;
+    if (num_inference_steps) json["num_inference_steps"] = *num_inference_steps;
+    if (guidance_scale) json["guidance_scale"] = *guidance_scale;
+    if (guidance_rescale) json["guidance_rescale"] = *guidance_rescale;
+    if (seed) json["seed"] = *seed;
+    if (number_of_images) json["number_of_images"] = *number_of_images;
+    if (crop_coords_top_left) {
+      Json::Value coords(Json::arrayValue);
+      coords.append(crop_coords_top_left->first);
+      coords.append(crop_coords_top_left->second);
+      json["crop_coords_top_left"] = std::move(coords);
+    }
+    if (timesteps) {
+      Json::Value values(Json::arrayValue);
+      for (float value : *timesteps) values.append(value);
+      json["timesteps"] = std::move(values);
+    }
+    if (sigmas) {
+      Json::Value values(Json::arrayValue);
+      for (float value : *sigmas) values.append(value);
+      json["sigmas"] = std::move(values);
+    }
+    if (lora_path) json["lora_path"] = *lora_path;
+    if (lora_scale) json["lora_scale"] = *lora_scale;
+    if (image_return_format) json["image_return_format"] = *image_return_format;
+    if (image_quality) json["image_quality"] = *image_quality;
+    if (image) json["image"] = *image;
+    if (mask) json["mask"] = *mask;
+    if (strength) json["strength"] = *strength;
+    return json;
+  }
+
   static ImageGenerateRequest fromJson(const Json::Value& json,
                                        uint32_t taskId) {
     ImageGenerateRequest req(taskId);

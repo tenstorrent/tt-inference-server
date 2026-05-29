@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include <chrono>
+#include <cstdlib>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+
 #include "profiling/tracy.hpp"
 #include "runtime/runners/llm_runner/model_runner.hpp"
 #include "utils/logger.hpp"
@@ -15,6 +21,26 @@ using Config = tt::config::LLMConfig;
 namespace {
 
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
+constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
+constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
+constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;    // "thinking"
+constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID = 15329;  // "response"
+constexpr size_t K_THINK_TOKENS_COUNT = 10;
+
+std::chrono::milliseconds mockPrefillDelay() {
+  const char* value = std::getenv("MOCK_PREFILL_SLEEP_MS");
+  if (!value) return std::chrono::milliseconds(0);
+
+  char* end = nullptr;
+  const long long milliseconds = std::strtoll(value, &end, 10);
+  if (end == value || *end != '\0' || milliseconds <= 0) {
+    TT_LOG_WARN("[model_runner:mock] Ignoring invalid MOCK_PREFILL_SLEEP_MS={}",
+                value);
+    return std::chrono::milliseconds(0);
+  }
+
+  return std::chrono::milliseconds(milliseconds);
+}
 
 // Token IDs for structural JSON characters and mock string content, resolved
 // from the active tokenizer at construction time so the mock works with any
@@ -73,17 +99,43 @@ class MockModelRunner : public IModelRunner {
                  isPrefill ? "prefill" : "decode", seqs.size());
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
+      const auto delay = mockPrefillDelay();
+      if (delay.count() > 0) {
+        TT_LOG_INFO("[model_runner:mock] Sleeping {}ms during mock prefill",
+                    delay.count());
+        std::this_thread::sleep_for(delay);
+      }
       for (Sequence* seq : seqs) {
+        std::lock_guard<std::mutex> lock(tokenCountMutex);
+        tokenCounts[seq->taskId] = 0;
         decodeCallback(
-            TokenResult(seq->taskId, pickToken(seq, K_WHITESPACE_TOKEN_ID)));
+            TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
-        uint64_t defaultToken = static_cast<uint64_t>(seq->getLastToken() + 1);
-        decodeCallback(TokenResult(seq->taskId, pickToken(seq, defaultToken)));
+        uint64_t token = pickThinkingToken(seq);
+        decodeCallback(TokenResult(seq->taskId, pickToken(seq, token)));
       }
     }
+  }
+
+  uint64_t pickThinkingToken(Sequence* seq) {
+    size_t generated = 0;
+    {
+      std::lock_guard<std::mutex> lock(tokenCountMutex);
+      generated = tokenCounts[seq->taskId]++;
+    }
+    if (generated < K_THINK_TOKENS_COUNT) {
+      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID
+                                  : K_WHITESPACE_TOKEN_ID;
+    }
+    if (generated == K_THINK_TOKENS_COUNT) {
+      return K_THINK_END_TOKEN_ID;
+    }
+    size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
+    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
+                                 : K_WHITESPACE_TOKEN_ID;
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
@@ -164,6 +216,8 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
+  std::mutex tokenCountMutex;
+  std::unordered_map<uint32_t, size_t> tokenCounts;
 };
 
 }  // namespace

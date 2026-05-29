@@ -32,6 +32,23 @@ TEST(PrefillRegistryTest, MarkRegisteredTurnsPrefillHealthy) {
   EXPECT_EQ(snaps[0].max_in_flight, 8u);
 }
 
+TEST(PrefillRegistryTest, SetAcceptingTasksUpdatesSnapshot) {
+  PrefillRegistry reg;
+  reg.preRegister("A", nullptr);
+  reg.markRegistered("A", 4);
+
+  reg.setAcceptingTasks("A", false);
+
+  auto snaps = reg.snapshot();
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_FALSE(snaps[0].accepting_tasks);
+
+  reg.setAcceptingTasks("A", true);
+  snaps = reg.snapshot();
+  ASSERT_EQ(snaps.size(), 1u);
+  EXPECT_TRUE(snaps[0].accepting_tasks);
+}
+
 TEST(PrefillRegistryTest, MarkRegisteredReturnsFalseForUnknownPrefill) {
   PrefillRegistry reg;
   EXPECT_FALSE(reg.markRegistered("UNKNOWN", 4));

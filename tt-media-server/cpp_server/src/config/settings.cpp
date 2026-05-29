@@ -23,6 +23,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
@@ -68,6 +69,17 @@ bool envBool(const char* name, bool defaultValue) {
     return false;
   }
   return defaultValue;
+}
+
+/** Read a KV cache block size env var; value must be divisible by 32. */
+size_t kvCacheSizeFromEnv(const char* envName, size_t defaultValue) {
+  size_t value = static_cast<size_t>(envUlong(envName, defaultValue));
+  if (value % 32) {
+    TT_LOG_WARN("[Config] {}={} is not divisible by 32, using default={}",
+                envName, value, defaultValue);
+    return defaultValue;
+  }
+  return value;
 }
 
 /** Parse DEVICE_IDS like Python: "(0,1,2,3),(4,5,6,7)" -> ["0,1,2,3",
@@ -150,9 +162,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
@@ -221,6 +237,14 @@ std::string ttCancelQueueName() {
   return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
 }
 
+std::string ttMediaTaskQueueName() {
+  return envString("TT_MEDIA_TASK_QUEUE", defaults::TT_MEDIA_TASK_QUEUE);
+}
+
+std::string ttMediaResultQueueName() {
+  return envString("TT_MEDIA_RESULT_QUEUE", defaults::TT_MEDIA_RESULT_QUEUE);
+}
+
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
@@ -268,7 +292,7 @@ int decodeMaxTokenIds() {
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
@@ -395,9 +419,31 @@ ImageConfig imageEngineConfig() {
   return cached;
 }
 
+RunnerConfig workerRunnerConfig(size_t workerIndex) {
+  switch (modelService()) {
+    case ModelService::IMAGE: {
+      auto cfg = imageEngineConfig();
+      cfg.worker_id = workerIndex;
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::EMBEDDING:
+      return EmbeddingConfig{};
+    case ModelService::LLM:
+    default:
+      return llmEngineConfig();
+  }
+}
+
 ModelType modelType() {
-  static const ModelType cached = modelTypeFromDeviceBackend(
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  static const ModelType cached = [] {
+    // Derive model type from MODEL env var
+    std::string m = envString("MODEL", defaults::MODEL);
+    if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "meta-llama/Llama-3.1-8B-Instruct")
+      return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_R1_0528;
+  }();
   return cached;
 }
 
@@ -444,6 +490,12 @@ size_t maxAccumulatedTokens() {
 uint16_t socketPort() {
   static const uint16_t cached =
       static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
+  return cached;
+}
+
+std::string socketTransport() {
+  static const std::string cached =
+      envString("SOCKET_TRANSPORT", defaults::SOCKET_TRANSPORT);
   return cached;
 }
 
@@ -522,6 +574,22 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t kvCacheBlockSize() {
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
+                              defaults::KV_CACHE_BLOCK_SIZE);
+  }();
+  return cached;
+}
+
+size_t kvCacheFirstBlockSize() {
+  static const size_t cached = []() {
+    return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
+                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+  }();
+  return cached;
+}
+
 bool useFastMode() {
   return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
 }
@@ -547,6 +615,50 @@ unsigned sessionAllocationMaxRetries() {
 unsigned prefillTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
+}
+
+bool dynamoEndpointEnabled() {
+  return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
+}
+
+std::string dynamoBindHost() {
+  return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+std::string dynamoEtcdEndpoints() {
+  // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
+  // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single
+  // export propagates to both processes when start_dynamo.sh wires them
+  // together.
+  if (const char* v = std::getenv("DYNAMO_ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  if (const char* v = std::getenv("ETCD_ENDPOINTS"); v && *v) {
+    return v;
+  }
+  return defaults::DYNAMO_ETCD_ENDPOINTS;
+}
+
+int64_t dynamoEtcdLeaseTtlSecs() {
+  const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
+  if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  try {
+    return std::stoll(v);
+  } catch (const std::exception&) {
+    return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  }
+}
+
+std::string dynamoNamespace() {
+  return envString("DYNAMO_NAMESPACE", defaults::DYNAMO_NAMESPACE);
+}
+
+std::string dynamoComponent() {
+  return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
+}
+
+std::string dynamoEndpointName() {
+  return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
 }
 
 }  // namespace tt::config

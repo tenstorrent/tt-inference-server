@@ -124,6 +124,13 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  // For disaggregated decode: position in KV Cache of the migrated token (the
+  // first token produced by the prefill server) in the per-user KV cache. The
+  // decode scheduler uses this as `position_id` so the migrated token lands at
+  // the correct KV slot and `current_position` advances to it + 1. Set iff
+  // `disaggregated == true`.
+  std::optional<uint32_t> kv_position_id;
+
   std::optional<bool> disaggregation_override;
 
   bool parallel_tool_calls = true;
@@ -140,9 +147,16 @@ struct LLMRequest : BaseRequest {
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;
 
+  // When true, the consumer emits chunks carrying only `token_id` and
+  // skips decode / reasoning / tool-call parsing. Used by transports
+  // that forward raw token_ids and handle detokenization downstream
+  // (e.g. Dynamo).
+  bool skip_text_decode = false;
+
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  std::optional<uint32_t> prefillSlotId;
   tt::domain::Session* session =
       nullptr;  // Pointer to session in SessionManager
   bool continuation =

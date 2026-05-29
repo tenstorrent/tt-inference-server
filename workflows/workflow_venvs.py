@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -134,6 +133,31 @@ class VenvConfig:
         return True
 
 
+def setup_evals_agentic(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for EVALS_AGENTIC: clone SWE-agent and install it as editable.
+
+    Other deps (harbor, mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+    """
+    sweagent_dir = venv_config.venv_path / "SWE-agent"
+    if not sweagent_dir.exists():
+        clone_return_code = run_command(
+            f"git clone https://github.com/SWE-agent/SWE-agent.git {sweagent_dir}",
+            logger=logger,
+        )
+        if clone_return_code != 0:
+            return False
+
+    return_code = run_command(
+        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
+        f"-e {sweagent_dir}",
+        logger=logger,
+    )
+    return return_code == 0
+
+
 def check_docker_available(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -234,12 +258,13 @@ def setup_evals_meta(
             logger.warning(
                 f"Failed to prepare meta eval datasets for: {meta_eval_data_dir}, continuing..."
             )
-    # IFEval (and likely others) hard-code ./work_dir; hot-swap so downstream finds it.
-    work_dir = venv_config.venv_path / "work_dir"
-    logger.info(f"moving {str(meta_eval_data_dir)} to {str(work_dir)}")
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
-    shutil.copytree(meta_eval_data_dir, work_dir)
+    # The model-specific data lives at meta_eval_data_dir (work_dir_<model_name>/).
+    # IFEval (and likely others) hard-code ./work_dir relative to lm-eval's cwd,
+    # so run_evals.py creates a per-PID staging dir with a 'work_dir' symlink
+    # pointing here at command-build time. We do NOT write to a shared
+    # .venv_evals_meta/work_dir/ here — that previously raced across parallel
+    # model invocations and produced spurious FileNotFoundError for tasks (e.g.
+    # meta_ifeval) when a sibling model's data overwrote the shared dir.
     os.chdir(original_dir)
     return setup_succeeded
 
@@ -338,6 +363,16 @@ _venv_config_list = [
         requirements_file="reports-run-script.txt",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.EVALS_AGENTIC,
+        requirements_file="evals-agentic.txt",
+        python_version="3.12",
+        setup_function=setup_evals_agentic,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
+        requirements_file="v2-run-script.txt",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
         requirements_file="hf-setup.txt",
     ),
@@ -394,10 +429,11 @@ _venv_config_list = [
         extra_dirs=("artifacts",),
         setup_function=check_docker_available,
     ),
-    # Custom Python work; pip handled inside the hook (model-type dependent)
+    # Custom Python work; pip handled inside the hook (model-type dependent).
+    # No extra_dirs — `run_evals.py` materializes a per-invocation staging
+    # dir at command-build time (see EVALS_META branch in build_eval_command).
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_META,
-        extra_dirs=("work_dir",),
         setup_function=setup_evals_meta,
     ),
 ]

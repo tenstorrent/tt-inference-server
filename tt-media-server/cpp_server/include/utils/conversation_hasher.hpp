@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -90,24 +91,51 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
  * Used by the controller to determine session lookup and registration.
  */
 struct PrefixCachingInfo {
-  std::optional<uint64_t>
-      lookupHash;  // Hash of prior-turn prefix (for session lookup)
-  uint64_t registrationHash =
-      0;  // Hash of current conversation (for next turn's lookup)
-  std::string deltaPrompt;  // Last user turn rendered (for continuations)
-  bool hasPriorTurn =
-      false;  // True if assistant messages exist (enables lookup)
+  std::vector<uint64_t> hashes;  // Per-block prefix cache hashes
 };
 
+// ---------------------------------------------------------------------------
+// Token-level helpers (used by the Dynamo backend, where the frontend has
+// already applied the chat template and we receive only token ids).
+// ---------------------------------------------------------------------------
+
 /**
- * Compute prefix caching routing information from conversation messages.
- * This is the entry point for controllers to extract all routing data needed
- * for hash-based session lookup and registration.
- *
- * @param messages Input chat messages (should end with user message)
- * @return Complete routing information for prefix caching
+ * Stable 64-bit hash over a sequence of token ids. Computed from the byte
+ * representation of the int sequence so two callers produce matching hashes
+ * iff the underlying token ids are identical.
  */
-PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<ChatMessage>& messages);
+uint64_t hashTokenPrefix(std::span<const int> tokens);
+
+/**
+ * Compute prefix caching routing information from a tokenized prompt.
+ * The assistant-header sequence is read from the active tokenizer strategy.
+ *
+ * @param tokens Full token-id sequence from the request.
+ * @return Complete routing information for prefix caching (per-block hashes).
+ */
+PrefixCachingInfo computePrefixCachingInfoFromTokens(
+    std::span<const int> tokens);
+
+/**
+ * Compute per-block KV cache hashes using vLLM's prefix caching approach.
+ *
+ * Tokens are divided into blocks of `kvCacheBlockSize` (from config). Each
+ * block's hash is computed as `xxh64(block_tokens, seed=parent_hash)`, where
+ * `parent_hash` is the hash of the previous block (0 for the first block).
+ * This chaining ensures that two sequences sharing a common prefix produce
+ * identical hashes for the shared blocks.
+ *
+ * Only FULL blocks are hashed — any trailing partial block is ignored (it
+ * hasn't been committed to the KV cache yet).
+ *
+ * @param tokens Token-id sequence to hash.
+ * @param parentHash Optional seed hash from a prior block. When non-zero,
+ *        hashing uses standard block size (not first block size) and chains
+ *        from this seed. Use `hashes.back()` from a prior call to continue.
+ * @return Vector of per-block hashes (one per full block). Empty if the
+ *         sequence is shorter than one block.
+ */
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash = 0);
 
 }  // namespace tt::utils

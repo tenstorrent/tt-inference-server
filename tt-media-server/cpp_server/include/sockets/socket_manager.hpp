@@ -3,18 +3,20 @@
 
 #pragma once
 
-#include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <mutex>
-#include <sstream>
+#include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
-#include "sockets/socket_transport.hpp"
+#include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -56,7 +58,7 @@ class SocketManager {
    * @return true if successful
    */
   template <typename T>
-  bool sendObject(const std::string& messageType, const T& obj);
+  bool sendObject(std::string_view messageType, const T& obj);
 
   /**
    * @brief Register handler for incoming messages of specific type
@@ -64,7 +66,7 @@ class SocketManager {
    * @param handler Function to call when message is received
    */
   template <typename T>
-  void registerHandler(const std::string& messageType,
+  void registerHandler(std::string_view messageType,
                        std::function<void(const T&)> handler);
 
   /**
@@ -93,8 +95,7 @@ class SocketManager {
   void setConnectionLostCallback(std::function<void()> callback);
 
   /**
-   * @brief Set callback fired when a TCP connection is established.
-   * Server: each accept. Client: each (re)connect.
+   * @brief Set callback for connection established/reconnected events.
    */
   void setConnectionEstablishedCallback(std::function<void()> callback);
 
@@ -102,42 +103,45 @@ class SocketManager {
    * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
    * Must be called before start().
    */
-  void setReconnectBackoff(uint32_t initialDelayMs, uint32_t maxDelayMs);
+  void setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                           std::chrono::milliseconds maxDelay);
 
  private:
-  void messageLoop();
+  void messageLoop(std::stop_token stopToken);
   void handleIncomingMessage(const std::vector<uint8_t>& data);
+  std::function<void(const std::vector<uint8_t>&)> getHandler(
+      std::string_view messageType) const;
 
-  SocketTransport transport_;
+  std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
-  std::thread messageThread_;
+  std::jthread messageThread_;
 
   mutable std::mutex handlersMutex_;
-  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
+  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>,
+           std::less<>>
       handlers_;
+
+  std::function<void()> pendingConnectionLostCallback_;
+  std::function<void()> pendingConnectionEstablishedCallback_;
+  bool reconnectBackoffSet_{false};
+  std::chrono::milliseconds reconnectInitialDelay_{0};
+  std::chrono::milliseconds reconnectMaxDelay_{0};
+
+  void applyPendingSettings();
 };
 
 // Template implementations
 
 template <typename T>
-bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!transport_.isConnected()) {
+bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
+  if (!transport_) {
     return false;
   }
 
   try {
-    std::ostringstream oss;
-    {
-      cereal::BinaryOutputArchive archive(oss);
-      archive(messageType);
-      obj.write(archive);
-    }
-
-    std::string serialized = oss.str();
-    std::vector<uint8_t> data(serialized.begin(), serialized.end());
-
-    return transport_.sendRawData(data);
+    std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
+    return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -145,25 +149,19 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
 }
 
 template <typename T>
-void SocketManager::registerHandler(const std::string& messageType,
+void SocketManager::registerHandler(std::string_view messageType,
                                     std::function<void(const T&)> handler) {
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
-  handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
-    try {
-      std::string serialized(data.begin(), data.end());
-      std::istringstream iss(serialized);
-
-      cereal::BinaryInputArchive archive(iss);
-      std::string msgType;
-      archive(msgType);
-      T payload = T::read(archive);
-
-      handler(payload);
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
-    }
-  };
+  handlers_[std::string(messageType)] =
+      [handler](const std::vector<uint8_t>& data) {
+        try {
+          T payload = wire::deserializePayload<T>(data);
+          handler(payload);
+        } catch (const std::exception& e) {
+          TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
+        }
+      };
 }
 
 }  // namespace tt::sockets
