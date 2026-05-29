@@ -246,7 +246,7 @@ void LLMPipeline::dispatchGeneration(
   }
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    if (shouldDoPrefillOnDecode(request, sessionInfo.validSessionFound)) {
+    if (shouldDoPrefillOnDecode(request)) {
       TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
                    request.sessionId.value_or("none"));
       service_->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
@@ -273,7 +273,7 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
 }
 
 bool LLMPipeline::shouldDoPrefillOnDecode(
-    const tt::domain::llm::LLMRequest& request, bool validSessionFound) const {
+    const tt::domain::llm::LLMRequest& request) const {
   const bool socketReady = socketService_ && socketService_->isConnected();
   if (!socketReady) {
     TT_LOG_WARN(
@@ -291,13 +291,11 @@ bool LLMPipeline::shouldDoPrefillOnDecode(
     return !forceDisagg;
   }
 
-  if (validSessionFound) {
-    return true;
-  }
-
   const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
   const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
 
+  // delta is already applied so no matter if session is found
+  // compare prompt (new or remaining) with max tokens
   return promptTokens < maxTokens;
 }
 
