@@ -45,6 +45,7 @@ constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";

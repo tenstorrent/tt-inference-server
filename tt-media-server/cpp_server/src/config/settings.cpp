@@ -591,26 +591,16 @@ size_t kvCacheFirstBlockSize() {
 }
 
 float prefixCacheHitThreshold() {
-  static const float cached = []() {
-    const char* v = std::getenv("PREFIX_CACHE_HIT_THRESHOLD");
-    if (!v || !*v) return 80.0f;
-    try {
-      float val = std::stof(v);
-      if (val < 0.0f || val > 100.0f) {
-        TT_LOG_WARN(
-            "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
-            "using 80",
-            val);
-        return 80.0f;
-      }
-      return val;
-    } catch (...) {
-      TT_LOG_WARN("[Config] PREFIX_CACHE_HIT_THRESHOLD={} invalid, using 80",
-                  v);
-      return 80.0f;
-    }
-  }();
-  return cached;
+  const unsigned long val = envUlong("PREFIX_CACHE_HIT_THRESHOLD",
+                                     defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  if (val > 100) {
+    TT_LOG_WARN(
+        "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
+        "using {}",
+        val, defaults::PREFIX_CACHE_HIT_THRESHOLD);
+    return static_cast<float>(defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  }
+  return static_cast<float>(val);
 }
 
 bool useFastMode() {
