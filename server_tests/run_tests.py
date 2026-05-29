@@ -37,6 +37,7 @@ def build_test_command(
     device,
     output_dir_path,
     service_port,
+    deploy_url: str = "http://127.0.0.1",
 ) -> list[str]:
     """
     Build the command for tests by templating command-line arguments using properties
@@ -51,9 +52,17 @@ def build_test_command(
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
 
     if task.task_name == "vllm_responses":
-        # vLLM responses test needs the service port to connect to the server
+        # vLLM responses test needs the service port to connect to the server.
+        # An explicit port on deploy_url wins over service_port to avoid
+        # double-port URLs when --server-url already carries a port.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(deploy_url.rstrip("/"))
+        base = deploy_url.rstrip("/") if parsed.port is not None else (
+            f"{deploy_url.rstrip('/')}:{service_port}"
+        )
         test_kwargs_list.extend(
-            ["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"]
+            ["--endpoint-url", f"{base}/v1/responses"]
         )
     cmd = [
         str(test_exec),
@@ -136,6 +145,12 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
+    deploy_url = (
+        getattr(runtime_config, "server_url", None)
+        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    )
+    # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL.
+    os.environ["DEPLOY_URL"] = deploy_url
 
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -169,6 +184,7 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     # Create a single shared output directory for all tasks in this run
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -195,6 +211,7 @@ def main():
             device_str,
             str(output_dir_path),
             runtime_config.service_port,
+            deploy_url=deploy_url,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)
