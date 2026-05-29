@@ -503,6 +503,101 @@ TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
   future.get();
 }
 
+TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
+  // Build a session with many blocks (long conversation), then send a short
+  // request that only matches the first block. With PREFIX_CACHE_HIT_THRESHOLD
+  // at 80% (default), the session should be rejected and a new one allocated.
+  //
+  // Setup: opener (1 block) -> many assistant/user turns (many more blocks)
+  // Test request: same opener only -> matches 1 block out of many -> rejected
+  server->setMemoryAutoRespond(false);
+
+  // Step 1: Create a long conversation to build up many blocks.
+  // Each message should be long enough to form blocks.
+  const std::string opener =
+      "prefix-threshold-test-unique-opener with enough tokens to form exactly "
+      "one block when tokenized this needs thirty two tokens minimum";
+
+  // First turn: establishes the session with opener
+  auto future1 =
+      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  tt::domain::ManageMemoryTask memReq1{};
+  server->memoryRequestQueue().receive(memReq1);
+  EXPECT_EQ(memReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+
+  tt::domain::ManageMemoryResult memRes1{};
+  memRes1.taskId = memReq1.taskId;
+  memRes1.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes1.slotId = 0;
+  server->memoryResultQueue().push(memRes1);
+
+  auto seq1 = server->taskQueue().receive();
+  ASSERT_NE(seq1, nullptr);
+  EXPECT_FALSE(seq1->isContinuation()) << "First turn should not be continuation";
+
+  tt::test::WorkerResponse(seq1->taskId).token(100).finalize().sendTo(
+      server->resultQueue());
+  future1.get();
+
+  // Step 2: Add several more turns to grow the session's block count.
+  // Each turn adds more blocks, making the session much longer than just opener.
+  ChatRequest convo;
+  convo.user(opener).assistant("ok");
+
+  for (int i = 0; i < 5; ++i) {
+    std::string longMessage =
+        "additional turn " + std::to_string(i) +
+        " with enough words to add more blocks to this session making it "
+        "much longer than the original opener so that a short request "
+        "matching only the opener will have a low match percentage";
+    convo.user(longMessage).maxTokens(1).stream();
+
+    auto future = asyncRequest(convo);
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_TRUE(seq->isContinuation()) << "Turn " << i << " should be continuation";
+
+    tt::test::WorkerResponse(seq->taskId).token(101 + i).finalize().sendTo(
+        server->resultQueue());
+    future.get();
+
+    convo.assistant("got it");
+  }
+
+  // Step 3: Send a NEW request with only the opener (no history).
+  // This matches only the first block of the multi-block session.
+  // With 80% threshold, this ~10-20% match should be rejected.
+  auto future2 =
+      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  // Should allocate a NEW session because match percentage is below threshold
+  tt::domain::ManageMemoryTask memReq2{};
+  bool gotAlloc = server->memoryRequestQueue().tryReceive(memReq2,
+      std::chrono::milliseconds(1000));
+  EXPECT_TRUE(gotAlloc)
+      << "Low match percentage should trigger new ALLOCATE, not reuse session";
+
+  if (gotAlloc) {
+    tt::domain::ManageMemoryResult memRes2{};
+    memRes2.taskId = memReq2.taskId;
+    memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes2.slotId = 1;  // Different slot
+    server->memoryResultQueue().push(memRes2);
+  }
+
+  auto seq2 = server->taskQueue().receive();
+  ASSERT_NE(seq2, nullptr);
+  EXPECT_FALSE(seq2->isContinuation())
+      << "Short request should NOT be continuation due to threshold rejection";
+
+  tt::test::WorkerResponse(seq2->taskId).token(200).finalize().sendTo(
+      server->resultQueue());
+  future2.get();
+
+  server->setMemoryAutoRespond(true);
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
