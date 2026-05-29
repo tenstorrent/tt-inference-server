@@ -2893,6 +2893,99 @@ jobs:
       - name: Check results
         run: |
           STATUS=0
+          EVENT_NAME="${{ github.event_name }}"
+          SHOULD_TEST="${{ needs.detect-changes.outputs.should-test }}"
+          CPP_SERVER="${{ needs.detect-changes.outputs.cpp-server }}"
+          PREFILL_GATEWAY="${{ needs.detect-changes.outputs.prefill-gateway }}"
+          MEDIA_SERVER_DEPS="${{ needs.detect-changes.outputs.media-server-deps }}"
+          CHARTS="${{ needs.detect-changes.outputs.charts }}"
+          HELM_INPUTS="${{ needs.detect-changes.outputs.helm-inputs }}"
+          FORGE_RUNNER="${{ needs.forge-runner-changes.outputs.should-run }}"
+
+          skipped_reason() {
+            case "$1" in
+              lint|unit-tests-main|unit-tests-media|unit-tests-summary|llm-streaming-performance)
+                if [[ "$SHOULD_TEST" != "true" ]]; then
+                  echo "no Python, dependency, or workflow paths matched"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              verify-media-server-install)
+                if [[ "$MEDIA_SERVER_DEPS" != "true" ]]; then
+                  echo "media-server dependency or Docker inputs did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              test-coverage)
+                if [[ "$EVENT_NAME" != "pull_request" ]]; then
+                  echo "coverage comments only run on pull_request events"
+                elif [[ "$SHOULD_TEST" != "true" ]]; then
+                  echo "no Python, dependency, or workflow paths matched"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              cpp-format-check|cpp-build|cpp-server-benchmarks|cpp-server-prefill-decode-split|dynamo-frontend-integration|cpp-tsan)
+                if [[ "$CPP_SERVER" != "true" ]]; then
+                  echo "cpp_server paths did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              prefill-gateway-format-check|prefill-gateway-build|prefill-gateway-tsan|cpp-server-gateway-split)
+                if [[ "$CPP_SERVER" != "true" && "$PREFILL_GATEWAY" != "true" ]]; then
+                  echo "neither cpp_server nor prefill_gateway paths changed"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              forge-runner-cpu-tests)
+                if [[ "$EVENT_NAME" != "pull_request" ]]; then
+                  echo "forge runner path detection only runs on pull_request events"
+                elif [[ "$FORGE_RUNNER" != "true" ]]; then
+                  echo "forge runner paths did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              helm-chart-validate)
+                if [[ "$CHARTS" != "true" && "$HELM_INPUTS" != "true" ]]; then
+                  echo "chart and Helm generator inputs did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              *)
+                echo "job condition evaluated false"
+                ;;
+            esac
+          }
+
+          JOB_ORDER=(
+            detect-changes
+            lint
+            verify-media-server-install
+            unit-tests-main
+            unit-tests-media
+            unit-tests-summary
+            forge-runner-changes
+            forge-runner-cpu-tests
+            llm-streaming-performance
+            test-coverage
+            cpp-format-check
+            cpp-build
+            cpp-server-benchmarks
+            cpp-server-prefill-decode-split
+            prefill-gateway-format-check
+            prefill-gateway-build
+            prefill-gateway-tsan
+            cpp-server-gateway-split
+            dynamo-frontend-integration
+            cpp-tsan
+            helm-chart-validate
+          )
           declare -A JOBS=(
             [detect-changes]="${{ needs.detect-changes.result }}"
             [lint]="${{ needs.lint.result }}"
@@ -2916,14 +3009,26 @@ jobs:
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
-          for job in "${!JOBS[@]}"; do
+          {
+            echo "## Test Gate Results"
+            echo ""
+            echo "| Job | Result | Notes |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for job in "${JOB_ORDER[@]}"; do
             result="${JOBS[$job]}"
-            if [[ "$result" == "success" || "$result" == "skipped" ]]; then
+            note=""
+            if [[ "$result" == "skipped" ]]; then
+              note="$(skipped_reason "$job")"
+              echo "✅ $job: skipped ($note)"
+            elif [[ "$result" == "success" ]]; then
               echo "✅ $job: $result"
             else
               echo "❌ $job: $result"
               STATUS=1
             fi
+            echo "| \`$job\` | \`$result\` | $note |" >> "$GITHUB_STEP_SUMMARY"
           done
           if [[ "$STATUS" -ne 0 ]]; then
             echo "CI gate failed: one or more jobs failed or were cancelled"
