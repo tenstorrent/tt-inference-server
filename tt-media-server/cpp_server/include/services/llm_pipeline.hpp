@@ -105,8 +105,8 @@ class LLMPipeline {
   }
 
  private:
-  bool shouldDoPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
-                               bool validSessionFound) const;
+  bool shouldDoPrefillOnDecode(
+      const tt::domain::llm::LLMRequest& request) const;
 
   std::shared_ptr<LLMService> service_;
   std::shared_ptr<SessionManager> sessionManager_;
