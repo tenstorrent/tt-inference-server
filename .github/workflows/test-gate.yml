@@ -1461,19 +1461,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          init-private-submodule: "false"
 
       - name: Configure prefill_gateway
         run: |
@@ -1529,19 +1520,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          init-private-submodule: "false"
 
       - name: Configure prefill_gateway with ThreadSanitizer
         run: |
