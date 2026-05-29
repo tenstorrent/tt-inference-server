@@ -46,14 +46,14 @@ std::chrono::milliseconds mockPrefillDelay() {
 // from the active tokenizer at construction time so the mock works with any
 // vocabulary (DeepSeek, Llama, etc.).
 struct GrammarTokenIds {
-  int quote;         // '"'
-  int letterA;       // 'A' — valid in bitmask only inside free-form string values
-  int minus;         // '-'
-  int comma;         // ','
-  int closeBracket;  // ']'
-  int closeBrace;    // '}'
-  std::array<int, 10> digits;        // '0'–'9' (not assumed consecutive)
-  std::array<int, 5> mockStrChars;   // T I S R V — varied content per task
+  int quote;    // '"'
+  int letterA;  // 'A' — valid in bitmask only inside free-form string values
+  int minus;    // '-'
+  int comma;    // ','
+  int closeBracket;                 // ']'
+  int closeBrace;                   // '}'
+  std::array<int, 10> digits;       // '0'–'9' (not assumed consecutive)
+  std::array<int, 5> mockStrChars;  // T I S R V — varied content per task
 
   static GrammarTokenIds fromTokenizer(
       const tt::utils::tokenizers::Tokenizer& tok) {
@@ -127,13 +127,15 @@ class MockModelRunner : public IModelRunner {
       generated = tokenCounts[seq->taskId]++;
     }
     if (generated < K_THINK_TOKENS_COUNT) {
-      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID : K_WHITESPACE_TOKEN_ID;
+      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID
+                                  : K_WHITESPACE_TOKEN_ID;
     }
     if (generated == K_THINK_TOKENS_COUNT) {
       return K_THINK_END_TOKEN_ID;
     }
     size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
-    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID : K_WHITESPACE_TOKEN_ID;
+    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
+                                 : K_WHITESPACE_TOKEN_ID;
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }

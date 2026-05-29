@@ -105,30 +105,27 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   // 30 tokens: think_start + 10 think + think_end + 18 visible
   const std::vector<int64_t> expectedSeq0 = {
-      kThinkStart,
-      kThinkContent, kWhitespace, kThinkContent, kWhitespace, kThinkContent,
-      kWhitespace, kThinkContent, kWhitespace, kThinkContent, kWhitespace,
-      kThinkEnd,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
+      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
       kVisibleContent, kWhitespace,
   };
   // 10 tokens: think_start + 9 think
   const std::vector<int64_t> expectedSeq1 = {
-      kThinkStart,
-      kThinkContent, kWhitespace, kThinkContent, kWhitespace, kThinkContent,
-      kWhitespace, kThinkContent, kWhitespace, kThinkContent,
+      kThinkStart,   kThinkContent, kWhitespace,   kThinkContent, kWhitespace,
+      kThinkContent, kWhitespace,   kThinkContent, kWhitespace,   kThinkContent,
   };
   // 20 tokens: think_start + 10 think + think_end + 8 visible
   const std::vector<int64_t> expectedSeq2 = {
-      kThinkStart,
-      kThinkContent, kWhitespace, kThinkContent, kWhitespace, kThinkContent,
-      kWhitespace, kThinkContent, kWhitespace, kThinkContent, kWhitespace,
-      kThinkEnd,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace, kVisibleContent, kWhitespace,
+      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
+      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
   };
 
   EXPECT_EQ(receivedTokens[taskIds[0]], expectedSeq0);
