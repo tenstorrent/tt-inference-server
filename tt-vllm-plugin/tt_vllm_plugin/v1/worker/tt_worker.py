@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from contextlib import suppress
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
@@ -64,6 +65,12 @@ class TTWorker(WorkerBase):
                 f"Invalid {trace_key}: {override_tt_config[trace_key]}"
             )
             self.trace_mode = override_tt_config[trace_key]
+
+        # Monotonic policy/weight version, bumped on every successful
+        # in-place weight update. Used to tag rollouts so an RL trainer can
+        # detect (and optionally discard) off-policy samples. Starts at 0 =
+        # the weights loaded at startup.
+        self._weights_version = 0
 
     def init_device(self) -> None:
         logger.info("Initializing TT device...")
@@ -154,6 +161,89 @@ class TTWorker(WorkerBase):
                     mesh_device=self.mesh_device,
                     trace_mode=self.trace_mode,
                 )
+
+    # ---- Runtime weight update (RL rollouts) ----
+    #
+    # Invoked from the API server process via
+    # ``engine_client.collective_rpc("update_weights", kwargs=...)``. Runs on
+    # every worker in the (DP) group, but only the rank that actually owns the
+    # on-device model (DP rank 0 for TT) performs the update; other ranks
+    # no-op so the collective returns uniformly.
+    #
+    # Phase-1 contract (implemented in tt-metal, see
+    # ``models/tt_transformers/tt/generator_vllm.py``): the model object
+    # returned by the loader exposes
+    #
+    #     def update_weights(self, *, weights_path: str | None = None,
+    #                        state_dict: dict | None = None) -> None
+    #
+    # which performs the HF -> Meta -> per-shard host conversion and the
+    # in-place ``ttnn.copy`` overwrite of each weight buffer (preserving the
+    # device buffer address so captured traces stay valid). Keeping that
+    # conversion in tt-metal avoids duplicating the sharding logic here.
+
+    def _owns_model(self) -> bool:
+        runner = getattr(self, "model_runner", None)
+        return runner is not None and getattr(runner, "model", None) is not None
+
+    def update_weights(
+        self,
+        weights_path: Optional[str] = None,
+        version: Optional[int] = None,
+        **kwargs,
+    ) -> dict:
+        """In-place replace on-device weights from a checkpoint on disk.
+
+        Args:
+            weights_path: Path (visible to the worker process, e.g. a
+                bind-mounted ``MODEL_WEIGHTS_DIR`` or shared checkpoint dir)
+                to an HF-format checkpoint. Forwarded to the model's
+                ``update_weights`` which owns the conversion.
+            version: Optional caller-assigned version to record. If omitted,
+                the worker's counter is simply incremented.
+
+        Returns:
+            dict with ``rank``, ``updated`` (bool), and ``version``.
+        """
+        rank = self.vllm_config.parallel_config.data_parallel_rank
+
+        if not self._owns_model():
+            # Non-owning DP ranks have no device model; nothing to do.
+            return {"rank": rank, "updated": False, "version": self._weights_version}
+
+        if weights_path is None:
+            raise ValueError("update_weights requires a `weights_path`")
+        path = Path(weights_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"weights_path does not exist in worker filesystem: {path}. "
+                "Ensure the checkpoint is on shared/bind-mounted storage "
+                "reachable by the inference container."
+            )
+
+        model = self.model_runner.get_model()
+        if not hasattr(model, "update_weights"):
+            raise NotImplementedError(
+                f"Model {type(model).__name__} does not implement "
+                "update_weights(). Runtime weight update requires the "
+                "tt-metal Phase-1 in-place update API "
+                "(Generator.update_weights / Transformer.update)."
+            )
+
+        logger.info("Applying in-place weight update from %s (rank %s)", path, rank)
+        model.update_weights(weights_path=str(path), **kwargs)
+
+        self._weights_version = (
+            version if version is not None else self._weights_version + 1
+        )
+        logger.info(
+            "Weight update complete; weights_version=%s", self._weights_version
+        )
+        return {"rank": rank, "updated": True, "version": self._weights_version}
+
+    def get_weights_version(self) -> int:
+        """Return the current on-device weights/policy version."""
+        return self._weights_version
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
