@@ -48,14 +48,7 @@ PrefillEligibilitySummary summarizePrefillEligibility(
 
 std::string_view routingReasonName(PrefillRoutingReason reason);
 
-PrefillSelection selectPrefillWithReason(
-    const std::vector<PrefillSnapshot>& prefills, size_t registration_hash,
-    const std::optional<std::string>& sticky_target,
-    size_t& round_robin_cursor);
-
-// Choose a prefill. Order: sticky-by-hash → least-inflight → round-robin.
-// `round_robin_cursor` is caller-owned so the selector stays pure.
-std::optional<std::string> selectPrefill(
+PrefillSelection selectPrefill(
     const std::vector<PrefillSnapshot>& prefills, size_t registration_hash,
     const std::optional<std::string>& sticky_target,
     size_t& round_robin_cursor);

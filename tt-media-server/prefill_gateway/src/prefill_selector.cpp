@@ -63,7 +63,7 @@ std::string_view routingReasonName(PrefillRoutingReason reason) {
   return "unknown";
 }
 
-PrefillSelection selectPrefillWithReason(
+PrefillSelection selectPrefill(
     const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
     const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
   const bool hasStickyHint = registrationHash != 0 && stickyTarget.has_value();
@@ -106,14 +106,6 @@ PrefillSelection selectPrefillWithReason(
   return {leastLoaded[pickIndex]->server_id,
           hasStickyHint ? PrefillRoutingReason::StickyFallback
                         : PrefillRoutingReason::RoundRobin};
-}
-
-std::optional<std::string> selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
-    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
-  return selectPrefillWithReason(prefills, registrationHash, stickyTarget,
-                                 roundRobinCursor)
-      .server_id;
 }
 
 }  // namespace tt::gateway

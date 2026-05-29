@@ -38,8 +38,8 @@ void Dispatcher::onPrefillRequest(
   auto sticky =
       (affinityKey != 0) ? affinity_cache_.lookup(affinityKey) : std::nullopt;
 
-  auto selection = selectPrefillWithReason(prefills, affinityKey, sticky,
-                                           round_robin_cursor_);
+  auto selection =
+      selectPrefill(prefills, affinityKey, sticky, round_robin_cursor_);
   GatewayMetrics::instance().recordRoutingDecision(
       routingReasonName(selection.reason));
   GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
