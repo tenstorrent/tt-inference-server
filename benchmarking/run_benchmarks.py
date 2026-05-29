@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -135,6 +136,20 @@ def parse_args():
     return ret_args
 
 
+def _resolve_host_port(deploy_url: str, service_port) -> tuple[str, str]:
+    """Split a deploy URL into ``(host, port)`` for ``--host``/``--port`` args.
+
+    When ``deploy_url`` carries an explicit port (e.g. ``http://host:9000``) that
+    port wins over ``service_port`` so callers can't end up with mismatched
+    ``--host host --port <service_port>`` against a server that's actually
+    listening on a different port.
+    """
+    parsed = urlparse(deploy_url.rstrip("/"))
+    host = parsed.hostname or "localhost"
+    port = str(parsed.port) if parsed.port is not None else str(service_port)
+    return host, port
+
+
 def build_benchmark_command(
     task,
     benchmark_script,
@@ -143,6 +158,7 @@ def build_benchmark_command(
     service_port,
     benchmark_config,
     model_spec,
+    deploy_url: str = "http://127.0.0.1",
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -167,6 +183,8 @@ def build_benchmark_command(
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "openai-chat"
 
+    host, port = _resolve_host_port(deploy_url, service_port)
+
     # fmt: off
     cmd = [
         str(benchmark_script),
@@ -175,7 +193,8 @@ def build_benchmark_command(
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
         "--model", model_spec.hf_model_repo,
-        "--port", str(service_port),
+        "--host", host,
+        "--port", port,
         "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -212,6 +231,7 @@ def build_structured_output_command(
     output_path,
     service_port,
     model_spec,
+    deploy_url: str = "http://127.0.0.1",
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     ratio_tag = (
@@ -226,13 +246,15 @@ def build_structured_output_command(
         f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
     )
 
+    host, port = _resolve_host_port(deploy_url, service_port)
+
     # fmt: off
     cmd = [
         str(venv_python),
         str(structured_output_script),
         "--backend", "vllm",
-        "--host", "localhost",
-        "--port", str(service_port),
+        "--host", host,
+        "--port", port,
         "--model", model_spec.hf_model_repo,
         "--dataset", params.structured_dataset,
         "--max-concurrency", str(params.max_concurrency),
@@ -283,6 +305,13 @@ def main():
     device_str = runtime_config.device
     service_port = runtime_config.service_port
     disable_trace_capture = runtime_config.disable_trace_capture
+    # Mirror EnvironmentConfig's default (os.environ.get("DEPLOY_URL",
+    # "http://127.0.0.1")) so the genai-perf path (which runs before
+    # env_config is constructed) sees the same value used later.
+    deploy_url = (
+        getattr(runtime_config, "server_url", None)
+        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    )
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -328,6 +357,7 @@ def main():
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -408,7 +438,12 @@ def main():
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
         return_code = run_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -439,6 +474,7 @@ def main():
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -527,6 +563,7 @@ def main():
                             output_path=args.output_path,
                             service_port=service_port,
                             model_spec=model_spec,
+                            deploy_url=deploy_url,
                         )
                     )
                 else:
@@ -538,6 +575,7 @@ def main():
                         service_port=service_port,
                         benchmark_config=benchmark_config,
                         model_spec=model_spec,
+                        deploy_url=deploy_url,
                     )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
@@ -556,7 +594,9 @@ def main():
     return main_return_code
 
 
-def run_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
@@ -570,6 +610,7 @@ def run_benchmarks(all_params, model_spec, device, output_path, service_port):
         output_path,
         service_port,
         task_type=MediaTaskType.BENCHMARK,
+        deploy_url=deploy_url,
     )
 
 
