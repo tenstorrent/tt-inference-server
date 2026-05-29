@@ -4,16 +4,23 @@ description: Configure private submodules, restore C++ caches, and install C++ b
 inputs:
   token:
     description: GitHub token with access to private C++ submodules.
-    required: true
+    required: false
+    default: ""
+  init-private-submodule:
+    description: Whether to configure and initialize the private tt-llm-engine submodule.
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: Configure git for private submodules
+      if: ${{ inputs.init-private-submodule == 'true' }}
       shell: bash
       run: git config --local url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf "https://github.com/"
 
     - name: Init tt-llm-engine submodule (without tt-metal)
+      if: ${{ inputs.init-private-submodule == 'true' }}
       shell: bash
       run: git -c url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
