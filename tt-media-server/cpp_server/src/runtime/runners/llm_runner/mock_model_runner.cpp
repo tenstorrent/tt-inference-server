@@ -46,14 +46,14 @@ std::chrono::milliseconds mockPrefillDelay() {
 // from the active tokenizer at construction time so the mock works with any
 // vocabulary (DeepSeek, Llama, etc.).
 struct GrammarTokenIds {
-  int quote;    // '"'
-  int letterA;  // 'A' — valid in bitmask only inside free-form string values
-  int minus;    // '-'
-  int comma;    // ','
-  int closeBracket;                 // ']'
-  int closeBrace;                   // '}'
-  std::array<int, 10> digits;       // '0'–'9' (not assumed consecutive)
-  std::array<int, 5> mockStrChars;  // T I S R V — varied content per task
+  int quote;         // '"'
+  int letterA;       // 'A' — valid in bitmask only inside free-form string values
+  int minus;         // '-'
+  int comma;         // ','
+  int closeBracket;  // ']'
+  int closeBrace;    // '}'
+  std::array<int, 10> digits;        // '0'–'9' (not assumed consecutive)
+  std::array<int, 5> mockStrChars;   // T I S R V — varied content per task
 
   static GrammarTokenIds fromTokenizer(
       const tt::utils::tokenizers::Tokenizer& tok) {
@@ -106,13 +106,8 @@ class MockModelRunner : public IModelRunner {
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
-        // Reset counter on prefill (new request), start at 0 so first decode
-        // emits think start
-        {
-          std::lock_guard<std::mutex> lock(tokenCountMutex_);
-          tokenCounts_[seq->taskId] = 0;
-        }
-        // Prefill emits think start token
+        std::lock_guard<std::mutex> lock(tokenCountMutex);
+        tokenCounts[seq->taskId] = 0;
         decodeCallback(
             TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
       }
@@ -125,29 +120,20 @@ class MockModelRunner : public IModelRunner {
     }
   }
 
-  // Generates a sequence: <think> + 10 tokens + </think> + visible tokens
-  // Prefill emits think start (position 0 already used).
-  // Decode positions: 0-9: think content, 10: think end, 11+: visible
-  // Both think and visible tokens alternate with spaces.
   uint64_t pickThinkingToken(Sequence* seq) {
     size_t generated = 0;
     {
-      std::lock_guard<std::mutex> lock(tokenCountMutex_);
-      generated = tokenCounts_[seq->taskId]++;
+      std::lock_guard<std::mutex> lock(tokenCountMutex);
+      generated = tokenCounts[seq->taskId]++;
     }
-    // Positions 0-9: think content with spaces
     if (generated < K_THINK_TOKENS_COUNT) {
-      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID
-                                  : K_WHITESPACE_TOKEN_ID;
+      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID : K_WHITESPACE_TOKEN_ID;
     }
-    // Position 10: think end
     if (generated == K_THINK_TOKENS_COUNT) {
       return K_THINK_END_TOKEN_ID;
     }
-    // Position 11+: visible content with spaces
     size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
-    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
-                                 : K_WHITESPACE_TOKEN_ID;
+    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID : K_WHITESPACE_TOKEN_ID;
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
@@ -228,8 +214,8 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
-  std::mutex tokenCountMutex_;
-  std::unordered_map<uint32_t, size_t> tokenCounts_;
+  std::mutex tokenCountMutex;
+  std::unordered_map<uint32_t, size_t> tokenCounts;
 };
 
 }  // namespace
