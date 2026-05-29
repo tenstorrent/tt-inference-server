@@ -1203,18 +1203,16 @@ jobs:
 
       - name: Verify prefill/decode socket connection
         run: |
-          for i in $(seq 1 30); do
-            PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"' \
-               && echo "$DECODE_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-              echo "✅ Prefill (client:connected) and Decode (server:connected) both ready"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --expect '"socket_status":"client:connected"' \
+            --pid-file prefill_server_runner.pid \
+            --label "mock_prefill_runner prefill socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8000 \
+            --expect '"socket_status":"server:connected"' \
+            --pid-file decode_server_runner.pid \
+            --label "mock_prefill_runner decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
           DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
           echo "Prefill liveness: $PREFILL_LIVENESS"
@@ -1608,18 +1606,11 @@ jobs:
             --prefill=127.0.0.1:9202 \
             > gw.log 2>&1 &
           echo $! > gw.pid
-          for i in $(seq 1 30); do
-            REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
-              break
-            fi
-            if ! kill -0 "$(cat gw.pid)" 2>/dev/null; then
-              echo "ERROR: Gateway process exited unexpectedly"
-              exit 1
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command '[ "$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)" -ge 2 ]' \
+            --pid-file gw.pid \
+            --failure-log gw.log \
+            --label "TCP prefill gateway registrations"
           REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
           if [ "$REG" -lt 2 ]; then
             echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
@@ -1647,18 +1638,9 @@ jobs:
 
       - name: "[TCP] Verify gateway socket connections"
         run: |
-          for i in $(seq 1 30); do
-            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$P1"  | grep -q '"socket_status":"server:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"server:connected"' \
-               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 (server:connected) and Decode (client:connected) all verified"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"server:connected"' --pid-file gw_prefill1.pid --label "TCP gateway prefill-1 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"server:connected"' --pid-file gw_prefill2.pid --label "TCP gateway prefill-2 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_decode.pid --label "TCP gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -1755,18 +1737,11 @@ jobs:
             --prefill-bind=127.0.0.1:9201 \
             > gw_zmq.log 2>&1 &
           echo $! > gw_zmq.pid
-          for i in $(seq 1 30); do
-            REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
-              break
-            fi
-            if ! kill -0 "$(cat gw_zmq.pid)" 2>/dev/null; then
-              echo "ERROR: Gateway process exited unexpectedly"
-              exit 1
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command '[ "$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)" -ge 2 ]' \
+            --pid-file gw_zmq.pid \
+            --failure-log gw_zmq.log \
+            --label "ZMQ prefill gateway registrations"
           REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
           if [ "$REG" -lt 2 ]; then
             echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
@@ -1794,18 +1769,9 @@ jobs:
 
       - name: "[ZMQ] Verify gateway socket connections"
         run: |
-          for i in $(seq 1 30); do
-            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$P1"  | grep -q '"socket_status":"client:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"client:connected"' \
-               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 and Decode (client:connected) all verified"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -1987,13 +1953,11 @@ jobs:
             --listen-client-urls=http://127.0.0.1:2379 \
             > etcd.log 2>&1 &
           echo $! > etcd.pid
-          for i in $(seq 1 30); do
-            if etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null; then
-              echo "✅ etcd ready after ${i}s"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
           etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
 
       - name: Set up uv for Dynamo
@@ -2088,16 +2052,13 @@ jobs:
               --model-path "${MODEL_PATH}" \
               > frontend.log 2>&1 &
           echo $! > frontend.pid
-          for i in $(seq 1 60); do
-            if curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null \
-                 | grep -q '"data"'; then
-              echo "✅ Frontend ready (:8000) after ${i}*2s"
-              break
-            fi
-            sleep 2
-          done
-          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
-            || { echo "ERROR: frontend not ready"; cat frontend.log; exit 1; }
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
 
       - name: Verify both backends registered in etcd
         # cpp_server's etcd discovery writes one instance + one MDC entry per
