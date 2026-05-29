@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from __future__ import annotations
+
 import inspect
 
 from torch import nn
@@ -96,7 +98,31 @@ class TTModelLoader(BaseModelLoader):
         """Download a model so that it can be immediately loaded."""
         raise NotImplementedError
 
-    def load_weights(self, model: nn.Module, model_config: ModelConfig) -> None:
-        """Load weights into a model. This standalone API allows
-        inplace weights loading for an already-initialized model"""
-        raise NotImplementedError
+    def load_weights(
+        self,
+        model: nn.Module,
+        model_config: ModelConfig,
+        *,
+        weights_path: str | None = None,
+        state_dict: dict | None = None,
+    ) -> None:
+        """Load weights into an already-initialized model in place.
+
+        Delegates to the tt-metal model's ``update_weights`` (Phase-1 API),
+        which performs the HF -> Meta -> per-shard host conversion and the
+        in-place ``ttnn.copy`` overwrite of each on-device weight buffer.
+        The device buffer addresses are preserved, so captured ttnn traces
+        remain valid across the update (no recompile / re-warmup needed).
+        """
+        if not hasattr(model, "update_weights"):
+            raise NotImplementedError(
+                f"Model {type(model).__name__} does not implement "
+                "update_weights(); cannot perform in-place weight load. "
+                "This requires the tt-metal in-place update API "
+                "(Generator.update_weights / Transformer.update)."
+            )
+        if weights_path is None and state_dict is None:
+            raise ValueError(
+                "load_weights requires either `weights_path` or `state_dict`"
+            )
+        model.update_weights(weights_path=weights_path, state_dict=state_dict)
