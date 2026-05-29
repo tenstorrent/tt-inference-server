@@ -162,9 +162,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
@@ -432,8 +436,14 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
 }
 
 ModelType modelType() {
-  static const ModelType cached = modelTypeFromDeviceBackend(
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  static const ModelType cached = [] {
+    // Derive model type from MODEL env var
+    std::string m = envString("MODEL", defaults::MODEL);
+    if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "meta-llama/Llama-3.1-8B-Instruct")
+      return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_R1_0528;
+  }();
   return cached;
 }
 

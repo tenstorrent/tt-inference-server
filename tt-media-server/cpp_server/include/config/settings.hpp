@@ -63,8 +63,10 @@ std::string tokenizerConfigPath(ModelType model);
  */
 std::string visibleDevicesForWorker(size_t workerIndex);
 
-/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT,
- * else DEEPSEEK_R1_0528). */
+/** Model type derived from LLM_DEVICE_BACKEND:
+ * "llama" -> LLAMA_3_1_8B_INSTRUCT,
+ * "kimi" -> KIMI_K2_6,
+ * otherwise -> DEEPSEEK_R1_0528. */
 ModelType modelType();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */

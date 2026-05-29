@@ -80,6 +80,9 @@ Performance knobs (read from the calling shell, optional):
                         backend->frontend wire or downstream of it. High
                         log volume (~one line per generated token), keep
                         off in normal runs.
+  DYN_ENABLE_ANTHROPIC_API
+                        Enable experimental Anthropic Messages API endpoint
+                        (/v1/messages). (default: true)
 
 Example:
   $0 \\
@@ -134,6 +137,7 @@ if [[ -z "$ETCD_IMAGE" || -z "$WORKER_IMAGE" || -z "$FRONTEND_IMAGE" ]]; then
     echo "Missing required argument(s)." >&2
     usage
 fi
+
 
 log() { printf '[deploy] %s\n' "$*"; }
 
@@ -209,6 +213,7 @@ docker run -d --name "$WORKER_NAME" \
     -e DYNAMO_COMPONENT=backend \
     -e DYNAMO_ENDPOINT_NAME=generate \
     -e SERVER_MODE=cpp \
+    -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
     -e USE_DEEPSEEK_MD_FORMAT=1 \
@@ -340,6 +345,7 @@ docker run -d --name "$FRONTEND_NAME" \
     -e RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-}" \
     -e DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
     -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
+    -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null
 
