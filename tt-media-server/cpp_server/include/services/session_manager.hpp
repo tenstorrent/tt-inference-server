@@ -140,8 +140,6 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  // Prefix index helpers: maintain prefixIndex alongside the sessions map.
-  void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;

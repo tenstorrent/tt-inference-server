@@ -689,24 +689,6 @@ void SessionManager::updateSessionCountMetric() {
       static_cast<double>(getActiveSessionCount()));
 }
 
-void SessionManager::addToPrefixIndex(const std::string& sessionId,
-                                      uint64_t prefixHash) {
-  if (prefixHash == 0) return;
-  bool exists = prefixIndex.modify(
-      prefixHash, [&sessionId](std::vector<PrefixIndexEntry>& entries) {
-        if (entries.empty()) {
-          entries.push_back(PrefixIndexEntry{{sessionId}, {}});
-        } else {
-          entries.front().sessionIds.push_back(sessionId);
-        }
-      });
-  if (!exists) {
-    std::vector<PrefixIndexEntry> entries;
-    entries.push_back(PrefixIndexEntry{{sessionId}, {}});
-    prefixIndex.insert(prefixHash, std::move(entries));
-  }
-}
-
 void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
                                            uint64_t prefixHash) {
   if (prefixHash == 0) return;
