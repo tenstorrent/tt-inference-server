@@ -139,7 +139,7 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    commands = CommandFactory.build(args)
+    commands = CommandFactory.build_isolated(args)
     runner = WorkflowRunner(commands)
     return runner.run()
 

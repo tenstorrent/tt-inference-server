@@ -28,23 +28,7 @@ from report_module.schema import Block
 from workflow_module import accept_blocks
 
 from ._test_common import TestConfig, sweep_envelope
-from .benchmark_tests import (
-    run_audio_benchmark,
-    run_cnn_benchmark,
-    run_embedding_benchmark,
-    run_image_benchmark,
-    run_tts_benchmark,
-    run_video_benchmark,
-)
 from .context import MediaContext
-from .eval_tests import (
-    run_audio_eval,
-    run_cnn_eval,
-    run_embedding_eval,
-    run_image_eval,
-    run_tts_eval,
-    run_video_eval,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -57,23 +41,29 @@ class MediaTaskType(Enum):
     SPEC_TESTS = "spec_tests"
 
 
-EVAL_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_eval,
-    "IMAGE": run_image_eval,
-    "AUDIO": run_audio_eval,
-    "EMBEDDING": run_embedding_eval,
-    "TEXT_TO_SPEECH": run_tts_eval,
-    "VIDEO": run_video_eval,
+EVAL_DISPATCH: dict[str, str] = {
+    "CNN": "test_module.eval_tests.cnn_eval_tests:run_cnn_eval",
+    "IMAGE": "test_module.eval_tests.image_eval_tests:run_image_eval",
+    "AUDIO": "test_module.eval_tests.audio_eval_tests:run_audio_eval",
+    "EMBEDDING": "test_module.eval_tests.embedding_eval_tests:run_embedding_eval",
+    "TEXT_TO_SPEECH": "test_module.eval_tests.tts_eval_tests:run_tts_eval",
+    "VIDEO": "test_module.eval_tests.video_eval_tests:run_video_eval",
 }
 
-BENCHMARK_DISPATCH: dict[str, MediaRunner] = {
-    "CNN": run_cnn_benchmark,
-    "IMAGE": run_image_benchmark,
-    "AUDIO": run_audio_benchmark,
-    "EMBEDDING": run_embedding_benchmark,
-    "TEXT_TO_SPEECH": run_tts_benchmark,
-    "VIDEO": run_video_benchmark,
+BENCHMARK_DISPATCH: dict[str, str] = {
+    "CNN": "test_module.benchmark_tests.cnn_benchmark_tests:run_cnn_benchmark",
+    "IMAGE": "test_module.benchmark_tests.image_benchmark_tests:run_image_benchmark",
+    "AUDIO": "test_module.benchmark_tests.audio_benchmark_tests:run_audio_benchmark",
+    "EMBEDDING": "test_module.benchmark_tests.embedding_benchmark_tests:run_embedding_benchmark",
+    "TEXT_TO_SPEECH": "test_module.benchmark_tests.tts_benchmark_tests:run_tts_benchmark",
+    "VIDEO": "test_module.benchmark_tests.video_benchmark_tests:run_video_benchmark",
 }
+
+
+def _resolve_runner(spec: str) -> MediaRunner:
+    module_path, fn_name = spec.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, fn_name)
 
 
 def run_media_task(
@@ -107,8 +97,8 @@ def run_media_task(
     dispatch = (
         EVAL_DISPATCH if task_type == MediaTaskType.EVALUATION else BENCHMARK_DISPATCH
     )
-    runner = dispatch.get(model_type_name)
-    if runner is None:
+    spec = dispatch.get(model_type_name)
+    if spec is None:
         logger.error(
             "No %s runner registered for model_type=%r. Known types: %s",
             task_type.value,
@@ -116,6 +106,7 @@ def run_media_task(
             sorted(dispatch),
         )
         return 1, None
+    runner = _resolve_runner(spec)
 
     try:
         block = runner(ctx)

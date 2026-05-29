@@ -7,11 +7,12 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from test_module import MediaContext
+if TYPE_CHECKING:
+    from test_module import MediaContext
 
-from .execution import OrchestratorMetadata, WorkflowResult
+    from .execution import OrchestratorMetadata, WorkflowResult
 
 logger = logging.getLogger(__name__)
 

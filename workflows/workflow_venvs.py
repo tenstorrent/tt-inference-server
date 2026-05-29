@@ -369,8 +369,20 @@ _venv_config_list = [
         setup_function=setup_evals_agentic,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
-        requirements_file="v2-run-script.txt",
+        venv_type=WorkflowVenvType.V2_EVALS,
+        requirements_file="v2-evals.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_BENCHMARKS,
+        requirements_file="v2-benchmarks.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_SPEC_TESTS,
+        requirements_file="v2-spec-tests.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_RELEASE,
+        requirements_file="v2-release.txt",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,

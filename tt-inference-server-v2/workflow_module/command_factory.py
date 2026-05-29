@@ -15,10 +15,7 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 
-from test_module import MediaContext
-
-from .commands import Command, WorkflowCommand
-from .execution import OrchestratorMetadata
+from .commands import Command
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +23,28 @@ logger = logging.getLogger(__name__)
 class CommandFactory:
     """Builds the list of commands a WorkflowRunner will execute.
 
-    Currently emits a single ``WorkflowCommand``. A future ``ServerCommand``
-    will be prepended when inline server bring-up is requested.
+    Two entry points:
+
+    * :meth:`build_isolated` — the thin orchestrator path. Emits
+      ``SubprocessWorkflowCommand``, which bootstraps the workflow's venv
+      and runs the worker out-of-process. Pulls no ``test_module`` deps.
+    * :meth:`build` — the in-venv path used by ``workflow_worker.py``.
+      Builds the in-process ``WorkflowCommand`` (imports ``test_module``).
+
+    A future ``ServerCommand`` will be prepended when inline server
+    bring-up is requested.
     """
 
     @staticmethod
+    def build_isolated(args: argparse.Namespace) -> List[Command]:
+        from .isolation import SubprocessWorkflowCommand
+
+        return [SubprocessWorkflowCommand(args)]
+
+    @staticmethod
     def build(args: argparse.Namespace) -> List[Command]:
+        from .commands import WorkflowCommand
+
         ctx = _build_context(args)
         metadata = _build_orchestrator_metadata(args)
         commands: List[Command] = [
@@ -45,7 +58,9 @@ class CommandFactory:
         return commands
 
 
-def _build_context(args: argparse.Namespace) -> MediaContext:
+def _build_context(args: argparse.Namespace):
+    from test_module import MediaContext
+
     model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
@@ -84,7 +99,9 @@ def _resolve_eval_config(model_name: str):
     return cfg
 
 
-def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
+def _build_orchestrator_metadata(args: argparse.Namespace):
+    from .execution import OrchestratorMetadata
+
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
     return OrchestratorMetadata(
         server_mode=_resolve_server_mode(args, runtime_config),
