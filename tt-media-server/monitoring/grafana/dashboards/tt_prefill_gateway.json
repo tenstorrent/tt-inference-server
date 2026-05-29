@@ -353,7 +353,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(tt_gateway_routing_decisions_total{reason=\"prefix_match\"}[5m])) / clamp_min(sum(rate(tt_gateway_routing_decisions_total[5m])), 1)",
+          "expr": "(sum(rate(tt_gateway_routing_decisions_total{reason=\"prefix_match\"}[5m])) or on() vector(0)) / clamp_min((sum(rate(tt_gateway_routing_decisions_total[5m])) or on() vector(0)), 1)",
           "legendFormat": "prefix match rate",
           "refId": "A"
         }

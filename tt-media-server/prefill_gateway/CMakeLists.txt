@@ -105,11 +105,15 @@ add_library(prefill_gateway_core STATIC ${GATEWAY_CORE_SOURCES})
 target_include_directories(prefill_gateway_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CPP_SERVER_DIR}/include
+)
+target_include_directories(prefill_gateway_core PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 target_link_libraries(prefill_gateway_core PUBLIC
     cereal::cereal
     spdlog::spdlog
+)
+target_link_libraries(prefill_gateway_core PRIVATE
     prometheus-cpp::core
 )
 target_compile_features(prefill_gateway_core PUBLIC cxx_std_20)
