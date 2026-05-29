@@ -17,12 +17,14 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      # Single-user serving (max_concurrency=1 externally) so max_model_len=16K
-      # gives reasoning evals (mmlu_pro, r1_gpqa_diamond) real headroom without
-      # the KV pool needing to fit max_num_seqs concurrent 16K sequences.
-      # TT_KV_POOL_GB lifts the forge wheel's 12 GB hardcode (peer cnn.yaml
-      # commit 8ab810b6 patches vllm_tt/worker.py:236 at container startup).
-      max_concurrency: 1
+      # max_concurrency=4 matches MAX_NUM_SEQS so lm-eval can run client-side
+      # batch=4 (recovers throughput on slow forge tasks like EVALS_META).
+      # max_context=16K gives reasoning evals (mmlu_pro, r1_gpqa_diamond) real
+      # headroom on prompt+max_gen_toks; the KV pool fits 4 concurrent 16K
+      # sequences with 1.24x slack (81,536-token pool / 16K = 4.98x ratio) so
+      # no preemption at saturation. TT_KV_POOL_GB lifts the forge wheel's
+      # 12 GB hardcode (peer cnn.yaml commit 8ab810b6 patches vllm_tt/worker.py:236).
+      max_concurrency: 4
       max_context: 16384
       default_impl: true
       eval_max_retries: 1
@@ -45,13 +47,14 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      # Single-user serving (max_concurrency=1 externally) so max_model_len=16K
-      # gives reasoning / longbench evals real headroom without needing the
-      # KV pool to fit max_num_seqs concurrent 16K sequences. Internal batch
-      # at 4 (proven by peer commit 8ab810b6) so trace-capture scratch fits
-      # alongside weights + KV pool on 32 GB P150. TT_KV_POOL_GB lifts the
-      # forge wheel's 12 GB hardcode (vllm_tt/worker.py:236).
-      max_concurrency: 1
+      # max_concurrency=4 matches MAX_NUM_SEQS so lm-eval can run batch=4
+      # client-side (recovers EVALS_META throughput). max_context=16K gives
+      # reasoning / longbench evals real headroom; pool fits 4 concurrent 16K
+      # sequences with 1.60x slack (104,832-token pool / 16K = 6.40x ratio).
+      # Internal batch at 4 (proven by peer commit 8ab810b6) so trace-capture
+      # scratch fits alongside weights + KV pool on 32 GB P150. TT_KV_POOL_GB
+      # lifts the forge wheel's 12 GB hardcode (vllm_tt/worker.py:236).
+      max_concurrency: 4
       max_context: 16384
       default_impl: false
       eval_max_retries: 1
@@ -73,11 +76,13 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      # Single-user serving so EVALS_META meta_ifeval and longbench evals at
-      # 16K context fit `prompt + max_gen_toks` within max_model_len.
-      # TT_KV_POOL_GB lifts the forge wheel's 12 GB hardcode (peer commit
-      # 8ab810b6, vllm_tt/worker.py:236).
-      max_concurrency: 1
+      # max_concurrency=4 matches MAX_NUM_SEQS so lm-eval can run batch=4
+      # client-side. max_context=16K so EVALS_META meta_ifeval and longbench
+      # evals fit `prompt + max_gen_toks`; pool fits 4 concurrent 16K sequences
+      # with 1.20x slack (78,624-token pool / 16K = 4.80x ratio). TT_KV_POOL_GB
+      # lifts the forge wheel's 12 GB hardcode (peer commit 8ab810b6,
+      # vllm_tt/worker.py:236).
+      max_concurrency: 4
       max_context: 16384
       default_impl: false
       eval_max_retries: 1
@@ -99,10 +104,14 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      # Single-user serving so reasoning evals (mmlu_pro, r1_gpqa_diamond)
-      # at 16K context fit `prompt + max_gen_toks`. TT_KV_POOL_GB lifts the
-      # forge wheel's 12 GB hardcode (peer commit 8ab810b6).
-      max_concurrency: 1
+      # max_concurrency=4 matches MAX_NUM_SEQS so lm-eval can run batch=4
+      # client-side. max_context=16K so reasoning evals (mmlu_pro,
+      # r1_gpqa_diamond) fit `prompt + max_gen_toks`; pool fits 4 concurrent
+      # 16K sequences with 1.07x slack (69,888-token pool / 16K = 4.27x ratio).
+      # TT_KV_POOL_GB lifts the forge wheel's 12 GB hardcode (peer commit
+      # 8ab810b6). Note: r1_gpqa_diamond's max_gen_toks=32768 still doesn't
+      # fit at 16K; needs a separate per-task gen_kwargs override or 32K context.
+      max_concurrency: 4
       max_context: 16384
       default_impl: false
       eval_max_retries: 1
@@ -124,13 +133,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      # Single-user serving so eval prompts + benchmark long-context configs
-      # at 16K fit `prompt + max_gen_toks`. TT_KV_POOL_GB lifts the forge
-      # wheel's 12 GB hardcode (peer commit 8ab810b6). Falcon3-7B uses a
-      # smaller pool (12 vs 16) because its trace-capture scratch fragments
-      # HBM at TT_KV_POOL_GB=16, causing OOM with `largest free block <
-      # required allocation`. 12 leaves enough headroom for trace allocator.
-      max_concurrency: 1
+      # max_concurrency=4 matches MAX_NUM_SEQS so lm-eval can run batch=4
+      # client-side. max_context=16K so eval prompts + benchmark long-context
+      # configs fit `prompt + max_gen_toks`; pool fits 4 concurrent 16K
+      # sequences with 1.03x slack (67,392-token pool / 16K = 4.11x ratio,
+      # tightest of the five forge LLMs). TT_KV_POOL_GB=12 (not 16) here
+      # because Falcon3-7B's trace-capture scratch fragments HBM at pool=16,
+      # OOM-ing with `largest free block < required allocation`. 12 leaves
+      # enough headroom for the trace allocator.
+      max_concurrency: 4
       max_context: 16384
       default_impl: true
       eval_max_retries: 1
