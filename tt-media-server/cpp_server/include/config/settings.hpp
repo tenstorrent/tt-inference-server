@@ -35,6 +35,17 @@ std::string runnerType();
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t numWorkers();
 
+/**
+ * Size of the process-wide ThreadPool that fronts inference dispatch (used by
+ * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
+ * threads for the full inference latency, so this caps the in-flight
+ * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
+ * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
+ * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
+ */
+size_t callbackPoolThreads();
+
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
