@@ -656,6 +656,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '16'
   Qwen3-32B:
@@ -2672,6 +2674,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '16'
     defaultEngine: vllm
@@ -2860,6 +2864,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '16'
   Llama-3.1-8B:
@@ -3675,6 +3681,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '16'
   Qwen2.5-Coder-32B-Instruct:
@@ -7127,6 +7135,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '16'
     defaultEngine: forge
@@ -7676,6 +7686,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '12'
     defaultEngine: forge

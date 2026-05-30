@@ -33,6 +33,7 @@ templates:
         MAX_NUM_SEQS: "4"
         GPU_MEMORY_UTILIZATION: "0.7"
         TT_KV_POOL_GB: "16"
+        OPTIMIZATION_LEVEL: "0"
 
 - weights:
     - meta-llama/Llama-3.2-3B
@@ -63,6 +64,7 @@ templates:
         MAX_NUM_SEQS: "4"
         GPU_MEMORY_UTILIZATION: "0.7"
         TT_KV_POOL_GB: "16"
+        OPTIMIZATION_LEVEL: "0"
 
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
@@ -91,6 +93,7 @@ templates:
         MAX_NUM_SEQS: "4"
         GPU_MEMORY_UTILIZATION: "0.6"
         TT_KV_POOL_GB: "16"
+        OPTIMIZATION_LEVEL: "0"
 
 - weights:
     - Qwen/Qwen3-8B
@@ -120,6 +123,7 @@ templates:
         MAX_NUM_SEQS: "4"
         GPU_MEMORY_UTILIZATION: "0.6"
         TT_KV_POOL_GB: "16"
+        OPTIMIZATION_LEVEL: "0"
 
 - weights:
     - tiiuae/Falcon3-7B-Instruct
@@ -150,6 +154,7 @@ templates:
         MAX_NUM_SEQS: "4"
         GPU_MEMORY_UTILIZATION: "0.6"
         TT_KV_POOL_GB: "12"
+        OPTIMIZATION_LEVEL: "0"
 
 - weights:
     - resnet-50
