@@ -36,6 +36,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
+        # Tunable per-run via env vars (matches the OPTIMIZATION_LEVEL
+        # convention in sdxl_forge_runner.py). Defaults preserve prior
+        # behavior: optimization_level=1, cpu_sampling enabled.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
+        cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -47,8 +52,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": True,
-                "optimization_level": 1,
+                "cpu_sampling": cpu_sampling,
+                "optimization_level": optimization_level,
             },
         )
         self.logger.info(
