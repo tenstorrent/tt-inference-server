@@ -52,6 +52,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
+                # NOTE: on the tt-forge 1.2.0 wheel, optimization_level>=1 aborts
+                # in the tt-mlir MemoryLayoutPropagation beam-search pass
+                # (SmallVector OOB in consolidateBeam) during warmup, so set
+                # OPTIMIZATION_LEVEL=0 for 1.2.0 runs (e.g. via cnn.yaml env_vars)
+                # until the upstream tt-mlir fix lands.
                 "cpu_sampling": cpu_sampling,
                 "optimization_level": optimization_level,
             },
