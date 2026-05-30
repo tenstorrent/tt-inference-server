@@ -48,7 +48,12 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
                 "cpu_sampling": True,
-                "optimization_level": 1,
+                # tt-forge 1.2.0: optimization_level>=1 runs the tt-mlir
+                # MemoryLayoutPropagation beam-search pass, which aborts with a
+                # SmallVector OOB assertion in consolidateBeam() during warmup.
+                # Disable the optimizer (matches vllm_forge_gemma4_31b) until the
+                # upstream tt-mlir fix lands.
+                "optimization_level": 0,
             },
         )
         self.logger.info(
