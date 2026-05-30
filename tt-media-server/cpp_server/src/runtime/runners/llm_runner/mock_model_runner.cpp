@@ -23,9 +23,11 @@ namespace {
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
 constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
-constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;    // "thinking"
-constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID = 15329;  // "response" (no leading space)
-constexpr int64_t K_VISIBLE_CONTENT_CONT_TOKEN_ID = 4256;  // " response" (with leading space)
+constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;  // "thinking"
+constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID =
+    15329;  // "response" (no leading space)
+constexpr int64_t K_VISIBLE_CONTENT_CONT_TOKEN_ID =
+    4256;  // " response" (with leading space)
 constexpr size_t K_THINK_TOKENS_COUNT = 10;
 
 std::chrono::milliseconds mockPrefillDelay() {

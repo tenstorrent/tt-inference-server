@@ -502,7 +502,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         // Regular content (text or reasoning)
         // Always emit chunks with token_id for Session hash tracking, even if
         // content is suppressed (e.g., think markers). The controller callback
-        // uses token_id to accumulate hashes; skipping here breaks prefix cache.
+        // uses token_id to accumulate hashes; skipping here breaks prefix
+        // cache.
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
         if (isFinal) {
