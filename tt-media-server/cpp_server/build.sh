@@ -369,7 +369,8 @@ CMAKE_ARGS=(
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 [ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")
-if [ "${CI_CCACHE:-0}" = "1" ] && command -v ccache >/dev/null 2>&1; then
+# Use ccache if available for faster rebuilds
+if command -v ccache >/dev/null 2>&1; then
     CMAKE_ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
 fi
 
