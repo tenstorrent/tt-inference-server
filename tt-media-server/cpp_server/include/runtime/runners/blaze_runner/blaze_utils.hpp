@@ -134,7 +134,7 @@ inline pl::PipelineConfig makePipelineConfig(
           .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
           .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-          .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+          .wire_format = tt_llm_engine::pipeline::WireFormat::LOOPBACK};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
           .num_stages = 64,
