@@ -17,7 +17,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
-FRESH_CONFIGURE="ON"
+FRESH_CONFIGURE="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -51,8 +51,8 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
-        --no-fresh)
-            FRESH_CONFIGURE="OFF"
+        --fresh)
+            FRESH_CONFIGURE="ON"
             shift
             ;;
         --toolchain-path)
@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
-            echo "  --no-fresh           Reuse existing CMake configure state"
+            echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
