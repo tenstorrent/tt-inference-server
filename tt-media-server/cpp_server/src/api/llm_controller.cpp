@@ -285,6 +285,7 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
     if (!chunk.choices.empty() &&
         (!chunk.choices[0].text.empty() ||
          !chunk.choices[0].reasoning.value_or("").empty() ||
+         chunk.choices[0].tool_calls.has_value() ||
          chunk.choices[0].finish_reason.has_value())) {
       writer->handleTokenChunk(chunk);
     }
