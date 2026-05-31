@@ -10,10 +10,11 @@ Deploys vLLM and media inference backends on Tenstorrent Galaxy hardware.
 
 This chart creates a single `Deployment`, `Service`, `ConfigMap`, and `Secret` for one inference model on one Tenstorrent device. The chart ships with pre-validated configurations for every supported model and device combination. You select a model and device at install time; the chart merges your selection against a layered config system to produce the final Kubernetes resources.
 
-Two server types are supported:
+Three engines are supported:
 
 - **vllm** — large language models served via the vLLM OpenAI-compatible API
 - **media** — image/audio/video/embedding models served via the tt-media-inference-server API
+- **forge** — models served via the tt-forge backend
 
 ---
 
@@ -50,35 +51,87 @@ charts/tt-inference-server/
 
 Contains the core logic for this chart:
 
-- **`tt-inference-server.validateValues`** — fails the render if `model` or `device` is missing, or if the `model`+`device` combination has no entry in the `models` map.
-- **`tt-inference-server.resolvedConfig`** — deep-merges `defaults` with the per-model/device config block and returns the final effective config as YAML (see [Configuration System](#configuration-system)).
+- **`tt-inference-server.validateValues`** — fails the render if `model` or `device` is missing, or if the resolved `model`/`engine`/`device`/`impl` has no entry in the `models` map.
+- **`tt-inference-server.resolvedEngine`** — picks the engine: `.Values.engine` if set, the sole engine offering the device, otherwise `models.<model>.defaultEngine` when more than one engine offers it.
+- **`tt-inference-server.resolvedImpl`** — picks the implementation: `.Values.impl` if set, otherwise `models.<model>.<engine>.<device>.defaultImpl`.
+- **`tt-inference-server.resolvedConfig`** — deep-merges `defaults` with the resolved impl block (`models.<model>.<engine>.<device>.impls.<impl>`) and returns the effective config as YAML (see [Configuration System](#configuration-system)).
 - **`tt-inference-server.image`** — assembles the container image string (`repository:tag`) from the resolved config.
-- **`tt-inference-server.cacheHostPath`** — returns `cache.hostPath` if set, otherwise generates `/opt/cache/<model>-<device>`.
+- **`tt-inference-server.cacheHostPath`** — returns `cache.hostPath` if set, otherwise generates `/opt/cache/<model>-<device>-<impl>`.
 - Standard Helm name helpers: `tt-inference-server.name`, `tt-inference-server.fullname`, `tt-inference-server.labels`, `tt-inference-server.selectorLabels`.
 
 ---
 
 ## Configuration System
 
-Values are resolved through a three-level merge. Later levels win on any conflict.
+A model is addressed by a `model → engine → device → impl` path. `engine` and `impl` are normally inferred, so most installs set only `model` and `device`:
+
+- **engine** — if exactly one engine offers the requested device it is chosen automatically; when more than one does, `models.<model>.defaultEngine` is used unless you pass `--set engine=`.
+- **impl** — defaults to `models.<model>.<engine>.<device>.defaultImpl` unless you pass `--set impl=`.
+
+The effective config is then a two-level merge — the resolved impl block layered on top of `defaults`, where the impl block wins on any conflict:
 
 ```
-defaults                          ← baseline for all models and devices
-  └── models.<name>               ← model-level fields (serverType)
-        └── models.<name>.<device> ← deepest override, wins on all conflicts
+defaults                                              ← baseline for every model
+  └── models.<model>.<engine>.<device>.impls.<impl>   ← resolved leaf, wins on conflict
 ```
 
-**Example:** for `model=Llama-3.1-8B-Instruct` and `device=galaxy`, the effective config is:
+**Example:** for `model=Llama-3.1-8B-Instruct` and `device=n300`:
 
-1. Start with the full `defaults` block.
-2. Apply the `serverType: vllm` field from `models.Llama-3.1-8B-Instruct`.
-3. Deep-merge the `models.Llama-3.1-8B-Instruct.galaxy` block on top — overriding `image.repository`, `image.tag`, `resources`, and probe delays.
+1. Resolve the engine — `n300` is offered by both `vllm` and `forge`, so `models.Llama-3.1-8B-Instruct.defaultEngine` (`vllm`) is used. Pass `--set engine=forge` to pick the other.
+2. Resolve the impl — `models.Llama-3.1-8B-Instruct.vllm.n300.defaultImpl` (`tt_transformers`).
+3. Start from the full `defaults` block, then deep-merge `models.Llama-3.1-8B-Instruct.vllm.n300.impls.tt_transformers` on top — overriding `image.repository`, `image.tag`, `resources`, probe delays, and `env`.
 
-Any field not overridden at the model/device level falls back to `defaults`.
+Any field the resolved impl block does not set falls back to `defaults`.
 
 ---
 
-{{ template "chart.valuesSection" . }}
+## Values Reference
+
+Set per release, typically via `--set`.
+
+| Value | Required | Default | Description |
+|---|---|---|---|
+| `model` | yes | `""` | Model name. Must match a key under `models`. |
+| `device` | yes | `""` | Device name. Must match a key under `models.<model>.<engine>`. |
+| `engine` | no | `""` | Pin the engine (`vllm`, `media`, or `forge`) when a model+device is offered by more than one. Defaults to the only matching engine, or `models.<model>.defaultEngine` when ambiguous. |
+| `impl` | no | `""` | Pin the implementation when a device offers more than one. Defaults to `models.<model>.<engine>.<device>.defaultImpl`. |
+| `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded via `hfCacheDir`. |
+| `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
+| `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>-<impl>`. |
+| `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
+| `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
+| `models` | — | See [Supported Models](#supported-models) | Per-model catalogue keyed by `<model>.<engine>.<device>.impls.<impl>`. Each impl leaf overrides `defaults`. |
+
+## Defaults Reference
+
+All fields under `defaults` apply to every model/engine/device/impl unless overridden by the resolved impl block.
+
+| Field | Default | Description |
+|---|---|---|
+| `defaults.replicaCount` | `1` | Number of Deployment replicas. |
+| `defaults.progressDeadlineSeconds` | `3600` | Deployment progress deadline. Set high due to long model load times. |
+| `defaults.podAnnotations` | `{}` | Annotations applied to the pod template. |
+| `defaults.podSecurityContext` | `{}` | Pod-level `securityContext`. |
+| `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
+| `defaults.image.pullSecrets` | `[]` | Image pull secrets. |
+| `defaults.service.type` | `ClusterIP` | Kubernetes Service type. |
+| `defaults.service.port` | `8000` | Service port. |
+| `defaults.service.targetPort` | `8000` | Container target port. |
+| `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
+| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. (`cpu` and `memory` limits are unset by default.) |
+| `defaults.resources.requests.cpu` | `"6"` | CPU request. |
+| `defaults.resources.requests.memory` | `64Gi` | Memory request (often overridden per impl). |
+| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
+| `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
+| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path. |
+| `defaults.probes.liveness.initialDelaySeconds` | `2400` | Liveness probe initial delay. Set high due to model load times. |
+| `defaults.probes.readiness.enabled` | `true` | Enable readiness probe. |
+| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path. |
+| `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
+| `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
+| `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
+| `defaults.affinity` | `{}` | Affinity rules applied to the pod. |
+| `defaults.extraEnv` | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
 
 ---
 
