@@ -21,7 +21,7 @@ from workflows.helm_generator.merge import (
     merge_spec,
     set_default_engine,
 )
-from workflows.helm_generator.pinning import SpecKey, unpinned_image_spec_keys
+from workflows.helm_generator.image_pinning import SpecKey, unpinned_image_spec_keys
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
 from workflows.model_spec import MODEL_SPECS, ModelSpec
