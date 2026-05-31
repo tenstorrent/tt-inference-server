@@ -199,6 +199,31 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       svc->abortRequest(taskId);
     };
 
+    // Reject requests that exceed the maximum context length early, before
+    // allocating a session or slot.
+    const size_t maxContextLength = tt::config::maxContextLength();
+    const size_t promptTokens =
+        static_cast<size_t>(req->full_prompt_tokens_count);
+    const size_t requested =
+        promptTokens + (req->max_tokens.has_value()
+                            ? static_cast<size_t>(*req->max_tokens)
+                            : 1);
+    if (requested > maxContextLength) {
+      TT_LOG_WARN(
+          "[DynamoEndpoint] Request exceeds max context length ({} > {})",
+          requested, maxContextLength);
+      TokenChunk err;
+      err.error = "Request exceeds maximum context length (" +
+                  std::to_string(maxContextLength) +
+                  " tokens): prompt_tokens=" + std::to_string(promptTokens) +
+                  ", max_tokens=" + std::to_string(req->max_tokens.value_or(1));
+      err.error_code = 400;
+      sendChunk(err);
+      signalDone();
+      future.wait();
+      return;
+    }
+
     pipeline->resolveSession(
         req, loop,
         [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen,

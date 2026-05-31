@@ -226,6 +226,32 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
 }
 
 std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
+  // If this chunk carries an error, encode as Annotated::error format
+  // so the Dynamo frontend's check_for_backend_error can intercept it.
+  if (chunk.error.has_value()) {
+    // Encode the error message as a JSON payload with a status code so the
+    // Dynamo frontend's extract_backend_error_if_present() can parse it and
+    // return the correct HTTP status (e.g. 400 instead of default 500).
+    Json::Value errorPayload(Json::objectValue);
+    errorPayload["message"] = *chunk.error;
+    errorPayload["code"] = chunk.error_code.value_or(500);
+    std::string errorJson = dumpJsonCompact(errorPayload);
+
+    Json::Value annotated(Json::objectValue);
+    annotated["data"] = Json::Value::null;
+    annotated["event"] = "error";
+    Json::Value comment(Json::arrayValue);
+    comment.append(errorJson);
+    annotated["comment"] = std::move(comment);
+
+    Json::Value wrapper(Json::objectValue);
+    wrapper["data"] = std::move(annotated);
+    wrapper["complete_final"] = false;
+
+    std::string s = dumpJsonCompact(wrapper);
+    return std::vector<uint8_t>(s.begin(), s.end());
+  }
+
   Json::Value tokenData(Json::objectValue);
   Json::Value tokenIds(Json::arrayValue);
   for (int t : chunk.token_ids) tokenIds.append(t);
@@ -426,10 +452,22 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
         microsBetween(tStart, tAfter));
   }
 
-  // 2. ResponseStreamPrologue (header-only).
-  {
+  // 2. ResponseStreamPrologue + streaming.
+  //    The prologue carries either error=null (success) or error="<msg>"
+  //    (pre-stream rejection). We defer sending the prologue until the first
+  //    chunk arrives so the handler can signal an error via TokenChunk::error.
+  size_t chunkSeq = 0;
+  size_t totalTokens = 0;
+  size_t totalBytes = 0;
+  SteadyClock::time_point tFirstChunk{};
+  SteadyClock::time_point tPrevChunk{};
+  bool sawFirstChunk = false;
+  bool prologueSent = false;
+  bool hadError = false;
+
+  auto sendPrologue = [&](const Json::Value& errorVal) -> bool {
     Json::Value prologue(Json::objectValue);
-    prologue["error"] = Json::Value::null;
+    prologue["error"] = errorVal;
     std::string ps = dumpJsonCompact(prologue);
 
     TwoPartMessage tp;
@@ -437,32 +475,38 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
     const auto tBefore = SteadyClock::now();
     if (!writeAll(sock, encode_two_part(tp))) {
       TT_LOG_WARN("[DynamoServer] Failed to send prologue (id={})", requestId);
-      ::close(sock);
-      return;
+      return false;
     }
     const auto tAfter = SteadyClock::now();
     TT_LOG_INFO(
         "[DynamoTx] id={} stage=prologue_sent write_us={} since_start_us={}",
         requestId, microsBetween(tBefore, tAfter),
         microsBetween(tStart, tAfter));
-  }
-
-  // 3. User-supplied generate handler streams chunks back as data-only
-  //    TwoPartMessages. Per-chunk timestamps let us tell whether the
-  //    inter-token gap a client sees lives on this wire (sparse arrivals
-  //    from the runner) or downstream of it (frontend tokio wakeup
-  //    coalescing, asyncio batching, etc.). We capture the wall-clock at
-  //    two points per token: just before `write()` (when the chunk is
-  //    ready to leave) and just after (when bytes are in the kernel
-  //    send buffer).
-  size_t chunkSeq = 0;
-  size_t totalTokens = 0;
-  size_t totalBytes = 0;
-  SteadyClock::time_point tFirstChunk{};
-  SteadyClock::time_point tPrevChunk{};
-  bool sawFirstChunk = false;
+    prologueSent = true;
+    return true;
+  };
 
   handler_(genReq, [&](const TokenChunk& chunk) -> bool {
+    // Always send a success prologue first (even for error chunks).
+    if (!prologueSent) {
+      if (!sendPrologue(Json::Value::null)) {
+        return false;
+      }
+    }
+
+    // If the chunk carries an error, send it as an Annotated::error frame and
+    // abort. The Dynamo frontend's check_for_backend_error() will intercept
+    // this and map it to an HTTP 4xx/5xx response.
+    if (chunk.error.has_value()) {
+      hadError = true;
+      // Send the error as an Annotated::error frame, then stop.
+      auto chunkBytes = encode_stream_chunk(chunk);
+      TwoPartMessage errTp;
+      errTp.body = std::move(chunkBytes);
+      writeAll(sock, encode_two_part(errTp));
+      return false;
+    }
+
     auto chunkBytes = encode_stream_chunk(chunk);
     const size_t bytesOut = chunkBytes.size() + sizeof(uint64_t) * 3;
     TwoPartMessage tp;
@@ -513,7 +557,21 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
     return true;
   });
 
-  // 4. complete_final sentinel.
+  // If an error was sent in the prologue, skip the stream sentinels.
+  if (hadError) {
+    ::close(sock);
+    return;
+  }
+
+  // Send prologue now if the handler produced no chunks at all.
+  if (!prologueSent) {
+    if (!sendPrologue(Json::Value::null)) {
+      ::close(sock);
+      return;
+    }
+  }
+
+  // 3. complete_final sentinel.
   {
     auto finalBytes = encode_stream_final();
     TwoPartMessage tp;
@@ -529,7 +587,7 @@ void DynamoServer::stream_response(const TcpStreamConnectionInfo& connInfo,
         microsBetween(tBefore, tAfter));
   }
 
-  // 5. End-of-stream sentinel (empty TwoPartMessage).
+  // 4. End-of-stream sentinel (empty TwoPartMessage).
   {
     TwoPartMessage tp;
     writeAll(sock, encode_two_part(tp));
