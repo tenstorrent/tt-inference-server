@@ -21,6 +21,7 @@ from workflows.helm_generator.merge import (
     merge_spec,
     set_default_engine,
 )
+from workflows.helm_generator.pinning import SpecKey, unpinned_image_spec_keys
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
 from workflows.model_spec import MODEL_SPECS, ModelSpec
@@ -43,16 +44,24 @@ def _mapper_for(spec: ModelSpec) -> HelmValuesMapper:
     return MAPPERS[_spec_engine_value(spec)]
 
 
+def _spec_identity(spec: ModelSpec) -> SpecKey:
+    """(model_name, device, engine, impl) -- unique per spec and the path the
+    spec is written to in values.yaml. Shared by the uniqueness check and the
+    pinning filter so both agree on what identifies a spec.
+    """
+    return (
+        model_name_from_spec(spec),
+        device_key(spec.device_type),
+        _spec_engine_value(spec),
+        spec.impl.impl_id,
+    )
+
+
 def assert_unique(specs: Iterable[ModelSpec]) -> None:
     """Each (model_name, device, engine, impl) must be unique."""
-    seen: Dict[Tuple[str, str, str, str], str] = {}
+    seen: Dict[SpecKey, str] = {}
     for spec in specs:
-        key = (
-            model_name_from_spec(spec),
-            device_key(spec.device_type),
-            _spec_engine_value(spec),
-            spec.impl.impl_id,
-        )
+        key = _spec_identity(spec)
         if key in seen:
             raise GenerateHelmValuesError(
                 f"Duplicate (model_name, device, engine, impl) found: {key}. "
@@ -95,7 +104,15 @@ def filter_specs(
     include_multihost: bool = False,
 ) -> List[ModelSpec]:
     out: List[ModelSpec] = []
+    unpinned = unpinned_image_spec_keys()
     for spec in specs:
+        if _spec_identity(spec) in unpinned:
+            logger.info(
+                "skipping %s: catalog pins no image (no explicit version or "
+                "docker_image), so its tag would be derived from the repo VERSION",
+                spec.model_id,
+            )
+            continue
         if not include_multihost and is_multihost(spec.device_type):
             logger.debug(
                 "skipping multihost spec %s (use --include-multihost)", spec.model_id

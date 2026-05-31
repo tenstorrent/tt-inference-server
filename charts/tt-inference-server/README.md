@@ -213,7 +213,6 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Mistral-7B-Instruct-v0.3` | n150 |
 | `Mistral-7B-Instruct-v0.3` | n300 |
 | `Mistral-7B-Instruct-v0.3` | t3k |
-| `Mistral-Small-3.1-24B-Instruct-2503` | t3k |
 | `QwQ-32B` | galaxy |
 | `QwQ-32B` | galaxy_t3k |
 | `QwQ-32B` | t3k |
@@ -258,7 +257,6 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `gemma-3-4b-it` | p150 |
 | `gemma-3-4b-it` | t3k |
 | `gpt-oss-120b` | galaxy |
-| `gpt-oss-120b` | p300x2 |
 | `gpt-oss-120b` | t3k |
 | `gpt-oss-20b` | galaxy |
 | `gpt-oss-20b` | galaxy_t3k |
@@ -315,10 +313,6 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `bge-large-en-v1.5` | n150 |
 | `bge-large-en-v1.5` | n300 |
 | `bge-large-en-v1.5` | t3k |
-| `bge-m3` | galaxy |
-| `bge-m3` | n150 |
-| `bge-m3` | n300 |
-| `bge-m3` | t3k |
 | `distil-large-v3` | galaxy |
 | `distil-large-v3` | n150 |
 | `distil-large-v3` | n300 |
