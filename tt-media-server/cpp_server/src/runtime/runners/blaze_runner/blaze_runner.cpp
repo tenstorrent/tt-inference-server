@@ -289,12 +289,17 @@ inline void BlazeRunner::handleEvictRequest(
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+        tt::worker::SingleProcessWorkerMetrics::instance()
+            .incrementSpPipelineEvent(
+                tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_SUPERSEDED);
       }
       TT_LOG_DEBUG(
           "[BlazeRunner] handleEvictRequest: latching deferredEvict on "
           "slotId={} (waiting for STOP ack)",
           request.slotId);
       slotContext.deferredEvict = std::move(evictRequest);
+      tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+          tt::worker::SpPipelineEvent::DEFERRED_EVICT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK:
@@ -435,9 +440,14 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
       ipc::helpers::pushToken(
           *resultQueue, droppedTaskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_SUPERSEDED);
     }
     auto evictReq = std::move(*slot.deferredEvict);
     slot.deferredEvict = std::nullopt;
+    tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+        tt::worker::SpPipelineEvent::DEFERRED_EVICT_REPLAYED);
     handleEvictRequest(tt::domain::ManageMemoryTask{
         .taskId = evictReq.request_id,
         .action = tt::domain::MemoryManagementAction::DEALLOCATE,
@@ -445,6 +455,8 @@ inline void BlazeRunner::handleDeferred(SlotContext& slot) {
     });
   } else if (slot.deferredContinue) {
     // move clears slot.deferredContinue
+    tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+        tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_REPLAYED);
     handleRequest(std::move(slot.deferredContinue));
   }
 }
@@ -524,6 +536,8 @@ inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
   ipc::helpers::pushToken(*resultQueue, taskId, 0, ipc::SharedToken::FLAG_ABORT,
                           0, 0);
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+  tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+      tt::worker::SpPipelineEvent::RUNNING_TO_STOP_ACK);
 }
 
 void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
@@ -655,6 +669,9 @@ void BlazeRunner::handleRequest(
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       tt::worker::SingleProcessWorkerMetrics::instance()
           .incrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::IDLE_TO_RUNNING);
       break;
     }
 
@@ -671,6 +688,8 @@ void BlazeRunner::handleRequest(
           "on slotId={} (waiting for STOP ack)",
           request->taskId, slotId);
       slotContext.deferredContinue = std::move(request);
+      tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+          tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {
