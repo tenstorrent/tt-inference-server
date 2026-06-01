@@ -23,9 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast pip operations
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && ln -s /root/.local/bin/uv /usr/local/bin/uv
+# Install uv for fast pip operations (from PyPI; reliable, no piped install
+# script — `curl ... | sh` masks curl failures and left a dangling symlink).
+RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
