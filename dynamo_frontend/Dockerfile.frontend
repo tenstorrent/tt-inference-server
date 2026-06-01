@@ -6,6 +6,9 @@
 # Dynamo Frontend - lightweight container
 # with owned_by patched to "TT Inc"
 # ==============================================================================
+# NOTE: build with the repo root as the context so the shared tokenizer-fetch
+# script is in scope, e.g.:
+#   docker build -f dynamo_frontend/Dockerfile.frontend -t dynamo-frontend .
 FROM python:3.12-slim AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -13,9 +16,11 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Minimal runtime deps
+# Minimal runtime deps. wget is used by the shared fetch_tokenizers.sh script.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    wget \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast pip operations
@@ -30,7 +35,7 @@ RUN uv venv .venv --python 3.12 \
     && uv pip install ai-dynamo
 
 # Patch owned_by: "nvidia" -> "TT Inc" in the compiled binary
-COPY patch_owned_by.sh /app/patch_owned_by.sh
+COPY dynamo_frontend/patch_owned_by.sh /app/patch_owned_by.sh
 RUN chmod +x /app/patch_owned_by.sh && /app/patch_owned_by.sh
 
 # Install huggingface_hub for model downloads
@@ -52,8 +57,22 @@ ENV DYN_DISCOVERY_BACKEND=etcd \
 
 EXPOSE 8000
 
+# Pre-fetch the tokenizer tree at the absolute path the worker advertises in its
+# MDC, using the SAME script the worker's build.sh runs (single source of truth).
+# With this baked in, no tokenizer bind-mount is needed at deploy time: just set
+# MODEL_PATH to the model subdir (e.g. .../tokenizers/moonshotai/Kimi-K2.6). The
+# dir is writable so entrypoint.sh's mkdir/optional-download still work.
+# Pass HF_TOKEN as a build secret (--secret id=hf_token,...) to also fetch gated
+# tokenizers; public ones (DeepSeek, Kimi) need no token.
+COPY tt-media-server/cpp_server/scripts/fetch_tokenizers.sh /usr/local/bin/fetch_tokenizers.sh
+RUN --mount=type=secret,id=hf_token \
+    chmod +x /usr/local/bin/fetch_tokenizers.sh \
+    && HF_TOKEN="$(cat /run/secrets/hf_token 2>/dev/null || true)" \
+       /usr/local/bin/fetch_tokenizers.sh \
+       /home/container_app_user/app/server/cpp_server/tokenizers
+
 # Startup script: download model config/tokenizer if not present, then launch frontend
-COPY entrypoint.sh /app/entrypoint.sh
+COPY dynamo_frontend/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
