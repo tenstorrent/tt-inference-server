@@ -200,7 +200,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["max_num_batched_tokens"] = Json::Value::null;
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
-  runtime["tool_call_parser"] = Json::Value::null;
+  setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;
