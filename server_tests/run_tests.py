@@ -18,6 +18,7 @@ if project_root not in sys.path:
 
 from server_tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -53,16 +54,7 @@ def build_test_command(
 
     if task.task_name == "vllm_responses":
         # vLLM responses test needs the service port to connect to the server.
-        # An explicit port on deploy_url wins over service_port to avoid
-        # double-port URLs when --server-url already carries a port.
-        from urllib.parse import urlparse
-
-        parsed = urlparse(deploy_url.rstrip("/"))
-        base = (
-            deploy_url.rstrip("/")
-            if parsed.port is not None
-            else (f"{deploy_url.rstrip('/')}:{service_port}")
-        )
+        base = build_base_url(deploy_url, service_port)
         test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/responses"])
     cmd = [
         str(test_exec),
@@ -145,9 +137,7 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
-        "DEPLOY_URL", "http://127.0.0.1"
-    )
+    deploy_url = resolve_deploy_url(runtime_config)
     # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL /
     # SERVICE_PORT (conftest --endpoint-url default, BaseTest). Without
     # exporting SERVICE_PORT, a non-default --service-port wouldn't reach

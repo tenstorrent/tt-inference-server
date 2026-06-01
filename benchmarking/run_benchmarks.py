@@ -10,7 +10,6 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -20,6 +19,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.media_clients.media_client_factory import MediaClientFactory, MediaTaskType
+from utils.url_helpers import resolve_deploy_url, resolve_host_port
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -136,20 +136,6 @@ def parse_args():
     return ret_args
 
 
-def _resolve_host_port(deploy_url: str, service_port) -> tuple[str, str]:
-    """Split a deploy URL into ``(host, port)`` for ``--host``/``--port`` args.
-
-    When ``deploy_url`` carries an explicit port (e.g. ``http://host:9000``) that
-    port wins over ``service_port`` so callers can't end up with mismatched
-    ``--host host --port <service_port>`` against a server that's actually
-    listening on a different port.
-    """
-    parsed = urlparse(deploy_url.rstrip("/"))
-    host = parsed.hostname or "localhost"
-    port = str(parsed.port) if parsed.port is not None else str(service_port)
-    return host, port
-
-
 def build_benchmark_command(
     task,
     benchmark_script,
@@ -183,7 +169,7 @@ def build_benchmark_command(
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "openai-chat"
 
-    host, port = _resolve_host_port(deploy_url, service_port)
+    host, port = resolve_host_port(deploy_url, service_port)
 
     # fmt: off
     cmd = [
@@ -246,7 +232,7 @@ def build_structured_output_command(
         f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
     )
 
-    host, port = _resolve_host_port(deploy_url, service_port)
+    host, port = resolve_host_port(deploy_url, service_port)
 
     # fmt: off
     cmd = [
@@ -305,12 +291,9 @@ def main():
     device_str = runtime_config.device
     service_port = runtime_config.service_port
     disable_trace_capture = runtime_config.disable_trace_capture
-    # Mirror EnvironmentConfig's default (os.environ.get("DEPLOY_URL",
-    # "http://127.0.0.1")) so the genai-perf path (which runs before
+    # Resolved once here so the genai-perf branch (which returns before
     # env_config is constructed) sees the same value used later.
-    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
-        "DEPLOY_URL", "http://127.0.0.1"
-    )
+    deploy_url = resolve_deploy_url(runtime_config)
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture

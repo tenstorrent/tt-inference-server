@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 import requests
 
 from server_tests.test_classes import TestConfig
+from utils.url_helpers import DEFAULT_DEPLOY_URL, build_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +45,10 @@ class BaseTest(ABC):
         self.targets = targets
         self.description = description
         self.service_port = os.getenv("SERVICE_PORT", "8000")
-        # DEPLOY_URL is set by the workflow runner from --server-url; keep the
-        # localhost default for direct/manual test invocations.
-        self.deploy_url = os.getenv("DEPLOY_URL", "http://localhost")
-        # Pre-computed base URL (scheme://host[:port]) for test_cases to build
-        # endpoint URLs against. An explicit port on DEPLOY_URL wins over
-        # SERVICE_PORT so test_cases can't end up with a double-port URL.
-        from urllib.parse import urlparse as _urlparse
-
-        _parsed = _urlparse(self.deploy_url.rstrip("/"))
-        self.base_url = (
-            self.deploy_url.rstrip("/")
-            if _parsed.port is not None
-            else f"{self.deploy_url.rstrip('/')}:{self.service_port}"
-        )
+        # DEPLOY_URL is set by the workflow runner from --server-url.
+        self.deploy_url = os.getenv("DEPLOY_URL", DEFAULT_DEPLOY_URL)
+        # Pre-computed base URL (scheme://host[:port]) for test_cases.
+        self.base_url = build_base_url(self.deploy_url, self.service_port)
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
         self.break_on_failure = config.get("break_on_failure")
@@ -218,18 +209,7 @@ class BaseTest(ABC):
         retry_delay = (
             retry_delay if retry_delay is not None else HEALTH_CHECK_CONFIG.RETRY_DELAY
         )
-        # If DEPLOY_URL already carries a port, honor it; otherwise append
-        # service_port. Mirrors the urlparse-port-wins rule used by the
-        # benchmark/eval runners.
-        from urllib.parse import urlparse
-
-        parsed = urlparse(self.deploy_url.rstrip("/"))
-        host_with_port = (
-            self.deploy_url.rstrip("/")
-            if parsed.port is not None
-            else f"{self.deploy_url.rstrip('/')}:{service_port}"
-        )
-        health_url = f"{host_with_port}/tt-liveness"
+        health_url = f"{build_base_url(self.deploy_url, service_port)}/tt-liveness"
         logger.info("Waiting for server at %s ...", health_url)
 
         for attempt in range(1, max_attempts + 1):

@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
 import jwt
 
@@ -31,6 +30,7 @@ sys.path.insert(0, str(project_root))
 
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
+from utils.url_helpers import build_base_url, resolve_deploy_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -657,9 +657,7 @@ def main():
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
-        "DEPLOY_URL", "http://127.0.0.1"
-    )
+    deploy_url = resolve_deploy_url(runtime_config)
 
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
@@ -682,13 +680,7 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     workflow_params = parse_workflow_args(runtime_config.workflow_args)
-    # Honor an explicit port on deploy_url to avoid double-port targets.
-    _parsed = urlparse(deploy_url.rstrip("/"))
-    _base = (
-        deploy_url.rstrip("/")
-        if _parsed.port is not None
-        else f"{deploy_url.rstrip('/')}:{runtime_config.service_port}"
-    )
+    _base = build_base_url(deploy_url, runtime_config.service_port)
     target = workflow_params.get("target", f"{_base}/v1")
 
     runs = build_scenario_runs(

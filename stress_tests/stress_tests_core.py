@@ -29,12 +29,12 @@ and automatically applies context limit constraints with adjustment when needed.
 import os
 import logging
 import subprocess
-from urllib.parse import urlparse
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from utils.url_helpers import resolve_host_port
 from workflows.workflow_types import DeviceTypes
 from .stress_tests_config import StressTestParamSpace, enforce_context_limit
 from .stress_tests_args import StressTestsArgs
@@ -716,15 +716,8 @@ class StressTests:
             str(self.test_args.project_root)
             + "/stress_tests/stress_tests_benchmarking_script.py"
         )
-        # An explicit port on deploy_url wins over service_port to avoid
-        # --host h --port <service_port> against a server actually on a
-        # different port (mirrors run_benchmarks._resolve_host_port).
-        parsed = urlparse(self.test_args.deploy_url.rstrip("/"))
-        sub_host = parsed.hostname or "127.0.0.1"
-        sub_port = (
-            str(parsed.port)
-            if parsed.port is not None
-            else str(self.env_config.service_port)
+        sub_host, sub_port = resolve_host_port(
+            self.test_args.deploy_url, self.env_config.service_port
         )
         cmd = [
             str(self.test_args.project_root)

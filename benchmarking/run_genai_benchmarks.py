@@ -13,7 +13,6 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from urllib.parse import urlparse
 
 import jwt
 
@@ -21,6 +20,7 @@ import jwt
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils.url_helpers import resolve_deploy_url, resolve_host_port
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -109,12 +109,8 @@ def run_genai_benchmarks(
     """
     logger.info("Starting genai-perf benchmarks...")
 
-    # genai-perf consumes URL as host[:port] without the scheme, so strip it
-    # here. An explicit port on the deploy URL wins over service_port to
-    # match the resolver used by the vLLM-bench path.
-    parsed = urlparse(deploy_url.rstrip("/"))
-    genai_host = parsed.hostname or "localhost"
-    genai_port = str(parsed.port) if parsed.port is not None else str(service_port)
+    # genai-perf consumes URL as host[:port] without the scheme, so strip it.
+    genai_host, genai_port = resolve_host_port(deploy_url, service_port)
     genai_url = f"{genai_host}:{genai_port}"
 
     # Get venv config for artifacts directory
@@ -240,9 +236,7 @@ def main():
 
     # runtime config loaded from JSON
     service_port = runtime_config.service_port
-    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
-        "DEPLOY_URL", "http://127.0.0.1"
-    )
+    deploy_url = resolve_deploy_url(runtime_config)
 
     logger.info(f"Model: {model_spec.model_name}")
     logger.info(f"Device: {model_spec.device_type}")
