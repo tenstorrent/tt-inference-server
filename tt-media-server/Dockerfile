@@ -174,6 +174,62 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
 RUN chmod +x ${TT_METAL_HOME}/server/run_cpp.sh
 
+# ==============================================================================
+# STRIP SOURCE - reduce the app tree to runtime artifacts only
+# ==============================================================================
+# Done in the BUILDER (before the cross-stage COPY) so source bytes never enter
+# any layer of the final image -- no `docker --squash` required. A copy-then-rm
+# in the runtime stage would only add a whiteout: the source would still live in
+# the COPY layer and be fully recoverable.
+#
+# Policy: the Python app ships as-is (it is interpreted), while every C++
+# component is reduced to its compiled artifacts. We keep:
+#   * the Python tree (minus the C++ source dirs, tests, scripts, __pycache__)
+#   * cpp_server/build:           the binary + every *.so (RPATH layout preserved)
+#   * cpp_server/tt-llm-engine/build-full: blaze *.so (LD_PRELOADed in pipeline_manager)
+#   * cpp_server/{tokenizers,resources,monitoring}: runtime data, not code
+# We drop: cpp_server/{src,include,...}, the tt-llm-engine/blaze source incl. its
+# vendored tt-metal checkout, and prefill_gateway (built nowhere, used nowhere).
+RUN set -eux; \
+    SRV="${TT_METAL_HOME}/server"; \
+    CLEAN="${HOME_DIR}/.server_runtime"; \
+    rm -rf "${CLEAN}"; mkdir -p "${CLEAN}"; \
+    rsync -a \
+        --exclude='/cpp_server/' \
+        --exclude='/prefill_gateway/' \
+        --exclude='/tests/' \
+        --exclude='/scripts/' \
+        --exclude='__pycache__/' \
+        "${SRV}/" "${CLEAN}/"; \
+    CPP="${SRV}/cpp_server"; OUT="${CLEAN}/cpp_server"; mkdir -p "${OUT}"; \
+    if [ -d "${CPP}/build" ]; then \
+        rsync -a --prune-empty-dirs \
+            --include='*/' \
+            --include='tt_media_server_cpp' \
+            --include='*.so' --include='*.so.*' \
+            --exclude='*' \
+            "${CPP}/build/" "${OUT}/build/"; \
+    fi; \
+    if [ -d "${CPP}/tt-llm-engine/build-full" ]; then \
+        mkdir -p "${OUT}/tt-llm-engine/build-full"; \
+        rsync -a --prune-empty-dirs \
+            --include='*/' --include='*.so' --include='*.so.*' --exclude='*' \
+            "${CPP}/tt-llm-engine/build-full/" "${OUT}/tt-llm-engine/build-full/"; \
+    fi; \
+    for d in tokenizers resources monitoring; do \
+        if [ -d "${CPP}/${d}" ]; then cp -a "${CPP}/${d}" "${OUT}/${d}"; fi; \
+    done; \
+    rm -rf "${SRV}"; mv "${CLEAN}" "${SRV}"; \
+    chmod +x "${SRV}/cpp_server/build/tt_media_server_cpp" 2>/dev/null || true; \
+    SRC="$(find "${SRV}" -type f \( \
+        -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+     -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+     -o -name '*.cu' -o -name '*.cuh' \))"; \
+    if [ -n "${SRC}" ]; then \
+        echo "ERROR: first-party C/C++ source survived the strip:"; echo "${SRC}"; exit 1; \
+    fi; \
+    echo "OK: no first-party C/C++ source under ${SRV}"
+
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
@@ -190,8 +246,6 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/scripts \
     && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
     && rm -rf ${HOME_DIR}/tt-metal/tt-train \
-    && rm -rf ${HOME_DIR}/tt-metal/server/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 
@@ -255,6 +309,35 @@ RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# ── Verify the final image carries no first-party C/C++ source ──────────────
+# The builder already strips + gates this; re-asserted here so a regression in
+# the wholesale COPY can never ship source to production.
+RUN if find ${TT_METAL_HOME}/server -type f \( \
+        -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+     -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+     -o -name '*.cu' -o -name '*.cuh' \) | grep -q .; then \
+        echo "ERROR: C/C++ source present in runtime image:"; \
+        find ${TT_METAL_HOME}/server -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.cu' -o -name '*.cuh' \); \
+        exit 1; \
+    fi; \
+    echo "verified: no first-party C/C++ source under ${TT_METAL_HOME}/server"
+
+# ── Informational: surface any unresolved shared libs for the C++ binary ────
+# A linking gap (e.g. Drogon in /usr/local/lib, or an RPATH into a stripped
+# build tree) shows up here in the build log. Non-fatal by design; promote the
+# WARNING to a hard `exit 1` once the runtime lib set is confirmed on hardware.
+RUN BIN="${TT_METAL_HOME}/server/cpp_server/build/tt_media_server_cpp"; \
+    if [ -x "$BIN" ]; then \
+        echo "ldd $BIN:"; ldd "$BIN" || true; \
+        if ldd "$BIN" 2>/dev/null | grep -q "not found"; then \
+            echo "WARNING: unresolved shared libraries for $BIN (see 'not found' above)"; \
+        else \
+            echo "ldd: all shared libraries resolved for $BIN"; \
+        fi; \
+    else \
+        echo "note: cpp binary absent (cpp build skipped); skipping ldd check"; \
+    fi
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
