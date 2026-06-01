@@ -267,6 +267,16 @@ void ZmqPrefillRouter::failPendingSends() {
 void ZmqPrefillRouter::handleIncomingMessage(const PeerIdentity& peerId,
                                              const std::vector<uint8_t>& data) {
   try {
+    {
+      const std::string key = peerKey(peerId);
+      std::lock_guard<std::mutex> lock(peer_mutex_);
+      auto serverIt = peer_to_server_.find(key);
+      if (serverIt != peer_to_server_.end()) {
+        last_seen_by_server_[serverIt->second] =
+            std::chrono::steady_clock::now();
+      }
+    }
+
     std::string messageType = tt::sockets::wire::readMessageType(data);
     RawHandler handler;
     {
