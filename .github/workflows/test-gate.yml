@@ -99,7 +99,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run actionlint
-        uses: rhysd/actionlint@v1
+        uses: docker://rhysd/actionlint:1.7.12
         with:
           # Start with workflow/expression validation; embedded ShellCheck can
           # be enabled after existing workflow shell findings are cleaned up.
