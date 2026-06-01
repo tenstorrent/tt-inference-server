@@ -245,8 +245,9 @@ bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
-  if (!sendQueue.pushIf(std::move(request),
-                        [this] { return running_.load() && ioActive_.load(); })) {
+  if (!sendQueue.pushIf(std::move(request), [this] {
+        return running_.load() && ioActive_.load();
+      })) {
     return false;
   }
 
