@@ -387,9 +387,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
             "results keys=%s",
             list(results.keys()),
         )
-        return _audio_eval_fail_block(
-            ctx, task, "WER not found in lmms-eval results"
-        )
+        return _audio_eval_fail_block(ctx, task, "WER not found in lmms-eval results")
 
     score = 100.0 - wer
     published = task.score.published_score
