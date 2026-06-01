@@ -27,7 +27,7 @@ namespace tt::api {
  * (chat.completion.chunk + `data: [DONE]`); `/v1/responses` passes a
  * `ResponsesEventFormatter` to emit `response.created`, ...,
  * `response.completed` events instead. Forwards client-disconnect detection
- * back to the LLM service via `abortRequest`.
+ * back to the LLM/disaggregation services via abort callbacks.
  */
 class StreamingResponseWriter : public ResponseWriter {
  public:
@@ -52,7 +52,8 @@ class StreamingResponseWriter : public ResponseWriter {
 
   /**
    * Cancel the underlying request and tear down the stream. Called when the
-   * client disconnects mid-stream (drogon send() returns false).
+   * client disconnects mid-stream (drogon send() returns false on a token or
+   * heartbeat write).
    */
   void abort();
 
@@ -67,6 +68,8 @@ class StreamingResponseWriter : public ResponseWriter {
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
   void flushAccumulated();
+  void startHeartbeat();
+  void stopHeartbeat();
 
   trantor::EventLoop* loop;
   bool includeUsage;
@@ -77,6 +80,7 @@ class StreamingResponseWriter : public ResponseWriter {
   std::shared_ptr<std::vector<std::string>> earlyBuffer =
       std::make_shared<std::vector<std::string>>();
   std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> sseBatchQueue;
+  trantor::TimerId heartbeatTimerId = trantor::InvalidTimerId;
 
   std::atomic<bool> firstContentChunk{true};
   std::string accumulatedText;

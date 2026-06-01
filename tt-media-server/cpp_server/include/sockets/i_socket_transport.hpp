@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace tt::sockets {
@@ -15,8 +18,8 @@ namespace tt::sockets {
  * @brief Wire-format names for SOCKET_TRANSPORT.
  */
 namespace transport_names {
-constexpr const char* TCP = "tcp";
-constexpr const char* ZMQ = "zmq";
+constexpr std::string_view TCP = "tcp";
+constexpr std::string_view ZMQ = "zmq";
 }  // namespace transport_names
 
 /**
@@ -41,15 +44,15 @@ class ISocketTransport {
   virtual bool isConnected() const = 0;
   virtual std::string getStatus() const = 0;
 
-  virtual bool sendRawData(const std::vector<uint8_t>& data) = 0;
+  virtual bool sendRawData(std::span<const uint8_t> data) = 0;
   virtual std::vector<uint8_t> receiveRawData() = 0;
 
   virtual void setConnectionLostCallback(std::function<void()> callback) = 0;
   virtual void setConnectionEstablishedCallback(
       std::function<void()> callback) = 0;
 
-  virtual void setReconnectBackoff(uint32_t /*initialDelayMs*/,
-                                   uint32_t /*maxDelayMs*/) {}
+  virtual void setReconnectBackoff(std::chrono::milliseconds /*initialDelay*/,
+                                   std::chrono::milliseconds /*maxDelay*/) {}
 };
 
 /**

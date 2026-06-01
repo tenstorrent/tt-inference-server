@@ -5,28 +5,27 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "config/runner_config.hpp"
 #include "domain/image/image_response.hpp"
 #include "domain/image_generate_request.hpp"
-#include "runtime/runners/media_runner.hpp"
+#include "ipc/media_payload_ipc.hpp"
+#include "runtime/worker/worker_manager.hpp"
 #include "services/base_sync_service.hpp"
+#include "services/media_worker_scheduler.hpp"
 
 namespace tt::services {
 
-/** In-process image service. Owns one runner and dispatches synchronously;
- *  the Drogon controller offloads to a thread pool. */
+/** Image service facade backed by media worker processes. */
 class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
                                             domain::image::ImageResponse> {
  public:
-  using Runner = runners::IMediaRunner<domain::ImageGenerateRequest,
-                                       std::vector<std::string>>;
-
-  ImageService(config::ImageConfig config, std::unique_ptr<Runner> runner);
+  ImageService(config::ImageConfig config,
+               std::unique_ptr<tt::worker::WorkerManager> workerManager,
+               std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
+                   queueManager);
   ~ImageService() override;
 
   ImageService(const ImageService&) = delete;
@@ -46,14 +45,9 @@ class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
-  config::ImageConfig config_;
-  std::unique_ptr<Runner> runner_;
-  std::atomic<bool> ready_{false};
-  mutable std::atomic<size_t> in_flight_{0};
-  // Warmup runs here so start() can return immediately and the HTTP listener
-  // can bind; /tt-liveness reports model_ready=false until warmup completes.
-  std::thread warmup_thread_;
-  std::mutex warmup_mutex_;
+  config::ImageConfig imageConfig;
+  std::unique_ptr<MediaWorkerScheduler> workerScheduler;
+  mutable std::atomic<size_t> inFlight{0};
 };
 
 }  // namespace tt::services

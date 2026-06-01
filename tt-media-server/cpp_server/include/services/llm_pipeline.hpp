@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
@@ -54,7 +56,7 @@ class LLMPipeline {
 
   struct SessionInfo {
     bool validSessionFound = false;
-    std::optional<size_t> registrationHash;
+    std::vector<uint64_t> registrationHashes;
   };
 
   LLMPipeline(std::shared_ptr<LLMService> service,
@@ -95,14 +97,16 @@ class LLMPipeline {
       const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
           cb) const;
 
+  void abortRequest(uint32_t taskId) const;
+
   std::shared_ptr<LLMService> service() const { return service_; }
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;
   }
 
  private:
-  bool shouldDoPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
-                               bool validSessionFound) const;
+  bool shouldDoPrefillOnDecode(
+      const tt::domain::llm::LLMRequest& request) const;
 
   std::shared_ptr<LLMService> service_;
   std::shared_ptr<SessionManager> sessionManager_;

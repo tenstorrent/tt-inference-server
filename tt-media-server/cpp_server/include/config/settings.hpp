@@ -35,6 +35,17 @@ std::string runnerType();
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t numWorkers();
 
+/**
+ * Size of the process-wide ThreadPool that fronts inference dispatch (used by
+ * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
+ * threads for the full inference latency, so this caps the in-flight
+ * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
+ * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
+ * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
+ */
+size_t callbackPoolThreads();
+
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
@@ -63,8 +74,10 @@ std::string tokenizerConfigPath(ModelType model);
  */
 std::string visibleDevicesForWorker(size_t workerIndex);
 
-/** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT,
- * else DEEPSEEK_R1_0528). */
+/** Model type derived from LLM_DEVICE_BACKEND:
+ * "llama" -> LLAMA_3_1_8B_INSTRUCT,
+ * "kimi" -> KIMI_K2_6,
+ * otherwise -> DEEPSEEK_R1_0528. */
 ModelType modelType();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
@@ -136,6 +149,18 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** Max input sequence length (prompt tokens) from MAX_ISL. Default:
+ * defaults::MAX_ISL. */
+size_t maxISL();
+
+/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_BLOCK_SIZE. */
+size_t kvCacheBlockSize();
+
+/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
+size_t kvCacheFirstBlockSize();
+
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
 
@@ -191,6 +216,12 @@ std::string ttResultQueueName();
 /** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
  */
 std::string ttCancelQueueName();
+
+/** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
+std::string ttMediaTaskQueueName();
+
+/** Media payload result queue name from TT_MEDIA_RESULT_QUEUE. */
+std::string ttMediaResultQueueName();
 
 /** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
  * defaults::TT_MEMORY_REQUEST_QUEUE. */
@@ -279,6 +310,10 @@ LLMConfig llmEngineConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build the runner config used by a fork/exec worker for the active service.
+ * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
+RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();

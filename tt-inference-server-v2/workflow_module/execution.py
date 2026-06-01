@@ -176,7 +176,7 @@ class WorkflowExecution(ABC):
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "✘ task=%s raised after %.1fs: %s", task_type.value, elapsed, e
+                "❌ task=%s raised after %.1fs: %s", task_type.value, elapsed, e
             )
             return TaskOutcome(task_type.value, 1, elapsed, None)
 
@@ -184,7 +184,7 @@ class WorkflowExecution(ABC):
         block_kind = block.kind if block is not None else None
         if exit_code != 0 or block is None:
             self.logger.error(
-                "✘ task=%s rc=%d block=%s (%.1fs)",
+                "❌ task=%s rc=%d block=%s (%.1fs)",
                 task_type.value,
                 exit_code,
                 block_kind,
@@ -192,7 +192,7 @@ class WorkflowExecution(ABC):
             )
         else:
             self.logger.info(
-                "✓ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
+                "✅ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
             )
         return TaskOutcome(task_type.value, exit_code, elapsed, block_kind)
 
@@ -230,7 +230,8 @@ class WorkflowExecution(ABC):
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
 
     def generate_report(self, schema: ReportSchema) -> GenerateResult:
-        result = ReportGenerator().generate(schema, self.ctx.output_path)
+        report_dir = Path(self.ctx.output_path).parent
+        result = ReportGenerator().generate(schema, report_dir)
         self.logger.info("Wrote markdown: %s", result.markdown_path)
         self.logger.info("Wrote json:     %s", result.json_path)
         return result

@@ -25,6 +25,11 @@ process_names:
     comm:
       - tt_media_server
 
+  # PrefillGateway process. Binary name is short enough for /proc/<pid>/comm.
+  - name: "prefill_gateway"
+    comm:
+      - prefill_gateway
+
   # Python tt-media-server (TRANSIENT — sunsets in ~4 months together with the
   # Python server itself, see README "Sunset of the Python server" section).
   # Matches the canonical uvicorn launch from run_uvicorn.sh as well as

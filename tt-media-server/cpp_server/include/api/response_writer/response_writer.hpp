@@ -11,7 +11,6 @@
 #include <string>
 
 #include "domain/llm/llm_response.hpp"
-#include "services/llm_service.hpp"
 
 namespace tt::api {
 
@@ -29,8 +28,9 @@ struct ResponseWriterParams {
   int cachedTokenCount = 0;
   std::optional<std::string> sessionId;
   uint32_t taskId;
-  std::shared_ptr<services::LLMService> service;
+  std::function<void(uint32_t)> onAbortRequest;
   std::function<void()> onSessionRelease;
+  bool enableDisconnectHeartbeat = false;
 };
 
 /**

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #pragma once
 
 #include <cstddef>
@@ -9,7 +12,7 @@
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
-#include "domain/slot_types.hpp"
+#include "domain/sentinel_values.hpp"
 
 namespace tt::domain::llm {
 
@@ -37,8 +40,9 @@ class Sequence {
 
   Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
            size_t numPromptTokens, std::optional<uint32_t> slotId,
-           bool continuation, bool disaggregated,
-           std::unique_ptr<SamplingParams> samplingParams);
+           std::optional<uint32_t> prefillSlotId, bool continuation,
+           bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
+           std::optional<uint32_t> kvPositionId = std::nullopt);
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
@@ -64,6 +68,9 @@ class Sequence {
 
   void setKVCacheSlot(uint32_t slot) { kvCacheSlot = slot; }
   uint32_t getKVCacheSlot() const { return kvCacheSlot; }
+
+  void setPrefillKVCacheSlot(uint32_t slot) { prefillKvCacheSlot = slot; }
+  uint32_t getPrefillKVCacheSlot() const { return prefillKvCacheSlot; }
 
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
@@ -98,16 +105,21 @@ class Sequence {
   bool isDisaggregated() const { return disaggregated; }
   void setDisaggregated(bool d) { disaggregated = d; }
 
+  std::optional<uint32_t> getKVPositionId() const { return kvPositionId; }
+  void setKVPositionId(uint32_t positionId) { kvPositionId = positionId; }
+
  private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
   int64_t lastToken = 0;
+  std::optional<uint32_t> kvPositionId = std::nullopt;
   size_t numPromptTokens = 0;
   size_t numCachedTokens = 0;
   std::vector<int> blockTable;
   std::unique_ptr<SamplingParams> samplingParams;
   int blockSize;
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
+  uint32_t prefillKvCacheSlot = tt::domain::INVALID_SLOT_ID;
   bool continuation = false;   // True if this continues an existing session
   bool disaggregated = false;  // True if this is a disaggregated request
 };

@@ -251,7 +251,11 @@ ResponseWriterParams LLMController::makeWriterParams(
           : 0;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
-  params.service = service;
+  params.onAbortRequest = [pipeline = pipeline](uint32_t taskId) {
+    pipeline->abortRequest(taskId);
+  };
+  params.enableDisconnectHeartbeat =
+      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY;
   if (request.session) {
     params.onSessionRelease = [s = request.session]() { s->clearInFlight(); };
   }
@@ -263,10 +267,29 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
                                      domain::Session* session) {
   return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
                                                bool isFinal) {
+    // Accumulate token for prefix index (always, even if connection closed)
+    if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
+      session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
+    }
+
+    // Finalize session before isDone check (register partial progress on abort)
+    if (isFinal && session) {
+      session->finalizeAndRegisterHashes();
+      session->clearInFlight();
+    }
+
     if (writer->isDone()) return;
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+
+    // Only forward chunks with content to the writer; suppressed tokens (e.g.,
+    // think markers with empty text) are tracked above but not sent to client.
+    if (!chunk.choices.empty() &&
+        (!chunk.choices[0].text.empty() ||
+         !chunk.choices[0].reasoning.value_or("").empty() ||
+         chunk.choices[0].tool_calls.has_value() ||
+         chunk.choices[0].finish_reason.has_value())) {
+      writer->handleTokenChunk(chunk);
+    }
     if (isFinal) {
-      if (session) session->clearInFlight();
       writer->finalize();
     }
   };
@@ -295,8 +318,8 @@ void LLMController::handleStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
-    svc->abortRequest(taskId);
+  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
+    pipeline->abortRequest(taskId);
   };
 
   pipeline->resolveSession(
@@ -357,8 +380,8 @@ void LLMController::handleNonStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
-  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
-    svc->abortRequest(taskId);
+  auto cancelFn = [pipeline = pipeline, taskId = reqPtr->task_id]() {
+    pipeline->abortRequest(taskId);
   };
 
   pipeline->resolveSession(
