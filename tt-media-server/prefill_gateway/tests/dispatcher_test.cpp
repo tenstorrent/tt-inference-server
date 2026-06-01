@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "gateway/affinity_cache.hpp"
+#include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 
 namespace tt::gateway {
@@ -408,6 +409,26 @@ TEST_F(DispatcherTest, CacheBlocksAddedAndEvictedAreNoThrow) {
 
   // No public read API on the cache view; we assert reachability only.
   SUCCEED();
+}
+
+TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
+  GatewayMetrics::instance().resetForTests();
+  markAllHealthy();
+
+  dispatcher->onPrefillRequest(makeRequest(42, /*hash=*/0));
+  ASSERT_EQ(requests.size(), 1u);
+
+  tt::sockets::PrefillResultMessage result(42);
+  result.error = false;
+  result.finished = true;
+  dispatcher->onPrefillResult(requests[0].prefillServerId, result);
+
+  const std::string text = GatewayMetrics::instance().renderText();
+  EXPECT_NE(text.find("tt_gateway_routing_decisions_total"), std::string::npos);
+  EXPECT_NE(text.find("tt_prefill_completed_total"), std::string::npos);
+  EXPECT_NE(text.find("outcome=\"success\""), std::string::npos);
+  EXPECT_NE(text.find("server_id=\"" + requests[0].prefillServerId + "\""),
+            std::string::npos);
 }
 
 }  // namespace

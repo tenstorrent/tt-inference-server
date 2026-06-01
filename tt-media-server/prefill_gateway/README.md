@@ -62,6 +62,35 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   if a prefill times out `3` requests within `60000`ms, the gateway stops
   assigning new requests to it for `30000`ms. Use `--timeout-threshold=0` to
   disable this protection.
+- `--metrics-port=PORT` exposes Prometheus metrics at `GET /metrics`. Default:
+  `9091`. Use `--metrics-port=0` to disable the endpoint.
+
+## Metrics
+
+PrefillGateway exposes a small Prometheus text endpoint independent of the
+decode/prefill sockets:
+
+```bash
+curl http://127.0.0.1:9091/metrics
+```
+
+To view the `TT Prefill Gateway` dashboard in Grafana, run the monitoring stack
+from [`monitoring/README.md`](../monitoring/README.md). If the gateway is
+running inside a Cursor/dev container, use that README's dev-container setup so
+Prometheus can scrape the gateway over Docker's `tt_net` network.
+
+Key metrics include:
+
+- `tt_gateway_routing_decisions_total{reason=...}` for prefix-match,
+  least-inflight, round-robin, fallback, and no-eligible-prefill decisions.
+- `tt_prefill_completed_total{server_id,outcome}` and
+  `tt_prefill_latency_seconds{server_id,outcome}` for request outcomes and
+  latency.
+- `tt_prefill_inflight`, `tt_prefill_accepting_tasks`,
+  `tt_prefill_last_heartbeat_age_seconds`, and `tt_prefill_cache_blocks` for
+  per-prefill state.
+- `tt_gateway_prefill_timeouts_total`, `tt_gateway_request_failures_total`, and
+  `tt_gateway_cancels_total` for failure and cancellation paths.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
@@ -103,6 +132,7 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -173,6 +203,7 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
