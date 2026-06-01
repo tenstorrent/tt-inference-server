@@ -550,7 +550,8 @@ SessionManager::tryAcquireByPrefixHash(
       size_t totalMatched = 1 + matched;
       size_t sessionTotal = 1 + entry.remainingBlocks.size();
       for (const auto& sid : entry.sessionIds) {
-        candidates.push_back({sid, totalMatched, sessionTotal, lastMatchedThinkCount});
+        candidates.push_back(
+            {sid, totalMatched, sessionTotal, lastMatchedThinkCount});
       }
     }
   });
