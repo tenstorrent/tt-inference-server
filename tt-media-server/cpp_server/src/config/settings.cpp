@@ -135,6 +135,24 @@ std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
 
+size_t callbackPoolThreads() {
+  static const size_t cached = [] {
+    // CALLBACK_POOL_THREADS=N picks an explicit size; 0 or unset auto-scales.
+    const size_t fromEnv =
+        static_cast<size_t>(envUlong("CALLBACK_POOL_THREADS", 0));
+    if (fromEnv > 0) {
+      return std::min(fromEnv, defaults::CALLBACK_POOL_THREADS_MAX);
+    }
+    // Auto: at least the legacy floor, never less than the per-deploy worker
+    // count so HTTP dispatch threads never silently cap below DEVICE_IDS
+    // (the root cause of 16-wide serialization on 32-chip Galaxy SDXL).
+    return std::min(
+        std::max<size_t>(numWorkers(), defaults::CALLBACK_POOL_THREADS_MIN),
+        defaults::CALLBACK_POOL_THREADS_MAX);
+  }();
+  return cached;
+}
+
 unsigned batchTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
@@ -162,9 +180,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
@@ -432,8 +454,14 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
 }
 
 ModelType modelType() {
-  static const ModelType cached = modelTypeFromDeviceBackend(
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  static const ModelType cached = [] {
+    // Derive model type from MODEL env var
+    std::string m = envString("MODEL", defaults::MODEL);
+    if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "meta-llama/Llama-3.1-8B-Instruct")
+      return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_R1_0528;
+  }();
   return cached;
 }
 
@@ -561,6 +589,12 @@ size_t maxTokensToPrefillOnDecode() {
 size_t maxContextLength() {
   static const size_t cached = static_cast<size_t>(
       envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
+  return cached;
+}
+
+size_t maxISL() {
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
   return cached;
 }
 

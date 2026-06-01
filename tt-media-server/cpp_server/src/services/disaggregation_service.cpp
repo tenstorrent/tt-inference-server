@@ -3,10 +3,13 @@
 
 #include "services/disaggregation_service.hpp"
 
+#include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
+#include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 
@@ -16,10 +19,13 @@ using namespace tt::domain::llm;
 
 DisaggregationService::DisaggregationService(
     tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
-    std::shared_ptr<sockets::InterServerService> socketService)
+    std::shared_ptr<sockets::InterServerService> socketService,
+    std::shared_ptr<SessionManager> sessionMgr)
     : mode(mode),
       llmService(std::move(llmService)),
-      socketService(std::move(socketService)) {
+      socketService(std::move(socketService)),
+      sessionManager(std::move(sessionMgr)) {
+  eventLoopThread.run();
   setupSocketHandlers();
 }
 
@@ -145,6 +151,9 @@ void DisaggregationService::setupSocketHandlers() {
           auto slotId = message.slot_id;
           request.slotId = slotId;
 
+          // Resolve prefix cache: on HIT sets prefillSlotId and trims prompt.
+          resolvePrefillSession(request, message.registration_hashes);
+
           llmService->submitStreamingRequest(
               request, [this, message, maxTokens, slotId](
                            const LLMStreamChunk& response, bool /*isFinal*/) {
@@ -200,6 +209,96 @@ void DisaggregationService::start() {
 }
 
 void DisaggregationService::stop() { socketService->stop(); }
+
+void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
+                                             uint32_t matchedTokens) {
+  auto& tokens = std::get<std::vector<int>>(req.prompt);
+  if (matchedTokens == 0 || matchedTokens >= tokens.size()) {
+    return;
+  }
+
+  // The remaining (unmatched) prompt tokens that will be prefilled must be
+  // aligned to 32 so the prefill kernel can operate on full tiles.  If the
+  // remainder isn't divisible by 32, we pull back some matched tokens into
+  // the delta to pad the remainder up to the next multiple of 32.
+  constexpr uint32_t kAlignment = 32;
+  const uint32_t totalTokens = static_cast<uint32_t>(tokens.size());
+  const uint32_t remainder = totalTokens - matchedTokens;
+  const uint32_t alignedRemainder =
+      ((remainder + kAlignment - 1) / kAlignment) * kAlignment;
+
+  // How many extra tokens we need to pull back from the matched prefix.
+  const uint32_t pullBack = alignedRemainder - remainder;
+  const uint32_t effectiveSkip =
+      (pullBack <= matchedTokens) ? (matchedTokens - pullBack) : 0;
+
+  if (effectiveSkip == 0) {
+    TT_LOG_DEBUG(
+        "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
+        "remainder={} — cannot align, full prefill will run",
+        matchedTokens, remainder);
+    return;
+  }
+
+  TT_LOG_DEBUG(
+      "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
+      "effectiveSkip={} pullBack={} alignedRemainder={}",
+      matchedTokens, effectiveSkip, pullBack, alignedRemainder);
+
+  // Remove the first `effectiveSkip` tokens — they are already in KV cache.
+  tokens.erase(tokens.begin(),
+               tokens.begin() + static_cast<ptrdiff_t>(effectiveSkip));
+  req.prompt_tokens_count = static_cast<int>(tokens.size());
+
+  // kv_position_id points to the last valid KV cache position (0-indexed),
+  // which is one less than the number of tokens we're reusing.
+  req.kv_position_id = effectiveSkip - 1;
+}
+
+void DisaggregationService::resolvePrefillSession(
+    LLMRequest& request, const std::vector<uint64_t>& routingHashes) {
+  if (!sessionManager || routingHashes.empty()) {
+    return;
+  }
+
+  // Convert hashes to BlockHashInfo for session manager calls.
+  // Think token counts are 0 since prefill server doesn't track them.
+  auto blockInfos = utils::hashesToBlockInfos(routingHashes);
+
+  auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
+
+  if (acquired.has_value()) {
+    TT_LOG_INFO(
+        "[DisaggregationService] Prefill prefix cache HIT taskId={} "
+        "sessionId={} slotId={} matchedTokens={}",
+        request.task_id, acquired->sessionId, acquired->slotId,
+        acquired->numberOfMatchedTokens);
+    request.prefillSlotId = acquired->slotId;
+    applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
+    sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+  } else {
+    TT_LOG_INFO(
+        "[DisaggregationService] Prefill prefix cache MISS taskId={} "
+        "hashes={}, creating new session",
+        request.task_id, routingHashes.size());
+    sessionManager->createSession(
+        [taskId = request.task_id, infos = std::move(blockInfos),
+         sm = sessionManager](const tt::domain::Session& session) mutable {
+          TT_LOG_INFO(
+              "[DisaggregationService] New session allocated taskId={} "
+              "sessionId={} slotId={}",
+              taskId, session.getSessionId(), session.getSlotId());
+          sm->registerPrefixHash(session.getSessionId(), infos);
+        },
+        [taskId = request.task_id](std::string_view errorMessage) {
+          TT_LOG_WARN(
+              "[DisaggregationService] Failed to create session for "
+              "taskId={}: {}",
+              taskId, errorMessage);
+        },
+        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos);
+  }
+}
 
 void DisaggregationService::handleStreamingRequest(
     LLMRequest& request, const std::vector<uint64_t>& registrationHashes,

@@ -332,6 +332,9 @@ class DeviceModelSpec:
     tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
+    # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
+    # Default 3 × exponential backoff = hours of burn on permanent 4xx.
+    eval_max_retries: Optional[int] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -362,7 +365,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "max-log-len": "32",
             "seed": "9472",
-            "plugin_config": json.dumps({"tt": self.override_tt_config}),
+            "additional_config": json.dumps({"tt": self.override_tt_config}),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
@@ -797,7 +800,7 @@ class ModelSpec:
             )
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "plugin_config": json.dumps({"tt": merged_override_config}),
+                "additional_config": json.dumps({"tt": merged_override_config}),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -968,6 +971,7 @@ class ModelSpecTemplate:
                     tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
                     system_requirements=device_model_spec.system_requirements,
                     known_issues=device_model_spec.known_issues,
+                    eval_max_retries=device_model_spec.eval_max_retries,
                 )
                 spec = ModelSpec(
                     # Core identity

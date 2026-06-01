@@ -69,18 +69,22 @@ This page lists all supported models organized by hardware type.
 
 | Status | Type | Model |
 |--------|------|-------|
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p300x2.md) |
 | 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300x2.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
+| 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
 ## [p150](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
 |--------|------|-------|
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p100.md) |
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
+| 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p100.md) |
 
 ## [p100](https://tenstorrent.com/hardware/blackhole)
 
