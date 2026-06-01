@@ -66,6 +66,14 @@ class ZmqSocketTransport : public ISocketTransport,
     std::promise<bool> result;
   };
 
+  struct SendQueue {
+    std::mutex queueMutex;
+    std::mutex wakeMutex;
+    std::condition_variable wakeCv;
+    std::atomic<bool> hasItems{false};
+    std::deque<std::shared_ptr<SendRequest>> items;
+  };
+
   bool startIoThread();
   void ioLoop(std::stop_token stopToken, std::promise<bool> initialized);
   bool initializeSocket();
@@ -98,9 +106,7 @@ class ZmqSocketTransport : public ISocketTransport,
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
-  std::mutex sendMutex_;
-  std::condition_variable sendCv_;
-  std::deque<std::shared_ptr<SendRequest>> pendingSends_;
+  SendQueue sendQueue_;
 
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;

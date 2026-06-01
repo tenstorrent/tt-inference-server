@@ -57,6 +57,14 @@ class ZmqPrefillRouter {
     std::promise<bool> result;
   };
 
+  struct SendQueue {
+    std::mutex queueMutex;
+    std::mutex wakeMutex;
+    std::condition_variable wakeCv;
+    std::atomic<bool> hasItems{false};
+    std::deque<std::shared_ptr<SendRequest>> items;
+  };
+
   using RawHandler =
       std::function<void(const PeerIdentity&, const std::vector<uint8_t>&)>;
 
@@ -88,9 +96,7 @@ class ZmqPrefillRouter {
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       last_seen_by_server_;
 
-  std::mutex send_mutex_;
-  std::condition_variable send_cv_;
-  std::deque<std::shared_ptr<SendRequest>> pending_sends_;
+  SendQueue sendQueue_;
 
   mutable std::mutex handlers_mutex_;
   std::unordered_map<std::string, RawHandler> handlers_;
@@ -111,13 +117,14 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     auto result = request->result.get_future();
 
     {
-      std::lock_guard<std::mutex> lock(send_mutex_);
+      std::lock_guard<std::mutex> lock(sendQueue_.queueMutex);
       if (!running_) {
         return false;
       }
-      pending_sends_.push_back(std::move(request));
+      sendQueue_.items.push_back(std::move(request));
     }
-    send_cv_.notify_one();
+    sendQueue_.hasItems = true;
+    sendQueue_.wakeCv.notify_one();
     return result.get();
   } catch (const std::exception&) {
     return false;
