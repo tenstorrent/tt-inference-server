@@ -5979,6 +5979,21 @@
             }
         ]
     },
+    "Z-Image-Turbo": {
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 9,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.111
+                    }
+                }
+            }
+        ]
+    },
     "whisper-large-v3": {
         "n150": [
             {
