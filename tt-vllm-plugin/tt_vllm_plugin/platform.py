@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
     from vllm.inputs import ProcessorInputs
-    from vllm.sampling_params import SamplingParams
+    from vllm.sampling_params import SamplingParamsdff
 else:
     ModelConfig = None
     VllmConfig = None
@@ -22,6 +22,7 @@ else:
 logger = init_logger("vllm.tt_vllm_plugin.platform")
 
 VLLM_USE_V1 = os.environ.get("VLLM_USE_V1", "1") == "1"
+
 
 class TTPlatform(Platform):
     _enum = PlatformEnum.OOT  # Out-of-tree platform
@@ -204,7 +205,7 @@ class TTPlatform(Platform):
         if isinstance(params, SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
-            #if params.best_of is not None:
+            # if params.best_of is not None:
             #    raise ValueError(
             #        f"Currently not supporting best_of on {cls.device_name}"
             #    )

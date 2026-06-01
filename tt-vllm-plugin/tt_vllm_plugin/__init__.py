@@ -19,8 +19,7 @@ def register_models():
 
     llama_text_version = os.getenv("TT_LLAMA_TEXT_VER", "tt_transformers")
     if llama_text_version == "tt_transformers":
-        path_llama_text = (
-            "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM")
+        path_llama_text = "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM"
     elif llama_text_version == "llama3_70b_galaxy":
         path_llama_text = (
             "models.demos.llama3_70b_galaxy.tt.generator_vllm:LlamaForCausalLM"
@@ -32,23 +31,24 @@ def register_models():
     else:
         raise ValueError(
             f"Unsupported TT Llama version: {llama_text_version}, "
-            "pick one of [tt_transformers, llama3_70b_galaxy, llama2_70b]")
+            "pick one of [tt_transformers, llama3_70b_galaxy, llama2_70b]"
+        )
 
     # Llama3.1/3.2 - Text
     ModelRegistry.register_model("TTLlamaForCausalLM", path_llama_text)
 
     ## Llama3.2 - Vision
-    #ModelRegistry.register_model(
+    # ModelRegistry.register_model(
     #    "TTMllamaForConditionalGeneration",
     #    "models.tt_transformers.tt.generator_vllm:MllamaForConditionalGeneration",
     #    )
-    #try:
+    # try:
     #    ModelRegistry.register_model(
     #        "TTBertModel",
     #        "models.demos.wormhole.bge_large_en.demo.generator_vllm:BGEForEmbedding",
     #    )
     #    print("Registered BGE embedding model")
-    #except Exception as e:
+    # except Exception as e:
     #    # If registration fails (e.g., module not found), log warning but continue
     #    # This allows the plugin to work even if BGE model isn't available
     #    import logging
@@ -64,10 +64,10 @@ def register_models():
     ModelRegistry.register_model("TTQwen3ForCausalLM", path_qwen_text)
 
     ## Qwen2.5 - Vision
-    #ModelRegistry.register_model(
+    # ModelRegistry.register_model(
     #    "TTQwen2_5_VLForConditionalGeneration",
     #    "models.demos.qwen25_vl.tt.generator_vllm:Qwen2_5_VLForConditionalGeneration",
-    #)
+    # )
 
     # Register Qwen3-Embedding model (TTQwen3Model)
     # This allows vLLM to find the TT-specific Qwen3-Embedding implementation
@@ -100,16 +100,16 @@ def register_models():
     )
 
     ## Gemma3
-    #ModelRegistry.register_model(
+    # ModelRegistry.register_model(
     #    "TTGemma3ForConditionalGeneration",
     #    "models.tt_transformers.tt.generator_vllm:Gemma3ForConditionalGeneration",
-    #)
+    # )
 
     ## DeepseekV3
-    #ModelRegistry.register_model(
+    # ModelRegistry.register_model(
     #    "TTDeepseekV3ForCausalLM",
     #    "models.demos.deepseek_v3.tt.generator_vllm:DeepseekV3ForCausalLM",
-    #)
+    # )
 
     # GPT-OSS
     ModelRegistry.register_model(

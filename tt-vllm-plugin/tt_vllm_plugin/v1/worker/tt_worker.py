@@ -195,7 +195,7 @@ class TTWorker(WorkerBase):
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            #use_mla=model_config.use_mla,
+            # use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}

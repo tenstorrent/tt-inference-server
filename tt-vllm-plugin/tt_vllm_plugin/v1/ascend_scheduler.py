@@ -185,15 +185,15 @@ class AscendScheduler(Scheduler):
             #          (assert num_new_tokens > 0, allocate_slots, etc. all assume > 0).
             # Solution: pretend 1 token is not computed (num_computed = num_tokens - 1),
             #           so scheduler schedules it normally (num_new_tokens = 1).
-            num_new_tokens = request.num_tokens - min(num_computed_tokens, request.num_tokens)
+            num_new_tokens = request.num_tokens - min(
+                num_computed_tokens, request.num_tokens
+            )
             if num_new_tokens == 0:
                 num_computed_tokens = request.num_tokens - 1
                 num_new_local_computed_tokens = num_computed_tokens
                 num_new_tokens = 1
 
-            max_tokens_in_kvcache = (
-                self.kv_cache_config.num_blocks * self.block_size
-            )
+            max_tokens_in_kvcache = self.kv_cache_config.num_blocks * self.block_size
             prompt_limit = min(prompt_limit, max_tokens_in_kvcache)
 
             # Finish request that exceeds prompt_limit or kv cache size.
@@ -216,7 +216,7 @@ class AscendScheduler(Scheduler):
                 continue
             assert num_new_tokens > 0
             blocks = new_computed_blocks.blocks[0]
-            
+
             watermark = getattr(self.scheduler_config, "watermark", 0.01)
             if not self._check_watermark_for_prefill(
                 request, num_new_tokens, blocks, watermark
@@ -242,7 +242,7 @@ class AscendScheduler(Scheduler):
                     f"waiting_queue_size={len(self.waiting)}"
                 )
                 break
-            
+
             # [PrefixCaching] Register blocks in prefix cache after allocation.
             # Without this, future requests with the same prompt cannot reuse these blocks.
             if self.kv_cache_manager.enable_caching:
@@ -285,8 +285,8 @@ class AscendScheduler(Scheduler):
 
             if self.lora_config and request.lora_request:
                 scheduled_loras.add(request.lora_request.lora_int_id)
-            req_to_new_block_ids[request.request_id] = (
-                self.kv_cache_manager.get_blocks(request.request_id)
+            req_to_new_block_ids[request.request_id] = self.kv_cache_manager.get_blocks(
+                request.request_id
             )
             # Update request info.
             num_scheduled_tokens[request.request_id] = num_new_tokens
@@ -435,9 +435,8 @@ class AscendScheduler(Scheduler):
         if self.running:
             any_request = self.running[0]
             num_common_prefix_blocks = (
-                self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request)
-                )
+                self.kv_cache_manager.get_num_common_prefix_blocks(any_request)
+            )
 
         # Generate grammar bitmask for structured output requests
         # TODO: use grammar_bitmask for structured output decoding
@@ -449,7 +448,9 @@ class AscendScheduler(Scheduler):
 
         # Construct the scheduler output.
         new_reqs_data = [
-            NewRequestData.from_request(req, req_to_new_block_ids[req.request_id].get_block_ids())
+            NewRequestData.from_request(
+                req, req_to_new_block_ids[req.request_id].get_block_ids()
+            )
             for req in scheduled_new_reqs
         ]
 
@@ -569,7 +570,7 @@ class AscendScheduler(Scheduler):
         For example, the API server can abort a request when the client
         disconnects.
         """
-        for req_id in (request_ids or []):
+        for req_id in request_ids or []:
             request = self.requests.get(req_id)
             if request is None:
                 # Invalid request ID.

@@ -14,6 +14,7 @@ from vllm.logger import init_logger
 logger = init_logger("vllm.tt_vllm_plugin.worker.tt_worker")
 VLLM_USE_V1 = os.environ.get("VLLM_USE_V1", "1") == "1"
 
+
 def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     """
     Used to set the number of available blocks for the TT KV cache as we
