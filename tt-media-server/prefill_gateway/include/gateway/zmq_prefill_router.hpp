@@ -107,7 +107,8 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     request->data = tt::sockets::wire::serializeMessage(messageType, obj);
     auto result = request->result.get_future();
 
-    if (!sendQueue.pushIf(std::move(request), [this] { return running_.load(); })) {
+    if (!sendQueue.pushIf(std::move(request),
+                          [this] { return running_.load(); })) {
       return false;
     }
     return result.get();
