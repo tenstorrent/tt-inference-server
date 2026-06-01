@@ -786,6 +786,7 @@ jobs:
       # ── Mock backend benchmarks ──────────────────────────────────────
       - name: Start C++ server (mock backend)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
           cd cpp_server/build
           LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
@@ -877,11 +878,12 @@ jobs:
         if: always()
         run: |
           [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
-          sleep 1
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
       # ── Mock pipeline backend benchmarks ─────────────────────────────
       - name: Start C++ server (mock_pipeline backend)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
           cd cpp_server/build
           LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
           echo $! > ../../cpp_server.pid
@@ -924,6 +926,7 @@ jobs:
         if: always()
         run: |
           [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
 
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
@@ -1020,6 +1023,7 @@ jobs:
       # ── Round 1a: TCP Decode + Prefill split ─────────────────────────
       - name: "[TCP] Start Decode server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "TCP direct split decode"
           cd cpp_server/build
           NS=tcp_decode
           SOCKET_TRANSPORT=tcp LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1037,6 +1041,7 @@ jobs:
 
       - name: "[TCP] Start Prefill server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
           cd cpp_server/build
           NS=tcp_prefill
           SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
@@ -1076,11 +1081,12 @@ jobs:
         run: |
           [ -f tcp_decode.pid ]  && kill $(cat tcp_decode.pid)  2>/dev/null || true
           [ -f tcp_prefill.pid ] && kill $(cat tcp_prefill.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "TCP direct split"
 
       # ── Round 1b: ZMQ Decode + Prefill split ─────────────────────────
       - name: "[ZMQ] Start Decode server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
           cd cpp_server/build
           NS=zmq_decode
           SOCKET_TRANSPORT=zmq LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1098,6 +1104,7 @@ jobs:
 
       - name: "[ZMQ] Start Prefill server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
           SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
@@ -1137,7 +1144,7 @@ jobs:
         run: |
           [ -f zmq_decode.pid ]  && kill $(cat zmq_decode.pid)  2>/dev/null || true
           [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
 
       # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
       - name: Clean shared memory segments
@@ -1163,6 +1170,7 @@ jobs:
 
       - name: Start Prefill server (mock_prefill_runner round)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock_prefill_runner prefill"
           cd cpp_server
           NS=r2_prefill
           TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
@@ -1184,6 +1192,7 @@ jobs:
 
       - name: Start Decode server (mock_prefill_runner round)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
           cd cpp_server
           NS=r2_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1237,7 +1246,6 @@ jobs:
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
-          sleep 2
 
       - name: Run vLLM bench serve against mock_prefill_runner split
         env:
@@ -1264,7 +1272,7 @@ jobs:
           [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
           [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
           rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-          sleep 1
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock_prefill_runner split"
 
       - name: Check benchmark thresholds
         run: |
@@ -1563,6 +1571,7 @@ jobs:
       # All components must use the same SOCKET_TRANSPORT;
       - name: "[TCP] Start Prefill server 1 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
           cd cpp_server/build
           NS=gw_prefill1
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
@@ -1581,6 +1590,7 @@ jobs:
 
       - name: "[TCP] Start Prefill server 2 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
           cd cpp_server/build
           NS=gw_prefill2
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
@@ -1599,11 +1609,13 @@ jobs:
 
       - name: "[TCP] Start PrefillGateway"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9200 --label "TCP prefill gateway"
           SOCKET_TRANSPORT=tcp TT_LOG_LEVEL=debug \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill=127.0.0.1:9201 \
             --prefill=127.0.0.1:9202 \
+            --metrics-port=0 \
             > gw.log 2>&1 &
           echo $! > gw.pid
           bash cpp_server/scripts/ci/wait_for_command.sh \
@@ -1619,6 +1631,7 @@ jobs:
 
       - name: "[TCP] Start Decode server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "TCP gateway decode server"
           cd cpp_server/build
           NS=gw_decode
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
@@ -1661,7 +1674,6 @@ jobs:
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
-          sleep 2
 
       - name: "[TCP] Run vLLM bench serve through gateway"
         env:
@@ -1688,11 +1700,12 @@ jobs:
           [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
           [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
           [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
 
       # ── Round 2: ZMQ transport ────────────────────────────────────────────
       - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
           cd cpp_server/build
           NS=gw_zmq_prefill1
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
@@ -1712,6 +1725,7 @@ jobs:
 
       - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
           cd cpp_server/build
           NS=gw_zmq_prefill2
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
@@ -1731,11 +1745,12 @@ jobs:
 
       - name: "[ZMQ] Start PrefillGateway"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9200 --port 9201 --label "ZMQ prefill gateway"
           SOCKET_TRANSPORT=zmq TT_LOG_LEVEL=debug \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill-bind=127.0.0.1:9201 \
-            --metrics-port=9092 \
+            --metrics-port=0 \
             > gw_zmq.log 2>&1 &
           echo $! > gw_zmq.pid
           bash cpp_server/scripts/ci/wait_for_command.sh \
@@ -1751,6 +1766,7 @@ jobs:
 
       - name: "[ZMQ] Start Decode server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "ZMQ gateway decode server"
           cd cpp_server/build
           NS=gw_zmq_decode
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
@@ -1793,7 +1809,6 @@ jobs:
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
-          sleep 2
 
       - name: "[ZMQ] Run vLLM bench serve through gateway"
         env:
@@ -1820,7 +1835,7 @@ jobs:
           [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
           [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
           [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
 
       - name: Check benchmark thresholds
         run: |
@@ -1945,6 +1960,7 @@ jobs:
 
       - name: Start etcd
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --label "etcd"
           # --data-dir under /tmp so it gets wiped between runs; bind to
           # 127.0.0.1 only — the Dynamo frontend and both cpp_server
           # backends run on this same runner.
@@ -1989,6 +2005,7 @@ jobs:
       # once for the whole fleet.
       - name: Start cpp_server backend 1 (port 8001)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend 1"
           cd cpp_server
           ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
           echo $! > ../backend1.pid
@@ -2002,6 +2019,7 @@ jobs:
 
       - name: Start cpp_server backend 2 (port 8002)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "Dynamo backend 2"
           cd cpp_server
           ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
           echo $! > ../backend2.pid
@@ -2034,6 +2052,7 @@ jobs:
 
       - name: Start single Dynamo frontend (port 8000)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
           # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
           # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
           # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
@@ -2161,10 +2180,10 @@ jobs:
           for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
             [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
           done
-          sleep 2
           # Belt + suspenders: nuke any leftover frontends/backends still bound.
           pkill -f 'dynamo.frontend' 2>/dev/null || true
           pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 8000 --port 8001 --port 8002 --label "Dynamo integration"
 
       - name: Check benchmark result
         run: |
@@ -2260,6 +2279,7 @@ jobs:
         env:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
           cd cpp_server/build
           ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
@@ -2295,7 +2315,7 @@ jobs:
         if: always()
         run: |
           [ -f tsan_server.pid ] && kill $(cat tsan_server.pid) 2>/dev/null || true
-          sleep 3
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
 
       - name: Analyze TSan output
         if: always()
