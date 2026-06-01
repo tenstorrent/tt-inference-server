@@ -103,7 +103,7 @@ jobs:
         with:
           # Start with workflow/expression validation; embedded ShellCheck can
           # be enabled after existing workflow shell findings are cleaned up.
-          args: -shellcheck=
+          args: -shellcheck= -verbose
 
   verify-media-server-install:
     needs: detect-changes
