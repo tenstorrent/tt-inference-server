@@ -8,6 +8,7 @@
 #include <random>
 
 #include "utils/conversation_hasher.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
 
@@ -36,25 +37,53 @@ bool Session::clearInFlight() {
   cancelFn_ = nullptr;
   deltaTokens_.clear();
   generatedTokens_.clear();
-  initialHashes_.clear();
+  initialBlocks_.clear();
   parentHash_ = 0;
+  parentThinkCount_ = 0;
   onComplete_ = nullptr;
+  inThinkingBlock_ = false;
+  accumulatedThinkTokens_ = 0;
   return true;
 }
 
 void Session::initTokenAccumulator(
-    std::vector<int> deltaTokens, std::vector<uint64_t> initialHashes,
-    std::function<void(const std::string&, const std::vector<uint64_t>&)>
+    std::vector<int> deltaTokens,
+    std::vector<utils::BlockHashInfo> initialBlocks,
+    std::function<void(const std::string&,
+                       const std::vector<utils::BlockHashInfo>&)>
         onComplete) {
   deltaTokens_ = std::move(deltaTokens);
-  initialHashes_ = std::move(initialHashes);
-  parentHash_ = initialHashes_.empty() ? 0 : initialHashes_.back();
+  initialBlocks_ = std::move(initialBlocks);
+  parentHash_ = initialBlocks_.empty() ? 0 : initialBlocks_.back().hash;
+  parentThinkCount_ =
+      initialBlocks_.empty() ? 0 : initialBlocks_.back().accumulatedThinkTokens;
   onComplete_ = std::move(onComplete);
   generatedTokens_.clear();
+
+  // Initialize thinking token tracking
+  auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
+  thinkStartTokenId_ = thinkStart;
+  thinkEndTokenId_ = thinkEnd;
+  inThinkingBlock_ = false;
+  accumulatedThinkTokens_ = parentThinkCount_;
 }
 
 void Session::addGeneratedToken(int tokenId) {
   generatedTokens_.push_back(tokenId);
+
+  // Track thinking state using same state machine as ReasoningParser
+  const bool thinkingEnabled =
+      thinkStartTokenId_ != utils::tokenizers::kNoThinkTokenId &&
+      thinkEndTokenId_ != utils::tokenizers::kNoThinkTokenId;
+  if (!thinkingEnabled) return;
+
+  if (tokenId == static_cast<int>(thinkStartTokenId_)) {
+    inThinkingBlock_ = true;
+  } else if (tokenId == static_cast<int>(thinkEndTokenId_)) {
+    inThinkingBlock_ = false;
+  } else if (inThinkingBlock_) {
+    ++accumulatedThinkTokens_;  // Only content tokens, not markers
+  }
 }
 
 void Session::finalizeAndRegisterHashes() {
@@ -65,17 +94,18 @@ void Session::finalizeAndRegisterHashes() {
   allDeltaTokens.insert(allDeltaTokens.end(), generatedTokens_.begin(),
                         generatedTokens_.end());
 
-  // Compute new hashes continuing from parentHash (avoids re-hashing matched
-  // prefix)
-  auto newHashes =
-      utils::getPrefixCacheHashesByBlocks(allDeltaTokens, parentHash_);
+  // Compute new block info continuing from parent (avoids re-hashing matched
+  // prefix). Uses thinking-aware hashing to exclude thinking tokens from hash.
+  auto newBlocks = utils::getPrefixCacheHashesByBlocksWithThinking(
+      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_, parentHash_,
+      parentThinkCount_);
 
   // Only register if new blocks were formed
-  if (!newHashes.empty()) {
-    // Prepend initial hashes to form complete hash list
-    std::vector<uint64_t> allHashes = initialHashes_;
-    allHashes.insert(allHashes.end(), newHashes.begin(), newHashes.end());
-    onComplete_(session_id_, allHashes);
+  if (!newBlocks.empty()) {
+    // Prepend initial blocks to form complete block list
+    std::vector<utils::BlockHashInfo> allBlocks = initialBlocks_;
+    allBlocks.insert(allBlocks.end(), newBlocks.begin(), newBlocks.end());
+    onComplete_(session_id_, allBlocks);
   }
 }
 

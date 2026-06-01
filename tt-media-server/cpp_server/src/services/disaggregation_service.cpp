@@ -261,8 +261,11 @@ void DisaggregationService::resolvePrefillSession(
     return;
   }
 
-  auto acquired =
-      sessionManager->tryAcquireByPrefixHash(routingHashes, nullptr);
+  // Convert hashes to BlockHashInfo for session manager calls.
+  // Think token counts are 0 since prefill server doesn't track them.
+  auto blockInfos = utils::hashesToBlockInfos(routingHashes);
+
+  auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
 
   if (acquired.has_value()) {
     TT_LOG_INFO(
@@ -272,20 +275,20 @@ void DisaggregationService::resolvePrefillSession(
         acquired->numberOfMatchedTokens);
     request.prefillSlotId = acquired->slotId;
     applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
-    sessionManager->registerPrefixHash(acquired->sessionId, routingHashes);
+    sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
   } else {
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request.task_id, routingHashes.size());
     sessionManager->createSession(
-        [taskId = request.task_id, hashes = routingHashes,
-         sm = sessionManager](const tt::domain::Session& session) {
+        [taskId = request.task_id, infos = std::move(blockInfos),
+         sm = sessionManager](const tt::domain::Session& session) mutable {
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
               taskId, session.getSessionId(), session.getSlotId());
-          sm->registerPrefixHash(session.getSessionId(), hashes);
+          sm->registerPrefixHash(session.getSessionId(), infos);
         },
         [taskId = request.task_id](std::string_view errorMessage) {
           TT_LOG_WARN(
@@ -293,7 +296,7 @@ void DisaggregationService::resolvePrefillSession(
               "taskId={}: {}",
               taskId, errorMessage);
         },
-        /*eventLoop=*/eventLoopThread.getLoop(), routingHashes);
+        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos);
   }
 }
 

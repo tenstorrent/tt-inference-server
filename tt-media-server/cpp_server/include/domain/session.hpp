@@ -15,6 +15,7 @@
 
 #include "domain/manage_memory.hpp"
 #include "domain/sentinel_values.hpp"
+#include "utils/conversation_hasher.hpp"
 
 namespace tt::domain {
 
@@ -90,12 +91,14 @@ class Session {
    * Called once per request when session routing is resolved.
    *
    * @param deltaTokens Delta prompt tokens (after matched prefix trimmed)
-   * @param initialHashes Block hashes computed from the prompt (for prepending)
-   * @param onComplete Callback invoked at stream end with final hashes
+   * @param initialBlocks Block info computed from the prompt (for prepending)
+   * @param onComplete Callback invoked at stream end with final block info
    */
   void initTokenAccumulator(
-      std::vector<int> deltaTokens, std::vector<uint64_t> initialHashes,
-      std::function<void(const std::string&, const std::vector<uint64_t>&)>
+      std::vector<int> deltaTokens,
+      std::vector<utils::BlockHashInfo> initialBlocks,
+      std::function<void(const std::string&,
+                         const std::vector<utils::BlockHashInfo>&)>
           onComplete);
 
   /**
@@ -127,10 +130,18 @@ class Session {
   // Streaming token accumulator (initialized per-request)
   std::vector<int> deltaTokens_;
   std::vector<int> generatedTokens_;
-  std::vector<uint64_t> initialHashes_;
+  std::vector<utils::BlockHashInfo> initialBlocks_;
   uint64_t parentHash_ = 0;
-  std::function<void(const std::string&, const std::vector<uint64_t>&)>
+  uint32_t parentThinkCount_ = 0;
+  std::function<void(const std::string&,
+                     const std::vector<utils::BlockHashInfo>&)>
       onComplete_;
+
+  // Thinking token tracking
+  bool inThinkingBlock_ = false;
+  uint32_t accumulatedThinkTokens_ = 0;
+  int64_t thinkStartTokenId_ = 0;
+  int64_t thinkEndTokenId_ = 0;
 
   static std::string generateUuid();
 };

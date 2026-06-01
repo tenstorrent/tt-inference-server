@@ -117,11 +117,13 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens) {
   PrefixCachingInfo info;
 
-  // Hash all tokens into per-block hashes.
-  info.hashes = getPrefixCacheHashesByBlocks(tokens);
+  // Hash non-thinking tokens into per-block hashes, tracking think counts.
+  auto [thinkStart, thinkEnd] = tokenizers::thinkTokenIds();
+  info.blocks =
+      getPrefixCacheHashesByBlocksWithThinking(tokens, thinkStart, thinkEnd);
 
-  TT_LOG_INFO("[TokenHasher] tokens={} hashes={}", tokens.size(),
-              info.hashes.size());
+  TT_LOG_INFO("[TokenHasher] tokens={} blocks={}", tokens.size(),
+              info.blocks.size());
 
   return info;
 }
@@ -179,6 +181,59 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
   }
 
   return hashes;
+}
+
+std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
+    std::span<const int> tokens, int64_t thinkStartId, int64_t thinkEndId,
+    uint64_t parentHash, uint32_t parentThinkCount) {
+  const bool filterThinking = (thinkStartId != tokenizers::kNoThinkTokenId &&
+                               thinkEndId != tokenizers::kNoThinkTokenId);
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  if (firstBlockSize == 0 || blockSize == 0) {
+    return {};
+  }
+
+  std::vector<BlockHashInfo> result;
+  std::vector<int> currentBlock;
+  currentBlock.reserve(std::max(firstBlockSize, blockSize));
+
+  bool inThinking = false;
+  uint32_t thinkCount = parentThinkCount;
+  size_t targetBlockSize = (parentHash == 0) ? firstBlockSize : blockSize;
+
+  for (int token : tokens) {
+    if (filterThinking) {
+      // Mirror ReasoningParser::processToken() state machine
+      if (token == static_cast<int>(thinkStartId)) {
+        inThinking = true;
+        continue;  // Skip marker, don't count
+      }
+      if (token == static_cast<int>(thinkEndId)) {
+        inThinking = false;
+        continue;  // Skip marker, don't count
+      }
+      if (inThinking) {
+        ++thinkCount;  // Count content token, don't hash
+        continue;
+      }
+    }
+
+    // Non-thinking token: add to current block
+    currentBlock.push_back(token);
+
+    if (currentBlock.size() == targetBlockSize) {
+      // Block complete: hash it
+      parentHash = XXH64(currentBlock.data(), currentBlock.size() * sizeof(int),
+                         parentHash);
+      result.push_back({parentHash, thinkCount});
+      currentBlock.clear();
+      targetBlockSize = blockSize;  // All subsequent blocks use standard size
+    }
+  }
+
+  return result;  // Partial block at end is not hashed
 }
 
 }  // namespace tt::utils
