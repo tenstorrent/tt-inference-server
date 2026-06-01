@@ -312,6 +312,31 @@ def _extract_wer(results: dict, task_name: str) -> Optional[float]:
     return None
 
 
+def _audio_eval_fail_block(ctx: MediaContext, task, error: str) -> Block:
+    return Block(
+        kind="evals",
+        task_type="audio",
+        title="Audio Eval",
+        id=block_id(ctx) or None,
+        targets={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+        },
+        data={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "score": None,
+            "published_score_ref": task.score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.FAIL,
+            "wer": None,
+            "error": error,
+        },
+    )
+
+
 def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest."""
     from .._test_common import TestConfig
@@ -330,6 +355,18 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     test.test_limit = None
     test.debug_mode = False
     test.mock_mode = False
+
+    if not test.lmms_eval_exec:
+        logger.error(
+            "lmms-eval executable not found; the EVALS_AUDIO venv is not provisioned. "
+            "Cannot run audio eval for %s.",
+            ctx.model_spec.model_name,
+        )
+        return _audio_eval_fail_block(
+            ctx,
+            task,
+            "lmms-eval executable not found (EVALS_AUDIO venv not provisioned)",
+        )
 
     logger.info(
         "Invoking WhisperEvalTest (lmms-eval): task=%s base_url=%s hf_model_repo=%s",
@@ -350,27 +387,8 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
             "results keys=%s",
             list(results.keys()),
         )
-        return Block(
-            kind="evals",
-            task_type="audio",
-            title="Audio Eval",
-            id=block_id(ctx) or None,
-            targets={
-                "task_name": task.task_name,
-                "tolerance": task.score.tolerance,
-                "published_score": task.score.published_score,
-                "published_score_ref": task.score.published_score_ref,
-            },
-            data={
-                "task_name": task.task_name,
-                "tolerance": task.score.tolerance,
-                "published_score": task.score.published_score,
-                "score": None,
-                "published_score_ref": task.score.published_score_ref,
-                "accuracy_check": ReportCheckTypes.FAIL,
-                "wer": None,
-                "error": "WER not found in lmms-eval results",
-            },
+        return _audio_eval_fail_block(
+            ctx, task, "WER not found in lmms-eval results"
         )
 
     score = 100.0 - wer
