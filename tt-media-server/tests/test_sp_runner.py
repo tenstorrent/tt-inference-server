@@ -748,18 +748,18 @@ class TestSPRunnerWarmup:
         assert mock_output.read_response.call_count == 2
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_stale_gas_probe_ack_is_skipped_then_warmup_succeeds(
+    def test_stale_canary_ack_is_skipped_then_warmup_succeeds(
         self, MockVideoShm, _enable_warmup_ping, monkeypatch
     ):
-        """A gas-probe ack left in the output ring by a prior session must be
+        """A canary ack left in the output ring by a prior session must be
         discarded, not treated as a fatal desync. The one-shot drain in
-        set_device() races with gas-probe requests still queued in the input
+        set_device() races with canary requests still queued in the input
         ring, which the peer answers after the drain. Before the fix this
-        surfaced as ``unexpected response task_id='__gas_probe__'`` and warmup
+        surfaced as ``unexpected response task_id='__canary__'`` and warmup
         failed, wedging the worker at is_ready=False. After the fix the loop
-        skips the stale gas-probe ack and waits for the real ``__sp_warmup__``
+        skips the stale canary ack and waits for the real ``__sp_warmup__``
         ack."""
-        from config.constants import GAS_PROBE_TASK_ID
+        from config.constants import CANARY_TASK_ID
         from ipc.video_shm import SP_WARMUP_TASK_ID
 
         monkeypatch.setattr(_mock_settings, "sp_warmup_timeout_seconds", 5.0)
@@ -773,7 +773,7 @@ class TestSPRunnerWarmup:
         mock_input.write_request.return_value = True
         mock_output.read_response.side_effect = [
             VideoResponse(
-                task_id=GAS_PROBE_TASK_ID,
+                task_id=CANARY_TASK_ID,
                 status=VideoStatus.SUCCESS,
                 file_path="",
                 error_message="",
@@ -793,8 +793,8 @@ class TestSPRunnerWarmup:
 
         result = asyncio.run(runner.warmup())
 
-        assert result is True, "stale gas-probe ack must not fail warmup"
-        # First read = stale gas probe (skipped), second = the real warmup ack.
+        assert result is True, "stale canary ack must not fail warmup"
+        # First read = stale canary probe (skipped), second = the real warmup ack.
         assert mock_output.read_response.call_count == 2
 
 

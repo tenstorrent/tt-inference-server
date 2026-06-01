@@ -54,7 +54,12 @@ from typing import Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from config.constants import GAS_PROBE_TASK_ID, ModelRunners
+from config.constants import (
+    CANARY_DEEP_TASK_ID,
+    CANARY_TASK_ID,
+    CANARY_TASK_IDS,
+    ModelRunners,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -340,11 +345,12 @@ def _encoder_loop(
             _log.info("Encoder thread: shutdown sentinel received, exiting")
             return
 
-        # Warmup ping and gas probe: respond SUCCESS with empty file_path.
-        # No ffmpeg, no frames — the round-trip itself is the signal. (The
-        # gas probe's cross-rank collective already ran in the inference loop;
-        # here rank 0 just acks.)
-        if job.task_id in (SP_WARMUP_TASK_ID, GAS_PROBE_TASK_ID):
+        # Warmup ping and canary probes (shallow + deep): respond SUCCESS with
+        # empty file_path. No ffmpeg, no frames — the round-trip itself is the
+        # signal. (The collective — bare barrier for shallow, replayed warmup
+        # forward for deep — already ran in the inference loop; here rank 0 just
+        # acks.)
+        if job.task_id == SP_WARMUP_TASK_ID or job.task_id in CANARY_TASK_IDS:
             try:
                 _write_response_to_shm(output_shm, job.task_id, "")
                 _log.info(f"Encoder thread: replied to {job.task_id}")
@@ -420,12 +426,15 @@ def _run_inference_loop(
                     _EncodeJob(task_id=SP_WARMUP_TASK_ID, frames=None, error=None)
                 )
                 rank0_skip = True
-            elif raw_req is not None and raw_req.task_id == GAS_PROBE_TASK_ID:
-                # Gas probe: unlike warmup, do NOT skip. We broadcast the
-                # request (skip=False) so every rank joins the collective below
-                # in lockstep — that is what lets the probe catch a wedged
-                # sub-rank. No image-prompt loading for the gas probe.
-                _log.info("Rank 0: received gas probe, broadcasting to all ranks")
+            elif raw_req is not None and raw_req.task_id in CANARY_TASK_IDS:
+                # Canary probe (shallow or deep): unlike warmup, do NOT skip. We
+                # broadcast the request (skip=False) so every rank joins the
+                # collective below in lockstep — that is what lets the probe
+                # catch a wedged sub-rank. No image-prompt loading for canaries.
+                _log.info(
+                    f"Rank 0: received canary probe ({raw_req.task_id}), "
+                    f"broadcasting to all ranks"
+                )
             else:
                 rank0_image_prompts, rank0_skip = _rank0_load_image_prompts(
                     raw_req, encode_queue
@@ -450,8 +459,8 @@ def _run_inference_loop(
                 )
             continue
 
-        if req.task_id == GAS_PROBE_TASK_ID:
-            # Gas probe: every rank joins one bare MPI collective to prove
+        if req.task_id == CANARY_TASK_ID:
+            # Canary probe: every rank joins one bare MPI collective to prove
             # the whole job's host loops are responsive, then rank 0 acks. The
             # broadcast above (skip=False) guarantees all ranks reach this
             # barrier in lockstep, so a wedged sub-rank stalls the collective
@@ -462,8 +471,34 @@ def _run_inference_loop(
             comm.barrier()
             if rank == 0:
                 encode_queue.put(
-                    _EncodeJob(task_id=GAS_PROBE_TASK_ID, frames=None, error=None)
+                    _EncodeJob(task_id=CANARY_TASK_ID, frames=None, error=None)
                 )
+            continue
+
+        if req.task_id == CANARY_DEEP_TASK_ID:
+            # Deep canary: replay the runner's compiled warmup forward on EVERY
+            # rank (a real collective forward), so the ack proves the device can
+            # still compute — not just that hosts reach a barrier. We reuse the
+            # exact warmup request so the shape is already compiled: a novel
+            # shape would trigger a recompile and evict real-request programs
+            # from the cache, degrading the very thing we monitor. Frames are
+            # discarded; rank 0 just acks (no ffmpeg). An exception on any rank
+            # becomes an ERROR ack → a probe miss, which is the correct signal.
+            try:
+                runner.run([runner._build_warmup_video_request()])
+                if rank == 0:
+                    encode_queue.put(
+                        _EncodeJob(task_id=CANARY_DEEP_TASK_ID, frames=None, error=None)
+                    )
+            except Exception as e:
+                _log.error(
+                    f"Rank {rank}: deep canary forward failed: {e}\n"
+                    f"{traceback.format_exc()}"
+                )
+                if rank == 0:
+                    encode_queue.put(
+                        _EncodeJob(task_id=CANARY_DEEP_TASK_ID, error=str(e))
+                    )
             continue
 
         if rank == 0:

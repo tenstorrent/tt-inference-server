@@ -64,13 +64,18 @@ class BaseDeviceRunner(ABC):
     def run(self, *args, **kwargs):
         pass
 
-    def health_check(self) -> bool:
-        """Liveness probe answered in the worker process by the gas monitor.
+    def health_check(self, deep: bool = False) -> bool:
+        """Liveness probe answered in the worker process by the canary monitor.
 
-        Called by the device worker when it dequeues a ``GasProbeRequest``,
+        Called by the device worker when it dequeues a ``CanaryProbeRequest``,
         instead of ``run()``. The cheap default returns ``True`` unconditionally:
         reaching this method already proves the worker process and its dequeue
         loop are alive, which is all a single-process runner needs to certify.
+
+        ``deep`` requests a device-depth probe (a real minimal forward) rather
+        than a bare liveness check; runners that can exercise the device should
+        honour it. The default ignores it — a single-process runner has no
+        device hop to verify beyond reaching this method.
         """
         return True
 

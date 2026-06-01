@@ -25,7 +25,7 @@ import os
 import tempfile
 import time
 
-from config.constants import GAS_PROBE_TASK_ID
+from config.constants import CANARY_DEEP_TASK_ID, CANARY_TASK_ID, CANARY_TASK_IDS
 from ipc.video_shm import (
     MAX_IMAGE_PATH_LEN,
     SP_WARMUP_TASK_ID,
@@ -165,10 +165,15 @@ class SPRunner(BaseDeviceRunner):
         return True
 
     @staticmethod
-    def _build_gas_probe_request() -> VideoRequest:
-        """Reserved zero-cost VideoRequest for the gas-probe round-trip."""
+    def _build_canary_request(task_id: str) -> VideoRequest:
+        """Reserved zero-cost VideoRequest for the canary round-trip.
+
+        The body is empty for both shallow and deep probes — the pipeline keys
+        off ``task_id`` to decide whether to run a bare collective or replay its
+        compiled warmup forward, so the server never has to know the shape.
+        """
         return VideoRequest(
-            task_id=GAS_PROBE_TASK_ID,
+            task_id=task_id,
             prompt="",
             negative_prompt="",
             num_inference_steps=0,
@@ -181,46 +186,59 @@ class SPRunner(BaseDeviceRunner):
             image_path="",
         )
 
-    def _round_trip_gas_probe(self, timeout_s: float) -> VideoResponse | None:
-        """Write the gas probe and read its ack within a single ``timeout_s`` budget."""
+    def _round_trip_canary(
+        self, task_id: str, timeout_s: float
+    ) -> VideoResponse | None:
+        """Write the canary probe and read its ack within a single ``timeout_s`` budget."""
         deadline = time.monotonic() + timeout_s
         wrote = self._input_shm.write_request(
-            self._build_gas_probe_request(), timeout_s
+            self._build_canary_request(task_id), timeout_s
         )
         if not wrote:
             self.logger.warning(
-                f"{self._log_id} gas probe: input ring full; treating as miss"
+                f"{self._log_id} canary probe: input ring full; treating as miss"
             )
             return None
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
-        return self._read_response_for(GAS_PROBE_TASK_ID, remaining)
+        return self._read_response_for(task_id, remaining)
 
-    def health_check(self) -> bool:
+    def health_check(self, deep: bool = False) -> bool:
         """End-to-end liveness probe for the multihost video pipeline.
 
-        Round-trips a reserved gas-probe ``VideoRequest`` over the SAME
+        Round-trips a reserved canary ``VideoRequest`` over the SAME
         single-writer SHM input ring real requests use, and waits for the
-        pipeline's ack. ``video_runner`` handles ``GAS_PROBE_TASK_ID`` by
+        pipeline's ack. ``video_runner`` handles ``CANARY_TASK_ID`` by
         broadcasting to all ranks and running a bare MPI collective
         (``skip=False``), so a wedged sub-rank fails this probe — unlike the
         warmup ping, which short-circuits the collective and cannot see it.
+
+        When ``deep`` is set the probe uses ``CANARY_DEEP_TASK_ID``: the pipeline
+        replays its compiled warmup forward across all ranks, so the ack also
+        proves the device can still compute (not just that hosts are looping).
+        Deep probes get the larger ``canary_deep_probe_timeout_seconds`` budget
+        since a real forward is seconds, not the ~ms of a barrier.
         """
         if self._input_shm is None or self._output_shm is None:
             self.logger.error(f"{self._log_id} health_check called before set_device()")
             return False
 
-        timeout_s = self.settings.gas_monitor_probe_timeout_seconds
+        task_id = CANARY_DEEP_TASK_ID if deep else CANARY_TASK_ID
+        timeout_s = (
+            self.settings.canary_deep_probe_timeout_seconds
+            if deep
+            else self.settings.canary_probe_timeout_seconds
+        )
         try:
-            resp = self._round_trip_gas_probe(timeout_s)
+            resp = self._round_trip_canary(task_id, timeout_s)
         except TimeoutError:
             self.logger.warning(
-                f"{self._log_id} gas probe: no pipeline ack within {timeout_s:.1f}s"
+                f"{self._log_id} canary probe: no pipeline ack within {timeout_s:.1f}s"
             )
             return False
         except Exception:
-            self.logger.exception(f"{self._log_id} gas probe: probe failed")
+            self.logger.exception(f"{self._log_id} canary probe: probe failed")
             return False
 
         if resp is None:
@@ -262,16 +280,16 @@ class SPRunner(BaseDeviceRunner):
                 return None
 
             if resp is not None:
-                # A leftover gas-probe ack can only be stale here: this session's
-                # gas monitor starts only AFTER warmup flips the worker ready.
-                # The one-shot drain in set_device() races with gas-probe requests
+                # A leftover canary ack can only be stale here: this session's
+                # canary monitor starts only AFTER warmup flips the worker ready.
+                # The one-shot drain in set_device() races with canary requests
                 # still queued in the input ring from a prior session, which the
                 # peer answers into the output ring after the drain. Discarding
                 # them (instead of failing as "desynced") keeps the warmup
                 # handshake robust across restarts; the deadline still bounds us.
-                if resp.task_id == GAS_PROBE_TASK_ID:
+                if resp.task_id in CANARY_TASK_IDS:
                     self.logger.warning(
-                        f"{self._log_id} warmup: discarding stale gas-probe ack "
+                        f"{self._log_id} warmup: discarding stale canary ack "
                         f"left by a prior session, still awaiting warmup ack"
                     )
                     self._try_unlink(resp.file_path)
@@ -493,8 +511,8 @@ class SPRunner(BaseDeviceRunner):
         Any response whose task_id doesn't match is dropped and we keep reading
         within the original deadline so the caller's timeout contract is
         preserved. Two distinct sources of mismatch:
-          - Reserved control acks (gas probe / warmup): expected and benign. A
-            gas probe that timed out during an outage leaves its request
+          - Reserved control acks (canary probe / warmup): expected and benign. A
+            canary probe that timed out during an outage leaves its request
             queued in the input ring (bounded by INPUT_SLOTS); the peer flushes
             them on recovery, so a real request legitimately skips a burst of
             them. Logged at debug to avoid drowning the logs on recovery.
@@ -515,11 +533,10 @@ class SPRunner(BaseDeviceRunner):
                 )
             if resp.task_id == task_id:
                 return resp
-            log = (
-                self.logger.debug
-                if resp.task_id in (GAS_PROBE_TASK_ID, SP_WARMUP_TASK_ID)
-                else self.logger.warning
+            is_control = (
+                resp.task_id in CANARY_TASK_IDS or resp.task_id == SP_WARMUP_TASK_ID
             )
+            log = self.logger.debug if is_control else self.logger.warning
             log(
                 f"[SP] Dropping stale response task_id={resp.task_id!r} "
                 f"(expected {task_id!r}); unlinking {resp.file_path!r}"

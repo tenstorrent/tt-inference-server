@@ -5,7 +5,7 @@
 import asyncio
 from multiprocessing import Queue
 
-from config.constants import SHUTDOWN_SIGNAL, GasProbeRequest
+from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from device_workers.worker_utils import initialize_device_worker
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue import TTQueue
@@ -87,14 +87,16 @@ def device_worker(
             logger.error(f"Streaming failed for task {request._task_id}: {e}")
             error_queue.put((worker_id, request._task_id, str(e)))
 
-    # Handle gas-monitor probe
-    async def handle_gas_probe(request):
+    # Handle canary-monitor probe
+    async def handle_canary(request):
         try:
             is_alive = bool(
-                await loop.run_in_executor(None, device_runner.health_check)
+                await loop.run_in_executor(
+                    None, lambda: device_runner.health_check(deep=request.deep)
+                )
             )
         except Exception as e:
-            logger.warning(f"Worker {worker_id} gas-probe health_check raised: {e}")
+            logger.warning(f"Worker {worker_id} canary health_check raised: {e}")
             is_alive = False
         result_queue.put((worker_id, request._task_id, is_alive))
 
@@ -172,10 +174,10 @@ def device_worker(
                     return
                 if request is None:
                     continue
-                if isinstance(request, GasProbeRequest):
+                if isinstance(request, CanaryProbeRequest):
                     # Singleton by construction (monitor only probes when idle);
                     # never merged into a batch.
-                    _track(request, asyncio.create_task(handle_gas_probe(request)))
+                    _track(request, asyncio.create_task(handle_canary(request)))
                 elif hasattr(request, "stream") and request.stream:
                     # Fire and forget streaming task - runs concurrently
                     _track(request, asyncio.create_task(handle_streaming(request)))

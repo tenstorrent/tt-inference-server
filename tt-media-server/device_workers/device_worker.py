@@ -5,7 +5,7 @@
 import threading
 from multiprocessing import Queue
 
-from config.constants import GAS_PROBE_TASK_ID, SHUTDOWN_SIGNAL, GasProbeRequest
+from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
 from device_workers.worker_utils import initialize_device_worker
 from utils.logger import TTLogger
@@ -60,18 +60,19 @@ def device_worker(
             loop.close()
             break
 
-        # Gas-monitor probe: The monitor only
+        # Canary-monitor probe: The monitor only
         # submits a probe when idle, so it arrives as its own singleton batch.
         # A raised health_check is converted to a False result (not an
         # error_queue entry) so a probe miss does not inflate the worker's
-        # error_count / restart accounting.
-        if isinstance(requests[0], GasProbeRequest):
+        # error_count / restart accounting. Echo the probe's own ``_task_id``
+        if isinstance(requests[0], CanaryProbeRequest):
+            probe = requests[0]
             try:
-                is_alive = bool(device_runner.health_check())
+                is_alive = bool(device_runner.health_check(deep=probe.deep))
             except Exception as e:
-                logger.warning(f"Worker {worker_id} gas-probe health_check raised: {e}")
+                logger.warning(f"Worker {worker_id} canary health_check raised: {e}")
                 is_alive = False
-            result_queue.put((worker_id, GAS_PROBE_TASK_ID, is_alive))
+            result_queue.put((worker_id, probe._task_id, is_alive))
             continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
