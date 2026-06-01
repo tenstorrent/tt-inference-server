@@ -4,7 +4,6 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <future>
@@ -18,6 +17,7 @@
 
 #include "sockets/i_socket_transport.hpp"
 #include "sockets/socket_transport_state.hpp"
+#include "sockets/zmq_send_queue.hpp"
 
 // Forward-declare ZMQ types to avoid leaking zmq.hpp into every TU.
 namespace zmq {
@@ -66,14 +66,6 @@ class ZmqSocketTransport : public ISocketTransport,
     std::promise<bool> result;
   };
 
-  struct SendQueue {
-    std::mutex queueMutex;
-    std::mutex wakeMutex;
-    std::condition_variable wakeCv;
-    std::atomic<bool> hasItems{false};
-    std::deque<std::shared_ptr<SendRequest>> items;
-  };
-
   bool startIoThread();
   void ioLoop(std::stop_token stopToken, std::promise<bool> initialized);
   bool initializeSocket();
@@ -106,7 +98,7 @@ class ZmqSocketTransport : public ISocketTransport,
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
-  SendQueue sendQueue;
+  ZmqSendQueue<SendRequest> sendQueue;
 
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;

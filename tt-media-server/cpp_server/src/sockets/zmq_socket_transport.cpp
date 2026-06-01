@@ -164,8 +164,7 @@ void ZmqSocketTransport::stop() {
   ioActive_ = false;
   monitorActive_ = false;
   connected_ = false;
-  sendQueue.hasItems = false;
-  sendQueue.wakeCv.notify_all();
+  sendQueue.notifyStopped();
 
   if (ioThread_.joinable()) {
     ioThread_.request_stop();
@@ -246,13 +245,10 @@ bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
-  {
-    std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-    if (!running_ || !ioActive_) return false;
-    sendQueue.items.push_back(std::move(request));
+  if (!sendQueue.pushIf(std::move(request),
+                        [this] { return running_.load() && ioActive_.load(); })) {
+    return false;
   }
-  sendQueue.hasItems = true;
-  sendQueue.wakeCv.notify_one();
 
   try {
     return result.get();
@@ -267,14 +263,8 @@ bool ZmqSocketTransport::processPendingSends() {
 
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-      if (sendQueue.items.empty()) {
-        sendQueue.hasItems = false;
-        return processed;
-      }
-      request = std::move(sendQueue.items.front());
-      sendQueue.items.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return processed;
     }
 
     bool ok = false;
@@ -307,23 +297,14 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  std::unique_lock<std::mutex> lock(sendQueue.wakeMutex);
-  sendQueue.wakeCv.wait_for(lock, IO_IDLE_WAIT, [this] {
-    return sendQueue.hasItems.load() || !ioActive_.load();
-  });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !ioActive_.load(); });
 }
 
 void ZmqSocketTransport::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-      if (sendQueue.items.empty()) {
-        sendQueue.hasItems = false;
-        return;
-      }
-      request = std::move(sendQueue.items.front());
-      sendQueue.items.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return;
     }
     request->result.set_value(false);
   }

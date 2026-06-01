@@ -5,9 +5,7 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <future>
 #include <memory>
@@ -21,6 +19,7 @@
 #include <vector>
 
 #include "sockets/socket_serialization.hpp"
+#include "sockets/zmq_send_queue.hpp"
 
 namespace tt::gateway {
 
@@ -57,14 +56,6 @@ class ZmqPrefillRouter {
     std::promise<bool> result;
   };
 
-  struct SendQueue {
-    std::mutex queueMutex;
-    std::mutex wakeMutex;
-    std::condition_variable wakeCv;
-    std::atomic<bool> hasItems{false};
-    std::deque<std::shared_ptr<SendRequest>> items;
-  };
-
   using RawHandler =
       std::function<void(const PeerIdentity&, const std::vector<uint8_t>&)>;
 
@@ -96,7 +87,7 @@ class ZmqPrefillRouter {
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       last_seen_by_server_;
 
-  SendQueue sendQueue;
+  tt::sockets::ZmqSendQueue<SendRequest> sendQueue;
 
   mutable std::mutex handlers_mutex_;
   std::unordered_map<std::string, RawHandler> handlers_;
@@ -116,15 +107,9 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     request->data = tt::sockets::wire::serializeMessage(messageType, obj);
     auto result = request->result.get_future();
 
-    {
-      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-      if (!running_) {
-        return false;
-      }
-      sendQueue.items.push_back(std::move(request));
+    if (!sendQueue.pushIf(std::move(request), [this] { return running_.load(); })) {
+      return false;
     }
-    sendQueue.hasItems = true;
-    sendQueue.wakeCv.notify_one();
     return result.get();
   } catch (const std::exception&) {
     return false;

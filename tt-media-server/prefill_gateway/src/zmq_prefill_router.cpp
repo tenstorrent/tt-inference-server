@@ -53,8 +53,7 @@ void ZmqPrefillRouter::stop() {
   }
 
   running_ = false;
-  sendQueue.hasItems = false;
-  sendQueue.wakeCv.notify_all();
+  sendQueue.notifyStopped();
 
   if (io_thread_.joinable()) {
     io_thread_.request_stop();
@@ -189,14 +188,8 @@ bool ZmqPrefillRouter::processPendingSends() {
 
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-      if (sendQueue.items.empty()) {
-        sendQueue.hasItems = false;
-        return processed;
-      }
-      request = std::move(sendQueue.items.front());
-      sendQueue.items.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return processed;
     }
 
     bool ok = false;
@@ -246,23 +239,14 @@ bool ZmqPrefillRouter::receiveAvailableMessages() {
 }
 
 void ZmqPrefillRouter::waitForIoWork() {
-  std::unique_lock<std::mutex> lock(sendQueue.wakeMutex);
-  sendQueue.wakeCv.wait_for(lock, IO_IDLE_WAIT, [this] {
-    return sendQueue.hasItems.load() || !running_.load();
-  });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !running_.load(); });
 }
 
 void ZmqPrefillRouter::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
-      if (sendQueue.items.empty()) {
-        sendQueue.hasItems = false;
-        return;
-      }
-      request = std::move(sendQueue.items.front());
-      sendQueue.items.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return;
     }
     request->result.set_value(false);
   }
