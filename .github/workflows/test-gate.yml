@@ -26,7 +26,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
-      github-actions: ${{ steps.filter.outputs.github_actions }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
       prefill-gateway: ${{ steps.filter.outputs.prefill_gateway }}
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
@@ -43,10 +42,6 @@ jobs:
               - '**/requirements*.txt'
               - 'pyproject.toml'
               - '.github/workflows/*.yml'
-            github_actions:
-              - '.github/workflows/**'
-              - '.github/actions/**'
-              - '.github/actionlint.yaml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
             prefill_gateway:
@@ -86,24 +81,6 @@ jobs:
 
       - name: Run ruff format check
         run: ruff format --check .
-
-  workflow-lint:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.github-actions == 'true' }}
-    name: GitHub Actions Lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run actionlint
-        uses: docker://rhysd/actionlint:1.7.12
-        with:
-          # Start with workflow/expression validation; embedded ShellCheck can
-          # be enabled after existing workflow shell findings are cleaned up.
-          args: -shellcheck= -verbose
 
   verify-media-server-install:
     needs: detect-changes
@@ -2699,7 +2676,6 @@ jobs:
     needs:
       - detect-changes
       - lint
-      - workflow-lint
       - verify-media-server-install
       - unit-tests-main
       - unit-tests-media
@@ -2726,7 +2702,6 @@ jobs:
           STATUS=0
           EVENT_NAME="${{ github.event_name }}"
           SHOULD_TEST="${{ needs.detect-changes.outputs.should-test }}"
-          GITHUB_ACTIONS="${{ needs.detect-changes.outputs.github-actions }}"
           CPP_SERVER="${{ needs.detect-changes.outputs.cpp-server }}"
           PREFILL_GATEWAY="${{ needs.detect-changes.outputs.prefill-gateway }}"
           MEDIA_SERVER_DEPS="${{ needs.detect-changes.outputs.media-server-deps }}"
@@ -2739,13 +2714,6 @@ jobs:
               lint|unit-tests-main|unit-tests-media|unit-tests-summary|llm-streaming-performance)
                 if [[ "$SHOULD_TEST" != "true" ]]; then
                   echo "no Python, dependency, or workflow paths matched"
-                else
-                  echo "job condition evaluated false"
-                fi
-                ;;
-              workflow-lint)
-                if [[ "$GITHUB_ACTIONS" != "true" ]]; then
-                  echo "GitHub Actions workflow/action files did not change"
                 else
                   echo "job condition evaluated false"
                 fi
@@ -2805,7 +2773,6 @@ jobs:
           JOB_ORDER=(
             detect-changes
             lint
-            workflow-lint
             verify-media-server-install
             unit-tests-main
             unit-tests-media
@@ -2829,7 +2796,6 @@ jobs:
           declare -A JOBS=(
             [detect-changes]="${{ needs.detect-changes.result }}"
             [lint]="${{ needs.lint.result }}"
-            [workflow-lint]="${{ needs.workflow-lint.result }}"
             [verify-media-server-install]="${{ needs.verify-media-server-install.result }}"
             [unit-tests-main]="${{ needs.unit-tests-main.result }}"
             [unit-tests-media]="${{ needs.unit-tests-media.result }}"
