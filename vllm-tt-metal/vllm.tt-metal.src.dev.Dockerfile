@@ -211,11 +211,16 @@ RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
 USER ${CONTAINER_APP_USERNAME}
 
 # Environment variable defaults (can be overridden at runtime with -e)
+# TT_VLLM_INTERFACE marks this image as plugin-mode (upstream vLLM + tt-vllm-plugin).
+# Host-side code reads this via `docker inspect` to decide whether to emit
+# --plugin-config (this image) or --override-tt-config (legacy fork images without
+# the marker). See workflows/utils.image_uses_plugin_interface().
 ENV TT_METAL_LOGS_PATH=/home/container_app_user/logs \
     CACHE_ROOT=/home/container_app_user/cache_root \
     MODEL_SPECS_JSON_PATH=/home/container_app_user/model_specs/model_spec.json \
     VLLM_TARGET_DEVICE=tt \
-    WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
+    WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml \
+    TT_VLLM_INTERFACE=plugin
 
 # Create cache_root directory as non-root user to seed Docker volume with correct ownership
 RUN mkdir -p ${CACHE_ROOT}
