@@ -33,6 +33,12 @@ Env knobs (shared by both variants)::
     MOCK_FRAME_HEIGHT        (default 8)   placeholder frame height
     MOCK_FRAME_WIDTH         (default 8)   placeholder frame width
     MOCK_NUM_FRAMES          (default 4)   placeholder frame count
+    MOCK_DEEP_FAIL           (default none) fault-inject the DEEP canary only:
+                               none  -> healthy ack (device alive)
+                               error -> ERROR response (device fault)
+                               hang  -> no response (wedged device)
+                             Shallow canaries + real requests stay healthy, so
+                             this models a LIVE host with a DYING device.
 """
 
 from __future__ import annotations
@@ -53,6 +59,10 @@ _DEFAULT_ENCODE_S = 1.0
 _DEFAULT_HEIGHT = 8
 _DEFAULT_WIDTH = 8
 _DEFAULT_NUM_FRAMES = 4
+
+# Deep-canary fault-injection modes (test harness only).
+_DEEP_FAIL_NONE = "none"
+_DEEP_FAIL_MODES = frozenset({_DEEP_FAIL_NONE, "error", "hang"})
 
 ENCODER_QUEUE_MAXSIZE = 2
 ENCODER_JOIN_TIMEOUT_S = 30.0
@@ -78,6 +88,7 @@ class _BridgeConfig:
     height: int
     width: int
     numFrames: int
+    deepFail: str
     perRequestValidator: Optional[Callable[[Any], None]]
 
 
@@ -105,6 +116,16 @@ def _isShutdown() -> bool:
     return _shutdown
 
 
+def _readDeepFailMode() -> str:
+    mode = os.environ.get("MOCK_DEEP_FAIL", _DEEP_FAIL_NONE).strip().lower()
+    if mode not in _DEEP_FAIL_MODES:
+        raise ValueError(
+            f"MOCK_DEEP_FAIL={mode!r} invalid; expected one of "
+            f"{sorted(_DEEP_FAIL_MODES)}"
+        )
+    return mode
+
+
 def _readBridgeConfig(
     label: str,
     perRequestValidator: Optional[Callable[[Any], None]],
@@ -119,6 +140,7 @@ def _readBridgeConfig(
         height=_readEnvInt("MOCK_FRAME_HEIGHT", _DEFAULT_HEIGHT),
         width=_readEnvInt("MOCK_FRAME_WIDTH", _DEFAULT_WIDTH),
         numFrames=_readEnvInt("MOCK_NUM_FRAMES", _DEFAULT_NUM_FRAMES),
+        deepFail=_readDeepFailMode(),
         perRequestValidator=perRequestValidator,
     )
 
@@ -136,7 +158,7 @@ def runMockBridge(
     contract violation. The T2V mock passes ``None`` (no validation);
     the I2V mock passes a validator that opens + parses the side-file.
     """
-    from config.constants import GAS_PROBE_TASK_ID
+    from config.constants import CANARY_DEEP_TASK_ID, CANARY_TASK_IDS
     from ipc.video_shm import (
         SP_WARMUP_TASK_ID,
         VideoResponse,
@@ -304,15 +326,42 @@ def runMockBridge(
         except Exception as err:
             logger.error(f"{cfg.label} failed writing control-ping response: {err}")
 
+    def replyDeepCanary(taskId: str) -> None:
+        """Deep-canary ack with optional fault injection (MOCK_DEEP_FAIL).
+
+        Lets the mock model a live host with a dying device: shallow canaries
+        keep succeeding via ``replyWarmupPing`` while the deep forward stalls
+        (``hang``) or errors (``error``) — a wedge a single-process mock can't
+        otherwise express. ``none`` acks healthy like the shallow path.
+        """
+        if cfg.deepFail == "hang":
+            logger.warning(
+                f"{cfg.label} MOCK_DEEP_FAIL=hang: dropping deep canary "
+                f"{taskId} (simulated wedged device)"
+            )
+            return
+        if cfg.deepFail == "error":
+            logger.warning(
+                f"{cfg.label} MOCK_DEEP_FAIL=error: failing deep canary "
+                f"{taskId} (simulated device fault)"
+            )
+            writeError(taskId, RuntimeError("simulated device fault"))
+            return
+        replyWarmupPing(taskId)
+
     try:
         while not _shutdown:
             req = inputShm.read_request()
             if req is None:
                 break
-            if req.task_id in (SP_WARMUP_TASK_ID, GAS_PROBE_TASK_ID):
-                # Single-process mock has no MPI ranks, so the gas probe has no
-                # collective to run — an immediate SUCCESS ack is the right
-                # mock of a healthy pipeline.
+            # Deep canary first so MOCK_DEEP_FAIL can target it in isolation.
+            if req.task_id == CANARY_DEEP_TASK_ID:
+                replyDeepCanary(req.task_id)
+                continue
+            if req.task_id == SP_WARMUP_TASK_ID or req.task_id in CANARY_TASK_IDS:
+                # Single-process mock has no MPI ranks or device, so the shallow
+                # collective has nothing to run — an immediate SUCCESS ack is the
+                # right mock of a healthy host/pipeline.
                 replyWarmupPing(req.task_id)
                 continue
             pool.submit(handleRequest, req)
