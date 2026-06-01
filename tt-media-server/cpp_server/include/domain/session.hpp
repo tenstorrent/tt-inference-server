@@ -116,8 +116,8 @@ class Session {
   }
 
  private:
-  std::string session_id_;  // Stable UUID, never changes
-  size_t hash_;             // Current content hash, changes with conversation
+  std::string session_id_;   // Stable UUID, never changes
+  size_t hash_;              // Current content hash, changes with conversation
   std::string response_id_;  // Current response id (Responses API key), empty
                              // until registered
   size_t cached_prompt_len_ =

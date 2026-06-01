@@ -782,9 +782,8 @@ void SessionManager::addToResponseIdIndex(const std::string& sessionId,
                                           const std::string& responseId) {
   if (responseId.empty()) return;
   bool exists = responseIdIndex.modify(
-      responseId, [&sessionId](std::list<std::string>& ids) {
-        ids.push_back(sessionId);
-      });
+      responseId,
+      [&sessionId](std::list<std::string>& ids) { ids.push_back(sessionId); });
   if (!exists) {
     responseIdIndex.insert(responseId, std::list<std::string>{sessionId});
   }
