@@ -7,14 +7,14 @@ import difflib
 import pytest
 
 from workflows.helm_generator.cli import DEFAULT_VALUES_PATH, filter_specs, generate
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS
 
 
 def test_committed_values_yaml_in_sync_with_model_spec(tmp_path):
     work = tmp_path / "values.yaml"
     work.write_text(DEFAULT_VALUES_PATH.read_text())
 
-    specs = filter_specs(MODEL_SPECS.values(), include_multihost=False)
+    specs = filter_specs(IMAGE_PINNED_MODEL_SPECS, include_multihost=False)
     generate(values_path=work, specs=specs)
 
     committed = DEFAULT_VALUES_PATH.read_text()
