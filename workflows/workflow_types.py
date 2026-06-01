@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
+from typing import List
 
 
 class WorkflowType(IntEnum):
@@ -31,18 +32,21 @@ class WorkflowVenvType(IntEnum):
     TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
+    V2_RUN_SCRIPT = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
     EVALS_AUDIO = auto()
     EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
+    EVALS_AGENTIC = auto()
     BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
     BENCHMARKS_GENAI_PERF = auto()
     BENCHMARKS_AIPERF = auto()
+    BENCHMARKS_GUIDELLM = auto()
     HF_SETUP = auto()
     SERVER = auto()
     TT_SMI = auto()
@@ -53,6 +57,7 @@ class BenchmarkTaskType(IntEnum):
     HTTP_CLIENT_VLLM_API = auto()
     HTTP_CLIENT_CNN_API = auto()
     HTTP_CLIENT_VIDEO_API = auto()
+    HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API = auto()
     GENAI_PERF = auto()
     AIPERF = auto()
 
@@ -121,7 +126,7 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P150X4: "BH 4xP150",
             DeviceTypes.P150X8: "BH LoudBox",
             DeviceTypes.P300: "BH P300",
-            DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
+            DeviceTypes.P300X2: "BH QuietBox 2",
             DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
@@ -217,6 +222,8 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.BLACKHOLE_GALAXY, 4): DeviceTypes.P150X8,
             (DeviceTypes.BLACKHOLE_GALAXY, 8): DeviceTypes.P150X4,
             (DeviceTypes.BLACKHOLE_GALAXY, 32): DeviceTypes.P150,
+            (DeviceTypes.DUAL_GALAXY, 8): DeviceTypes.T3K,
+            (DeviceTypes.QUAD_GALAXY, 16): DeviceTypes.T3K,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
@@ -291,6 +298,24 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }[self]
+
+    @property
+    def required_target_tiers(self) -> List[str]:
+        """Tiers that MUST pass for a model at this status level.
+
+        Tiers not in this list are still computed and reported but
+        treated as informational -- failures are accepted and do not
+        block a release. This enables programmatic masking: e.g. an
+        EXPERIMENTAL model (forge, new bring-up) can fail every
+        performance benchmark and still be released.
+        """
+        tier_map = {
+            ModelStatusTypes.EXPERIMENTAL: [],
+            ModelStatusTypes.FUNCTIONAL: ["functional"],
+            ModelStatusTypes.COMPLETE: ["functional", "complete"],
+            ModelStatusTypes.TOP_PERF: ["functional", "complete", "target"],
+        }
+        return tier_map[self]
 
 
 class EvalLimitMode(IntEnum):
@@ -386,11 +411,11 @@ class ModelType(IntEnum):
         task_types = {
             ModelType.LLM: "text",
             ModelType.VLM: "vlm",
-            ModelType.AUDIO: "audio",
+            ModelType.AUDIO: "asr",  # Automatic Speech Recognition
             ModelType.IMAGE: "image",
             ModelType.CNN: "cnn",
             ModelType.EMBEDDING: "embedding",
-            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
         }
         return task_types[self]

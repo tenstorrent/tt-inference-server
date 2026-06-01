@@ -18,8 +18,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
-from ..context import MediaContext, common_report_metadata, require_health
+from report_module.schema import Block
+
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    run_tiered_check,
+)
+from ..context import MediaContext, require_health
 from ..test_status import CnnGenerationTestStatus
 
 logger = logging.getLogger(__name__)
@@ -84,7 +91,7 @@ def _ensure_imagenet_dataset() -> tuple[Path, list[dict]]:
     )
     download_test = VisionEvalsTest(config, {"request": request})
     download_result = download_test.run_tests()
-    if not download_result.get("success"):
+    if not download_result.data.get("success"):
         raise RuntimeError(f"Failed to download ImageNet samples: {download_result}")
 
     with metadata_path.open("r", encoding="utf-8") as f:
@@ -183,7 +190,7 @@ def _cnn_target_checks(
     )
 
 
-def run_cnn_benchmark(ctx: MediaContext) -> dict:
+def run_cnn_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for a CNN model (MobileNetV2, ResNet, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -207,18 +214,31 @@ def run_cnn_benchmark(ctx: MediaContext) -> dict:
     target_checks, accuracy_check = _cnn_target_checks(
         ctx, ttft_value, inference_steps_per_second
     )
-    report_data = common_report_metadata(ctx, "cnn")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "num_inference_steps": status_list[0].num_inference_steps if status_list else 0,
-        "ttft": ttft_value,
-        "inference_steps_per_second": inference_steps_per_second,
-        "tput_user": inference_steps_per_second,
-        "accuracy_check": accuracy_check,
-        "target_checks": target_checks,
-    }
-
-    return report_data
+    return Block(
+        kind="benchmarks",
+        task_type="cnn",
+        title="CNN Benchmark",
+        id=block_id(ctx) or None,
+        targets={
+            "num_prompts": len(status_list),
+            "num_inference_steps": (
+                status_list[0].num_inference_steps if status_list else 0
+            ),
+        },
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "num_inference_steps": (
+                    status_list[0].num_inference_steps if status_list else 0
+                ),
+                "ttft": ttft_value,
+                "inference_steps_per_second": inference_steps_per_second,
+                "tput_user": inference_steps_per_second,
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_cnn_benchmark"]

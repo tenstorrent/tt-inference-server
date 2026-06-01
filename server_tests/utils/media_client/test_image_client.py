@@ -408,7 +408,8 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Multiple status entries to verify averaging of TTFT and inference_steps_per_second
+        # Two requests with different elapsed values. Aggregate steps/sec is
+        # 40 steps / 3.0 s ≈ 13.33; the avg-of-rates blend would be 15.0.
         status_list = [
             ImageGenerationTestStatus(
                 status=True,
@@ -455,10 +456,12 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 2
         assert benchmarks["num_inference_steps"] == 20
-        # TTFT: (1.0 + 2.0) / 2 = 1.5
-        assert benchmarks["ttft"] == 1.5
-        # inference_steps_per_second: (20.0 + 10.0) / 2 = 15.0
-        assert benchmarks["inference_steps_per_second"] == 15.0
+        assert benchmarks["latency"] == 1.5
+        assert benchmarks["inference_steps_per_second"] == pytest.approx(40 / 3)
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify metadata
         assert report_data["model"] == "test_model"

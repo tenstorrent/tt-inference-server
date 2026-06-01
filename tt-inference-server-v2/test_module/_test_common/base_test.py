@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -9,11 +11,17 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import requests
 
+from report_module.schema import Block
+
+from .blockify import block_id
 from .test_classes import TestConfig
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +45,28 @@ HEALTH_CHECK_CONFIG = HealthCheckConfig()
 
 
 class BaseTest(ABC):
+    # Subclasses set these so run_tests() can build a properly-tagged Block.
+    KIND: str = "base"
+    TASK_TYPE: str = "infra"
+
     def __init__(
-        self, config: TestConfig, targets: Dict[str, Any], description: str = ""
+        self,
+        config: TestConfig,
+        targets: Dict[str, Any],
+        description: str = "",
+        ctx: Optional["MediaContext"] = None,
     ):
         self.config = config
         self.targets = targets
         self.description = description
-        self.service_port = os.getenv("SERVICE_PORT", "8000")
+        self.ctx = ctx
+        # Prefer ctx.service_port over the env var so sweep-orchestrated runs
+        # don't depend on SERVICE_PORT being exported in the shell.
+        self.service_port = (
+            str(ctx.service_port)
+            if ctx is not None
+            else os.getenv("SERVICE_PORT", "8000")
+        )
         self.timeout = config.get("timeout")
         self.retry_attempts = config.get("retry_attempts")
         self.break_on_failure = config.get("break_on_failure")
@@ -89,13 +112,56 @@ class BaseTest(ABC):
             raise ValueError(f"targets.{key} must be >= 1, got {value}")
         return value
 
-    def run_tests(self):
-        last_exception = None
+    def _block(self, data: Dict[str, Any]) -> Block:
+        """Wrap ``data`` in a Block tagged kind="spec_tests"."""
+        bid = block_id(self.ctx) or None if self.ctx is not None else None
+        return Block(
+            kind="spec_tests",
+            id=bid,
+            title=self.KIND.replace("_", " ").title(),
+            task_type=self.TASK_TYPE,
+            targets=dict(self.targets),
+            data=data,
+        )
+
+    def run_tests(self) -> Block:
+        """Run the test with retry/log accounting and return a Block.
+
+        On success, ``Block.data`` carries the envelope keys
+        (``success``, ``attempts``, ``logs``, ``elapsed_seconds``,
+        ``test_name``, ``description``) merged with the test's own
+        result dict at the top level — so a result like
+        ``{"runner_in_use": "vllm", "ttft": 0.18}`` becomes
+        ``{"success": True, "attempts": 1, "logs": [...],
+        "runner_in_use": "vllm", "ttft": 0.18}``.
+
+        Spreading at the top level (rather than nesting under ``"result"``)
+        lets the report renderer recurse one more level into nested test
+        data — otherwise dict-of-dicts result fields get JSON-blobbed into
+        a single cell.
+
+        Non-dict results fall back to the legacy ``{"result": <raw>}`` shape.
+        Envelope keys take precedence on collision so meta-info stays
+        reliable.
+
+        On failure (all retries exhausted)::
+            {"success": False, "attempts": int, "logs": list,
+             "elapsed_seconds": float, "test_name": str,
+             "description": str, "error": {"type": str, "message": str}}
+
+        ``break_on_failure=True`` re-raises ``SystemExit`` after building the
+        failure Block so callers that opt into hard-fail still get one;
+        otherwise the Block is returned and the caller decides.
+        """
+        last_exception: Optional[BaseException] = None
+        attempts_used = 0
+        run_started = time.monotonic()
 
         for attempt in range(self.retry_attempts + 1):
+            attempts_used = attempt + 1
             try:
                 logger.info(
-                    f"Running tests (attempt {attempt + 1}/{self.retry_attempts + 1})"
+                    f"Running tests (attempt {attempts_used}/{self.retry_attempts + 1})"
                 )
 
                 result = asyncio.run(
@@ -104,29 +170,44 @@ class BaseTest(ABC):
                     )
                 )
 
-                success = result.get("success", False)
+                # Tests that don't explicitly mark success are treated as
+                # passing once the coroutine returns without raising. The
+                # legacy "default to False" was a latent bug for tests like
+                # MediaServerLivenessTest that just return the response body.
+                if isinstance(result, dict) and "success" in result:
+                    success = bool(result["success"])
+                else:
+                    success = True
+
                 if success:
                     logger.info("Tests completed successfully")
                 else:
                     logger.error("Tests failed")
 
-                # Return both result and logs
-                return {
-                    "success": True if result.get("success", False) else False,
-                    "result": result,
-                    "logs": self.logs,
-                    "attempts": attempt + 1,
-                }
+                if isinstance(result, dict):
+                    data: Dict[str, Any] = {**result}
+                else:
+                    data = {"result": result}
+                data["success"] = success
+                data["attempts"] = attempts_used
+                data["logs"] = list(self.logs)
+                data["elapsed_seconds"] = time.monotonic() - run_started
+                data["test_name"] = type(self).__name__
+                data["description"] = self.description
+                return self._block(data)
 
             except asyncio.TimeoutError as e:
                 last_exception = e
-                error_msg = f"Tests timed out after {self.timeout} seconds (attempt {attempt + 1}/{self.retry_attempts + 1})"
+                error_msg = (
+                    f"Tests timed out after {self.timeout} seconds "
+                    f"(attempt {attempts_used}/{self.retry_attempts + 1})"
+                )
                 logger.error(error_msg)
                 self.logs.append(
                     {
                         "timestamp": time.time(),
                         "level": "ERROR",
-                        "attempt": attempt + 1,
+                        "attempt": attempts_used,
                         "type": "TimeoutError",
                         "message": error_msg,
                         "exception": str(e),
@@ -135,24 +216,30 @@ class BaseTest(ABC):
 
             except SystemExit as e:
                 last_exception = e
-                error_msg = f"SystemExit encountered (attempt {attempt + 1}/{self.retry_attempts + 1}): {str(e)}"
+                error_msg = (
+                    f"SystemExit encountered "
+                    f"(attempt {attempts_used}/{self.retry_attempts + 1}): {e}"
+                )
                 logger.error(error_msg)
                 self.logs.append(
                     {
                         "timestamp": time.time(),
                         "level": "ERROR",
-                        "attempt": attempt + 1,
+                        "attempt": attempts_used,
                         "type": "SystemExit",
                         "message": error_msg,
                         "exception": str(e),
                     }
                 )
-                # Include logs in SystemExit for immediate access
-                raise SystemExit(f"{str(e)}\nLogs: {self.logs}")
+                # SystemExit short-circuits the retry loop — no further attempts.
+                break
 
             except Exception as e:
                 last_exception = e
-                error_msg = f"Test failed with exception (attempt {attempt + 1}/{self.retry_attempts + 1}): {str(e)}"
+                error_msg = (
+                    f"Test failed with exception "
+                    f"(attempt {attempts_used}/{self.retry_attempts + 1}): {e}"
+                )
                 logger.error(error_msg)
                 logger.error(f"Exception type: {type(e).__name__}")
                 traceback_str = traceback.format_exc()
@@ -161,7 +248,7 @@ class BaseTest(ABC):
                     {
                         "timestamp": time.time(),
                         "level": "ERROR",
-                        "attempt": attempt + 1,
+                        "attempt": attempts_used,
                         "type": type(e).__name__,
                         "message": error_msg,
                         "exception": str(e),
@@ -173,20 +260,35 @@ class BaseTest(ABC):
                 logger.info(f"Retrying in {self.retry_delay} seconds...")
                 time.sleep(self.retry_delay)
 
-        # All retries exhausted - return failure with logs
-        logger.error(f"All {self.retry_attempts + 1} attempts failed. Last exception:")
+        logger.error(f"All {attempts_used} attempt(s) failed.")
 
-        if self.config.get("break_on_failure"):
+        error_payload = (
+            {
+                "type": type(last_exception).__name__,
+                "message": str(last_exception),
+            }
+            if last_exception is not None
+            else {
+                "type": "RuntimeError",
+                "message": "Tests failed after all retry attempts",
+            }
+        )
+        failure_block = self._block(
+            {
+                "success": False,
+                "attempts": attempts_used,
+                "logs": list(self.logs),
+                "elapsed_seconds": time.monotonic() - run_started,
+                "test_name": type(self).__name__,
+                "description": self.description,
+                "error": error_payload,
+            }
+        )
+
+        if self.break_on_failure:
             raise SystemExit(f"Test failed after all retries. Logs: {self.logs}")
 
-        if last_exception:
-            # Attach logs to the exception
-            last_exception.test_logs = self.logs
-            raise last_exception
-        else:
-            error = RuntimeError("Tests failed after all retry attempts")
-            error.test_logs = self.logs
-            raise error
+        return failure_block
 
     def get_logs(self):
         """Get all logs collected during test execution"""

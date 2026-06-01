@@ -90,6 +90,14 @@ class ConcurrentMap {
     return true;
   }
 
+  // Get a pointer to the value in the map
+  Value* getPtr(const Key& key) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) return nullptr;
+    return &it->second;
+  }
+
   template <typename Func>
   void forEach(Func&& func) {
     std::lock_guard lock(mutex);

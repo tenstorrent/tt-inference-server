@@ -37,7 +37,7 @@ def mock_audio_performance_targets():
         "tolerance": 0.05,
         "max_concurrency": 1,
         "num_eval_runs": 2,
-        "task_type": "audio",
+        "task_type": "asr",
     }
 
 
@@ -73,7 +73,7 @@ def mock_audio_performance_targets():
                 "tolerance": 0.05,
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
             },
         ),
     ],

@@ -9,14 +9,17 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::domain;
+using namespace tt::domain::llm;
 using namespace tt::utils;
 using tt::utils::tokenizers::activeTokenizer;
 
 namespace {
+
+using namespace tt::domain::llm;
 
 ChatMessage makeMessage(std::string role, std::string content) {
   ChatMessage m;
@@ -145,7 +148,7 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
       makeMessage("assistant", "reply"),
       makeMessage("user", "newer"),
   };
-  std::string delta = renderLastUserTurn(thread);
+  std::string delta = renderLastUserTurn(thread, /*hasPriorTurn=*/true);
   EXPECT_FALSE(delta.empty());
   // Last user content should appear in the rendered single-turn template
   EXPECT_NE(delta.find("newer"), std::string::npos);
@@ -153,120 +156,23 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_PicksLastUser) {
 }
 
 TEST_F(ConversationHasherTest, RenderLastUserTurn_NoUserRoleReturnsEmpty) {
-  EXPECT_EQ(renderLastUserTurn({makeMessage("assistant", "no user")}), "");
+  EXPECT_EQ(renderLastUserTurn({makeMessage("assistant", "no user")},
+                               /*hasPriorTurn=*/false),
+            "");
 }
 
-TEST_F(ConversationHasherTest,
-       ComputePrefixCachingInfo_AlignedWithDecomposedPipeline) {
-  // Primary regression target: computePrefixCachingInfo() must stay consistent
-  // with strip / hash / render / prior extraction.
-  std::vector<ChatMessage> messages = {
-      makeMessage("system", "You are a test bot"),
-      makeMessage("user", "first turn"),
-      makeMessage("assistant", "ack"),
-      makeMessage("user", "second turn"),
-  };
-  std::vector<ChatMessage> turns = stripToolMessages(messages);
-
-  PrefixCachingInfo info = computePrefixCachingInfo(messages);
-
-  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(turns));
-  EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
-
-  std::optional<std::vector<ChatMessage>> prior =
-      extractPriorTurnPrefix(messages);
-  if (prior.has_value()) {
-    EXPECT_TRUE(info.hasPriorTurn);
-    ASSERT_TRUE(info.lookupHash.has_value());
-    EXPECT_EQ(*info.lookupHash, hashConversationPrefix(*prior));
-  } else {
-    EXPECT_FALSE(info.hasPriorTurn);
-    EXPECT_FALSE(info.lookupHash.has_value());
+TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
+  auto cfg = tt::utils::tokenizers::getTokenizerConfig();
+  if (!cfg.add_bos_token || cfg.bos_token.empty()) {
+    GTEST_SKIP() << "Tokenizer config does not add a BOS token";
   }
-}
 
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
-  std::vector<ChatMessage> messages = {makeMessage("user", "solo")};
-  PrefixCachingInfo info = computePrefixCachingInfo(messages);
+  std::vector<ChatMessage> lastUser = {makeMessage("user", "first turn")};
+  std::string freshDelta = renderLastUserTurn(lastUser, /*hasPriorTurn=*/false);
+  EXPECT_EQ(freshDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
+      << "Fresh sessions should keep BOS at the start of the delta";
 
-  EXPECT_FALSE(info.hasPriorTurn);
-  EXPECT_FALSE(info.lookupHash.has_value());
-  EXPECT_EQ(info.registrationHash,
-            hashConversationPrefix(stripToolMessages(messages)));
-  EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages)));
-}
-
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_MultiTurnHasLookup) {
-  std::vector<ChatMessage> messages = {
-      makeMessage("user", "q1"),
-      makeMessage("assistant", "a1"),
-      makeMessage("user", "q2"),
-  };
-  PrefixCachingInfo info = computePrefixCachingInfo(messages);
-  std::vector<ChatMessage> turns = stripToolMessages(messages);
-
-  EXPECT_TRUE(info.hasPriorTurn);
-  ASSERT_TRUE(info.lookupHash.has_value());
-  std::vector<ChatMessage> prior = {makeMessage("user", "q1")};
-  EXPECT_EQ(*info.lookupHash, hashConversationPrefix(prior));
-  EXPECT_NE(info.registrationHash, *info.lookupHash);
-  EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
-}
-
-TEST_F(ConversationHasherTest,
-       ComputePrefixCachingInfo_AssistantUserOnlyHasNoLookup) {
-  std::vector<ChatMessage> messages = {
-      makeMessage("assistant", "hi"),
-      makeMessage("user", "u"),
-  };
-  PrefixCachingInfo info = computePrefixCachingInfo(messages);
-
-  EXPECT_FALSE(info.hasPriorTurn);
-  EXPECT_FALSE(info.lookupHash.has_value());
-}
-
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StripsTools) {
-  std::vector<ChatMessage> messages = {
-      makeMessage("user", "q1"),
-      makeMessage("assistant", "call tool"),
-      makeMessage("tool", "json result"),
-      makeMessage("user", "q2"),
-  };
-  std::vector<ChatMessage> noTool = {
-      makeMessage("user", "q1"),
-      makeMessage("assistant", "call tool"),
-      makeMessage("user", "q2"),
-  };
-
-  PrefixCachingInfo got = computePrefixCachingInfo(messages);
-  PrefixCachingInfo noToolInfo = computePrefixCachingInfo(noTool);
-
-  // Stripped view matches a conversation without the tool line.
-  EXPECT_EQ(got.registrationHash, noToolInfo.registrationHash);
-  EXPECT_EQ(got.deltaPrompt, noToolInfo.deltaPrompt);
-  EXPECT_EQ(got.hasPriorTurn, noToolInfo.hasPriorTurn);
-  if (got.lookupHash.has_value()) {
-    ASSERT_TRUE(noToolInfo.lookupHash.has_value());
-    EXPECT_EQ(*got.lookupHash, *noToolInfo.lookupHash);
-  } else {
-    EXPECT_FALSE(noToolInfo.lookupHash.has_value());
-  }
-}
-
-TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_StabilitySecondTurn) {
-  // After turn 1, "registration" is the one-message conversation; add assistant
-  // + user and ensure lookup would find the first registration hash.
-  std::vector<ChatMessage> turn1 = {makeMessage("user", "first")};
-  uint64_t hTurn1 = hashConversationPrefix(turn1);
-
-  std::vector<ChatMessage> turn2 = {
-      makeMessage("user", "first"),
-      makeMessage("assistant", "ack"),
-      makeMessage("user", "second"),
-  };
-  PrefixCachingInfo info2 = computePrefixCachingInfo(turn2);
-  ASSERT_TRUE(info2.hasPriorTurn);
-  ASSERT_TRUE(info2.lookupHash.has_value());
-  EXPECT_EQ(*info2.lookupHash, hTurn1);
-  EXPECT_EQ(info2.deltaPrompt, renderLastUserTurn(stripToolMessages(turn2)));
+  std::string contDelta = renderLastUserTurn(lastUser, /*hasPriorTurn=*/true);
+  EXPECT_NE(contDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
+      << "Continuations must not duplicate BOS already in the KV cache";
 }

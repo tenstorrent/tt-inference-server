@@ -59,6 +59,22 @@ class VideoStatus(IntEnum):
     ERROR = 1
 
 
+# Sentinel task_id used by SPRunner's startup ping to signal readiness to the
+# pipeline rank 0. The pipeline short-circuits on this value: it writes a
+# SUCCESS VideoResponse (empty file_path) without running inference, so the
+# round-trip latency is exactly the pipeline's cold-start time. Picking a
+# value that cannot collide with the UUID4 task_ids the API emits keeps the
+# wire format unchanged — no slot resizing, no mixed-deploy SHM size mismatch.
+#
+# ── ack-fungibility (multi-worker contract) ──
+# All SPRunner workers — there are N of them when device_ids="(0),(1),...,(N-1)"
+# — write pings carrying THIS same task_id. They share the output ring's
+# reader_index (it lives in SHM state, not per-process), so they don't each
+# get a dedicated response slot. Instead, each worker consumes one SUCCESS
+# response off the ring in arrival order.
+SP_WARMUP_TASK_ID = "__sp_warmup__"
+
+
 @dataclass(frozen=True)
 class VideoRequest:
     task_id: str
@@ -71,16 +87,44 @@ class VideoRequest:
     num_frames: int
     guidance_scale: float
     guidance_scale_2: float
+    # Optional path to a JSON side-file on tmpfs holding I2V image_prompts.
+    image_path: str = ""
 
 
 VIDEO_FILE_DIR = os.environ.get("TT_VIDEO_FILE_DIR", "/dev/shm")
 VIDEO_FILE_GLOB = "tt_video_*.pkl"
+IMAGE_FILE_GLOB = "tt_img_*"
 MAX_FILE_PATH_LEN = 256
+MAX_IMAGE_PATH_LEN = 256
 
 
 def video_result_path(task_id: str) -> str:
     """Return the file path for a video result on the RAM-backed tmpfs."""
     return os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+
+def image_prompts_path(task_id: str) -> str:
+    """Return the side-file path holding the JSON-serialised image_prompts.
+
+    A worst-case I2V request can carry ``WAN22_NUM_FRAMES * MAX_BASE64_IMAGE_LEN``
+    bytes of conditioning images (~810 MB). Embedding that inline in the SHM
+    slot is impractical, so :class:`SPRunner` writes the list to this path and
+    the runner side reads it back after the SHM hand-off.
+    """
+    return os.path.join(VIDEO_FILE_DIR, f"tt_img_{task_id}.json")
+
+
+def _cleanup_glob(pattern: str) -> int:
+    import glob
+
+    removed = 0
+    for path in glob.glob(os.path.join(VIDEO_FILE_DIR, pattern)):
+        try:
+            os.unlink(path)
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def cleanup_orphaned_video_files() -> int:
@@ -89,16 +133,19 @@ def cleanup_orphaned_video_files() -> int:
     Returns the number of files removed.  Safe to call at any point –
     individual unlink failures are silently ignored.
     """
-    import glob
+    return _cleanup_glob(VIDEO_FILE_GLOB)
 
-    removed = 0
-    for path in glob.glob(os.path.join(VIDEO_FILE_DIR, VIDEO_FILE_GLOB)):
-        try:
-            os.unlink(path)
-            removed += 1
-        except OSError:
-            pass
-    return removed
+
+def cleanup_orphaned_image_files() -> int:
+    """Remove any leftover ``tt_img_*`` side-files from :data:`VIDEO_FILE_DIR`.
+
+    Mirrors :func:`cleanup_orphaned_video_files`. Called by the server proxy
+    (``SPRunner.set_device`` / ``SPRunner.close_device``) and by the operator
+    bootstrap CLI on tear-down so a crashed I2V request does not leak hundreds
+    of megabytes of base64 conditioning data on tmpfs. The runner side does
+    not write side-files and therefore does not need to sweep them.
+    """
+    return _cleanup_glob(IMAGE_FILE_GLOB)
 
 
 @dataclass(frozen=True)
@@ -120,11 +167,12 @@ class VideoShm:
 
     Layout per slot depends on *mode*:
 
-    Input slot (2 640 B):
+    Input slot (2 900 B):
         state(4) task_id(36) prompt_length(4) prompt(2048)
         neg_prompt_length(4) negative_prompt(512)
         num_inference_steps(4) seed(8) height(4) width(4)
         num_frames(4) guidance_scale(4) guidance_scale_2(4)
+        image_path_len(4) image_path(256)
 
     Output slot (564 B):
         state(4) task_id(36) status(4)
@@ -222,7 +270,9 @@ class VideoShm:
     _IN_NUM_FRAMES = 2628
     _IN_GUIDANCE_SCALE = 2632
     _IN_GUIDANCE_SCALE_2 = 2636
-    INPUT_SLOT_SIZE = 2640
+    _IN_IMAGE_PATH_LEN = 2640
+    _IN_IMAGE_PATH = 2644
+    INPUT_SLOT_SIZE = 2644 + MAX_IMAGE_PATH_LEN  # 2900
 
     # ── Output slot field offsets ──
     #   state(4) task_id(36) status(4) error_len(4) error(256)
@@ -285,27 +335,57 @@ class VideoShm:
         self._buf = self._shm.buf
         self._state_buf = self._state_shm.buf
 
+    # Bounded retry window for the create-vs-attach race. When server and
+    # runner boot concurrently, one wins ``create=True`` and the other falls
+    # through to ``create=False`` — but if the loser sees the segment briefly
+    # then it disappears (e.g. an out-of-band ``bootstrap down`` mid-create,
+    # or the kernel surfacing the dentry before the file is fully published),
+    # ``shm_open`` raises ENOENT. Retrying covers a window of roughly
+    # ``_ATTACH_RETRIES * _ATTACH_RETRY_DELAY_S`` seconds (default ~5 s),
+    # which is orders of magnitude wider than any realistic race.
+    _ATTACH_RETRIES = 50
+    _ATTACH_RETRY_DELAY_S = 0.1
+
     @staticmethod
     def _create_or_attach(name: str, size: int) -> tuple[_shm.SharedMemory, bool]:
         """POSIX O_CREAT-style open: create if absent, else attach.
 
         Returns (segment, created). Always drops the resource_tracker entry so
         this process never unlinks the segment on exit.
-        """
-        try:
-            shm = _shm.SharedMemory(name=name, create=True, size=size)
-            created = True
-        except FileExistsError:
-            shm = _shm.SharedMemory(name=name, create=False)
-            if shm.size < size:
-                raise RuntimeError(
-                    f"Existing SHM {name!r} size {shm.size} < expected {size}. "
-                    "Layout changed — run `python -m ipc.video_shm_bootstrap down` "
-                    "to reset, or unlink manually."
-                ) from None
-            created = False
 
-        # Always chmod (idempotent) so whoever created it, either side can attach.
+        Bounded retry on ENOENT to cover the create-vs-attach race when both
+        sides bring up the rings concurrently (see ``_ATTACH_RETRIES``).
+        """
+        last_err: Exception | None = None
+        for attempt in range(VideoShm._ATTACH_RETRIES):
+            try:
+                shm = _shm.SharedMemory(name=name, create=True, size=size)
+                created = True
+                break
+            except FileExistsError:
+                try:
+                    shm = _shm.SharedMemory(name=name, create=False)
+                except FileNotFoundError as exc:
+                    last_err = exc
+                    time.sleep(VideoShm._ATTACH_RETRY_DELAY_S)
+                    continue
+                if shm.size < size:
+                    raise RuntimeError(
+                        f"Existing SHM {name!r} size {shm.size} < expected {size}. "
+                        "Layout changed — run `python -m ipc.video_shm_bootstrap down` "
+                        "to reset, or unlink manually."
+                    ) from None
+                created = False
+                break
+        else:
+            raise RuntimeError(
+                f"SHM {name!r}: create-vs-attach race did not resolve within "
+                f"{VideoShm._ATTACH_RETRIES * VideoShm._ATTACH_RETRY_DELAY_S:.1f}s "
+                f"(last error: {last_err!r}). Peer process is likely stuck "
+                f"between create and chmod, or the segment is being repeatedly "
+                f"unlinked by another actor."
+            ) from last_err
+
         try:
             os.chmod(f"/dev/shm/{name}", 0o666)
         except (PermissionError, FileNotFoundError):
@@ -477,19 +557,34 @@ class VideoShm:
 
     # ── Input SHM: request read / write ──
 
-    def write_request(self, request: VideoRequest) -> None:
-        """Write a VideoRequest into the next free input slot (spin-waits)."""
+    def write_request(
+        self, request: VideoRequest, timeout_s: float | None = None
+    ) -> bool:
+        """Write a VideoRequest into the next free input slot.
+
+        Spin-waits for the target slot to become EMPTY. Pass ``timeout_s`` to
+        bound the wait — required for the SPRunner warmup ping, which must
+        not deadlock if a previous server session left the input ring full
+        of unconsumed pings while the pipeline was down.
+
+        Returns True on success, False on shutdown or timeout. The legacy
+        ``None`` return is preserved as a falsy value for any existing caller
+        that didn't inspect it.
+        """
         buf = self._buf
         widx = self._get_writer_index()
         off = (widx % self._slots) * self._slot_size
         state_off = off + self._IN_STATE
+        deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
             if struct.unpack_from("<i", buf, state_off)[0] == self._EMPTY:
                 break
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
             time.sleep(self._POLL_INTERVAL_S)
         else:
-            return
+            return False
 
         self._pack_task_id(buf, off + self._IN_TASK_ID, request.task_id)
         self._pack_string(
@@ -520,9 +615,17 @@ class VideoShm:
         struct.pack_into(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2, request.guidance_scale_2
         )
+        self._pack_string(
+            buf,
+            off + self._IN_IMAGE_PATH_LEN,
+            off + self._IN_IMAGE_PATH,
+            request.image_path,
+            MAX_IMAGE_PATH_LEN,
+        )
 
         struct.pack_into("<i", buf, state_off, self._FILLED)
         self._set_writer_index(widx + 1)
+        return True
 
     def read_request(self, timeout_s: float | None = None) -> VideoRequest | None:
         """Blocking read of a VideoRequest from the next input slot."""
@@ -562,6 +665,9 @@ class VideoShm:
         guidance_scale_2 = struct.unpack_from(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2
         )[0]
+        image_path = self._unpack_string(
+            buf, off + self._IN_IMAGE_PATH_LEN, off + self._IN_IMAGE_PATH
+        )
 
         struct.pack_into("<i", buf, state_off, self._EMPTY)
         self._set_reader_index(ridx + 1)
@@ -577,6 +683,7 @@ class VideoShm:
             num_frames=num_frames,
             guidance_scale=guidance_scale,
             guidance_scale_2=guidance_scale_2,
+            image_path=image_path,
         )
 
     # ── Output SHM: response read / write (file-path reference) ──

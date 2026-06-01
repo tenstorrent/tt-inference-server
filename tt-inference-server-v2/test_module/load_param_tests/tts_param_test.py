@@ -8,7 +8,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +55,9 @@ headers = {
 
 
 class TTSParamTest(BaseTest):
+    KIND = "tts_param"
+    TASK_TYPE = "text_to_speech"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
 
@@ -170,3 +178,16 @@ class TTSParamTest(BaseTest):
             result["data"]
             for result in sorted(response_data_list, key=lambda x: x["index"])
         ]
+
+
+def run_tts_param(ctx: "MediaContext", targets: dict | None = None) -> Block:
+    """Run :class:`TTSParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return TTSParamTest(test_config, targets or {}, ctx=ctx).run_tests()

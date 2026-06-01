@@ -6,14 +6,16 @@
 #include <algorithm>
 
 #define XXH_INLINE_ALL
+#include "config/settings.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "xxhash.h"
 
 namespace tt::utils {
 
-std::vector<domain::ChatMessage> stripToolMessages(
-    const std::vector<domain::ChatMessage>& messages) {
-  std::vector<domain::ChatMessage> result;
+std::vector<ChatMessage> stripToolMessages(
+    const std::vector<ChatMessage>& messages) {
+  std::vector<ChatMessage> result;
   result.reserve(messages.size());
 
   for (const auto& msg : messages) {
@@ -25,8 +27,8 @@ std::vector<domain::ChatMessage> stripToolMessages(
   return result;
 }
 
-std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
-    const std::vector<domain::ChatMessage>& messages) {
+std::optional<std::vector<ChatMessage>> extractPriorTurnPrefix(
+    const std::vector<ChatMessage>& messages) {
   // Precondition check: messages should end with user
   if (messages.empty() || messages.back().role != "user") {
     return std::nullopt;
@@ -48,7 +50,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
   }
 
   // Remove the trailing [assistant, user] pair
-  std::vector<domain::ChatMessage> priorPrefix;
+  std::vector<ChatMessage> priorPrefix;
   priorPrefix.reserve(turns.size() - 2);
 
   for (size_t i = 0; i < turns.size() - 2; ++i) {
@@ -63,8 +65,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
   return priorPrefix;
 }
 
-uint64_t hashConversationPrefix(
-    const std::vector<domain::ChatMessage>& prefix) {
+uint64_t hashConversationPrefix(const std::vector<ChatMessage>& prefix) {
   // Empty prefix should have a deterministic hash
   if (prefix.empty()) {
     return 0;
@@ -79,42 +80,105 @@ uint64_t hashConversationPrefix(
   return XXH64(rendered.data(), rendered.size(), 0);
 }
 
-std::string renderLastUserTurn(
-    const std::vector<domain::ChatMessage>& messages) {
-  auto it = std::find_if(
-      messages.rbegin(), messages.rend(),
-      [](const domain::ChatMessage& msg) { return msg.role == "user"; });
+std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
+                               bool hasPriorTurn) {
+  auto it =
+      std::find_if(messages.rbegin(), messages.rend(),
+                   [](const ChatMessage& msg) { return msg.role == "user"; });
   if (it == messages.rend()) {
     return "";
   }
   const auto& tokenizer = tokenizers::activeTokenizer();
-  return tokenizer.applyChatTemplate({*it}, true);
+  std::string rendered = tokenizer.applyChatTemplate({*it}, true);
+
+  // applyChatTemplate prepends BOS based on the tokenizer config. For
+  // continuations BOS is already in the slot's KV cache and must not be
+  // duplicated in the delta; for fresh conversations keep it so the model
+  // sees the start-of-sequence marker. The BOS string is fixed for the
+  // process lifetime, so cache it to avoid copying TokenizerConfig on every
+  // call.
+  static const std::string bosToken =
+      tokenizers::getTokenizerConfig().bos_token;
+  if (hasPriorTurn && !bosToken.empty() &&
+      rendered.compare(0, bosToken.size(), bosToken) == 0) {
+    rendered.erase(0, bosToken.size());
+  }
+  return rendered;
 }
 
-PrefixCachingInfo computePrefixCachingInfo(
-    const std::vector<domain::ChatMessage>& messages) {
+uint64_t hashTokenPrefix(std::span<const int> tokens) {
+  if (tokens.empty()) {
+    return 0;
+  }
+  return XXH64(tokens.data(), tokens.size_bytes(), 0);
+}
+
+PrefixCachingInfo computePrefixCachingInfoFromTokens(
+    std::span<const int> tokens) {
   PrefixCachingInfo info;
 
-  // Drop tool/function turns before hashing; system/developer messages stay
-  // as part of the stable prefix identity.
-  auto turns = stripToolMessages(messages);
+  // Hash all tokens into per-block hashes.
+  info.hashes = getPrefixCacheHashesByBlocks(tokens);
 
-  // deltaPrompt is the last user turn
-  info.deltaPrompt = renderLastUserTurn(turns);
-
-  // registrationHash = always hash of full current conversation
-  info.registrationHash = hashConversationPrefix(turns);
-
-  // Try to extract prior turn prefix (excluding last [assistant, user] pair)
-  auto priorPrefix = extractPriorTurnPrefix(messages);
-  if (priorPrefix.has_value()) {
-    info.hasPriorTurn = true;
-    info.lookupHash = hashConversationPrefix(*priorPrefix);
-  } else {
-    info.hasPriorTurn = false;
-  }
+  TT_LOG_INFO("[TokenHasher] tokens={} hashes={}", tokens.size(),
+              info.hashes.size());
 
   return info;
+}
+
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash) {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  // When continuing from a parent hash, use standard block size for all blocks
+  if (parentHash != 0) {
+    if (blockSize == 0 || tokens.size() < blockSize) {
+      return {};
+    }
+
+    std::vector<uint64_t> hashes;
+    size_t offset = 0;
+    while (offset + blockSize <= tokens.size()) {
+      const int* blockStart = tokens.data() + offset;
+      const size_t blockBytes = blockSize * sizeof(int);
+      parentHash = XXH64(blockStart, blockBytes, parentHash);
+      hashes.push_back(parentHash);
+      offset += blockSize;
+    }
+
+    return hashes;
+  }
+
+  // Fresh hashing: first block uses larger size
+  if (firstBlockSize == 0 || blockSize == 0 || tokens.size() < firstBlockSize) {
+    return {};
+  }
+
+  std::vector<uint64_t> hashes;
+
+  // vLLM-style chained hashing: each block's hash uses the previous block's
+  // hash as the xxHash seed. This guarantees that two sequences sharing a
+  // common token prefix produce identical hashes for their shared blocks.
+  // The first block uses a larger size (e.g. system prompt) to capture the
+  // common prefix shared across conversations with the same model config.
+
+  // First block (larger, covers system prompt / preamble)
+  const size_t firstBlockBytes = firstBlockSize * sizeof(int);
+  parentHash = XXH64(tokens.data(), firstBlockBytes, parentHash);
+  hashes.push_back(parentHash);
+
+  // Remaining blocks use the standard block size
+  size_t offset = firstBlockSize;
+  while (offset + blockSize <= tokens.size()) {
+    const int* blockStart = tokens.data() + offset;
+    const size_t blockBytes = blockSize * sizeof(int);
+    parentHash = XXH64(blockStart, blockBytes, parentHash);
+    hashes.push_back(parentHash);
+    offset += blockSize;
+  }
+
+  return hashes;
 }
 
 }  // namespace tt::utils

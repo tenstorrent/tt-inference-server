@@ -70,10 +70,34 @@ class TestChatPromptLengthValidation:
 
         response = test_client.post(
             "/v1/chat/completions",
-            json={"messages": [{"role": "user", "content": "hello"}]},
+            json={"messages": [{"role": "user", "content": "hello"}], "max_tokens": 10},
         )
 
         assert response.status_code == 200
+
+    @patch("open_ai_api.chat._apply_chat_template", return_value="hello")
+    @patch("open_ai_api.chat._count_tokens", return_value=50)
+    @patch("open_ai_api.chat.settings")
+    def test_returns_400_when_prompt_plus_max_tokens_exceeds_limit(
+        self, mock_settings, mock_count, mock_template, test_client
+    ):
+        """Prompt fits within max_model_len on its own, but prompt + max_tokens does not."""
+        mock_settings.vllm.max_model_length = 100
+        mock_settings.vllm.model = "test-model"
+        mock_settings.model_weights_path = "test-model"
+
+        response = test_client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "hello"}],
+                "max_tokens": 200,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "exceeds max model length" in response.json()["detail"]
+        assert "50" in response.json()["detail"]
+        assert "200" in response.json()["detail"]
 
 
 class TestCompletionsPromptLengthValidation:
@@ -124,3 +148,20 @@ class TestCompletionsPromptLengthValidation:
 
         # Won't be 400 — prompt is short enough
         assert response.status_code != 400
+
+    @patch("open_ai_api.llm.settings")
+    def test_returns_400_when_prompt_plus_max_tokens_exceeds_limit(
+        self, mock_settings, test_client
+    ):
+        """Prompt fits within max_model_len on its own, but prompt + max_tokens does not."""
+        mock_settings.vllm.max_model_length = 100
+
+        response = test_client.post(
+            "/v1/completions",
+            json={"prompt": list(range(50)), "max_tokens": 60},
+        )
+
+        assert response.status_code == 400
+        assert "exceeds max model length" in response.json()["detail"]
+        assert "50" in response.json()["detail"]
+        assert "60" in response.json()["detail"]

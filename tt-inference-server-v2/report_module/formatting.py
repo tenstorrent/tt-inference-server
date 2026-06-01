@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import Any
 
 MISSING_VALUE = "N/A"
@@ -17,12 +18,16 @@ def format_value(value: Any) -> str:
         return MISSING_VALUE
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, Enum):
+        return value.name
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
         return _format_float(value)
     if isinstance(value, (list, tuple)):
-        return ", ".join(format_value(v) for v in value)
+        if not value:
+            return "[]"
+        return "[" + ", ".join(format_value(v) for v in value) + "]"
     if isinstance(value, dict):
         if all(not isinstance(v, (dict, list, tuple)) for v in value.values()):
             return ", ".join(f"{k}={format_value(v)}" for k, v in value.items())

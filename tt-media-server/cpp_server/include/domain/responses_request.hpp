@@ -14,12 +14,14 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
-#include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
-#include "domain/llm_request.hpp"
+#include "domain/llm/chat_message.hpp"
+#include "domain/llm/llm_request.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
+
+using namespace tt::domain::llm;
 
 struct ResponsesRequest : BaseRequest {
   using BaseRequest::BaseRequest;
@@ -377,8 +379,13 @@ struct ResponsesRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
-        toMessages());
+    const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+    auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,
+                                                 std::nullopt, true, false);
+    auto promptTokens = tokenizer.encode(promptStr);
+    out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
+    out.prompt_tokens_count = out.full_prompt_tokens_count;
+    out.prompt = std::move(promptTokens);
 
     out.max_tokens = max_output_tokens;
     out.presence_penalty = presence_penalty.value_or(0.0f);

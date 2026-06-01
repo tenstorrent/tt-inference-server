@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # SHM response deadline in SPRunner (server-side proxy to video_runner).
     # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
     video_request_timeout_seconds: float = 300.0
+    # Deadline for SPRunner's warmup round-trip against the video pipeline.
+    # The ping is only sent when SP_REQUIRE_WARMUP_PING=true; default is a full
+    # hour because cold-start WAN with weight load + first compile across a
+    # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
+    sp_warmup_timeout_seconds: float = 6000.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -116,7 +121,7 @@ class Settings(BaseSettings):
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -205,6 +210,15 @@ class Settings(BaseSettings):
             )
             self.max_batch_size = self.vllm.max_num_seqs
 
+        # Without this the scheduler picks the serial device_worker even though
+        # max_num_seqs > 1 advertises concurrent capacity; explicit env still wins.
+        if self.vllm.max_num_seqs > 1 and os.getenv("USE_DYNAMIC_BATCHER") is None:
+            logger.info(
+                f"Auto-enabling use_dynamic_batcher because max_num_seqs={self.vllm.max_num_seqs} > 1 "
+                f"(set USE_DYNAMIC_BATCHER=false to override)"
+            )
+            self.use_dynamic_batcher = True
+
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
             f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
@@ -270,6 +284,11 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
+            ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
+            ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
+            ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
+            ModelRunners.TT_WAN_2_2_I2V_LORA.value,
         ]:
             self.default_throttle_level = None
 

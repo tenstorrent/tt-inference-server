@@ -3,17 +3,19 @@
 
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/interface/memory_queue.hpp"
 
 namespace tt::services {
-
 class MemoryManager {
  public:
   MemoryManager();
-  virtual ~MemoryManager();
+  MemoryManager(std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue,
+                std::shared_ptr<ipc::IMemoryResultQueue> resultQueue);
+  ~MemoryManager();
 
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
@@ -21,21 +23,13 @@ class MemoryManager {
   MemoryManager& operator=(MemoryManager&&) = delete;
 
   std::optional<domain::ManageMemoryTask> getRequest();
-  virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
 
-  // Optional method for asynchronous memory managers that receive responses
-  // from an external system. Synchronous managers don't
-  // need to override this. Async managers override to
-  // complete allocation after receiving a response.
-  virtual void handleResponse(uint32_t requestId, uint32_t slotId) {
-    // Default implementation does nothing - only async managers need this
-    (void)requestId;
-    (void)slotId;
-  }
+  void replyAllocateSuccess(uint32_t taskId, uint32_t slotId);
+  void replyAllocateFailure(uint32_t taskId);
 
- protected:
-  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
-  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
+ private:
+  std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue;
+  std::shared_ptr<ipc::IMemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services

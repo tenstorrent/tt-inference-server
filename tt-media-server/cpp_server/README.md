@@ -90,8 +90,8 @@ Available log levels (from most to least verbose):
 
 ## LLM engine
 
-Inference engine code lives under `include/runners/llm_runner/` and
-`src/runners/llm_runner/`. Public C++ API types are in namespace
+Inference engine code lives under `include/runtime/runners/llm_runner/` and
+`src/runtime/runners/llm_runner/`. Public C++ API types are in namespace
 `tt::runners::llm_engine`. The engine uses the standard `TT_LOG_*` macros
 (see **Logging** above). The static library CMake target is `llm_runner_lib`.
 
@@ -293,6 +293,7 @@ All environment variable reads go through `config/settings.hpp` (no direct `gete
 | `MAX_BATCH_DELAY_TIME_MS`      | Max wait (ms) to fill batch (embedding). Same as tt-media-server.                                                                                                     | `5`                 |
 | `MAX_QUEUE_SIZE`               | Maximum number of requests that can be queued.                                                                                                                        | `1000`              |
 | `MAX_IN_FLIGHT_COUNT`          | Maximum number of requests being processed simultaneously.                                                                                                            | `32`                |
+| `CALLBACK_POOL_THREADS`        | Size of the HTTP dispatch thread pool. `0` or unset auto-scales to `max(num_workers, 16)` (capped at 256). Set explicitly to override (e.g. for testing).             | `0` (auto)          |
 | `TT_PYTHON_PATH`               | Path added to Python `sys.path` for embedding runner (C++ only).                                                                                                      | `..`                |
 | `LLM_DEVICE_BACKEND`           | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct).                                                          | `mock`              |
 | `OPENAI_API_KEY`               | Bearer token for API authentication.                                                                                                                                  | `your-secret-key`   |
@@ -302,6 +303,8 @@ All environment variable reads go through `config/settings.hpp` (no direct `gete
 | `SCHEDULING_POLICY`            | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy.                          | `prefill_first`     |
 | `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk).                                                                                          | `false`             |
 | `MAX_ACCUMULATED_TOKENS`       | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true.                                                                            | `5`                 |
+| `KV_CACHE_BLOCK_SIZE`          | Token block size for prefix caching. Must be divisible by 32; falls back to default if not.                                                                           | `32`                |
+| `KV_CACHE_FIRST_BLOCK_SIZE`    | First block size for prefix caching (typically larger to capture system prompt). Must be divisible by 32; falls back to default if not.                               | `128`               |
 | `KAFKA_BROKERS`                | Kafka broker addresses (comma-separated) for session offloading. See Kafka Messaging section.                                                                         | `localhost:9092`    |
 | `KAFKA_OFFLOAD_TOPIC_NAME`     | Kafka topic name for session offload messages.                                                                                                                        | `session-offload`   |
 | `KAFKA_GROUP_ID`               | Kafka consumer group ID for load balancing across consumer instances.                                                                                                 | `migration-workers` |
@@ -558,6 +561,7 @@ The following endpoints do not require authentication:
 
 - `GET /health`
 - `GET /tt-liveness`
+- `GET /info`
 - `GET /docs`
 - `GET /swagger`
 - `GET /openapi.json`
@@ -602,6 +606,7 @@ pkill -9 -f tt_media_server_cpp
 | `/v1/chat/completions` | POST   | ✅ Yes         | OpenAI-compatible chat completion                                                                                   |
 | `/health`              | GET    | ❌ No          | Health check (unchanged: always 200 with status + timestamp)                                                        |
 | `/tt-liveness`         | GET    | ❌ No          | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
+| `/info`                | GET    | ❌ No          | Build identity: tt-inference-server version + commit, tt-blaze commit, tt-metal commit                              |
 | `/docs`                | GET    | ❌ No          | Swagger UI documentation                                                                                            |
 | `/openapi.json`        | GET    | ❌ No          | OpenAPI specification                                                                                               |
 
@@ -746,9 +751,11 @@ cpp_server/
 │   │   │   └── ...
 │   │   ├── llama_model_runner.hpp   # LlamaModelRunner (pybind11 in-process)
 │   │   ├── embedding_runner.hpp
-│   │   └── runner_interface.hpp
+│   │   ├── runner_base.hpp          # IRunnerBase (shared)
+│   │   ├── ipc_runner.hpp           # IRunner (IPC-loop runner interface)
+│   │   └── media_runner.hpp         # IMediaRunner<R, S> (direct-call interface)
 │   ├── utils/
-│   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
+│   │   ├── ipc_runner_factory.hpp   # createIpcRunner() (env-based selection)
 │   │   └── tokenizer_strategy.hpp  # LLM_DEVICE_BACKEND → tokenizer
 │   ├── services/
 │   │   ├── llm_service.hpp
@@ -764,7 +771,7 @@ cpp_server/
 │   │   ├── llama_model_runner.cpp
 │   │   └── embedding_runner.cpp
 │   ├── utils/
-│   │   └── runner_factory.cpp       # create_runner() → LLMRunner or EmbeddingRunner
+│   │   └── ipc_runner_factory.cpp   # createIpcRunner() → LLMRunner / EmbeddingRunner / ...
 │   ├── services/
 │   └── main.cpp
 └── CMakeLists.txt
@@ -791,7 +798,7 @@ cpp_server/
 
 ### Runners
 
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
+- **IPC runner factory** (`utils/ipc_runner_factory.cpp`): Worker-process entry point for IPC runners. Reads `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`), and delegates to `RunnerRegistry::createIpc` to construct the runner; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runtime/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`). Direct-call media runners (image, audio, ...) don't go through this factory; they're constructed inline at registration time.
 
 ### API
 
@@ -807,10 +814,10 @@ via the existing `/metrics` endpoint, alongside the server-side metrics.
 ### Adding a new worker type
 
 1. Pick a `MetricsLayout` enum value in
-  `include/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
+  `include/runtime/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
    new runner produces the same metric semantics; otherwise append a new
    value (never renumber).
-2. Create `include/worker/<runner>_metrics_layout.hpp` with `SCRATCH_`*
+2. Create `include/runtime/worker/<runner>_metrics_layout.hpp` with `SCRATCH_`*
   index constants. Append-only.
 3. Create `<Runner>WorkerMetricsRenderer` implementing
   `IWorkerMetricsRenderer`. Pre-build the Prometheus gauges in

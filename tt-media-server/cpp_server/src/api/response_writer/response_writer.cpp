@@ -11,8 +11,22 @@ namespace tt::api {
 ResponseWriter::ResponseWriter(ResponseWriterParams params)
     : params(std::move(params)) {}
 
-int ResponseWriter::noteToken() {
+int ResponseWriter::noteToken(const LLMChoice& choice) {
+  // Spec stats are cumulative; only store on final token
+  if (choice.finish_reason.has_value()) {
+    specAccepts.store(choice.spec_accepts);
+    specRejects.store(choice.spec_rejects);
+  }
+
+  if (choice.text.empty() && !choice.reasoning.has_value() &&
+      !choice.tool_calls.has_value()) {
+    return completionTokens.load();
+  }
+
   const int current = completionTokens.fetch_add(1) + 1;
+  if (choice.reasoning.has_value()) {
+    reasoningTokens.fetch_add(1);
+  }
   auto now = std::chrono::high_resolution_clock::now();
   if (!firstTokenTime.has_value()) {
     firstTokenTime = now;
@@ -22,15 +36,24 @@ int ResponseWriter::noteToken() {
   return current;
 }
 
-domain::CompletionUsage ResponseWriter::buildUsage() const {
+CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
+  const int reasoning = reasoningTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
-  domain::CompletionUsage usage{params.promptTokenCount,
-                                tokens,
-                                totalTokens,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt};
+
+  PromptTokensDetails promptDetails;
+  promptDetails.cached_tokens = params.cachedTokenCount;
+
+  CompletionTokensDetails completionDetails;
+  completionDetails.reasoning_tokens = reasoning;
+  completionDetails.accepted_prediction_tokens =
+      static_cast<int>(specAccepts.load());
+  completionDetails.rejected_prediction_tokens =
+      static_cast<int>(specRejects.load());
+
+  CompletionUsage usage{
+      params.promptTokenCount, tokens,       totalTokens, promptDetails,
+      completionDetails,       std::nullopt, std::nullopt};
 
   if (firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -50,16 +73,7 @@ domain::CompletionUsage ResponseWriter::buildUsage() const {
     }
   }
 
-  if (params.sessionId.has_value()) {
-    usage.sessionId = params.sessionId;
-  }
   return usage;
-}
-
-void ResponseWriter::releaseInFlight() {
-  if (params.sessionId.has_value() && params.sessionManager) {
-    params.sessionManager->releaseInFlight(params.sessionId.value());
-  }
 }
 
 }  // namespace tt::api

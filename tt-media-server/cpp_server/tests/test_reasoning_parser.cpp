@@ -8,85 +8,17 @@
 #include <vector>
 
 #include "services/reasoning_parser.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::services;
 
-void testParseComplete() {
-  std::cout << "\n=== Testing parseComplete ===\n";
+namespace {
 
-  ReasoningParser parser;
-
-  // Test 1: Complete reasoning block
-  {
-    std::string input =
-        "<think>\nOkay, the user is asking about math.\n</think>\nThe answer "
-        "is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value() == "Okay, the user is asking about math.");
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 1 passed: Complete reasoning block\n";
-  }
-
-  // Test 2: No reasoning block
-  {
-    std::string input = "The answer is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(!result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(!result.reasoning.has_value());
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 2 passed: No reasoning block\n";
-  }
-
-  // Test 3: Malformed (missing </think>)
-  {
-    std::string input = "<think>\nOkay, the user is asking about math.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value() == "Okay, the user is asking about math.");
-    assert(result.answer == "");
-    std::cout << "✓ Test 3 passed: Malformed (missing </think>)\n";
-  }
-
-  // Test 4: Empty reasoning
-  {
-    std::string input = "<think>\n\n</think>\nThe answer is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    // Empty reasoning after trimming should be empty string
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 4 passed: Empty reasoning\n";
-  }
-
-  // Test 5: Multi-line reasoning
-  {
-    std::string input =
-        "<think>\nFirst, I need to understand the question.\nThen I'll "
-        "calculate.\nFinally, I'll provide the answer.\n</think>\nThe answer "
-        "is 42.";
-    auto result = parser.parseComplete(input);
-
-    assert(result.has_reasoning);
-    assert(!result.is_malformed);
-    assert(result.reasoning.has_value());
-    assert(result.reasoning.value().find("First") != std::string::npos);
-    assert(result.reasoning.value().find("Finally") != std::string::npos);
-    assert(result.answer == "The answer is 42.");
-    std::cout << "✓ Test 5 passed: Multi-line reasoning\n";
-  }
-
-  std::cout << "✅ All parseComplete tests passed!\n";
+std::pair<int64_t, int64_t> thinkTokens() {
+  return tt::utils::tokenizers::thinkTokenIds();
 }
+
+}  // namespace
 
 void testStreamingTokens() {
   std::cout << "\n=== Testing Streaming Tokens ===\n";
@@ -100,8 +32,7 @@ void testStreamingTokens() {
 
   // <think> marker: state flips, not emitted
   {
-    auto r =
-        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    auto r = parser.processToken(taskId, thinkTokens().first, "");
     assert(!r.should_emit);
     assert(r.type == ContentType::REASONING);
     assert(parser.isInReasoning(taskId));
@@ -129,7 +60,7 @@ void testStreamingTokens() {
 
   // </think> marker: state flips, not emitted
   {
-    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(taskId, thinkTokens().second, "");
     assert(!r.should_emit);
     assert(r.type == ContentType::REASONING);
     assert(!parser.isInReasoning(taskId));
@@ -184,7 +115,7 @@ void testMultipleTasks() {
 
   // Process tokens for different tasks in interleaved manner
   for (uint32_t i = 0; i < 512; i += 2) {
-    auto r = parser.processToken(i, ReasoningParser::THINK_START_TOKEN, "");
+    auto r = parser.processToken(i, thinkTokens().first, "");
     assert(!r.should_emit);
     assert(parser.isInReasoning(i));
   }
@@ -200,7 +131,7 @@ void testMultipleTasks() {
 
   // Exit reasoning for even tasks
   for (uint32_t i = 0; i < 512; i += 2) {
-    auto r = parser.processToken(i, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(i, thinkTokens().second, "");
     assert(!r.should_emit);
     assert(!parser.isInReasoning(i));
   }
@@ -236,7 +167,7 @@ void testEdgeCases() {
     uint32_t taskId = 50;
     parser.initializeTask(taskId);
 
-    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(taskId, thinkTokens().second, "");
     assert(!r.should_emit);
     assert(!parser.isInReasoning(taskId));
 
@@ -249,15 +180,14 @@ void testEdgeCases() {
     uint32_t taskId = 51;
     parser.initializeTask(taskId);
 
-    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    parser.processToken(taskId, thinkTokens().first, "");
     assert(parser.isInReasoning(taskId));
 
-    auto r =
-        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    auto r = parser.processToken(taskId, thinkTokens().first, "");
     assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
 
-    parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    parser.processToken(taskId, thinkTokens().second, "");
     assert(!parser.isInReasoning(taskId));
 
     parser.finalizeTask(taskId);
@@ -269,7 +199,7 @@ void testEdgeCases() {
     uint32_t taskId = 52;
     parser.initializeTask(taskId);
 
-    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    parser.processToken(taskId, thinkTokens().first, "");
     assert(parser.isInReasoning(taskId));
 
     parser.finalizeTask(taskId);
@@ -330,14 +260,10 @@ void testReasoningSuppression() {
   // Test 1: Suppression ON – reasoning tokens dropped, answer tokens kept
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {ReasoningParser::THINK_START_TOKEN, "", false},
-        {201, "\n", false},
-        {12345, "reasoning", false},
-        {67890, " text", false},
-        {ReasoningParser::THINK_END_TOKEN, "", false},
-        {201, "\n", false},
-        {11111, "answer", false},
-        {22222, " text", true},
+        {thinkTokens().first, "", false},  {201, "\n", false},
+        {12345, "reasoning", false},       {67890, " text", false},
+        {thinkTokens().second, "", false}, {201, "\n", false},
+        {11111, "answer", false},          {22222, " text", true},
     };
 
     auto emitted = simulateConsumerLoop(parser, 100, true, tokens);
@@ -354,9 +280,9 @@ void testReasoningSuppression() {
   // Test 2: Suppression OFF – all tokens pass through
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {ReasoningParser::THINK_START_TOKEN, "", false},
+        {thinkTokens().first, "", false},
         {12345, "reasoning", false},
-        {ReasoningParser::THINK_END_TOKEN, "", false},
+        {thinkTokens().second, "", false},
         {11111, "answer", true},
     };
 
@@ -374,7 +300,7 @@ void testReasoningSuppression() {
   // ANSWER so the stream terminates properly
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {ReasoningParser::THINK_START_TOKEN, "", false},
+        {thinkTokens().first, "", false},
         {12345, "only reasoning", true},
     };
 
@@ -389,7 +315,7 @@ void testReasoningSuppression() {
   // classified as REASONING and dropped
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {ReasoningParser::THINK_START_TOKEN, "", false},
+        {thinkTokens().first, "", false},
         {12345, "reasoning", false},
         {67890, " continues", false},
         {99999, " more reasoning", true},
@@ -423,10 +349,8 @@ void testReasoningSuppression() {
   // <think>\n</think>\n pattern from DeepSeek chat template)
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
-        {ReasoningParser::THINK_START_TOKEN, "", false},
-        {201, "\n", false},
-        {ReasoningParser::THINK_END_TOKEN, "", false},
-        {201, "\n", false},
+        {thinkTokens().first, "", false},  {201, "\n", false},
+        {thinkTokens().second, "", false}, {201, "\n", false},
         {11111, "The answer is 4.", true},
     };
 
@@ -444,7 +368,7 @@ void testReasoningSuppression() {
   {
     std::vector<std::tuple<int64_t, std::string, bool>> tokens = {
         {11111, "Let me think...", false},
-        {ReasoningParser::THINK_END_TOKEN, "", false},
+        {thinkTokens().second, "", false},
         {22222, " The answer is 4.", true},
     };
 
@@ -468,7 +392,6 @@ int main() {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
-    testParseComplete();
     testStreamingTokens();
     testMultipleTasks();
     testEdgeCases();

@@ -64,6 +64,7 @@ class RuntimeConfig:
     preprocessing: Optional[str] = None
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
+    eval_samples: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
     # Device configuration
@@ -128,6 +129,7 @@ class RuntimeConfig:
             preprocessing=args.preprocessing,
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
+            eval_samples=args.eval_samples,
             sdxl_num_prompts=args.sdxl_num_prompts,
             device_id=args.device_id,
             host_volume=args.host_volume,

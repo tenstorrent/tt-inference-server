@@ -20,8 +20,16 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from workflows.utils import get_num_calls
-from .._test_common import MetricSpec, ReportCheckTypes, run_tiered_check
-from ..context import MediaContext, common_report_metadata, require_health
+
+from report_module.schema import Block
+
+from .._test_common import (
+    MetricSpec,
+    ReportCheckTypes,
+    block_id,
+    run_tiered_check,
+)
+from ..context import MediaContext, require_health
 from ..test_status import TtsTestStatus
 
 logger = logging.getLogger(__name__)
@@ -207,7 +215,7 @@ def _tts_tail_latency(status_list: list[TtsTestStatus]) -> tuple[float, float]:
     return sorted_ttft[p90_index], sorted_ttft[p95_index]
 
 
-def run_tts_benchmark(ctx: MediaContext) -> dict:
+def run_tts_benchmark(ctx: MediaContext) -> Block:
     """Run benchmarks for a TTS model (SpeechT5, etc.)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -227,18 +235,24 @@ def run_tts_benchmark(ctx: MediaContext) -> dict:
     p90_ttft, p95_ttft = _tts_tail_latency(status_list)
     target_checks, accuracy_check = _tts_target_checks(ctx, ttft_value, rtr_value)
 
-    report_data = common_report_metadata(ctx, "tts")
-    report_data["benchmarks"] = {
-        "num_requests": len(status_list),
-        "ttft": ttft_value / 1000 if ttft_value is not None else None,
-        "rtr": rtr_value,
-        "ttft_p90": p90_ttft / 1000,
-        "ttft_p95": p95_ttft / 1000,
-        "accuracy_check": accuracy_check,
-        "target_checks": target_checks,
-    }
-
-    return report_data
+    return Block(
+        kind="benchmarks",
+        task_type="text_to_speech",
+        title="Text-to-Speech Benchmark",
+        id=block_id(ctx) or None,
+        targets={"num_prompts": len(status_list)},
+        data={
+            "Benchmarks": {
+                "num_requests": len(status_list),
+                "ttft": ttft_value / 1000 if ttft_value is not None else None,
+                "rtr": rtr_value,
+                "ttft_p90": p90_ttft / 1000,
+                "ttft_p95": p95_ttft / 1000,
+                "accuracy_check": accuracy_check,
+                "target_checks": target_checks,
+            },
+        },
+    )
 
 
 __all__ = ["run_tts_benchmark"]

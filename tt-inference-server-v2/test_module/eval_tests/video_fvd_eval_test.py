@@ -64,6 +64,9 @@ class VideoFVDTest(BaseTest):
     Lower scores indicate better quality (0 = identical distributions).
     """
 
+    KIND = "video_fvd_evals"
+    TASK_TYPE = "video"
+
     def __init__(self, config: TestConfig, targets: dict):
         super().__init__(config, targets)
         self.eval_results: dict = {}

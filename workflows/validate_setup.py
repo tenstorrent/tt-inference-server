@@ -12,11 +12,13 @@ from evals.eval_config import EVAL_CONFIGS
 from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    MIN_SUPPORTED_IMAGE_VERSION,
     check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_groups_for_uid,
     get_repo_root_path,
+    parse_version_tuple,
     resolve_hf_snapshot_dir,
     run_command,
 )
@@ -29,6 +31,41 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _check_image_version_supported(model_spec):
+    """Refuse to run a pre-0.11 vLLM image with this run.py.
+
+    The vLLM docker image interface was reshaped in v0.11.0 (commit 50db8ac7
+    "Simplify and improve vLLM Docker image interface"): ENTRYPOINT changed
+    from docker-entrypoint.sh + gosu to bash -c, the script's CLI argument
+    contract changed, and shared-memory + env-var conventions changed. main
+    only emits the new contract, so an older vLLM image won't start.
+
+    Scoped to vLLM only — media-inference-server and forge images have
+    different Dockerfiles and aren't affected by this interface change
+    (the docker command for them is also simpler and stable across versions).
+
+    apply_overrides re-parses model_spec.version from --override-docker-image
+    when present, so this check covers both template-pinned versions and
+    override paths.
+    """
+    if model_spec.inference_engine != InferenceEngine.VLLM.value:
+        return
+    parsed = parse_version_tuple(model_spec.version)
+    if parsed is None:
+        # Unparseable versions (`dev`, `latest`, etc.) default to "newest
+        # contract" — let the runtime decide, matches main's behaviour.
+        return
+    if parsed < MIN_SUPPORTED_IMAGE_VERSION:
+        min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
+        tag = f"v{model_spec.version}"
+        raise RuntimeError(
+            f"⛔ Image v{model_spec.version} is not supported in this "
+            f"version of run.py (need v{min_str}+). Check out the matching "
+            f"release tag {tag} and re-run:\n"
+            f"    git checkout {tag}"
+        )
 
 
 def validate_runtime_args(model_spec, runtime_config):
@@ -46,6 +83,8 @@ def validate_runtime_args(model_spec, runtime_config):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
+
+    _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
@@ -152,6 +191,83 @@ def _validate_local_vllm_installation(runtime_config):
             f"import `vllm` with: {venv_python}"
         )
     logger.info(f"✅ validated vLLM Python package import with: {venv_python}")
+
+    _validate_local_vllm_tt_plugin(runtime_config, venv_python)
+
+
+def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
+    """Ensure the vllm-tt-plugin package is installed and registered when the
+    user's vLLM checkout requires it.
+
+    Since tenstorrent/vllm commit a072e40a6 (2026-05-04, "Extract TT backend
+    into plugin package (Phase 1)") the TT platform lives in a separate
+    editable package at ``$VLLM_DIR/plugins/vllm-tt-plugin``. Without that
+    package installed, ``vllm/platforms/tt.py`` raises
+    ``ModuleNotFoundError: No module named 'vllm_tt_plugin'`` when
+    ``vllm serve`` starts up.
+
+    When the plugin source directory exists in the vLLM checkout this helper
+    will:
+
+    1. Editable-install it into the tt-metal venv (idempotent, mirrors the
+       dev Dockerfile behaviour added by tt-inference-server PR #3370).
+    2. Run a strict in-process check that ``import vllm_tt_plugin`` works AND
+       that the ``tt`` entry is registered under the ``vllm.platform_plugins``
+       entry-point group.
+
+    When the plugin source is absent (older vLLM checkouts that still ship
+    TT support inside vllm core) both steps are skipped.
+    """
+    # Local import to avoid a module-level circular dependency:
+    # workflows.run_local_server -> workflows.setup_host -> workflows.validate_setup
+    from workflows.run_local_server import (  # noqa: PLC0415
+        install_vllm_tt_plugin_if_present,
+        vllm_tt_plugin_source_path,
+    )
+
+    plugin_path = vllm_tt_plugin_source_path(_get_local_vllm_dir(runtime_config))
+    if not (plugin_path / "pyproject.toml").exists():
+        logger.info(
+            f"Skipping vllm-tt-plugin validation: source not present at {plugin_path}"
+        )
+        return
+
+    install_vllm_tt_plugin_if_present(runtime_config)
+
+    check_script = (
+        "import vllm_tt_plugin; "
+        "from importlib.metadata import entry_points; "
+        "eps = {ep.name for ep in entry_points(group='vllm.platform_plugins')}; "
+        "assert 'tt' in eps, "
+        "f'tt platform plugin not registered in vllm.platform_plugins entry points, got: {eps}'"
+    )
+    return_code = run_command([str(venv_python), "-c", check_script], logger=logger)
+    if return_code != 0:
+        raise ValueError(
+            "⛔ --local-server with inference engine vLLM requires the "
+            "`vllm_tt_plugin` Python package (the TT platform plugin) "
+            "to be installed in the tt-metal python environment and to register "
+            "the `tt` entry under the `vllm.platform_plugins` entry-point group.\n"
+            f"Plugin source detected at: {plugin_path}\n"
+            "Auto-install via this validator failed or the entry point did not "
+            "register. Re-install the plugin by running the canonical script "
+            f"from the vLLM repo: `cd {_get_local_vllm_dir(runtime_config)} && "
+            "bash tt_metal/install-vllm-tt.sh`\n"
+            "See vllm-tt-metal/README.md for the full local installation steps."
+        )
+    logger.info(
+        f"✅ validated vllm-tt-plugin install and `tt` platform_plugins entry "
+        f"point registration with: {venv_python}"
+    )
+
+
+def _get_local_vllm_dir(runtime_config) -> Path:
+    """Resolve $VLLM_DIR the same way workflows.run_local_server does."""
+    tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
+    vllm_dir = getattr(runtime_config, "vllm_dir", None)
+    if vllm_dir:
+        return Path(vllm_dir).expanduser().resolve()
+    return (tt_metal_home / "vllm").resolve()
 
 
 def validate_local_setup(model_spec, runtime_config, json_fpath):

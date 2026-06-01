@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from report_module.schema import Block
+
+from .._test_common import block_id
 from ..context import MediaContext, require_health
 
 logger = logging.getLogger(__name__)
@@ -131,7 +133,7 @@ def _run_embedding_transcription_eval(ctx: MediaContext) -> dict:
     return _parse_embedding_evals_output(results)
 
 
-def run_embedding_eval(ctx: MediaContext) -> dict:
+def run_embedding_eval(ctx: MediaContext) -> Block:
     """Run evaluations for an embedding model."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
@@ -146,16 +148,17 @@ def run_embedding_eval(ctx: MediaContext) -> dict:
         raise
 
     logger.info("Generating evals report...")
-    report_data = {
-        "model": ctx.model_spec.model_name,
-        "device": ctx.device.name,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-        "task_type": "embedding",
-        "task_name": ctx.all_params.tasks[0].task_name,
-    }
-    report_data.update(metrics)
-
-    return report_data
+    return Block(
+        kind="evals",
+        task_type="embedding",
+        title="Embedding Eval",
+        id=block_id(ctx) or None,
+        targets={"task_name": ctx.all_params.tasks[0].task_name},
+        data={
+            "task_name": ctx.all_params.tasks[0].task_name,
+            **metrics,
+        },
+    )
 
 
 __all__ = ["run_embedding_eval"]

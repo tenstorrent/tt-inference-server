@@ -21,9 +21,14 @@ def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]
 
     Raises:
         HTTPException: If service is unavailable or model check fails.
+            HTTPExceptions raised by the service (e.g. 405 "model not ready",
+            503 "no workers available") are propagated unchanged so callers
+            can distinguish "still warming up" from "actually broken".
     """
     try:
         return {"status": "alive", **service.check_is_model_ready()}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Liveness check failed: {e}")
 
@@ -37,9 +42,12 @@ def health(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
         dict: Empty dict when healthy (matches vLLM behavior).
     Raises:
         HTTPException: If service is unavailable or model is not ready.
+            Service-raised HTTPExceptions are forwarded unchanged.
     """
     try:
         status = service.check_is_model_ready()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {e}")
 

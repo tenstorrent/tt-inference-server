@@ -204,6 +204,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
 
 For example, to run flux.1-dev on t3k
 1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
@@ -1009,6 +1010,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 | `MAX_MODEL_LENGTH` | `4096` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_model_length`) |
 | `MAX_NUM_SEQS` | `1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_num_seqs`) |
+| `GPU_MEMORY_UTILIZATION` | `0.1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.gpu_memory_utilization`) |
 
 ## Audio Processing Settings
 

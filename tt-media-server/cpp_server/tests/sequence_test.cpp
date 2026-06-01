@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "domain/sequence.hpp"
+#include "domain/llm/sequence.hpp"
 
 #include <gtest/gtest.h>
 
 #include <sstream>
 
 #include "config/runner_config.hpp"
-#include "domain/sampling_params.hpp"
+#include "domain/llm/sampling_params.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::runners::llm_engine {
-using SamplingParams = tt::domain::SamplingParams;
-using Sequence = tt::domain::Sequence;
-using SequenceStatus = tt::domain::SequenceStatus;
+
+using namespace tt::domain::llm;
+using SamplingParams = tt::domain::llm::SamplingParams;
+using Sequence = tt::domain::llm::Sequence;
+using SequenceStatus = tt::domain::llm::SequenceStatus;
 namespace {
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
@@ -124,12 +126,16 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(tt::utils::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5},
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), 128, {1, 2, 3, 4, 5},
                 params);
-  orig.setNumCachedTokens(256);
+  orig.setNumCachedTokens(128);
   orig.getMutableBlockTable() = {0, 1};
   orig.setStatus(SequenceStatus::IN_FLIGHT);
   orig.setLastToken(5);
+  orig.setKVCacheSlot(42);
+  orig.setContinuation(true);
+  orig.setDisaggregated(true);
+  orig.setKVPositionId(17);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -144,6 +150,12 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.getTokenIds(), orig.getTokenIds());
   EXPECT_EQ(restored.getBlockTable(), orig.getBlockTable());
   EXPECT_EQ(restored.getStatus(), orig.getStatus());
+  EXPECT_EQ(restored.getKVCacheSlot(), orig.getKVCacheSlot());
+  EXPECT_EQ(restored.isContinuation(), orig.isContinuation());
+  EXPECT_EQ(restored.isDisaggregated(), orig.isDisaggregated());
+  ASSERT_TRUE(restored.getKVPositionId().has_value());
+  EXPECT_EQ(*restored.getKVPositionId(), *orig.getKVPositionId());
+  EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
 
   const auto& sp = restored.getSamplingParams();
   const auto& spOrig = orig.getSamplingParams();
@@ -173,6 +185,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_TRUE(restored.getTokenIds().empty());
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
   EXPECT_EQ(restored.getLastToken(), 0);
+  EXPECT_FALSE(restored.getKVPositionId().has_value());
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {

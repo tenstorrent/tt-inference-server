@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the REPORTS_RUN_SCRIPT workflow venv.
+# Used by: setup_reports_run_script() in workflows/workflow_venvs.py
+
+-c constraints.txt
+
+requests
+numpy
+pyyaml

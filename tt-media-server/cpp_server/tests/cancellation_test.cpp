@@ -5,28 +5,30 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "domain/sequence.hpp"
-#include "ipc/boost_ipc_result_queue.hpp"
-#include "ipc/cancel_queue.hpp"
-#include "runners/llm_runner.hpp"
-#include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/schedulers/prefill_first_scheduler.hpp"
+#include "config/settings.hpp"
+#include "domain/llm/sequence.hpp"
+#include "ipc/boost/boost_result_queue.hpp"
+#include "ipc/in_memory/in_memory_cancel_queue.hpp"
+#include "ipc/in_memory/in_memory_task_queue.hpp"
+#include "runtime/runners/llm_runner.hpp"
+#include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
 
 namespace tt::runners::schedulers {
 
+using namespace tt::domain::llm;
+
 using Config = tt::config::LLMConfig;
-using tt::runners::llm_engine::InMemoryTaskQueue;
+using tt::ipc::in_memory::TaskQueue;
 
 namespace {
 
 std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
-  return std::make_shared<InMemoryTaskQueue>();
+  return std::make_shared<TaskQueue>();
 }
 
 Config makeConfig(int numBlocks = 128, int blockSize = 8,
@@ -48,36 +50,6 @@ std::vector<int64_t> prompt(size_t len) {
 }
 
 uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
-
-// ---------- In-memory cancel queue for testing ----------
-//
-// Production uses BoostIpcCancelQueue, which is thread-safe via Boost's
-// IPC message queue. The tests exercise concurrent access (scheduler
-// thread pushing/draining while the main test thread pushes/inspects),
-// so this stub must mirror that thread-safety contract — otherwise the
-// tests race their own helper instead of the code under test.
-
-class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
- public:
-  void push(uint32_t taskId) override {
-    std::lock_guard<std::mutex> lock(mu_);
-    items.push_back(taskId);
-  }
-
-  void tryPopAll(std::vector<uint32_t>& out) override {
-    std::lock_guard<std::mutex> lock(mu_);
-    out.insert(out.end(), items.begin(), items.end());
-    items.clear();
-  }
-
-  void remove() override {
-    std::lock_guard<std::mutex> lock(mu_);
-    items.clear();
-  }
-
-  std::mutex mu_;
-  std::vector<uint32_t> items;
-};
 
 // ==========================================================
 //  Scheduler abort tests
@@ -231,11 +203,11 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   Config config = makeConfig(128, 8, 256, 0);
 
   auto taskQueue = makeQueue();
-  InMemoryCancelQueue cancelQueue;
+  tt::ipc::in_memory::CancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
-  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(rbName,
+                                          tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -289,11 +261,11 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   Config config = makeConfig(128, 8, 256, 0);
 
   auto taskQueue = makeQueue();
-  InMemoryCancelQueue cancelQueue;
+  tt::ipc::in_memory::CancelQueue cancelQueue;
 
   std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
-  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
-                                           tt::ipc::RESULT_QUEUE_CAPACITY);
+  tt::ipc::boost::ResultQueue resultQueue(rbName,
+                                          tt::config::resultQueueCapacity());
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};

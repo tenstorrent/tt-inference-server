@@ -9,7 +9,12 @@ import time
 
 import aiohttp
 
-from .._test_common import BaseTest
+from report_module.schema import Block
+from .._test_common import BaseTest, TestConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +68,9 @@ headers = {
 
 
 class VideoGenerationParamTest(BaseTest):
+    KIND = "video_generation_param"
+    TASK_TYPE = "video"
+
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
         logger.info(f"Testing video generation parameters at {self.url}")
@@ -266,3 +274,18 @@ class VideoGenerationParamTest(BaseTest):
             if num_steps:
                 return num_steps
         return default
+
+
+def run_video_generation_param(
+    ctx: "MediaContext", targets: dict | None = None
+) -> Block:
+    """Run :class:`VideoGenerationParamTest` under ``ctx`` and return its Block."""
+    test_config = TestConfig(
+        {
+            "timeout": 1800,
+            "retry_attempts": 1,
+            "retry_delay": 10,
+            "break_on_failure": False,
+        }
+    )
+    return VideoGenerationParamTest(test_config, targets or {}, ctx=ctx).run_tests()

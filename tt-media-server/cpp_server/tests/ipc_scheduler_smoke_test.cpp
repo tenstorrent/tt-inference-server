@@ -6,7 +6,7 @@
 //
 //   Parent  -- creates the shared-memory message queue, pushes two sequences,
 //              then forks.
-//   Child   -- opens the queue via BoostIpcTaskQueue, creates a Scheduler,
+//   Child   -- opens the queue via boost TaskQueue, creates a Scheduler,
 //              calls schedule(), and verifies the deserialized batch.
 //
 // Exit code 0 = PASS.
@@ -22,15 +22,17 @@
 #include <iostream>
 
 #include "config/runner_config.hpp"
-#include "domain/sampling_params.hpp"
-#include "domain/sequence.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "runners/schedulers/prefill_first_scheduler.hpp"
-#include "runners/schedulers/scheduler.hpp"
+#include "domain/llm/sampling_params.hpp"
+#include "domain/llm/sequence.hpp"
+#include "ipc/boost/boost_task_queue.hpp"
+#include "runtime/runners/schedulers/prefill_first_scheduler.hpp"
+#include "runtime/runners/schedulers/scheduler.hpp"
 
-using Sequence = tt::domain::Sequence;
-using SamplingParams = tt::domain::SamplingParams;
+using Sequence = tt::domain::llm::Sequence;
+using SamplingParams = tt::domain::llm::SamplingParams;
 namespace ipc = boost::interprocess;
+
+using namespace tt::domain::llm;
 
 static const char* queueName = "tt_ipc_scheduler_smoke_test";
 static constexpr size_t MAX_NUM_MSGS = 64;
@@ -54,9 +56,9 @@ int main() {
   Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
-  // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
+  // Push via boost TaskQueue (opens the existing shared-memory queue).
   {
-    tt::ipc::BoostIpcTaskQueue producer(queueName);
+    tt::ipc::boost::TaskQueue producer(queueName);
     producer.push(seq1);
     producer.push(seq2);
   }
@@ -82,7 +84,7 @@ int main() {
     config.max_num_batched_tokens = 256;
     config.eos = 0;
 
-    auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(queueName);
+    auto queue = std::make_unique<tt::ipc::boost::TaskQueue>(queueName);
     PrefillFirstScheduler sched(config, queue.get(), 1);
 
     auto [batch, is_prefill] = sched.schedule();

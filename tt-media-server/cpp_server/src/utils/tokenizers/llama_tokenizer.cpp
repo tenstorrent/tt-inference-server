@@ -16,18 +16,25 @@ static const char* llamaSystemPreamble =
     "Today Date: 26 Jul 2024\n\n";
 
 std::string LlamaTokenizer::applyChatTemplate(
-    const std::vector<tt::domain::ChatMessage>& messages,
+    const std::vector<tt::domain::llm::ChatMessage>& messages,
     bool addGenerationPrompt,
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools,
-    [[maybe_unused]] bool enableReasoning) const {
+    [[maybe_unused]] bool enableReasoning, bool skipApplyChatTemplate) const {
   std::ostringstream out;
+
+  if (skipApplyChatTemplate) {
+    for (const auto& m : messages) {
+      out << m.content;
+    }
+    return out.str();
+  }
 
   // Extract system message
   std::string systemContent;
   auto filteredMessages = messages;
   if (!messages.empty() && messages[0].role == "system") {
     systemContent = messages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
+    filteredMessages = std::vector<tt::domain::llm::ChatMessage>(
         messages.begin() + 1, messages.end());
   } else if (tools.has_value() && !tools->empty()) {
     // Default system message when tools are provided
@@ -68,7 +75,7 @@ std::string LlamaTokenizer::applyChatTemplate(
 
     // Extract first user message
     auto firstUserMessage = filteredMessages[0].content;
-    filteredMessages = std::vector<tt::domain::ChatMessage>(
+    filteredMessages = std::vector<tt::domain::llm::ChatMessage>(
         filteredMessages.begin() + 1, filteredMessages.end());
 
     out << llamaHeaderStart << "user" << llamaHeaderEnd << "\n\n";
@@ -124,6 +131,21 @@ std::string LlamaTokenizer::applyChatTemplate(
   }
 
   return out.str();
+}
+
+std::vector<int> LlamaTokenizer::assistantHeaderSequence() const {
+  // Llama-3 chat template ends every assistant generation prompt with the
+  // multi-token sequence `<|start_header_id|>assistant<|end_header_id|>\n\n`.
+  // Encode it once on first use; the result is stable for the process
+  // lifetime so it's safe to cache (per Tokenizer instance — Tokenizer is
+  // thread-local).
+  static thread_local std::vector<int> cached;
+  if (cached.empty()) {
+    std::string header =
+        std::string(llamaHeaderStart) + "assistant" + llamaHeaderEnd + "\n\n";
+    cached = encode(header);
+  }
+  return cached;
 }
 
 }  // namespace tt::utils::tokenizers

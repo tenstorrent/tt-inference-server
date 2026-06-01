@@ -3,26 +3,21 @@
 
 #pragma once
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+#include <chrono>
 #include <functional>
 #include <map>
-#include <memory>
 #include <mutex>
-#include <sstream>
+#include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
+#include "sockets/i_socket_transport.hpp"
+#include "sockets/socket_serialization.hpp"
 #include "utils/logger.hpp"
-#include "utils/scoped_fd.hpp"
 
 namespace tt::sockets {
 
@@ -34,11 +29,6 @@ namespace tt::sockets {
  */
 class SocketManager {
  public:
-  enum class Mode {
-    SERVER,  // Listen for incoming connections
-    CLIENT   // Connect to remote server
-  };
-
   SocketManager() = default;
   SocketManager(const SocketManager&) = delete;
   SocketManager& operator=(const SocketManager&) = delete;
@@ -63,20 +53,20 @@ class SocketManager {
 
   /**
    * @brief Send serializable object to connected peer
-   * @param message_type Type identifier for the message
+   * @param messageType Type identifier for the message
    * @param obj Object to send
    * @return true if successful
    */
   template <typename T>
-  bool sendObject(const std::string& messageType, const T& obj);
+  bool sendObject(std::string_view messageType, const T& obj);
 
   /**
    * @brief Register handler for incoming messages of specific type
-   * @param message_type Type identifier to handle
+   * @param messageType Type identifier to handle
    * @param handler Function to call when message is received
    */
   template <typename T>
-  void registerHandler(const std::string& messageType,
+  void registerHandler(std::string_view messageType,
                        std::function<void(const T&)> handler);
 
   /**
@@ -100,62 +90,58 @@ class SocketManager {
   std::string getStatus() const;
 
   /**
-   * @brief Set callback for connection lost events
-   * @param callback Function to call when connection is lost
+   * @brief Set callback for connection lost events.
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
+  /**
+   * @brief Set callback for connection established/reconnected events.
+   */
+  void setConnectionEstablishedCallback(std::function<void()> callback);
+
+  /**
+   * @brief Configure client-mode reconnect backoff (defaults: 100ms/5000ms).
+   * Must be called before start().
+   */
+  void setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                           std::chrono::milliseconds maxDelay);
+
  private:
-  void serverLoop();
-  void clientLoop();
-  void messageLoop();
+  void messageLoop(std::stop_token stopToken);
   void handleIncomingMessage(const std::vector<uint8_t>& data);
-  bool sendRawData(const std::vector<uint8_t>& data);
-  std::vector<uint8_t> receiveRawData();
+  std::function<void(const std::vector<uint8_t>&)> getHandler(
+      std::string_view messageType) const;
 
-  Mode mode_;
-  std::string host_;
-  uint16_t port_;
-
-  tt::utils::ScopedFd serverSocket;
-  tt::utils::ScopedFd clientSocket;
-  int peerSocket = -1;  // Non-owning view of active connection FD
+  std::unique_ptr<ISocketTransport> transport_;
 
   std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
+  std::jthread messageThread_;
 
-  std::thread server_thread_;
-  std::thread message_thread_;
-
-  mutable std::mutex handlers_mutex_;
-  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
+  mutable std::mutex handlersMutex_;
+  std::map<std::string, std::function<void(const std::vector<uint8_t>&)>,
+           std::less<>>
       handlers_;
 
-  mutable std::mutex send_mutex_;
+  std::function<void()> pendingConnectionLostCallback_;
+  std::function<void()> pendingConnectionEstablishedCallback_;
+  bool reconnectBackoffSet_{false};
+  std::chrono::milliseconds reconnectInitialDelay_{0};
+  std::chrono::milliseconds reconnectMaxDelay_{0};
 
-  std::function<void()> connection_lost_callback_;
+  void applyPendingSettings();
 };
 
 // Template implementations
 
 template <typename T>
-bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
-  if (!connected_) {
+bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
+  if (!transport_) {
     return false;
   }
 
   try {
-    std::ostringstream oss;
-    {
-      cereal::BinaryOutputArchive archive(oss);
-      archive(messageType);
-      obj.write(archive);
-    }
-
-    std::string serialized = oss.str();
-    std::vector<uint8_t> data(serialized.begin(), serialized.end());
-
-    return sendRawData(data);
+    std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
+    return transport_->sendRawData(data);
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;
@@ -163,25 +149,19 @@ bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
 }
 
 template <typename T>
-void SocketManager::registerHandler(const std::string& messageType,
+void SocketManager::registerHandler(std::string_view messageType,
                                     std::function<void(const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlers_mutex_);
+  std::lock_guard<std::mutex> lock(handlersMutex_);
 
-  handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
-    try {
-      std::string serialized(data.begin(), data.end());
-      std::istringstream iss(serialized);
-
-      cereal::BinaryInputArchive archive(iss);
-      std::string msgType;
-      archive(msgType);
-      T payload = T::read(archive);
-
-      handler(payload);
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
-    }
-  };
+  handlers_[std::string(messageType)] =
+      [handler](const std::vector<uint8_t>& data) {
+        try {
+          T payload = wire::deserializePayload<T>(data);
+          handler(payload);
+        } catch (const std::exception& e) {
+          TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
+        }
+      };
 }
 
 }  // namespace tt::sockets
