@@ -224,6 +224,10 @@ std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
 }
 
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
+}
+
 std::string ttResultQueueName() {
   return envString("TT_RESULT_QUEUE", defaults::TT_RESULT_QUEUE);
 }

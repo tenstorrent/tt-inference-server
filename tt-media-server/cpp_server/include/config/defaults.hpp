@@ -75,6 +75,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
+constexpr const char* WIRE_FORMAT = "deepseek";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;

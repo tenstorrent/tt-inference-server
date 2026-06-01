@@ -126,6 +126,16 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 
 namespace pl = tt_llm_engine::pipeline;
 
+pl::WireFormat wireFormatFromString(const std::string& s) {
+  if (s == "deepseek") {
+    return pl::WireFormat::DEEPSEEK;
+  } else if (s == "loopback") {
+    return pl::WireFormat::LOOPBACK;
+  } else if (s == "blaze") {
+    return pl::WireFormat::BLAZE;
+  }
+  throw std::runtime_error("Invalid wire format: " + s);
+}
 inline pl::PipelineConfig makePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
@@ -134,7 +144,7 @@ inline pl::PipelineConfig makePipelineConfig(
           .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
           .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-          .wire_format = tt_llm_engine::pipeline::WireFormat::DEEPSEEK};
+          .wire_format = wireFormatFromString(tt::config::wireFormat())};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
           .num_stages = 64,

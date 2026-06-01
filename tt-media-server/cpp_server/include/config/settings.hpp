@@ -225,6 +225,8 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
+std::string wireFormat();
+
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
  * defaults::RESULT_QUEUE_CAPACITY. */
