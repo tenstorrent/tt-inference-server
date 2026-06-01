@@ -402,8 +402,18 @@ def parse_arguments():
             "Use --server-url alone to target an already-running inference server."
         )
     if args.server_url:
-        args.server_url = args.server_url.rstrip("/")
+        from urllib.parse import urlparse
 
+        server_url = args.server_url.strip().rstrip("/")
+        parsed = urlparse(server_url)
+        if not parsed.scheme:
+            server_url = f"http://{server_url}"
+            parsed = urlparse(server_url)
+        if not parsed.hostname:
+            parser.error(
+                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
+            )
+        args.server_url = server_url
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
