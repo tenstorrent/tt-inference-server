@@ -100,19 +100,25 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   constexpr int64_t kThinkStart = 128798;
   constexpr int64_t kThinkEnd = 128799;
   constexpr int64_t kThinkContent = 77291;
-  constexpr int64_t kVisibleContent = 15329;
+  constexpr int64_t kVisibleContent = 15329;  // "response" (no leading space)
+  constexpr int64_t kVisibleContentCont =
+      4256;  // " response" (with leading space)
   constexpr int64_t kWhitespace = 223;
 
   // 30 tokens: think_start + 10 think + think_end + 18 visible
+  // Visible tokens: first is "response", rest are " response" (round-trip
+  // stable)
   const std::vector<int64_t> expectedSeq0 = {
-      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
-      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
-      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace,
+      kThinkStart,         kThinkContent,       kWhitespace,
+      kThinkContent,       kWhitespace,         kThinkContent,
+      kWhitespace,         kThinkContent,       kWhitespace,
+      kThinkContent,       kWhitespace,         kThinkEnd,
+      kVisibleContent,     kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
   };
   // 10 tokens: think_start + 9 think
   const std::vector<int64_t> expectedSeq1 = {
@@ -121,11 +127,13 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   };
   // 20 tokens: think_start + 10 think + think_end + 8 visible
   const std::vector<int64_t> expectedSeq2 = {
-      kThinkStart,     kThinkContent, kWhitespace,     kThinkContent,
-      kWhitespace,     kThinkContent, kWhitespace,     kThinkContent,
-      kWhitespace,     kThinkContent, kWhitespace,     kThinkEnd,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
-      kVisibleContent, kWhitespace,   kVisibleContent, kWhitespace,
+      kThinkStart,         kThinkContent,       kWhitespace,
+      kThinkContent,       kWhitespace,         kThinkContent,
+      kWhitespace,         kThinkContent,       kWhitespace,
+      kThinkContent,       kWhitespace,         kThinkEnd,
+      kVisibleContent,     kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont, kVisibleContentCont,
+      kVisibleContentCont, kVisibleContentCont,
   };
 
   EXPECT_EQ(receivedTokens[taskIds[0]], expectedSeq0);

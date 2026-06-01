@@ -23,8 +23,11 @@ namespace {
 constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
 constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
-constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;    // "thinking"
-constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID = 15329;  // "response"
+constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;  // "thinking"
+constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID =
+    15329;  // "response" (no leading space)
+constexpr int64_t K_VISIBLE_CONTENT_CONT_TOKEN_ID =
+    4256;  // " response" (with leading space)
 constexpr size_t K_THINK_TOKENS_COUNT = 10;
 
 std::chrono::milliseconds mockPrefillDelay() {
@@ -134,8 +137,9 @@ class MockModelRunner : public IModelRunner {
       return K_THINK_END_TOKEN_ID;
     }
     size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
-    return (visiblePos % 2 == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
-                                 : K_WHITESPACE_TOKEN_ID;
+    // Use round-trip stable tokens: first "response", then " response"
+    return (visiblePos == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
+                             : K_VISIBLE_CONTENT_CONT_TOKEN_ID;
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
