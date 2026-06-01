@@ -154,6 +154,13 @@ struct LLMRequest : BaseRequest {
   bool continuation =
       false;  // True if this request continues an existing session
 
+  // Responses API continuation keys (Dynamo path). When `previousResponseId`
+  // is set, session resolution looks up the slot under that id instead of the
+  // content-prefix hash. `responseId` is the current turn's id the session is
+  // re-registered under so the next turn's previous_response_id can find it.
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
+
   std::string toString() const {
     std::string promptInfo;
     if (auto* s = std::get_if<std::string>(&prompt)) {

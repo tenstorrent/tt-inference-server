@@ -50,6 +50,31 @@ class Session {
   void setHash(size_t hash) { hash_ = hash; }
 
   /**
+   * Get the response id this session is currently registered under (OpenAI
+   * Responses API continuation key). Empty when the session has never been
+   * registered under a response id.
+   */
+  const std::string& getResponseId() const { return response_id_; }
+
+  /**
+   * Update the response id this session is registered under (called when a
+   * turn completes and the next turn should be reachable via
+   * previous_response_id).
+   */
+  void setResponseId(const std::string& responseId) {
+    response_id_ = responseId;
+  }
+
+  /**
+   * Number of leading prompt tokens already committed to this session's slot
+   * KV cache (the full prompt length of the turn last prefilled into the
+   * slot). On a continuation the next request only needs to prefill
+   * tokens[cachedPromptLen:]. 0 until the first turn is registered.
+   */
+  size_t getCachedPromptLen() const { return cached_prompt_len_; }
+  void setCachedPromptLen(size_t len) { cached_prompt_len_ = len; }
+
+  /**
    * Get the assigned slot ID.
    * @return Slot ID, or max uint32_t if unassigned
    */
@@ -93,6 +118,10 @@ class Session {
  private:
   std::string session_id_;  // Stable UUID, never changes
   size_t hash_;             // Current content hash, changes with conversation
+  std::string response_id_;  // Current response id (Responses API key), empty
+                             // until registered
+  size_t cached_prompt_len_ =
+      0;  // Prompt tokens already in the slot KV cache (for delta prefill)
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;

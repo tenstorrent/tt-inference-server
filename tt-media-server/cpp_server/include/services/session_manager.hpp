@@ -50,6 +50,9 @@ class SessionManager {
     std::string sessionId;
     uint32_t slotId;
     uint32_t numberOfMatchedTokens = 0;
+    // Prompt tokens already cached in the slot (prior turn's full prompt
+    // length). Used by the response-id path to prefill only tokens[len:].
+    size_t cachedPromptLen = 0;
   };
 
   SessionManager();
@@ -108,6 +111,39 @@ class SessionManager {
    */
   void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
+  /**
+   * Response-id continuation lookup. Parallel to tryAcquireByPrefixHash but
+   * keyed on the OpenAI Responses API `previous_response_id` supplied by the
+   * frontend instead of a content hash. Atomically marks the matching session
+   * in-flight and registers the cancel function under the same lock.
+   *
+   * Returns:
+   *   AcquiredSession — session found under `previousResponseId` and locked.
+   *   nullopt         — no session registered under this id (or id empty).
+   *                     Caller should fall back to createSession.
+   *
+   * Throws:
+   *   SessionInFlightException — a session is registered under this id but is
+   *                              already serving another request (HTTP 429).
+   */
+  std::optional<AcquiredSession> tryAcquireByResponseId(
+      const std::string& previousResponseId, std::function<void()> cancelFn);
+
+  /**
+   * Route future lookups of `responseId` to this session, and record the
+   * prompt-token length now committed to the slot's KV cache so the next turn
+   * can prefill only the delta. Mirrors registerPrefixHash: if the session
+   * was previously registered under a different response id, it is moved to
+   * the new id's index entry.
+   *
+   * `cachedPromptLen` is the full prompt token count of the turn just
+   * dispatched (after this turn the slot holds that prefix); pass 0 to leave
+   * the recorded length unchanged.
+   */
+  void registerResponseId(const std::string& sessionId,
+                          const std::string& responseId,
+                          size_t cachedPromptLen);
+
  private:
   struct PendingAllocation {
     tt::domain::Session session;
@@ -138,6 +174,13 @@ class SessionManager {
   void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
+  // Response-id index helpers: maintain responseIdIndex alongside the sessions
+  // map. Mirror the prefix-index helpers above.
+  void addToResponseIdIndex(const std::string& sessionId,
+                            const std::string& responseId);
+  void removeFromResponseIdIndex(const std::string& sessionId,
+                                 const std::string& responseId);
+
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
   // An entry in the prefix index: a group of sessions sharing the same prefix
@@ -152,6 +195,12 @@ class SessionManager {
   // hashes pointing to different sessions/slots).
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
+
+  // Secondary index: previous_response_id -> sessions registered under it.
+  // Parallel to prefixIndex but keyed on the Responses API response id instead
+  // of a content hash; no block hashing is involved. Used by
+  // tryAcquireByResponseId / registerResponseId.
+  utils::ConcurrentMap<std::string, std::list<std::string>> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;

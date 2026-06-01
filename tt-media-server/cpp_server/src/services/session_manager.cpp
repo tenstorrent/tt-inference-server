@@ -115,8 +115,10 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
     return CloseSessionResult::NOT_FOUND;
   }
 
-  // Remove this session from the prefix index so future lookups miss.
+  // Remove this session from the prefix + response-id indexes so future
+  // lookups miss.
   removeFromPrefixIndex(sessionId, session->getHash());
+  removeFromResponseIdIndex(sessionId, session->getResponseId());
 
   auto cancelFn = session->takeCancelFn();
   if (cancelFn) {
@@ -256,6 +258,7 @@ void SessionManager::evictOldSessions() {
         "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
         sessionId, ms->getSlotId());
     removeFromPrefixIndex(sessionId, ms->getHash());
+    removeFromResponseIdIndex(sessionId, ms->getResponseId());
     finalizeSessionClose(sessionId, *ms);
     ++evicted;
   }
@@ -606,6 +609,129 @@ void SessionManager::registerPrefixHash(const std::string& sessionId,
       sessionId, prefixHash);
 }
 
+std::optional<SessionManager::AcquiredSession>
+SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
+                                       std::function<void()> cancelFn) {
+  if (previousResponseId.empty()) {
+    return std::nullopt;
+  }
+  TT_LOG_DEBUG("[SessionManager] tryAcquireByResponseId: id={}",
+               previousResponseId);
+
+  // Snapshot candidate sessionIds under the responseIdIndex lock, then release
+  // it before touching the sessions map (acquireInFlight/modify takes that
+  // lock, and we avoid holding both simultaneously). Mirrors
+  // tryAcquireByPrefixHash.
+  std::vector<std::string> candidateIds;
+  responseIdIndex.modify(
+      previousResponseId, [&candidateIds](std::list<std::string>& ids) {
+        candidateIds.insert(candidateIds.end(), ids.begin(), ids.end());
+      });
+
+  if (candidateIds.empty()) {
+    TT_LOG_DEBUG("[SessionManager] tryAcquireByResponseId: id={} miss",
+                 previousResponseId);
+    return std::nullopt;
+  }
+
+  TT_LOG_INFO(
+      "[SessionManager] tryAcquireByResponseId: {} candidate(s) under id={}",
+      candidateIds.size(), previousResponseId);
+
+  bool anyBusy = false;
+  for (const auto& sessionId : candidateIds) {
+    std::optional<AcquiredSession> acquired;
+    bool busy = false;
+    bool stale = false;
+
+    bool found = sessions.modify(sessionId, [&](domain::Session& s) {
+      if (s.getResponseId() != previousResponseId) {
+        stale = true;
+        return;
+      }
+      if (s.isInFlight()) {
+        busy = true;
+        return;
+      }
+      s.updateActivityTime();
+      s.markInFlight();
+      s.setCancelFn(cancelFn);  // copied so we can retry other candidates
+      AcquiredSession a;
+      a.sessionId = sessionId;
+      a.slotId = s.getSlotId();
+      a.cachedPromptLen = s.getCachedPromptLen();
+      acquired = a;
+    });
+
+    if (!found || stale) {
+      removeFromResponseIdIndex(sessionId, previousResponseId);
+      continue;
+    }
+
+    if (acquired) {
+      TT_LOG_INFO(
+          "[SessionManager] tryAcquireByResponseId: acquired sessionId={}, "
+          "slotId={} for id={}",
+          acquired->sessionId, acquired->slotId, previousResponseId);
+      return acquired;
+    }
+
+    anyBusy |= busy;
+  }
+
+  if (anyBusy) {
+    TT_LOG_WARN(
+        "[SessionManager] tryAcquireByResponseId: all sessions under id={} "
+        "are in-flight",
+        previousResponseId);
+    throw SessionInFlightException();
+  }
+
+  return std::nullopt;
+}
+
+void SessionManager::registerResponseId(const std::string& sessionId,
+                                        const std::string& responseId,
+                                        size_t cachedPromptLen) {
+  if (responseId.empty()) {
+    return;
+  }
+  TT_LOG_DEBUG(
+      "[SessionManager] registerResponseId: sessionId={}, id={}, "
+      "cachedPromptLen={}",
+      sessionId, responseId, cachedPromptLen);
+
+  // Update session's response-id + cached-prompt-length fields and pick up the
+  // old id (for index update). Mirrors registerPrefixHash.
+  std::string oldId;
+  bool sessionFound = sessions.modify(
+      sessionId, [&oldId, &responseId, cachedPromptLen](domain::Session& s) {
+        oldId = s.getResponseId();
+        s.setResponseId(responseId);
+        if (cachedPromptLen > 0) s.setCachedPromptLen(cachedPromptLen);
+      });
+
+  if (!sessionFound) {
+    TT_LOG_WARN("[SessionManager] registerResponseId: sessionId={} not found",
+                sessionId);
+    return;
+  }
+
+  if (oldId == responseId) {
+    return;
+  }
+
+  if (!oldId.empty()) {
+    removeFromResponseIdIndex(sessionId, oldId);
+  }
+  addToResponseIdIndex(sessionId, responseId);
+
+  TT_LOG_INFO(
+      "[SessionManager] registerResponseId: registered sessionId={} under "
+      "id={}",
+      sessionId, responseId);
+}
+
 void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
@@ -649,6 +775,32 @@ void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
   });
   if (becameEmpty) {
     prefixIndex.erase(prefixHash);
+  }
+}
+
+void SessionManager::addToResponseIdIndex(const std::string& sessionId,
+                                          const std::string& responseId) {
+  if (responseId.empty()) return;
+  bool exists = responseIdIndex.modify(
+      responseId, [&sessionId](std::list<std::string>& ids) {
+        ids.push_back(sessionId);
+      });
+  if (!exists) {
+    responseIdIndex.insert(responseId, std::list<std::string>{sessionId});
+  }
+}
+
+void SessionManager::removeFromResponseIdIndex(const std::string& sessionId,
+                                               const std::string& responseId) {
+  if (responseId.empty()) return;
+  bool becameEmpty = false;
+  responseIdIndex.modify(
+      responseId, [&sessionId, &becameEmpty](std::list<std::string>& ids) {
+        ids.remove(sessionId);
+        becameEmpty = ids.empty();
+      });
+  if (becameEmpty) {
+    responseIdIndex.erase(responseId);
   }
 }
 
