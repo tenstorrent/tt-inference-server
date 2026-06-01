@@ -148,8 +148,13 @@ def main():
     deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
         "DEPLOY_URL", "http://127.0.0.1"
     )
-    # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL.
+    # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL /
+    # SERVICE_PORT (conftest --endpoint-url default, BaseTest). Without
+    # exporting SERVICE_PORT, a non-default --service-port wouldn't reach
+    # pytest and tests would target :8000. setdefault so an explicit
+    # SERVICE_PORT already in the env still wins.
     os.environ["DEPLOY_URL"] = deploy_url
+    os.environ.setdefault("SERVICE_PORT", str(service_port))
 
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
