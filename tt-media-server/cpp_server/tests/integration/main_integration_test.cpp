@@ -174,6 +174,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   // fewer tokens than the full prompt are sent.
   EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
       << "continuation should still send some tokens";
+  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
+  // position. With block_size=32, first block matched = 32 tokens, so
+  // kv_position_id = 31 (0-indexed position of last matched token).
+  ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
+      << "continuation should have kv_position_id set";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
+      << "kv_position_id should be one less than matched tokens (0-indexed)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()

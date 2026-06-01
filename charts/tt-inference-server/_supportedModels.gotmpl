@@ -1,12 +1,15 @@
 {{- /*
 chart.supportedModelsSection — auto-generated Supported Models tables.
 
-Reads values.yaml via .Files.Get, groups every entry under `models:` by
-its `serverType`, and emits one Markdown table per engine. The label is
-derived from the engine key (vllm → vLLM, media → Media, forge → Forge);
-any unmapped engine falls back to its capitalised key.
+Reads values.yaml via .Files.Get and walks the model catalogue, whose shape is
+`models.<name>.<engine>.<device>` alongside a sibling `defaultEngine` string.
+Models are grouped by engine — the top-level key under each model, excluding
+`defaultEngine` — and one Markdown table is emitted per engine, listing every
+model/device pair. The label is derived from the engine key (vllm → vLLM,
+media → Media, forge → Forge); any unmapped engine falls back to its
+capitalised key.
 
-Adding a new engine or model in values.yaml is reflected here on the
+Adding a new engine, model, or device in values.yaml is reflected here on the
 next helm-docs run — no manual edit to this file or README.md.gotmpl.
 */ -}}
 {{- define "chart.supportedModelsSection" -}}
@@ -15,9 +18,12 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 {{- $engineOrder := list "vllm" "media" "forge" -}}
 {{- $groups := dict -}}
 {{- range $name, $cfg := $values.models -}}
-  {{- $engine := default "unknown" $cfg.serverType -}}
-  {{- $entries := default (list) (index $groups $engine) -}}
-  {{- $_ := set $groups $engine (append $entries (dict "name" $name "cfg" $cfg)) -}}
+  {{- range $engine, $devices := $cfg -}}
+  {{- if ne $engine "defaultEngine" -}}
+    {{- $entries := default (list) (index $groups $engine) -}}
+    {{- $_ := set $groups $engine (append $entries (dict "name" $name "devices" $devices)) -}}
+  {{- end -}}
+  {{- end -}}
 {{- end -}}
 ## Supported Models
 {{- range $engineOrder }}
@@ -30,10 +36,8 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 |---|---|
 {{- range (index $groups $engine) }}
 {{- $name := .name }}
-{{- range $key, $_ := .cfg }}
-{{- if ne $key "serverType" }}
-| `{{ $name }}` | {{ $key }} |
-{{- end }}
+{{- range $device, $_ := .devices }}
+| `{{ $name }}` | {{ $device }} |
 {{- end }}
 {{- end }}
 {{- end }}
@@ -47,14 +51,12 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 |---|---|
 {{- range $entries }}
 {{- $name := .name }}
-{{- range $key, $_ := .cfg }}
-{{- if ne $key "serverType" }}
-| `{{ $name }}` | {{ $key }} |
-{{- end }}
+{{- range $device, $_ := .devices }}
+| `{{ $name }}` | {{ $device }} |
 {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
 
-To add a new model, add an entry under `models` in `values.yaml` with at least one device sub-key containing `image.repository` and `image.tag`.
+To add a new model, add an entry under `models.<name>.<engine>.<device>` in `values.yaml`, where `<engine>` is one of `vllm`, `media`, or `forge`, and the device block contains an `impls.<impl-id>` entry with `image.repository` and `image.tag`.
 {{- end -}}
