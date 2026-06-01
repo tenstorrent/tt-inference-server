@@ -127,31 +127,31 @@ jobs_in_progress = Gauge(
     multiprocess_mode="livesum",
 )
 
-# --- Gas monitor metrics (OUTPUT ONLY) ---------------------------------------
-# Emitted by GasMonitor (health_monitoring/). Prometheus is never the
+# --- Canary monitor metrics (OUTPUT ONLY) ------------------------------------
+# Emitted by CanaryMonitor (health_monitoring/). Prometheus is never the
 # trigger for a probe; these only export the monitor's observations.
-gas_monitor_state = Gauge(
-    "tt_gas_monitor_state",
-    "Current gas-monitor state (1 for the active state, 0 otherwise)",
+canary_state = Gauge(
+    "tt_canary_state",
+    "Current canary-monitor state (1 for the active state, 0 otherwise)",
     ["model_type", "state"],
     multiprocess_mode="livesum",
 )
 
-gas_monitor_failures_total = Counter(
-    "tt_gas_monitor_failures_total",
-    "Total number of gas-monitor probe misses (timeout / error / falsy)",
-    ["model_type"],
+canary_failures_total = Counter(
+    "tt_canary_failures_total",
+    "Total number of canary-monitor probe misses (timeout / error / falsy)",
+    ["model_type", "depth"],
 )
 
-gas_monitor_probe_latency_seconds = Histogram(
-    "tt_gas_monitor_probe_latency_seconds",
-    "Round-trip latency of a gas-monitor probe in seconds",
-    ["model_type"],
+canary_probe_latency_seconds = Histogram(
+    "tt_canary_probe_latency_seconds",
+    "Round-trip latency of a canary-monitor probe in seconds",
+    ["model_type", "depth"],
 )
 
-gas_monitor_last_success_timestamp = Gauge(
-    "tt_gas_monitor_last_success_timestamp",
-    "Unix timestamp of the last successful gas-monitor probe",
+canary_last_success_timestamp = Gauge(
+    "tt_canary_last_success_timestamp",
+    "Unix timestamp of the last successful canary-monitor probe",
     ["model_type"],
     multiprocess_mode="max",
 )

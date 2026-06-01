@@ -1392,33 +1392,43 @@ _DEFAULT_SAMPLING_PARAMS = {
 SHUTDOWN_SIGNAL = {"__shutdown__": True}
 
 
-# Reserved task_id for the gas-monitor probe (see health_monitoring/).
+# Reserved task_id for the canary-monitor probe (see health_monitoring/).
 # Constraints it must satisfy:
 #   - a string (result_listener/error_listener route by string task_id),
 #   - no "_chunk_" substring (error_listener splits on it, scheduler.py),
 #   - cannot collide with the UUID4 task_ids the API emits,
 #   - <= VideoShm.TASK_ID_SIZE (36) bytes, since SPRunner reuses it as the
-#     SHM-wire task_id for its gas-probe round-trip.
-GAS_PROBE_TASK_ID = "__gas_probe__"
+#     SHM-wire task_id for its canary round-trip.
+CANARY_TASK_ID = "__canary__"
+# Reserved task_id for the *deep* canary probe. Same contract/constraints as
+# CANARY_TASK_ID, but the pipeline answers it by replaying its compiled warmup
+# forward (real device work) instead of a bare host-side collective, so it also
+# proves silicon liveness.
+CANARY_DEEP_TASK_ID = "__canary_deep__"
+# All reserved canary task ids
+CANARY_TASK_IDS = frozenset({CANARY_TASK_ID, CANARY_DEEP_TASK_ID})
 
 
 @dataclass(frozen=True)
-class GasProbeRequest:
-    """Sentinel request the gas monitor puts on the scheduler ``task_queue``.
+class CanaryProbeRequest:
+    """Sentinel request the canary monitor puts on the scheduler ``task_queue``.
 
     The device workers recognise it by ``isinstance`` before calling
     ``runner.run()`` and route it to ``runner.health_check()`` instead, so the
     probe never enters the model forward path. It lives here next to
-    ``GAS_PROBE_TASK_ID`` (and ``SHUTDOWN_SIGNAL``) so the workers can import the
+    ``CANARY_TASK_ID`` (and ``SHUTDOWN_SIGNAL``) so the workers can import the
     whole reserved-probe contract from one light module, without pulling the
     monitor's telemetry/asyncio dependencies into every worker process. It is a
     plain frozen dataclass so it pickles cleanly across the multiprocessing
     queue.
 
-    It carries the two attributes the worker loop reads off every request:
-    ``_task_id`` (for result routing) and ``stream`` (to stay on the
-    non-streaming path).
+    It carries the attributes the worker loop reads off every request:
+    ``_task_id`` (for result routing), ``stream`` (to stay on the non-streaming
+    path), and ``deep`` (whether the runner should run the deeper device probe).
+    The monitor sets ``_task_id`` to ``CANARY_TASK_ID`` or ``CANARY_DEEP_TASK_ID``
+    to match ``deep``.
     """
 
-    _task_id: str = field(default=GAS_PROBE_TASK_ID)
+    _task_id: str = field(default=CANARY_TASK_ID)
     stream: bool = field(default=False)
+    deep: bool = field(default=False)

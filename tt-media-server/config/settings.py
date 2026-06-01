@@ -86,27 +86,41 @@ class Settings(BaseSettings):
     # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
     sp_warmup_timeout_seconds: float = 6000.0
 
-    # Gas monitor settings (see health_monitoring/). Named after the electronic
-    # gas monitor that replaced the coal-mine canary.
-    gas_monitor_enabled: bool = True
+    # Canary monitor settings (see health_monitoring/). Named after the
+    # coal-mine canary that signalled when the air stopped being safe.
+    canary_enabled: bool = True
     # Observe-only by default-OFF: when False the monitor records state, metrics
     # and logs but never drives /health to 503. Flip to True to gate readiness.
-    gas_monitor_gate_readiness: bool = False
+    canary_gate_readiness: bool = False
     # Idle dwell before a probe fires (system considered idle this long).
-    gas_monitor_wait_seconds: float = 5.0
+    canary_wait_seconds: float = 5.0
     # Per-probe round-trip deadline. A probe exceeding this counts as one miss.
-    gas_monitor_probe_timeout_seconds: float = 3.0
+    canary_probe_timeout_seconds: float = 3.0
     # Monitor loop cadence.
-    gas_monitor_tick_seconds: float = 1.0
+    canary_tick_seconds: float = 1.0
     # Consecutive misses before the model is declared Dead. Tuned for tolerance
     # over raw speed (~10s to Dead at defaults); lower to 2 for ~6-7s detection
     # at the cost of less headroom for a transient GC pause / network blip.
-    gas_monitor_dead_misses: int = 3
+    canary_dead_misses: int = 3
     # Grace after is_ready before the first probe. NOTE: with the default
     # SP_REQUIRE_WARMUP_PING=false, is_ready flips before a multihost pipeline
     # finishes its 4-node compile, so operators running multihost should set
     # this >= sp_warmup_timeout_seconds to avoid probing a still-warming peer.
-    gas_monitor_startup_grace_seconds: float = 30.0
+    canary_startup_grace_seconds: float = 30.0
+    # Deep (device-depth) probe: periodically replay the pipeline's compiled
+    # warmup forward instead of a bare host collective, so the canary also
+    # proves the device can still compute (not just that hosts are looping).
+    # Default OFF: it consumes device cycles and must reuse the warmup shape to
+    # avoid recompiles, so operators opt in once they've sized the timeout.
+    canary_deep_probe_enabled: bool = False
+    # Run a deep probe on every Nth idle probe; the rest stay cheap collectives.
+    # At defaults (wait=5s, tick=1s) ~every Nth idle window, keeping device load
+    # low while still periodically certifying silicon.
+    canary_deep_every_n: int = 3
+    # Per-deep-probe deadline. A minimal forward across a multihost mesh is
+    # seconds, not the ~ms of a barrier, so this must be far larger than
+    # canary_probe_timeout_seconds or every deep probe false-misses.
+    canary_deep_probe_timeout_seconds: float = 60.0
 
     # Job management settings
     max_jobs: int = 10000
