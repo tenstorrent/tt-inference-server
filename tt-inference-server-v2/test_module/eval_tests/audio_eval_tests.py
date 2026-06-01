@@ -19,15 +19,16 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from report_module.schema import Block
+
 from workflows.utils import (
     get_num_calls,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from report_module.schema import Block
 
 from .._test_common import ReportCheckTypes, block_id
-from ..context import MediaContext, count_tokens, require_health
+from ..context import HardwareRequirement, MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
@@ -380,7 +381,7 @@ def run_audio_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     if _is_whisper(ctx):
         return _run_whisper_lmms_eval(ctx)
