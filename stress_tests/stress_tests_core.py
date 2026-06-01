@@ -722,7 +722,8 @@ class StressTests:
         parsed = urlparse(self.test_args.deploy_url.rstrip("/"))
         sub_host = parsed.hostname or "127.0.0.1"
         sub_port = (
-            str(parsed.port) if parsed.port is not None
+            str(parsed.port)
+            if parsed.port is not None
             else str(self.env_config.service_port)
         )
         cmd = [

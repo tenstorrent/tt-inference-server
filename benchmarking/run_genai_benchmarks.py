@@ -240,9 +240,8 @@ def main():
 
     # runtime config loaded from JSON
     service_port = runtime_config.service_port
-    deploy_url = (
-        getattr(runtime_config, "server_url", None)
-        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
     )
 
     logger.info(f"Model: {model_spec.model_name}")

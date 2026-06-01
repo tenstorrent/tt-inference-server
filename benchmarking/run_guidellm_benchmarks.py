@@ -657,9 +657,8 @@ def main():
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    deploy_url = (
-        getattr(runtime_config, "server_url", None)
-        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
     )
 
     if model_spec.inference_engine in (
@@ -686,7 +685,8 @@ def main():
     # Honor an explicit port on deploy_url to avoid double-port targets.
     _parsed = urlparse(deploy_url.rstrip("/"))
     _base = (
-        deploy_url.rstrip("/") if _parsed.port is not None
+        deploy_url.rstrip("/")
+        if _parsed.port is not None
         else f"{deploy_url.rstrip('/')}:{runtime_config.service_port}"
     )
     target = workflow_params.get("target", f"{_base}/v1")

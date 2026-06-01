@@ -139,7 +139,8 @@ class PromptClient:
         deploy_url = self.env_config.deploy_url.rstrip("/")
         parsed = urlparse(deploy_url)
         base = (
-            deploy_url if parsed.port is not None
+            deploy_url
+            if parsed.port is not None
             else f"{deploy_url}:{self.env_config.service_port}"
         )
         return f"{base}/v1" if include_v1 else base

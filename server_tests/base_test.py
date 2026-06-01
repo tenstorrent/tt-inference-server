@@ -54,7 +54,8 @@ class BaseTest(ABC):
 
         _parsed = _urlparse(self.deploy_url.rstrip("/"))
         self.base_url = (
-            self.deploy_url.rstrip("/") if _parsed.port is not None
+            self.deploy_url.rstrip("/")
+            if _parsed.port is not None
             else f"{self.deploy_url.rstrip('/')}:{self.service_port}"
         )
         self.timeout = config.get("timeout")
@@ -224,7 +225,8 @@ class BaseTest(ABC):
 
         parsed = urlparse(self.deploy_url.rstrip("/"))
         host_with_port = (
-            self.deploy_url.rstrip("/") if parsed.port is not None
+            self.deploy_url.rstrip("/")
+            if parsed.port is not None
             else f"{self.deploy_url.rstrip('/')}:{service_port}"
         )
         health_url = f"{host_with_port}/tt-liveness"

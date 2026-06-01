@@ -308,9 +308,8 @@ def main():
     # Mirror EnvironmentConfig's default (os.environ.get("DEPLOY_URL",
     # "http://127.0.0.1")) so the genai-perf path (which runs before
     # env_config is constructed) sees the same value used later.
-    deploy_url = (
-        getattr(runtime_config, "server_url", None)
-        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
     )
 
     # Automatically control trace capture based on has_builtin_warmup

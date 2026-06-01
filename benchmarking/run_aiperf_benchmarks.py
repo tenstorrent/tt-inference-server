@@ -570,9 +570,8 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    deploy_url = (
-        getattr(runtime_config, "server_url", None)
-        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
     )
     # An explicit port on deploy_url wins over service_port so AIPerf doesn't
     # connect to host:service_port when --server-url already carries a port.

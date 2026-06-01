@@ -58,12 +58,12 @@ def build_test_command(
         from urllib.parse import urlparse
 
         parsed = urlparse(deploy_url.rstrip("/"))
-        base = deploy_url.rstrip("/") if parsed.port is not None else (
-            f"{deploy_url.rstrip('/')}:{service_port}"
+        base = (
+            deploy_url.rstrip("/")
+            if parsed.port is not None
+            else (f"{deploy_url.rstrip('/')}:{service_port}")
         )
-        test_kwargs_list.extend(
-            ["--endpoint-url", f"{base}/v1/responses"]
-        )
+        test_kwargs_list.extend(["--endpoint-url", f"{base}/v1/responses"])
     cmd = [
         str(test_exec),
         task.test_path,
@@ -145,9 +145,8 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    deploy_url = (
-        getattr(runtime_config, "server_url", None)
-        or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
     )
     # Propagate to subprocesses (pytest, etc.) that read DEPLOY_URL.
     os.environ["DEPLOY_URL"] = deploy_url
