@@ -523,7 +523,6 @@ class ModelSpec:
 
         # Generate default docker image if not provided
         if not self.docker_image:
-            # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
                 self.version,
@@ -840,11 +839,6 @@ class ModelSpec:
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if runtime_config.dev_mode:
-            object.__setattr__(
-                self, "docker_image", self.docker_image.replace("-release-", "-dev-")
-            )
-
         if runtime_config.override_docker_image:
             object.__setattr__(
                 self, "docker_image", runtime_config.override_docker_image
@@ -1091,6 +1085,16 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 
+# Catalog environments live in sibling directories under _MODEL_SPECS_DIR.
+# Set MODEL_SPECS_ENV=dev to load the dev set instead of prod.
+_VALID_MODEL_SPECS_ENVS = ("prod", "dev")
+_MODEL_SPECS_ENV = os.getenv("MODEL_SPECS_ENV", "prod")
+if _MODEL_SPECS_ENV not in _VALID_MODEL_SPECS_ENVS:
+    raise ValueError(
+        f"MODEL_SPECS_ENV must be one of {_VALID_MODEL_SPECS_ENVS}, "
+        f"got {_MODEL_SPECS_ENV!r}"
+    )
+
 # One catalog file per model category. Load order determines spec_templates
 # order, which in turn determines MODEL_SPECS dict insertion order.
 _CATALOG_FILES = (
@@ -1106,7 +1110,9 @@ _CATALOG_FILES = (
 spec_templates: List["ModelSpecTemplate"] = [
     template
     for fname in _CATALOG_FILES
-    for template in load_templates_from_yaml(_MODEL_SPECS_DIR / fname)
+    for template in load_templates_from_yaml(
+        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
+    )
 ]
 
 
@@ -1199,7 +1205,13 @@ def get_runtime_model_spec(
     engine: Optional[str] = None,
     impl: Optional[str] = None,
 ) -> Tuple[ModelSpec, str, str]:
-    """Select a ModelSpec from MODEL_SPECS.
+    """Select a ModelSpec from the active catalog.
+
+    The active catalog is whatever was loaded into MODEL_SPECS at module
+    import time, controlled by MODEL_SPECS_ENV (default "prod"). Callers that
+    want the dev catalog must set MODEL_SPECS_ENV=dev in the environment
+    before importing this module -- run.py does this automatically when
+    --dev-mode is on the command line.
 
     Pure function -- does **not** mutate any external state.
 
@@ -1221,7 +1233,8 @@ def get_runtime_model_spec(
         engine_msg = f", engine={engine}" if engine else ""
         impl_msg = f", impl={impl}" if impl else ""
         raise ValueError(
-            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg}"
+            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg} "
+            f"in the {_MODEL_SPECS_ENV!r} catalog"
         )
 
     default_spec = next(
@@ -1233,7 +1246,7 @@ def get_runtime_model_spec(
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine}; "
+            f"device:={device}, engine:={engine} in the {_MODEL_SPECS_ENV!r} catalog; "
             f"you must pass --impl or --engine"
         )
 
