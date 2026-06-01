@@ -307,9 +307,6 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  // Keep the wake predicate off sendQueue.items: TSan reports false
-  // double-lock/race warnings when condition_variable reads the same deque that
-  // producers update under sendQueue.queueMutex.
   std::unique_lock<std::mutex> lock(sendQueue.wakeMutex);
   sendQueue.wakeCv.wait_for(lock, IO_IDLE_WAIT, [this] {
     return sendQueue.hasItems.load() || !ioActive_.load();
