@@ -1735,6 +1735,7 @@ jobs:
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill-bind=127.0.0.1:9201 \
+            --metrics-port=9092 \
             > gw_zmq.log 2>&1 &
           echo $! > gw_zmq.pid
           bash cpp_server/scripts/ci/wait_for_command.sh \
