@@ -2231,7 +2231,7 @@ jobs:
           if-no-files-found: warn
 
   cpp-tsan:
-    needs: detect-changes
+    needs detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ ThreadSanitizer
     runs-on: ubuntu-latest
