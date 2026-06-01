@@ -173,6 +173,29 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
     auto req = buildLLMRequest(dynReq);
     auto svc = pipeline->service();
 
+    // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
+    // or run the response writer here (the frontend detokenizes), so we count
+    // token ids directly. A model whose chat template opens <think> in the
+    // prompt (Kimi) begins generation already inside the reasoning span; other
+    // reasoning models emit <think> themselves. Reasoning ends at </think>.
+    struct UsageAccum {
+      int64_t thinkStart;
+      int64_t thinkEnd;
+      bool inReasoning;
+      int completion = 0;
+      int reasoning = 0;
+    };
+    auto usage = std::make_shared<UsageAccum>();
+    {
+      const auto think = tt::utils::tokenizers::thinkTokenIds();
+      usage->thinkStart = think.first;
+      usage->thinkEnd = think.second;
+      const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+      usage->inReasoning =
+          usage->thinkStart != kNo && !dynReq.token_ids.empty() &&
+          dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
+    }
+
     // Capture which loop thread is serving this request — combined with the
     // pre-warm log this lets us spot any unexpected cold thread that bypassed
     // the warm-up (e.g. consumer thread spawned later in LLMService).
@@ -220,8 +243,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
     pipeline->resolveSession(
         req, loop,
-        [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen,
-         probeId](services::LLMPipeline::SessionInfo info) {
+        [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
+         usage](services::LLMPipeline::SessionInfo info) {
           using SteadyClock = std::chrono::steady_clock;
           const auto tSession = SteadyClock::now();
           const auto sessionMs =
@@ -257,8 +280,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
           const auto tDispatch = SteadyClock::now();
           auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-                     tDispatch](const tt::domain::llm::LLMStreamChunk& chunk,
-                                bool isFinal) {
+                     tDispatch, usage](
+                        const tt::domain::llm::LLMStreamChunk& chunk,
+                        bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
             // AND time spent purely in BlazeRunner (since dispatchGeneration).
             // Splitting these lets us tell the difference between "session
@@ -293,13 +317,45 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   static_cast<int>(*chunk.choices[0].token_id));
             }
 
+            // Usage accounting: count generated tokens and the reasoning span.
+            if (!chunk.choices.empty() && chunk.choices[0].token_id) {
+              const int tid = static_cast<int>(*chunk.choices[0].token_id);
+              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              usage->completion += 1;
+              if (usage->thinkStart != kNo && tid == usage->thinkStart) {
+                usage->inReasoning = true;
+              }
+              if (usage->inReasoning) usage->reasoning += 1;
+              if (usage->thinkEnd != kNo && tid == usage->thinkEnd) {
+                usage->inReasoning = false;
+              }
+            }
+
             // Finalize session state before sending final chunk
             if (isFinal && req->session) {
               req->session->finalizeAndRegisterHashes();
               req->session->clearInFlight();
             }
 
-            sendChunk(toTokenChunk(chunk, isFinal));
+            TokenChunk out = toTokenChunk(chunk, isFinal);
+            if (isFinal) {
+              DynamoUsage du;
+              du.prompt_tokens = req->full_prompt_tokens_count;
+              du.completion_tokens = usage->completion;
+              du.total_tokens = du.prompt_tokens + du.completion_tokens;
+              int cached = req->continuation
+                               ? req->full_prompt_tokens_count -
+                                     req->prompt_tokens_count
+                               : 0;
+              du.cached_tokens = cached < 0 ? 0 : cached;
+              // Only report reasoning_tokens for models that have think tokens.
+              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
+                du.reasoning_tokens = usage->reasoning;
+              }
+              out.completion_usage = du;
+            }
+            sendChunk(out);
             if (isFinal) {
               signalDone();
             }
