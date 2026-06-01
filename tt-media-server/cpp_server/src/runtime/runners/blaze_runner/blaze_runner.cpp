@@ -3,6 +3,7 @@
 
 #include "runtime/runners/blaze_runner/blaze_runner.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -28,7 +29,6 @@ BlazeRunner::BlazeRunner(
       taskQueue(taskQueue),
       stopQueue(stopQueue),
       slotManager(tt::config::dsMaxUsers()),
-      lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePipelineConfig(config);
@@ -528,7 +528,6 @@ inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
 
 void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
-  lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
   if (slotContext.state != SlotState::RUNNING) {
     if (slotContext.state == SlotState::AWAITING_STOP_ACK ||
@@ -552,6 +551,7 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
     assert(false && "scheduler output for slot not RUNNING/AWAITING_*_ACK");
     return;
   }
+  slotContext.lastProgressTime = std::chrono::steady_clock::now();
   bool finished = output.is_complete;
   auto taskId = slotContext.taskId.value();
 
@@ -571,22 +571,46 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
 }
 
 void BlazeRunner::checkOutputHang() {
-  auto runningCount = slotManager.activeRunningCount();
-  if (runningCount == 0) {
-    lastOutputTime = std::chrono::steady_clock::now();
-    return;
+  auto currentTime = std::chrono::steady_clock::now();
+
+  for (const auto& slot : slotManager.getSlots()) {
+    const char* hangKind = nullptr;
+    switch (slot.state) {
+      case SlotState::RUNNING:
+        hangKind = "no model output (decode/TTFT stall)";
+        break;
+      case SlotState::AWAITING_STOP_ACK:
+        hangKind = "no STOP ack from scheduler";
+        break;
+      case SlotState::AWAITING_EVICT_ACK:
+        hangKind = "no EVICT ack from scheduler";
+        break;
+      case SlotState::FREE:
+      case SlotState::IDLE:
+        continue;
+    }
+
+    auto stalledFor = std::chrono::duration_cast<std::chrono::milliseconds>(
+        currentTime - slot.lastProgressTime);
+    if (stalledFor <= outputHangTimeout) {
+      continue;
+    }
+
+    TT_LOG_CRITICAL(
+        "[BlazeRunner] Hang detected on Slot {} in state {}: {} for {} ms "
+        "(threshold {} ms). Total in-flight generations: {}. "
+        "Self-terminating worker for infrastructure restart.",
+        slot.slotId,                       // Which slot broke?
+        toString(slot.state),              // What was it waiting on?
+        hangKind,                          // Human-readable cause
+        stalledFor.count(),                // How bad is it?
+        outputHangTimeout.count(),         // What was the limit?
+        slotManager.activeRunningCount());  // Global context
+
+    TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
+                    slotManager.dumpSlotStates());
+    std::abort();
   }
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - lastOutputTime);
-  if (elapsed <= outputHangTimeout) {
-    return;
-  }
-  TT_LOG_CRITICAL(
-      "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
-      "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
-      "infrastructure can restart the server.",
-      elapsed.count(), runningCount, outputHangTimeout.count());
-  std::abort();
 }
 
 void BlazeRunner::handleRequest(
@@ -625,9 +649,6 @@ void BlazeRunner::handleRequest(
             request->taskId, slotId);
         pendingRequests.pendingTask = std::move(request);
         return;
-      }
-      if (slotManager.activeRunningCount() == 0) {
-        lastOutputTime = std::chrono::steady_clock::now();
       }
       utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
