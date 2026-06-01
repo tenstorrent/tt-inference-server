@@ -436,11 +436,12 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
+    "tt-z-image-turbo": run_z_image_turbo_eval,
 }
 
 
 def run_image_eval(ctx: MediaContext) -> Block:
-    """Run evaluations for an image model (SDXL, SD3.5, Flux, Motif)."""
+    """Run evaluations for an image model (SDXL, SD3.5, Flux, Motif, Z-Image-Turbo)."""
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
@@ -465,11 +466,22 @@ def run_image_eval(ctx: MediaContext) -> Block:
 
     if isinstance(eval_result, dict):
         eval_results = eval_result.get("eval_results", {})
-        data["fid_score"] = eval_results.get("fid_score")
-        data["average_clip"] = eval_results.get("average_clip")
-        data["deviation_clip_score"] = eval_results.get("deviation_clip_score")
         data["accuracy_check"] = eval_results.get("accuracy_check")
         data["score"] = None
+        # Only surface metric fields the sub-eval actually reports — keeps
+        # the report honest (e.g. Z-Image-Turbo doesn't compute FID/CLIP, so
+        # those columns won't appear at all instead of showing as null).
+        for key in (
+            "fid_score",
+            "average_clip",
+            "deviation_clip_score",
+            "pcc_results",
+            "pcc_min",
+            "pcc_mean",
+            "pcc_tolerance",
+        ):
+            if key in eval_results:
+                data[key] = eval_results[key]
     else:
         status_list, total_time = eval_result
 
