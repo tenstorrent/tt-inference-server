@@ -3,20 +3,28 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import argparse
-import getpass
-import logging
 import os
-import shutil
-import subprocess
 import sys
-from datetime import datetime
-from pathlib import Path
 
-from workflows.bootstrap_uv import bootstrap_uv
-from workflows.device_utils import infer_default_device
-from workflows.log_setup import setup_run_logger
-from workflows.model_spec import (
+# Pre-argparse: translate --dev-mode to MODEL_SPECS_ENV=dev before importing
+# workflows.model_spec, which builds MODEL_SPECS at module import time.
+# This keeps every consumer of MODEL_SPECS (argparse choices, eval_config,
+# stress_tests, subprocess inheritance) on the same catalog as the resolver.
+if "--dev-mode" in sys.argv[1:]:
+    os.environ["MODEL_SPECS_ENV"] = "dev"
+
+import argparse  # noqa: E402
+import getpass  # noqa: E402
+import logging  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from datetime import datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from workflows.bootstrap_uv import bootstrap_uv  # noqa: E402
+from workflows.device_utils import infer_default_device  # noqa: E402
+from workflows.log_setup import setup_run_logger  # noqa: E402
+from workflows.model_spec import (  # noqa: E402
     MODEL_SPECS,
     ModelSpec,
     export_model_specs_json,
@@ -176,7 +184,18 @@ def parse_arguments():
         action="store_true",
         help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
-    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help=(
+            "Resolve the model spec from the dev catalog "
+            "(workflows/model_specs/dev/) and forward it into the Docker "
+            "container, overriding its prebuilt prod catalog. Also bind-mounts "
+            "host source dirs (benchmarking/, evals/, utils/, tests/, plus "
+            "vllm-tt-metal/src or tt-media-server/) so live host edits are "
+            "picked up. Has no effect when --runtime-model-spec-json is given."
+        ),
+    )
     parser.add_argument(
         "--override-docker-image",
         type=str,
@@ -583,6 +602,11 @@ def resolve_runtime(args):
 
     Returns ``(runtime_config, model_spec)`` with impl/engine fully resolved.
     """
+    # Spec-source precedence:
+    #   1. --runtime-model-spec-json wins outright (taken as-is, no overrides applied).
+    #   2. Otherwise resolve from MODEL_SPECS. MODEL_SPECS is loaded from
+    #      workflows/model_specs/<env>/ where env is set by the top-of-file
+    #      argv pre-scan: --dev-mode → MODEL_SPECS_ENV=dev, else prod.
     if args.runtime_model_spec_json:
         logger.warning(
             f"No validation is done, loading runtime model spec from JSON: "

@@ -1,0 +1,128 @@
+# Model spec catalog: Audio / TTS templates.
+# Edit this file to add or modify a Audio / TTS model spec.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+templates:
+# =============================================================================
+# Audio / TTS templates
+# =============================================================================
+- weights:
+    - openai/whisper-large-v3
+    - distil-whisper/distil-large-v3
+  version: "0.11.1"
+  tt_metal_commit: "2508216"
+  impl: whisper
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: AUDIO
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: GALAXY
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: T3K
+      max_concurrency: 4
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P300
+      max_concurrency: 2
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+  status: COMPLETE
+
+- weights:
+    - openai/whisper-large-v3
+    - distil-whisper/distil-large-v3
+  version: "0.15.0"
+  tt_metal_commit: "25891d3"
+  impl: whisper
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: AUDIO
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+    - device: P300X2
+      max_concurrency: 4
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+  status: COMPLETE
+
+- weights:
+    - microsoft/speecht5_tts
+  version: "0.10.0"
+  tt_metal_commit: "2508216"
+  impl: speecht5_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+
+- weights:
+    - microsoft/speecht5_tts
+  version: "0.15.0"
+  tt_metal_commit: "25891d3"
+  impl: speecht5_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+    - device: P300X2
+      max_concurrency: 4
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+  status: EXPERIMENTAL
+
+- weights:
+    - microsoft/speecht5_tts
+  version: "0.10.0"
+  tt_metal_commit: "2508216"
+  impl: speecht5_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300
+      max_concurrency: 2
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+  status: EXPERIMENTAL
