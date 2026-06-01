@@ -97,6 +97,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help=(
+            "Run the workflow N times, keeping each run's report under "
+            "<output>/<model>_<device>_<workflow>/run_NN/, then write an "
+            "aggregated benchmark summary (mean/median/stdev/percentiles + "
+            "acceptance on the means) into .../summary/. Default 1 (no summary)."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -125,6 +136,8 @@ def parse_args() -> argparse.Namespace:
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be >= 1")
     if args.output_dir is None:
         args.output_dir = (
             _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
