@@ -149,6 +149,10 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** Max input sequence length (prompt tokens) from MAX_ISL. Default:
+ * defaults::MAX_ISL. */
+size_t maxISL();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
