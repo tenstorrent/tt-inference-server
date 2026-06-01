@@ -74,6 +74,20 @@ foreach(_gt_target gtest gtest_main gmock gmock_main)
     endif()
 endforeach()
 
+# Prometheus metrics (core only; gateway exposes text with its own HTTP server).
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    prometheus-cpp
+    GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+    GIT_TAG        v1.2.4
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(prometheus-cpp)
+
 # Gateway core library: selector + registry + affinity cache + dispatcher.
 # All pure C++; no socket I/O is performed inside the library. The dispatcher
 # receives Senders (std::function objects) which production main() wires to
@@ -83,6 +97,7 @@ set(GATEWAY_CORE_SOURCES
     src/affinity_cache.cpp
     src/prefill_registry.cpp
     src/dispatcher.cpp
+    src/gateway_metrics.cpp
     ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 
@@ -91,9 +106,15 @@ target_include_directories(prefill_gateway_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CPP_SERVER_DIR}/include
 )
+target_include_directories(prefill_gateway_core PRIVATE
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
 target_link_libraries(prefill_gateway_core PUBLIC
     cereal::cereal
     spdlog::spdlog
+)
+target_link_libraries(prefill_gateway_core PRIVATE
+    prometheus-cpp::core
 )
 target_compile_features(prefill_gateway_core PUBLIC cxx_std_20)
 target_compile_options(prefill_gateway_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -165,6 +186,21 @@ elseif(TARGET libzmq)
 endif()
 target_compile_features(prefill_gateway_io PUBLIC cxx_std_20)
 
+# Small gateway-owned HTTP endpoint for Prometheus scrapes.
+add_library(prefill_gateway_metrics_http STATIC
+    src/gateway_metrics_server.cpp
+)
+target_include_directories(prefill_gateway_metrics_http PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CPP_SERVER_DIR}/include
+)
+target_link_libraries(prefill_gateway_metrics_http PUBLIC
+    prefill_gateway_core
+    spdlog::spdlog
+)
+target_compile_features(prefill_gateway_metrics_http PUBLIC cxx_std_20)
+target_compile_options(prefill_gateway_metrics_http PRIVATE -Wall -Wextra -Wpedantic)
+
 # prefill_gateway binary — wires core library to real SocketManagers.
 add_executable(prefill_gateway src/main.cpp)
 target_include_directories(prefill_gateway PRIVATE
@@ -173,6 +209,7 @@ target_include_directories(prefill_gateway PRIVATE
 target_link_libraries(prefill_gateway PRIVATE
     prefill_gateway_core
     prefill_gateway_io
+    prefill_gateway_metrics_http
 )
 target_compile_features(prefill_gateway PUBLIC cxx_std_20)
 target_compile_options(prefill_gateway PRIVATE -Wall -Wextra -Wpedantic)
@@ -193,7 +230,8 @@ endfunction()
 function(_gateway_add_e2e_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE
-        prefill_gateway_core prefill_gateway_io GTest::gtest_main)
+        prefill_gateway_core prefill_gateway_io prefill_gateway_metrics_http
+        GTest::gtest_main)
     target_include_directories(${name} PRIVATE ${CPP_SERVER_DIR}/include)
     gtest_discover_tests(${name})
 endfunction()
@@ -202,4 +240,5 @@ _gateway_add_unit_test(prefill_selector_test)
 _gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
+_gateway_add_unit_test(gateway_metrics_test)
 _gateway_add_e2e_test(gateway_e2e_test)
