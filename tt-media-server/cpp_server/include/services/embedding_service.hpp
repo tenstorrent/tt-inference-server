@@ -17,9 +17,8 @@ namespace tt::services {
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
  * Synchronous: submit_request blocks until the embedding is computed.
  */
-class EmbeddingService
-    : public BaseSyncService<domain::EmbeddingRequest,
-                             domain::EmbeddingResponse> {
+class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
+                                                domain::EmbeddingResponse> {
  public:
   EmbeddingService();
   ~EmbeddingService() override;

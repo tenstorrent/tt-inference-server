@@ -19,9 +19,8 @@
 namespace tt::services {
 
 /** Image service facade backed by media worker processes. */
-class ImageService
-    : public BaseSyncService<domain::ImageGenerateRequest,
-                             domain::image::ImageResponse> {
+class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
+                                            domain::image::ImageResponse> {
  public:
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,

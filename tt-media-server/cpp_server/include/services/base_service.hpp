@@ -110,12 +110,11 @@ class BaseStreamingService : public RequestPipeline<RequestType> {
     if (!skipPreProcess) {
       this->preProcess(request);
     }
-    produceStream(
-        std::move(request),
-        [this, cb = std::move(callback)](ChunkType& chunk, bool isFinal) {
-          streamingPostProcess(chunk);
-          cb(chunk, isFinal);
-        });
+    produceStream(std::move(request), [this, cb = std::move(callback)](
+                                          ChunkType& chunk, bool isFinal) {
+      streamingPostProcess(chunk);
+      cb(chunk, isFinal);
+    });
   }
 
   virtual void abortRequest(uint32_t /*taskId*/) {}
