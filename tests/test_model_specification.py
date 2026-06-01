@@ -166,6 +166,52 @@ class TestModelSpecTemplateSystem:
         assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
+        # Directly-constructed templates default to pinned so they are never
+        # dropped from IMAGE_PINNED_MODEL_SPECS.
+        assert template.image_pinned is True
+
+    def test_build_template_sets_image_pinned_from_yaml_keys(self):
+        """A catalog entry "pins" its image only when it sets `version` or
+        `docker_image`; with neither, image_pinned is False so the spec is
+        excluded from IMAGE_PINNED_MODEL_SPECS."""
+        from workflows.model_spec import _IMPL_REGISTRY, _build_template
+
+        base = {
+            "weights": ["acme/Foo-7B"],
+            "impl": next(iter(_IMPL_REGISTRY)),
+            "tt_metal_commit": "abc1234",
+            "inference_engine": "VLLM",
+            "device_model_specs": [
+                {"device": "N150", "max_concurrency": 16, "max_context": 8192}
+            ],
+        }
+
+        assert _build_template(dict(base)).image_pinned is False
+        assert _build_template({**base, "version": "0.10.0"}).image_pinned is True
+        assert (
+            _build_template({**base, "docker_image": "ghcr.io/x/y:1.0"}).image_pinned
+            is True
+        )
+
+    def test_image_pinned_model_specs_excludes_unpinned_entries(self):
+        """The helm-facing list drops entries that pin no image, but they stay
+        in MODEL_SPECS for every other consumer."""
+        from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, MODEL_SPECS
+
+        pinned_ids = {s.model_id for s in IMAGE_PINNED_MODEL_SPECS}
+        excluded = {
+            (MODEL_SPECS[mid].model_name, MODEL_SPECS[mid].device_type.name.lower())
+            for mid in set(MODEL_SPECS) - pinned_ids
+        }
+        assert excluded == {
+            ("gpt-oss-120b", "p300x2"),
+            ("Mistral-Small-3.1-24B-Instruct-2503", "t3k"),
+            ("bge-m3", "n150"),
+            ("bge-m3", "n300"),
+            ("bge-m3", "t3k"),
+            ("bge-m3", "galaxy"),
+        }
+        assert len(IMAGE_PINNED_MODEL_SPECS) < len(MODEL_SPECS)
 
     def test_system_requirement_template_level(self, sample_impl):
         """Test that SystemRequirements propagate correctly from templates and device specs."""
