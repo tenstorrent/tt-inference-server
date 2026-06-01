@@ -43,6 +43,15 @@ void configureEnv() {
   setenv("MAX_NUM_SESSIONS", "4", 1);
   setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
   setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
+  // Disable the prefix-cache hit threshold by default: most tests assert that
+  // ANY prefix match reuses the session (the pre-threshold contract). With the
+  // production default (80%), a legitimate follow-up can be rejected when the
+  // seed session has grown past the matched prefix — e.g. it gets re-registered
+  // with the generated tokens, so a 1-block opener match becomes <80% of a
+  // 2-block session and falls through to ALLOCATE, hanging tests that have the
+  // memory auto-responder turned off. PrefixCacheHitThreshold_* opts back into
+  // 80% explicitly to exercise the rejection path.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 }  // namespace
@@ -517,6 +526,13 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
   //
   // Setup: opener (1 block) -> many assistant/user turns (many more blocks)
   // Test request: same opener only -> matches 1 block out of many -> rejected
+  //
+  // Steps 1-2 BUILD the long session and must run with the threshold disabled
+  // (the suite default, see configureEnv): each growth turn only matches the
+  // leading block(s) of the session-so-far, which is below 80%, so an active
+  // threshold would reject these legitimate continuations and the session
+  // would never grow. The threshold is enabled only for step 3 — the actual
+  // rejection assertion — and restored to "0" at the end.
   server->setMemoryAutoRespond(false);
 
   // Step 1: Create a long conversation to build up many blocks.
@@ -579,9 +595,10 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
     convo.assistant("got it");
   }
 
-  // Step 3: Send a NEW request with only the opener (no history).
-  // This matches only the first block of the multi-block session.
-  // With 80% threshold, this ~10-20% match should be rejected.
+  // Step 3: Enable the production 80% threshold, then send a NEW request with
+  // only the opener (no history). This matches only the first block of the
+  // multi-block session, so the ~10-20% match should be rejected.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
   auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
   // Should allocate a NEW session because match percentage is below threshold.
@@ -609,6 +626,7 @@ TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
   future2.get();
 
   server->setMemoryAutoRespond(true);
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 // ---------------------------------------------------------------------------
