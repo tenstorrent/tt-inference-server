@@ -262,6 +262,29 @@ std::vector<uint8_t> encode_stream_chunk(const TokenChunk& chunk) {
     tokenData["finish_reason"] = Json::Value::null;
   }
 
+  // BackendOutput.completion_usage (async-openai CompletionUsage shape). The
+  // frontend's chat/completions aggregator copies prompt_tokens_details from
+  // here; the (currently missing) completion_tokens_details copy is what makes
+  // reasoning_tokens surface once the frontend is patched.
+  if (chunk.completion_usage.has_value()) {
+    const auto& u = *chunk.completion_usage;
+    Json::Value cu(Json::objectValue);
+    cu["prompt_tokens"] = u.prompt_tokens;
+    cu["completion_tokens"] = u.completion_tokens;
+    cu["total_tokens"] = u.total_tokens;
+    if (u.cached_tokens.has_value()) {
+      Json::Value ptd(Json::objectValue);
+      ptd["cached_tokens"] = *u.cached_tokens;
+      cu["prompt_tokens_details"] = std::move(ptd);
+    }
+    if (u.reasoning_tokens.has_value()) {
+      Json::Value ctd(Json::objectValue);
+      ctd["reasoning_tokens"] = *u.reasoning_tokens;
+      cu["completion_tokens_details"] = std::move(ctd);
+    }
+    tokenData["completion_usage"] = std::move(cu);
+  }
+
   // Annotated<T>: {"data": <token_data>}
   Json::Value annotated(Json::objectValue);
   annotated["data"] = std::move(tokenData);
