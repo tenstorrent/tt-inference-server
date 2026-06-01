@@ -1,6 +1,12 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
 --extra-index-url https://download.pytorch.org/whl/cpu
 tt-forge==1.2.0
+# tt-forge 1.2.0 needs torch 2.10.0; pin the matching torch/vision/audio here
+# (forge image only) so the shared requirements.txt — and the media/blaze
+# images that install only it — stay on torch 2.7.1. forge_runners is installed
+# after requirements.txt, so these override the shared pins for the forge image.
+torch==2.10.0+cpu
+torchaudio==2.10.0+cpu
 torchvision==0.25.0+cpu
 
 tabulate
