@@ -365,9 +365,7 @@ def _run_z_image_turbo_benchmark(
         )
         status, elapsed = _generate_image_z_image_turbo(ctx, prompt, seed, steps)
         inference_steps_per_second = steps / elapsed if elapsed > 0 else 0
-        logger.info(
-            f"Generated image with {steps} steps in {elapsed:.2f} seconds."
-        )
+        logger.info(f"Generated image with {steps} steps in {elapsed:.2f} seconds.")
         status_list.append(
             ImageGenerationTestStatus(
                 status=status,
