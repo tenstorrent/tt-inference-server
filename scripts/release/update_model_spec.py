@@ -29,10 +29,12 @@ The script:
 """
 
 import argparse
+import copy
 import importlib.util
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # Add repo root to path for imports
@@ -444,7 +446,7 @@ def generate_release_diff_markdown(update_records, output_path):
     print(f"\nGenerated release diff markdown: {output_path}")
 
 
-def reload_and_export_model_specs_json(model_spec_path, output_json_path):
+def reload_and_export_model_specs_json(model_spec_path, output_json_path, quiet=False):
     """
     Dynamically reimport MODEL_SPECS from updated model_spec.py and export to JSON.
 
@@ -454,6 +456,8 @@ def reload_and_export_model_specs_json(model_spec_path, output_json_path):
     Args:
         model_spec_path: Path to the model_spec.py file
         output_json_path: Path where JSON output should be written
+        quiet: When True, suppress the "Exported N model specs to ..." message
+            (used for intermediate exports to a temp file).
     """
     # Add the repository root to sys.path so imports work
     repo_root = model_spec_path.parent.parent
@@ -468,7 +472,239 @@ def reload_and_export_model_specs_json(model_spec_path, output_json_path):
 
     model_specs = model_spec_module.MODEL_SPECS
     num_specs = export_model_specs_json(model_specs, Path(output_json_path))
-    print(f"\nExported {num_specs} model specs to {output_json_path}")
+    if not quiet:
+        print(f"\nExported {num_specs} model specs to {output_json_path}")
+
+
+# --------------------------------------------------------------------------- #
+# Scoped release_model_spec.json update (`--model` flag)
+#
+# These helpers let `--output-only` update release_model_spec.json for only an
+# explicit set of (model, device) pairs, leaving every other entry byte-identical
+# to the current file. They are deliberately self-contained and DO NOT touch the
+# docs/README generation or any other output -- `--model` affects only how
+# release_model_spec.json is populated. Name/device resolution mirrors tt-shield's
+# revert_release_model_spec.py so both tools accept the same `NAME=dev1,dev2` input.
+# --------------------------------------------------------------------------- #
+class ModelScopeError(Exception):
+    """User-facing error: malformed --model value or an unresolvable model/device name."""
+
+
+def parse_model_arg(value):
+    """Parse a ``NAME=dev1,dev2`` ``--model`` value into ``(name, [devices])``.
+
+    Used as an argparse ``type`` so malformed values are rejected at parse time.
+    """
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            f"--model expects NAME=dev1,dev2 (got {value!r})"
+        )
+    name, devs = value.split("=", 1)
+    name = name.strip()
+    devices = [d.strip() for d in devs.split(",") if d.strip()]
+    if not name:
+        raise argparse.ArgumentTypeError(f"--model is missing a model name: {value!r}")
+    if not devices:
+        raise argparse.ArgumentTypeError(f"--model {value!r} lists no devices")
+    return (name, devices)
+
+
+def merge_model_args(model_args):
+    """Merge repeated ``--model`` entries, de-duplicating devices while keeping order."""
+    merged = {}
+    for name, devices in model_args:
+        bucket = merged.setdefault(name, [])
+        for dev in devices:
+            if dev not in bucket:
+                bucket.append(dev)
+    return [(name, devices) for name, devices in merged.items()]
+
+
+def resolve_model(name, available):
+    """Resolve a (possibly short) model name to an exact key in ``available``.
+
+    Matches a full key, the part after the last ``/`` (e.g. ``speecht5_tts`` ->
+    ``microsoft/speecht5_tts``), or a case-insensitive variant of either.
+
+    Raises:
+        ModelScopeError: If the name matches no key or is ambiguous.
+    """
+    available = list(available)
+    if name in available:
+        return name
+
+    def suffix(key):
+        return key.split("/")[-1]
+
+    exact_suffix = [k for k in available if suffix(k) == name]
+    if len(exact_suffix) == 1:
+        return exact_suffix[0]
+    if len(exact_suffix) > 1:
+        raise ModelScopeError(
+            f"Model {name!r} is ambiguous; matches {exact_suffix}. "
+            f"Pass the full model key instead."
+        )
+
+    low = name.lower()
+    ci = [k for k in available if suffix(k).lower() == low or k.lower() == low]
+    if len(ci) == 1:
+        return ci[0]
+    if len(ci) > 1:
+        raise ModelScopeError(
+            f"Model {name!r} is ambiguous (case-insensitive); matches {ci}. "
+            f"Pass the full model key instead."
+        )
+    raise ModelScopeError(
+        f"Model {name!r} not found. Available models: {sorted(available)}"
+    )
+
+
+def resolve_device(name, available, model_key):
+    """Resolve a (possibly lower-case) device name to an exact device key for a model.
+
+    Raises:
+        ModelScopeError: If the device matches no key or is ambiguous.
+    """
+    available = list(available)
+    if name in available:
+        return name
+    low = name.lower()
+    ci = [d for d in available if d.lower() == low]
+    if len(ci) == 1:
+        return ci[0]
+    if len(ci) > 1:
+        raise ModelScopeError(
+            f"Device {name!r} is ambiguous for model {model_key!r}; matches {ci}."
+        )
+    raise ModelScopeError(
+        f"Device {name!r} not found for model {model_key!r}. "
+        f"Available devices: {sorted(available)}"
+    )
+
+
+def apply_model_scope(baseline_obj, fresh_obj, models_scope, release_version):
+    """Overlay only the in-scope (model, device) entries from ``fresh_obj`` onto a baseline.
+
+    Starts from a deep copy of ``baseline_obj`` so every untouched entry (and the key
+    order) stays identical to the baseline, then replaces the requested
+    ``model_specs[model][device]`` subtrees with the freshly generated ones. Names are
+    resolved against ``fresh_obj`` (the source of truth generated from model_spec.py), so
+    brand-new release models/devices resolve and get added. ``schema_version`` is left as
+    the baseline's; only ``release_version`` is overwritten.
+
+    Args:
+        baseline_obj: Parsed current release_model_spec.json (the baseline to preserve).
+        fresh_obj: Parsed full export freshly generated from model_spec.py.
+        models_scope: List of ``(model_name, [device_name, ...])`` tuples.
+        release_version: Value to write into the top-level ``release_version`` field
+            (``None`` leaves it untouched).
+
+    Returns:
+        ``(result_obj, resolved_pairs)`` where ``resolved_pairs`` lists the overlaid
+        ``(model_key, device_key)`` tuples.
+
+    Raises:
+        ModelScopeError: If ``fresh_obj`` has no model_specs or a name does not resolve.
+    """
+    fresh_specs = fresh_obj.get("model_specs", {})
+    if not fresh_specs:
+        raise ModelScopeError(
+            "Freshly generated spec has no 'model_specs'; cannot scope the update."
+        )
+
+    result = copy.deepcopy(baseline_obj)
+    result_specs = result.setdefault("model_specs", {})
+
+    resolved_pairs = []
+    for name, devices in models_scope:
+        model_key = resolve_model(name, fresh_specs.keys())
+        for dev_name in devices:
+            dev_key = resolve_device(dev_name, fresh_specs[model_key].keys(), model_key)
+            result_specs.setdefault(model_key, {})[dev_key] = copy.deepcopy(
+                fresh_specs[model_key][dev_key]
+            )
+            resolved_pairs.append((model_key, dev_key))
+
+    if release_version is not None:
+        result["release_version"] = release_version
+
+    return result, resolved_pairs
+
+
+def populate_release_model_spec_json(
+    model_spec_path, output_json_path, models_scope=None
+):
+    """Write release_model_spec.json, optionally scoped to specific (model, device) pairs.
+
+    Single entry point for producing release_model_spec.json:
+
+    - ``models_scope`` falsy -> full export: regenerate the entire file from model_spec.py
+      (unchanged historical behavior).
+    - ``models_scope`` given (list of ``(model_name, [devices])``) -> selective overlay:
+      keep the existing ``output_json_path`` as the baseline and replace ONLY the listed
+      (model, device) subtrees with freshly generated ones, so the git diff is limited to
+      those entries plus ``release_version``. The fresh entries come from a full export to
+      a temp file, so they are byte-for-byte what a full export would produce.
+
+    Args:
+        model_spec_path: Path to model_spec.py.
+        output_json_path: Path to release_model_spec.json (read as baseline + written).
+        models_scope: Optional list of ``(model_name, [device_name, ...])`` tuples.
+    """
+    output_json_path = Path(output_json_path)
+
+    if not models_scope:
+        reload_and_export_model_specs_json(model_spec_path, output_json_path)
+        return
+
+    if not output_json_path.exists():
+        raise FileNotFoundError(
+            f"Selective --model update requires an existing baseline at "
+            f"{output_json_path}, but it was not found. Run a full export first."
+        )
+
+    # De-duplicate repeated --model entries (e.g. the same NAME given twice).
+    models_scope = merge_model_args(models_scope)
+
+    # Read the baseline (current file); keep its raw text to preserve trailing newline.
+    baseline_raw = output_json_path.read_text()
+    baseline_obj = json.loads(baseline_raw)
+
+    # Generate a fresh FULL export to a temp file, then load it. This reuses
+    # export_model_specs_json verbatim, so the fresh entries we overlay are identical
+    # to what a full regeneration would produce.
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        reload_and_export_model_specs_json(model_spec_path, tmp_path, quiet=True)
+        fresh_obj = json.loads(tmp_path.read_text())
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    # release_version follows the freshly generated value (model_spec.py VERSION);
+    # schema_version and every out-of-scope entry stay exactly as in the baseline.
+    result_obj, resolved_pairs = apply_model_scope(
+        baseline_obj,
+        fresh_obj,
+        models_scope,
+        release_version=fresh_obj.get("release_version"),
+    )
+
+    # Preserve the baseline's trailing newline so the diff stays minimal.
+    body = json.dumps(result_obj, indent=2)
+    if baseline_raw.endswith("\n"):
+        body += "\n"
+    output_json_path.write_text(body)
+
+    plural = "y" if len(resolved_pairs) == 1 else "ies"
+    print(
+        f"\nUpdated {len(resolved_pairs)} model/device entr{plural} in "
+        f"{output_json_path} (release_version={result_obj.get('release_version')}); "
+        f"all other entries left unchanged:"
+    )
+    for model_key, dev_key in resolved_pairs:
+        print(f"    {model_key} :: {dev_key}")
 
 
 def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"):
@@ -699,8 +935,31 @@ def main():
         action="store_true",
         help="Only update tt_metal_commit and vllm_commit, do not update status/perf_status",
     )
+    parser.add_argument(
+        "--model",
+        "--models",
+        action="append",
+        dest="models",
+        default=None,
+        type=parse_model_arg,
+        metavar="NAME=dev1,dev2",
+        help=(
+            "Scope the release_model_spec.json update to a specific model and its "
+            "device(s): only these (model, device) entries are (re)populated, every other "
+            "entry is left byte-identical to the current file. Repeatable. The model name "
+            "may be the full HF repo key or the part after the last '/' (e.g. speecht5_tts "
+            "-> microsoft/speecht5_tts); devices are matched case-insensitively. Only valid "
+            "with --output-only and affects only release_model_spec.json (not docs/README). "
+            "Example: --model speecht5_tts=p150,p300x2"
+        ),
+    )
 
     args = parser.parse_args()
+
+    # --model only changes how release_model_spec.json is populated, which happens in
+    # --output-only mode; reject it elsewhere so its effect is never silently ignored.
+    if args.models and not args.output_only:
+        parser.error("--model/--models is only supported together with --output-only")
 
     # Handle --output-only mode
     if args.output_only:
@@ -712,12 +971,21 @@ def main():
             "Running in --output-only mode: generating outputs without modifying model_spec.py"
         )
 
-        # Update README.md Model Support section and regenerate docs/model_support/
+        # Update README.md Model Support section and regenerate docs/model_support/.
+        # This is unaffected by --model: docs always reflect the full catalog.
         update_readme_model_support(model_spec_path, args.readme_path)
 
-        # Export MODEL_SPECS to JSON
+        # Export MODEL_SPECS to JSON. With --model, only the listed (model, device)
+        # entries are (re)populated and every other entry is left unchanged; without it,
+        # the full file is regenerated as before.
         output_json_path = Path(args.output_json)
-        reload_and_export_model_specs_json(model_spec_path, output_json_path)
+        try:
+            populate_release_model_spec_json(
+                model_spec_path, output_json_path, models_scope=args.models
+            )
+        except ModelScopeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
         return
 
