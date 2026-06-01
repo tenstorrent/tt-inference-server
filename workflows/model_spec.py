@@ -365,7 +365,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "max-log-len": "32",
             "seed": "9472",
-            "plugin_config": json.dumps({"tt": self.override_tt_config}),
+            "additional_config": json.dumps({"tt": self.override_tt_config}),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
@@ -800,7 +800,7 @@ class ModelSpec:
             )
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "plugin_config": json.dumps({"tt": merged_override_config}),
+                "additional_config": json.dumps({"tt": merged_override_config}),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
