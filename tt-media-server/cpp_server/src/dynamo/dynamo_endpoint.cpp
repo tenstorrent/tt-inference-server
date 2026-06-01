@@ -291,9 +291,22 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   probeId.empty() ? "?" : probeId, sinceRecvMs,
                   sinceDispatchMs);
             }
+
+            // Track token for prefix cache hash accumulation
+            if (req->session && !chunk.choices.empty() &&
+                chunk.choices[0].token_id) {
+              req->session->addGeneratedToken(
+                  static_cast<int>(*chunk.choices[0].token_id));
+            }
+
+            // Finalize session state before sending final chunk
+            if (isFinal && req->session) {
+              req->session->finalizeAndRegisterHashes();
+              req->session->clearInFlight();
+            }
+
             sendChunk(toTokenChunk(chunk, isFinal));
             if (isFinal) {
-              if (req->session) req->session->clearInFlight();
               signalDone();
             }
           };
