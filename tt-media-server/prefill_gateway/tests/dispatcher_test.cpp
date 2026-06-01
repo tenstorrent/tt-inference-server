@@ -5,10 +5,12 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <memory>
 #include <vector>
 
 #include "gateway/affinity_cache.hpp"
+#include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 
 namespace tt::gateway {
@@ -17,7 +19,12 @@ namespace {
 struct CapturedRequest {
   std::string prefillServerId;
   uint32_t taskId;
-  size_t registrationHash;
+  std::vector<uint64_t> registrationHashes;
+};
+
+struct CapturedCancel {
+  std::string prefillServerId;
+  uint32_t taskId;
 };
 
 // Test fixture wires the dispatcher to capture-only senders that record
@@ -33,8 +40,14 @@ class DispatcherTest : public ::testing::Test {
     senders.sendRequestToPrefill =
         [this](const std::string& serverId,
                const tt::sockets::PrefillRequestMessage& m) {
-          requests.push_back({serverId, m.task_id, m.registration_hash});
+          requests.push_back({serverId, m.task_id, m.registration_hashes});
           return prefillSendSucceeds;
+        };
+    senders.sendCancelToPrefill =
+        [this](const std::string& serverId,
+               const tt::sockets::CancelPrefillMessage& m) {
+          cancels.push_back({serverId, m.task_id});
+          return prefillCancelSucceeds;
         };
     senders.sendAssignmentToDecode =
         [this](const tt::sockets::PrefillAssignmentMessage& m) {
@@ -57,9 +70,16 @@ class DispatcherTest : public ::testing::Test {
   }
 
   tt::sockets::PrefillRequestMessage makeRequest(uint32_t taskId,
-                                                 size_t hash = 0) {
+                                                 uint64_t hash = 0) {
     tt::sockets::PrefillRequestMessage m(taskId);
-    m.registration_hash = hash;
+    if (hash != 0) m.registration_hashes = {hash};
+    return m;
+  }
+
+  tt::sockets::PrefillRequestMessage makeRequest(uint32_t taskId,
+                                                 std::vector<uint64_t> hashes) {
+    tt::sockets::PrefillRequestMessage m(taskId);
+    m.registration_hashes = std::move(hashes);
     return m;
   }
 
@@ -68,9 +88,11 @@ class DispatcherTest : public ::testing::Test {
   std::unique_ptr<Dispatcher> dispatcher;
 
   std::vector<CapturedRequest> requests;
+  std::vector<CapturedCancel> cancels;
   std::vector<tt::sockets::PrefillAssignmentMessage> assignments;
   std::vector<tt::sockets::PrefillResultMessage> results;
   bool prefillSendSucceeds = true;
+  bool prefillCancelSucceeds = true;
 };
 
 TEST_F(DispatcherTest, NoHealthyPrefillsFailsTaskToDecode) {
@@ -95,6 +117,17 @@ TEST_F(DispatcherTest, HealthyPrefillReceivesRequestAndDecodeGetsAssignment) {
   EXPECT_TRUE(results.empty());
   EXPECT_EQ(assignments[0].task_id, 42u);
   EXPECT_EQ(assignments[0].server_id, requests[0].prefillServerId);
+}
+
+TEST_F(DispatcherTest, ForwardsAllRegistrationHashesToPrefill) {
+  markAllHealthy();
+  const std::vector<uint64_t> hashes = {11, 22, 33};
+
+  dispatcher->onPrefillRequest(makeRequest(42, hashes));
+
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].taskId, 42u);
+  EXPECT_EQ(requests[0].registrationHashes, hashes);
 }
 
 TEST_F(DispatcherTest, AffinityCacheHitDrivesStickyRouting) {
@@ -181,6 +214,77 @@ TEST_F(DispatcherTest, InflightDecrementsBackToZeroAfterResult) {
   EXPECT_EQ(countInflightTotal(), 0u);
 }
 
+TEST_F(DispatcherTest, RequestTimeoutFailsTaskAndDecrementsInflight) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(77, /*hash=*/123));
+  ASSERT_EQ(requests.size(), 1u);
+  ASSERT_TRUE(results.empty());
+
+  dispatcher->onRequestTimeouts(Dispatcher::Clock::now() +
+                                std::chrono::minutes(6));
+
+  ASSERT_EQ(cancels.size(), 1u);
+  EXPECT_EQ(cancels[0].taskId, 77u);
+  EXPECT_EQ(cancels[0].prefillServerId, requests[0].prefillServerId);
+
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].task_id, 77u);
+  EXPECT_TRUE(results[0].error);
+  EXPECT_TRUE(results[0].finished);
+  EXPECT_EQ(results[0].generated_text, "timeout");
+
+  uint32_t sum = 0;
+  for (const auto& s : registry.snapshot()) sum += s.in_flight;
+  EXPECT_EQ(sum, 0u);
+}
+
+TEST_F(DispatcherTest, RepeatedTimeoutsTemporarilyDisablePrefill) {
+  markAllHealthy();
+  affinity.record(/*hash=*/77, "A");
+  const auto timeoutNow = Dispatcher::Clock::now() + std::chrono::minutes(6);
+
+  for (uint32_t taskId : {1u, 2u, 3u}) {
+    dispatcher->onPrefillRequest(makeRequest(taskId, /*hash=*/77));
+    ASSERT_EQ(requests.back().prefillServerId, "A");
+    dispatcher->onRequestTimeouts(timeoutNow);
+  }
+
+  auto snap = registry.snapshot();
+  auto isAccepting = [](const auto& peers, const std::string& serverId) {
+    for (const auto& peer : peers) {
+      if (peer.server_id == serverId) return peer.accepting_tasks;
+    }
+    return false;
+  };
+  EXPECT_FALSE(isAccepting(snap, "A"));
+
+  dispatcher->onPrefillRequest(makeRequest(4, /*hash=*/77));
+  EXPECT_EQ(requests.back().prefillServerId, "B");
+
+  dispatcher->onRequestTimeouts(timeoutNow + std::chrono::seconds(31));
+  snap = registry.snapshot();
+  EXPECT_TRUE(isAccepting(snap, "A"));
+}
+
+TEST_F(DispatcherTest, LateResultAfterTimeoutIsDropped) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(78, /*hash=*/123));
+  ASSERT_EQ(requests.size(), 1u);
+  const std::string chosen = requests[0].prefillServerId;
+
+  dispatcher->onRequestTimeouts(Dispatcher::Clock::now() +
+                                std::chrono::minutes(6));
+  ASSERT_EQ(results.size(), 1u);
+  results.clear();
+
+  tt::sockets::PrefillResultMessage late(78);
+  late.finished = true;
+  dispatcher->onPrefillResult(chosen, late);
+
+  EXPECT_TRUE(results.empty());
+  EXPECT_FALSE(affinity.lookup(123).has_value());
+}
+
 TEST_F(DispatcherTest, PrefillDownFailsOrphanedTasksAndEvictsAffinity) {
   markAllHealthy();
   affinity.record(/*hash=*/77, "A");
@@ -220,6 +324,55 @@ TEST_F(DispatcherTest, PrefillDownLeavesOtherPrefillsTasksAlone) {
   EXPECT_TRUE(affinity.lookup(88).has_value());  // B's affinity intact
 }
 
+TEST_F(DispatcherTest, CancelKnownTaskForwardsToAssignedPrefill) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(11, /*hash=*/77));
+  ASSERT_EQ(requests.size(), 1u);
+  const std::string chosen = requests[0].prefillServerId;
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 11;
+  dispatcher->onPrefillCancel(cancel);
+
+  ASSERT_EQ(cancels.size(), 1u);
+  EXPECT_EQ(cancels[0].taskId, 11u);
+  EXPECT_EQ(cancels[0].prefillServerId, chosen);
+
+  uint32_t sum = 0;
+  for (const auto& s : registry.snapshot()) sum += s.in_flight;
+  EXPECT_EQ(sum, 0u);
+}
+
+TEST_F(DispatcherTest, CancelUnknownTaskIsSilent) {
+  markAllHealthy();
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 404;
+  dispatcher->onPrefillCancel(cancel);
+
+  EXPECT_TRUE(cancels.empty());
+  EXPECT_TRUE(results.empty());
+}
+
+TEST_F(DispatcherTest, LateResultAfterCancelIsDropped) {
+  markAllHealthy();
+  dispatcher->onPrefillRequest(makeRequest(21, /*hash=*/99));
+  ASSERT_EQ(requests.size(), 1u);
+  const std::string chosen = requests[0].prefillServerId;
+
+  tt::sockets::CancelPrefillMessage cancel;
+  cancel.task_id = 21;
+  dispatcher->onPrefillCancel(cancel);
+
+  tt::sockets::PrefillResultMessage late(21);
+  late.finished = true;
+  late.generated_text = "late";
+  dispatcher->onPrefillResult(chosen, late);
+
+  EXPECT_TRUE(results.empty());
+  EXPECT_FALSE(affinity.lookup(99).has_value());
+}
+
 TEST_F(DispatcherTest, SendFailureToPrefillRollsBackAndFailsTask) {
   markAllHealthy();
   prefillSendSucceeds = false;
@@ -256,6 +409,26 @@ TEST_F(DispatcherTest, CacheBlocksAddedAndEvictedAreNoThrow) {
 
   // No public read API on the cache view; we assert reachability only.
   SUCCEED();
+}
+
+TEST_F(DispatcherTest, RecordsRoutingAndOutcomeMetrics) {
+  GatewayMetrics::instance().resetForTests();
+  markAllHealthy();
+
+  dispatcher->onPrefillRequest(makeRequest(42, /*hash=*/0));
+  ASSERT_EQ(requests.size(), 1u);
+
+  tt::sockets::PrefillResultMessage result(42);
+  result.error = false;
+  result.finished = true;
+  dispatcher->onPrefillResult(requests[0].prefillServerId, result);
+
+  const std::string text = GatewayMetrics::instance().renderText();
+  EXPECT_NE(text.find("tt_gateway_routing_decisions_total"), std::string::npos);
+  EXPECT_NE(text.find("tt_prefill_completed_total"), std::string::npos);
+  EXPECT_NE(text.find("outcome=\"success\""), std::string::npos);
+  EXPECT_NE(text.find("server_id=\"" + requests[0].prefillServerId + "\""),
+            std::string::npos);
 }
 
 }  // namespace

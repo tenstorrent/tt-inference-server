@@ -976,6 +976,25 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 51.0,
+                        "tput_user": 27.0,
+                        "tput": 27.0
+                    }
+                }
+            }
         ]
     },
     "gpt-oss-20b": {
@@ -4371,6 +4390,27 @@
             }
         ]
     },
+    "Falcon3-7B-Instruct": {
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26.0,
+                        "tput_user": 43.0,
+                        "tput": 1328.0
+                    }
+                }
+            }
+        ]
+    },
     "Falcon3-10B-Base": {
         "t3k": [
             {
@@ -4665,25 +4705,6 @@
         ]
     },
     "gemma-3-4b-it": {
-        "n300": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 133.0,
-                        "tput_user": 84.0,
-                        "tput": 2688.0
-                    }
-                }
-            }
-        ],
         "n150": [
             {
                 "isl": 128,
@@ -4696,9 +4717,28 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 198.0,
+                        "ttft_ms": 202.0,
                         "tput_user": 42.0,
                         "tput": 1344.0
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 102.0,
+                        "tput_user": 78.0,
+                        "tput": 2688.0
                     }
                 }
             }
@@ -4715,14 +4755,51 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 55.0,
-                        "tput_user": 340.0,
+                        "ttft_ms": 28.0,
+                        "tput_user": 50.0,
                         "tput": 10752.0
                     }
                 }
             }
         ],
-        "p100": [],
+        "p100": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 82.0,
+                        "tput_user": 65.0,
+                        "tput": 2091.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76.0,
+                        "tput_user": 74.0,
+                        "tput": 2389.0
+                    }
+                }
+            }
+        ],
         "p150x8": [
             {
                 "isl": 128,
@@ -4798,25 +4875,6 @@
         ]
     },
     "gemma-3-27b-it": {
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 235.0,
-                        "tput_user": 200.0,
-                        "tput": 3093.0
-                    }
-                }
-            }
-        ],
         "t3k": [
             {
                 "isl": 128,
@@ -4829,9 +4887,47 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 828.0,
-                        "tput_user": 50.0,
+                        "ttft_ms": 76.0,
+                        "tput_user": 43.0,
                         "tput": 773.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 23.0,
+                        "tput_user": 154.0,
+                        "tput": 3093.0
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 66.0,
+                        "tput_user": 41.0,
+                        "tput": 687.0
                     }
                 }
             }
@@ -5064,6 +5160,25 @@
                     "theoretical": {
                         "ttft_ms": 17,
                         "tput_user": 61
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13.0,
+                        "tput_user": 99.0,
+                        "tput": 2991.0
                     }
                 }
             }
@@ -5920,10 +6035,26 @@
                 "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400.0,
+                        "ttft_ms": 2700.0,
                         "ttft_streaming_ms": null,
-                        "tput_user": 65.0,
-                        "rtr": 17.0,
+                        "tput_user": 47.0,
+                        "rtr": 11.5,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1900.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 62.0,
+                        "rtr": 16.0,
                         "tolerance": 0.05
                     }
                 }
@@ -5974,6 +6105,38 @@
                         "ttft_streaming_ms": 450,
                         "tput_user": 131.10,
                         "rtr": 21.81,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1250.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 130.0,
+                        "rtr": 25.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 380.0,
+                        "rtr": 38.0,
                         "tolerance": 0.05
                     }
                 }

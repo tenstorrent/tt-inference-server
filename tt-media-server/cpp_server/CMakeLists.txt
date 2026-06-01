@@ -10,6 +10,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
 add_compile_options(-g)
 
+# Keep the frame pointer (rbp on x86-64) in every translation unit so that
+# perf/eBPF/profilers can walk stacks via `--call-graph fp` instead of paying
+# the cost of DWARF unwinding. Runtime cost on this workload is <1% (mutex /
+# IPC / HTTP-framing dominated, not register-pressure-bound numeric loops);
+# capture-time win is ~10x smaller perf.data and stacks that don't truncate
+# across -O2 optimization boundaries. Fedora 38+ and Ubuntu 24.04+ ship
+# distro-wide with this flag for the same reason.
+add_compile_options(-fno-omit-frame-pointer)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -259,7 +268,7 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 add_library(stb_image_write INTERFACE)
-target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
+target_include_directories(stb_image_write SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -362,7 +371,6 @@ set(LLM_RUNNER_LIB_SOURCES
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
         src/runtime/runners/blaze_runner/blaze_runner.cpp
-        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -457,6 +465,18 @@ target_include_directories(llm_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+if(ENABLE_BLAZE)
+    add_executable(blaze_runner_test
+        tests/blaze_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+endif()
+
 add_executable(sequence_test tests/sequence_test.cpp)
 target_link_libraries(sequence_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(sequence_test PRIVATE
@@ -537,6 +557,12 @@ target_include_directories(test_image_generate_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
+target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(media_payload_ipc_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Reasoning parser test
 add_executable(test_reasoning_parser
     tests/test_reasoning_parser.cpp
@@ -575,7 +601,7 @@ add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -611,6 +637,7 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
@@ -623,6 +650,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -661,11 +690,14 @@ add_executable(main_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -692,6 +724,7 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -727,11 +760,14 @@ add_executable(tool_calling_integration_test
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
@@ -781,12 +817,17 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
-set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
+if(ENABLE_BLAZE)
+    gtest_discover_tests(blaze_runner_test)
+endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
@@ -802,12 +843,20 @@ gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(test_image_generate_request)
+gtest_discover_tests(media_payload_ipc_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
+
+add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
+target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(test_apply_delta_prompt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ApplyDeltaPrompt COMMAND test_apply_delta_prompt)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -901,11 +950,14 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
+    src/runtime/runners/media_ipc_runner.cpp
+    src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp

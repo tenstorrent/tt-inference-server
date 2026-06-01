@@ -41,11 +41,7 @@ struct TaskState {
  */
 class ReasoningParser {
  public:
-  // Token IDs for DeepSeek R1 reasoning markers
-  static constexpr int64_t THINK_START_TOKEN = 128798;  // <think>
-  static constexpr int64_t THINK_END_TOKEN = 128799;    // </think>
-
-  ReasoningParser() = default;
+  ReasoningParser();
   ~ReasoningParser() = default;
 
   // Non-copyable
@@ -87,6 +83,10 @@ class ReasoningParser {
   size_t activeTaskCount() const;
 
  private:
+  int64_t thinkStartToken_;
+  int64_t thinkEndToken_;
+  bool thinkTokensEnabled_;
+
   mutable std::mutex mutex_;
   std::unordered_map<uint32_t, TaskState> task_states_;
 };

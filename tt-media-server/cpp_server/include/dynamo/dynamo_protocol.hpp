@@ -143,6 +143,11 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info);
 struct TokenChunk {
   std::vector<int> token_ids;
   std::optional<std::string> finish_reason;
+  /// If set, signals a pre-stream error. stream_response will send this as an
+  /// Annotated::error chunk so the Dynamo frontend can intercept it.
+  std::optional<std::string> error;
+  /// HTTP status code to return when error is set (default: 500).
+  std::optional<uint16_t> error_code;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.
