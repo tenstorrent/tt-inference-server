@@ -100,7 +100,7 @@ class TTPlatform(Platform):
         # TODO move this to tt_model_runner when request validation
         # stops depending on vllm_config
 
-        override_tt_config = getattr(vllm_config.model_config, "plugin_config", {}).get(
+        override_tt_config = getattr(vllm_config, "additional_config", {}).get(
             "tt", {}
         )
         if (
