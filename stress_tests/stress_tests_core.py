@@ -29,6 +29,7 @@ and automatically applies context limit constraints with adjustment when needed.
 import os
 import logging
 import subprocess
+from urllib.parse import urlparse
 import time
 from datetime import datetime
 from pathlib import Path
@@ -683,6 +684,7 @@ class StressTests:
         env_config.jwt_secret = self.test_args.jwt_secret
         env_config.service_port = self.test_args.service_port
         env_config.vllm_model = model_spec.hf_model_repo
+        env_config.deploy_url = self.test_args.deploy_url
 
         prompt_client = PromptClient(env_config)
         prompt_client.wait_for_healthy(timeout=7200.0)
@@ -714,6 +716,16 @@ class StressTests:
             str(self.test_args.project_root)
             + "/stress_tests/stress_tests_benchmarking_script.py"
         )
+        # An explicit port on deploy_url wins over service_port to avoid
+        # --host h --port <service_port> against a server actually on a
+        # different port (mirrors run_benchmarks._resolve_host_port).
+        parsed = urlparse(self.test_args.deploy_url.rstrip("/"))
+        sub_host = parsed.hostname or "127.0.0.1"
+        sub_port = (
+            str(parsed.port)
+            if parsed.port is not None
+            else str(self.env_config.service_port)
+        )
         cmd = [
             str(self.test_args.project_root)
             + "/.workflow_venvs/.venv_stress_tests_run_script/bin/python",
@@ -722,8 +734,10 @@ class StressTests:
             "vllm",
             "--model",
             str(self.env_config.vllm_model),
+            "--host",
+            sub_host,
             "--port",
-            str(self.env_config.service_port),
+            sub_port,
             "--dataset-name",
             "cleaned-random",
             "--max-concurrency",

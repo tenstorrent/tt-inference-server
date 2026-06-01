@@ -35,7 +35,7 @@ headers = {
 
 class EmbeddingParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/embeddings"
+        self.url = f"{self.base_url}/v1/embeddings"
         logger.info(f"Testing embedding parameters at {self.url}")
 
         model = self.config.get("model", "test-model")

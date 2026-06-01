@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class DeviceStabilityTest(BaseTest):
     async def _run_specific_test_async(self):
-        url = f"http://localhost:{self.service_port}/tt-liveness"
+        url = f"{self.base_url}/tt-liveness"
 
         if (
             self.targets.get("num_of_devices") is None
