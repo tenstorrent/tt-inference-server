@@ -11,6 +11,7 @@ into a single well-typed dataclass with explicit precedence rules.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -39,6 +40,7 @@ class StressTestsArgs:
     model: str
     device: str
     service_port: str = "8000"
+    deploy_url: str = "http://127.0.0.1"
 
     # From RuntimeConfig (stress tests specific)
     disable_trace_capture: bool = False
@@ -88,6 +90,10 @@ class StressTestsArgs:
             model=runtime_config.model,
             device=runtime_config.device,
             service_port=runtime_config.service_port,
+            deploy_url=(
+                getattr(runtime_config, "server_url", None)
+                or os.environ.get("DEPLOY_URL", "http://127.0.0.1")
+            ),
             # From RuntimeConfig (stress tests configuration)
             # Auto-disable trace capture if model has builtin warmup and user hasn't explicitly overridden
             disable_trace_capture=runtime_config.disable_trace_capture
