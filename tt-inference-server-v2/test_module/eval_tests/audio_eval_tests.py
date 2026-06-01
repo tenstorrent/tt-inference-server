@@ -343,7 +343,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     from .whisper_eval_test import WhisperEvalTest
 
     task = ctx.all_params.tasks[0]
-    timeout_s = 1800  # full LibriSpeech run on n150 is ~10 min; pad for safety
+    timeout_s = 3600  # full serial LibriSpeech run on n150 (concurrency=1) is ~45 min
 
     test = WhisperEvalTest(
         config=TestConfig.create_default(timeout=timeout_s),
@@ -375,9 +375,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
         test.hf_model_repo,
     )
 
-    results = asyncio.run(
-        asyncio.wait_for(test._run_specific_test_async(), timeout=timeout_s)
-    )
+    results = asyncio.run(test._run_specific_test_async())
 
     wer = _extract_wer(results, task.task_name)
 

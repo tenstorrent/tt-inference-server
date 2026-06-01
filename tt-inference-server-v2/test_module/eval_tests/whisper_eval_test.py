@@ -771,10 +771,17 @@ class WhisperEvalTest(BaseTest):
         stdout_thread.start()
         stderr_thread.start()
 
+        try:
+            process.wait(timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "lmms-eval subprocess exceeded timeout (%ss); killing.", self.timeout
+            )
+            process.kill()
+            process.wait()
+
         stdout_thread.join()
         stderr_thread.join()
-
-        process.wait()
         return_code = process.returncode
 
         success = return_code == 0
