@@ -106,7 +106,7 @@ class ZmqSocketTransport : public ISocketTransport,
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
-  SendQueue sendQueue_;
+  SendQueue sendQueue;
 
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;

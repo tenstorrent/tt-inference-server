@@ -96,7 +96,7 @@ class ZmqPrefillRouter {
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       last_seen_by_server_;
 
-  SendQueue sendQueue_;
+  SendQueue sendQueue;
 
   mutable std::mutex handlers_mutex_;
   std::unordered_map<std::string, RawHandler> handlers_;
@@ -117,14 +117,14 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     auto result = request->result.get_future();
 
     {
-      std::lock_guard<std::mutex> lock(sendQueue_.queueMutex);
+      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
       if (!running_) {
         return false;
       }
-      sendQueue_.items.push_back(std::move(request));
+      sendQueue.items.push_back(std::move(request));
     }
-    sendQueue_.hasItems = true;
-    sendQueue_.wakeCv.notify_one();
+    sendQueue.hasItems = true;
+    sendQueue.wakeCv.notify_one();
     return result.get();
   } catch (const std::exception&) {
     return false;

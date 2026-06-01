@@ -164,8 +164,8 @@ void ZmqSocketTransport::stop() {
   ioActive_ = false;
   monitorActive_ = false;
   connected_ = false;
-  sendQueue_.hasItems = false;
-  sendQueue_.wakeCv.notify_all();
+  sendQueue.hasItems = false;
+  sendQueue.wakeCv.notify_all();
 
   if (ioThread_.joinable()) {
     ioThread_.request_stop();
@@ -247,12 +247,12 @@ bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   auto result = request->result.get_future();
 
   {
-    std::lock_guard<std::mutex> lock(sendQueue_.queueMutex);
+    std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
     if (!running_ || !ioActive_) return false;
-    sendQueue_.items.push_back(std::move(request));
+    sendQueue.items.push_back(std::move(request));
   }
-  sendQueue_.hasItems = true;
-  sendQueue_.wakeCv.notify_one();
+  sendQueue.hasItems = true;
+  sendQueue.wakeCv.notify_one();
 
   try {
     return result.get();
@@ -268,13 +268,13 @@ bool ZmqSocketTransport::processPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
     {
-      std::lock_guard<std::mutex> lock(sendQueue_.queueMutex);
-      if (sendQueue_.items.empty()) {
-        sendQueue_.hasItems = false;
+      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
+      if (sendQueue.items.empty()) {
+        sendQueue.hasItems = false;
         return processed;
       }
-      request = std::move(sendQueue_.items.front());
-      sendQueue_.items.pop_front();
+      request = std::move(sendQueue.items.front());
+      sendQueue.items.pop_front();
     }
 
     bool ok = false;
@@ -307,12 +307,12 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  // Keep the wake predicate off sendQueue_.items: TSan reports false
+  // Keep the wake predicate off sendQueue.items: TSan reports false
   // double-lock/race warnings when condition_variable reads the same deque that
-  // producers update under sendQueue_.queueMutex.
-  std::unique_lock<std::mutex> lock(sendQueue_.wakeMutex);
-  sendQueue_.wakeCv.wait_for(lock, IO_IDLE_WAIT, [this] {
-    return sendQueue_.hasItems.load() || !ioActive_.load();
+  // producers update under sendQueue.queueMutex.
+  std::unique_lock<std::mutex> lock(sendQueue.wakeMutex);
+  sendQueue.wakeCv.wait_for(lock, IO_IDLE_WAIT, [this] {
+    return sendQueue.hasItems.load() || !ioActive_.load();
   });
 }
 
@@ -320,13 +320,13 @@ void ZmqSocketTransport::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
     {
-      std::lock_guard<std::mutex> lock(sendQueue_.queueMutex);
-      if (sendQueue_.items.empty()) {
-        sendQueue_.hasItems = false;
+      std::lock_guard<std::mutex> lock(sendQueue.queueMutex);
+      if (sendQueue.items.empty()) {
+        sendQueue.hasItems = false;
         return;
       }
-      request = std::move(sendQueue_.items.front());
-      sendQueue_.items.pop_front();
+      request = std::move(sendQueue.items.front());
+      sendQueue.items.pop_front();
     }
     request->result.set_value(false);
   }
