@@ -437,8 +437,17 @@ def handle_secrets(runtime_config):
     jwt_secret_required = jwt_secret_required and not runtime_config.interactive
     # --no-auth disables authorization, so JWT_SECRET is not required
     jwt_secret_required = jwt_secret_required and not runtime_config.no_auth
-    # HF_TOKEN is optional for client-side scripts workflows
-    client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
+    # HF_TOKEN is optional for client-side scripts workflows. These run
+    # against an inference server (local, docker, or external via
+    # --server-url) and don't need to load HF weights/tokenizers themselves.
+    client_side_workflows = {
+        WorkflowType.BENCHMARKS,
+        WorkflowType.EVALS,
+        WorkflowType.STRESS_TESTS,
+        WorkflowType.TESTS,
+        WorkflowType.SPEC_TESTS,
+        WorkflowType.REPORTS,
+    }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
         workflow_type not in client_side_workflows or runtime_config.docker_server
