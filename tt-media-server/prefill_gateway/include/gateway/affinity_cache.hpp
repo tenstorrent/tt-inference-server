@@ -27,6 +27,8 @@ class AffinityCache {
   // Remove all entries pointing at `server_id` (called on prefill drop).
   void evictPrefill(const std::string& server_id);
 
+  size_t size() const;
+
  private:
   mutable std::mutex mutex_;
   std::unordered_map<size_t, std::string> hash_to_server_;

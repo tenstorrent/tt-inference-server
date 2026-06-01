@@ -365,7 +365,7 @@ class DeviceModelSpec:
             "max_num_batched_tokens": str(self.max_context),
             "max-log-len": "32",
             "seed": "9472",
-            "plugin_config": json.dumps({"tt": self.override_tt_config}),
+            "additional_config": json.dumps({"tt": self.override_tt_config}),
         }
         merged_vllm_args = {**default_vllm_args, **self.vllm_args}
         object.__setattr__(self, "vllm_args", merged_vllm_args)
@@ -800,7 +800,7 @@ class ModelSpec:
             )
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
-                "plugin_config": json.dumps({"tt": merged_override_config}),
+                "additional_config": json.dumps({"tt": merged_override_config}),
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
@@ -890,6 +890,13 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
+    # True when the catalog explicitly pinned the image via `version` or
+    # `docker_image`. When neither is set, the docker tag is synthesized from the
+    # repo-wide VERSION + commits rather than a real published image, so these
+    # specs are excluded from IMAGE_PINNED_MODEL_SPECS (the list the helm chart
+    # generator consumes). Set by _build_template from YAML key presence;
+    # defaults True for directly constructed templates so they are never dropped.
+    image_pinned: bool = True
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -1065,6 +1072,12 @@ def _build_template(data: Dict) -> "ModelSpecTemplate":
         kwargs["model_type"] = ModelType[kwargs["model_type"]]
     if "status" in kwargs:
         kwargs["status"] = ModelStatusTypes[kwargs["status"]]
+    # An image is "pinned" when the catalog gives an explicit `version` or
+    # `docker_image`. Without either, the tag falls back to the repo-wide
+    # VERSION and is not a real published image.
+    kwargs["image_pinned"] = (
+        data.get("version") is not None or data.get("docker_image") is not None
+    )
     return ModelSpecTemplate(**kwargs)
 
 
@@ -1160,6 +1173,24 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
+
+# model_ids whose catalog template pins no image (set neither `version` nor
+# `docker_image`); their docker tag would be synthesized from the repo VERSION.
+_UNPINNED_IMAGE_MODEL_IDS = {
+    spec.model_id
+    for template in spec_templates
+    if not template.image_pinned
+    for spec in template.expand_to_specs()
+}
+
+# The list of "valid" specs the helm chart generator consumes: every spec EXCEPT
+# the unpinned ones above. MODEL_SPECS still holds all specs for other consumers
+# (run.py, model-support docs, the release_model_spec.json export).
+IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
+    spec
+    for spec in MODEL_SPECS.values()
+    if spec.model_id not in _UNPINNED_IMAGE_MODEL_IDS
+]
 
 
 def get_runtime_model_spec(
