@@ -6,6 +6,7 @@ from .blocks_sink import BlockAccumulator, accept_blocks, get_default_accumulato
 
 _LAZY_FROM_EXECUTION = {
     "OrchestratorMetadata",
+    "PrefixCacheOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",

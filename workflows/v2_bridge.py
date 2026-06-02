@@ -59,7 +59,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    v2_run_py = repo_root / "tt-inference-server-v2" / "workflow_runner.py"
+    v2_run_py = repo_root / "tt-inference-server-v2" / "run.py"
     if not v2_run_py.is_file():
         raise FileNotFoundError(
             f"v2 entry point not found at {v2_run_py}. "
