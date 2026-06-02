@@ -134,3 +134,18 @@ def find_matches(dev_dir: Path, combos: set):
             matches_by_file[dev_file.name] = picked
     unmatched = combos - matched_combos
     return matches_by_file, unmatched
+
+
+def upsert_template(prod_templates, template) -> str:
+    """Insert or replace template in prod_templates by identity.
+
+    Returns "updated" if an existing same-identity template was replaced in
+    place, else "appended".
+    """
+    identity = template_identity(template)
+    for i, existing in enumerate(prod_templates):
+        if template_identity(existing) == identity:
+            prod_templates[i] = template
+            return "updated"
+    prod_templates.append(template)
+    return "appended"

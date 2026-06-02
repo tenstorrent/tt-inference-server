@@ -4,6 +4,8 @@
 
 import textwrap
 
+from ruamel.yaml.comments import CommentedSeq
+
 from scripts.release.promote_dev_spec_to_prod import (
     ReleaseCombo,
     collect_release_combos,
@@ -12,6 +14,7 @@ from scripts.release.promote_dev_spec_to_prod import (
     model_name_from_weight,
     template_identity,
     template_matches,
+    upsert_template,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -187,3 +190,44 @@ def test_find_matches_dedups_template_matched_by_two_combos(tmp_path):
     matches_by_file, unmatched = find_matches(dev, combos)
     assert len(matches_by_file["llm.yaml"]) == 1
     assert unmatched == set()
+
+
+def test_upsert_appends_new_template():
+    prod = CommentedSeq()
+    tmpl = {
+        "weights": ["meta-llama/Llama-3.1-8B-Instruct"],
+        "impl": "tt_transformers",
+        "inference_engine": "VLLM",
+        "device_model_specs": [{"device": "GALAXY"}],
+    }
+    action = upsert_template(prod, tmpl)
+    assert action == "appended"
+    assert len(prod) == 1
+
+
+def test_upsert_replaces_same_identity_and_leaves_others():
+    other = {
+        "weights": ["openai/gpt-oss-20b"],
+        "impl": "gpt_oss",
+        "inference_engine": "VLLM",
+        "device_model_specs": [{"device": "T3K"}],
+    }
+    old = {
+        "weights": ["meta-llama/Llama-3.1-8B-Instruct"],
+        "impl": "tt_transformers",
+        "inference_engine": "VLLM",
+        "version": "0.1.0",
+        "device_model_specs": [{"device": "GALAXY"}],
+    }
+    prod = CommentedSeq()
+    prod.append(other)
+    prod.append(old)
+
+    new = dict(old)
+    new["version"] = "0.2.0"
+    action = upsert_template(prod, new)
+
+    assert action == "updated"
+    assert len(prod) == 2
+    assert prod[0] is other  # untouched
+    assert prod[1]["version"] == "0.2.0"
