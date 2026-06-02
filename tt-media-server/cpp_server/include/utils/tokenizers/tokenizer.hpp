@@ -228,5 +228,4 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model);
 /// Shorthand for `staticInfoFor(config::modelType())`.
 const StaticTokenizerInfo& staticInfo();
 
-
 }  // namespace tt::utils::tokenizers
