@@ -222,7 +222,7 @@ Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be spec
 
 | Argument | Description |
 |---|---|
-| `--dev-mode` | Enable developer mode (bind mounts source code into container). |
+| `--dev-mode` | Resolve the model spec from the dev catalog (`workflows/model_specs/dev/`) and forward it to the container, overriding its prebuilt prod catalog. Also bind-mounts host source dirs (`benchmarking/`, `evals/`, `utils/`, `tests/`, plus `vllm-tt-metal/src` or `tt-media-server/`) so live host edits are picked up. Overridden by `--runtime-model-spec-json`. |
 | `--override-docker-image` | Override the Docker image used by `--docker-server`. |
 | `--device-id` | Tenstorrent device IDs, comma-separated PCI indices (e.g. `0` or `0,1,2`). |
 | `--override-tt-config` | Override TT config as JSON string (e.g., '{"data_parallel": 16}'). |

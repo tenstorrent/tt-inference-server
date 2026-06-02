@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class MediaServerLivenessTest(BaseTest):
     async def _run_specific_test_async(self):
-        url = f"http://localhost:{self.service_port}/tt-liveness"
+        url = f"{self.base_url}/tt-liveness"
 
         try:
             timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout

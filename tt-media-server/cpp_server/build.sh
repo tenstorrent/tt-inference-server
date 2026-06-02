@@ -17,6 +17,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
+FRESH_CONFIGURE="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
+        --fresh)
+            FRESH_CONFIGURE="ON"
+            shift
+            ;;
         --toolchain-path)
             TOOLCHAIN_PATH_ARG="$2"
             shift 2
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
+            echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -96,6 +102,7 @@ echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
+echo "  Fresh configure: ${FRESH_CONFIGURE}"
 echo "=============================================="
 
 # Ensure cargo (Rust) is in PATH for tokenizers-cpp
@@ -159,117 +166,13 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pre-fetch tokenizer files for all supported models
+# Pre-fetch tokenizer files for all supported models.
+# Delegated to scripts/fetch_tokenizers.sh so the SAME logic is reused by
+# dynamo_frontend/Dockerfile.frontend (which bakes the identical assets into
+# the frontend image). Edit the model list / download logic there, not here.
 # ---------------------------------------------------------------------------
-TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
-mkdir -p "${TOKENIZER_DIR}"
-
-HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
-if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
-    HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
-fi
-
-download_tokenizer() {
-    local model_name="$1"
-    local hf_repo="$2"
-    local requires_auth="$3"
-    # Optional 4th arg: minimal placeholder config.json body. Used when HF
-    # is unreachable so the artifact is still self-contained (the cpp_server
-    # itself doesn't need config.json, but Dynamo's frontend loader does —
-    # see dynamo_frontend/deploy.sh for the canonical backfill).
-    local placeholder_config_json="${4:-}"
-
-    local model_dir="${TOKENIZER_DIR}/${model_name}"
-    local tok_json="${model_dir}/tokenizer.json"
-    local tok_config="${model_dir}/tokenizer_config.json"
-    local model_config="${model_dir}/config.json"
-
-    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ] && [ -f "${model_config}" ]; then
-        echo "  Using existing ${model_name} tokenizer + config."
-        return 0
-    fi
-
-    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
-        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
-        return 0
-    fi
-
-    local wget_args=()
-    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
-        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
-    fi
-
-    mkdir -p "${model_dir}"
-
-    echo "Downloading ${model_name} tokenizer..."
-    if [ ! -f "${tok_json}" ]; then
-        if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
-            echo "  tokenizer.json downloaded to ${tok_json}"
-        else
-            rm -f "${tok_json}"
-            echo "  ERROR: Failed to download ${model_name} tokenizer.json."
-            echo "  URL: ${hf_repo}/tokenizer.json"
-            if [ "${requires_auth}" = "true" ]; then
-                echo "  This is a gated model. Make sure you have:"
-                echo "    1. A valid HF_TOKEN set in your environment"
-                echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
-            fi
-            echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
-            return 1
-        fi
-    fi
-
-    if [ ! -f "${tok_config}" ]; then
-        if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
-            echo "  tokenizer_config.json downloaded to ${tok_config}"
-        else
-            rm -f "${tok_config}"
-            echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
-            return 1
-        fi
-    fi
-
-    # config.json (HF model config) is not required by cpp_server itself,
-    # but Dynamo's frontend refuses to start without it. Try HF first; fall
-    # back to the caller-supplied minimal stub so the build artifact always
-    # carries a usable file.
-    if [ ! -f "${model_config}" ]; then
-        if wget -q "${wget_args[@]}" -O "${model_config}" "${hf_repo}/config.json" 2>&1; then
-            echo "  config.json downloaded to ${model_config}"
-        elif [ -n "${placeholder_config_json}" ]; then
-            rm -f "${model_config}"
-            echo "  config.json HF fetch failed; writing minimal placeholder."
-            printf '%s\n' "${placeholder_config_json}" > "${model_config}"
-        else
-            rm -f "${model_config}"
-            echo "  WARN: ${model_name} config.json missing and no placeholder supplied."
-            echo "  Dynamo frontend will fail with 'unable to extract config.json'."
-            return 1
-        fi
-    fi
-}
-
 echo ""
-echo "Pre-fetching tokenizer files for supported models..."
-
-# DeepSeek R1-0528 (public, no auth) — required for default build.
-# The placeholder mirrors dynamo_frontend/deploy.sh's offline fallback:
-# `model_type` is what makes Dynamo's frontend pick a HF transformer
-# architecture; `architectures` lets the loader pass its sanity check.
-download_tokenizer \
-    "deepseek-ai/DeepSeek-R1-0528" \
-    "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
-    "false" \
-    '{"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}'
-
-# Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
-download_tokenizer \
-    "meta-llama/Llama-3.1-8B-Instruct" \
-    "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
-    "true" \
-    '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
-
-echo ""
+"${SCRIPT_DIR}/scripts/fetch_tokenizers.sh" "${SCRIPT_DIR}/tokenizers"
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -327,6 +230,11 @@ CMAKE_ARGS=(
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
+[ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")
+# Use ccache if available for faster rebuilds
+if command -v ccache >/dev/null 2>&1; then
+    CMAKE_ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
 
 # Compiler/toolchain: --cxx-compiler-path overrides --toolchain-path overrides auto-detection (match build_metal.sh)
 if [ -n "${CXX_COMPILER_PATH}" ]; then
@@ -345,7 +253,11 @@ fi
 
 echo ""
 echo "Configuring CMake..."
-cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+if [ "${FRESH_CONFIGURE}" = "ON" ]; then
+    cmake --fresh -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+else
+    cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" "${CMAKE_ARGS[@]}"
+fi
 
 # Symlink compile_commands.json to project root for intellisense (clangd, VSCode C++)
 if [ -f "${BUILD_DIR}/compile_commands.json" ]; then

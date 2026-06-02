@@ -495,6 +495,9 @@ std::unique_ptr<IToolCallParser> createToolCallParser(
     case tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       // TODO: Implement Llama tool call parser
       return std::make_unique<DeepSeekToolCallParser>();
+    case tt::config::ModelType::KIMI_K2_6:
+      // TODO: Implement Kimi-specific tool call parser.
+      return std::make_unique<DeepSeekToolCallParser>();
     default:
       return std::make_unique<DeepSeekToolCallParser>();
   }

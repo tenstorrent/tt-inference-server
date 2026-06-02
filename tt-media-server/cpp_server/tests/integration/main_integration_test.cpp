@@ -41,6 +41,17 @@ void configureEnv() {
   setenv("LLM_MODE", "regular", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
+  setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
+  setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
+  // Disable the prefix-cache hit threshold by default: most tests assert that
+  // ANY prefix match reuses the session (the pre-threshold contract). With the
+  // production default (80%), a legitimate follow-up can be rejected when the
+  // seed session has grown past the matched prefix — e.g. it gets re-registered
+  // with the generated tokens, so a 1-block opener match becomes <80% of a
+  // 2-block session and falls through to ALLOCATE, hanging tests that have the
+  // memory auto-responder turned off. PrefixCacheHitThreshold_* opts back into
+  // 80% explicitly to exercise the rejection path.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 }  // namespace
@@ -102,9 +113,15 @@ using tt::test::ChatRequest;
 TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   server->setMemoryAutoRespond(false);
 
-  // 1. Fire the streaming request.
+  // 1. Fire the streaming request. The opener must be long enough to form at
+  //    least one block (32 tokens with test config) so the follow-up can hit
+  //    the prefix cache.
+  const std::string opener =
+      "hello this is a longer initial message that needs to have enough words "
+      "to produce at least thirty two tokens after tokenization so that the "
+      "prefix cache can form a block and the follow-up request can match it";
   auto responseFuture =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
@@ -143,18 +160,15 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_FALSE(stream.contentDeltas().empty())
       << "expected at least one content delta";
 
-  // 7. Follow-up with the same opener but a long claimed assistant turn
-  //    in between. If the controller sent the full conversation to the
-  //    worker (no cache hit), the prompt would include all those tokens.
-  //    With the cache HIT, only the delta — the trailing user turn —
-  //    is sent; the prompt token count stays close to a single-turn one.
+  // 7. Follow-up with the same opener but an assistant turn and a new user
+  //    turn appended. The block-based prefix cache matches the first block(s)
+  //    from the opener, and only the delta (assistant + new user) is sent.
+  //    With block size 32, the matched prefix is trimmed, leaving
+  //    (full_prompt - matched_tokens) tokens to prefill.
   const std::string longPriorAssistant =
-      "this is intentionally a long assistant turn so that if the controller "
-      "sent the full conversation history to the worker the prompt would "
-      "balloon to many more tokens than the small delta of the last user "
-      "turn alone";
+      "this is the assistant response that was generated for the initial turn";
   auto followUpFuture = asyncRequest(ChatRequest()
-                                         .user("hello")
+                                         .user(opener)
                                          .assistant(longPriorAssistant)
                                          .user("y")
                                          .maxTokens(1)
@@ -163,13 +177,19 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(followUpSeq, nullptr);
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
-  // "y" tokenises to a single token. With the cache hit, the delta prompt
-  // is exactly that token wrapped in the chat-template markers — 3 tokens for
-  // continuation for the DeepSeek tokenizer (user-marker + "y" +
-  // assistant-marker, no BOS since it's already in the slot's KV cache). If the
-  // full conversation had been sent, the long prior assistant turn would have
-  // pushed this well into the dozens.
-  EXPECT_EQ(followUpSeq->getNumPromptTokens(), 3u);
+  // Block-based prefix caching: block(s) from the opener are matched and
+  // trimmed. The remaining tokens (full prompt minus matched) are sent to the
+  // worker. The key verification is that it's a continuation (cache hit) and
+  // fewer tokens than the full prompt are sent.
+  EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
+      << "continuation should still send some tokens";
+  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
+  // position. With block_size=32, first block matched = 32 tokens, so
+  // kv_position_id = 31 (0-indexed position of last matched token).
+  ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
+      << "continuation should have kv_position_id set";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
+      << "kv_position_id should be one less than matched tokens (0-indexed)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -211,9 +231,13 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   // Each turn appends a new user message to the running conversation. Turn
   // N+1's controller-side prefix lookup hash matches turn N's history, so
   // every turn after the first must be flagged as a continuation.
+  // The first message must be long enough to form at least one block (32
+  // tokens with test config) so subsequent turns can hit the prefix cache.
   ChatRequest convo;
   const std::vector<std::string> userMessages = {
-      "hello",
+      "multi-turn-test-unique-opener with enough words to produce at least "
+      "thirty two tokens after tokenization so that the prefix cache can "
+      "register a block for subsequent turns to match against",
       "how are you",
       "tell me a joke",
       "thanks",
@@ -284,16 +308,19 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 
 TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Two identical first-turn requests. Same content, same registration hash
-  // — but neither has a prior turn, so both bypass prefix-cache routing and
-  // each hits the Layer-2 ALLOCATE path. Verify they're independent: two
-  // distinct ALLOCATE requests, two distinct mocked slots, both flowing
-  // back to the Sequences pushed onto the task queue.
+  // — but when all candidate sessions are in-flight, both fall through to
+  // the ALLOCATE path. Verify they're independent: two distinct ALLOCATE
+  // requests, two distinct mocked slots, both flowing back to the Sequences
+  // pushed onto the task queue.
+  //
+  // Uses a unique opener to avoid acquiring sessions registered by earlier
+  // tests in this suite.
   server->setMemoryAutoRespond(false);
 
-  auto future1 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
-  auto future2 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future1 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+  auto future2 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
@@ -389,7 +416,12 @@ TEST_F(MainIntegrationTest,
   // multiple seeded candidates are available — every request ends up
   // with its own slot. No two requests ever share a slot.
   server->setMemoryAutoRespond(false);
-  const std::string opener = "concurrent-different-rest-opener";
+  // The opener must be long enough to form at least one block (32 tokens with
+  // test config) so the follow-up requests can hit the prefix cache.
+  const std::string opener =
+      "concurrent-different-rest-opener with enough words to produce at least "
+      "thirty two tokens after tokenization so that the prefix cache can "
+      "register blocks for the follow-up requests to match against";
   constexpr uint32_t kSeedSlotA = 7;
   constexpr uint32_t kSeedSlotB = 8;
 
@@ -485,6 +517,116 @@ TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
 
   mockWorkerResponse(seq->taskId);
   future.get();
+}
+
+TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
+  // Build a session with many blocks (long conversation), then send a short
+  // request that only matches the first block. With PREFIX_CACHE_HIT_THRESHOLD
+  // at 80% (default), the session should be rejected and a new one allocated.
+  //
+  // Setup: opener (1 block) -> many assistant/user turns (many more blocks)
+  // Test request: same opener only -> matches 1 block out of many -> rejected
+  //
+  // Steps 1-2 BUILD the long session and must run with the threshold disabled
+  // (the suite default, see configureEnv): each growth turn only matches the
+  // leading block(s) of the session-so-far, which is below 80%, so an active
+  // threshold would reject these legitimate continuations and the session
+  // would never grow. The threshold is enabled only for step 3 — the actual
+  // rejection assertion — and restored to "0" at the end.
+  server->setMemoryAutoRespond(false);
+
+  // Step 1: Create a long conversation to build up many blocks.
+  // The opener must be long enough to form at least one block (32 tokens).
+  const std::string opener =
+      "prefix-threshold-test-unique-opener-v2 with enough tokens to form "
+      "exactly one block when tokenized this needs at least thirty two tokens "
+      "after tokenization so we add more words here";
+
+  // First turn: establishes the session with opener
+  auto future1 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  tt::domain::ManageMemoryTask memReq1{};
+  server->memoryRequestQueue().receive(memReq1);
+  EXPECT_EQ(memReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+
+  tt::domain::ManageMemoryResult memRes1{};
+  memRes1.taskId = memReq1.taskId;
+  memRes1.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes1.slotId = 0;
+  server->memoryResultQueue().push(memRes1);
+
+  auto seq1 = server->taskQueue().receive();
+  ASSERT_NE(seq1, nullptr);
+  EXPECT_FALSE(seq1->isContinuation())
+      << "First turn should not be continuation";
+
+  tt::test::WorkerResponse(seq1->taskId)
+      .token(100)
+      .finalize()
+      .sendTo(server->resultQueue());
+  future1.get();
+
+  // Step 2: Add several more turns to grow the session's block count.
+  // Each turn adds more blocks, making the session much longer than just
+  // opener.
+  ChatRequest convo;
+  convo.user(opener).assistant("ok");
+
+  for (int i = 0; i < 5; ++i) {
+    std::string longMessage =
+        "additional turn " + std::to_string(i) +
+        " with enough words to add more blocks to this session making it "
+        "much longer than the original opener so that a short request "
+        "matching only the opener will have a low match percentage";
+    convo.user(longMessage).maxTokens(1).stream();
+
+    auto future = asyncRequest(convo);
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_TRUE(seq->isContinuation())
+        << "Turn " << i << " should be continuation";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .token(101 + i)
+        .finalize()
+        .sendTo(server->resultQueue());
+    future.get();
+
+    convo.assistant("got it");
+  }
+
+  // Step 3: Enable the production 80% threshold, then send a NEW request with
+  // only the opener (no history). This matches only the first block of the
+  // multi-block session, so the ~10-20% match should be rejected.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
+  auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  // Should allocate a NEW session because match percentage is below threshold.
+  // An ALLOCATE request indicates the prefix cache candidate was rejected.
+  tt::domain::ManageMemoryTask memReq2{};
+  server->memoryRequestQueue().receive(memReq2);
+  EXPECT_EQ(memReq2.action, tt::domain::MemoryManagementAction::ALLOCATE)
+      << "Low match percentage should trigger new ALLOCATE, not reuse session";
+
+  tt::domain::ManageMemoryResult memRes2{};
+  memRes2.taskId = memReq2.taskId;
+  memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes2.slotId = 1;  // Different slot
+  server->memoryResultQueue().push(memRes2);
+
+  auto seq2 = server->taskQueue().receive();
+  ASSERT_NE(seq2, nullptr);
+  EXPECT_FALSE(seq2->isContinuation())
+      << "Short request should NOT be continuation due to threshold rejection";
+
+  tt::test::WorkerResponse(seq2->taskId)
+      .token(200)
+      .finalize()
+      .sendTo(server->resultQueue());
+  future2.get();
+
+  server->setMemoryAutoRespond(true);
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -178,12 +178,13 @@ server (no v1 entry point involved). The workflow is `benchmarks`; the
 prefix-cache flag swaps the default media-task dispatch for the scenario sweep
 defined in [`llm_module/prefix_cache/manifest.json`](llm_module/prefix_cache/manifest.json).
 
-The script `run.py` materializes the dedicated venv on
-the first `--prefix-cache` invocation and re-execs itself inside it, so no
-manual venv setup is required:
+`run.py` itself has no import-time side effects, so it must run inside the
+dedicated `V2_PREFIX_CACHE` venv. Use the thin launcher `run_prefix_cache.py`,
+which selects/creates that venv and re-execs `run.py` inside it — no manual venv
+setup required:
 
 ```bash
-python tt-inference-server-v2/run.py \
+python tt-inference-server-v2/run_prefix_cache.py \
     --model Llama-3.1-8B-Instruct \
     --workflow benchmarks \
     --device gpu \
@@ -193,13 +194,15 @@ python tt-inference-server-v2/run.py \
     --jwt-secret "$JWT_SECRET"
 ```
 
-When `--prefix-cache` is set, `run.py` calls
+`run_prefix_cache.py` calls
 `VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE].setup(...)` (declared in
 [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
 [`requirements/v2-prefix-cache.txt`](../requirements/v2-prefix-cache.txt)), then
-`os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python` while
-preserving every CLI argument. Subsequent runs reuse the existing venv and the
-re-exec step is a no-op when the script is already running inside it.
+`os.execv`s into `.workflow_venvs/.venv_v2_prefix_cache/bin/python`, forwarding
+every CLI argument to `run.py`. Setup is idempotent, so subsequent runs reuse
+the existing venv. This mirrors how [`workflows/v2_bridge.py`](../workflows/v2_bridge.py)
+selects the per-workflow venv externally for image-model runs, keeping venv
+selection out of `run.py`.
 
 Scenarios (`shared_system`, `prefix_pool`, `multi_turn`, `baseline`,
 `mooncake_trace`) and per-preset grids are JSON-defined and overridable with
@@ -320,7 +323,8 @@ modules from the start rather than bolted onto v1.
 
 ```
 tt-inference-server-v2/
-├── run.py                          # CLI entry point
+├── run.py                          # CLI entry point (no import-time side effects)
+├── run_prefix_cache.py             # thin launcher: ensures V2_PREFIX_CACHE venv, execs run.py
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult

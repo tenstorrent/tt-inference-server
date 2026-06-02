@@ -227,7 +227,7 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 test = _instantiate_spec_test(patched, ctx)
                 block = test.run_tests()
             except Exception as e:
-                logger.exception("  ✘ %s raised: %s", class_name, e)
+                logger.exception("  ❌ %s raised: %s", class_name, e)
                 failures += 1
                 continue
             blocks.append(block)
@@ -236,7 +236,7 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
                 or block.data.get("success") is not True
             ):
                 logger.error(
-                    "  ✘ %s did not report success=True (data=%r)",
+                    "  ❌ %s did not report success=True (data=%r)",
                     class_name,
                     block.data,
                 )

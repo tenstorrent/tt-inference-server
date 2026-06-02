@@ -23,6 +23,8 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_metrics.hpp"
+#include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/zmq_prefill_router.hpp"
 #include "sockets/socket_manager.hpp"
@@ -59,6 +61,38 @@ uint16_t ephemeralPort() {
   uint16_t port = ntohs(addr.sin_port);
   close(s);
   return port;
+}
+
+std::string httpGetMetrics(uint16_t port) {
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  EXPECT_GE(s, 0);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = htons(port);
+  if (connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    close(s);
+    return {};
+  }
+
+  const std::string request =
+      "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+  if (send(s, request.data(), request.size(), 0) !=
+      static_cast<ssize_t>(request.size())) {
+    close(s);
+    return {};
+  }
+
+  std::string response;
+  char buffer[4096];
+  while (true) {
+    const ssize_t bytes = recv(s, buffer, sizeof(buffer), 0);
+    if (bytes <= 0) break;
+    response.append(buffer, static_cast<size_t>(bytes));
+  }
+  close(s);
+  return response;
 }
 
 struct PrefillConnectionState {
@@ -157,7 +191,8 @@ class FakeDecode {
  public:
   FakeDecode(const std::string& gatewayHost, uint16_t gatewayPort) {
     sm_.initializeAsClient(gatewayHost, gatewayPort);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
 
     sm_.registerHandler<tt::sockets::PrefillResultMessage>(
         "prefill_result", [this](const tt::sockets::PrefillResultMessage& msg) {
@@ -181,7 +216,14 @@ class FakeDecode {
 
   void sendRequest(uint32_t taskId, size_t registrationHash = 0) {
     tt::sockets::PrefillRequestMessage req(taskId);
-    req.registration_hash = registrationHash;
+    if (registrationHash != 0)
+      req.registration_hashes = {static_cast<uint64_t>(registrationHash)};
+    sm_.sendObject("prefill_request", req);
+  }
+
+  void sendRequest(uint32_t taskId, std::vector<uint64_t> registrationHashes) {
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.registration_hashes = std::move(registrationHashes);
     sm_.sendObject("prefill_request", req);
   }
 
@@ -228,7 +270,8 @@ class GatewayHarness {
 
     for (const auto& [host, port] : prefills) {
       auto sm = std::make_unique<tt::sockets::SocketManager>();
-      sm->setReconnectBackoff(50, 500);
+      sm->setReconnectBackoff(std::chrono::milliseconds(50),
+                              std::chrono::milliseconds(500));
       sm->initializeAsClient(host, port);
       prefillSms_.push_back(std::move(sm));
     }
@@ -324,6 +367,7 @@ class GatewayHarness {
 
   PrefillRegistry& registry() { return registry_; }
   AffinityCache& affinity() { return affinity_; }
+  Dispatcher& dispatcher() { return *dispatcher_; }
 
  private:
   uint16_t decodePort_;
@@ -345,7 +389,8 @@ class FakeZmqPrefill {
         routerPort_(routerPort),
         maxInFlight_(maxInFlight) {
     sm_.initializeAsClient(routerHost_, routerPort_);
-    sm_.setReconnectBackoff(50, 500);
+    sm_.setReconnectBackoff(std::chrono::milliseconds(50),
+                            std::chrono::milliseconds(500));
   }
 
   ~FakeZmqPrefill() { stop(); }
@@ -596,6 +641,28 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   EXPECT_EQ(total, 1u);
 }
 
+TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
+  const std::vector<uint64_t> hashes = {11, 22, 33};
+  decode_->sendRequest(/*taskId=*/2, hashes);
+
+  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
+  auto assignments = decode_->assignments();
+  ASSERT_EQ(assignments.size(), 1u);
+  ASSERT_TRUE(assignments[0].server_id == prefillA_->serverId() ||
+              assignments[0].server_id == prefillB_->serverId());
+
+  FakePrefill* assignedPrefill =
+      assignments[0].server_id == prefillA_->serverId() ? prefillA_.get()
+                                                        : prefillB_.get();
+  ASSERT_TRUE(
+      waitFor([&] { return assignedPrefill->receivedTaskCount() >= 1; }));
+
+  auto request = assignedPrefill->takeLastRequest();
+  ASSERT_TRUE(request.has_value());
+  EXPECT_EQ(request->task_id, 2u);
+  EXPECT_EQ(request->registration_hashes, hashes);
+}
+
 TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   prefillA_->setAutoReply(false);
   prefillB_->setAutoReply(false);
@@ -615,6 +682,34 @@ TEST_F(GatewayE2ETest, CancelIsForwardedToAssignedPrefill) {
   EXPECT_EQ(cancelled[0], 88u);
   EXPECT_EQ(prefillB_->cancelCount(), 0u);
   EXPECT_EQ(decode_->resultCount(), 0u);
+}
+
+TEST_F(GatewayE2ETest, RequestTimeoutFailsTaskToDecode) {
+  prefillA_->setAutoReply(false);
+  prefillB_->setAutoReply(false);
+
+  gateway_->affinity().record(/*hash=*/77, "prefill-A");
+  decode_->sendRequest(/*task_id=*/89, /*hash=*/77);
+
+  ASSERT_TRUE(waitFor([&] { return prefillA_->receivedTaskCount() >= 1; }));
+  ASSERT_TRUE(waitFor([&] { return decode_->assignmentCount() >= 1; }));
+  EXPECT_EQ(decode_->resultCount(), 0u);
+
+  gateway_->dispatcher().onRequestTimeouts(Dispatcher::Clock::now() +
+                                           std::chrono::minutes(6));
+
+  ASSERT_TRUE(waitFor([&] { return decode_->resultCount() >= 1; }));
+  ASSERT_TRUE(waitFor([&] { return prefillA_->cancelCount() >= 1; }));
+  auto results = decode_->results();
+  ASSERT_EQ(results.size(), 1u);
+  EXPECT_EQ(results[0].task_id, 89u);
+  EXPECT_TRUE(results[0].error);
+  EXPECT_TRUE(results[0].finished);
+  EXPECT_EQ(results[0].generated_text, "timeout");
+
+  auto cancelled = prefillA_->cancelledTaskIds();
+  ASSERT_EQ(cancelled.size(), 1u);
+  EXPECT_EQ(cancelled[0], 89u);
 }
 
 TEST_F(GatewayE2ETest, StickyRoutingByRegistrationHash) {
@@ -902,6 +997,25 @@ TEST(ZmqPrefillRouterTest, SendFailsWhenRegisteredPeerIsNoLongerRoutable) {
       << "ROUTER_MANDATORY should make sends to unroutable peers fail";
 
   router.stop();
+}
+
+TEST(GatewayMetricsServerTest, ServesPrometheusTextOnMetricsPath) {
+  auto& metrics = GatewayMetrics::instance();
+  metrics.resetForTests();
+  metrics.recordRoutingDecision("least_inflight");
+
+  const uint16_t port = ephemeralPort();
+  GatewayMetricsServer server(metrics);
+  ASSERT_TRUE(server.start(port));
+
+  ASSERT_TRUE(waitFor([&] {
+    const std::string response = httpGetMetrics(port);
+    return response.find("HTTP/1.1 200 OK") != std::string::npos &&
+           response.find("tt_gateway_routing_decisions_total") !=
+               std::string::npos;
+  }));
+
+  server.stop();
 }
 
 }  // namespace

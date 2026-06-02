@@ -3,12 +3,16 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import atexit
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import jwt
 
@@ -431,6 +435,22 @@ def parse_args():
     return ret_args
 
 
+def _build_base_url(deploy_url: str, service_port: str) -> str:
+    """Construct a base URL from a deploy URL and service port.
+
+    Normalizes the deploy URL by stripping trailing slashes.  When the URL
+    already contains an explicit port (e.g. ``http://host:9000``) that port is
+    used and *service_port* is ignored so that the resulting URL is never of
+    the form ``http://host:9000:8000``.
+    """
+    normalized = deploy_url.rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.port is not None:
+        # URL already includes a port; use as-is
+        return normalized
+    return f"{normalized}:{service_port}"
+
+
 def build_eval_command(
     task: EvalTask,
     model_spec,
@@ -438,6 +458,7 @@ def build_eval_command(
     output_path,
     service_port,
     runtime_config=None,
+    deploy_url: str = "http://127.0.0.1",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -454,10 +475,11 @@ def build_eval_command(
 
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
+    host_with_port = _build_base_url(deploy_url, service_port)
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"http://127.0.0.1:{service_port}"
+        base_url = host_with_port
     else:
-        base_url = f"http://127.0.0.1:{service_port}/v1"
+        base_url = f"{host_with_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -510,6 +532,17 @@ def build_eval_command(
     optional_model_args = []
     if effective_max_concurrent:
         optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
+    # Fast-fail 4xx when DeviceModelSpec opts in (forge LLMs at tight
+    # max_context). EVALS_COMMON only: lm-eval 0.4.3 in EVALS_META rejects
+    # the kwarg.
+    eval_max_retries = getattr(
+        getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
+    )
+    if (
+        eval_max_retries is not None
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+    ):
+        optional_model_args.append(f"max_retries={eval_max_retries}")
 
     # lm-eval (text) expects full completions api route in base_url
     # lmms-eval (vision) expects base_url WITHOUT the endpoint path
@@ -605,8 +638,32 @@ def build_eval_command(
 
     if task.include_path:
         cmd.append("--include_path")
-        cmd.append(task_venv_config.venv_path / task.include_path)
-        os.chdir(task_venv_config.venv_path)
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_META:
+            # lm-eval meta_* task YAMLs hardcode `./work_dir/joined_*.parquet`
+            # relative to cwd. The model-specific data lives at
+            # `<venv>/llama-cookbook/.../meta_eval/work_dir_<model>/`. To
+            # support parallel invocations against different models without
+            # racing on a single shared work_dir/, give each invocation its
+            # own staging dir containing a symlink that masquerades as it.
+            meta_data_dir = (
+                task_venv_config.venv_path
+                / "llama-cookbook/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval"
+                / f"work_dir_{model_spec.model_name}"
+            )
+            staging_dir = Path(
+                tempfile.mkdtemp(
+                    prefix=f"meta_eval_{model_spec.model_name}_",
+                    dir=task_venv_config.venv_path,
+                )
+            )
+            atexit.register(shutil.rmtree, staging_dir, ignore_errors=True)
+            staging_work_dir = staging_dir / "work_dir"
+            os.symlink(meta_data_dir, staging_work_dir)
+            cmd.append(staging_work_dir)
+            os.chdir(staging_dir)
+        else:
+            cmd.append(task_venv_config.venv_path / task.include_path)
+            os.chdir(task_venv_config.venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
@@ -855,6 +912,8 @@ def main():
     # explicitly re-read so in-process PromptClient sees later env updates
     # (mirrors run_benchmarks.py:439).
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    if getattr(runtime_config, "server_url", None):
+        env_config.deploy_url = runtime_config.server_url
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
@@ -866,6 +925,7 @@ def main():
             device,
             args.output_path,
             runtime_config.service_port,
+            deploy_url=env_config.deploy_url,
         )
         return return_code
 
@@ -896,6 +956,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -933,8 +994,21 @@ def main():
 
         # Execute lm_eval for each task.
         logger.info("Running vLLM evals client ...")
+        device_max_context = getattr(
+            getattr(model_spec, "device_model_spec", None), "max_context", None
+        )
         return_codes = []
         for task in eval_config.tasks:
+            # Skip if device can't fit this task's prompts (avoids 4xx retry-storm).
+            min_ctx = getattr(task, "min_context_required", None)
+            if min_ctx and device_max_context and device_max_context < min_ctx:
+                logger.warning(
+                    f"Skipping {task.task_name}: requires max_context >= {min_ctx}, "
+                    f"device provides {device_max_context}."
+                )
+                return_codes.append(0)
+                continue
+
             health_check = prompt_client.get_health()
             if health_check.status_code != 200:
                 logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
@@ -952,6 +1026,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             if not cmd:
                 logger.info("Skipping task %s (no command built)", task.task_name)
@@ -969,7 +1044,9 @@ def main():
         return 1
 
 
-def run_media_evals(all_params, model_spec, device, output_path, service_port):
+def run_media_evals(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run media evals for cnn and image models only (not AUDIO models).
 
@@ -987,6 +1064,7 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
         output_path,
         service_port,
         task_type=MediaTaskType.EVALUATION,
+        deploy_url=deploy_url,
     )
 
 

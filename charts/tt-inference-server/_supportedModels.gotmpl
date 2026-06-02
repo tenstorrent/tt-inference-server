@@ -1,0 +1,62 @@
+{{- /*
+chart.supportedModelsSection — auto-generated Supported Models tables.
+
+Reads values.yaml via .Files.Get and walks the model catalogue, whose shape is
+`models.<name>.<engine>.<device>` alongside a sibling `defaultEngine` string.
+Models are grouped by engine — the top-level key under each model, excluding
+`defaultEngine` — and one Markdown table is emitted per engine, listing every
+model/device pair. The label is derived from the engine key (vllm → vLLM,
+media → Media, forge → Forge); any unmapped engine falls back to its
+capitalised key.
+
+Adding a new engine, model, or device in values.yaml is reflected here on the
+next helm-docs run — no manual edit to this file or README.md.gotmpl.
+*/ -}}
+{{- define "chart.supportedModelsSection" -}}
+{{- $values := .Files.Get "values.yaml" | fromYaml -}}
+{{- $labels := dict "vllm" "vLLM" "media" "Media" "forge" "Forge" -}}
+{{- $engineOrder := list "vllm" "media" "forge" -}}
+{{- $groups := dict -}}
+{{- range $name, $cfg := $values.models -}}
+  {{- range $engine, $devices := $cfg -}}
+  {{- if ne $engine "defaultEngine" -}}
+    {{- $entries := default (list) (index $groups $engine) -}}
+    {{- $_ := set $groups $engine (append $entries (dict "name" $name "devices" $devices)) -}}
+  {{- end -}}
+  {{- end -}}
+{{- end -}}
+## Supported Models
+{{- range $engineOrder }}
+{{- $engine := . }}
+{{- if hasKey $groups $engine }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range (index $groups $engine) }}
+{{- $name := .name }}
+{{- range $device, $_ := .devices }}
+| `{{ $name }}` | {{ $device }} |
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $engine, $entries := $groups }}
+{{- if not (has $engine $engineOrder) }}
+
+### {{ index $labels $engine | default ($engine | title) }}
+
+| Model | Device |
+|---|---|
+{{- range $entries }}
+{{- $name := .name }}
+{{- range $device, $_ := .devices }}
+| `{{ $name }}` | {{ $device }} |
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+To add a new model, add an entry under `models.<name>.<engine>.<device>` in `values.yaml`, where `<engine>` is one of `vllm`, `media`, or `forge`, and the device block contains an `impls.<impl-id>` entry with `image.repository` and `image.tag`.
+{{- end -}}
