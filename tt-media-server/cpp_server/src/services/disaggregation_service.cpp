@@ -268,7 +268,7 @@ void DisaggregationService::resolvePrefillSession(
 
   auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
 
-  if (acquired.has_value()) {
+  if (acquired.has_value() && acquired->sessionFound) {
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache HIT taskId={} "
         "sessionId={} slotId={} matchedTokens={}",
