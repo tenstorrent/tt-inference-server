@@ -61,6 +61,11 @@ markers = [
     "sd35: Stable Diffusion 3.5 tests",
     "whisper: Whisper large model tests",
     "distil_whisper: Distil Whisper model tests",
+    "flux_dev: FLUX.1-dev tests",
+    "flux_schnell: FLUX.1-schnell tests",
+    "motif: Motif Image model tests",
+    "z_image_turbo: Z-Image-Turbo model tests (PCC + perf)",
+    "p300x2: Tests for P300X2 device (4 chips)",
 ]
 
 [tool.coverage.run]
