@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import jwt
 
@@ -434,6 +435,22 @@ def parse_args():
     return ret_args
 
 
+def _build_base_url(deploy_url: str, service_port: str) -> str:
+    """Construct a base URL from a deploy URL and service port.
+
+    Normalizes the deploy URL by stripping trailing slashes.  When the URL
+    already contains an explicit port (e.g. ``http://host:9000``) that port is
+    used and *service_port* is ignored so that the resulting URL is never of
+    the form ``http://host:9000:8000``.
+    """
+    normalized = deploy_url.rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.port is not None:
+        # URL already includes a port; use as-is
+        return normalized
+    return f"{normalized}:{service_port}"
+
+
 def build_eval_command(
     task: EvalTask,
     model_spec,
@@ -441,6 +458,7 @@ def build_eval_command(
     output_path,
     service_port,
     runtime_config=None,
+    deploy_url: str = "http://127.0.0.1",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -457,10 +475,11 @@ def build_eval_command(
 
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
+    host_with_port = _build_base_url(deploy_url, service_port)
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"http://127.0.0.1:{service_port}"
+        base_url = host_with_port
     else:
-        base_url = f"http://127.0.0.1:{service_port}/v1"
+        base_url = f"{host_with_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -893,6 +912,8 @@ def main():
     # explicitly re-read so in-process PromptClient sees later env updates
     # (mirrors run_benchmarks.py:439).
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    if getattr(runtime_config, "server_url", None):
+        env_config.deploy_url = runtime_config.server_url
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
@@ -904,6 +925,7 @@ def main():
             device,
             args.output_path,
             runtime_config.service_port,
+            deploy_url=env_config.deploy_url,
         )
         return return_code
 
@@ -934,6 +956,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -1003,6 +1026,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             if not cmd:
                 logger.info("Skipping task %s (no command built)", task.task_name)
@@ -1020,7 +1044,9 @@ def main():
         return 1
 
 
-def run_media_evals(all_params, model_spec, device, output_path, service_port):
+def run_media_evals(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run media evals for cnn and image models only (not AUDIO models).
 
@@ -1038,6 +1064,7 @@ def run_media_evals(all_params, model_spec, device, output_path, service_port):
         output_path,
         service_port,
         task_type=MediaTaskType.EVALUATION,
+        deploy_url=deploy_url,
     )
 
 

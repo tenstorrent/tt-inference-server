@@ -40,7 +40,7 @@ class TTSIntegrationTest(BaseTest):
     async def _run_specific_test_async(self):
         """Run integration tests for TTS API."""
         test_start_time = time.time()
-        self.url = f"http://localhost:{self.service_port}/v1/audio/speech"
+        self.url = f"{self.base_url}/v1/audio/speech"
 
         results = {
             "empty_text": None,
