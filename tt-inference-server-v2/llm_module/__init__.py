@@ -5,13 +5,16 @@
 from .config import DriverContext, LLMRunConfig, ServerConnection
 from .drivers import (
     AIPerfDriver,
+    AIPerfPrefixCacheDriver,
     DriverResult,
     GenAIPerfDriver,
     GuideLLMDriver,
     InferenceMaxDriver,
     LLMDriver,
+    PrefixCacheDriverResult,
     VLLMBenchDriver,
 )
+from .prefix_cache import PrefixCacheRun, build_runs as build_prefix_cache_runs
 from .runner import LLMPerformanceRunner, RunnerResult
 from .server_control import ServerController
 
@@ -22,6 +25,10 @@ __all__ = [
     "LLMDriver",
     "DriverResult",
     "AIPerfDriver",
+    "AIPerfPrefixCacheDriver",
+    "PrefixCacheDriverResult",
+    "PrefixCacheRun",
+    "build_prefix_cache_runs",
     "GenAIPerfDriver",
     "GuideLLMDriver",
     "InferenceMaxDriver",
