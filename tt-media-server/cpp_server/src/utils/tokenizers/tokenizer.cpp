@@ -63,8 +63,8 @@ Tokenizer::Tokenizer(const std::string& path) {
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
     tok_ = ::tokenizers::Tokenizer::FromBlobJSON(blob);
     specialTokenIds_ = parseSpecialTokenIds(blob);
-  } else if (path.size() >= 7 &&
-             path.compare(path.size() - 7, 7, ".model") == 0) {
+  } else if (path.size() >= 6 &&
+             path.compare(path.size() - 6, 6, ".model") == 0) {
     tok_ = ::tokenizers::Tokenizer::FromBlobSentencePiece(blob);
   } else {
     throw std::runtime_error(
