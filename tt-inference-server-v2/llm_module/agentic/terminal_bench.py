@@ -170,5 +170,7 @@ def run(config: TerminalBenchRunConfig) -> int:
 
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(cmd)
+    if result.returncode != 0:
+        return result.returncode
     _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
     return result.returncode

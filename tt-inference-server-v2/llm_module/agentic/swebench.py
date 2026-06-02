@@ -47,9 +47,9 @@ class SWEbenchRunConfig:
     instance_ids: list[str] = field(default_factory=list)
 
 
-def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> None:
+def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
     logger.info("Running command: %s", " ".join(cmd))
-    subprocess.run(cmd, cwd=cwd, env=env, check=True)
+    return subprocess.run(cmd, cwd=cwd, env=env).returncode
 
 
 def _write_swebench_container_name_patch(output_dir: Path) -> Path:
@@ -429,7 +429,9 @@ def run(config: SWEbenchRunConfig) -> int:
         sweagent_cmd = build_sweagent_command(
             config, sweagent_config_path, sweagent_output_dir
         )
-        _run_command(sweagent_cmd, cwd=config.output_dir, env=env)
+        rc = _run_command(sweagent_cmd, cwd=config.output_dir, env=env)
+        if rc != 0:
+            return rc
         preds_path = _find_sweagent_preds(sweagent_output_dir)
     elif config.agent_backend == "mini-swe-agent":
         mini_config_path = _write_mini_sweagent_model_config(config)
@@ -437,7 +439,9 @@ def run(config: SWEbenchRunConfig) -> int:
         mini_cmd = build_mini_sweagent_command(
             config, mini_config_path, mini_output_dir
         )
-        _run_command(mini_cmd, cwd=config.output_dir, env=env)
+        rc = _run_command(mini_cmd, cwd=config.output_dir, env=env)
+        if rc != 0:
+            return rc
         preds_path = _find_sweagent_preds(mini_output_dir)
     else:
         raise ValueError(f"Unsupported SWE-bench agent backend: {config.agent_backend}")
@@ -447,7 +451,9 @@ def run(config: SWEbenchRunConfig) -> int:
 
     harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
     env = _add_swebench_container_name_patch_to_env(config.output_dir, env)
-    _run_command(harness_cmd, cwd=config.output_dir, env=env)
+    rc = _run_command(harness_cmd, cwd=config.output_dir, env=env)
+    if rc != 0:
+        return rc
 
     harness_report_path = _find_harness_report(
         config.output_dir, config.model_name, run_id

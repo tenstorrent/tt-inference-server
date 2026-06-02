@@ -19,6 +19,8 @@ from llm_module.drivers.agentic import (
     resolve_n_tasks,
     resolve_task_names,
 )
+from llm_module.agentic.swebench import run as run_swebench
+from llm_module.agentic.terminal_bench import run as run_terminal_bench
 from llm_module.parsers.agentic import AgenticEvalParser, compute_accuracy_check
 from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
@@ -225,6 +227,61 @@ class TestAgenticDriverConfigMapping:
             "/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified"
         )
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+
+class TestTerminalBenchHarness:
+    def test_nonzero_return_code_does_not_require_result_file(self, tmp_path):
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 17
+
+            assert run_terminal_bench(cfg) == 17
+
+
+class TestSWEbenchHarness:
+    def test_agent_failure_returns_nonzero_without_predictions(self, tmp_path):
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 23
+
+            assert run_swebench(cfg) == 23
+
+    def test_harness_failure_returns_nonzero_without_result_file(self, tmp_path):
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
+        preds_path.parent.mkdir(parents=True)
+        preds_path.write_text(
+            '{"django__django-11299": {"model_patch": ""}}',
+            encoding="utf-8",
+        )
+
+        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.side_effect = [
+                SimpleNamespace(returncode=0),
+                SimpleNamespace(returncode=31),
+            ]
+
+            assert run_swebench(cfg) == 31
 
 
 class TestAgenticLimitResolution:
