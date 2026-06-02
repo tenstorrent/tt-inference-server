@@ -2,7 +2,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 cmake_minimum_required(VERSION 3.24)
-project(tt_media_server_cpp CXX)
+# C and ASM are enabled for the BLAKE3 C library (FetchContent below), whose
+# optimized SIMD paths compile .c and .S sources. Enabling them on the
+# top-level project ensures CMake detects the C/ASM toolchain up front instead
+# of failing once BLAKE3's subdirectory pulls them in.
+project(tt_media_server_cpp CXX C ASM)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -103,6 +107,21 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(xxhash)
 add_library(xxhash_lib INTERFACE)
 target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
+# BLAKE3 (official C library). The Dynamo frontend blake3-validates every file
+# it fetches from a Model Descriptor Card (config.json, tokenizer, chat
+# template, tokenizer_config); a placeholder/zero checksum makes it reject the
+# model and the backend never becomes routable. We hash those files at
+# registration time in src/dynamo/discovery.cpp. SOURCE_SUBDIR points at the
+# repo's c/ project, which enables the C/ASM languages it needs in its own scope.
+FetchContent_Declare(
+    blake3
+    GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
+    GIT_TAG        1.5.4
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  c
+)
+FetchContent_MakeAvailable(blake3)
 
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
@@ -1036,6 +1055,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# BLAKE3 for Dynamo MDC file checksums (src/dynamo/discovery.cpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE blake3)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 
