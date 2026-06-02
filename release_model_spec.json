@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.12.0",
+  "release_version": "0.15.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -116,7 +116,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -192,7 +196,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -304,7 +312,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       }
@@ -419,7 +431,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       },
@@ -537,7 +553,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "openai_gptoss",
+              "tool_call_parser_name": "openai"
+            }
           }
         }
       }
@@ -613,7 +633,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -687,7 +708,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -766,7 +788,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -878,7 +901,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -990,7 +1017,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1102,7 +1133,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1183,7 +1218,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1299,7 +1338,11 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1379,7 +1422,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -1515,7 +1562,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           },
           "tt_transformers": {
             "model_id": "id_tt-transformers_Qwen3-32B_galaxy",
@@ -1631,7 +1682,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1744,7 +1799,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1826,7 +1885,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1911,7 +1974,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -1929,7 +1996,7 @@
             "model_name": "Qwen3-32B",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -1984,9 +2051,11 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{}"
+                "override_tt_config": "{\"trace_region_size\": 402653184}"
               },
-              "override_tt_config": {},
+              "override_tt_config": {
+                "trace_region_size": 402653184
+              },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
@@ -2013,24 +2082,30 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "7678b70",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.14.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
-            "override_tt_config": {},
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 402653184
+            },
             "supported_modalities": [
               "text"
             ],
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
-            "has_builtin_warmup": false,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            },
             "cli_args": {}
           }
         }
@@ -2144,7 +2219,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -2218,7 +2294,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -2292,7 +2369,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -2407,7 +2485,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2526,7 +2608,11 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2608,7 +2694,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -2766,7 +2856,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -2924,7 +3017,10 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3009,7 +3105,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3167,7 +3266,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3325,7 +3427,10 @@
             "subdevice_type": "T3K",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3410,7 +3515,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3525,7 +3633,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3597,7 +3708,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3712,7 +3826,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -3784,7 +3901,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -3956,7 +4076,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4085,7 +4208,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4217,7 +4343,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4349,7 +4478,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4472,7 +4604,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4566,7 +4701,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -4738,7 +4876,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4867,7 +5008,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -4999,7 +5143,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5131,7 +5278,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5254,7 +5404,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5348,7 +5501,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -5520,7 +5676,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5649,7 +5808,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5781,7 +5943,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -5913,7 +6078,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -6036,7 +6204,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -6130,7 +6301,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -6302,7 +6476,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6431,7 +6609,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6563,7 +6745,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6695,7 +6881,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6818,7 +7008,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -6912,7 +7106,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       }
@@ -6985,7 +7183,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -7071,7 +7273,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       },
@@ -7157,7 +7363,11 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "reasoning_parser_name": "deepseek_r1",
+              "tool_call_parser_name": "deepseek_v3"
+            }
           }
         }
       }
@@ -7270,7 +7480,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7383,7 +7596,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7496,7 +7712,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -7609,7 +7828,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7722,7 +7944,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -7835,7 +8060,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -7951,7 +8179,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         },
         "forge": {
@@ -8065,7 +8296,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -8177,7 +8409,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         },
         "forge": {
@@ -8293,7 +8528,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -8405,7 +8641,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -8521,7 +8760,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8633,7 +8875,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8745,7 +8990,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -8857,7 +9105,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -8973,7 +9224,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9127,7 +9381,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9196,7 +9453,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9310,7 +9570,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9420,7 +9683,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9538,7 +9804,10 @@
             "subdevice_type": "P150",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9662,7 +9931,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9787,7 +10059,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -9873,7 +10148,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10001,7 +10279,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10093,7 +10374,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -10205,7 +10489,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10321,7 +10608,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10475,7 +10765,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10544,7 +10837,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10658,7 +10954,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10768,7 +11067,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -10886,7 +11188,10 @@
             "subdevice_type": "P150",
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11010,7 +11315,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11028,7 +11336,7 @@
             "model_name": "Llama-3.1-8B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 32,
@@ -11083,11 +11391,11 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"sample_on_device_mode\": \"decode_only\", \"trace_region_size\": 155000000}"
               },
               "override_tt_config": {
                 "sample_on_device_mode": "decode_only",
-                "trace_region_size": 56000000
+                "trace_region_size": 155000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
@@ -11114,20 +11422,20 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "vllm_commit": "22be241",
+            "vllm_commit": "7678b70",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241",
+            "version": "0.14.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
-              "trace_region_size": 56000000
+              "trace_region_size": 155000000
             },
             "supported_modalities": [
               "text"
@@ -11135,6 +11443,9 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            },
             "cli_args": {}
           }
         }
@@ -11221,7 +11532,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11349,7 +11663,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       },
@@ -11441,7 +11758,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "llama3_json"
+            }
           }
         }
       }
@@ -11556,7 +11876,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -11638,7 +11961,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -11759,7 +12085,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -11880,7 +12207,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12001,7 +12329,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12122,7 +12451,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12247,7 +12577,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12335,7 +12666,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12459,7 +12791,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12584,7 +12917,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12672,7 +13006,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -12796,7 +13131,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -12816,7 +13152,7 @@
             "model_name": "Qwen3-VL-32B-Instruct",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "ba32283",
+            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 32,
@@ -12872,7 +13208,7 @@
                 "max-log-len": "32",
                 "seed": "9472",
                 "override_tt_config": "{}",
-                "disable_mm_preprocessor_cache": true
+                "mm-processor-cache-gb": 0
               },
               "override_tt_config": {},
               "env_vars": {
@@ -12894,17 +13230,17 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
-            "vllm_commit": "4386a82",
+            "vllm_commit": "7678b70",
             "hf_weights_repo": "Qwen/Qwen3-VL-32B-Instruct",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "VLM",
             "repacked": 0,
-            "version": "0.10.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-ba32283-4386a82",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/ba32283/models/tt_transformers",
+            "version": "0.14.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.14.0-80180b9-7678b70",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text",
@@ -12913,6 +13249,7 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -13027,7 +13364,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -13141,7 +13481,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13255,7 +13598,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       },
@@ -13373,7 +13719,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13489,7 +13838,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13609,7 +13961,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {
+              "tool_call_parser_name": "hermes"
+            }
           }
         }
       }
@@ -13724,7 +14079,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -13837,7 +14193,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -13952,7 +14309,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14065,7 +14423,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14182,7 +14541,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14299,7 +14659,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14413,7 +14774,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14523,7 +14885,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14637,7 +15000,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14751,7 +15115,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -14865,7 +15230,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -14979,7 +15345,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15089,7 +15456,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15203,7 +15571,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15317,7 +15686,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15335,7 +15705,7 @@
             "model_name": "Wan2.2-T2V-A14B-Diffusers",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -15418,10 +15788,10 @@
             "min_ram_gb": 32,
             "model_type": "VIDEO",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240",
+            "version": "0.14.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 30000000
             },
@@ -15431,6 +15801,7 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -15543,7 +15914,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15655,7 +16027,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15767,7 +16140,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -15877,7 +16251,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -15989,7 +16364,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16101,7 +16477,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16213,7 +16590,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16323,7 +16701,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16437,7 +16816,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16547,7 +16927,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16659,7 +17040,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16732,7 +17114,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16805,7 +17188,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -16876,7 +17260,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -16990,7 +17375,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17100,7 +17486,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17210,7 +17597,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17228,7 +17616,7 @@
             "model_name": "FLUX.1-dev",
             "inference_engine": "media",
             "device_type": "P300X2",
-            "tt_metal_commit": "555f240",
+            "tt_metal_commit": "80180b9",
             "device_model_spec": {
               "device": "P300X2",
               "max_concurrency": 1,
@@ -17309,10 +17697,10 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.10.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240",
+            "version": "0.14.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -17320,6 +17708,7 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -17430,7 +17819,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17540,7 +17930,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -17654,7 +18045,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17764,7 +18156,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17874,7 +18267,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -17984,7 +18378,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18094,7 +18489,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18204,7 +18600,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18318,7 +18715,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18428,7 +18826,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18538,7 +18937,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18609,7 +19009,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18686,7 +19087,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18757,7 +19159,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -18834,7 +19237,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -18905,7 +19309,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -19017,7 +19422,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19090,7 +19496,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19200,7 +19607,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19312,6 +19720,231 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "cli_args": {},
+            "metadata": {}
+          }
+        }
+      },
+      "P150": {
+        "media": {
+          "whisper": {
+            "model_id": "id_whisper_whisper-large-v3_p150",
+            "impl": {
+              "impl_id": "whisper",
+              "impl_name": "whisper",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/whisper"
+            },
+            "hf_model_repo": "openai/whisper-large-v3",
+            "model_name": "whisper-large-v3",
+            "inference_engine": "media",
+            "device_type": "P150",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "asr",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 27000.0,
+                      "tput_user": 4.7,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 5400.0,
+                      "tput_user": 23.5,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 2700.0,
+                      "tput_user": 47.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "openai/whisper-large-v3",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "openai/whisper-large-v3",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "AUDIO",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/demos/whisper",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      },
+      "P300X2": {
+        "media": {
+          "whisper": {
+            "model_id": "id_whisper_whisper-large-v3_p300x2",
+            "impl": {
+              "impl_id": "whisper",
+              "impl_name": "whisper",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/whisper"
+            },
+            "hf_model_repo": "openai/whisper-large-v3",
+            "model_name": "whisper-large-v3",
+            "inference_engine": "media",
+            "device_type": "P300X2",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "asr",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 19000.0,
+                      "tput_user": 6.2,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 3800.0,
+                      "tput_user": 31.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 1900.0,
+                      "tput_user": 62.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "openai/whisper-large-v3",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "openai/whisper-large-v3",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "AUDIO",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/demos/whisper",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -19424,7 +20057,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19497,7 +20131,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19607,7 +20242,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19719,6 +20355,231 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "cli_args": {},
+            "metadata": {}
+          }
+        }
+      },
+      "P150": {
+        "media": {
+          "whisper": {
+            "model_id": "id_whisper_distil-large-v3_p150",
+            "impl": {
+              "impl_id": "whisper",
+              "impl_name": "whisper",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/whisper"
+            },
+            "hf_model_repo": "distil-whisper/distil-large-v3",
+            "model_name": "distil-large-v3",
+            "inference_engine": "media",
+            "device_type": "P150",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "asr",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 27000.0,
+                      "tput_user": 4.7,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 5400.0,
+                      "tput_user": 23.5,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 2700.0,
+                      "tput_user": 47.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "distil-whisper/distil-large-v3",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "distil-whisper/distil-large-v3",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "AUDIO",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/demos/whisper",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      },
+      "P300X2": {
+        "media": {
+          "whisper": {
+            "model_id": "id_whisper_distil-large-v3_p300x2",
+            "impl": {
+              "impl_id": "whisper",
+              "impl_name": "whisper",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/whisper"
+            },
+            "hf_model_repo": "distil-whisper/distil-large-v3",
+            "model_name": "distil-large-v3",
+            "inference_engine": "media",
+            "device_type": "P300X2",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 1,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "asr",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 19000.0,
+                      "tput_user": 6.2,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 3800.0,
+                      "tput_user": 31.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 1900.0,
+                      "tput_user": 62.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "distil-whisper/distil-large-v3",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "distil-whisper/distil-large-v3",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "AUDIO",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/demos/whisper",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -19831,7 +20692,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -19943,6 +20805,149 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
+            "cli_args": {},
+            "metadata": {}
+          }
+        }
+      },
+      "P150": {
+        "media": {
+          "speecht5_tts": {
+            "model_id": "id_speecht5-tts_speecht5_tts_p150",
+            "impl": {
+              "impl_id": "speecht5_tts",
+              "impl_name": "speecht5-tts",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/experimental/speecht5_tts"
+            },
+            "hf_model_repo": "microsoft/speecht5_tts",
+            "model_name": "speecht5_tts",
+            "inference_engine": "media",
+            "device_type": "P150",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 1,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "microsoft/speecht5_tts",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "microsoft/speecht5_tts",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "TEXT_TO_SPEECH",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/experimental/speecht5_tts",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      },
+      "P300X2": {
+        "media": {
+          "speecht5_tts": {
+            "model_id": "id_speecht5-tts_speecht5_tts_p300x2",
+            "impl": {
+              "impl_id": "speecht5_tts",
+              "impl_name": "speecht5-tts",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/experimental/speecht5_tts"
+            },
+            "hf_model_repo": "microsoft/speecht5_tts",
+            "model_name": "speecht5_tts",
+            "inference_engine": "media",
+            "device_type": "P300X2",
+            "tt_metal_commit": "25891d3",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "microsoft/speecht5_tts",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "plugin_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": []
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+            },
+            "vllm_commit": null,
+            "hf_weights_repo": "microsoft/speecht5_tts",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "TEXT_TO_SPEECH",
+            "repacked": 0,
+            "version": "0.15.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.15.0-25891d3",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/25891d3/models/experimental/speecht5_tts",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
@@ -20067,7 +21072,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20191,7 +21197,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20315,7 +21322,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20439,7 +21447,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -20559,7 +21568,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20679,7 +21689,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20799,7 +21810,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -20917,7 +21929,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21041,7 +22054,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21165,7 +22179,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21289,7 +22304,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21411,7 +22427,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21529,7 +22546,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21647,7 +22665,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": false,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21667,7 +22686,7 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21748,10 +22767,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -21759,7 +22778,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -21777,7 +22797,7 @@
             "model_name": "resnet-50",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -21860,10 +22880,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -21871,7 +22891,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -21891,7 +22912,7 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -21972,10 +22993,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -21983,7 +23004,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22001,7 +23023,7 @@
             "model_name": "vovnet",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22084,10 +23106,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22095,7 +23117,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22115,7 +23138,7 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22196,10 +23219,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22207,7 +23230,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22225,7 +23249,7 @@
             "model_name": "mobilenetv2",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22308,10 +23332,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22319,7 +23343,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22431,7 +23456,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22543,7 +23569,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22563,7 +23590,7 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22644,10 +23671,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22655,7 +23682,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22673,7 +23701,7 @@
             "model_name": "segformer",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22756,10 +23784,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22767,7 +23795,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -22787,7 +23816,7 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N150",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N150",
               "max_concurrency": 1,
@@ -22868,10 +23897,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22879,7 +23908,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -22897,7 +23927,7 @@
             "model_name": "vit",
             "inference_engine": "forge",
             "device_type": "N300",
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "079a2c2",
             "device_model_spec": {
               "device": "N300",
               "max_concurrency": 1,
@@ -22980,10 +24010,10 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
-            "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
+            "version": "0.13.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -22991,7 +24021,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }
@@ -23103,7 +24134,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       },
@@ -23215,7 +24247,8 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": false,
-            "cli_args": {}
+            "cli_args": {},
+            "metadata": {}
           }
         }
       }

@@ -41,7 +41,10 @@ from typing import List
 logger = logging.getLogger("server_tests.run")
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+v2_root = os.path.join(project_root, "tt-inference-server-v2")
+for _path in (project_root, v2_root):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from server_tests.test_categorization_system import TestFilter
 from server_tests.test_classes import TestConfig
@@ -199,7 +202,10 @@ class TestFrameworkRunner:
 
             logger.info(f"Created {len(test_cases)} test case(s)")
 
-            runner = ServerRunner(test_cases)
+            runner = ServerRunner(
+                test_cases,
+                output_path=getattr(self._args, "output_path", None),
+            )
 
             start_time = time.perf_counter()
             reports = runner.run()
@@ -369,10 +375,34 @@ def parse_args():
     return args
 
 
+def _propagate_deploy_url_from_spec(args: argparse.Namespace) -> None:
+    """Lift --server-url from the runtime spec JSON into the DEPLOY_URL env
+    var so downstream test harnesses (e.g. BaseTest, conftest fixtures) can
+    target the same inference server as the rest of the workflow. No-op when
+    no spec JSON was provided or it lacks server_url.
+    """
+    spec_path = getattr(args, "runtime_model_spec_json", None)
+    if not spec_path:
+        return
+    try:
+        from workflows.runtime_config import RuntimeConfig
+
+        runtime_config = RuntimeConfig.from_json(spec_path)
+    except Exception as exc:  # corrupt JSON / missing fields shouldn't block tests
+        logger.warning("Could not load runtime config from %s: %s", spec_path, exc)
+        return
+    server_url = getattr(runtime_config, "server_url", None)
+    if server_url:
+        os.environ["DEPLOY_URL"] = server_url
+    if getattr(runtime_config, "service_port", None):
+        os.environ.setdefault("SERVICE_PORT", str(runtime_config.service_port))
+
+
 def main() -> int:
     """CLI entry point."""
     _configure_logging()
     args = parse_args()
+    _propagate_deploy_url_from_spec(args)
     return TestFrameworkRunner(args).run()
 
 

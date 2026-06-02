@@ -37,6 +37,10 @@ generated_modules
 *_params.pt
 *.json
 *.jsonl
+# Curated assets shipped with the v2 prefix-cache benchmark need to escape the
+# wildcards above so CI runs can use them out of the box.
+!tt-inference-server-v2/llm_module/prefix_cache/manifest.json
+!tt-inference-server-v2/llm_module/prefix_cache/sample_traces/*.jsonl
 *.pt
 *.tti
 *.txt
@@ -54,13 +58,19 @@ scripts/examples/example_data
 # unignore
 !**/CMakeLists.txt
 !requirements*.txt
+!requirements/*.txt
+!**/uv-overrides.txt
+!**/tsan_suppressions.txt
 !workflows/model_performance_reference.json
 !server_tests/test_config.json
 !server_tests/server_tests_config.json
 !server_tests/test_suites/*.json
 !benchmarking/benchmark_targets/*.json
+!tt-inference-server-v2/test_module/_test_common/targets/*.json
 !release_model_spec.json
 !tt-media-server/static/demos/images.json
+!tt-media-server/cpp_server/scripts/ci/vllm_thresholds.json
+!tt-media-server/monitoring/grafana/**/*.json
 .github/workflows/*.json
 
 venv*/**
@@ -77,3 +87,4 @@ server_tests/datasets/*
 model_spec.json
 # deprecated
 default_model_spec.json
+tt-inference-server-v2/run_inf_server_v2.py

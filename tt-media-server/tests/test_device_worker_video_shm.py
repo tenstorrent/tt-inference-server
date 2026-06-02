@@ -50,9 +50,12 @@ class MockVideoGenerateRequest:
 
 
 def _touch_mp4_file() -> str:
-    """Create an empty file; simulates coordinator output (mp4 path in SHM)."""
+    """Create a valid-sized file; simulates coordinator output (mp4 path in SHM)."""
     fd, path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_test_")
-    os.close(fd)
+    # SPRunner now validates file size (minimum 0.5 MB), so write enough data
+    MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(b"\x00" * MIN_VIDEO_SIZE_BYTES)
     return path
 
 
@@ -89,6 +92,29 @@ def _install_shm_factory(MockVideoShm):
     return mock_input, mock_output
 
 
+def _read_response_side_effect(*responses):
+    """Return each ``VideoResponse`` once, then ``None`` forever.
+
+    The output drainer polls ``read_response`` in a loop. A static
+    ``return_value`` would be delivered repeatedly; after the future is
+    resolved, SPRunner treats the duplicate as stale and unlinks ``file_path``.
+    """
+    pending = list(responses)
+
+    def _read(timeout_s=None):
+        if pending:
+            return pending.pop(0)
+        return None
+
+    return _read
+
+
+@pytest.fixture
+def disableWarmupPing(monkeypatch):
+    """Default-off: warmup is a no-op unless SP_REQUIRE_WARMUP_PING is set."""
+    monkeypatch.delenv("SP_REQUIRE_WARMUP_PING", raising=False)
+
+
 class TestSPRunnerRequestConversion:
     """Test that SPRunner.run() correctly converts requests and sends to SHM."""
 
@@ -97,8 +123,8 @@ class TestSPRunnerRequestConversion:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         file_path = _touch_mp4_file()
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -122,8 +148,8 @@ class TestSPRunnerRequestConversion:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         file_path = _touch_mp4_file()
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -139,8 +165,8 @@ class TestSPRunnerRequestConversion:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         file_path = _touch_mp4_file()
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -158,8 +184,8 @@ class TestSPRunnerResponseHandling:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         file_path = _touch_mp4_file()
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -175,8 +201,8 @@ class TestSPRunnerResponseHandling:
     def test_error_response_raises(self, MockVideoShm):
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.ERROR, "", "inference failed"
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.ERROR, "", "inference failed")
         )
 
         runner = SPRunner("dev0")
@@ -217,55 +243,36 @@ class TestSPRunnerLifecycle:
         assert runner.load_weights() is True
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_warmup_runs_real_inference(self, MockVideoShm):
-        """Test that warmup is now a no-op (warm start)"""
+    def test_warmup_runs_real_inference(self, MockVideoShm, disableWarmupPing):
+        """With SP_REQUIRE_WARMUP_PING off, warmup is a no-op (warm start)."""
         import asyncio
 
-        mock_input = MagicMock()
-        mock_output = MagicMock()
-
-        def mock_video_shm_factory(*args, **kwargs):
-            if kwargs.get("mode") == "input":
-                return mock_input
-            return mock_output
-
-        MockVideoShm.side_effect = mock_video_shm_factory
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         runner = SPRunner("dev0")
         runner.set_device()
 
-        # set_device drains stale responses at startup; reset before the assert
-        # so we can prove warmup itself doesn't touch either ring.
         mock_input.reset_mock()
         mock_output.reset_mock()
 
-        result = asyncio.get_event_loop().run_until_complete(runner.warmup())
+        result = asyncio.run(runner.warmup())
         assert result is True
-
-        # Warmup is now a no-op (warm start), so it should NOT write any request
         mock_input.write_request.assert_not_called()
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_warmup_timeout_surfaces_as_request_timeout(self, MockVideoShm):
-        """Test that warmup no longer performs inference, so no timeout occurs"""
+    def test_warmup_timeout_surfaces_as_request_timeout(
+        self, MockVideoShm, disableWarmupPing
+    ):
+        """With ping disabled, warmup does not block on read_response."""
         import asyncio
 
-        mock_input = MagicMock()
-        mock_output = MagicMock()
-
-        def mock_video_shm_factory(*args, **kwargs):
-            if kwargs.get("mode") == "input":
-                return mock_input
-            return mock_output
-
-        MockVideoShm.side_effect = mock_video_shm_factory
-        mock_output.read_response.return_value = None
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_output.read_response.side_effect = lambda timeout_s=None: None
 
         runner = SPRunner("dev0")
         runner.set_device()
 
-        # Warmup is now a no-op and should succeed without raising TimeoutError
-        result = asyncio.get_event_loop().run_until_complete(runner.warmup())
+        result = asyncio.run(runner.warmup())
         assert result is True
         mock_input.write_request.assert_not_called()
 
@@ -293,8 +300,8 @@ class TestSPRunnerFileCleanup:
         file_path = _touch_mp4_file()
         assert os.path.exists(file_path)
 
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -309,11 +316,13 @@ class TestSPRunnerFileCleanup:
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
 
         fd, file_path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_corrupt_")
+        # Write enough data to pass size validation, but content is invalid MP4
+        MIN_VIDEO_SIZE_BYTES = 512 * 1024  # 0.5 MB
         with os.fdopen(fd, "wb") as fh:
-            fh.write(b"not-a-valid-mp4")
+            fh.write(b"not-a-valid-mp4" * (MIN_VIDEO_SIZE_BYTES // 15 + 1))
 
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, file_path, ""
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
         )
 
         runner = SPRunner("dev0")
@@ -332,8 +341,8 @@ class TestSPRunnerFileCleanup:
         with os.fdopen(fd, "wb") as fh:
             fh.write(b"partial")
 
-        mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.ERROR, file_path, "pipeline error"
+        mock_output.read_response.side_effect = _read_response_side_effect(
+            VideoResponse("tid", VideoStatus.ERROR, file_path, "pipeline error")
         )
 
         runner = SPRunner("dev0")

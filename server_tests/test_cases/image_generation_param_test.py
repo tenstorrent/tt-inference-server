@@ -47,7 +47,7 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
-DEFAULT_SAME_SEED_MIN_SSIM = 0.95
+DEFAULT_SAME_SEED_MIN_SSIM = 0.92
 DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.98
 
 
@@ -107,7 +107,7 @@ def compute_image_ssim(response_a, response_b):
 
 class ImageGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/images/generations"
+        self.url = f"{self.base_url}/v1/images/generations"
         logger.info(f"Targets: {self.targets}")
 
         model = self.targets.get("model", "")

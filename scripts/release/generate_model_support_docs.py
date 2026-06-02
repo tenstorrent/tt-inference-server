@@ -32,7 +32,6 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workflows.model_spec import (
-    VERSION,
     ModelSpecTemplate,
     generate_default_docker_link,
     model_weights_to_model_name,
@@ -82,6 +81,7 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
+    DeviceTypes.P300X2: "https://tenstorrent.com/hardware/tt-quietbox",
     DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
     DeviceTypes.BLACKHOLE_GALAXY: "https://tenstorrent.com/hardware/galaxy",
 }
@@ -116,6 +116,7 @@ DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     ),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
+    DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
@@ -575,6 +576,7 @@ def generate_model_page_group_page(
                         target_template.version,
                         target_template.tt_metal_commit,
                         target_template.vllm_commit,
+                        inference_engine=target_template.inference_engine,
                         multihost=is_multihost,
                     )
                 )
@@ -618,9 +620,10 @@ def generate_model_page_group_page(
             docker_image = target_template.docker_image
         else:
             docker_image = generate_default_docker_link(
-                VERSION,
+                target_template.version,
                 target_template.tt_metal_commit,
                 target_template.vllm_commit,
+                inference_engine=target_template.inference_engine,
                 multihost=device.is_multihost(),
             )
 
@@ -918,7 +921,9 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         for model_name, status_enum, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
-            filename = get_model_device_filename(model_name, device)
+            filename = get_model_page_group_filename(
+                model_name, DEVICE_HARDWARE_PAGE_GROUPS_MAPPING[device]
+            )
 
             model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name

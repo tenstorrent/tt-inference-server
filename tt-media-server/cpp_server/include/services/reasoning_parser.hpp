@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -15,15 +14,6 @@ namespace tt::services {
 enum class ContentType {
   REASONING,  // Inside <think>...</think> block
   ANSWER      // Outside reasoning block (normal content)
-};
-
-// Result of parsing complete text for reasoning blocks
-struct ReasoningParseResult {
-  std::optional<std::string> reasoning;  // Reasoning content (inside <think>)
-  std::string answer;                    // Answer content (outside <think>)
-  bool has_reasoning;                    // Whether reasoning was found
-  bool
-      is_malformed;  // Whether reasoning block is incomplete (missing </think>)
 };
 
 // Result of processing a single token
@@ -51,27 +41,12 @@ struct TaskState {
  */
 class ReasoningParser {
  public:
-  // Token IDs for DeepSeek R1 reasoning markers
-  static constexpr int64_t THINK_START_TOKEN = 128798;  // <think>
-  static constexpr int64_t THINK_END_TOKEN = 128799;    // </think>
-  static constexpr int64_t NEWLINE_TOKEN = 201;         // \n
-
-  // String markers for text-based parsing
-  static constexpr const char* THINK_START_TAG = "<think>";
-  static constexpr const char* THINK_END_TAG = "</think>";
-
-  ReasoningParser() = default;
+  ReasoningParser();
   ~ReasoningParser() = default;
 
   // Non-copyable
   ReasoningParser(const ReasoningParser&) = delete;
   ReasoningParser& operator=(const ReasoningParser&) = delete;
-
-  /**
-   * Parse complete text to extract reasoning and answer.
-   * Used for non-streaming requests.
-   */
-  ReasoningParseResult parseComplete(const std::string& text) const;
 
   /**
    * Initialize streaming state for a task.
@@ -108,6 +83,10 @@ class ReasoningParser {
   size_t activeTaskCount() const;
 
  private:
+  int64_t thinkStartToken_;
+  int64_t thinkEndToken_;
+  bool thinkTokensEnabled_;
+
   mutable std::mutex mutex_;
   std::unordered_map<uint32_t, TaskState> task_states_;
 };

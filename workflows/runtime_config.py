@@ -44,6 +44,7 @@ class RuntimeConfig:
     interactive: bool = False
     service_port: str = "8000"
     bind_host: str = "0.0.0.0"
+    server_url: Optional[str] = None
 
     # Dev / override
     dev_mode: bool = False
@@ -64,6 +65,7 @@ class RuntimeConfig:
     preprocessing: Optional[str] = None
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
+    eval_samples: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
     # Device configuration
@@ -112,6 +114,7 @@ class RuntimeConfig:
             interactive=args.interactive,
             service_port=args.service_port,
             bind_host=args.bind_host,
+            server_url=args.server_url,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
             print_docker_cmd=args.print_docker_cmd,
@@ -128,6 +131,7 @@ class RuntimeConfig:
             preprocessing=args.preprocessing,
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
+            eval_samples=args.eval_samples,
             sdxl_num_prompts=args.sdxl_num_prompts,
             device_id=args.device_id,
             host_volume=args.host_volume,

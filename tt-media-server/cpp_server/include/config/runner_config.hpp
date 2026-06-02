@@ -5,40 +5,53 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <variant>
 #include <vector>
 
+#include "config/defaults.hpp"
 #include "config/types.hpp"
 
 namespace tt::config {
 
-/**
- * Configuration for LLM inference engine.
- * Includes model runner settings, scheduling policy, and KV cache parameters.
- */
-struct LLMConfig {
-  static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
-  size_t max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
+struct RunnerConfigBase {
+  ModelRunnerType runner_type = ModelRunnerType::MOCK;
+};
+
+/** Shared fields for media runners (image, audio, video). Mirrors the
+ *  device/weight knobs from tt-media-server's `config/settings.py`. */
+struct MediaRunnerConfigBase : RunnerConfigBase {
+  size_t worker_id = 0;
+  size_t max_batch_size = 1;
+  // 2-D {rows, cols}. rows > 1 enables tensor parallelism.
+  std::vector<size_t> device_mesh_shape{1, 1};
+  bool is_galaxy = false;
+  // Empty = use the HF Hub default repo for the active runner.
+  std::string model_weights_path;
+  unsigned weights_distribution_timeout_seconds = 1800;
+  std::string visible_devices;
+};
+
+struct LLMConfig : RunnerConfigBase {
+  size_t max_num_batched_tokens = 64 * defaults::MAX_CONTEXT_LENGTH;
   size_t max_in_flight_count = 64;
   std::vector<int64_t> stop_token_ids;  // Set by tt::config::llmEngineConfig()
                                         // from active tokenizer strategy
   int eos = 1;
   size_t kvcache_block_size = 256;
   size_t num_kvcache_blocks = 512;
-  ModelRunnerType runner_type = ModelRunnerType::MOCK;
   SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 
-/**
- * Configuration for embedding service.
- * Currently a placeholder - will be expanded as embedding features are added.
- */
-struct EmbeddingConfig {};
+struct EmbeddingConfig : RunnerConfigBase {};
 
-/**
- * Variant wrapper for all runner configuration types.
- * Allows generic handling of different service configurations.
- */
-using RunnerConfig = std::variant<LLMConfig, EmbeddingConfig>;
+struct ImageConfig : MediaRunnerConfigBase {
+  ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }
+
+  size_t image_width = 1024;
+  size_t image_height = 1024;
+};
+
+using RunnerConfig = std::variant<LLMConfig, EmbeddingConfig, ImageConfig>;
 
 }  // namespace tt::config

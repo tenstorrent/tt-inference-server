@@ -4,13 +4,14 @@ Comprehensive guide to performance benchmarking tools integrated with tt-inferen
 
 ## Overview
 
-tt-inference-server supports three benchmarking tools for measuring LLM inference performance on Tenstorrent accelerators:
+tt-inference-server supports four benchmarking tools for measuring LLM inference performance on Tenstorrent accelerators:
 
 | Tool | Source | Installation | Best For |
 |------|--------|--------------|----------|
 | **vLLM** | vLLM project | Docker | Baseline reference |
 | **GenAI-Perf** | NVIDIA Triton SDK | Docker (~10GB) | Official Triton validation |
 | **AIPerf** | NVIDIA ai-dynamo | `pip install` | Detailed percentiles, VLM support |
+| **GuideLLM** | vLLM project | `pip install` | Multi-turn, custom datasets, omni-modal scenarios |
 
 ## Quick Start
 
@@ -25,6 +26,9 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker
 
 # AIPerf
 python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
+
+# GuideLLM
+python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
 ```
 
 ## Tool Comparison
@@ -274,6 +278,56 @@ Separate tables with AIPerf's unique percentile metrics:
 |-----|-----|--------|----------|----------|----------|----------|----------|----------|
 | 128 | 128 | 1 | 93.5 | 91.2 | 112.8 | 40.2 | 39.8 | 48.7 |
 | 128 | 128 | 32 | 2396.5 | 2580.1 | 2729.4 | 44.7 | 43.3 | 62.8 |
+
+---
+
+## Prefix-Caching Benchmarks (v2)
+
+Prefix-caching benchmarks are **not** wired through v1 `run.py`. Use the v2
+orchestrator against an already-running vLLM-compatible server:
+
+```bash
+# CI smoke (~12 runs)
+python tt-inference-server-v2/run.py \
+  --model Llama-3.1-8B-Instruct \
+  --workflow benchmarks \
+  --device gpu \
+  --service-port 8000 \
+  --prefix-cache \
+  --prefix-cache-preset ci \
+  --jwt-secret "$JWT_SECRET"
+
+# Full validation sweep
+python tt-inference-server-v2/run.py \
+  --model Llama-3.1-8B-Instruct \
+  --workflow benchmarks \
+  --device gpu \
+  --service-port 8000 \
+  --prefix-cache
+```
+
+On first use, `run.py` materializes the `V2_PREFIX_CACHE` venv
+(`.workflow_venvs/.venv_v2_prefix_cache`) and re-execs inside it so AIPerf and
+its dependencies are available without manual setup.
+
+### Scenarios
+
+| Scenario | Reuse model | What it answers |
+|----------|-------------|-----------------|
+| `shared_system` | 100% shared system prompt | Best-case prefix-cache uplift |
+| `prefix_pool` | Pool of N prefixes | Realistic chat-style reuse at tunable rates |
+| `multi_turn` | Organic reuse via re-sent chat history | Multi-turn chatting scenario |
+| `mooncake_trace` | Mooncake JSONL trace + AIPerf synthesis multipliers | Production-realistic patterns |
+| `baseline` | Zero shared prefix (control) | Reference for measuring uplift |
+
+Scenarios and per-preset grids are defined in
+`tt-inference-server-v2/llm_module/prefix_cache/manifest.json`. Override with
+`--prefix-cache-scenarios-json`, subset with `--prefix-cache-scenarios`, and
+point `mooncake_trace` at a production trace via `--prefix-cache-trace`.
+
+See [tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
+for flags, report layout, and TT hardware notes (prefix caching may be disabled
+in `tt-vllm-plugin` until lifted).
 
 ---
 

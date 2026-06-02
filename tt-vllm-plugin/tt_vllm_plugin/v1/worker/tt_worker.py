@@ -51,7 +51,9 @@ class TTWorker(WorkerBase):
 
         # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = {}
+        self.model_config.override_tt_config = getattr(
+            self.vllm_config, "additional_config", {}
+        ).get("tt", {})
 
         # Whether to use ttnn tracing for model execution
         override_tt_config = self.model_config.override_tt_config

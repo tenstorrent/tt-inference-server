@@ -51,6 +51,14 @@ class Scheduler:
             )
 
         self.error_queue = Queue()
+        # Cancellation channel: when a FastAPI handler is cancelled or errored
+        # out mid-flight (client read-timeout, asyncio.CancelledError, etc.),
+        # base_service.process() pushes the request's task_id here so the worker
+        # can abort the in-flight asyncio task in vLLM and free the slot it was
+        # holding. Without this, the engine continues generating until natural
+        # completion, starving sibling sub-requests waiting on max_num_seqs.
+        # See #3533 (Problem 1).
+        self.cancel_queue = Queue()
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -70,6 +78,20 @@ class Scheduler:
         self.listener_task_ref = None
         self.device_warmup_listener_ref = None
         self.error_queue_listener_ref = None
+
+    def cancel_task(self, task_id: str) -> None:
+        """Signal the worker that the given task_id should be aborted.
+
+        Best-effort and non-blocking: the worker may already have finished the
+        task (in which case the signal is a no-op), or the cancel_queue may be
+        unavailable during shutdown. Either way we don't raise.
+        """
+        if not task_id:
+            return
+        try:
+            self.cancel_queue.put(task_id, block=False)
+        except Exception:
+            pass
 
     def process_request(self, request):
         try:
@@ -188,6 +210,7 @@ class Scheduler:
                 if self.settings.queue_for_multiprocessing
                 == QueueType.MemoryQueue.value
                 else None,
+                self.cancel_queue,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -311,6 +334,15 @@ class Scheduler:
 
                 self.logger.error(f"Error in worker {result_key}: {error}")
 
+                # ``device_worker`` pushes ``(worker_id, -1, error)`` when init
+                # itself fails (see device_workers/device_worker.py). The int
+                # sentinel has no task_id to route to — coerce to str so the
+                # `_chunk_` membership check below doesn't crash with
+                # ``argument of type 'int' is not iterable`` and silently take
+                # the listener down.
+                if not isinstance(result_key, str):
+                    result_key = str(result_key)
+
                 task_id = (
                     result_key.split("_chunk_")[0]
                     if "_chunk_" in result_key
@@ -334,7 +366,14 @@ class Scheduler:
                 if device_id is None:  # Shutdown signal
                     break
 
-                self.logger.info(f"Device {device_id} is warmed up")
+                # "Worker reported ready" rather than "Device is warmed up":
+                # for SHM-proxy runners (SPRunner) this only confirms the
+                # Python worker side is up — the actual model-bearing peer
+                # may still be loading. The runner is responsible for
+                # delaying this signal until it has positively verified
+                # downstream readiness (see ``SPRunner.warmup`` and
+                # ``SP_REQUIRE_WARMUP_PING``).
+                self.logger.info(f"Worker {device_id} reported ready")
 
                 # Thread-safe device tracking
                 self.worker_info[device_id]["is_ready"] = True
@@ -344,7 +383,8 @@ class Scheduler:
                 if not self.is_ready:
                     self.is_ready = True
                     self.logger.info(
-                        "First device warmed up, starting worker health monitor"
+                        f"First worker ({device_id}) reported ready; "
+                        "starting worker health monitor and flipping /health to 200"
                     )
                     self.monitor_task_ref = asyncio.create_task(
                         self.worker_health_monitor()
@@ -354,7 +394,9 @@ class Scheduler:
                     info["is_ready"] for info in self.worker_info.values()
                 )
                 if all_devices_ready:
-                    self.logger.info("All devices are warmed up and ready")
+                    self.logger.info(
+                        "All workers ready (model readiness gated by per-runner warmup)"
+                    )
 
                 consecutive_errors = 0  # Reset on success
 
@@ -410,12 +452,19 @@ class Scheduler:
 
                 self.error_queue.put((None, None, None), timeout=1.0)
                 self.warmup_signals_queue.put(None, timeout=1.0)
+                # Wake the worker's cancel_listener so it can exit cleanly.
+                self.cancel_queue.put(None, timeout=1.0)
             except Exception:
                 self.logger.warning("Timeout sending shutdown signals to listeners")
 
             # Close all worker queues
             self._close_queues(
-                [self.task_queue, self.warmup_signals_queue, self.error_queue]
+                [
+                    self.task_queue,
+                    self.warmup_signals_queue,
+                    self.error_queue,
+                    self.cancel_queue,
+                ]
                 + list(self.result_queues_by_worker.values())
             )
 

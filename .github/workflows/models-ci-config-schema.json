@@ -6,7 +6,7 @@
   "$defs": {
     "device_names": {
       "type": "string",
-      "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY", "QUAD_GALAXY"]
+      "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY", "QUAD_GALAXY"]
     },
     "device_arg_entry": {
       "type": "object",
@@ -53,6 +53,7 @@
             "GALAXY":  { "$ref": "#/$defs/device_arg_entry" },
             "GALAXY_BH": { "$ref": "#/$defs/device_arg_entry" },
             "P100":    { "$ref": "#/$defs/device_arg_entry" },
+            "P150":    { "$ref": "#/$defs/device_arg_entry" },
             "P150X4":  { "$ref": "#/$defs/device_arg_entry" },
             "P150X8":  { "$ref": "#/$defs/device_arg_entry" },
             "P300X2":  { "$ref": "#/$defs/device_arg_entry" },
@@ -71,35 +72,86 @@
       "description": "Dictionary of model configurations",
       "patternProperties": {
         ".*": {
-          "type": "object",
-          "properties": {
-            "inference_engine": {
-              "type": "string",
-              "enum": ["vLLM", "MEDIA", "FORGE"],
-              "description": "The inference engine to use for this model"
-            },
-            "ci": {
+          "oneOf": [
+            {
               "type": "object",
-              "description": "CI configuration for different schedules. Must contain at least one schedule.",
+              "description": "Single-engine model configuration",
               "properties": {
-                "nightly": {
-                  "$ref": "#/$defs/schedule_config"
+                "inference_engine": {
+                  "type": "string",
+                  "enum": ["vLLM", "MEDIA", "FORGE"],
+                  "description": "The inference engine to use for this model"
                 },
-                "weekly": {
-                  "$ref": "#/$defs/schedule_config"
-                },
-                "bi_weekly": {
-                  "$ref": "#/$defs/schedule_config"
-                },
-                "release": {
-                  "$ref": "#/$defs/schedule_config"
+                "ci": {
+                  "type": "object",
+                  "description": "CI configuration for different schedules. Must contain at least one schedule.",
+                  "properties": {
+                    "nightly": {
+                      "$ref": "#/$defs/schedule_config"
+                    },
+                    "weekly": {
+                      "$ref": "#/$defs/schedule_config"
+                    },
+                    "bi_weekly": {
+                      "$ref": "#/$defs/schedule_config"
+                    },
+                    "release": {
+                      "$ref": "#/$defs/schedule_config"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "minProperties": 1
                 }
               },
-              "additionalProperties": false,
-              "minProperties": 1
+              "required": ["inference_engine", "ci"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Multi-engine model configuration with independent CI schedules per implementation",
+              "properties": {
+                "implementations": {
+                  "type": "array",
+                  "description": "List of inference engine implementations for this model, each with its own CI schedule",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "inference_engine": {
+                        "type": "string",
+                        "enum": ["vLLM", "MEDIA", "FORGE"],
+                        "description": "The inference engine for this implementation"
+                      },
+                      "ci": {
+                        "type": "object",
+                        "description": "CI configuration for different schedules. Must contain at least one schedule.",
+                        "properties": {
+                          "nightly": {
+                            "$ref": "#/$defs/schedule_config"
+                          },
+                          "weekly": {
+                            "$ref": "#/$defs/schedule_config"
+                          },
+                          "bi_weekly": {
+                            "$ref": "#/$defs/schedule_config"
+                          },
+                          "release": {
+                            "$ref": "#/$defs/schedule_config"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "minProperties": 1
+                      }
+                    },
+                    "required": ["inference_engine", "ci"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["implementations"],
+              "additionalProperties": false
             }
-          },
-          "required": ["inference_engine", "ci"]
+          ]
         }
       }
     }

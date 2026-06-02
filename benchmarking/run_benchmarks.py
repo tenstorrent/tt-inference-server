@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -28,6 +29,7 @@ if project_root not in sys.path:
 
 from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
+    BenchmarkConfig,
     expand_concurrency_sweep_params,
     powers_of_two_up_to,
     select_smoke_test_benchmark_config,
@@ -43,12 +45,15 @@ from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
 from workflows.workflow_types import (
+    BenchmarkTaskType,
     DeviceTypes,
     EvalLimitMode,
     InferenceEngine,
     ModelType,
 )
-from workflows.workflow_venvs import VENV_CONFIGS
+
+from workflows.workflow_venvs import VENV_CONFIGS, STRUCTURED_OUTPUT_SCRIPT_NAME
+
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +136,20 @@ def parse_args():
     return ret_args
 
 
+def _resolve_host_port(deploy_url: str, service_port) -> tuple[str, str]:
+    """Split a deploy URL into ``(host, port)`` for ``--host``/``--port`` args.
+
+    When ``deploy_url`` carries an explicit port (e.g. ``http://host:9000``) that
+    port wins over ``service_port`` so callers can't end up with mismatched
+    ``--host host --port <service_port>`` against a server that's actually
+    listening on a different port.
+    """
+    parsed = urlparse(deploy_url.rstrip("/"))
+    host = parsed.hostname or "localhost"
+    port = str(parsed.port) if parsed.port is not None else str(service_port)
+    return host, port
+
+
 def build_benchmark_command(
     task,
     benchmark_script,
@@ -139,6 +158,7 @@ def build_benchmark_command(
     service_port,
     benchmark_config,
     model_spec,
+    deploy_url: str = "http://127.0.0.1",
 ):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     isl = params.isl
@@ -163,6 +183,8 @@ def build_benchmark_command(
     dataset_name = "random-mm" if params.task_type == "vlm" else "random"
     backend = "openai-chat"
 
+    host, port = _resolve_host_port(deploy_url, service_port)
+
     # fmt: off
     cmd = [
         str(benchmark_script),
@@ -170,9 +192,9 @@ def build_benchmark_command(
         "serve",
         "--backend", backend,
         "--endpoint", "/v1/chat/completions",
-        "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
         "--model", model_spec.hf_model_repo,
-        "--port", str(service_port),
+        "--host", host,
+        "--port", port,
         "--dataset-name", dataset_name,
         "--max-concurrency", str(max_concurrency),
         "--num-prompts", str(num_prompts),
@@ -184,6 +206,13 @@ def build_benchmark_command(
         "--result-filename", str(result_filename),
     ]
 
+    # only truncate prompts for text-only tasks; VLMs interleave vision tokens
+    # in the prompt and truncation can drop them, causing 400s at the preprocessor
+    if params.task_type == "text":
+        cmd.extend([
+            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+        ])
+
     if params.task_type == "vlm":
         if params.image_height and params.image_width:
             cmd.extend([
@@ -193,6 +222,73 @@ def build_benchmark_command(
             ])
     # fmt: on
     return cmd
+
+
+def build_structured_output_command(
+    venv_python,
+    structured_output_script,
+    params,
+    output_path,
+    service_port,
+    model_spec,
+    deploy_url: str = "http://127.0.0.1",
+):
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    ratio_tag = (
+        "no-so"
+        if params.structured_output_ratio is None
+        else f"so-{params.structured_output_ratio}"
+    )
+    result_filepath = (
+        Path(output_path)
+        / f"benchmark_structured_{model_spec.model_id}_{run_timestamp}"
+        f"_dataset-{params.structured_dataset}_{ratio_tag}"
+        f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
+    )
+
+    host, port = _resolve_host_port(deploy_url, service_port)
+
+    # fmt: off
+    cmd = [
+        str(venv_python),
+        str(structured_output_script),
+        "--backend", "vllm",
+        "--host", host,
+        "--port", port,
+        "--model", model_spec.hf_model_repo,
+        "--dataset", params.structured_dataset,
+        "--max-concurrency", str(params.max_concurrency),
+        "--num-prompts", str(params.num_prompts),
+        "--output-len", str(params.osl),
+        "--request-rate", "inf",
+        "--percentile-metrics", "ttft,tpot,itl,e2el",
+        "--save-results",
+        "--result-dir", str(output_path),
+        "--result-filename", result_filepath.name,
+    ]
+    if params.structured_output_ratio is None:
+        cmd.append("--no-structured-output")
+    else:
+        cmd.extend(["--structured-output-ratio", str(params.structured_output_ratio)])
+    # fmt: on
+    return cmd, result_filepath
+
+
+def annotate_structured_output_result(result_filepath):
+    """Tag a structured-output result JSON in place so downstream readers can
+    distinguish it from regular `vllm bench serve` outputs."""
+    if not result_filepath.exists():
+        logger.warning("Structured-output result JSON not found: %s", result_filepath)
+        return
+    try:
+        with open(result_filepath, "r+") as f:
+            data = json.load(f)
+            data["benchmark_kind"] = "structured_output"
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, indent=2)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not annotate %s: %s", result_filepath, exc)
 
 
 def main():
@@ -209,6 +305,12 @@ def main():
     device_str = runtime_config.device
     service_port = runtime_config.service_port
     disable_trace_capture = runtime_config.disable_trace_capture
+    # Mirror EnvironmentConfig's default (os.environ.get("DEPLOY_URL",
+    # "http://127.0.0.1")) so the genai-perf path (which runs before
+    # env_config is constructed) sees the same value used later.
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
+    )
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
@@ -254,6 +356,7 @@ def main():
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -288,6 +391,20 @@ def main():
         benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
         logger.info("Smoke-test mode enabled; selected smoke-test benchmark config.")
 
+    if os.getenv("ONLY_STRUCTURED_OUTPUT_BENCHMARKS"):
+        benchmark_config = BenchmarkConfig(
+            model_id=benchmark_config.model_id,
+            tasks=[
+                t
+                for t in benchmark_config.tasks
+                if t.task_type
+                == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+            ],
+        )
+        logger.info(
+            "ONLY_STRUCTURED_OUTPUT_BENCHMARKS set; running structured-output tasks only."
+        )
+
     concurrency_sweeps = args.concurrency_sweeps or runtime_config.concurrency_sweeps
     if smoke_test_mode and concurrency_sweeps:
         logger.info("Ignoring concurrency sweeps in smoke-test mode.")
@@ -320,7 +437,12 @@ def main():
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
         return_code = run_benchmarks(
-            all_params, model_spec, device, args.output_path, service_port
+            all_params,
+            model_spec,
+            device,
+            args.output_path,
+            service_port,
+            deploy_url=deploy_url,
         )
         return return_code
 
@@ -351,6 +473,7 @@ def main():
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -358,7 +481,7 @@ def main():
         runtime_config=runtime_config,
     )
     logger.info(
-        "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+        "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
         prompt_client.cache_monitor.get_tensor_cache_timeout(),
     )
     if not prompt_client.wait_for_healthy():
@@ -372,16 +495,24 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
+        is_structured_output_task = (
+            task.task_type == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+        )
         benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
-            context_lens = [(params.isl, params.osl) for params in params_list]
-            # de-dupe
-            context_lens_set = set(context_lens)
+            # Structured-output params have no isl, so they don't participate in
+            # trace capture. The structured-output script generates its own
+            # prompt shapes from the chosen dataset.
+            context_lens_set = {
+                (params.isl, params.osl)
+                for params in params_list
+                if params.isl is not None and params.osl is not None
+            }
             context_lens_set.difference_update(captured_traces)
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
-            if not disable_trace_capture:
+            if not disable_trace_capture and sorted_context_lens_set:
                 if "image" in model_spec.supported_modalities:
                     prompt_client.capture_traces(
                         context_lens=list(sorted_context_lens_set),
@@ -408,17 +539,47 @@ def main():
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
-                cmd = build_benchmark_command(
-                    task,
-                    benchmark_script,
-                    params=params,
-                    output_path=args.output_path,
-                    service_port=service_port,
-                    benchmark_config=benchmark_config,
-                    model_spec=model_spec,
-                )
+                structured_output_result_filepath = None
+                if is_structured_output_task:
+                    structured_output_script = (
+                        venv_config.venv_path
+                        / "work_dir"
+                        / STRUCTURED_OUTPUT_SCRIPT_NAME
+                    )
+                    if not structured_output_script.exists():
+                        logger.error(
+                            "⛔️ Structured-output benchmark script not found at "
+                            f"{structured_output_script}. Re-run with --reset-venvs "
+                            "or rerun fetch_structured_output_scripts to fetch it."
+                        )
+                        return_codes.append(1)
+                        continue
+                    cmd, structured_output_result_filepath = (
+                        build_structured_output_command(
+                            venv_python=venv_config.venv_python,
+                            structured_output_script=structured_output_script,
+                            params=params,
+                            output_path=args.output_path,
+                            service_port=service_port,
+                            model_spec=model_spec,
+                            deploy_url=deploy_url,
+                        )
+                    )
+                else:
+                    cmd = build_benchmark_command(
+                        task,
+                        benchmark_script,
+                        params=params,
+                        output_path=args.output_path,
+                        service_port=service_port,
+                        benchmark_config=benchmark_config,
+                        model_spec=model_spec,
+                        deploy_url=deploy_url,
+                    )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
+                if return_code == 0 and structured_output_result_filepath is not None:
+                    annotate_structured_output_result(structured_output_result_filepath)
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed benchmarks")
@@ -432,7 +593,9 @@ def main():
     return main_return_code
 
 
-def run_benchmarks(all_params, model_spec, device, output_path, service_port):
+def run_benchmarks(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run benchmarks for the given model and device. Here we are running IMAGE, CNN, AUDIO, VIDEO benchmarks.
     """
@@ -446,6 +609,7 @@ def run_benchmarks(all_params, model_spec, device, output_path, service_port):
         output_path,
         service_port,
         task_type=MediaTaskType.BENCHMARK,
+        deploy_url=deploy_url,
     )
 
 

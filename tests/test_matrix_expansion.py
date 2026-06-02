@@ -468,6 +468,41 @@ class TestVideoMatrixExpansion:
             "model_marker": "wan",
         },
         {
+            "id": "wan-i2v-t3k",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "t3k",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-galaxy",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "galaxy",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p150x4",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p150x4",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p150x8",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p150x8",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
+            "id": "wan-i2v-p300x2",
+            "weights": ["Wan2.2-I2V-A14B-Diffusers"],
+            "device": "p300x2",
+            "num_of_devices": 1,
+            "model_marker": "wan_i2v",
+        },
+        {
             "id": "mochi-p150x4",
             "weights": ["mochi-1-preview"],
             "device": "p150x4",
@@ -511,6 +546,33 @@ class TestVideoMatrixExpansion:
         "wan-p150x8": {"video_generation_target_time": 600, "poll_timeout": 900},
         "wan-p300x2": {"video_generation_target_time": 500, "poll_timeout": 800},
     }
+    WAN_I2V_TARGETS = {
+        "wan-i2v-t3k": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1500,
+            "poll_interval": 5,
+        },
+        "wan-i2v-galaxy": {
+            "num_inference_steps": 40,
+            "poll_timeout": 550,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x4": {
+            "num_inference_steps": 40,
+            "poll_timeout": 1200,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p150x8": {
+            "num_inference_steps": 40,
+            "poll_timeout": 900,
+            "poll_interval": 5,
+        },
+        "wan-i2v-p300x2": {
+            "num_inference_steps": 40,
+            "poll_timeout": 800,
+            "poll_interval": 5,
+        },
+    }
     MOCHI_LOAD_TARGETS = {
         "mochi-p150x4": {
             "video_generation_target_time": 480,
@@ -540,7 +602,7 @@ class TestVideoMatrixExpansion:
 
     def test_video_suite_count(self):
         suites = load_suite_files_by_category("video")
-        assert len(suites) == 10
+        assert len(suites) == 15
 
     def test_video_suite_ids_match(self):
         suites = load_suite_files_by_category("video")
@@ -585,6 +647,28 @@ class TestVideoMatrixExpansion:
 
             param_test = suite["test_cases"][1]
             assert param_test["template"] == "VideoGenerationParamTest"
+            assert "targets" not in param_test
+
+    def test_video_wan_i2v_test_cases(self):
+        suites = load_suite_files_by_category("video")
+        i2v_suites = [s for s in suites if s["model_marker"] == "wan_i2v"]
+
+        assert len(i2v_suites) == len(self.WAN_I2V_TARGETS)
+
+        for suite in i2v_suites:
+            assert len(suite["test_cases"]) == 2, (
+                f"Expected 2 test cases for {suite['id']}"
+            )
+
+            i2v_test = suite["test_cases"][0]
+            assert i2v_test["template"] == "VideoGenerationI2VTest"
+            expected_targets = self.WAN_I2V_TARGETS[suite["id"]]
+            assert i2v_test["targets"] == expected_targets, (
+                f"targets mismatch for {suite['id']}"
+            )
+
+            param_test = suite["test_cases"][1]
+            assert param_test["template"] == "VideoGenerationI2VParamTest"
             assert "targets" not in param_test
 
     def test_video_mochi_test_cases(self):
@@ -794,7 +878,10 @@ class TestEmbeddingMatrixExpansion:
         suite_map = {s["id"]: s for s in suites}
 
         assert suite_map["bge-n150"]["weights"] == ["bge-large-en-v1.5"]
-        assert suite_map["qwen3-emb-8b-t3k"]["weights"] == ["Qwen3-Embedding-8B"]
+        assert suite_map["qwen3-emb-8b-t3k"]["weights"] == [
+            "Qwen3-Embedding-8B",
+            "Qwen3-Embedding-4B",
+        ]
 
 
 class TestTtsMatrixExpansion:
@@ -816,7 +903,7 @@ class TestTtsMatrixExpansion:
             templates = [tc["template"] for tc in suite["test_cases"]]
             assert templates == [
                 "SpeechT5TTSTest",
-                "TestTTSServerHealth",
+                "TTSLoadTest",
                 "TTSParamTest",
                 "TTSIntegrationTest",
             ]
@@ -833,21 +920,13 @@ class TestTtsMatrixExpansion:
 
 
 class TestImageMatrixExpansion:
-    """Validate that the migrated image.json produces the same suites as before."""
+    """Validate image.json expansion.
+
+    SDXL ownership moved to v2; SDXL-specific coverage now lives in
+    tt-inference-server-v2/tests/test_module/test_matrix_expansion.py.
+    """
 
     ORIGINAL_IMAGE_IDS = {
-        "sdxl-n150",
-        "sdxl-t3k",
-        "sdxl-galaxy",
-        "sdxl-n300",
-        "sdxl-p150x8",
-        "sdxl-p300x2",
-        "sdxl-img2img-n150",
-        "sdxl-img2img-t3k",
-        "sdxl-img2img-galaxy",
-        "sdxl-inpaint-n150",
-        "sdxl-inpaint-t3k",
-        "sdxl-inpaint-galaxy",
         "sd35-t3k",
         "sd35-galaxy",
         "flux-dev-t3k",
@@ -871,64 +950,12 @@ class TestImageMatrixExpansion:
 
     def test_image_suite_count(self):
         suites = load_suite_files_by_category("image")
-        assert len(suites) == 31
+        assert len(suites) == 19
 
     def test_image_suite_ids(self):
         suites = load_suite_files_by_category("image")
         ids = {s["id"] for s in suites}
         assert ids == self.ORIGINAL_IMAGE_IDS
-
-    def test_sdxl_full_lora_suites(self):
-        """n150, t3k, galaxy should have 7 test cases including LoRA tests."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["sdxl-n150", "sdxl-t3k", "sdxl-galaxy"]:
-            suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 7, f"{suite_id}: expected 7 test cases"
-            templates = [tc["template"] for tc in suite["test_cases"]]
-            assert "ImageGenerationEvalsTest" in templates
-            assert "ImageGenerationLoraLoadTest" in templates
-
-    def test_sdxl_galaxy_timing_differs(self):
-        """Galaxy should have different LoadTest timing (11/15/25 vs 10/14/23)."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        galaxy = suite_map["sdxl-galaxy"]
-        load_tests = [
-            tc
-            for tc in galaxy["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [11, 15, 25]
-
-        n150 = suite_map["sdxl-n150"]
-        load_tests = [
-            tc
-            for tc in n150["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [10, 14, 23]
-
-    def test_sdxl_reduced_suites(self):
-        """n300, p150x8, p300x2 should have 4 test cases (no LoRA)."""
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["sdxl-n300", "sdxl-p150x8", "sdxl-p300x2"]:
-            suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 4, f"{suite_id}: expected 4 test cases"
-
-    def test_sdxl_reduced_num_devices(self):
-        suites = load_suite_files_by_category("image")
-        suite_map = {s["id"]: s for s in suites}
-
-        assert suite_map["sdxl-n300"]["num_of_devices"] == 1
-        assert suite_map["sdxl-p150x8"]["num_of_devices"] == 4
-        assert suite_map["sdxl-p300x2"]["num_of_devices"] == 2
 
     def test_flux_dev_t3k_timing(self):
         """flux-dev on t3k has unique timing (16/23/36)."""
@@ -1025,7 +1052,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 64
+        assert len(all_suites) == 57
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()
@@ -1044,3 +1071,178 @@ class TestAllSuitesLoad:
                 f"Missing 'model_marker' in suite {suite['id']}"
             )
             assert "test_cases" in suite, f"Missing 'test_cases' in suite {suite['id']}"
+
+
+class TestNumConcurrentRequestsExpansion:
+    """
+    Verify the split between `num_of_devices` (physical chips, consumed by
+    liveness/stability tests) and `num_concurrent_requests` (client-side
+    concurrency, consumed by load tests).
+
+    These assertions guard against regressions introduced by the overloaded
+    `num_of_devices` key reappearing inside load-test `targets`.
+    """
+
+    def _make_filter(self):
+        from server_tests.test_categorization_system.test_filter import TestFilter
+
+        tf = TestFilter.__new__(TestFilter)
+        tf.config = {}
+        tf.model_categories = {}
+        tf.hardware_defaults = {}
+        tf._model_to_category = {}
+        tf.test_templates = {
+            "LoadTest": {
+                "module": "x",
+                "markers": [],
+                "test_config": {},
+            }
+        }
+        return tf
+
+    def _expand(self, suite, test_case):
+        return self._make_filter()._expand_test_case(test_case, suite)
+
+    def test_expand_populates_both_keys_from_suite_num_of_devices(self):
+        suite = {
+            "id": "s1",
+            "device": "t3k",
+            "num_of_devices": 4,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {"template": "LoadTest", "enabled": True}
+        expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_of_devices"] == 4
+        assert expanded["targets"]["num_concurrent_requests"] == 4
+
+    def test_test_case_num_concurrent_requests_overrides_suite_default(self):
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_concurrent_requests": 1},
+        }
+        expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+        # num_of_devices (chip count for stability) stays at the suite default.
+        assert expanded["targets"]["num_of_devices"] == 32
+
+    def test_test_case_num_of_devices_override_mirrors_into_concurrent_requests(
+        self, caplog
+    ):
+        import logging
+
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_of_devices": 1},
+        }
+
+        with caplog.at_level(
+            logging.WARNING,
+            logger="server_tests.test_categorization_system.test_filter",
+        ):
+            expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_of_devices"] == 1
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+
+        deprecation_messages = [
+            r
+            for r in caplog.records
+            if "deprecated alias" in r.getMessage()
+            and "num_of_devices" in r.getMessage()
+        ]
+        assert len(deprecation_messages) == 1
+
+    def test_test_case_explicit_both_keys_keeps_both_overrides(self, caplog):
+        """When a test case sets both keys explicitly, each is honored
+        independently and no deprecation warning is emitted (the user is
+        already on the new key).
+        """
+        import logging
+
+        suite = {
+            "id": "s1",
+            "device": "galaxy",
+            "num_of_devices": 32,
+            "weights": [],
+            "model_marker": "m",
+        }
+        test_case = {
+            "template": "LoadTest",
+            "enabled": True,
+            "targets": {"num_of_devices": 8, "num_concurrent_requests": 1},
+        }
+
+        with caplog.at_level(
+            logging.WARNING,
+            logger="server_tests.test_categorization_system.test_filter",
+        ):
+            expanded = self._expand(suite, test_case)
+
+        assert expanded["targets"]["num_of_devices"] == 8
+        assert expanded["targets"]["num_concurrent_requests"] == 1
+        assert not any("deprecated alias" in r.getMessage() for r in caplog.records)
+
+
+class TestBaseTestConcurrencyResolution:
+    """Precedence for BaseTest._get_num_concurrent_requests."""
+
+    def _make_test(self, targets):
+        from server_tests.base_test import BaseTest
+
+        class _StubTest(BaseTest):
+            async def _run_specific_test_async(self):  # pragma: no cover
+                return {}
+
+        config = {
+            "timeout": 1,
+            "retry_attempts": 0,
+            "retry_delay": 0,
+            "break_on_failure": False,
+        }
+        return _StubTest(config=config, targets=targets)
+
+    def test_prefers_num_concurrent_requests(self):
+        t = self._make_test({"num_concurrent_requests": 7, "num_of_devices": 32})
+        assert t._get_num_concurrent_requests(default=1) == 7
+
+    def test_falls_back_to_num_of_devices(self):
+        t = self._make_test({"num_of_devices": 4})
+        assert t._get_num_concurrent_requests(default=1) == 4
+
+    def test_returns_default_when_neither_present(self):
+        t = self._make_test({})
+        assert t._get_num_concurrent_requests(default=3) == 3
+
+    def test_deprecation_warning_emitted_once(self, caplog):
+        import logging
+
+        t = self._make_test({"num_of_devices": 2})
+        with caplog.at_level(logging.WARNING, logger="server_tests.base_test"):
+            t._get_num_concurrent_requests()
+            t._get_num_concurrent_requests()
+
+        deprecation_messages = [
+            r
+            for r in caplog.records
+            if "num_of_devices is deprecated" in r.getMessage()
+        ]
+        assert len(deprecation_messages) == 1

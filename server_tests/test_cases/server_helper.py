@@ -5,14 +5,29 @@
 import logging
 import os
 import subprocess
-import time
 from pathlib import Path
-from typing import Optional
 
 SERVER_STARTUP_TIMEOUT = 5 * 60  # wait up to 5 minutes for server to start
 SERVER_SHUTDOWN_TIMEOUT = 20
+
+
+def _build_server_base_url() -> str:
+    """Resolve the server base URL from DEPLOY_URL / SERVICE_PORT (set by
+    the workflow runner from --server-url), defaulting to localhost for
+    direct script invocations.
+    """
+    from urllib.parse import urlparse
+
+    deploy_url = os.environ.get("DEPLOY_URL", "http://127.0.0.1").rstrip("/")
+    parsed = urlparse(deploy_url)
+    if parsed.port is not None:
+        return deploy_url
+    port = os.environ.get("SERVICE_PORT", "8000")
+    return f"{deploy_url}:{port}"
+
+
 # Base URL (host:port only) for building v1 API paths in eval tests
-SERVER_BASE_URL = "http://127.0.0.1:8000"
+SERVER_BASE_URL = _build_server_base_url()
 # Full URL to CNN search-image endpoint
 SERVER_DEFAULT_URL = f"{SERVER_BASE_URL}/v1/cnn/search-image"
 DEFAULT_AUTHORIZATION = "your-secret-key"
@@ -97,48 +112,6 @@ def launch_device_server(model_runner: str) -> tuple[subprocess.Popen, Path]:
     """Start the media server in CPU mode for the given model and capture logs."""
 
     return _launch_server(model_runner=model_runner, port=8000, runs_on_cpu=False)
-
-
-def wait_for_server_ready(
-    process: subprocess.Popen,
-    timeout: float = SERVER_STARTUP_TIMEOUT,
-    interval: float = 1.0,
-    log_path: Optional[Path] = None,
-) -> None:
-    """Stream server logs until the ready marker is observed."""
-
-    ready_path = log_path or getattr(process, "_log_path", None)
-    if ready_path is None:
-        raise ValueError("Missing log path for readiness checks.")
-
-    deadline = time.time() + timeout
-    last_pos = 0
-    buffer = ""
-    max_buffer = max(len(READY_LOG_TEXT) * 2, 2048)
-
-    with ready_path.open("r", encoding="utf-8", errors="replace") as log_file:
-        while time.time() < deadline:
-            if process.poll() is not None:
-                log_file.seek(0)
-                snippet = log_file.read()
-                raise RuntimeError(
-                    "Server process exited before becoming ready. Last log output:\n"
-                    + snippet[-2000:]
-                )
-
-            log_file.seek(last_pos)
-            chunk = log_file.read()
-            if chunk:
-                last_pos = log_file.tell()
-                buffer = (buffer + chunk)[-max_buffer:]
-                if READY_LOG_TEXT in buffer:
-                    return
-
-            time.sleep(interval)
-
-    raise TimeoutError(
-        f"Server did not log '{READY_LOG_TEXT}' within {timeout} seconds."
-    )
 
 
 def stop_server(

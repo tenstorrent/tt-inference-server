@@ -3,17 +3,19 @@
 
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/interface/memory_queue.hpp"
 
 namespace tt::services {
-
 class MemoryManager {
  public:
   MemoryManager();
-  virtual ~MemoryManager();
+  MemoryManager(std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue,
+                std::shared_ptr<ipc::IMemoryResultQueue> resultQueue);
+  ~MemoryManager();
 
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
@@ -21,11 +23,13 @@ class MemoryManager {
   MemoryManager& operator=(MemoryManager&&) = delete;
 
   std::optional<domain::ManageMemoryTask> getRequest();
-  virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
 
- protected:
-  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
-  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
+  void replyAllocateSuccess(uint32_t taskId, uint32_t slotId);
+  void replyAllocateFailure(uint32_t taskId);
+
+ private:
+  std::shared_ptr<ipc::IMemoryRequestQueue> requestQueue;
+  std::shared_ptr<ipc::IMemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services

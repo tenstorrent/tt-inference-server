@@ -318,6 +318,79 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
             with pytest.raises(RuntimeError, match="FID score too high"):
                 asyncio.run(strategy._run_image_generation_eval_test())
 
+    @patch(
+        "utils.media_clients.image_client.is_sdxl_num_prompts_enabled", return_value=5
+    )
+    def test_run_image_generation_eval_test_accuracy_failure_returns_result(
+        self, mock_num_prompts
+    ):
+        """Accuracy failure with populated eval_results should return the result
+        (not raise) so the caller can persist a report before failing."""
+        import asyncio
+
+        strategy = self._create_strategy()
+
+        mock_result = {
+            "success": False,
+            "eval_results": {
+                "fid_score": 245.8392,
+                "average_clip": 26.5805,
+                "deviation_clip_score": 3.6637,
+                "accuracy_check": 3,
+            },
+        }
+
+        with patch(
+            "utils.media_clients.image_client.ImageGenerationEvalsTest"
+        ) as MockTest:
+            mock_instance = MagicMock()
+            mock_instance._run_specific_test_async = AsyncMock(return_value=mock_result)
+            MockTest.return_value = mock_instance
+
+            result = asyncio.run(strategy._run_image_generation_eval_test())
+
+        assert result["success"] is False
+        assert result["eval_results"]["fid_score"] == 245.8392
+        assert result["eval_results"]["accuracy_check"] == 3
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("pathlib.Path.mkdir")
+    def test_run_eval_accuracy_failure_writes_report_then_raises(
+        self, mock_mkdir, mock_file
+    ):
+        """When the eval returns success=False with populated eval_results, the
+        report must be written to disk and then a RuntimeError should be raised."""
+        strategy = self._create_strategy()
+
+        eval_result = {
+            "success": False,
+            "eval_results": {
+                "fid_score": 245.8392,
+                "average_clip": 26.5805,
+                "deviation_clip_score": 3.6637,
+                "accuracy_check": 3,
+            },
+        }
+
+        with patch.object(strategy, "get_health", return_value=(True, "tt-flux.1-dev")):
+            with patch("asyncio.run", return_value=eval_result):
+                with pytest.raises(RuntimeError, match="ACCURACY_CHECK"):
+                    strategy.run_eval()
+
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        report_data = json.loads(written_content)
+
+        assert isinstance(report_data, list)
+        assert len(report_data) == 1
+        persisted = report_data[0]
+        assert persisted["fid_score"] == 245.8392
+        assert persisted["average_clip"] == 26.5805
+        assert persisted["deviation_clip_score"] == 3.6637
+        assert persisted["accuracy_check"] == 3
+
 
 class TestImageClientStrategyRunBenchmark(unittest.TestCase):
     """Tests for run_benchmark method."""
@@ -335,7 +408,8 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
     @patch("pathlib.Path.mkdir")
     def test_run_benchmark_success(self, mock_mkdir, mock_file, mock_num_calls):
         strategy = self._create_strategy()
-        # Multiple status entries to verify averaging of TTFT and inference_steps_per_second
+        # Two requests with different elapsed values. Aggregate steps/sec is
+        # 40 steps / 3.0 s ≈ 13.33; the avg-of-rates blend would be 15.0.
         status_list = [
             ImageGenerationTestStatus(
                 status=True,
@@ -382,10 +456,12 @@ class TestImageClientStrategyRunBenchmark(unittest.TestCase):
         benchmarks = report_data["benchmarks"]
         assert benchmarks["num_requests"] == 2
         assert benchmarks["num_inference_steps"] == 20
-        # TTFT: (1.0 + 2.0) / 2 = 1.5
-        assert benchmarks["ttft"] == 1.5
-        # inference_steps_per_second: (20.0 + 10.0) / 2 = 15.0
-        assert benchmarks["inference_steps_per_second"] == 15.0
+        assert benchmarks["latency"] == 1.5
+        assert benchmarks["inference_steps_per_second"] == pytest.approx(40 / 3)
+        assert "throughput_rps" in benchmarks
+        assert "latency_p50" in benchmarks
+        assert "latency_p90" in benchmarks
+        assert "latency_p95" in benchmarks
 
         # Verify metadata
         assert report_data["model"] == "test_model"

@@ -17,7 +17,7 @@ import requests
 from transformers import AutoTokenizer
 
 # Local imports
-from .base_strategy_interface import BaseMediaStrategy
+from .base_strategy_interface import BaseMediaStrategy, PerfCheck
 from .test_status import AudioTestStatus
 
 # Add project root to Python path
@@ -30,7 +30,7 @@ from workflows.utils import (
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.utils_report import get_performance_targets
+from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,17 @@ logger = logging.getLogger(__name__)
 class AudioClientStrategy(BaseMediaStrategy):
     """Strategy for audio models (Whisper, etc.)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        super().__init__(all_params, model_spec, device, output_path, service_port)
+    def __init__(
+        self, all_params, model_spec, device, output_path, service_port, deploy_url=None
+    ):
+        super().__init__(
+            all_params,
+            model_spec,
+            device,
+            output_path,
+            service_port,
+            deploy_url=deploy_url,
+        )
 
         # Initialize tokenizer
         self.tokenizer = None
@@ -54,63 +63,58 @@ class AudioClientStrategy(BaseMediaStrategy):
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
-        status_list = []
-
         logger.info(
             f"Running evals for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info("Health check passed.")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
+            loop_start = time.monotonic()
             status_list = self._run_audio_transcription_benchmark(num_calls)
+            wall_clock_seconds = time.monotonic() - loop_start
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
 
         logger.info("Generating eval report...")
-        benchmark_data = {}
-
-        # Calculate TTFT
+        latency_value = self._calculate_latency(status_list)
         ttft_value = self._calculate_ttft_value(status_list)
-        logger.info(f"Extracted TTFT value: {ttft_value}")
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-        logger.info(f"Extracted RTR value: {rtr_value}")
-
-        # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
-        logger.info(f"Extracted T/S/U value: {tsu_value}")
-
-        benchmark_data["model"] = self.model_spec.model_name
-        benchmark_data["device"] = self.device.name
-        benchmark_data["timestamp"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime()
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
         )
-        benchmark_data["task_type"] = "audio"
-        benchmark_data["task_name"] = self.all_params.tasks[0].task_name
-        benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
-        benchmark_data["published_score"] = self.all_params.tasks[
-            0
-        ].score.published_score
-        benchmark_data["score"] = ttft_value
-        benchmark_data["published_score_ref"] = self.all_params.tasks[
-            0
-        ].score.published_score_ref
-        # For now hardcode accuracy_check to 2
-        benchmark_data["accuracy_check"] = 2
-        benchmark_data["t/s/u"] = tsu_value
-        benchmark_data["rtr"] = rtr_value
+        logger.info(
+            f"Extracted latency={latency_value}, TTFT={ttft_value} "
+            f"(streaming-only), RTR={rtr_value}, T/S/U={tsu_value}"
+        )
+
+        performance_check = self._calculate_performance_check(
+            latency_value, tsu_value, rtr_value
+        )
+
+        # ``score`` is end-to-end latency so streaming-on and -off
+        # runs are comparable; ``ttft`` is only meaningful when
+        # streaming is enabled.
+        benchmark_data = {
+            "model": self.model_spec.model_name,
+            "device": self.device.name.lower(),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "task_type": "asr",  # Automatic Speech Recognition
+            "task_name": self.all_params.tasks[0].task_name,
+            "tolerance": self.all_params.tasks[0].score.tolerance,
+            "published_score": self.all_params.tasks[0].score.published_score,
+            "score": latency_value,
+            "published_score_ref": self.all_params.tasks[0].score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.NA,
+            "performance_check": performance_check,
+            "ttft": ttft_value,
+            "t/s/u": tsu_value,
+            "rtr": rtr_value,
+            "throughput_rps": throughput_rps,
+            **tail,
+        }
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
@@ -129,33 +133,27 @@ class AudioClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
-    def run_benchmark(self, attempt=0) -> list[AudioTestStatus]:
+    def run_benchmark(self) -> list[AudioTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
             f"Running benchmarks for model: {self.model_spec.model_name} on device: {self.device.name}"
         )
         try:
-            health_status, runner_in_use = self.get_health()
-            if health_status:
-                logger.info(f"Health check passed. Runner in use: {runner_in_use}")
-            else:
-                logger.error("Health check failed.")
-                raise
-
-            logger.info(f"Runner in use: {runner_in_use}")
-
-            # Get num_calls from benchmark parameters
+            self.require_health()
             num_calls = get_num_calls(self)
-
-            status_list = []
+            loop_start = time.monotonic()
             status_list = self._run_audio_transcription_benchmark(num_calls)
-
-            return self._generate_report(status_list)
+            wall_clock_seconds = time.monotonic() - loop_start
+            return self._generate_report(status_list, wall_clock_seconds)
         except Exception as e:
             logger.error(f"Benchmark execution encountered an error: {e}")
             raise
 
-    def _generate_report(self, status_list: list[AudioTestStatus]) -> None:
+    def _generate_report(
+        self,
+        status_list: list[AudioTestStatus],
+        wall_clock_seconds: Optional[float] = None,
+    ) -> None:
         logger.info("Generating benchmark report...")
         result_filename = (
             Path(self.output_path)
@@ -164,35 +162,33 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Create directory structure if it doesn't exist
         result_filename.parent.mkdir(parents=True, exist_ok=True)
 
-        # Calculate TTFT
+        latency_value = self._calculate_latency(status_list)
         ttft_value = self._calculate_ttft_value(status_list)
-
-        # Calculate RTR
         rtr_value = self._calculate_rtr_value(status_list)
-
-        # Calculate T/S/U
         tsu_value = self._calculate_tsu_value(status_list)
-
-        # Calculate accuracy check
-        accuracy_check = self._calculate_accuracy_check(
-            ttft_value, tsu_value, rtr_value
+        performance_check = self._calculate_performance_check(
+            latency_value, tsu_value, rtr_value
+        )
+        tail = self._calculate_tail_latencies([s.elapsed for s in status_list])
+        throughput_rps = self._calculate_throughput_rps(
+            len(status_list), wall_clock_seconds
         )
 
-        # Convert AudioTestStatus objects to dictionaries for JSON serialization
         report_data = {
             "benchmarks": {
                 "num_requests": len(status_list),
-                "num_inference_steps": 0,
+                "latency": latency_value,
                 "ttft": ttft_value,
-                "inference_steps_per_second": 0,
                 "t/s/u": tsu_value,
                 "rtr": rtr_value,
-                "accuracy_check": accuracy_check,
+                "throughput_rps": throughput_rps,
+                **tail,
             },
             "model": self.model_spec.model_name,
-            "device": self.device.name,
+            "device": self.device.name.lower(),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "audio",
+            "task_type": "asr",
+            "performance_check": performance_check,
             "streaming_enabled": is_streaming_enabled_for_whisper(self),
             "preprocessing_enabled": is_preprocessing_enabled_for_whisper(self),
         }
@@ -267,8 +263,9 @@ class AudioClientStrategy(BaseMediaStrategy):
             timeout=90,
         )
         elapsed = time.time() - start_time
-        ttft = elapsed
-        tsu = None  # No streaming, so T/U/S is not applicable
+        # Non-streaming endpoint: no first-token timestamp.
+        ttft = None
+        tsu = None
 
         # Calculate RTR (Real-Time Ratio)
         rtr = None
@@ -442,22 +439,30 @@ class AudioClientStrategy(BaseMediaStrategy):
             logger.error(f"Streaming transcription failed: {e}")
             return False, 0.0, None, None, None
 
-    def _calculate_ttft_value(self, status_list: list[AudioTestStatus]) -> float:
-        """Calculate TTFT value based on model type and status list."""
+    def _calculate_latency(self, status_list: list[AudioTestStatus]) -> float:
+        """Mean end-to-end request latency in seconds."""
+        logger.info("Calculating latency")
+
+        if not status_list:
+            return 0
+        return sum(status.elapsed for status in status_list) / len(status_list)
+
+    def _calculate_ttft_value(
+        self, status_list: list[AudioTestStatus]
+    ) -> Optional[float]:
+        """Mean TTFT in seconds; ``None`` when no first-token timing was captured."""
         logger.info("Calculating TTFT value")
 
-        ttft_value = 0
-        if status_list:
-            valid_ttft_values = [
-                status.ttft for status in status_list if status.ttft is not None
-            ]
-            ttft_value = (
-                sum(valid_ttft_values) / len(valid_ttft_values)
-                if valid_ttft_values
-                else 0
-            )
+        if not status_list:
+            return None
 
-        return ttft_value
+        valid_ttft_values = [
+            status.ttft for status in status_list if status.ttft is not None
+        ]
+        if not valid_ttft_values:
+            return None
+
+        return sum(valid_ttft_values) / len(valid_ttft_values)
 
     def _calculate_rtr_value(self, status_list: list[AudioTestStatus]) -> float:
         """Calculate RTR value based on model type and status list."""
@@ -504,89 +509,29 @@ class AudioClientStrategy(BaseMediaStrategy):
         # Fallback to word counting
         return len(text.split())
 
-    def _calculate_accuracy_check(
-        self, ttft_value: float, tsu_value: float, rtr_value: float
-    ):
-        """Calculate accuracy check based on TTFT, RTR, T/S/U targets."""
-        logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
+    def _calculate_performance_check(
+        self,
+        latency_value: Optional[float],
+        tsu_value: Optional[float],
+        rtr_value: Optional[float],
+    ) -> ReportCheckTypes:
+        """Audio perf check: compares latency / T-S-U / RTR vs configured targets.
 
-        # Get performance targets using the shared utility
-        device_str = self.model_spec.cli_args.get("device")
-        targets = get_performance_targets(
-            self.model_spec.model_name,
-            device_str,
-            model_type=self.model_spec.model_type.name,
-        )
+        Targets file stores latency in ms; converted at this boundary so the
+        helper can compare same-unit values.
+        """
+        targets = self.get_performance_targets()
         logger.info(f"Performance targets: {targets}")
-
-        if not targets.ttft_ms:
-            logger.warning("⚠️ No TTFT target found, skipping accuracy check")
-            return 0  # UNDEFINED
-
-        available_metrics = [
-            "TTFT" if targets.ttft_ms else None,
-            "T/S/U" if targets.tput_user and tsu_value else None,
-            "RTR" if targets.rtr and rtr_value else None,
-        ]
-        logger.info(
-            f"Available metrics for validation: {[m for m in available_metrics if m]}"
+        latency_target_s = (
+            targets.ttft_ms / 1000.0 if targets.ttft_ms is not None else None
         )
-
-        # Use measured values passed as parameters (not recalculated)
-        tolerance = (
-            targets.tolerance if targets.tolerance else 0.05
-        )  # Default 5% tolerance
-        logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
-
-        # Check each metric individually and determine overall result
-        checks_passed = 0
-        checks_total = 0
-
-        # Always check TTFT if target is available
-        if targets.ttft_ms is not None:  # pragma: no branch
-            checks_total += 1
-            ttft_threshold = targets.ttft_ms * (1 + tolerance)
-            if ttft_value <= ttft_threshold:
-                logger.info(
-                    f"✅ TTFT PASSED: {ttft_value:.2f}ms <= {ttft_threshold:.2f}ms"
-                )
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ TTFT FAILED: {ttft_value:.2f}ms > {ttft_threshold:.2f}ms"
-                )
-
-        # Only check T/S/U if we have both target and measured value (streaming mode)
-        if targets.tput_user is not None and tsu_value is not None:
-            checks_total += 1
-            tsu_threshold = targets.tput_user * (
-                1 - tolerance
-            )  # For throughput, lower is worse
-            if tsu_value >= tsu_threshold:
-                logger.info(f"✅ T/S/U PASSED: {tsu_value:.2f} >= {tsu_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(
-                    f"❌ T/S/U FAILED: {tsu_value:.2f} < {tsu_threshold:.2f}"
-                )
-
-        # Only check RTR if we have both target and measured value (streaming mode)
-        if targets.rtr is not None and rtr_value is not None:
-            checks_total += 1
-            rtr_threshold = targets.rtr * (1 - tolerance)  # For RTR, lower is worse
-            if rtr_value >= rtr_threshold:
-                logger.info(f"✅ RTR PASSED: {rtr_value:.2f} >= {rtr_threshold:.2f}")
-                checks_passed += 1
-            else:
-                logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
-
-        # Determine overall result
-        if checks_total == 0:  # pragma: no cover
-            logger.warning("No targets available for accuracy check")
-            return 0  # UNDEFINED
-        elif checks_passed == checks_total:
-            logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-            return 2  # PASS
-
-        logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-        return 3  # FAIL
+        return self.calculate_performance_check(
+            checks=[
+                PerfCheck(
+                    "latency", latency_value, latency_target_s, lower_is_better=True
+                ),
+                PerfCheck("T/S/U", tsu_value, targets.tput_user, lower_is_better=False),
+                PerfCheck("RTR", rtr_value, targets.rtr, lower_is_better=False),
+            ],
+            tolerance=targets.tolerance,
+        )
