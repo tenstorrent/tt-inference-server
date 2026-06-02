@@ -8,6 +8,9 @@ import textwrap
 from ruamel.yaml.comments import CommentedSeq
 
 from scripts.release.promote_dev_spec_to_prod import (
+    DEFAULT_CI_CONFIG,
+    DEFAULT_DEV_DIR,
+    DEFAULT_PROD_DIR,
     ReleaseCombo,
     collect_release_combos,
     find_matches,
@@ -378,3 +381,18 @@ def test_main_returns_nonzero_on_unmatched(tmp_path, capsys):
     rc = main(["--ci-config", str(ci), "--dev-dir", str(dev), "--prod-dir", str(prod)])
     assert rc == 1
     assert "ghost-model" in capsys.readouterr().out
+
+
+def test_real_repo_release_combos_all_match_dev():
+    """Every release-marked combo in the real ci-config exists in the dev catalogue."""
+    ci_config = json.loads(DEFAULT_CI_CONFIG.read_text())
+    combos = collect_release_combos(ci_config)
+    assert combos, "expected at least one release combo in the real ci-config"
+    _, unmatched = find_matches(DEFAULT_DEV_DIR, combos)
+    assert unmatched == set(), f"release combos missing from dev: {unmatched}"
+
+
+def test_real_repo_dry_run_against_prod_succeeds(tmp_path):
+    """Dry-run against the real catalogues runs cleanly and writes nothing to repo."""
+    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, DEFAULT_PROD_DIR, dry_run=True)
+    assert report["unmatched"] == set()
