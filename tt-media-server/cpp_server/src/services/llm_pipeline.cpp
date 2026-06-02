@@ -154,7 +154,7 @@ void LLMPipeline::resolveSession(
           "[SessionTimer] taskId={} tryAcquireByPrefixHash_us={} hit={}",
           req->task_id, acquireUs, acquired.has_value());
 
-      if (acquired.has_value()) {
+      if (acquired.has_value() && acquired->sessionFound) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
         TT_LOG_INFO(
             "[LLMPipeline] Prefix cache HIT taskId={} sessionId={} "
