@@ -1960,7 +1960,11 @@ jobs:
 
       - name: Start etcd
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --label "etcd"
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          ss -ltnp '( sport = :2379 or sport = :2380 )' || true
+          pgrep -af etcd || true
           # --data-dir under /tmp so it gets wiped between runs; bind to
           # 127.0.0.1 only — the Dynamo frontend and both cpp_server
           # backends run on this same runner.
@@ -1968,6 +1972,9 @@ jobs:
             --data-dir /tmp/etcd-data \
             --advertise-client-urls=http://127.0.0.1:2379 \
             --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
             > etcd.log 2>&1 &
           echo $! > etcd.pid
           bash cpp_server/scripts/ci/wait_for_command.sh \
@@ -2180,10 +2187,13 @@ jobs:
           for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
             [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
           done
-          # Belt + suspenders: nuke any leftover frontends/backends still bound.
+          # Belt + suspenders: nuke any leftover frontends/backends/etcd still
+          # bound, so a cancelled/timed-out run doesn't leak :2379/:2380 (or the
+          # data-dir lock) into the next job on this persistent runner.
           pkill -f 'dynamo.frontend' 2>/dev/null || true
           pkill -f 'tt_media_server_cpp' 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 8000 --port 8001 --port 8002 --label "Dynamo integration"
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --port 8002 --label "Dynamo integration"
 
       - name: Check benchmark result
         run: |
