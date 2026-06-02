@@ -81,7 +81,7 @@ void DisaggregationService::setupSocketHandlers() {
             // -2 because last token doesnt count, and we need current pos in kv
             // cache.
             request.kv_position_id =
-                static_cast<uint32_t>(message.token_ids.size() - 2);
+                static_cast<uint32_t>(message.token_ids.size() - 1);
             request.prompt.emplace<std::vector<int>>(
                 message.token_ids.end() - 1, message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
@@ -182,10 +182,6 @@ void DisaggregationService::setupSocketHandlers() {
                   prefillResult.token_ids.insert(prefillResult.token_ids.end(),
                                                  message.token_ids.begin(),
                                                  message.token_ids.end());
-                  if (response.choices.back().token_id.has_value()) {
-                    prefillResult.token_ids.push_back(
-                        response.choices.back().token_id.value());
-                  }
                   prefillResult.generated_text = response.choices.back().text;
                 }
 

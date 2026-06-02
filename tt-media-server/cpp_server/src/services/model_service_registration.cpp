@@ -12,7 +12,6 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "ipc/media_payload_ipc.hpp"
-#include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/llm_runner.hpp"
@@ -62,19 +61,6 @@ void registerLLM() {
                             config::ModelRunnerType::MOCK, llmFactory);
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::LLAMA, llmFactory);
-
-  // Disaggregated prefill is independent of ENABLE_BLAZE.
-  runners.registerIpcRunner(
-      config::ModelService::LLM, config::ModelRunnerType::PREFILL,
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-          -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating Blaze Prefill runner");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::BlazePrefillRunner>(llm, resultQueue,
-                                                             taskQueue);
-      });
-
 #ifdef ENABLE_BLAZE
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,

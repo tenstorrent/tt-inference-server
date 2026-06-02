@@ -179,7 +179,7 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
           .service_id = "prefill_service",
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
-      return pl::PrefillMockConfig{};
+      return pl::PrefillMockConfig{.auto_layer_acks = true};
     default:
       throw std::runtime_error("Invalid blaze prefill runner type");
   }
