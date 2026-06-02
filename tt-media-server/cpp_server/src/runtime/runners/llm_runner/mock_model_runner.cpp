@@ -3,9 +3,7 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <mutex>
 #include <thread>
-#include <unordered_map>
 
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
@@ -52,7 +50,8 @@ constexpr MockContentTokens K_DEEPSEEK_CONTENT = {
 //   163606 <think>, 163607 </think>, 130400 "thinking", 220 " ",
 //   12092 "response", 4503 " response". emitThinkStart=false: the chat template
 //   already opens <think> in the prompt, and <think>/</think> are non-special
-//   (detokenize to literal text), so the model emits reasoning content directly.
+//   (detokenize to literal text), so the model emits reasoning content
+//   directly.
 constexpr MockContentTokens K_KIMI_CONTENT = {
     163606, 163607, 130400, 220, 12092, 4503, /*emitThinkStart=*/false};
 
@@ -149,6 +148,7 @@ class MockModelRunner : public IModelRunner {
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
+<<<<<<< Updated upstream
         std::lock_guard<std::mutex> lock(tokenCountMutex);
         uint64_t firstToken;
         if (content.emitThinkStart) {
@@ -162,6 +162,10 @@ class MockModelRunner : public IModelRunner {
           firstToken = static_cast<uint64_t>(content.thinkContent);
         }
         decodeCallback(TokenResult(seq->taskId, pickToken(seq, firstToken)));
+=======
+        decodeCallback(
+            TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
+>>>>>>> Stashed changes
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -172,12 +176,14 @@ class MockModelRunner : public IModelRunner {
     }
   }
 
-  uint64_t pickThinkingToken(Sequence* seq) {
-    size_t generated = 0;
-    {
-      std::lock_guard<std::mutex> lock(tokenCountMutex);
-      generated = tokenCounts[seq->taskId]++;
-    }
+  // Decide the next mock token from the sequence's own completion-token count.
+  // The <think> marker emitted during prefill is the first completion token, so
+  // the think-block content index is numCompletionTokens() - 1. Deriving this
+  // from per-sequence state (rather than a shared taskId->count map) keeps the
+  // decode hot path lock-free, which matters under high concurrency.
+  uint64_t pickThinkingToken(const Sequence* seq) const {
+    const size_t completion = seq->numCompletionTokens();
+    const size_t generated = completion > 0 ? completion - 1 : 0;
     if (generated < K_THINK_TOKENS_COUNT) {
       return static_cast<uint64_t>(generated % 2 == 0 ? content.thinkContent
                                                       : content.whitespace);
@@ -269,9 +275,12 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
+<<<<<<< Updated upstream
   MockContentTokens content;
   std::mutex tokenCountMutex;
   std::unordered_map<uint32_t, size_t> tokenCounts;
+=======
+>>>>>>> Stashed changes
 };
 
 }  // namespace
