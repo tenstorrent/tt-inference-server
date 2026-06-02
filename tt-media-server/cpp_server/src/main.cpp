@@ -353,7 +353,8 @@ int main(int argc, char* argv[]) {
           llmService,
           tt::services::ServiceContainer::instance().sessionManager(),
           tt::services::ServiceContainer::instance().disaggregation(),
-          tt::services::ServiceContainer::instance().socket());
+          tt::services::ServiceContainer::instance().socket(),
+          tt::services::ServiceContainer::instance().migration());
 
       tt::dynamo::DynamoEndpoint::Options opts;
       opts.bind_host = tt::config::dynamoBindHost();

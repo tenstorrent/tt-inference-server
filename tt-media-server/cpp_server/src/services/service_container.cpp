@@ -10,10 +10,12 @@ namespace tt::services {
 void ServiceContainer::initialize(
     std::shared_ptr<sockets::InterServerService> socket,
     std::shared_ptr<DisaggregationService> disaggregation,
-    std::shared_ptr<SessionManager> sessionMgr) {
+    std::shared_ptr<SessionManager> sessionMgr,
+    std::shared_ptr<MigrationService> migration) {
   socket_ = std::move(socket);
   disaggregation_ = std::move(disaggregation);
   sessionManager_ = std::move(sessionMgr);
+  migration_ = std::move(migration);
 }
 
 std::shared_ptr<IService> ServiceContainer::configuredService() const {

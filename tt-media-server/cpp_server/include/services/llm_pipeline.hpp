@@ -20,6 +20,7 @@ class EventLoop;
 namespace tt::services {
 class DisaggregationService;
 class LLMService;
+class MigrationService;
 class SessionManager;
 }  // namespace tt::services
 
@@ -62,7 +63,8 @@ class LLMPipeline {
   LLMPipeline(std::shared_ptr<LLMService> service,
               std::shared_ptr<SessionManager> sessionManager,
               std::shared_ptr<DisaggregationService> disaggregationService,
-              std::shared_ptr<sockets::InterServerService> socketService);
+              std::shared_ptr<sockets::InterServerService> socketService,
+              std::shared_ptr<MigrationService> migrationService = nullptr);
 
   /**
    * Resolve (or create) a session for `req`, populating sessionId / slotId /
@@ -112,6 +114,7 @@ class LLMPipeline {
   std::shared_ptr<SessionManager> sessionManager_;
   std::shared_ptr<DisaggregationService> disaggregationService_;
   std::shared_ptr<sockets::InterServerService> socketService_;
+  std::shared_ptr<MigrationService> migrationService_;
 };
 
 }  // namespace tt::services

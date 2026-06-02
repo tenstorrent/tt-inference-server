@@ -10,6 +10,7 @@
 
 namespace tt::services {
 class DisaggregationService;
+class MigrationService;
 class SessionManager;
 class IService;
 }  // namespace tt::services
@@ -34,7 +35,8 @@ class ServiceContainer {
    *  via `registerService()`. */
   void initialize(std::shared_ptr<sockets::InterServerService> socket,
                   std::shared_ptr<DisaggregationService> disaggregation,
-                  std::shared_ptr<SessionManager> sessionMgr);
+                  std::shared_ptr<SessionManager> sessionMgr,
+                  std::shared_ptr<MigrationService> migration);
 
   std::shared_ptr<IService> configuredService() const;
 
@@ -47,6 +49,7 @@ class ServiceContainer {
   std::shared_ptr<SessionManager> sessionManager() const {
     return sessionManager_;
   }
+  std::shared_ptr<MigrationService> migration() const { return migration_; }
 
   void registerService(config::ModelService key,
                        std::shared_ptr<IService> service);
@@ -61,6 +64,7 @@ class ServiceContainer {
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<DisaggregationService> disaggregation_;
   std::shared_ptr<SessionManager> sessionManager_;
+  std::shared_ptr<MigrationService> migration_;
 };
 
 }  // namespace tt::services

@@ -26,6 +26,7 @@ namespace tt::services {
 using namespace tt::domain::llm;
 
 class LLMService;
+class MigrationService;
 class SessionManager;
 
 class DisaggregationService {
@@ -55,6 +56,10 @@ class DisaggregationService {
     sessionManager = std::move(sm);
   }
 
+  void setMigrationService(std::shared_ptr<MigrationService> ms) {
+    migrationService = std::move(ms);
+  }
+
  private:
   void setupSocketHandlers();
   void applyDeltaPrompt(LLMRequest& req, uint32_t matchedTokens);
@@ -63,6 +68,7 @@ class DisaggregationService {
   std::shared_ptr<LLMService> llmService;
   std::shared_ptr<sockets::InterServerService> socketService;
   std::shared_ptr<SessionManager> sessionManager;
+  std::shared_ptr<MigrationService> migrationService;
   trantor::EventLoopThread eventLoopThread;
   utils::ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
 };

@@ -50,7 +50,8 @@ LLMController::LLMController() {
   }
 
   pipeline = std::make_shared<tt::services::LLMPipeline>(
-      service, c.sessionManager(), c.disaggregation(), c.socket());
+      service, c.sessionManager(), c.disaggregation(), c.socket(),
+      c.migration());
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 

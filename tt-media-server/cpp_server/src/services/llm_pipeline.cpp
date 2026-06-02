@@ -14,6 +14,7 @@
 #include "metrics/metrics.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
+#include "services/migration_service.hpp"
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -26,11 +27,13 @@ LLMPipeline::LLMPipeline(
     std::shared_ptr<LLMService> service,
     std::shared_ptr<SessionManager> sessionManager,
     std::shared_ptr<DisaggregationService> disaggregationService,
-    std::shared_ptr<sockets::InterServerService> socketService)
+    std::shared_ptr<sockets::InterServerService> socketService,
+    std::shared_ptr<MigrationService> migrationService)
     : service_(std::move(service)),
       sessionManager_(std::move(sessionManager)),
       disaggregationService_(std::move(disaggregationService)),
-      socketService_(std::move(socketService)) {}
+      socketService_(std::move(socketService)),
+      migrationService_(std::move(migrationService)) {}
 
 namespace {
 
@@ -216,7 +219,7 @@ void LLMPipeline::resolveSession(
   const auto tCreateStart = std::chrono::steady_clock::now();
   sessionManager_->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
-       mgr = sessionManager_,
+       mgr = sessionManager_, migSvc = migrationService_,
        tCreateStart](const tt::domain::Session& session) mutable {
         const auto createUs =
             std::chrono::duration_cast<std::chrono::microseconds>(
@@ -234,6 +237,13 @@ void LLMPipeline::resolveSession(
 
         req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
+
+        // Dummy migration call (placeholder for real slot copy logic)
+        // if (migSvc && req->slotId.has_value()) {
+        //   migSvc->copyFromSlot(/*sourceSlotId=*/0, *req->slotId,
+        //                        /*numberOfTokens=*/0);
+        // }
+
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
 
         // Initialize token accumulator for end-of-stream hash computation

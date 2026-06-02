@@ -9,6 +9,7 @@
 #include "profiling/tracy.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
+#include "services/migration_service.hpp"
 #include "services/model_service_registration.hpp"
 #include "services/service_registry.hpp"
 #include "services/session_manager.hpp"
@@ -66,13 +67,15 @@ void initializeServices() {
   auto aux = buildAuxiliaryServices(activeService);
 
   auto sessionManager = std::make_shared<services::SessionManager>();
+  auto migrationService = std::make_shared<services::MigrationService>();
 
   if (aux.disaggregation) {
     aux.disaggregation->setSessionManager(sessionManager);
+    aux.disaggregation->setMigrationService(migrationService);
   }
 
   c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
-               std::move(sessionManager));
+               std::move(sessionManager), std::move(migrationService));
 
   if (c.sessionManager()) {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");

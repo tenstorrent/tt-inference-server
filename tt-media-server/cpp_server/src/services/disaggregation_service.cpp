@@ -7,6 +7,7 @@
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/llm_service.hpp"
+#include "services/migration_service.hpp"
 #include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -273,6 +274,14 @@ void DisaggregationService::resolvePrefillSession(
         "sessionId={} slotId={} matchedTokens={}",
         request.task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
+
+    // Dummy migration call (placeholder for real slot copy logic)
+    // if (migrationService) {
+    //   migrationService->copyFromSlot(acquired->slotId,
+    //   /*destinationSlotId=*/0,
+    //                                  acquired->numberOfMatchedTokens);
+    // }
+
     request.prefillSlotId = acquired->slotId;
     applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);

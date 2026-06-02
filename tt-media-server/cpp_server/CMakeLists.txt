@@ -729,6 +729,7 @@ add_executable(main_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/migration_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
@@ -799,6 +800,7 @@ add_executable(tool_calling_integration_test
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_service.cpp
+    src/services/migration_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
@@ -979,6 +981,7 @@ set(SOURCES
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/services/disaggregation_service.cpp
+    src/services/migration_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
     src/sockets/tcp_socket_transport.cpp
