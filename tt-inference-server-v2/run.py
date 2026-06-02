@@ -3,35 +3,32 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Temporary v2 orchestrator - needed for running tests against the inference server.
+"""v2 CLI entry point — drives a workflow against a running inference server.
 
 Usage:
-    python tt-inference-server-v2/run.py \
-        --model stable-diffusion-xl-base-1.0 --workflow benchmarks \
-        --device n150 --service-port 8000
-
     python tt-inference-server-v2/run.py \
         --model stable-diffusion-xl-base-1.0 --workflow release \
         --device n150 --service-port 8000
 
 Prefix-caching benchmark (LLM-only, --workflow benchmarks):
-    python tt-inference-server-v2/run.py \
-        --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
-        --prefix-cache --prefix-cache-preset ci --service-port 8000 \
-        --jwt-secret "$JWT_SECRET"
+    This entry point has no import-time side effects, so it must run inside the
+    dedicated ``V2_PREFIX_CACHE`` venv. Use the thin launcher
+    ``run_prefix_cache.py`` (which selects/creates that venv and re-execs this
+    script) rather than invoking run.py directly:
+
+        python tt-inference-server-v2/run_prefix_cache.py \
+            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --prefix-cache --prefix-cache-preset ci --service-port 8000 \
+            --jwt-secret "$JWT_SECRET"
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
-import json
 import logging
-import os
-import shlex
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import List, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _V2_ROOT = Path(__file__).resolve().parent
@@ -39,11 +36,16 @@ for _p in (_REPO_ROOT, _V2_ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from workflows.model_spec import MODEL_SPECS, get_runtime_model_spec  # noqa: E402
-from workflows.runtime_config import RuntimeConfig  # noqa: E402
+from workflows.model_spec import MODEL_SPECS  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
-logger = logging.getLogger("tt_v2_run")
+from workflow_module import (  # noqa: E402
+    Command,
+    CommandFactory,
+    CommandResult,
+)
+
+logger = logging.getLogger("tt_v2_runner")
 
 _LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
@@ -53,61 +55,32 @@ _LOG_LEVELS = {
 }
 
 
-def _bootstrap_prefix_cache_venv() -> None:
-    """Materialize ``V2_PREFIX_CACHE`` and re-exec inside it for ``--prefix-cache``.
+class WorkflowRunner:
+    """Thin executor of pre-built commands.
 
-    Runs BEFORE the heavy ``test_module`` / ``workflow_module`` imports so
-    a user can invoke ``run.py`` from any Python that has the lightweight
-    ``workflows/*`` deps (no aiohttp / torch / aiperf required); the venv
-    brings in everything the orchestrator and AIPerf subprocess actually need.
-
-    Uses argv-sniffing because ``parse_args()`` cannot run yet — its
-    ``choices=`` lists pull in ``workflow_module`` (heavy). Idempotent: a
-    no-op when ``--prefix-cache`` is absent or we're already inside the
-    venv. argv is preserved verbatim so every other CLI flag survives the
-    ``os.execv``.
+    Iterates the command list, calls ``execute()`` on each, and collects
+    results. Has no knowledge of what any command actually does.
     """
-    if "--prefix-cache" not in sys.argv:
-        return
 
-    from workflows.workflow_types import WorkflowVenvType
-    from workflows.workflow_venvs import VENV_CONFIGS
+    def __init__(self, commands: Sequence[Command]) -> None:
+        self.commands: List[Command] = list(commands)
+        self.results: List[CommandResult] = []
 
-    venv_config = VENV_CONFIGS[WorkflowVenvType.V2_PREFIX_CACHE]
-    venv_python = venv_config.venv_python
-    if Path(sys.executable).resolve() == venv_python.resolve():
-        return
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    logger.info("Ensuring V2_PREFIX_CACHE venv at %s ...", venv_config.venv_path)
-    # V2_PREFIX_CACHE declares only a requirements_file (no setup_function),
-    # so model_spec is unused at runtime — passing None lets the bootstrap
-    # stay independent of the heavy v2 import chain that's installed below.
-    venv_config.setup(model_spec=None)
-
-    logger.info("Re-executing inside V2_PREFIX_CACHE venv: %s", venv_python)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
-
-
-_bootstrap_prefix_cache_venv()
-
-# Heavy v2 orchestrator imports — only reachable when either:
-#   (a) --prefix-cache was not requested, or
-#   (b) we're already running inside the V2_PREFIX_CACHE venv after the
-#       re-exec above.
-from test_module import MediaContext  # noqa: E402
-from workflow_module import (  # noqa: E402
-    OrchestratorMetadata,
-    PrefixCacheOptions,
-    WorkflowResult,
-    get_default_accumulator,
-    get_workflow_class,
-)
+    def run(self) -> int:
+        for cmd in self.commands:
+            logger.info("→ command=%s", cmd.name)
+            result = cmd.execute()
+            self.results.append(result)
+            if not result.succeeded:
+                logger.error(
+                    "❌ command=%s rc=%d error=%s",
+                    cmd.name,
+                    result.return_code,
+                    result.error,
+                )
+                return result.return_code
+            logger.info("✅ command=%s rc=0", cmd.name)
+        return 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,8 +92,9 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Drive v2 evals/benchmarks against a running inference server "
-            "and emit a combined report."
+            "Standalone CLI for the v2 WorkflowRunner — drives a v2 workflow "
+            "against an already-running inference server. For full server "
+            "bring-up + workflow runs, invoke through v1 /run.py instead."
         ),
         epilog="Available models:\n  " + "\n  ".join(valid_models),
         formatter_class=argparse.RawTextHelpFormatter,
@@ -143,8 +117,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=_V2_ROOT / "output",
-        help="Where to write the rendered report (markdown + json).",
+        default=None,
+        help=(
+            "Where to write the rendered report (markdown + json). "
+            "Defaults to <repo>/workflow_logs/reports_output/<workflow>/."
+        ),
     )
     parser.add_argument(
         "--docker-server",
@@ -168,8 +145,10 @@ def parse_args() -> argparse.Namespace:
 
     # ----- Prefix-caching benchmark (LLM-only) -----------------------
     # When --prefix-cache is set, BenchmarksWorkflow swaps its default
-    # task list for the AIPerf prefix-cache sweep. Validated below to
-    # require --workflow benchmarks.
+    # media-task dispatch for the AIPerf prefix-cache scenario sweep (wired
+    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Validated
+    # below to require --workflow benchmarks. Run via run_prefix_cache.py so
+    # the V2_PREFIX_CACHE venv is in place before these heavy deps are needed.
     parser.add_argument(
         "--prefix-cache",
         action="store_true",
@@ -179,7 +158,7 @@ def parse_args() -> argparse.Namespace:
             "baseline, mooncake_trace). Captures vLLM "
             "prefix_cache_hits/queries via Prometheus and reports "
             "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate. "
-            "Requires --workflow benchmarks."
+            "Requires --workflow benchmarks. Launch through run_prefix_cache.py."
         ),
     )
     parser.add_argument(
@@ -259,175 +238,11 @@ def parse_args() -> argparse.Namespace:
             "--prefix-cache currently requires --workflow benchmarks "
             f"(got --workflow {args.workflow})."
         )
-    args = parser.parse_args()
     if args.output_dir is None:
         args.output_dir = (
             _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
         )
     return args
-
-
-def _resolve_eval_config(model_name: str):
-    """Return the v1 EvalConfig for ``model_name`` if available, else None.
-
-    v2's image runners read ``ctx.all_params.tasks[0]`` for task_name /
-    score / tolerance — we reuse the v1 config rather than redefining the
-    same metadata in v2.
-    """
-    try:
-        from evals.eval_config import EVAL_CONFIGS
-    except Exception as e:
-        logger.warning("Could not import v1 EVAL_CONFIGS (%s); evals will fail.", e)
-        return None
-    cfg = EVAL_CONFIGS.get(model_name)
-    if cfg is None:
-        logger.warning(
-            "No EvalConfig registered for model=%r; eval task metadata will be empty.",
-            model_name,
-        )
-    return cfg
-
-
-def build_context(args: argparse.Namespace) -> MediaContext:
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
-    model_spec.cli_args["device"] = args.device
-    if args.num_prompts is not None:
-        model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
-
-    device = DeviceTypes.from_string(args.device)
-
-    output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    eval_cfg = _resolve_eval_config(args.model)
-    all_params = eval_cfg if eval_cfg is not None else []
-
-    return MediaContext(
-        all_params=all_params,
-        model_spec=model_spec,
-        device=device,
-        output_path=str(output_path),
-        service_port=args.service_port,
-        spec_tests_num_prompts_cap=args.num_prompts,
-    )
-
-
-def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:
-    """Best-effort load; returns ``None`` on missing/malformed input."""
-    if not path:
-        return None
-    try:
-        return RuntimeConfig.from_json(path)
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        logger.warning(
-            "Could not load runtime_model_spec_json=%r (%s); "
-            "falling back to CLI flags for server_mode.",
-            path,
-            e,
-        )
-        return None
-
-
-def _resolve_server_mode(
-    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
-) -> str:
-    """Spec JSON wins over ``--docker-server`` when present."""
-    if runtime_config is not None:
-        return "docker" if runtime_config.docker_server else "API"
-    return "docker" if args.docker_server else "API"
-
-
-def _capture_run_command(argv: Optional[Sequence[str]] = None) -> str:
-    """Paste-runnable reproduction of the orchestrator invocation."""
-    parts = list(sys.argv if argv is None else argv)
-    return "python " + shlex.join(parts)
-
-
-def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
-    """Mint a ``debug-test`` JWT and export it as ``OPENAI_API_KEY``.
-
-    Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When
-    no secret is supplied, returns the empty string (auth disabled).
-    Matches the inference server's expected debug token for JWT auth.
-    """
-    secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
-    if not secret:
-        return ""
-    try:
-        import jwt as _jwt
-    except ImportError:
-        logger.warning(
-            "PyJWT is not installed; --jwt-secret was supplied but no token "
-            "will be minted. Install pyjwt to enable JWT-protected servers."
-        )
-        return ""
-    payload = {
-        "team_id": "tenstorrent",
-        "token_id": "debug-test",
-        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
-    }
-    encoded = _jwt.encode(payload, secret, algorithm="HS256")
-    os.environ["OPENAI_API_KEY"] = encoded
-    logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
-    return encoded
-
-
-def _build_prefix_cache_options(
-    args: argparse.Namespace,
-) -> Optional[PrefixCacheOptions]:
-    if not args.prefix_cache:
-        return None
-    return PrefixCacheOptions(
-        preset=args.prefix_cache_preset,
-        scenarios=args.prefix_cache_scenarios,
-        arrival_pattern=args.prefix_cache_arrival,
-        request_rate=args.prefix_cache_request_rate,
-        scenarios_json=args.prefix_cache_scenarios_json,
-        trace_path=args.prefix_cache_trace,
-        auth_token=_mint_jwt_if_secret(args.jwt_secret),
-    )
-
-
-def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetadata:
-    runtime_config = _load_runtime_config(args.runtime_model_spec_json)
-    return OrchestratorMetadata(
-        server_mode=_resolve_server_mode(args, runtime_config),
-        run_command=_capture_run_command(),
-        runtime_model_spec_json=args.runtime_model_spec_json,
-        prefix_cache=_build_prefix_cache_options(args),
-    )
-
-
-def _apply_num_prompts_override(num_prompts: Optional[int]) -> None:
-    if num_prompts is None:
-        return
-    from test_module.benchmark_tests import image_benchmark_tests as _ibt
-
-    _ibt.SDXL_BENCHMARK_NUM_PROMPTS = num_prompts
-    _ibt.SDXL_SD35_BENCHMARK_NUM_PROMPTS = num_prompts
-    logger.info(
-        "Overriding image benchmark + spec_tests prompt count to %d", num_prompts
-    )
-
-
-def _log_workflow_summary(result: WorkflowResult) -> None:
-    logger.info(
-        "Workflow %s finished: rc=%d (%d task(s))",
-        result.workflow_name,
-        result.return_code,
-        len(result.task_outcomes),
-    )
-    for outcome in result.task_outcomes:
-        logger.info(
-            "  %s task=%s rc=%d elapsed=%.1fs block=%s",
-            "✓" if outcome.succeeded else "✘",
-            outcome.task_type,
-            outcome.exit_code,
-            outcome.elapsed_seconds,
-            outcome.block_kind,
-        )
-    if result.error:
-        logger.error("Workflow error: %s", result.error)
 
 
 def main() -> int:
@@ -437,18 +252,9 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    ctx = build_context(args)
-    _apply_num_prompts_override(args.num_prompts)
-
-    get_default_accumulator().clear()
-    workflow_cls = get_workflow_class(args.workflow)
-    workflow = workflow_cls(
-        ctx,
-        orchestrator_metadata=_build_orchestrator_metadata(args),
-    )
-    result = workflow.run()
-    _log_workflow_summary(result)
-    return result.return_code
+    commands = CommandFactory.build(args)
+    runner = WorkflowRunner(commands)
+    return runner.run()
 
 
 if __name__ == "__main__":
