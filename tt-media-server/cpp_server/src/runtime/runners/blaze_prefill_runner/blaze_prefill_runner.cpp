@@ -103,6 +103,12 @@ void BlazePrefillRunner::drainMemoryRequests() {
       if (nextSlotId >= static_cast<uint32_t>(tt::config::dsMaxUsers())) {
         nextSlotId = 0;
       }
+      if (request->slotIdToCopyFrom.has_value()) {
+        TT_LOG_INFO(
+            "[BlazePrefillRunner] ALLOCATE with slotIdToCopyFrom={} for "
+            "taskId={}, assigned slotId={}",
+            *request->slotIdToCopyFrom, request->taskId, slotId);
+      }
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] drainMemoryRequests: ALLOCATE taskId={}, "
           "assigned slotId={}",

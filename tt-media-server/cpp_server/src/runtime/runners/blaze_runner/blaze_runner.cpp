@@ -316,6 +316,10 @@ inline void BlazeRunner::handleEvictRequest(
 
 inline void BlazeRunner::handleAllocateRequest(
     const tt::domain::ManageMemoryTask& request) {
+  if (request.slotIdToCopyFrom.has_value()) {
+    TT_LOG_INFO("[BlazeRunner] ALLOCATE with slotIdToCopyFrom={} for taskId={}",
+                *request.slotIdToCopyFrom, request.taskId);
+  }
   auto allocateRequest = utils::makeAllocateRequest(request.taskId);
   if (!decodeScheduler->push_request(allocateRequest)) {
     TT_LOG_WARN(
