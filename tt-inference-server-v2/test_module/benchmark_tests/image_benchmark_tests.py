@@ -231,7 +231,11 @@ def _run_sdxl_image_generation_benchmark(
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running image generation benchmark.")
     return _build_image_status_list(
-        ctx, num_calls, SDXL_SD35_INFERENCE_STEPS, _generate_image, concurrency=concurrency
+        ctx,
+        num_calls,
+        SDXL_SD35_INFERENCE_STEPS,
+        _generate_image,
+        concurrency=concurrency,
     )
 
 
