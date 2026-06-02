@@ -9,7 +9,6 @@ import json
 import logging
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -219,47 +218,6 @@ def _build_image_status_list(
     return status_list
 
 
-def _build_image_status_list_concurrent(
-    ctx: MediaContext,
-    max_concurrency: int,
-    num_batches: int,
-    inference_steps: int,
-    generator: Callable[..., tuple[bool, float]],
-    generator_steps_kwarg: bool = False,
-) -> tuple[list[ImageGenerationTestStatus], float]:
-    status_list: list[ImageGenerationTestStatus] = []
-    total_start = time.time()
-    for batch in range(num_batches):
-        logger.info(
-            f"Running batch {batch + 1}/{num_batches} with {max_concurrency} concurrent requests..."
-        )
-        with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            if generator_steps_kwarg:
-                futures = [
-                    executor.submit(generator, ctx, inference_steps)
-                    for _ in range(max_concurrency)
-                ]
-            else:
-                futures = [
-                    executor.submit(generator, ctx) for _ in range(max_concurrency)
-                ]
-            for future in futures:
-                status, elapsed = future.result()
-                inference_steps_per_second = (
-                    inference_steps / elapsed if elapsed > 0 else 0
-                )
-                status_list.append(
-                    ImageGenerationTestStatus(
-                        status=status,
-                        elapsed=elapsed,
-                        num_inference_steps=inference_steps,
-                        inference_steps_per_second=inference_steps_per_second,
-                    )
-                )
-    total_time = time.time() - total_start
-    return status_list, total_time
-
-
 def _run_sdxl_image_generation_benchmark(
     ctx: MediaContext, num_calls: int
 ) -> list[ImageGenerationTestStatus]:
@@ -339,10 +297,10 @@ IMAGE_BENCHMARK_DISPATCH: dict[
 }
 
 
-_CONCURRENT_IMAGE_RUNNERS: dict[str, tuple[Callable[..., tuple[bool, float]], int]] = {
-    "tt-sdxl-trace": (_generate_image, SDXL_SD35_INFERENCE_STEPS),
-    "tt-sdxl-image-to-image": (_generate_image_img2img, SDXL_IMG2IMG_INFERENCE_STEPS),
-    "tt-sdxl-edit": (_generate_image_inpainting, SDXL_INPAINTING_INFERENCE_STEPS),
+_SDXL_LOAD_TEST_RUNNERS = {
+    "tt-sdxl-trace",
+    "tt-sdxl-image-to-image",
+    "tt-sdxl-edit",
 }
 
 
@@ -361,7 +319,7 @@ def _image_target_checks(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
+                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft_ms"
             ),
             MetricSpec(
                 "tput_user",
@@ -385,31 +343,21 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     try:
         num_calls = get_num_calls(ctx)
         max_concurrency = None
-        total_time = None
-        concurrent_cfg = _CONCURRENT_IMAGE_RUNNERS.get(runner_in_use)
-        if concurrent_cfg is not None:
+        if runner_in_use in _SDXL_LOAD_TEST_RUNNERS:
             max_concurrency = ctx.model_spec.device_model_spec.max_concurrency
+            if max_concurrency and max_concurrency > 0:
+                num_calls = SDXL_LOAD_TEST_NUM_BATCHES * max_concurrency
+                logger.info(
+                    f"Overriding num_calls for {runner_in_use} to {num_calls} prompts "
+                    f"({SDXL_LOAD_TEST_NUM_BATCHES} batches x {max_concurrency} concurrent requests)"
+                )
+            else:
+                max_concurrency = None
 
-        if concurrent_cfg is not None and max_concurrency and max_concurrency > 0:
-            generator, inference_steps = concurrent_cfg
-            num_calls = SDXL_LOAD_TEST_NUM_BATCHES * max_concurrency
-            logger.info(
-                f"Running {runner_in_use} load test: {SDXL_LOAD_TEST_NUM_BATCHES} batches "
-                f"x {max_concurrency} concurrent requests = {num_calls} prompts"
-            )
-            status_list, total_time = _build_image_status_list_concurrent(
-                ctx,
-                max_concurrency,
-                SDXL_LOAD_TEST_NUM_BATCHES,
-                inference_steps,
-                generator,
-            )
-        else:
-            max_concurrency = None
-            benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
-                runner_in_use, _run_sdxl_image_generation_benchmark
-            )
-            status_list = benchmark_fn(ctx, num_calls)
+        benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
+            runner_in_use, _run_sdxl_image_generation_benchmark
+        )
+        status_list = benchmark_fn(ctx, num_calls)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
@@ -421,18 +369,15 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         if status_list
         else 0
     )
-    if max_concurrency and total_time and total_time > 0:
-        tput_user = len(status_list) / (total_time * max_concurrency)
-    else:
-        tput_user = inference_steps_per_second
-    target_checks, accuracy_check = _image_target_checks(
-        ctx, ttft_value, tput_user
-    )
+    total_elapsed = sum(s.elapsed for s in status_list)
+    # tput_user is per-user image throughput (images/sec = 1 / avg latency).
+    tput_user = len(status_list) / total_elapsed if total_elapsed > 0 else 0
+    target_checks, accuracy_check = _image_target_checks(ctx, ttft_value, tput_user)
     num_inference_steps_used = status_list[0].num_inference_steps if status_list else 0
     benchmarks_data = {
         "num_requests": len(status_list),
         "num_inference_steps": num_inference_steps_used,
-        "ttft": ttft_value,
+        "ttft_ms": ttft_value * 1000,
         "inference_steps_per_second": inference_steps_per_second,
         "tput_user": tput_user,
         "accuracy_check": accuracy_check,
