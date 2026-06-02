@@ -9,6 +9,7 @@ import json
 import logging
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -34,7 +35,7 @@ from ..test_status import ImageGenerationTestStatus
 logger = logging.getLogger(__name__)
 
 
-SDXL_LOAD_TEST_NUM_BATCHES = 3
+SDXL_BENCHMARK_NUM_BATCHES = 3
 
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
 SDXL_SD35_INFERENCE_STEPS = 20
@@ -195,10 +196,12 @@ def _build_image_status_list(
     inference_steps: int,
     generator: Callable[..., tuple[bool, float]],
     generator_steps_kwarg: bool = False,
+    concurrency: int = 1,
 ) -> list[ImageGenerationTestStatus]:
-    status_list: list[ImageGenerationTestStatus] = []
-    for i in range(num_calls):
-        logger.info(f"Generating image {i + 1}/{num_calls}...")
+    concurrency = max(1, concurrency)
+
+    def _one(call_index: int) -> ImageGenerationTestStatus:
+        logger.info(f"Generating image {call_index + 1}/{num_calls}...")
         if generator_steps_kwarg:
             status, elapsed = generator(ctx, inference_steps)
         else:
@@ -207,46 +210,59 @@ def _build_image_status_list(
         logger.info(
             f"Generated image with {inference_steps} steps in {elapsed:.2f} seconds."
         )
-        status_list.append(
-            ImageGenerationTestStatus(
-                status=status,
-                elapsed=elapsed,
-                num_inference_steps=inference_steps,
-                inference_steps_per_second=inference_steps_per_second,
-            )
+        return ImageGenerationTestStatus(
+            status=status,
+            elapsed=elapsed,
+            num_inference_steps=inference_steps,
+            inference_steps_per_second=inference_steps_per_second,
         )
+
+    status_list: list[ImageGenerationTestStatus] = []
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for batch_start in range(0, num_calls, concurrency):
+            batch = range(batch_start, min(batch_start + concurrency, num_calls))
+            futures = [pool.submit(_one, i) for i in batch]
+            status_list.extend(f.result() for f in futures)
     return status_list
 
 
 def _run_sdxl_image_generation_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running image generation benchmark.")
     return _build_image_status_list(
-        ctx, num_calls, SDXL_SD35_INFERENCE_STEPS, _generate_image
+        ctx, num_calls, SDXL_SD35_INFERENCE_STEPS, _generate_image, concurrency=concurrency
     )
 
 
 def _run_img2img_generation_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running image-to-image generation benchmark.")
     return _build_image_status_list(
-        ctx, num_calls, SDXL_IMG2IMG_INFERENCE_STEPS, _generate_image_img2img
+        ctx,
+        num_calls,
+        SDXL_IMG2IMG_INFERENCE_STEPS,
+        _generate_image_img2img,
+        concurrency=concurrency,
     )
 
 
 def _run_inpainting_generation_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running inpainting generation benchmark.")
     return _build_image_status_list(
-        ctx, num_calls, SDXL_INPAINTING_INFERENCE_STEPS, _generate_image_inpainting
+        ctx,
+        num_calls,
+        SDXL_INPAINTING_INFERENCE_STEPS,
+        _generate_image_inpainting,
+        concurrency=concurrency,
     )
 
 
 def _run_flux_1_dev_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running Flux 1 Dev or Schnell benchmark.")
     return _build_image_status_list(
@@ -255,11 +271,12 @@ def _run_flux_1_dev_benchmark(
         FLUX_MOTIF_INFERENCE_STEPS,
         _generate_image,
         generator_steps_kwarg=True,
+        concurrency=concurrency,
     )
 
 
 def _run_flux_1_schnell_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running Flux 1 Schnell benchmark.")
     return _build_image_status_list(
@@ -268,11 +285,12 @@ def _run_flux_1_schnell_benchmark(
         FLUX_1_SCHNELL_INFERENCE_STEPS,
         _generate_image,
         generator_steps_kwarg=True,
+        concurrency=concurrency,
     )
 
 
 def _run_motif_image_6b_preview_benchmark(
-    ctx: MediaContext, num_calls: int
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
 ) -> list[ImageGenerationTestStatus]:
     logger.info("Running Motif Image 6B Preview benchmark.")
     return _build_image_status_list(
@@ -281,11 +299,12 @@ def _run_motif_image_6b_preview_benchmark(
         FLUX_MOTIF_INFERENCE_STEPS,
         _generate_image,
         generator_steps_kwarg=True,
+        concurrency=concurrency,
     )
 
 
 IMAGE_BENCHMARK_DISPATCH: dict[
-    str, Callable[[MediaContext, int], list[ImageGenerationTestStatus]]
+    str, Callable[[MediaContext, int, int], list[ImageGenerationTestStatus]]
 ] = {
     "tt-sdxl-trace": _run_sdxl_image_generation_benchmark,
     "tt-sdxl-image-to-image": _run_img2img_generation_benchmark,
@@ -297,7 +316,7 @@ IMAGE_BENCHMARK_DISPATCH: dict[
 }
 
 
-_SDXL_LOAD_TEST_RUNNERS = {
+_SDXL_BENCHMARK_RUNNERS = {
     "tt-sdxl-trace",
     "tt-sdxl-image-to-image",
     "tt-sdxl-edit",
@@ -343,13 +362,13 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     try:
         num_calls = get_num_calls(ctx)
         max_concurrency = None
-        if runner_in_use in _SDXL_LOAD_TEST_RUNNERS:
+        if runner_in_use in _SDXL_BENCHMARK_RUNNERS:
             max_concurrency = ctx.model_spec.device_model_spec.max_concurrency
             if max_concurrency and max_concurrency > 0:
-                num_calls = SDXL_LOAD_TEST_NUM_BATCHES * max_concurrency
+                num_calls = SDXL_BENCHMARK_NUM_BATCHES * max_concurrency
                 logger.info(
                     f"Overriding num_calls for {runner_in_use} to {num_calls} prompts "
-                    f"({SDXL_LOAD_TEST_NUM_BATCHES} batches x {max_concurrency} concurrent requests)"
+                    f"({SDXL_BENCHMARK_NUM_BATCHES} batches x {max_concurrency} concurrent requests)"
                 )
             else:
                 max_concurrency = None
@@ -357,7 +376,7 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
         benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
             runner_in_use, _run_sdxl_image_generation_benchmark
         )
-        status_list = benchmark_fn(ctx, num_calls)
+        status_list = benchmark_fn(ctx, num_calls, max_concurrency or 1)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
