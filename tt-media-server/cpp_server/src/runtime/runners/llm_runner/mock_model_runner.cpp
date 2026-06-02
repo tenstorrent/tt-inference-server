@@ -7,6 +7,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runtime/runners/llm_runner/model_runner.hpp"
 #include "utils/logger.hpp"
@@ -20,15 +21,53 @@ using Config = tt::config::LLMConfig;
 
 namespace {
 
-constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
-constexpr int64_t K_THINK_START_TOKEN_ID = 128798;
-constexpr int64_t K_THINK_END_TOKEN_ID = 128799;
-constexpr int64_t K_THINK_CONTENT_TOKEN_ID = 77291;  // "thinking"
-constexpr int64_t K_VISIBLE_CONTENT_TOKEN_ID =
-    15329;  // "response" (no leading space)
-constexpr int64_t K_VISIBLE_CONTENT_CONT_TOKEN_ID =
-    4256;  // " response" (with leading space)
 constexpr size_t K_THINK_TOKENS_COUNT = 10;
+
+// Token ids the mock emits to fake a "<think>…</think> response…" stream.
+// These MUST be valid ids in the active model's tokenizer, because the Dynamo
+// frontend (and the standalone decode path) detokenize them — picking the wrong
+// vocabulary's ids produces garbage / replacement chars on the wire. Resolved
+// by model type at construction (see mockContentTokensFor).
+struct MockContentTokens {
+  int64_t thinkStart;
+  int64_t thinkEnd;
+  int64_t thinkContent;  // a word, e.g. "thinking"
+  int64_t whitespace;    // single space
+  int64_t visibleFirst;  // "response"  (no leading space)
+  int64_t visibleCont;   // " response" (leading space) — round-trip stable
+  // Whether the model emits `thinkStart` itself. False when the chat template
+  // already opens the think block in the prompt (Kimi K2.6 appends `<think>`
+  // on add_generation_prompt): the mock then emits reasoning content directly
+  // and only emits `</think>` to close, matching how the real model behaves.
+  bool emitThinkStart;
+};
+
+// DeepSeek-R1-0528 ids — the original mock vocabulary, kept verbatim:
+//   128798 <think>, 128799 </think>, 77291 "thinking", 223 whitespace,
+//   15329 "response", 4256 " response". The model emits <think> itself.
+constexpr MockContentTokens K_DEEPSEEK_CONTENT = {
+    128798, 128799, 77291, 223, 15329, 4256, /*emitThinkStart=*/true};
+
+// Kimi K2.6 tiktoken ids (verified against tiktoken.model):
+//   163606 <think>, 163607 </think>, 130400 "thinking", 220 " ",
+//   12092 "response", 4503 " response". emitThinkStart=false: the chat template
+//   already opens <think> in the prompt, and <think>/</think> are non-special
+//   (detokenize to literal text), so the model emits reasoning content directly.
+constexpr MockContentTokens K_KIMI_CONTENT = {
+    163606, 163607, 130400, 220, 12092, 4503, /*emitThinkStart=*/false};
+
+// Mock content vocabulary for the active model. DeepSeek (and any other model)
+// gets the original DeepSeek ids; Kimi K2.6 gets its own tiktoken equivalents.
+MockContentTokens mockContentTokensFor(tt::config::ModelType model) {
+  switch (model) {
+    case tt::config::ModelType::KIMI_K2_6:
+      return K_KIMI_CONTENT;
+    case tt::config::ModelType::DEEPSEEK_R1_0528:
+    case tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT:
+    default:
+      return K_DEEPSEEK_CONTENT;
+  }
+}
 
 std::chrono::milliseconds mockPrefillDelay() {
   const char* value = std::getenv("MOCK_PREFILL_SLEEP_MS");
@@ -94,7 +133,8 @@ class MockModelRunner : public IModelRunner {
       : config(config),
         decodeCallback(std::move(callback)),
         tokenIds(GrammarTokenIds::fromTokenizer(
-            tt::utils::tokenizers::activeTokenizer())) {}
+            tt::utils::tokenizers::activeTokenizer())),
+        content(mockContentTokensFor(tt::config::modelType())) {}
 
   void run(const std::vector<Sequence*>& seqs, bool isPrefill) override {
     ZoneScopedN("MockModelRunner::run");
@@ -110,9 +150,18 @@ class MockModelRunner : public IModelRunner {
       }
       for (Sequence* seq : seqs) {
         std::lock_guard<std::mutex> lock(tokenCountMutex);
-        tokenCounts[seq->taskId] = 0;
-        decodeCallback(
-            TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
+        uint64_t firstToken;
+        if (content.emitThinkStart) {
+          tokenCounts[seq->taskId] = 0;
+          firstToken = static_cast<uint64_t>(content.thinkStart);
+        } else {
+          // The prompt already opened <think>; emit reasoning content directly.
+          // Count it as the first think token so </think> still lands at
+          // K_THINK_TOKENS_COUNT in pickThinkingToken().
+          tokenCounts[seq->taskId] = 1;
+          firstToken = static_cast<uint64_t>(content.thinkContent);
+        }
+        decodeCallback(TokenResult(seq->taskId, pickToken(seq, firstToken)));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -130,16 +179,16 @@ class MockModelRunner : public IModelRunner {
       generated = tokenCounts[seq->taskId]++;
     }
     if (generated < K_THINK_TOKENS_COUNT) {
-      return (generated % 2 == 0) ? K_THINK_CONTENT_TOKEN_ID
-                                  : K_WHITESPACE_TOKEN_ID;
+      return static_cast<uint64_t>(generated % 2 == 0 ? content.thinkContent
+                                                      : content.whitespace);
     }
     if (generated == K_THINK_TOKENS_COUNT) {
-      return K_THINK_END_TOKEN_ID;
+      return static_cast<uint64_t>(content.thinkEnd);
     }
     size_t visiblePos = generated - K_THINK_TOKENS_COUNT - 1;
     // Use round-trip stable tokens: first "response", then " response"
-    return (visiblePos == 0) ? K_VISIBLE_CONTENT_TOKEN_ID
-                             : K_VISIBLE_CONTENT_CONT_TOKEN_ID;
+    return static_cast<uint64_t>(visiblePos == 0 ? content.visibleFirst
+                                                 : content.visibleCont);
   }
 
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
@@ -220,6 +269,7 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
+  MockContentTokens content;
   std::mutex tokenCountMutex;
   std::unordered_map<uint32_t, size_t> tokenCounts;
 };
