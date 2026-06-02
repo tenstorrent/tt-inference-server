@@ -258,6 +258,14 @@ forge_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-xla/tree/main",
     code_path="integrations/vllm_plugin",
 )
+# Distinct impl for forge SDXL so its model_id does not collide with the media
+# SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
+sdxl_forge_impl = ImplSpec(
+    impl_id="sdxl_forge",
+    impl_name="sdxl-forge",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
+)
 tt_vllm_plugin_impl = ImplSpec(
     impl_id="tt_vllm_plugin",
     impl_name="tt-vllm-plugin",
@@ -2995,6 +3003,40 @@ image_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+    ),
+    # Forge full-on-device SDXL (PR #3485) — UNet (+ text encoders/VAE via
+    # TTXLA_SDXL_FULL_ON_DEVICE) on Blackhole. Distinct sdxl_forge_impl avoids a
+    # model_id collision with the media SDXL spec above on shared devices.
+    # NOTE: version/tt_metal_commit must point to the tt-media-inference-server-forge
+    # image that ships sdxl_forge_runner.py + #3485 (+ Forge LoRA) for this to pass;
+    # the values below mirror the current forge image family and should be confirmed
+    # at PR time.
+    ModelSpecTemplate(
+        weights=["stabilityai/stable-diffusion-xl-base-1.0"],
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
+        impl=sdxl_forge_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.IMAGE,
+        inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={"TTXLA_SDXL_FULL_ON_DEVICE": "true"},
+        hf_weights_repo="stabilityai/stable-diffusion-xl-base-1.0",
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=False,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=False,
+            ),
+        ],
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
