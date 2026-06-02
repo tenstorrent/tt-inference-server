@@ -17,7 +17,7 @@ import time
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, ClassVar, List, Optional, Sequence, Tuple
 
 from report_module import (
     GenerateResult,
@@ -26,7 +26,10 @@ from report_module import (
     acceptance_criteria_check,
     format_acceptance_summary_markdown,
 )
-from test_module import MediaContext, MediaTaskType, run_media_task
+from test_module.task_types import MediaTaskType
+
+if TYPE_CHECKING:
+    from test_module.context import MediaContext
 
 from .blocks_sink import BlockAccumulator, get_default_accumulator
 
@@ -62,6 +65,24 @@ class WorkflowResult:
 
 
 @dataclass(frozen=True)
+class PrefixCacheOptions:
+    """Prefix-caching benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    Threaded through
+    ``OrchestratorMetadata`` so the CLI entry point in ``run.py`` stays
+    decoupled from ``llm_module``.
+    """
+
+    preset: str = "full"
+    scenarios: Optional[str] = None
+    arrival_pattern: Optional[str] = None
+    request_rate: Optional[float] = None
+    scenarios_json: Optional[str] = None
+    trace_path: Optional[str] = None
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -72,6 +93,7 @@ class OrchestratorMetadata:
     server_mode: Optional[str] = None
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
+    prefix_cache: Optional[PrefixCacheOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -169,6 +191,8 @@ class WorkflowExecution(ABC):
         return [self._dispatch_task(t) for t in self.task_types]
 
     def _dispatch_task(self, task_type: MediaTaskType) -> TaskOutcome:
+        from test_module.dispatch import run_media_task
+
         self.logger.info("→ task=%s", task_type.value)
         started = time.time()
         try:
@@ -239,6 +263,7 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "OrchestratorMetadata",
+    "PrefixCacheOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",

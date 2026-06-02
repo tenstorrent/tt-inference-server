@@ -3220,8 +3220,8 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
         return "", None, None, None
 
     # Use the stress_tests-specific generate_report function
-    release_str, release_raw, disp_md_path, stats_file_path = (
-        stress_test_generate_report_helper(files, output_dir, report_id, metadata)
+    _, release_raw, _ = stress_test_generate_report_helper(
+        files, output_dir, report_id, metadata
     )
 
     # Generate stress test-specific release report

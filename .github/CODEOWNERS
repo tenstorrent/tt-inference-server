@@ -41,6 +41,7 @@ scripts/* @tstescoTT @tenstorrent/tt-inference-server-codeowners
 scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 
 # github actions
+.github/CODEOWNERS @tstescoTT @bgoelTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT
 .github/workflows/ @tstescoTT @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @mdobrosavljevicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
 
 # docs
