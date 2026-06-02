@@ -148,24 +148,14 @@ class MockModelRunner : public IModelRunner {
         std::this_thread::sleep_for(delay);
       }
       for (Sequence* seq : seqs) {
-<<<<<<< Updated upstream
-        std::lock_guard<std::mutex> lock(tokenCountMutex);
-        uint64_t firstToken;
-        if (content.emitThinkStart) {
-          tokenCounts[seq->taskId] = 0;
-          firstToken = static_cast<uint64_t>(content.thinkStart);
-        } else {
-          // The prompt already opened <think>; emit reasoning content directly.
-          // Count it as the first think token so </think> still lands at
-          // K_THINK_TOKENS_COUNT in pickThinkingToken().
-          tokenCounts[seq->taskId] = 1;
-          firstToken = static_cast<uint64_t>(content.thinkContent);
-        }
+        // When the model emits <think> itself, that marker is the first
+        // completion token; otherwise the prompt already opened the block and
+        // we emit reasoning content directly. pickThinkingToken() derives the
+        // think-block position from the sequence's own completion count, so no
+        // per-task counter (or lock) is needed here.
+        const uint64_t firstToken = static_cast<uint64_t>(
+            content.emitThinkStart ? content.thinkStart : content.thinkContent);
         decodeCallback(TokenResult(seq->taskId, pickToken(seq, firstToken)));
-=======
-        decodeCallback(
-            TokenResult(seq->taskId, pickToken(seq, K_THINK_START_TOKEN_ID)));
->>>>>>> Stashed changes
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -177,13 +167,19 @@ class MockModelRunner : public IModelRunner {
   }
 
   // Decide the next mock token from the sequence's own completion-token count.
-  // The <think> marker emitted during prefill is the first completion token, so
-  // the think-block content index is numCompletionTokens() - 1. Deriving this
-  // from per-sequence state (rather than a shared taskId->count map) keeps the
-  // decode hot path lock-free, which matters under high concurrency.
+  // Deriving the think-block position from per-sequence state (rather than a
+  // shared taskId->count map) keeps the decode hot path lock-free, which
+  // matters under high concurrency.
+  //
+  // The prefill token is the first completion token. When the model emits
+  // <think> itself (emitThinkStart), that marker is not part of the think
+  // budget, so the content index is numCompletionTokens() - 1. When the prompt
+  // already opened <think>, the prefill token is the first reasoning token, so
+  // no shift is applied.
   uint64_t pickThinkingToken(const Sequence* seq) const {
     const size_t completion = seq->numCompletionTokens();
-    const size_t generated = completion > 0 ? completion - 1 : 0;
+    const size_t offset = content.emitThinkStart ? 1 : 0;
+    const size_t generated = completion > offset ? completion - offset : 0;
     if (generated < K_THINK_TOKENS_COUNT) {
       return static_cast<uint64_t>(generated % 2 == 0 ? content.thinkContent
                                                       : content.whitespace);
@@ -275,12 +271,7 @@ class MockModelRunner : public IModelRunner {
   Config config;
   DecodeCallback decodeCallback;
   GrammarTokenIds tokenIds;
-<<<<<<< Updated upstream
   MockContentTokens content;
-  std::mutex tokenCountMutex;
-  std::unordered_map<uint32_t, size_t> tokenCounts;
-=======
->>>>>>> Stashed changes
 };
 
 }  // namespace
