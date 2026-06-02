@@ -3,14 +3,27 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+HOST="localhost"
 PORT=8000
+MODEL="deepseek-ai/DeepSeek-R1-0528"
 MAX_TOKENS=128
 API_KEY="${OPENAI_API_KEY:-your-secret-key}"
 PROMPT=""
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [-p PORT] [-n MAX_TOKENS] "initial prompt text"
+Usage: $0 [--host HOST] [--dynamo] [--model ID] [-p PORT] [-n MAX_TOKENS] "initial prompt text"
+  --host HOST    server host or IP (default: $HOST)
+  --dynamo       target the Dynamo frontend container directly: sets host
+                 dynamo-frontend and the container port 8000 (NOT the host-
+                 published port — addressing by name reaches the container's
+                 own port). Run from a container attached to the deploy's
+                 docker network (e.g. dynamo-net), since that name resolves
+                 there. Pass -p after --dynamo to override the port.
+  --model ID     model id sent in the request (default: $MODEL). Must match a
+                 model the server lists at GET /v1/models (e.g.
+                 moonshotai/Kimi-K2.6 for a Kimi frontend).
+  --kimi         shorthand for --model moonshotai/Kimi-K2.6
   -p PORT        server port (default: $PORT)
   -n MAX_TOKENS  max completion tokens per turn (default: $MAX_TOKENS)
 Flags may appear before or after the initial prompt.
@@ -18,9 +31,13 @@ EOF
   exit 1
 }
 
-# Manual arg loop so -p / -n work in any position.
+# Manual arg loop so flags work in any position.
 while [ $# -gt 0 ]; do
   case "$1" in
+    --host) HOST="$2"; shift 2 ;;
+    --dynamo) HOST="dynamo-frontend"; PORT=8000; shift ;;
+    --model) MODEL="$2"; shift 2 ;;
+    --kimi) MODEL="moonshotai/Kimi-K2.6"; shift ;;
     -p) PORT="$2"; shift 2 ;;
     -n) MAX_TOKENS="$2"; shift 2 ;;
     -h|--help) usage ;;
@@ -34,12 +51,13 @@ if [ -z "$PROMPT" ]; then
   usage
 fi
 
-URL="http://localhost:${PORT}/v1/chat/completions"
+URL="http://${HOST}:${PORT}/v1/chat/completions"
 
 # Stateful chat history. Starts with the initial user prompt; each turn we
 # append the streamed assistant reply, then the next user line.
 MESSAGES_JSON=$(jq -n --arg prompt "$PROMPT" '[{role: "user", content: $prompt}]')
 
+echo "Target: $URL  (model: $MODEL)"
 echo "Starting chat session. Type 'exit' or 'quit' to end."
 echo "Press Ctrl+C during the assistant's reply to cancel that turn"
 echo "  (partial reply is still saved to history)."
@@ -66,10 +84,11 @@ while true; do
   turn_max_tokens=""
 
   BODY=$(jq -n \
+    --arg model "$MODEL" \
     --argjson messages "$MESSAGES_JSON" \
     --argjson max_tokens "$effective_max_tokens" \
     '{
-      model: "deepseek-ai/DeepSeek-R1-0528",
+      model: $model,
       messages: $messages,
       max_tokens: $max_tokens,
       stream: true,
