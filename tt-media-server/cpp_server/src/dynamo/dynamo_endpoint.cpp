@@ -280,9 +280,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
 
           const auto tDispatch = SteadyClock::now();
           auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-                     tDispatch, usage](
-                        const tt::domain::llm::LLMStreamChunk& chunk,
-                        bool isFinal) {
+                     tDispatch,
+                     usage](const tt::domain::llm::LLMStreamChunk& chunk,
+                            bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
             // AND time spent purely in BlazeRunner (since dispatchGeneration).
             // Splitting these lets us tell the difference between "session
@@ -343,10 +343,9 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               du.prompt_tokens = req->full_prompt_tokens_count;
               du.completion_tokens = usage->completion;
               du.total_tokens = du.prompt_tokens + du.completion_tokens;
-              int cached = req->continuation
-                               ? req->full_prompt_tokens_count -
-                                     req->prompt_tokens_count
-                               : 0;
+              int cached = req->continuation ? req->full_prompt_tokens_count -
+                                                   req->prompt_tokens_count
+                                             : 0;
               du.cached_tokens = cached < 0 ? 0 : cached;
               // Only report reasoning_tokens for models that have think tokens.
               const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;

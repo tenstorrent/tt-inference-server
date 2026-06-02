@@ -196,7 +196,8 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
     if (sc.isMember("stop_token_ids_hidden") &&
         sc["stop_token_ids_hidden"].isArray()) {
       stopIds = &sc["stop_token_ids_hidden"];
-    } else if (sc.isMember("stop_token_ids") && sc["stop_token_ids"].isArray()) {
+    } else if (sc.isMember("stop_token_ids") &&
+               sc["stop_token_ids"].isArray()) {
       stopIds = &sc["stop_token_ids"];
     }
     if (stopIds != nullptr) {
