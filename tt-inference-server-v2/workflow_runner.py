@@ -124,35 +124,6 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
-    # Spec-decode benchmark options (only consumed by the
-    # spec_decode_benchmarks workflow; ignored by other workflows).
-    parser.add_argument(
-        "--spec-decode-profile",
-        choices=("smoke", "full"),
-        default="full",
-        help=(
-            "Spec-decode sweep profile: 'smoke' (1 short run) or "
-            "'full' (all SPEED-Bench categories + throughput sweep)."
-        ),
-    )
-    parser.add_argument(
-        "--spec-decode-venv-python",
-        type=Path,
-        default=None,
-        help=(
-            "Python interpreter to invoke 'python -m aiperf profile' with. "
-            "Defaults to <repo>/.workflow_venvs/.venv_benchmarks_spec_decode/"
-            "bin/python (the v1 BENCHMARKS_SPEC_DECODE venv that has "
-            "aiperf>=0.8.0); falls back to sys.executable if that path is "
-            "missing."
-        ),
-    )
-    parser.add_argument(
-        "--spec-decode-warmup-requests",
-        type=int,
-        default=4,
-        help="Warmup chat-completion requests fired before each phase.",
-    )
     args = parser.parse_args()
     if args.output_dir is None:
         args.output_dir = (

@@ -9,7 +9,6 @@ import json
 import logging
 import shlex
 import sys
-from pathlib import Path
 from typing import List, Optional, Sequence
 
 from workflows.model_spec import get_runtime_model_spec
@@ -22,8 +21,6 @@ from .commands import Command, WorkflowCommand
 from .execution import OrchestratorMetadata
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class CommandFactory:
@@ -69,37 +66,7 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
         output_path=str(output_path),
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
-        spec_decode_profile=args.spec_decode_profile,
-        spec_decode_venv_python=_resolve_spec_decode_venv_python(
-            args.spec_decode_venv_python
-        ),
-        spec_decode_warmup_requests=args.spec_decode_warmup_requests,
     )
-
-
-def _resolve_spec_decode_venv_python(override: Optional[Path]) -> Optional[Path]:
-    """Resolve which Python to invoke aiperf with for the spec-decode driver.
-
-    Priority:
-      1. ``--spec-decode-venv-python`` CLI override (no existence check —
-         the user knows what they want).
-      2. v1's BENCHMARKS_SPEC_DECODE venv at
-         ``<repo>/.workflow_venvs/.venv_benchmarks_spec_decode/bin/python``.
-         Used only if it exists (the v1 workflow runner materialises it).
-      3. ``None`` → ``AIPerfSpecDecodeDriver`` falls back to ``sys.executable``.
-    """
-    if override is not None:
-        return override
-    candidate = (
-        _REPO_ROOT
-        / ".workflow_venvs"
-        / ".venv_benchmarks_spec_decode"
-        / "bin"
-        / "python"
-    )
-    if candidate.exists():
-        return candidate
-    return None
 
 
 def _resolve_eval_config(model_name: str):

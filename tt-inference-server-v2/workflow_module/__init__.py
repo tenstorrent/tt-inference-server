@@ -15,7 +15,6 @@ _LAZY_FROM_WORKFLOWS = {
     "BenchmarksWorkflow",
     "EvalsWorkflow",
     "ReleaseWorkflow",
-    "SpecDecodeBenchmarksWorkflow",
     "SpecTestsWorkflow",
     "WORKFLOW_REGISTRY",
     "get_workflow_class",

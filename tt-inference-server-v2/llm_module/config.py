@@ -34,40 +34,6 @@ class LLMRunConfig:
 
 
 @dataclass(frozen=True)
-class SpecDecodeRunConfig:
-    """One sweep point for the speculative-decoding benchmark.
-
-    Mirrors v1 ``benchmarking.spec_decode_common.SpecDecodeRunSpec``: a
-    ``public_dataset`` name (Spec-Bench / SPEED-Bench slug consumed by
-    ``aiperf --public-dataset``) plus concurrency, with optional caps on
-    request count and output length. ``output_len`` left ``None`` means
-    decode to natural EOS — variable-length outputs that exercise real
-    decode behavior. ``num_prompts`` left ``None`` means consume every
-    prompt in the dataset (aiperf defaults ``--request-count`` to the
-    dataset size).
-    """
-
-    public_dataset: str
-    max_concurrency: int
-    num_prompts: Optional[int] = None
-    output_len: Optional[int] = None
-
-    def __post_init__(self) -> None:
-        if not self.public_dataset:
-            raise ValueError("public_dataset is required")
-
-    @property
-    def slug(self) -> str:
-        parts = [self.public_dataset]
-        if self.output_len is not None:
-            parts.append(f"osl-{self.output_len}")
-        parts.append(f"maxcon-{self.max_concurrency}")
-        if self.num_prompts is not None:
-            parts.append(f"n-{self.num_prompts}")
-        return "_".join(parts)
-
-
-@dataclass(frozen=True)
 class ServerConnection:
     """How a driver reaches the inference server."""
 
