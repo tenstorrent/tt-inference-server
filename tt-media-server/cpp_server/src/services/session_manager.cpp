@@ -199,6 +199,18 @@ domain::Session* SessionManager::getSession(const std::string& sessionId) {
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
+void SessionManager::lockSlot(uint32_t slotId) {
+  std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+  lockedSlots.insert(slotId);
+  TT_LOG_DEBUG("[SessionManager] lockSlot: slotId={}", slotId);
+}
+
+void SessionManager::unlockSlot(uint32_t slotId) {
+  std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+  lockedSlots.erase(slotId);
+  TT_LOG_DEBUG("[SessionManager] unlockSlot: slotId={}", slotId);
+}
+
 void SessionManager::evictOldSessions() {
   bool expected = false;
   if (!evictionInProgress.compare_exchange_strong(expected, true)) {
@@ -226,10 +238,19 @@ void SessionManager::evictOldSessions() {
   using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
   std::vector<Entry> candidates;
 
-  sessions.forEach(
-      [&candidates](const std::string& id, const domain::Session& s) {
-        if (s.isIdle()) candidates.emplace_back(s.getLastActivityTime(), id);
-      });
+  // Snapshot locked slots for the duration of candidate selection.
+  std::unordered_set<uint32_t> lockedSnapshot;
+  {
+    std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+    lockedSnapshot = lockedSlots;
+  }
+
+  sessions.forEach([&candidates, &lockedSnapshot](const std::string& id,
+                                                  const domain::Session& s) {
+    if (s.isIdle() &&
+        lockedSnapshot.find(s.getSlotId()) == lockedSnapshot.end())
+      candidates.emplace_back(s.getLastActivityTime(), id);
+  });
 
   size_t n = std::min(evictionCount, candidates.size());
   std::nth_element(
@@ -241,10 +262,14 @@ void SessionManager::evictOldSessions() {
                candidates.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : candidates) {
-    // A concurrent acquireInFlight call may mark the session in-flight
-    // between the forEach above and here; takeIf skips it atomically.
-    auto ms = sessions.takeIf(
-        sessionId, [](const domain::Session& s) { return s.isIdle(); });
+    // A concurrent acquireInFlight or lockSlot call may mark the session
+    // busy/locked between the forEach above and here; takeIf checks
+    // atomically under the map's entry lock.
+    auto ms = sessions.takeIf(sessionId, [&](const domain::Session& s) {
+      if (!s.isIdle()) return false;
+      std::lock_guard<std::mutex> lk(lockedSlotsMutex);
+      return lockedSlots.find(s.getSlotId()) == lockedSlots.end();
+    });
     if (!ms.has_value()) {
       TT_LOG_DEBUG(
           "[SessionManager] evictOldSessions: sessionId={} no longer idle, "
@@ -522,12 +547,6 @@ SessionManager::tryAcquireByPrefixHash(
   // Snapshot candidates: for each entry under keyHash, count how many
   // consecutive remaining hashes match the caller's remaining hashes.
   // Pick the entry with the longest match.
-  struct Candidate {
-    std::string sessionId;
-    size_t
-        matchedBlocks;  // total matched blocks (1 for key + matched remaining)
-    uint32_t thinkTokens;  // accumulated think tokens at matched block
-  };
   std::vector<Candidate> candidates;
 
   prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
@@ -546,9 +565,11 @@ SessionManager::tryAcquireByPrefixHash(
         ++entryIt;
       }
       // key hash itself counts as 1 block match.
-      size_t totalBlocks = 1 + matched;
+      size_t totalMatched = 1 + matched;
+      size_t sessionTotal = 1 + entry.remainingBlocks.size();
       for (const auto& sid : entry.sessionIds) {
-        candidates.push_back({sid, totalBlocks, lastMatchedThinkCount});
+        candidates.push_back(
+            {sid, totalMatched, sessionTotal, lastMatchedThinkCount});
       }
     }
   });
@@ -570,8 +591,24 @@ SessionManager::tryAcquireByPrefixHash(
       "keyHash={}, best match={} blocks",
       candidates.size(), keyHash, candidates.front().matchedBlocks);
 
+  const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
+    // Check if match percentage meets threshold (skip if below).
+    if (threshold > 0.0f) {
+      float matchPercent =
+          (candidate.matchedBlocks * 100.0f) / candidate.sessionBlocks;
+      if (matchPercent < threshold) {
+        TT_LOG_INFO(
+            "[SessionManager] Prefix cache candidate rejected: "
+            "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
+            "threshold={:.1f}%",
+            candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
+            threshold);
+        continue;
+      }
+    }
+
     std::optional<AcquiredSession> acquired;
     bool busy = false;
     bool stale = false;
@@ -592,8 +629,9 @@ SessionManager::tryAcquireByPrefixHash(
       s.updateActivityTime();
       s.markInFlight();
       s.setCancelFn(cancelFn);
-      acquired = AcquiredSession{candidate.sessionId, s.getSlotId(),
-                                 matchedTokens, candidate.thinkTokens};
+      acquired =
+          AcquiredSession{true,          candidate.sessionId,   s.getSlotId(),
+                          matchedTokens, candidate.thinkTokens, {}};
     });
 
     if (!found || stale) {
@@ -624,7 +662,9 @@ SessionManager::tryAcquireByPrefixHash(
       "[SessionManager] tryAcquireByPrefixHash: no acquirable session for "
       "keyHash={}",
       keyHash);
-  return std::nullopt;
+  // Return candidates sorted by matched tokens descending even though no
+  // session was acquired
+  return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
 void SessionManager::registerPrefixHash(

@@ -5,8 +5,9 @@
 import asyncio
 import json
 import logging
+import os
 import re
-import subprocess
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_TEST_LIMIT = 3
-DEFAULT_TIMEOUT = 10
 
 # Default paths to search for lmms-eval executable
 DEFAULT_LMMS_EVAL_PATHS = [
@@ -270,7 +270,13 @@ class WhisperEvalTest(BaseTest):
 
             if WorkflowVenvType.EVALS_AUDIO in VENV_CONFIGS:
                 venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_AUDIO]
-                return venv_config.venv_path / "bin" / "lmms-eval"
+                lmms_path = venv_config.venv_path / "bin" / "lmms-eval"
+                logger.info(
+                    "EVALS_AUDIO venv lmms-eval path: %s (exists=%s)",
+                    lmms_path,
+                    lmms_path.exists(),
+                )
+                return lmms_path
 
         except ImportError:
             # Silently continue if workflow modules aren't available
@@ -306,15 +312,11 @@ class WhisperEvalTest(BaseTest):
         Returns:
             True if the path is a valid executable, False otherwise.
         """
-        try:
-            result = subprocess.run(
-                [path, "--help"],
-                capture_output=True,
-                timeout=DEFAULT_TIMEOUT,
-            )
-            return result.returncode == 0
-        except (subprocess.SubprocessError, FileNotFoundError, OSError):
-            return False
+        resolved = path if os.path.sep in path else shutil.which(path)
+        if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+            return True
+        logger.debug("Not a valid lmms-eval executable: %s", path)
+        return False
 
     def _find_repo_root(self) -> Path:
         """
@@ -769,10 +771,17 @@ class WhisperEvalTest(BaseTest):
         stdout_thread.start()
         stderr_thread.start()
 
+        try:
+            process.wait(timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "lmms-eval subprocess exceeded timeout (%ss); killing.", self.timeout
+            )
+            process.kill()
+            process.wait()
+
         stdout_thread.join()
         stderr_thread.join()
-
-        process.wait()
         return_code = process.returncode
 
         success = return_code == 0
