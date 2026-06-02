@@ -66,7 +66,8 @@ constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
-constexpr size_t PM_MAX_USERS = 128;
+constexpr size_t DS_MAX_USERS = 128;
+constexpr size_t PS_MAX_USERS = 128;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 /**

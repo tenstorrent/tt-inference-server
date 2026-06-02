@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
-
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -23,6 +21,7 @@
 #include "ipc/in_memory/in_memory_memory_queue.hpp"
 #include "ipc/in_memory/in_memory_result_queue.hpp"
 #include "ipc/in_memory/in_memory_task_queue.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
 
 namespace tt::runners::blaze {
@@ -47,9 +46,9 @@ class BlazeRunnerHarness {
         memoryRequestQueue, memoryResultQueue);
     config.runner_type = tt::config::ModelRunnerType::MOCK_PIPELINE;
     config.stop_token_ids = std::move(stopTokenIds);
-    runner =
-        std::make_unique<BlazeRunner>(config, &resultQueue, &taskQueue,
-                                      &cancelQueue, std::move(memoryManager));
+    runner = std::make_unique<BlazeDecodeRunner>(config, &resultQueue,
+                                                 &taskQueue, &cancelQueue,
+                                                 std::move(memoryManager));
 
     runnerThread = std::thread([this]() {
       try {
@@ -134,7 +133,7 @@ class BlazeRunnerHarness {
   tt::ipc::in_memory::TaskQueue taskQueue;
   tt::ipc::in_memory::CancelQueue cancelQueue;
   tt::config::LLMConfig config{};
-  std::unique_ptr<BlazeRunner> runner;
+  std::unique_ptr<BlazeDecodeRunner> runner;
   std::thread runnerThread;
   std::exception_ptr runnerError;
   bool isShutdown = false;

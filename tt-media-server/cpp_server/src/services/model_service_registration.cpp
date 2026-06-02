@@ -28,7 +28,8 @@
 #include "utils/logger.hpp"
 
 #ifdef ENABLE_BLAZE
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 #endif
 
 namespace tt::services {
@@ -81,8 +82,13 @@ void registerLLM() {
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
     const auto& llm = std::get<config::LLMConfig>(cfg);
-    return std::make_unique<runners::blaze::BlazeRunner>(
-        llm, resultQueue, taskQueue, cancelQueue);
+    if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+      return std::make_unique<runners::blaze::BlazeDecodeRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    } else {
+      return std::make_unique<runners::blaze::BlazePrefillRunner>(
+          llm, resultQueue, taskQueue, cancelQueue);
+    }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::PIPELINE_MANAGER,

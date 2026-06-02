@@ -202,6 +202,10 @@ unsigned pmConnectTimeoutMs();
  * defaults::DS_MAX_USERS. */
 size_t dsMaxUsers();
 
+/** Prefill scheduler max users from PS_MAX_USERS. Default:
+ * defaults::PS_MAX_USERS. */
+size_t psMaxUsers();
+
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
 unsigned warmupTimeoutMs();

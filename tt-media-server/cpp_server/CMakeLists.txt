@@ -370,7 +370,8 @@ set(LLM_RUNNER_LIB_SOURCES
 # Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runtime/runners/blaze_runner/blaze_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_decode_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_prefill_runner.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()

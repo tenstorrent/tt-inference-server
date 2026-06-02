@@ -8,22 +8,27 @@
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
+#include "tt_llm_engine/pipeline/channel_configs.hpp"
+#include "tt_llm_engine/pipeline/prefill_pipeline_config.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
+#include "tt_llm_engine/scheduler/prefill/prefill_types.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze::utils {
 
-namespace ds = tt_llm_engine::scheduler::decode;
+namespace sch = tt_llm_engine::scheduler;
+namespace ds = sch::decode;
+namespace ps = sch::prefill;
 
-inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
+inline sch::ISRequest makeAllocateRequest(uint32_t requestId) {
   return {.type = ds::RequestType::ALLOCATE,
           .request_id = requestId,
           .tokens = {},
           .gen = {}};
 }
 
-inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
+inline sch::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::EVICT,
           .request_id = requestId,
           .slot_id = slotId,
@@ -31,7 +36,7 @@ inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
           .gen = {}};
 }
 
-inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
+inline sch::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
   return {.type = ds::RequestType::STOP,
           .request_id = requestId,
           .slot_id = slotId,
@@ -39,7 +44,7 @@ inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
           .gen = {}};
 }
 
-inline ds::GenerationParams makeGenerationParams(
+inline sch::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
   return {
       .max_new_tokens =
@@ -54,32 +59,32 @@ inline ds::GenerationParams makeGenerationParams(
       .stop_tokens = seq.getSamplingParams().stop_token_ids};
 }
 
-inline void fillSequenceFields(ds::ISRequest& req,
+inline void fillSequenceFields(sch::ISRequest& req,
                                const tt::domain::llm::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 
-inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const tt::domain::llm::Sequence& seq) {
-  ds::ISRequest req{};
+inline sch::ISRequest makeSubmitRequest(uint32_t slotId,
+                                        const tt::domain::llm::Sequence& seq) {
+  sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   return req;
 }
 
-inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq,
-                                         uint32_t currentPosition) {
-  ds::ISRequest req{};
+inline sch::ISRequest makeContinueRequest(uint32_t slotId,
+                                          const tt::domain::llm::Sequence& seq,
+                                          uint32_t currentPosition) {
+  sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
-    req.gen.position_id = *seq.getKVPositionId();
+    req.position_id = *seq.getKVPositionId();
   } else {
-    req.gen.position_id = currentPosition;
+    req.position_id = currentPosition;
   }
   return req;
 }
@@ -93,6 +98,16 @@ inline void initSlotForRun(SlotContext& slot,
   slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.specAcceptsAtStart = sched.get_spec_accepts(slot.slotId);
   slot.specRejectsAtStart = sched.get_spec_rejects(slot.slotId);
+  slot.taskId = seq.taskId;
+  slot.tokensGenerated = 0;
+}
+
+// Populates per-run fields on `slot` from `seq`. Snapshots the slot's spec
+// counters at this moment so handleOutput can later report per-turn deltas.
+// Does not touch state machine / metrics / task binding — caller's job.
+inline void initSlotForRun(SlotContext& slot,
+                           const tt::domain::llm::Sequence& seq) {
+  slot.ignoreEos = seq.getSamplingParams().ignore_eos;
   slot.taskId = seq.taskId;
   slot.tokensGenerated = 0;
 }
@@ -126,7 +141,7 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 
 namespace pl = tt_llm_engine::pipeline;
 
-inline pl::PipelineConfig makePipelineConfig(
+inline pl::PipelineConfig makeDecodePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
@@ -152,8 +167,26 @@ inline pl::PipelineConfig makePipelineConfig(
       };
        */
     default:
-      throw std::runtime_error("Invalid blaze runner type");
+      throw std::runtime_error("Invalid blaze decode runner type");
   }
+}
+
+inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
+    const tt::config::LLMConfig& config) {
+  switch (config.runner_type) {
+    case tt::config::ModelRunnerType::PIPELINE_MANAGER:
+      return pl::PrefillH2DConfig{
+          .service_id = "prefill_service",
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return pl::PrefillMockConfig{};
+    default:
+      throw std::runtime_error("Invalid blaze prefill runner type");
+  }
+}
+
+inline pl::CounterChannelConfig makePrefillAckChannelConfig() {
+  return pl::SingleProcessCounterChannelConfig{};
 }
 
 }  // namespace tt::runners::blaze::utils

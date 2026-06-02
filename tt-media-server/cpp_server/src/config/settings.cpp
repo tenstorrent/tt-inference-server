@@ -225,7 +225,11 @@ unsigned pmConnectTimeoutMs() {
 }
 
 size_t dsMaxUsers() {
-  return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+  return static_cast<size_t>(envUlong("DS_MAX_USERS", defaults::DS_MAX_USERS));
+}
+
+size_t psMaxUsers() {
+  return static_cast<size_t>(envUlong("PS_MAX_USERS", defaults::PS_MAX_USERS));
 }
 
 unsigned warmupTimeoutMs() {
