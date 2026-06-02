@@ -8,21 +8,27 @@ Promote dev model specs to prod for every model-device combination marked
 ``release`` in models-ci-config.json.
 
 For each (model, inference_engine, device) under ``ci.release`` in the CI config,
-the matching template in workflows/model_specs/dev/ is copied (whole, with inline
-comments preserved) into the same-named file in workflows/model_specs/prod/,
-upserting by (impl, inference_engine, weights) identity.
+the matching template in workflows/model_specs/dev/ is copied into the same-named
+file in workflows/model_specs/prod/, upserting by (impl, inference_engine, weights)
+identity.
+
+The catalogue YAML files are hand-authored with inconsistent block-sequence
+indentation (top-level list items at column 0, nested lists indented to column 4),
+which no single ruamel.yaml indent setting can reproduce. Round-tripping a whole
+file therefore reformats every untouched template. To preserve formatting exactly,
+this tool splices template TEXT blocks: each catalogue file is segmented into
+top-level ``- ...`` template blocks and the filler between them; only the specific
+blocks that change are replaced/appended, so untouched templates stay byte-identical.
 """
 
 import argparse
 import json
+import re
 import sys
 from collections import namedtuple
-from copy import deepcopy
-from io import StringIO
 from pathlib import Path
 
-from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap, CommentedSeq
+import yaml
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -35,13 +41,11 @@ DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 
 ReleaseCombo = namedtuple("ReleaseCombo", ["model_name", "engine", "device"])
 
+# A matched dev template: its upsert identity, parsed dict, and exact source lines.
+MatchedBlock = namedtuple("MatchedBlock", ["identity", "template", "lines"])
 
-def _yaml() -> YAML:
-    """A round-trip YAML configured to preserve comments and avoid line wrapping."""
-    y = YAML()
-    y.preserve_quotes = True
-    y.width = 4096
-    return y
+# A top-level template item starts with "- " (or a bare "-") at column 0.
+_TEMPLATE_ITEM_RE = re.compile(r"^-(\s|$)")
 
 
 def model_name_from_weight(weight: str) -> str:
@@ -102,38 +106,76 @@ def template_matches(template: dict, combo: ReleaseCombo) -> bool:
 
 
 def template_identity(template: dict):
-    """Upsert identity for a template: (impl, engine, frozenset(weights))."""
+    """Upsert identity for a template block: (impl, engine, weights, devices).
+
+    The device set is part of the identity because the catalogue intentionally
+    holds multiple blocks per (impl, engine, weights) — one per device group
+    (e.g. the same model validated on different hardware at different commits).
+    Without devices, distinct blocks would collide and overwrite each other.
+    """
     return (
         template["impl"],
         template_engine(template),
         frozenset(template.get("weights", [])),
+        frozenset(template_devices(template)),
     )
 
 
+def split_into_blocks(text: str):
+    """Segment catalogue text into ("block", lines) and ("filler", lines) parts.
+
+    A "block" is a top-level ``- ...`` template item: its first line plus all
+    following indented body lines. "filler" is everything else (the ``templates:``
+    header, column-0 comment banners, blank lines). Concatenating every segment's
+    lines reproduces ``text`` exactly.
+    """
+    lines = text.splitlines(keepends=True)
+    segments = []
+    i = 0
+    while i < len(lines):
+        if _TEMPLATE_ITEM_RE.match(lines[i].rstrip("\n")):
+            block = [lines[i]]
+            i += 1
+            # Body lines are indented; a blank or column-0 line ends the block.
+            while i < len(lines) and lines[i].startswith((" ", "\t")):
+                block.append(lines[i])
+                i += 1
+            segments.append(("block", block))
+        else:
+            segments.append(("filler", [lines[i]]))
+            i += 1
+    return segments
+
+
+def parse_block(block_lines) -> dict:
+    """Parse a template block's text into a plain dict."""
+    return yaml.safe_load("".join(block_lines))[0]
+
+
 def find_matches(dev_dir: Path, combos: set):
-    """Scan dev catalog files for templates matching any release combo.
+    """Scan dev catalogue files for templates matching any release combo.
 
     Returns (matches_by_file, unmatched):
-      - matches_by_file: dict filename -> list of matched template objects,
-        in file order, de-duplicated by identity.
+      - matches_by_file: dict filename -> list of MatchedBlock, in file order,
+        de-duplicated by identity.
       - unmatched: set of combos that matched no dev template.
     """
-    yaml = _yaml()
     matched_combos = set()
     matches_by_file = {}
-    for dev_file in sorted(dev_dir.glob("*.yaml")):
-        doc = yaml.load(dev_file.read_text())
-        templates = (doc or {}).get("templates") or []
+    for dev_file in sorted(Path(dev_dir).glob("*.yaml")):
         picked = []
         picked_ids = set()
-        for template in templates:
+        for kind, lines in split_into_blocks(dev_file.read_text()):
+            if kind != "block":
+                continue
+            template = parse_block(lines)
             hits = [c for c in combos if template_matches(template, c)]
             if not hits:
                 continue
             matched_combos.update(hits)
             identity = template_identity(template)
             if identity not in picked_ids:
-                picked.append(template)
+                picked.append(MatchedBlock(identity, template, lines))
                 picked_ids.add(identity)
         if picked:
             matches_by_file[dev_file.name] = picked
@@ -141,25 +183,38 @@ def find_matches(dev_dir: Path, combos: set):
     return matches_by_file, unmatched
 
 
-def upsert_template(prod_templates, template) -> str:
-    """Insert or replace template in prod_templates by identity.
+def upsert_block(segments, identity, lines) -> str:
+    """Replace the block segment with matching identity, else append a new one.
 
-    Returns "updated" if an existing same-identity template was replaced in
-    place, else "appended".
+    Operates in place on the ``segments`` list from split_into_blocks. Returns
+    "updated" if an existing same-identity block was replaced, else "appended".
     """
-    identity = template_identity(template)
-    for i, existing in enumerate(prod_templates):
-        if template_identity(existing) == identity:
-            prod_templates[i] = template
+    for idx, (kind, seg_lines) in enumerate(segments):
+        if kind == "block" and template_identity(parse_block(seg_lines)) == identity:
+            segments[idx] = ("block", list(lines))
             return "updated"
-    prod_templates.append(template)
+
+    last_block_idx = None
+    for idx, (kind, _) in enumerate(segments):
+        if kind == "block":
+            last_block_idx = idx
+    new_segment = ("block", _ensure_trailing_newline(list(lines)))
+    if last_block_idx is None:
+        segments.append(new_segment)
+    else:
+        segments.insert(last_block_idx + 1, new_segment)
     return "appended"
 
 
-def _dump_to_str(yaml: YAML, doc) -> str:
-    buf = StringIO()
-    yaml.dump(doc, buf)
-    return buf.getvalue()
+def _ensure_trailing_newline(lines):
+    """Guarantee the block's last line ends with a newline (safe to append after)."""
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    return lines
+
+
+def _render(segments) -> str:
+    return "".join(line for _, seg_lines in segments for line in seg_lines)
 
 
 def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
@@ -167,38 +222,34 @@ def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
 
     Returns a report dict:
       - combos: set of all release combos
-      - matches_by_file: dict filename -> matched dev templates
+      - matches_by_file: dict filename -> list of MatchedBlock
       - unmatched: set of combos with no dev template
       - actions: dict filename -> list of (identity, "appended"|"updated")
-      - changed_files: list of prod filenames whose content changed
+      - changed_files: list of prod filenames whose content would change
     """
-    yaml = _yaml()
     ci_config = json.loads(Path(ci_config_path).read_text())
     combos = collect_release_combos(ci_config)
     matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
 
     actions = {}
     changed_files = []
-    for filename, templates in matches_by_file.items():
+    for filename, matched in matches_by_file.items():
         prod_file = Path(prod_dir) / filename
         original = prod_file.read_text() if prod_file.exists() else ""
-        doc = yaml.load(original) if original else None
-        if not isinstance(doc, CommentedMap):
-            doc = CommentedMap()
-        if not isinstance(doc.get("templates"), CommentedSeq):
-            doc["templates"] = CommentedSeq()
+        segments = split_into_blocks(original)
 
         file_actions = []
-        for template in templates:
-            action = upsert_template(doc["templates"], deepcopy(template))
-            file_actions.append((template_identity(template), action))
+        for block in matched:
+            action = upsert_block(segments, block.identity, block.lines)
+            file_actions.append((block.identity, action))
         actions[filename] = file_actions
 
-        new_text = _dump_to_str(yaml, doc)
-        if new_text != original and not dry_run:
+        new_text = _render(segments)
+        if new_text != original:
             changed_files.append(filename)
-            prod_file.parent.mkdir(parents=True, exist_ok=True)
-            prod_file.write_text(new_text)
+            if not dry_run:
+                prod_file.parent.mkdir(parents=True, exist_ok=True)
+                prod_file.write_text(new_text)
 
     return {
         "combos": combos,
@@ -232,10 +283,11 @@ def main(argv=None) -> int:
     prefix = "[dry-run] " if args.dry_run else ""
     for filename, file_actions in sorted(report["actions"].items()):
         for identity, action in file_actions:
-            impl, engine, weights = identity
+            impl, engine, weights, devices = identity
             print(
                 f"{prefix}{action.upper():8} {filename}: "
-                f"{impl} [{engine.name}] {sorted(weights)}"
+                f"{impl} [{engine.name}] {sorted(weights)} "
+                f"on {sorted(d.name for d in devices)}"
             )
     changed = report["changed_files"]
     print(f"{prefix}{len(changed)} prod file(s) changed: {sorted(changed)}")
