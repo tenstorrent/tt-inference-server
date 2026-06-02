@@ -4,10 +4,11 @@
 
 """Lazy facade for LLM test runners.
 
-The LLM runners live in separate submodules with disjoint dependency
-footprints. Loading them lazily via :pep:`562` ``__getattr__`` lets one
-code path skip the other runners' imports instead of paying for all of
-them at every ``import test_module.llm_tests``.
+``run_llm_performance`` and ``run_prefix_cache`` live in separate
+submodules with disjoint dependency footprints. Loading them lazily via
+:pep:`562` ``__getattr__`` lets the prefix-cache code path skip the LLM
+performance runner's imports (and vice versa) instead of paying for both
+at every ``import test_module.llm_tests``.
 """
 
 _LAZY_FROM_AGENTIC_EVAL_TESTS = {"run_llm_agentic_eval"}

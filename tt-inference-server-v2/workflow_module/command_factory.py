@@ -54,6 +54,7 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
 
     device = DeviceTypes.from_string(args.device)
+    runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
     output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
     output_path.mkdir(parents=True, exist_ok=True)
@@ -68,6 +69,7 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
         output_path=str(output_path),
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
+        runtime_config=runtime_config,
     )
 
 

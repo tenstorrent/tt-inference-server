@@ -20,6 +20,14 @@ Prefix-caching benchmark (LLM-only, --workflow benchmarks):
             --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
             --prefix-cache --prefix-cache-preset ci --service-port 8000 \
             --jwt-secret "$JWT_SECRET"
+
+Agentic evals (LLM-only, --workflow agentic):
+    Agentic harnesses require the dedicated ``EVALS_AGENTIC`` venv. Use
+    ``run_agentic.py`` to select/create that venv and re-exec this script:
+
+        python tt-inference-server-v2/run_agentic.py \
+            --model Qwen3.6-27B --workflow agentic --device gpu \
+            --service-port 8000
 """
 
 from __future__ import annotations
@@ -243,37 +251,6 @@ def parse_args() -> argparse.Namespace:
             _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
         )
     return args
-
-
-def _maybe_reexec_in_evals_agentic_venv(args: argparse.Namespace) -> None:
-    """For ``--workflow agentic``: materialize the EVALS_AGENTIC venv and re-exec.
-
-    Reuses v1's existing ``WorkflowVenvType.EVALS_AGENTIC`` venv config
-    (harbor + mini-swe-agent + SWE-bench, declared in
-    workflows/workflow_venvs.py). Idempotent: no-op when already inside
-    the venv.
-    """
-    if args.workflow != "agentic":
-        return
-
-    from workflows.workflow_types import WorkflowVenvType
-    from workflows.workflow_venvs import VENV_CONFIGS
-
-    venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC]
-    venv_python = venv_config.venv_python
-    if Path(sys.executable).resolve() == venv_python.resolve():
-        logger.info("Already inside EVALS_AGENTIC venv (%s).", sys.executable)
-        return
-
-    logger.info("Ensuring EVALS_AGENTIC venv at %s ...", venv_config.venv_path)
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
-    if not venv_config.setup(model_spec=model_spec):
-        raise RuntimeError("Failed to setup EVALS_AGENTIC venv")
-
-    logger.info("Re-executing inside EVALS_AGENTIC venv: %s", venv_python)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
 
 
 def main() -> int:
