@@ -188,8 +188,19 @@ GenerateRequest parse_generate_request(const std::vector<uint8_t>& bodyBytes) {
     if (sc.isMember("min_tokens") && !sc["min_tokens"].isNull()) {
       req.min_tokens = sc["min_tokens"].asInt();
     }
-    if (sc.isMember("stop_token_ids") && sc["stop_token_ids"].isArray()) {
-      for (const auto& t : sc["stop_token_ids"]) {
+    // Dynamo's StopConditions serializes the token-id stop list as
+    // `stop_token_ids_hidden` (see lib/llm/src/protocols/common.rs — the Rust
+    // field has no serde rename). Prefer that key, but also accept the plain
+    // `stop_token_ids` name for forward-compatibility / other senders.
+    const Json::Value* stopIds = nullptr;
+    if (sc.isMember("stop_token_ids_hidden") &&
+        sc["stop_token_ids_hidden"].isArray()) {
+      stopIds = &sc["stop_token_ids_hidden"];
+    } else if (sc.isMember("stop_token_ids") && sc["stop_token_ids"].isArray()) {
+      stopIds = &sc["stop_token_ids"];
+    }
+    if (stopIds != nullptr) {
+      for (const auto& t : *stopIds) {
         req.stop_token_ids.push_back(t.asInt());
       }
     }
