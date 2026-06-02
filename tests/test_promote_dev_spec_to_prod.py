@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import textwrap
 
 from ruamel.yaml.comments import CommentedSeq
@@ -12,6 +13,7 @@ from scripts.release.promote_dev_spec_to_prod import (
     find_matches,
     iter_implementations,
     model_name_from_weight,
+    promote,
     template_identity,
     template_matches,
     upsert_template,
@@ -231,3 +233,103 @@ def test_upsert_replaces_same_identity_and_leaves_others():
     assert len(prod) == 2
     assert prod[0] is other  # untouched
     assert prod[1]["version"] == "0.2.0"
+
+
+def _build_tree(tmp_path):
+    """dev has a Llama template with an inline comment; prod has an older copy."""
+    dev = tmp_path / "dev"
+    prod = tmp_path / "prod"
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          version: "0.2.0"
+          device_model_specs:
+            - device: GALAXY
+              max_context: 16384  # 16 * 1024
+            - device: N150
+              max_context: 4096
+        """,
+    )
+    _write(
+        prod / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          version: "0.1.0"
+          device_model_specs:
+            - device: GALAXY
+              max_context: 16384
+        """,
+    )
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "Llama-3.1-8B-Instruct": {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    }
+                }
+            }
+        )
+    )
+    return ci, dev, prod
+
+
+def test_promote_updates_prod_preserving_comment_and_whole_template(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    report = promote(ci, dev, prod, dry_run=False)
+
+    text = (prod / "llm.yaml").read_text()
+    assert "0.2.0" in text  # version bumped from dev
+    assert "# 16 * 1024" in text  # inline comment preserved
+    assert "device: N150" in text  # whole template copied (non-release device)
+    assert report["unmatched"] == set()
+    assert "llm.yaml" in report["changed_files"]
+
+
+def test_promote_dry_run_writes_nothing(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    before = (prod / "llm.yaml").read_text()
+    report = promote(ci, dev, prod, dry_run=True)
+    assert (prod / "llm.yaml").read_text() == before
+    assert report["changed_files"] == []
+
+
+def test_promote_is_idempotent(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    promote(ci, dev, prod, dry_run=False)
+    after_first = (prod / "llm.yaml").read_text()
+    report = promote(ci, dev, prod, dry_run=False)
+    assert (prod / "llm.yaml").read_text() == after_first
+    assert report["changed_files"] == []
+
+
+def test_promote_reports_unmatched_combo(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "ghost-model": {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    }
+                }
+            }
+        )
+    )
+    report = promote(ci, dev, prod, dry_run=False)
+    assert (
+        ReleaseCombo("ghost-model", InferenceEngine.VLLM, DeviceTypes.GALAXY)
+        in report["unmatched"]
+    )

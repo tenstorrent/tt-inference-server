@@ -13,11 +13,15 @@ comments preserved) into the same-named file in workflows/model_specs/prod/,
 upserting by (impl, inference_engine, weights) identity.
 """
 
+import json
 import sys
 from collections import namedtuple
+from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -149,3 +153,56 @@ def upsert_template(prod_templates, template) -> str:
             return "updated"
     prod_templates.append(template)
     return "appended"
+
+
+def _dump_to_str(yaml: YAML, doc) -> str:
+    buf = StringIO()
+    yaml.dump(doc, buf)
+    return buf.getvalue()
+
+
+def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
+    """Promote release-marked dev templates into prod.
+
+    Returns a report dict:
+      - combos: set of all release combos
+      - matches_by_file: dict filename -> matched dev templates
+      - unmatched: set of combos with no dev template
+      - actions: dict filename -> list of (identity, "appended"|"updated")
+      - changed_files: list of prod filenames whose content changed
+    """
+    yaml = _yaml()
+    ci_config = json.loads(Path(ci_config_path).read_text())
+    combos = collect_release_combos(ci_config)
+    matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
+
+    actions = {}
+    changed_files = []
+    for filename, templates in matches_by_file.items():
+        prod_file = Path(prod_dir) / filename
+        original = prod_file.read_text() if prod_file.exists() else ""
+        doc = yaml.load(original) if original else None
+        if not isinstance(doc, CommentedMap):
+            doc = CommentedMap()
+        if not isinstance(doc.get("templates"), CommentedSeq):
+            doc["templates"] = CommentedSeq()
+
+        file_actions = []
+        for template in templates:
+            action = upsert_template(doc["templates"], deepcopy(template))
+            file_actions.append((template_identity(template), action))
+        actions[filename] = file_actions
+
+        new_text = _dump_to_str(yaml, doc)
+        if new_text != original and not dry_run:
+            changed_files.append(filename)
+            prod_file.parent.mkdir(parents=True, exist_ok=True)
+            prod_file.write_text(new_text)
+
+    return {
+        "combos": combos,
+        "matches_by_file": matches_by_file,
+        "unmatched": unmatched,
+        "actions": actions,
+        "changed_files": changed_files,
+    }
