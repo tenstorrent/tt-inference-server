@@ -9,8 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
-import yaml
-
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
     get_repo_root_path,
@@ -227,6 +225,10 @@ def setup_evals_meta(
     )
     meta_eval_data_dir = meta_eval_dir / f"work_dir_{model_spec.model_name}"
     if not meta_eval_data_dir.exists():
+        # PyYAML is only needed by this meta-eval setup hook, not by every
+        # caller of ``workflow_venvs``.
+        import yaml
+
         logger.info(f"preparing meta eval datasets for: {meta_eval_data_dir}")
         os.chdir(meta_eval_dir)
         yaml_path = meta_eval_dir / "eval_config.yaml"
@@ -371,6 +373,12 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
         requirements_file="v2-run-script.txt",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.V2_PREFIX_CACHE,
+        requirements_file="v2-prefix-cache.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.HF_SETUP,
