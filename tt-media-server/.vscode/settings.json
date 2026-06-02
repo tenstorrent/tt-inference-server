@@ -32,7 +32,7 @@
     "python.languageServer": "None",
     "python-envs.pythonProjects": [],
     "python.envFile": "${workspaceFolder}/.env.test",
-    "cmake.sourceDirectory": "/localdev/idjuric/tt-inference-server/tt-media-server/cpp_server/build/_deps/prometheus-cpp-subbuild",
+    "cmake.sourceDirectory": "${workspaceFolder}/tt-media-server/cpp_server",
     "cmake.useCMakePresets": "always",
     "cmake.allowCommentsInPresetsFile": true,
     "cmake.configureOnOpen": true,
