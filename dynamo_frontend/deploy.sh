@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Directory this script lives in. Used as the base for the tokenizer scratch
+# dir: it must NOT be under /tmp, because on hosts where dockerd runs with
+# systemd PrivateTmp a `-v /tmp/x:…` bind mount sees the daemon's (empty) /tmp
+# rather than ours, silently producing an empty tokenizer mount (the frontend
+# then 404s the model). See DEPLOY.md / MANUAL_KIMI_MOCK.md §D.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
     cat >&2 <<EOF
 Usage: $0 --etcd-image <img> --worker-image <img> --frontend-image <img> [options]
@@ -230,6 +237,21 @@ if [[ -n "$LOCAL_BUILD" ]]; then
     WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
 fi
 
+# Model-specific worker env. DeepSeek-R1 uses the legacy MD format and the
+# 'deepseek' blaze socket descriptor prefix. Kimi K2.6 uses its own 'kimi'
+# prefix and the default MD format (its tiktoken tokenizer is advertised as
+# tik_token_model, not DeepSeek's hf_tokenizer_json layout).
+WORKER_MODEL_ENV=()
+case "$HF_MODEL_ID" in
+    *[Kk]imi*)
+        WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=kimi)
+        ;;
+    *)
+        WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1)
+        WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek)
+        ;;
+esac
+
 docker run -d --name "$WORKER_NAME" \
     --network "$NETWORK_NAME" \
     --shm-size=2g \
@@ -246,14 +268,13 @@ docker run -d --name "$WORKER_NAME" \
     -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
-    -e USE_DEEPSEEK_MD_FORMAT=1 \
-    -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek \
+    "${WORKER_MODEL_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 \
     -e TT_LOG_LEVEL=debug \
     -e USE_FAST_MODE=1 \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     "$WORKER_IMAGE" \
-    ${LOCAL_BUILD:+-c 'cd cpp_server && LD_PRELOAD=$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0 ./build/tt_media_server_cpp'} \
+    ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \
     >/dev/null
 
 log "waiting for worker to register against etcd (up to 60s)"
@@ -309,7 +330,9 @@ if [[ -z "$SKIP_TOKENIZER_SHARE" ]]; then
             exit 1
         fi
     else
-        TOKENIZERS_TEMP_DIR="$(mktemp -d --suffix=-deploy-tokenizers)"
+        # NOT under /tmp — see SCRIPT_DIR note above (dockerd PrivateTmp would
+        # make the resulting bind mount silently empty).
+        TOKENIZERS_TEMP_DIR="$(mktemp -d "${SCRIPT_DIR}/.deploy-tokenizers.XXXXXX")"
         log "extracting tokenizers from worker image -> $TOKENIZERS_TEMP_DIR"
         TMP_CID="$(docker create "$WORKER_IMAGE")"
         if ! docker cp "${TMP_CID}:${WORKER_TOKENIZER_DIR}/." "$TOKENIZERS_TEMP_DIR/" >/dev/null 2>&1; then
@@ -350,7 +373,12 @@ if [[ -z "$SKIP_TOKENIZER_SHARE" ]]; then
     log "  using $HF_MODEL_ID:"
     find "$MODEL_SUBDIR" -maxdepth 1 -type f \
         | sed "s|^|[deploy]     |"
-    TOKENIZER_MOUNT+=(-v "${TOKENIZERS_HOST_DIR_ABS}:${WORKER_TOKENIZER_DIR}:ro")
+    # Mount read-write (not :ro): the frontend entrypoint.sh runs
+    # `mkdir -p "$MODEL_PATH"` under `set -e`, and on a read-only bind mount that
+    # mkdir fails with EROFS (the kernel reports the error even though the dir
+    # already exists), so the frontend container exits before starting. RW lets
+    # the no-op mkdir succeed; nothing is actually written for the baked models.
+    TOKENIZER_MOUNT+=(-v "${TOKENIZERS_HOST_DIR_ABS}:${WORKER_TOKENIZER_DIR}:rw")
     FRONTEND_MODEL_PATH_ENV+=(-e "MODEL_PATH=${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}")
 else
     log "skipping tokenizer share (--skip-tokenizer-share)"

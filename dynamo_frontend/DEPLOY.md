@@ -46,6 +46,76 @@ Show all options:
 The script runs in the foreground, tailing the frontend's logs. Hit Ctrl+C
 to stop and remove all three containers.
 
+## Running locally (local build, no TT hardware)
+
+For local development on a box **without** a Tenstorrent card, run the worker
+from a locally-built `cpp_server` binary (`--local-build`) against a **mock**
+backend. The worker image only supplies the runtime environment; `--local-build`
+bind-mounts your freshly built `build/` over the image's, so you can iterate on
+`cpp_server` without rebuilding the image.
+
+Prerequisites:
+
+- A mock worker image and the frontend image, built once (see
+  [`MANUAL_KIMI_MOCK.md`](./MANUAL_KIMI_MOCK.md) §A):
+  ```bash
+  cd /localdev/ljovanovic/tt-inference-server
+  DOCKER_BUILDKIT=1 docker build -f tt-media-server/Dockerfile.blaze -t tt-media-server-cpp:mock .   # BUILD_MODE=mock (default)
+  DOCKER_BUILDKIT=1 docker build -f dynamo_frontend/Dockerfile.frontend -t dynamo-frontend .
+  ```
+- A local mock build of the worker binary:
+  ```bash
+  cd tt-media-server/cpp_server && ./build.sh        # ENABLE_BLAZE=OFF (default) → build/tt_media_server_cpp
+  ```
+
+**DeepSeek-R1-0528:**
+
+```bash
+cd /localdev/ljovanovic/tt-inference-server/dynamo_frontend
+./deploy.sh \
+  --etcd-image quay.io/coreos/etcd:v3.5.13 \
+  --worker-image tt-media-server-cpp:mock \
+  --frontend-image dynamo-frontend \
+  --local-build --cpp-server-dir ../tt-media-server/cpp_server \
+  --llm-device-backend mock_pipeline \
+  --hf-model-id deepseek-ai/DeepSeek-R1-0528
+```
+
+**Kimi-K2.6** — identical, only the model id changes (the script switches the
+worker's `BLAZE_SOCKET_DESCRIPTOR_PREFIX`/MD-format env automatically):
+
+```bash
+./deploy.sh \
+  --etcd-image quay.io/coreos/etcd:v3.5.13 \
+  --worker-image tt-media-server-cpp:mock \
+  --frontend-image dynamo-frontend \
+  --local-build --cpp-server-dir ../tt-media-server/cpp_server \
+  --llm-device-backend mock_pipeline \
+  --hf-model-id moonshotai/Kimi-K2.6
+```
+
+Verify from a second shell (the mock emits synthetic `<think>…</think>
+response …` text — what matters is a 200 with `prompt_tokens`/`completion_tokens`):
+
+```bash
+curl -s http://localhost:8080/v1/models | jq
+curl -sS http://localhost:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"moonshotai/Kimi-K2.6","messages":[{"role":"user","content":"Hello"}],"max_tokens":16}' | jq
+```
+
+> **Notes for the local/mock path**
+> - The worker auto-builds with `BUILD_MODE=mock`, so there is no
+>   `libtt_llm_engine.so.0`; the script only sets `LD_PRELOAD` when that blaze
+>   library is actually present, so the mock binary runs without it.
+> - The tokenizer scratch dir is created next to this script (not under `/tmp`).
+>   On hosts where dockerd runs with systemd `PrivateTmp`, a `/tmp` scratch dir
+>   bind-mounts the daemon's empty `/tmp` and the frontend silently 404s the
+>   model (it never sees `tiktoken.model`). Keeping it off `/tmp` avoids that.
+> - The tokenizer tree is bind-mounted **read-write** so the frontend
+>   entrypoint's `mkdir -p "$MODEL_PATH"` (run under `set -e`) doesn't fail with
+>   `EROFS` on an otherwise read-only mount.
+
 ## Flags
 
 Required:
@@ -69,7 +139,8 @@ Optional:
 | `--hf-model-id <id>` | `deepseek-ai/DeepSeek-R1-0528` | Tokenizer repo the frontend pulls at boot |
 | `--llm-device-backend <name>` | `mock_pipeline` | Backend the cpp_server runner selects |
 | `--device-ids <ids>` | `(0)` | `DEVICE_IDS` env on the worker. Each top-level paren group becomes one parallel `LLMService` consumer thread. With the default `"(0)"` the worker only runs one in-flight generation at a time, regardless of how many requests the frontend pipelines. For benchmark concurrency on `mock_pipeline` use e.g. `"(0),(1),(2),(3),(4),(5),(6),(7)"`. |
-| `--cpp-binary <path>` | _(unset)_ | Bind-mount a locally-built `tt_media_server_cpp` over the image's binary. Useful when the prebuilt CI image ships a stale binary. Path is resolved with `readlink -f`. |
+| `--local-build` | _(off)_ | Bind-mount a locally-built `build/` over the image's, and run that binary instead of the image's. Requires `--cpp-server-dir`. See [Running locally](#running-locally-local-build-no-tt-hardware). |
+| `--cpp-server-dir <dir>` | _(unset)_ | Path to the local `cpp_server` directory (used with `--local-build`). Must contain `build/tt_media_server_cpp`. |
 | `--tokenizers-host-dir <dir>` | `<script_dir>/../tt-media-server/cpp_server/tokenizers` | Host directory that holds `<hf-model-id>/{config,tokenizer,tokenizer_config}.json`. Bind-mounted into the frontend at the path the worker advertises in the MDC. |
 | `--skip-tokenizer-share` | _(off)_ | Skip the tokenizer bind-mount. Debug only — the frontend will be unable to load any model the worker advertises via the MDC. |
 
@@ -83,8 +154,9 @@ export HF_TOKEN=hf_xxxxxxxxxxxx
 
 ### Overriding the worker binary
 
-If the prebuilt worker image's `tt_media_server_cpp` is stale (e.g. CI cache
-drift), build it locally and bind-mount the fresh binary:
+If the prebuilt worker image's binary is stale (e.g. CI cache drift), build
+`cpp_server` locally and run it with `--local-build` (bind-mounts your `build/`
+over the image's). For a real-hardware blaze build:
 
 ```bash
 cd /localdev/ljovanovic/tt-inference-server/tt-media-server/cpp_server
@@ -95,12 +167,15 @@ cd /localdev/ljovanovic/tt-inference-server/dynamo_frontend
   --etcd-image quay.io/coreos/etcd:v3.5.13 \
   --worker-image ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:<tag> \
   --frontend-image dynamo-frontend \
-  --cpp-binary ../tt-media-server/cpp_server/build/tt_media_server_cpp
+  --local-build --cpp-server-dir ../tt-media-server/cpp_server
 ```
 
-The binary is bind-mounted read-only over the image path
-`/home/container_app_user/app/server/cpp_server/build/tt_media_server_cpp`,
-so `run_cpp.sh` picks it up without any image rebuild.
+The `build/` dir is bind-mounted read-only over the image path
+`/home/container_app_user/app/server/cpp_server/build`, so the freshly built
+`tt_media_server_cpp` is picked up without any image rebuild. When the blaze
+library `tt-llm-engine/build-full/libtt_llm_engine.so.0` is present in the image
+it is `LD_PRELOAD`ed automatically; mock builds (no such library) run without it.
+For a mock, no-hardware run see [Running locally](#running-locally-local-build-no-tt-hardware).
 
 ## What the script does, step by step
 
