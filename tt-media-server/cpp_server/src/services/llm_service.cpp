@@ -500,11 +500,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       } else {
         // Regular content (text or reasoning)
-        if ((!parseResult.should_emit || parseResult.text.empty()) &&
-            !isFinal) {
-          continue;
-        }
-
+        // Always emit chunks with token_id for Session hash tracking, even if
+        // content is suppressed (e.g., think markers). The controller callback
+        // uses token_id to accumulate hashes; skipping here breaks prefix
+        // cache.
         auto response = buildStreamChunk(token, parseResult, stopTokenSet);
         entry->callback(response, isFinal);
         if (isFinal) {
@@ -624,15 +623,16 @@ void LLMService::processStreamingRequest(
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
-      taskId, static_cast<int>(prompt.size()));
+      taskId, static_cast<int>(tokenIds.size()));
 
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.continuation,
-      request.disaggregated,
+      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
+      request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
-          tt::utils::mapper::mapSamplingParams(request)));
+          tt::utils::mapper::mapSamplingParams(request)),
+      request.kv_position_id);
   taskQueue->push(*std::move(sequence));
 }
 

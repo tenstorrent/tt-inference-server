@@ -8,6 +8,8 @@
 
 namespace tt::domain {
 
+// Sentinel for an unassigned KV-cache slot. Matches tt_llm_engine INVALID_SLOT
+// and pipeline wire-format conventions (UINT32_MAX).
 constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
 
 }  // namespace tt::domain

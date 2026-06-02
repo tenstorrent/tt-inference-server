@@ -12,7 +12,6 @@
 #include <thread>
 
 #include "domain/session.hpp"
-#include "domain/slot_types.hpp"
 
 namespace {
 
@@ -55,7 +54,7 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
         promise.set_exception(
             std::make_exception_ptr(std::runtime_error(std::string(err))));
       },
-      loop, 0, slotId);
+      loop, {}, slotId);
 
   return future.get();
 }

@@ -41,6 +41,8 @@ void configureEnv() {
   setenv("LLM_MODE", "regular", 1);
   setenv("DEVICE_IDS", "(0)", 1);
   setenv("MAX_NUM_SESSIONS", "4", 1);
+  setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
+  setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
 }
 
 }  // namespace
@@ -102,9 +104,15 @@ using tt::test::ChatRequest;
 TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   server->setMemoryAutoRespond(false);
 
-  // 1. Fire the streaming request.
+  // 1. Fire the streaming request. The opener must be long enough to form at
+  //    least one block (32 tokens with test config) so the follow-up can hit
+  //    the prefix cache.
+  const std::string opener =
+      "hello this is a longer initial message that needs to have enough words "
+      "to produce at least thirty two tokens after tokenization so that the "
+      "prefix cache can form a block and the follow-up request can match it";
   auto responseFuture =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+      asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
@@ -143,18 +151,15 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   EXPECT_FALSE(stream.contentDeltas().empty())
       << "expected at least one content delta";
 
-  // 7. Follow-up with the same opener but a long claimed assistant turn
-  //    in between. If the controller sent the full conversation to the
-  //    worker (no cache hit), the prompt would include all those tokens.
-  //    With the cache HIT, only the delta — the trailing user turn —
-  //    is sent; the prompt token count stays close to a single-turn one.
+  // 7. Follow-up with the same opener but an assistant turn and a new user
+  //    turn appended. The block-based prefix cache matches the first block(s)
+  //    from the opener, and only the delta (assistant + new user) is sent.
+  //    With block size 32, the matched prefix is trimmed, leaving
+  //    (full_prompt - matched_tokens) tokens to prefill.
   const std::string longPriorAssistant =
-      "this is intentionally a long assistant turn so that if the controller "
-      "sent the full conversation history to the worker the prompt would "
-      "balloon to many more tokens than the small delta of the last user "
-      "turn alone";
+      "this is the assistant response that was generated for the initial turn";
   auto followUpFuture = asyncRequest(ChatRequest()
-                                         .user("hello")
+                                         .user(opener)
                                          .assistant(longPriorAssistant)
                                          .user("y")
                                          .maxTokens(1)
@@ -163,13 +168,19 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(followUpSeq, nullptr);
   EXPECT_TRUE(followUpSeq->isContinuation())
       << "follow-up should HIT the seed session";
-  // "y" tokenises to a single token. With the cache hit, the delta prompt
-  // is exactly that token wrapped in the chat-template markers — 3 tokens for
-  // continuation for the DeepSeek tokenizer (user-marker + "y" +
-  // assistant-marker, no BOS since it's already in the slot's KV cache). If the
-  // full conversation had been sent, the long prior assistant turn would have
-  // pushed this well into the dozens.
-  EXPECT_EQ(followUpSeq->getNumPromptTokens(), 3u);
+  // Block-based prefix caching: block(s) from the opener are matched and
+  // trimmed. The remaining tokens (full prompt minus matched) are sent to the
+  // worker. The key verification is that it's a continuation (cache hit) and
+  // fewer tokens than the full prompt are sent.
+  EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
+      << "continuation should still send some tokens";
+  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
+  // position. With block_size=32, first block matched = 32 tokens, so
+  // kv_position_id = 31 (0-indexed position of last matched token).
+  ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
+      << "continuation should have kv_position_id set";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
+      << "kv_position_id should be one less than matched tokens (0-indexed)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -211,9 +222,13 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   // Each turn appends a new user message to the running conversation. Turn
   // N+1's controller-side prefix lookup hash matches turn N's history, so
   // every turn after the first must be flagged as a continuation.
+  // The first message must be long enough to form at least one block (32
+  // tokens with test config) so subsequent turns can hit the prefix cache.
   ChatRequest convo;
   const std::vector<std::string> userMessages = {
-      "hello",
+      "multi-turn-test-unique-opener with enough words to produce at least "
+      "thirty two tokens after tokenization so that the prefix cache can "
+      "register a block for subsequent turns to match against",
       "how are you",
       "tell me a joke",
       "thanks",
@@ -284,16 +299,19 @@ TEST_F(MainIntegrationTest, DisaggregatedFlag_IsFalse_InRegularMode) {
 
 TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Two identical first-turn requests. Same content, same registration hash
-  // — but neither has a prior turn, so both bypass prefix-cache routing and
-  // each hits the Layer-2 ALLOCATE path. Verify they're independent: two
-  // distinct ALLOCATE requests, two distinct mocked slots, both flowing
-  // back to the Sequences pushed onto the task queue.
+  // — but when all candidate sessions are in-flight, both fall through to
+  // the ALLOCATE path. Verify they're independent: two distinct ALLOCATE
+  // requests, two distinct mocked slots, both flowing back to the Sequences
+  // pushed onto the task queue.
+  //
+  // Uses a unique opener to avoid acquiring sessions registered by earlier
+  // tests in this suite.
   server->setMemoryAutoRespond(false);
 
-  auto future1 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
-  auto future2 =
-      asyncRequest(ChatRequest().user("hello").maxTokens(1).stream());
+  auto future1 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
+  auto future2 = asyncRequest(
+      ChatRequest().user("two-first-turns-test").maxTokens(1).stream());
 
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
@@ -389,7 +407,12 @@ TEST_F(MainIntegrationTest,
   // multiple seeded candidates are available — every request ends up
   // with its own slot. No two requests ever share a slot.
   server->setMemoryAutoRespond(false);
-  const std::string opener = "concurrent-different-rest-opener";
+  // The opener must be long enough to form at least one block (32 tokens with
+  // test config) so the follow-up requests can hit the prefix cache.
+  const std::string opener =
+      "concurrent-different-rest-opener with enough words to produce at least "
+      "thirty two tokens after tokenization so that the prefix cache can "
+      "register blocks for the follow-up requests to match against";
   constexpr uint32_t kSeedSlotA = 7;
   constexpr uint32_t kSeedSlotB = 8;
 

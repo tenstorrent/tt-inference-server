@@ -62,7 +62,7 @@ class ReportGenerator:
         release_md = _assemble_release_markdown(normalized, rendered_pairs)
 
         md_path = out_dir / f"report_{normalized.report_id}.md"
-        json_path = out_dir / f"report_{normalized.report_id}.json"
+        json_path = out_dir / "data" / f"report_data_{normalized.report_id}.json"
 
         self._file_saver.write_markdown(release_md, md_path, strict=True)
         json_payload = normalized.to_dict()

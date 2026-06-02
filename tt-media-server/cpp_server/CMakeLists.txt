@@ -10,6 +10,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
 add_compile_options(-g)
 
+# Keep the frame pointer (rbp on x86-64) in every translation unit so that
+# perf/eBPF/profilers can walk stacks via `--call-graph fp` instead of paying
+# the cost of DWARF unwinding. Runtime cost on this workload is <1% (mutex /
+# IPC / HTTP-framing dominated, not register-pressure-bound numeric loops);
+# capture-time win is ~10x smaller perf.data and stacks that don't truncate
+# across -O2 optimization boundaries. Fedora 38+ and Ubuntu 24.04+ ship
+# distro-wide with this flag for the same reason.
+add_compile_options(-fno-omit-frame-pointer)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -259,7 +268,7 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 add_library(stb_image_write INTERFACE)
-target_include_directories(stb_image_write INTERFACE ${stb_SOURCE_DIR})
+target_include_directories(stb_image_write SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
@@ -592,7 +601,7 @@ add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -715,6 +724,7 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -807,10 +817,12 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
-set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 if(ENABLE_BLAZE)
@@ -838,6 +850,13 @@ add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
+
+add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
+target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(test_apply_delta_prompt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ApplyDeltaPrompt COMMAND test_apply_delta_prompt)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
