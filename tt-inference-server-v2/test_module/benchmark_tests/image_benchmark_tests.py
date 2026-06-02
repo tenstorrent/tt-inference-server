@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
-SDXL_BENCHMARK_NUM_PROMPTS = 100
 SDXL_SD35_INFERENCE_STEPS = 20
 SDXL_INPAINTING_INFERENCE_STEPS = 20
 FLUX_MOTIF_INFERENCE_STEPS = 28
@@ -335,10 +334,12 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     try:
         num_calls = get_num_calls(ctx)
         if runner_in_use == "tt-sdxl-trace":
+            num_chips = ctx.model_spec.device_model_spec.max_concurrency
+            if num_chips and num_chips > 0:
+                num_calls = num_chips
             logger.info(
-                f"Overriding num_calls for SDXL trace model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                f"Overriding num_calls for SDXL trace model to {num_calls} prompts (one per chip)"
             )
-            num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
         benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
             runner_in_use, _run_sdxl_image_generation_benchmark
