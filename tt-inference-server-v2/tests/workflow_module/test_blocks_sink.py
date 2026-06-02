@@ -104,6 +104,18 @@ def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
     assert "### Image Eval" in md
 
 
+def test_report_generator_writes_ci_report_data(tmp_path: Path):
+    acc = BlockAccumulator()
+    acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
+    schema = acc.build_schema()
+
+    result = ReportGenerator().generate(schema, tmp_path)
+
+    assert result.markdown_path.parent == tmp_path
+    assert result.json_path.parent == tmp_path
+    assert (tmp_path / "data" / f"report_data_{schema.report_id}.json").exists()
+
+
 def test_sweep_metadata_lives_only_at_top_level(tmp_path: Path):
     """Sweep-level model/device/timestamp live once in top-level metadata —
     never duplicated onto every block's serialised payload."""
