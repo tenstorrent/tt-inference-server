@@ -7,6 +7,8 @@ from scripts.release.promote_dev_spec_to_prod import (
     collect_release_combos,
     iter_implementations,
     model_name_from_weight,
+    template_identity,
+    template_matches,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -79,3 +81,43 @@ def test_collect_release_combos_ignores_nightly_and_weekly():
         }
     }
     assert collect_release_combos(ci_config) == set()
+
+
+def _llama_template():
+    return {
+        "weights": ["meta-llama/Llama-3.1-8B-Instruct"],
+        "impl": "tt_transformers",
+        "inference_engine": "VLLM",
+        "device_model_specs": [
+            {"device": "GALAXY", "max_concurrency": 32},
+            {"device": "N150", "max_concurrency": 1},
+            {"device": "P300X2", "max_concurrency": 8},
+        ],
+    }
+
+
+def test_template_matches_on_basename_engine_and_device():
+    combo = ReleaseCombo(
+        "Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY
+    )
+    assert template_matches(_llama_template(), combo) is True
+
+
+def test_template_does_not_match_wrong_device():
+    combo = ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.T3K)
+    assert template_matches(_llama_template(), combo) is False
+
+
+def test_template_does_not_match_wrong_engine():
+    combo = ReleaseCombo(
+        "Llama-3.1-8B-Instruct", InferenceEngine.FORGE, DeviceTypes.GALAXY
+    )
+    assert template_matches(_llama_template(), combo) is False
+
+
+def test_template_identity_is_impl_engine_weights():
+    assert template_identity(_llama_template()) == (
+        "tt_transformers",
+        InferenceEngine.VLLM,
+        frozenset({"meta-llama/Llama-3.1-8B-Instruct"}),
+    )

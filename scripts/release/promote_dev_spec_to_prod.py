@@ -70,3 +70,36 @@ def collect_release_combos(ci_config: dict) -> set:
                     ReleaseCombo(model_name, engine, DeviceTypes.from_string(device))
                 )
     return combos
+
+
+def template_engine(template: dict) -> InferenceEngine:
+    return InferenceEngine.from_string(template["inference_engine"])
+
+
+def template_devices(template: dict) -> set:
+    return {
+        DeviceTypes.from_string(d["device"])
+        for d in template.get("device_model_specs", [])
+    }
+
+
+def template_model_names(template: dict) -> set:
+    return {model_name_from_weight(w) for w in template.get("weights", [])}
+
+
+def template_matches(template: dict, combo: ReleaseCombo) -> bool:
+    """True if the template provides the given release combo."""
+    return (
+        combo.model_name in template_model_names(template)
+        and combo.engine == template_engine(template)
+        and combo.device in template_devices(template)
+    )
+
+
+def template_identity(template: dict):
+    """Upsert identity for a template: (impl, engine, frozenset(weights))."""
+    return (
+        template["impl"],
+        template_engine(template),
+        frozenset(template.get("weights", [])),
+    )
