@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -19,7 +21,7 @@ from workflows.workflow_types import DeviceTypes
 from test_module import MediaContext
 
 from .commands import Command, SummaryCommand, WorkflowCommand
-from .execution import OrchestratorMetadata
+from .execution import OrchestratorMetadata, PrefixCacheOptions
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +131,60 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         server_mode=_resolve_server_mode(args, runtime_config),
         run_command=_capture_run_command(),
         runtime_model_spec_json=args.runtime_model_spec_json,
+        prefix_cache=_build_prefix_cache_options(args),
     )
+
+
+def _build_prefix_cache_options(
+    args: argparse.Namespace,
+) -> Optional[PrefixCacheOptions]:
+    """Translate the ``--prefix-cache*`` CLI flags into ``PrefixCacheOptions``.
+
+    Returns ``None`` (the default) for every non-prefix-cache run, leaving
+    ``BenchmarksWorkflow`` on its normal media-task dispatch. The flags are
+    only present when ``run.py`` registered them, so ``getattr`` guards keep
+    this safe for the image-model entry path that never adds them.
+    """
+    if not getattr(args, "prefix_cache", False):
+        return None
+    return PrefixCacheOptions(
+        preset=args.prefix_cache_preset,
+        scenarios=args.prefix_cache_scenarios,
+        arrival_pattern=args.prefix_cache_arrival,
+        request_rate=args.prefix_cache_request_rate,
+        scenarios_json=args.prefix_cache_scenarios_json,
+        trace_path=args.prefix_cache_trace,
+        auth_token=_mint_jwt_if_secret(args.jwt_secret),
+    )
+
+
+def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
+    """Mint a ``debug-test`` JWT and export it as ``OPENAI_API_KEY``.
+
+    Looks at the ``--jwt-secret`` arg first, then ``$JWT_SECRET``. When no
+    secret is supplied, returns the empty string (auth disabled). Matches the
+    inference server's expected debug token for JWT auth.
+    """
+    secret = jwt_secret_arg or os.getenv("JWT_SECRET", "")
+    if not secret:
+        return ""
+    try:
+        import jwt as _jwt
+    except ImportError:
+        logger.warning(
+            "PyJWT is not installed; --jwt-secret was supplied but no token "
+            "will be minted. Install pyjwt to enable JWT-protected servers."
+        )
+        return ""
+    payload = {
+        "team_id": "tenstorrent",
+        "token_id": "debug-test",
+        "exp": int(_dt.datetime.now(_dt.timezone.utc).timestamp()) + 24 * 3600,
+    }
+    encoded = _jwt.encode(payload, secret, algorithm="HS256")
+    os.environ["OPENAI_API_KEY"] = encoded
+    logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
+    return encoded
 
 
 def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:

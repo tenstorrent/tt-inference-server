@@ -3,6 +3,24 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+"""v2 CLI entry point — drives a workflow against a running inference server.
+
+Usage:
+    python tt-inference-server-v2/run.py \
+        --model stable-diffusion-xl-base-1.0 --workflow release \
+        --device n150 --service-port 8000
+
+Prefix-caching benchmark (LLM-only, --workflow benchmarks):
+    This entry point has no import-time side effects, so it must run inside the
+    dedicated ``V2_PREFIX_CACHE`` venv. Use the thin launcher
+    ``run_prefix_cache.py`` (which selects/creates that venv and re-execs this
+    script) rather than invoking run.py directly:
+
+        python tt-inference-server-v2/run_prefix_cache.py \
+            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --prefix-cache --prefix-cache-preset ci --service-port 8000 \
+            --jwt-secret "$JWT_SECRET"
+"""
 
 from __future__ import annotations
 
@@ -135,9 +153,104 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
+
+    # ----- Prefix-caching benchmark (LLM-only) -----------------------
+    # When --prefix-cache is set, BenchmarksWorkflow swaps its default
+    # media-task dispatch for the AIPerf prefix-cache scenario sweep (wired
+    # through CommandFactory -> OrchestratorMetadata.prefix_cache). Validated
+    # below to require --workflow benchmarks. Run via run_prefix_cache.py so
+    # the V2_PREFIX_CACHE venv is in place before these heavy deps are needed.
+    parser.add_argument(
+        "--prefix-cache",
+        action="store_true",
+        help=(
+            "Switch the benchmarks workflow to the AIPerf prefix-caching "
+            "scenario sweep (shared_system, prefix_pool, multi_turn, "
+            "baseline, mooncake_trace). Captures vLLM "
+            "prefix_cache_hits/queries via Prometheus and reports "
+            "P50/P95/P99 for TTFT/TPOT/ITL/E2EL alongside cache hit-rate. "
+            "Requires --workflow benchmarks. Launch through run_prefix_cache.py."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-preset",
+        type=str,
+        choices=["ci", "full"],
+        default="full",
+        help=(
+            "Preset for --prefix-cache (default: full). 'ci' is a short "
+            "regression-friendly sweep, 'full' is the comprehensive serving "
+            "validation sweep."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated subset of prefix-cache scenarios to run "
+            "(any of: shared_system, prefix_pool, multi_turn, baseline, "
+            "mooncake_trace). When unset, every scenario from the preset "
+            "is run."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-arrival",
+        type=str,
+        choices=["constant", "poisson", "gamma"],
+        default=None,
+        help=(
+            "Override the arrival pattern for every prefix-cache run. For "
+            "bursty/clustered traffic use 'gamma' and set "
+            "arrival_smoothness < 1.0 in the manifest. Default is the "
+            "per-scenario value from the preset."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-request-rate",
+        type=float,
+        default=None,
+        help="Override the target request rate (req/s) for every prefix-cache run.",
+    )
+    parser.add_argument(
+        "--prefix-cache-scenarios-json",
+        type=str,
+        default=None,
+        help=(
+            "Path to a custom prefix-cache scenarios JSON file. See "
+            "llm_module/prefix_cache/manifest.json for the schema."
+        ),
+    )
+    parser.add_argument(
+        "--prefix-cache-trace",
+        type=str,
+        default=None,
+        help=(
+            "Path to a mooncake-format JSONL trace file. When set, every "
+            "mooncake_trace scenario in the preset uses this trace instead "
+            "of the manifest default. See "
+            "https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md"
+        ),
+    )
+    parser.add_argument(
+        "--jwt-secret",
+        type=str,
+        default=None,
+        help=(
+            "JWT secret for prefix-cache runs that hit an inference server "
+            "behind JWT auth. Mints a 'debug-test' token internally and sets "
+            "OPENAI_API_KEY for AIPerf. Reads $JWT_SECRET when omitted."
+        ),
+    )
+
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    if args.prefix_cache and args.workflow != "benchmarks":
+        parser.error(
+            "--prefix-cache currently requires --workflow benchmarks "
+            f"(got --workflow {args.workflow})."
+        )
     if args.output_dir is None:
         args.output_dir = (
             _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow

@@ -149,6 +149,10 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** Max input sequence length (prompt tokens) from MAX_ISL. Default:
+ * defaults::MAX_ISL. */
+size_t maxISL();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -156,6 +160,11 @@ size_t kvCacheBlockSize();
 /** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
 size_t kvCacheFirstBlockSize();
+
+/** Minimum match percentage for prefix cache hit from
+ * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
+ * Set to 0 to disable threshold check (accept any match). */
+float prefixCacheHitThreshold();
 
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
