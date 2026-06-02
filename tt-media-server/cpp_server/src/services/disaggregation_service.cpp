@@ -79,7 +79,7 @@ void DisaggregationService::setupSocketHandlers() {
             auto request = LLMRequest(message.task_id);
             request.disaggregated = true;
             // -2 because last token doesnt count, and we need current pos in kv
-            // cache.
+            // cache
             request.kv_position_id =
                 static_cast<uint32_t>(message.token_ids.size() - 2);
             request.prompt.emplace<std::vector<int>>(
