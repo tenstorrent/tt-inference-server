@@ -3,9 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from scripts.release.promote_dev_spec_to_prod import (
+    ReleaseCombo,
+    collect_release_combos,
     iter_implementations,
     model_name_from_weight,
 )
+from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 
 def test_model_name_from_weight_strips_org_prefix():
@@ -25,3 +28,54 @@ def test_iter_implementations_array_shape():
     impl_b = {"inference_engine": "FORGE", "ci": {}}
     entry = {"implementations": [impl_a, impl_b]}
     assert list(iter_implementations(entry)) == [impl_a, impl_b]
+
+
+def test_collect_release_combos_array_and_flat_shapes():
+    ci_config = {
+        "models": {
+            "Llama-3.1-8B-Instruct": {
+                "implementations": [
+                    {
+                        "inference_engine": "vLLM",
+                        "ci": {
+                            "nightly": {"devices": ["N150"]},
+                            "release": {"devices": ["GALAXY", "P300X2"]},
+                        },
+                    },
+                    {
+                        "inference_engine": "FORGE",
+                        "ci": {"nightly": {"devices": ["P150"]}},
+                    },
+                ]
+            },
+            "whisper-large-v3": {
+                "inference_engine": "MEDIA",
+                "ci": {"release": {"devices": ["P150"]}},
+            },
+            "Falcon3-7B-Instruct": {
+                "inference_engine": "FORGE",
+                "ci": {"nightly": {"devices": ["P150"]}},
+            },
+        }
+    }
+    combos = collect_release_combos(ci_config)
+    assert combos == {
+        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.P300X2),
+        ReleaseCombo("whisper-large-v3", InferenceEngine.MEDIA, DeviceTypes.P150),
+    }
+
+
+def test_collect_release_combos_ignores_nightly_and_weekly():
+    ci_config = {
+        "models": {
+            "m": {
+                "inference_engine": "vLLM",
+                "ci": {
+                    "nightly": {"devices": ["GALAXY"]},
+                    "weekly": {"devices": ["GALAXY"]},
+                },
+            }
+        }
+    }
+    assert collect_release_combos(ci_config) == set()

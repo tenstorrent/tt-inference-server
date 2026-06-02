@@ -21,6 +21,7 @@ from ruamel.yaml import YAML
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from workflows.workflow_types import DeviceTypes, InferenceEngine  # noqa: E402
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
@@ -53,3 +54,19 @@ def iter_implementations(model_entry: dict):
         yield from model_entry["implementations"]
     else:
         yield model_entry
+
+
+def collect_release_combos(ci_config: dict) -> set:
+    """Return the set of ReleaseCombo(model_name, engine, device) marked release."""
+    combos = set()
+    for model_name, entry in ci_config.get("models", {}).items():
+        for impl in iter_implementations(entry):
+            release = impl.get("ci", {}).get("release")
+            if not release:
+                continue
+            engine = InferenceEngine.from_string(impl["inference_engine"])
+            for device in release.get("devices", []):
+                combos.add(
+                    ReleaseCombo(model_name, engine, DeviceTypes.from_string(device))
+                )
+    return combos
