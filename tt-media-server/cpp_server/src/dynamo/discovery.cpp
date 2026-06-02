@@ -3,9 +3,12 @@
 
 #include "dynamo/discovery.hpp"
 
+#include <blake3.h>
 #include <json/json.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -22,10 +25,49 @@ namespace {
 
 constexpr int K_CONTEXT_LENGTH = 131072;
 
-/// Frontend reads the checksum but doesn't validate it for routing — it's
-/// used only for cache invalidation.
+/// Used only when a referenced file is missing/unreadable. The frontend
+/// blake3-validates every file it fetches from the MDC, so for files that
+/// exist we must publish their real digest (see fileChecksum); an all-zero
+/// placeholder makes the frontend reject the model with a "checksum mismatch".
 constexpr const char* K_BLAKE3_PLACEHOLDER =
     "blake3:0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Compute the BLAKE3-256 digest of a file's bytes, formatted as the
+/// `blake3:<64 hex chars>` string the Dynamo frontend expects in an MDC. On
+/// any read failure, fall back to the placeholder so registration still
+/// succeeds for files the frontend won't actually fetch.
+std::string fileChecksum(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    TT_LOG_WARN(
+        "[DynamoDiscovery] cannot open {} for checksum; using placeholder",
+        path);
+    return K_BLAKE3_PLACEHOLDER;
+  }
+
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  std::array<char, 64 * 1024> buf{};
+  while (f) {
+    f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+    const std::streamsize n = f.gcount();
+    if (n > 0) {
+      blake3_hasher_update(&hasher, buf.data(), static_cast<size_t>(n));
+    }
+  }
+
+  std::array<uint8_t, BLAKE3_OUT_LEN> out{};
+  blake3_hasher_finalize(&hasher, out.data(), out.size());
+
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string result = "blake3:";
+  result.reserve(result.size() + out.size() * 2);
+  for (uint8_t byte : out) {
+    result += kHex[(byte >> 4) & 0xF];
+    result += kHex[byte & 0xF];
+  }
+  return result;
+}
 
 /// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
 /// model ids have `/` and uppercase, so map them to `-` and lowercase.
@@ -149,7 +191,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
   hfConfig["path"] = configPath;
-  hfConfig["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfConfig["checksum"] = fileChecksum(configPath);
   modelInfo["hf_config_json"] = std::move(hfConfig);
   card["model_info"] = std::move(modelInfo);
 
@@ -159,11 +201,11 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
                            !std::filesystem::exists(tokenizerJsonPath);
   if (hasTiktoken) {
     tokFile["path"] = tiktokenModelPath;
-    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokFile["checksum"] = fileChecksum(tiktokenModelPath);
     tokenizer["tik_token_model"] = std::move(tokFile);
   } else {
     tokFile["path"] = tokenizerJsonPath;
-    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokFile["checksum"] = fileChecksum(tokenizerJsonPath);
     tokenizer["hf_tokenizer_json"] = std::move(tokFile);
   }
   card["tokenizer"] = std::move(tokenizer);
@@ -174,7 +216,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
     hfChatTemplate["is_custom"] = false;
     Json::Value jinjaFile(Json::objectValue);
     jinjaFile["path"] = chatTemplatePath;
-    jinjaFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    jinjaFile["checksum"] = fileChecksum(chatTemplatePath);
     hfChatTemplate["file"] = std::move(jinjaFile);
     chatTemplateFile["hf_chat_template_jinja"] = std::move(hfChatTemplate);
     card["chat_template_file"] = std::move(chatTemplateFile);
@@ -183,7 +225,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value promptFormatter(Json::objectValue);
   Json::Value hfTokCfg(Json::objectValue);
   hfTokCfg["path"] = tokenizerConfigPath;
-  hfTokCfg["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfTokCfg["checksum"] = fileChecksum(tokenizerConfigPath);
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
