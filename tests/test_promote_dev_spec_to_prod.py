@@ -2,9 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import textwrap
+
 from scripts.release.promote_dev_spec_to_prod import (
     ReleaseCombo,
     collect_release_combos,
+    find_matches,
     iter_implementations,
     model_name_from_weight,
     template_identity,
@@ -121,3 +124,66 @@ def test_template_identity_is_impl_engine_weights():
         InferenceEngine.VLLM,
         frozenset({"meta-llama/Llama-3.1-8B-Instruct"}),
     )
+
+
+def _write(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(textwrap.dedent(text))
+
+
+def test_find_matches_picks_whole_template_and_reports_unmatched(tmp_path):
+    dev = tmp_path / "dev"
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          device_model_specs:
+            - device: GALAXY
+              max_concurrency: 32
+            - device: N150
+              max_concurrency: 1
+        """,
+    )
+    combos = {
+        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ReleaseCombo("nonexistent", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+    }
+    matches_by_file, unmatched = find_matches(dev, combos)
+
+    assert list(matches_by_file.keys()) == ["llm.yaml"]
+    picked = matches_by_file["llm.yaml"]
+    assert len(picked) == 1
+    # whole template: the non-release N150 device is still present
+    devices = [d["device"] for d in picked[0]["device_model_specs"]]
+    assert devices == ["GALAXY", "N150"]
+    assert unmatched == {
+        ReleaseCombo("nonexistent", InferenceEngine.VLLM, DeviceTypes.GALAXY)
+    }
+
+
+def test_find_matches_dedups_template_matched_by_two_combos(tmp_path):
+    dev = tmp_path / "dev"
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          device_model_specs:
+            - device: GALAXY
+            - device: P300X2
+        """,
+    )
+    combos = {
+        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ReleaseCombo("Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.P300X2),
+    }
+    matches_by_file, unmatched = find_matches(dev, combos)
+    assert len(matches_by_file["llm.yaml"]) == 1
+    assert unmatched == set()

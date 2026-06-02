@@ -103,3 +103,34 @@ def template_identity(template: dict):
         template_engine(template),
         frozenset(template.get("weights", [])),
     )
+
+
+def find_matches(dev_dir: Path, combos: set):
+    """Scan dev catalog files for templates matching any release combo.
+
+    Returns (matches_by_file, unmatched):
+      - matches_by_file: dict filename -> list of matched template objects,
+        in file order, de-duplicated by identity.
+      - unmatched: set of combos that matched no dev template.
+    """
+    yaml = _yaml()
+    matched_combos = set()
+    matches_by_file = {}
+    for dev_file in sorted(dev_dir.glob("*.yaml")):
+        doc = yaml.load(dev_file.read_text())
+        templates = (doc or {}).get("templates") or []
+        picked = []
+        picked_ids = set()
+        for template in templates:
+            hits = [c for c in combos if template_matches(template, c)]
+            if not hits:
+                continue
+            matched_combos.update(hits)
+            identity = template_identity(template)
+            if identity not in picked_ids:
+                picked.append(template)
+                picked_ids.add(identity)
+        if picked:
+            matches_by_file[dev_file.name] = picked
+    unmatched = combos - matched_combos
+    return matches_by_file, unmatched
