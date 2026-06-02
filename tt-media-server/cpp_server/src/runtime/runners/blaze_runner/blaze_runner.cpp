@@ -298,8 +298,9 @@ inline void BlazeRunner::handleEvictRequest(
           "slotId={} (waiting for STOP ack)",
           request.slotId);
       slotContext.deferredEvict = std::move(evictRequest);
-      tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
-          tt::worker::SpPipelineEvent::DEFERRED_EVICT_LATCHED);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_EVICT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK:
@@ -614,11 +615,11 @@ void BlazeRunner::checkOutputHang() {
         "[BlazeRunner] Hang detected on Slot {} in state {}: {} for {} ms "
         "(threshold {} ms). Total in-flight generations: {}. "
         "Self-terminating worker for infrastructure restart.",
-        slot.slotId,                       // Which slot broke?
-        toString(slot.state),              // What was it waiting on?
-        hangKind,                          // Human-readable cause
-        stalledFor.count(),                // How bad is it?
-        outputHangTimeout.count(),         // What was the limit?
+        slot.slotId,                        // Which slot broke?
+        toString(slot.state),               // What was it waiting on?
+        hangKind,                           // Human-readable cause
+        stalledFor.count(),                 // How bad is it?
+        outputHangTimeout.count(),          // What was the limit?
         slotManager.activeRunningCount());  // Global context
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
@@ -688,8 +689,9 @@ void BlazeRunner::handleRequest(
           "on slotId={} (waiting for STOP ack)",
           request->taskId, slotId);
       slotContext.deferredContinue = std::move(request);
-      tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
-          tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_LATCHED);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {

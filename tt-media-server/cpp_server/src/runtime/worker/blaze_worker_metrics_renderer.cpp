@@ -23,8 +23,10 @@ struct BlazeEventDef {
 constexpr BlazeEventDef BLAZE_EVENTS[] = {
     {"idle_to_running", sp_pipeline::SCRATCH_EV_IDLE_TO_RUNNING},
     {"running_to_stop_ack", sp_pipeline::SCRATCH_EV_RUNNING_TO_STOP_ACK},
-    {"deferred_evict_replayed", sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_REPLAYED},
-    {"deferred_submit_latched", sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_LATCHED},
+    {"deferred_evict_replayed",
+     sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_REPLAYED},
+    {"deferred_submit_latched",
+     sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_LATCHED},
     {"deferred_submit_replayed",
      sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED},
     {"deferred_submit_superseded",
@@ -70,8 +72,9 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
     events_family_ =
         &prometheus::BuildGauge()
              .Name("tt_worker_blaze_events")
-             .Help("Cumulative count of BlazeRunner slot state transitions and "
-                   "defer-path events since the worker last (re)started")
+             .Help(
+                 "Cumulative count of BlazeRunner slot state transitions and "
+                 "defer-path events since the worker last (re)started")
              .Register(registry);
   }
 
