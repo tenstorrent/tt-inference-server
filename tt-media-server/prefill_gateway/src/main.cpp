@@ -284,8 +284,8 @@ std::string buildHealthJson(const tt::gateway::PrefillRegistry& registry,
       << ",\"registered_prefills\":" << prefills.size()
       << ",\"healthy_prefills\":" << healthyPrefills
       << ",\"accepting_prefills\":" << acceptingPrefills
-      << ",\"decode_connected\":"
-      << (decodeSm.isConnected() ? "true" : "false") << "}\n";
+      << ",\"decode_connected\":" << (decodeSm.isConnected() ? "true" : "false")
+      << "}\n";
   return out.str();
 }
 
@@ -299,8 +299,7 @@ int main(int argc, char** argv) {
   const GatewayConfig& cfg = *cfgOpt;
   const bool useZmqPrefillRouter =
       socketTransportFromEnv() == tt::sockets::transport_names::ZMQ;
-  const std::string_view transport =
-      useZmqPrefillRouter ? "zmq" : "tcp";
+  const std::string_view transport = useZmqPrefillRouter ? "zmq" : "tcp";
 
   if (useZmqPrefillRouter && cfg.prefillBindPort == 0) {
     std::cerr
