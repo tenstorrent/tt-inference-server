@@ -3,20 +3,28 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import argparse
-import getpass
-import logging
 import os
-import shutil
-import subprocess
 import sys
-from datetime import datetime
-from pathlib import Path
 
-from workflows.bootstrap_uv import bootstrap_uv
-from workflows.device_utils import infer_default_device
-from workflows.log_setup import setup_run_logger
-from workflows.model_spec import (
+# Pre-argparse: translate --dev-mode to MODEL_SPECS_ENV=dev before importing
+# workflows.model_spec, which builds MODEL_SPECS at module import time.
+# This keeps every consumer of MODEL_SPECS (argparse choices, eval_config,
+# stress_tests, subprocess inheritance) on the same catalog as the resolver.
+if "--dev-mode" in sys.argv[1:]:
+    os.environ["MODEL_SPECS_ENV"] = "dev"
+
+import argparse  # noqa: E402
+import getpass  # noqa: E402
+import logging  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from datetime import datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from workflows.bootstrap_uv import bootstrap_uv  # noqa: E402
+from workflows.device_utils import infer_default_device  # noqa: E402
+from workflows.log_setup import setup_run_logger  # noqa: E402
+from workflows.model_spec import (  # noqa: E402
     MODEL_SPECS,
     ModelSpec,
     export_model_specs_json,
@@ -149,6 +157,13 @@ def parse_arguments():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+    )
+    parser.add_argument(
         "--bind-host",
         type=str,
         default="0.0.0.0",
@@ -169,7 +184,18 @@ def parse_arguments():
         action="store_true",
         help="Generate detailed percentile reports for stress tests (includes p05, p25, p50, p95, p99 for TTFT, TPOT, ITL, E2EL)",
     )
-    parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help=(
+            "Resolve the model spec from the dev catalog "
+            "(workflows/model_specs/dev/) and forward it into the Docker "
+            "container, overriding its prebuilt prod catalog. Also bind-mounts "
+            "host source dirs (benchmarking/, evals/, utils/, tests/, plus "
+            "vllm-tt-metal/src or tt-media-server/) so live host edits are "
+            "picked up. Has no effect when --runtime-model-spec-json is given."
+        ),
+    )
     parser.add_argument(
         "--override-docker-image",
         type=str,
@@ -389,6 +415,24 @@ def parse_arguments():
         )
     args.device = args.tt_device or args.device
 
+    if args.server_url and (args.docker_server or args.local_server):
+        parser.error(
+            "--server-url cannot be used together with --docker-server or --local-server. "
+            "Use --server-url alone to target an already-running inference server."
+        )
+    if args.server_url:
+        from urllib.parse import urlparse
+
+        server_url = args.server_url.strip().rstrip("/")
+        parsed = urlparse(server_url)
+        if not parsed.scheme:
+            server_url = f"http://{server_url}"
+            parsed = urlparse(server_url)
+        if not parsed.hostname:
+            parser.error(
+                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
+            )
+        args.server_url = server_url
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
@@ -422,8 +466,17 @@ def handle_secrets(runtime_config):
     jwt_secret_required = jwt_secret_required and not runtime_config.interactive
     # --no-auth disables authorization, so JWT_SECRET is not required
     jwt_secret_required = jwt_secret_required and not runtime_config.no_auth
-    # HF_TOKEN is optional for client-side scripts workflows
-    client_side_workflows = {WorkflowType.BENCHMARKS, WorkflowType.EVALS}
+    # HF_TOKEN is optional for client-side scripts workflows. These run
+    # against an inference server (local, docker, or external via
+    # --server-url) and don't need to load HF weights/tokenizers themselves.
+    client_side_workflows = {
+        WorkflowType.BENCHMARKS,
+        WorkflowType.EVALS,
+        WorkflowType.STRESS_TESTS,
+        WorkflowType.TESTS,
+        WorkflowType.SPEC_TESTS,
+        WorkflowType.REPORTS,
+    }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
         workflow_type not in client_side_workflows or runtime_config.docker_server
@@ -549,6 +602,11 @@ def resolve_runtime(args):
 
     Returns ``(runtime_config, model_spec)`` with impl/engine fully resolved.
     """
+    # Spec-source precedence:
+    #   1. --runtime-model-spec-json wins outright (taken as-is, no overrides applied).
+    #   2. Otherwise resolve from MODEL_SPECS. MODEL_SPECS is loaded from
+    #      workflows/model_specs/<env>/ where env is set by the top-of-file
+    #      argv pre-scan: --dev-mode → MODEL_SPECS_ENV=dev, else prod.
     if args.runtime_model_spec_json:
         logger.warning(
             f"No validation is done, loading runtime model spec from JSON: "

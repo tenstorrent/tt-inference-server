@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import jwt
 
@@ -144,13 +145,17 @@ def create_default_multiturn_dataset(dataset_path: Path, samples: int = 50) -> P
 
 
 def wait_for_server(
-    model_spec: ModelSpec, runtime_config: RuntimeConfig, jwt_secret: str
+    model_spec: ModelSpec,
+    runtime_config: RuntimeConfig,
+    jwt_secret: str,
+    deploy_url: str = "http://127.0.0.1",
 ):
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -652,13 +657,19 @@ def main():
     model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
+    )
+
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
     ):
         os.environ["VLLM_API_KEY"] = "your-secret-key"
 
-    if not wait_for_server(model_spec, runtime_config, args.jwt_secret):
+    if not wait_for_server(
+        model_spec, runtime_config, args.jwt_secret, deploy_url=deploy_url
+    ):
         logger.error("vLLM server is not healthy. Aborting GuideLLM benchmarks.")
         return 1
 
@@ -671,9 +682,14 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     workflow_params = parse_workflow_args(runtime_config.workflow_args)
-    target = workflow_params.get(
-        "target", f"http://127.0.0.1:{runtime_config.service_port}/v1"
+    # Honor an explicit port on deploy_url to avoid double-port targets.
+    _parsed = urlparse(deploy_url.rstrip("/"))
+    _base = (
+        deploy_url.rstrip("/")
+        if _parsed.port is not None
+        else f"{deploy_url.rstrip('/')}:{runtime_config.service_port}"
     )
+    target = workflow_params.get("target", f"{_base}/v1")
 
     runs = build_scenario_runs(
         output_root=output_root,
