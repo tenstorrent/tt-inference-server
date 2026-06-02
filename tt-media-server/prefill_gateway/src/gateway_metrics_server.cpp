@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstring>
 #include <sstream>
+#include <utility>
 
 #include "gateway/gateway_metrics.hpp"
 #include "utils/logger.hpp"
@@ -36,6 +37,16 @@ std::string httpResponse(int status, std::string_view statusText,
 bool isMetricsRequest(std::string_view request) {
   return request.starts_with("GET /metrics ") ||
          request.starts_with("GET /metrics?");
+}
+
+bool isLivenessRequest(std::string_view request) {
+  return request.starts_with("GET /tt-liveness ") ||
+         request.starts_with("GET /tt-liveness?");
+}
+
+bool isHealthRequest(std::string_view request) {
+  return request.starts_with("GET /health ") ||
+         request.starts_with("GET /health?");
 }
 
 }  // namespace
@@ -89,6 +100,11 @@ void GatewayMetricsServer::stop() {
 
 uint16_t GatewayMetricsServer::port() const { return port_; }
 
+void GatewayMetricsServer::setHealthProvider(
+    std::function<std::string()> provider) {
+  health_provider_ = std::move(provider);
+}
+
 void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
                                  std::promise<bool> initialized) {
   const int serverFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -127,7 +143,7 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
     return;
   }
 
-  TT_LOG_INFO("[GatewayMetricsServer] Serving /metrics on port {}", port);
+  TT_LOG_INFO("[GatewayMetricsServer] Serving HTTP endpoints on port {}", port);
   initialized.set_value(true);
 
   while (running_ && !stopToken.stop_requested()) {
@@ -160,11 +176,17 @@ void GatewayMetricsServer::serveClient(int clientFd) {
   }
 
   const std::string_view request(buffer.data(), static_cast<size_t>(bytesRead));
-  const std::string response =
-      isMetricsRequest(request)
-          ? httpResponse(200, "OK", "text/plain; version=0.0.4",
-                         metrics_.renderText())
-          : httpResponse(404, "Not Found", "text/plain", "not found\n");
+  std::string response;
+  if (isMetricsRequest(request)) {
+    response = httpResponse(200, "OK", "text/plain; version=0.0.4",
+                            metrics_.renderText());
+  } else if (isLivenessRequest(request) || isHealthRequest(request)) {
+    const std::string body =
+        health_provider_ ? health_provider_() : R"({"status":"alive"})";
+    response = httpResponse(200, "OK", "application/json", body);
+  } else {
+    response = httpResponse(404, "Not Found", "text/plain", "not found\n");
+  }
 
   ssize_t offset = 0;
   while (offset < static_cast<ssize_t>(response.size())) {

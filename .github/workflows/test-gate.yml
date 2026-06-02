@@ -1609,25 +1609,21 @@ jobs:
 
       - name: "[TCP] Start PrefillGateway"
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9200 --label "TCP prefill gateway"
-          SOCKET_TRANSPORT=tcp TT_LOG_LEVEL=debug \
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 9200 --label "TCP prefill gateway"
+          SOCKET_TRANSPORT=tcp \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill=127.0.0.1:9201 \
             --prefill=127.0.0.1:9202 \
             --metrics-port=0 \
+            --health-port=9091 \
             > gw.log 2>&1 &
           echo $! > gw.pid
-          bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command '[ "$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)" -ge 2 ]' \
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 9091 \
+            --expect '"healthy_prefills":2' \
             --pid-file gw.pid \
-            --failure-log gw.log \
             --label "TCP prefill gateway registrations"
-          REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
-            exit 1
-          fi
 
       - name: "[TCP] Start Decode server"
         run: |
@@ -1700,7 +1696,7 @@ jobs:
           [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
           [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
           [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
 
       # ── Round 2: ZMQ transport ────────────────────────────────────────────
       - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
@@ -1745,24 +1741,20 @@ jobs:
 
       - name: "[ZMQ] Start PrefillGateway"
         run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9200 --port 9201 --label "ZMQ prefill gateway"
-          SOCKET_TRANSPORT=zmq TT_LOG_LEVEL=debug \
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 9200 --port 9201 --label "ZMQ prefill gateway"
+          SOCKET_TRANSPORT=zmq \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill-bind=127.0.0.1:9201 \
             --metrics-port=0 \
+            --health-port=9092 \
             > gw_zmq.log 2>&1 &
           echo $! > gw_zmq.pid
-          bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command '[ "$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)" -ge 2 ]' \
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 9092 \
+            --expect '"healthy_prefills":2' \
             --pid-file gw_zmq.pid \
-            --failure-log gw_zmq.log \
             --label "ZMQ prefill gateway registrations"
-          REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
-            exit 1
-          fi
 
       - name: "[ZMQ] Start Decode server"
         run: |
@@ -1835,7 +1827,7 @@ jobs:
           [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
           [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
           [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
 
       - name: Check benchmark thresholds
         run: |
