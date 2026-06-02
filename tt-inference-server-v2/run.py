@@ -20,6 +20,14 @@ Prefix-caching benchmark (LLM-only, --workflow benchmarks):
             --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
             --prefix-cache --prefix-cache-preset ci --service-port 8000 \
             --jwt-secret "$JWT_SECRET"
+
+Agentic evals (LLM-only, --workflow agentic):
+    Agentic harnesses require the dedicated ``EVALS_AGENTIC`` venv. Use
+    ``run_agentic.py`` to select/create that venv and re-exec this script:
+
+        python tt-inference-server-v2/run_agentic.py \
+            --model Qwen3.6-27B --workflow agentic --device gpu \
+            --service-port 8000
 """
 
 from __future__ import annotations

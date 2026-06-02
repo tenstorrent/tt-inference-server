@@ -221,6 +221,57 @@ scrapes into `server_metrics_export.jsonl`; on Tenstorrent hardware the
 renders as `null` until that's lifted (validation work was done against a
 reference GPU vLLM).
 
+## Agentic evals
+
+Run agentic accuracy evals (Terminal-Bench and SWE-bench) directly against an
+already-up OpenAI-compatible LLM server. The workflow is `agentic`; it bypasses
+the generic media-task dispatcher and emits `Block(kind="evals")` results through
+the same report/acceptance path as other evals.
+
+Agentic harnesses require the dedicated `EVALS_AGENTIC` venv (Harbor,
+mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
+`run_agentic.py`, which selects/creates that venv and re-execs `run.py` inside
+it:
+
+```bash
+MODEL_SPECS_ENV=dev python tt-inference-server-v2/run_agentic.py \
+    --model Qwen3.6-27B \
+    --workflow agentic \
+    --device gpu \
+    --service-port 8000 \
+    --runtime-model-spec-json /tmp/qwen36_agentic_nightly.json
+```
+
+`MODEL_SPECS_ENV=dev` is only needed when the target model spec lives in
+`workflows/model_specs/dev/`; omit it for models present in the default `prod`
+catalog. `run_agentic.py` calls
+`VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].setup(...)` (declared in
+[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
+[`requirements/evals-agentic.txt`](../requirements/evals-agentic.txt)), then
+`os.execv`s into `.workflow_venvs/.venv_evals_agentic/bin/python`, forwarding
+every CLI argument to `run.py`.
+
+Agentic task selection still comes from [`evals/eval_config.py`](../evals/eval_config.py).
+The runtime config JSON is optional, but it is how limit modes are forwarded to
+the agentic drivers. For a nightly-limited run, include:
+
+```json
+{
+  "runtime_config": {
+    "model": "Qwen3.6-27B",
+    "workflow": "agentic",
+    "device": "gpu",
+    "service_port": "8000",
+    "limit_samples_mode": "ci-nightly"
+  }
+}
+```
+
+The workflow checks the server via `/v1/models`, sets OpenAI-compatible
+environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
+then runs each configured agentic task through the v2 LLM driver/parser
+adapters.
+
 ## How v1 routes to v2
 
 While the migration is in progress, v1 stays the entry point for everything
@@ -311,9 +362,10 @@ To author a new test class:
 | Other image models (Flux, Motif, SD3.5) | Runners exist in v2; not yet routed |
 | LLM benchmarking via `llm_module` | Work in progress — LLMs still run through v1, except prefix-caching which is end-to-end on v2 |
 | Prefix-caching benchmark | Implemented on v2 (`--workflow benchmarks --prefix-cache`); validated against reference GPU vLLM |
+| Agentic evals | Implemented on v2 (`--workflow agentic` via `run_agentic.py`); runs Terminal-Bench and SWE-bench against an external OpenAI-compatible server |
 | CNN / audio / TTS / video / embedding runners | Scaffolded; correctness gaps tracked as bugs |
 | Spec tests | Ported from v1's `server_tests/`; renamed consistently to `spec_tests` |
-| New workflows on the horizon | Spec-decode bench, structured-outputs bench, agentic accuracy evals |
+| New workflows on the horizon | Spec-decode bench, structured-outputs bench |
 
 Migration policy (current consensus): start using v2 right away for SDXL and
 treat anything missing as a bug. New benchmarks should be authored as v2
@@ -325,6 +377,7 @@ modules from the start rather than bolted onto v1.
 tt-inference-server-v2/
 ├── run.py                          # CLI entry point (no import-time side effects)
 ├── run_prefix_cache.py             # thin launcher: ensures V2_PREFIX_CACHE venv, execs run.py
+├── run_agentic.py                  # thin launcher: ensures EVALS_AGENTIC venv, execs run.py
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult
@@ -335,7 +388,7 @@ tt-inference-server-v2/
 │   ├── _test_common/               # BaseTest, blockify, targets, target_check
 │   ├── benchmark_tests/            # cnn/image/audio/video/tts/embedding/llm
 │   ├── eval_tests/                 # cnn/image/audio/video/tts/embedding
-│   ├── llm_tests/                  # LLM performance tests
+│   ├── llm_tests/                  # LLM performance, prefix-cache, and agentic tests
 │   ├── health_tests/               # DeviceLiveness, MediaServerLiveness
 │   ├── stability_tests/            # device stability checks
 │   ├── stress_tests/               # stress regimen (has its own runner)
@@ -358,8 +411,9 @@ tt-inference-server-v2/
 │   ├── server_control.py           # ServerController (warmup, traces, health)
 │   ├── config.py                   # LLMRunConfig, ServerConnection, DriverContext
 │   ├── benchmark_configs.py        # get_llm_configs(model_spec, device)
-│   ├── drivers/                    # base, aiperf, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
+│   ├── drivers/                    # base, agentic, aiperf, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
 │   ├── parsers/                    # mirror of drivers/
+│   ├── agentic/                    # Terminal-Bench/SWE-bench harness wrappers
 │   └── prefix_cache/               # Scenario manifest + expander + CI mooncake trace
 ├── tests/                          # pytest tests for the modules above
 └── output/                         # generated reports land here
