@@ -17,7 +17,11 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     run_command,
 )
-from workflows.workflow_types import WorkflowType, WorkflowVenvType
+from workflows.workflow_types import (
+    ModelType,
+    WorkflowType,
+    WorkflowVenvType,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -29,12 +33,21 @@ _V2_WORKFLOW_NAMES = {
     WorkflowType.RELEASE: "release",
 }
 
-# Only sdxlmodels actually validated end-to-end against v2's engine are routed here.
+_V2_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
+
+
+_V2_EVAL_VENV_BY_MODEL_TYPE = {
+    ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
+}
+
+# Only models actually validated end-to-end against v2's engine are routed here.
 _V2_ROUTED_MODELS = frozenset(
     {
         "stable-diffusion-xl-base-1.0",
         "stable-diffusion-xl-base-1.0-img-2-img",
         "stable-diffusion-xl-1.0-inpainting-0.1",
+        "whisper-large-v3",
+        "distil-large-v3",
     }
 )
 
@@ -70,6 +83,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
     ensure_readwriteable_dir(output_dir)
 
     venv_python = _ensure_v2_venv(model_spec)
+    _ensure_v2_dependency_venvs(model_spec, wf)
 
     cmd = [
         str(venv_python),
@@ -122,6 +136,23 @@ def _ensure_v2_venv(model_spec) -> Path:
     setup_completed = venv_config.setup(model_spec=model_spec)
     assert setup_completed, "Failed to setup venv: V2_RUN_SCRIPT"
     return venv_config.venv_python
+
+
+def _v2_dependency_venv_types(model_spec, wf) -> List[WorkflowVenvType]:
+    venv_types: List[WorkflowVenvType] = []
+    if wf in _V2_EVAL_WORKFLOWS:
+        eval_venv = _V2_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)
+        if eval_venv is not None:
+            venv_types.append(eval_venv)
+    return venv_types
+
+
+def _ensure_v2_dependency_venvs(model_spec, wf) -> None:
+    for venv_type in _v2_dependency_venv_types(model_spec, wf):
+        venv_config = VENV_CONFIGS[venv_type]
+        logger.info("Provisioning v2 dependency venv: %s", venv_type.name)
+        setup_completed = venv_config.setup(model_spec=model_spec)
+        assert setup_completed, f"Failed to setup venv: {venv_type.name}"
 
 
 def _warn_on_unsupported_args(runtime_config) -> None:
