@@ -8,12 +8,12 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiohttp
-
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig
-from typing import TYPE_CHECKING
+
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -33,6 +33,7 @@ headers = {
 class TTSLoadTest(BaseTest):
     KIND = "tts_load"
     TASK_TYPE = "text_to_speech"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     """Load test for Text-to-Speech (SpeechT5) functionality.
 

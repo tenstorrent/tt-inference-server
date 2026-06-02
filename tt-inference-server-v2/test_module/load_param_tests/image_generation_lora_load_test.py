@@ -15,13 +15,12 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import aiohttp
-
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig
-from typing import TYPE_CHECKING
+
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -69,6 +68,7 @@ class RequestResult:
 class ImageGenerationLoraLoadTest(BaseTest):
     KIND = "image_generation_lora_load"
     TASK_TYPE = "image"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     """Concurrent load test mixing baseline and LoRA image-generation requests."""
 

@@ -9,10 +9,9 @@ import logging
 from typing import TYPE_CHECKING
 
 import aiohttp
-
 from report_module.schema import Block
 
-from .._test_common import BaseTest, TestConfig
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -24,6 +23,7 @@ logger = logging.getLogger(__name__)
 class DeviceStabilityTest(BaseTest):
     KIND = "device_stability"
     TASK_TYPE = "stability"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
         url = f"http://localhost:{self.service_port}/tt-liveness"
