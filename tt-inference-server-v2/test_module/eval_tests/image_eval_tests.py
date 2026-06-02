@@ -436,6 +436,7 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
+    "tt-z-image-turbo": run_z_image_turbo_eval,
 }
 
 
