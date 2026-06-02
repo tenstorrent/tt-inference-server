@@ -241,6 +241,32 @@ def test_split_into_blocks_roundtrips_and_separates_filler():
     assert blocks[1].startswith("- weights:\n    - meta-llama/Llama-3.1-8B-Instruct")
 
 
+def test_split_into_blocks_keeps_blank_line_inside_a_body():
+    # A blank line followed by more indented body is interior to the block, not a
+    # separator — otherwise the block (and its parsed identity) would be truncated.
+    text = textwrap.dedent(
+        """\
+        templates:
+        - weights:
+            - openai/gpt-oss-20b
+          impl: gpt_oss
+          inference_engine: VLLM
+
+          device_model_specs:
+            - device: T3K
+        """
+    )
+    segments = split_into_blocks(text)
+    assert "".join(line for _, lines in segments for line in lines) == text
+    blocks = [lines for kind, lines in segments if kind == "block"]
+    assert len(blocks) == 1
+    from scripts.release.promote_dev_spec_to_prod import parse_block
+
+    parsed = parse_block(blocks[0])
+    # the device survived the interior blank line
+    assert parsed["device_model_specs"] == [{"device": "T3K"}]
+
+
 def _block_lines(text):
     text = textwrap.dedent(text)
     (kind, lines) = next(seg for seg in split_into_blocks(text) if seg[0] == "block")
@@ -364,6 +390,77 @@ def test_promote_updates_prod_preserving_comment_and_whole_template(tmp_path):
     assert "device: N150" in text  # whole template copied (non-release device)
     assert report["unmatched"] == set()
     assert "llm.yaml" in report["changed_files"]
+
+
+def test_promote_appends_new_release_template_and_stays_valid_yaml(tmp_path):
+    import yaml as _yaml
+
+    dev = tmp_path / "dev"
+    prod = tmp_path / "prod"
+    # dev has a release template on P300X2 that prod does not have yet.
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - meta-llama/Llama-3.1-8B-Instruct
+          impl: tt_transformers
+          inference_engine: VLLM
+          device_model_specs:
+            - device: P300X2
+              max_context: 4096
+        """,
+    )
+    # prod has only an unrelated template; it must survive byte-for-byte. It also
+    # deliberately ends WITHOUT a trailing newline to exercise the append seam.
+    existing = (
+        "templates:\n"
+        "- weights:\n"
+        "    - openai/gpt-oss-20b\n"
+        "  impl: gpt_oss\n"
+        "  inference_engine: VLLM\n"
+        "  device_model_specs:\n"
+        "    - device: T3K"  # no trailing newline
+    )
+    (prod).mkdir(parents=True, exist_ok=True)
+    (prod / "llm.yaml").write_text(existing)
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "Llama-3.1-8B-Instruct": {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["P300X2"]}},
+                    }
+                }
+            }
+        )
+    )
+
+    report = promote(ci, dev, prod, dry_run=False)
+
+    assert report["actions"]["llm.yaml"] == [
+        (
+            template_identity(
+                {
+                    "impl": "tt_transformers",
+                    "inference_engine": "VLLM",
+                    "weights": ["meta-llama/Llama-3.1-8B-Instruct"],
+                    "device_model_specs": [{"device": "P300X2"}],
+                }
+            ),
+            "appended",
+        )
+    ]
+    text = (prod / "llm.yaml").read_text()
+    # the pre-existing block is intact (not fused with the appended one)
+    assert "    - device: T3K\n" in text
+    # the result is still valid YAML with both templates
+    parsed = _yaml.safe_load(text)
+    weights = {tuple(t["weights"]) for t in parsed["templates"]}
+    assert ("openai/gpt-oss-20b",) in weights
+    assert ("meta-llama/Llama-3.1-8B-Instruct",) in weights
 
 
 def test_promote_dry_run_writes_nothing(tmp_path):

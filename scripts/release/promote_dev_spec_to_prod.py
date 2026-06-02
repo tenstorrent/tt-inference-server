@@ -9,8 +9,8 @@ Promote dev model specs to prod for every model-device combination marked
 
 For each (model, inference_engine, device) under ``ci.release`` in the CI config,
 the matching template in workflows/model_specs/dev/ is copied into the same-named
-file in workflows/model_specs/prod/, upserting by (impl, inference_engine, weights)
-identity.
+file in workflows/model_specs/prod/, upserting by
+(impl, inference_engine, weights, devices) identity.
 
 The catalogue YAML files are hand-authored with inconsistent block-sequence
 indentation (top-level list items at column 0, nested lists indented to column 4),
@@ -136,10 +136,24 @@ def split_into_blocks(text: str):
         if _TEMPLATE_ITEM_RE.match(lines[i].rstrip("\n")):
             block = [lines[i]]
             i += 1
-            # Body lines are indented; a blank or column-0 line ends the block.
-            while i < len(lines) and lines[i].startswith((" ", "\t")):
-                block.append(lines[i])
-                i += 1
+            # Body lines are indented. A blank line is interior to the block only
+            # if an indented line follows it (after any run of blanks); otherwise
+            # it separates this block from the next template and stays filler.
+            while i < len(lines):
+                if lines[i].startswith((" ", "\t")):
+                    block.append(lines[i])
+                    i += 1
+                elif lines[i].strip() == "":
+                    j = i
+                    while j < len(lines) and lines[j].strip() == "":
+                        j += 1
+                    if j < len(lines) and lines[j].startswith((" ", "\t")):
+                        block.extend(lines[i:j])
+                        i = j
+                    else:
+                        break
+                else:
+                    break
             segments.append(("block", block))
         else:
             segments.append(("filler", [lines[i]]))
@@ -149,7 +163,11 @@ def split_into_blocks(text: str):
 
 def parse_block(block_lines) -> dict:
     """Parse a template block's text into a plain dict."""
-    return yaml.safe_load("".join(block_lines))[0]
+    parsed = yaml.safe_load("".join(block_lines))
+    assert isinstance(parsed, list) and len(parsed) == 1, (
+        f"expected a single-item YAML list, got: {''.join(block_lines)!r}"
+    )
+    return parsed[0]
 
 
 def find_matches(dev_dir: Path, combos: set):
@@ -202,6 +220,9 @@ def upsert_block(segments, identity, lines) -> str:
     if last_block_idx is None:
         segments.append(new_segment)
     else:
+        # Ensure the block we insert after ends in a newline so the two don't
+        # fuse onto one line.
+        _ensure_trailing_newline(segments[last_block_idx][1])
         segments.insert(last_block_idx + 1, new_segment)
     return "appended"
 
@@ -266,7 +287,7 @@ def _combo_str(combo: ReleaseCombo) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description=("Promote release-marked dev model specs into the prod catalogue.")
+        description="Promote release-marked dev model specs into the prod catalogue."
     )
     parser.add_argument("--ci-config", type=Path, default=DEFAULT_CI_CONFIG)
     parser.add_argument("--dev-dir", type=Path, default=DEFAULT_DEV_DIR)
