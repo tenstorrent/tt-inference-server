@@ -10,6 +10,19 @@
 
 **Design reference:** `docs/superpowers/specs/2026-06-02-promote-dev-spec-to-prod-design.md`
 
+> **Post-implementation correction (read first):** Two assumptions in the tasks below
+> were wrong against real data and were corrected during implementation:
+> 1. **Writing** — a `ruamel.yaml` whole-document round-trip does NOT preserve these files
+>    (their block-sequence indentation is inconsistent), so it reformatted every untouched
+>    template. The final code splices template **text blocks** instead (see the design doc
+>    and the `split_into_blocks`/`upsert_block` functions).
+> 2. **Identity** — the catalogue holds multiple blocks per `(impl, engine, weights)`, one
+>    per device group, so the upsert identity includes the **device set**:
+>    `(impl, engine, frozenset(weights), frozenset(devices))`.
+>
+> The TDD task structure below is still accurate; treat the `_yaml`/ruamel-write and
+> 3-tuple-identity snippets as superseded by the committed implementation.
+
 **Key facts (verified):**
 - `InferenceEngine.from_string(s)` = `cls[s.upper()]`, so both ci-config `"vLLM"` and yaml `"VLLM"` resolve to `InferenceEngine.VLLM`. Same for `MEDIA`/`FORGE`.
 - `DeviceTypes.from_string(s)` = `cls[s.upper()]`. Release devices in the real config are `GALAXY`, `P150`, `P300X2` (all valid).

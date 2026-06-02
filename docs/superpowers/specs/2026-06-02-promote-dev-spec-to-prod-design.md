@@ -35,8 +35,19 @@ catalogue (`workflows/model_specs/prod/`).
 - **Write mode:** **upsert** (add/update). Matched templates replace the same-identity
   template in prod, or are appended if absent. Existing prod templates that are not
   matched are left untouched (no removal of stale entries).
-- **Formatting:** copy via `ruamel.yaml` round-trip so inline comments and formatting in
-  the dev block survive into prod. (`ruamel.yaml` 0.18.6 is available in the venv.)
+- **Template identity** (for upsert) is `(impl, inference_engine, frozenset(weights),
+  frozenset(devices))`. The device set is required: the catalogue intentionally holds
+  multiple blocks per `(impl, engine, weights)` — one per device group (the same model
+  validated on different hardware at different commits) — so without devices, distinct
+  blocks collide and overwrite each other.
+- **Formatting:** the catalogue YAML uses *inconsistent* block-sequence indentation
+  (top-level template items at column 0, nested lists indented to column 4), which no
+  single `ruamel.yaml` indent setting can reproduce — round-tripping a whole file
+  reformats every untouched template. So copying is done by **text-block splicing**:
+  segment each file into top-level `- ...` template blocks plus the filler between them,
+  and replace/append only the blocks that change. Untouched templates stay byte-identical
+  and copied blocks keep their exact source text (including comments). Regression guard:
+  promoting when dev==prod must change nothing.
 - **Normalization:** engine/device strings are normalized through
   `workflows/workflow_types.py` enums (`InferenceEngine.from_string`,
   `DeviceTypes.from_string`) so dev (`VLLM`) and ci-config (`vLLM`) spellings can't
@@ -61,12 +72,12 @@ For each of the 7 dev catalog files, ruamel-load the `templates` list. A templat
 A matched template is collected **whole** and tagged with its source filename.
 
 ### Step 3 — upsert into prod
-For each matched dev template, open the **same-named** prod file (an `llm.yaml` match
-goes to `prod/llm.yaml`, preserving category placement). Template identity for upsert is
-`(impl, normalized_inference_engine, frozenset(weights))`. If prod has a template with
-that identity, replace it in place (same list index); otherwise append. The dev block is
-inserted as its ruamel round-trip object so comments/formatting carry over. Write the
-prod file back only if it changed.
+For each matched dev block, open the **same-named** prod file (an `llm.yaml` match goes
+to `prod/llm.yaml`, preserving category placement) and segment it into template blocks +
+filler. Find the prod block whose identity `(impl, engine, weights, devices)` matches and
+replace its text with the dev block's exact source lines; otherwise append the dev block
+after the last block. Re-render by concatenating all segment lines, and write the prod
+file back only if its text actually changed.
 
 ### Step 4 — report
 Print a summary mapping each release combo to the template/file it matched, with a
