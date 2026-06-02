@@ -12,6 +12,7 @@ from scripts.release.promote_dev_spec_to_prod import (
     collect_release_combos,
     find_matches,
     iter_implementations,
+    main,
     model_name_from_weight,
     promote,
     template_identity,
@@ -333,3 +334,47 @@ def test_promote_reports_unmatched_combo(tmp_path):
         ReleaseCombo("ghost-model", InferenceEngine.VLLM, DeviceTypes.GALAXY)
         in report["unmatched"]
     )
+
+
+def test_main_returns_zero_and_writes(tmp_path, capsys):
+    ci, dev, prod = _build_tree(tmp_path)
+    rc = main(["--ci-config", str(ci), "--dev-dir", str(dev), "--prod-dir", str(prod)])
+    assert rc == 0
+    assert "0.2.0" in (prod / "llm.yaml").read_text()
+
+
+def test_main_dry_run_writes_nothing(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    before = (prod / "llm.yaml").read_text()
+    rc = main(
+        [
+            "--ci-config",
+            str(ci),
+            "--dev-dir",
+            str(dev),
+            "--prod-dir",
+            str(prod),
+            "--dry-run",
+        ]
+    )
+    assert rc == 0
+    assert (prod / "llm.yaml").read_text() == before
+
+
+def test_main_returns_nonzero_on_unmatched(tmp_path, capsys):
+    ci, dev, prod = _build_tree(tmp_path)
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "ghost-model": {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    }
+                }
+            }
+        )
+    )
+    rc = main(["--ci-config", str(ci), "--dev-dir", str(dev), "--prod-dir", str(prod)])
+    assert rc == 1
+    assert "ghost-model" in capsys.readouterr().out

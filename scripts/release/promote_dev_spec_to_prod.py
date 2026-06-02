@@ -13,6 +13,7 @@ comments preserved) into the same-named file in workflows/model_specs/prod/,
 upserting by (impl, inference_engine, weights) identity.
 """
 
+import argparse
 import json
 import sys
 from collections import namedtuple
@@ -206,3 +207,47 @@ def promote(ci_config_path, dev_dir, prod_dir, dry_run=False) -> dict:
         "actions": actions,
         "changed_files": changed_files,
     }
+
+
+def _combo_str(combo: ReleaseCombo) -> str:
+    return f"{combo.model_name} [{combo.engine.name}] on {combo.device.name}"
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description=("Promote release-marked dev model specs into the prod catalogue.")
+    )
+    parser.add_argument("--ci-config", type=Path, default=DEFAULT_CI_CONFIG)
+    parser.add_argument("--dev-dir", type=Path, default=DEFAULT_DEV_DIR)
+    parser.add_argument("--prod-dir", type=Path, default=DEFAULT_PROD_DIR)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report intended changes without writing any files.",
+    )
+    args = parser.parse_args(argv)
+
+    report = promote(args.ci_config, args.dev_dir, args.prod_dir, dry_run=args.dry_run)
+
+    prefix = "[dry-run] " if args.dry_run else ""
+    for filename, file_actions in sorted(report["actions"].items()):
+        for identity, action in file_actions:
+            impl, engine, weights = identity
+            print(
+                f"{prefix}{action.upper():8} {filename}: "
+                f"{impl} [{engine.name}] {sorted(weights)}"
+            )
+    changed = report["changed_files"]
+    print(f"{prefix}{len(changed)} prod file(s) changed: {sorted(changed)}")
+
+    for combo in sorted(
+        report["unmatched"],
+        key=lambda c: (c.model_name, c.engine.name, c.device.name),
+    ):
+        print(f"WARNING: no dev template found for {_combo_str(combo)}")
+
+    return 1 if report["unmatched"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
