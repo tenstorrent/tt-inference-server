@@ -161,6 +161,11 @@ size_t kvCacheBlockSize();
  * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
 size_t kvCacheFirstBlockSize();
 
+/** Minimum match percentage for prefix cache hit from
+ * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
+ * Set to 0 to disable threshold check (accept any match). */
+float prefixCacheHitThreshold();
+
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
 

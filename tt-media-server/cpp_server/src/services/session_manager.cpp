@@ -526,6 +526,7 @@ SessionManager::tryAcquireByPrefixHash(
     std::string sessionId;
     size_t
         matchedBlocks;  // total matched blocks (1 for key + matched remaining)
+    size_t sessionBlocks;  // total blocks in the cached session
     uint32_t thinkTokens;  // accumulated think tokens at matched block
   };
   std::vector<Candidate> candidates;
@@ -546,9 +547,11 @@ SessionManager::tryAcquireByPrefixHash(
         ++entryIt;
       }
       // key hash itself counts as 1 block match.
-      size_t totalBlocks = 1 + matched;
+      size_t totalMatched = 1 + matched;
+      size_t sessionTotal = 1 + entry.remainingBlocks.size();
       for (const auto& sid : entry.sessionIds) {
-        candidates.push_back({sid, totalBlocks, lastMatchedThinkCount});
+        candidates.push_back(
+            {sid, totalMatched, sessionTotal, lastMatchedThinkCount});
       }
     }
   });
@@ -570,8 +573,24 @@ SessionManager::tryAcquireByPrefixHash(
       "keyHash={}, best match={} blocks",
       candidates.size(), keyHash, candidates.front().matchedBlocks);
 
+  const float threshold = tt::config::prefixCacheHitThreshold();
   bool anyBusy = false;
   for (const auto& candidate : candidates) {
+    // Check if match percentage meets threshold (skip if below).
+    if (threshold > 0.0f) {
+      float matchPercent =
+          (candidate.matchedBlocks * 100.0f) / candidate.sessionBlocks;
+      if (matchPercent < threshold) {
+        TT_LOG_INFO(
+            "[SessionManager] Prefix cache candidate rejected: "
+            "matchedBlocks={} sessionBlocks={} matchPercent={:.1f}% < "
+            "threshold={:.1f}%",
+            candidate.matchedBlocks, candidate.sessionBlocks, matchPercent,
+            threshold);
+        continue;
+      }
+    }
+
     std::optional<AcquiredSession> acquired;
     bool busy = false;
     bool stale = false;
