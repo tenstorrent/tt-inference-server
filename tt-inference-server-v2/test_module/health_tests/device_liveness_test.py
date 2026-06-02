@@ -46,7 +46,6 @@ class DeviceLivenessTest(BaseTest):
                         f"Expected status 200, got {response.status}"
                     )
                     data = await response.json()
-                    logger.info(f"Liveness check response: {data}")
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")
@@ -74,9 +73,22 @@ class DeviceLivenessTest(BaseTest):
                     ready_count = len(ready_workers)
                     alive_count = len(alive_workers)
 
+                    model_ready = data.get("model_ready")
+                    runner_in_use = data.get("runner_in_use")
                     logger.info(
-                        f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}"
+                        "📊 Liveness status=%s model_ready=%s runner=%s "
+                        "workers ready=%d alive=%d expected=%d",
+                        status,
+                        model_ready,
+                        runner_in_use,
+                        ready_count,
+                        alive_count,
+                        expected_devices,
                     )
+                    if ready_count >= expected_devices:
+                        logger.info("Liveness check response: %s", data)
+                    else:
+                        logger.debug("Liveness check response: %s", data)
 
                     # Check if number of ready workers is equal or bigger than expected devices
                     # we don't use equal to have a possibility to use i.e. 1 device on Galaxy to start some tests
@@ -110,8 +122,8 @@ class DeviceLivenessTest(BaseTest):
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
                         "alive_count": alive_count,
-                        "model_ready": data.get("model_ready"),
-                        "runner_in_use": data.get("runner_in_use"),
+                        "model_ready": model_ready,
+                        "runner_in_use": runner_in_use,
                     }
 
         except (
