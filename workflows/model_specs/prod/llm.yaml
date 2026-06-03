@@ -1085,3 +1085,21 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: qwen3_6_galaxy
+  version: "0.1.0"
+  tt_metal_commit: fa021238662
+  inference_engine: VLLM
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      vllm_args:
+        trust_remote_code: true
+      env_vars:
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
