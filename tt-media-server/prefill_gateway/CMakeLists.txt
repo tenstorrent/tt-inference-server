@@ -98,6 +98,7 @@ set(GATEWAY_CORE_SOURCES
     src/prefill_registry.cpp
     src/dispatcher.cpp
     src/gateway_metrics.cpp
+    src/gateway_health.cpp
     ${CPP_SERVER_DIR}/src/utils/logger.cpp
 )
 
@@ -243,4 +244,5 @@ _gateway_add_unit_test(affinity_cache_test)
 _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_unit_test(gateway_metrics_test)
+_gateway_add_unit_test(gateway_health_test)
 _gateway_add_e2e_test(gateway_e2e_test)

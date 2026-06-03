@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "gateway/gateway_health.hpp"
 #include "gateway/gateway_http_server.hpp"
 
 namespace tt::gateway {
@@ -23,12 +24,12 @@ class GatewayHealthServer {
   bool start(uint16_t port);
   void stop();
   uint16_t port() const;
-  void setHealthProvider(std::function<std::string()> provider);
+  void setHealthProvider(std::function<GatewayHealthStatus()> provider);
 
  private:
   std::optional<GatewayHttpResponse> handleRequest(std::string_view request);
 
-  std::function<std::string()> healthProvider;
+  std::function<GatewayHealthStatus()> healthProvider;
   GatewayHttpServer httpServer;
 };
 

@@ -23,6 +23,7 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
@@ -1024,13 +1025,20 @@ TEST(GatewayMetricsServerTest, ServesPrometheusTextOnMetricsPath) {
   server.stop();
 }
 
-TEST(GatewayHealthServerTest, ServesHealthJsonOnLivenessPath) {
+TEST(GatewayHealthServerTest, ServesLivenessAndReadinessSeparately) {
   const uint16_t port = ephemeralPort();
   GatewayHealthServer server;
   server.setHealthProvider([] {
-    return std::string(
+    GatewayHealthStatus status;
+    status.livenessJson =
         R"({"status":"alive","transport":"tcp","registered_prefills":2,"healthy_prefills":2,"accepting_prefills":2,"decode_connected":false})"
-        "\n");
+        "\n";
+    status.healthJson =
+        R"({"status":"unhealthy","error":"decode not connected","transport":"tcp","registered_prefills":2,"healthy_prefills":2,"accepting_prefills":2,"decode_connected":false})"
+        "\n";
+    status.ready = false;
+    status.error = "decode not connected";
+    return status;
   });
   ASSERT_TRUE(server.start(port));
 
@@ -1039,13 +1047,17 @@ TEST(GatewayHealthServerTest, ServesHealthJsonOnLivenessPath) {
     return response.find("HTTP/1.1 200 OK") != std::string::npos &&
            response.find("Content-Type: application/json") !=
                std::string::npos &&
+           response.find(R"("status":"alive")") != std::string::npos &&
            response.find(R"("healthy_prefills":2)") != std::string::npos &&
            response.find(R"("decode_connected":false)") != std::string::npos;
   }));
 
   const std::string healthResponse = httpGet(port, "/health");
-  EXPECT_NE(healthResponse.find("HTTP/1.1 200 OK"), std::string::npos);
-  EXPECT_NE(healthResponse.find(R"("healthy_prefills":2)"), std::string::npos);
+  EXPECT_NE(healthResponse.find("HTTP/1.1 503 Service Unavailable"),
+            std::string::npos);
+  EXPECT_NE(healthResponse.find(R"("status":"unhealthy")"), std::string::npos);
+  EXPECT_NE(healthResponse.find(R"("error":"decode not connected")"),
+            std::string::npos);
 
   server.stop();
 }

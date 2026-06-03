@@ -66,18 +66,26 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   disable this protection.
 - `--metrics-port=PORT` exposes Prometheus metrics at `GET /metrics`. Default:
   `9091`. Use `--metrics-port=0` to disable the endpoint.
-- `--health-port=PORT` — `GET /tt-liveness` and `GET /health` (JSON). Default:
-  `0` (disabled). Must differ from `--metrics-port`.
+- `--health-port=PORT` — `GET /tt-liveness` (liveness) and `GET /health`
+  (readiness). Default: `0` (disabled). Must differ from `--metrics-port`.
 
 ## HTTP endpoints
 
 | Flag | Default | Paths |
 | ---- | ------- | ----- |
 | `--metrics-port` | `9091` | `GET /metrics` (Prometheus) |
-| `--health-port` | `0` | `GET /tt-liveness`, `GET /health` (same JSON) |
+| `--health-port` | `0` | `GET /tt-liveness`, `GET /health` |
 
-Health JSON includes `status`, `transport`, `registered_prefills`,
-`healthy_prefills`, `accepting_prefills`, and `decode_connected`.
+`GET /tt-liveness` always returns **200** with JSON (`status: alive`) so
+orchestrators can tell the process is up even when degraded.
+
+`GET /health` returns **200** when the gateway can route (`status: healthy`) and
+**503** when it cannot (`status: unhealthy`), for example when
+`decode_connected` is false, `healthy_prefills` is 0, or
+`accepting_prefills` is 0.
+
+Both responses include `transport`, `registered_prefills`, `healthy_prefills`,
+`accepting_prefills`, and `decode_connected`.
 
 ```bash
 curl -s http://127.0.0.1:9091/metrics | head

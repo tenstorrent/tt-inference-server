@@ -17,6 +17,7 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health.hpp"
 #include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
@@ -268,28 +269,6 @@ std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
   return out;
 }
 
-std::string buildHealthJson(const tt::gateway::PrefillRegistry& registry,
-                            const tt::sockets::SocketManager& decodeSm,
-                            std::string_view transport) {
-  const auto prefills = registry.snapshot();
-  size_t healthyPrefills = 0;
-  size_t acceptingPrefills = 0;
-  for (const auto& prefill : prefills) {
-    if (prefill.healthy) ++healthyPrefills;
-    if (prefill.accepting_tasks) ++acceptingPrefills;
-  }
-
-  std::ostringstream out;
-  out << "{\"status\":\"alive\""
-      << ",\"transport\":\"" << transport << "\""
-      << ",\"registered_prefills\":" << prefills.size()
-      << ",\"healthy_prefills\":" << healthyPrefills
-      << ",\"accepting_prefills\":" << acceptingPrefills
-      << ",\"decode_connected\":" << (decodeSm.isConnected() ? "true" : "false")
-      << "}\n";
-  return out.str();
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -337,7 +316,7 @@ int main(int argc, char** argv) {
   }
 
   auto healthProvider = [&registry, &decodeSm, transport]() {
-    return buildHealthJson(registry, decodeSm, transport);
+    return buildGatewayHealthStatus(registry, transport, decodeSm.isConnected());
   };
   if (!metricsServer.start(cfg.metricsPort)) {
     TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",

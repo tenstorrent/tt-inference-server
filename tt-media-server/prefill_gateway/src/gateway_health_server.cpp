@@ -35,19 +35,35 @@ void GatewayHealthServer::stop() { httpServer.stop(); }
 uint16_t GatewayHealthServer::port() const { return httpServer.port(); }
 
 void GatewayHealthServer::setHealthProvider(
-    std::function<std::string()> provider) {
+    std::function<GatewayHealthStatus()> provider) {
   healthProvider = std::move(provider);
 }
 
 std::optional<GatewayHttpResponse> GatewayHealthServer::handleRequest(
     std::string_view request) {
-  if (!isLivenessRequest(request) && !isHealthRequest(request)) {
-    return std::nullopt;
+  if (isLivenessRequest(request)) {
+    const std::string body =
+        healthProvider ? healthProvider().livenessJson
+                       : R"({"status":"alive"})";
+    return GatewayHttpResponse{200, "OK", "application/json", body};
   }
 
-  return GatewayHttpResponse{
-      200, "OK", "application/json",
-      healthProvider ? healthProvider() : R"({"status":"alive"})"};
+  if (isHealthRequest(request)) {
+    if (!healthProvider) {
+      return GatewayHttpResponse{
+          503, "Service Unavailable", "application/json",
+          R"({"status":"unhealthy","error":"health provider not configured"})"};
+    }
+    const GatewayHealthStatus status = healthProvider();
+    if (status.ready) {
+      return GatewayHttpResponse{200, "OK", "application/json",
+                                 status.healthJson};
+    }
+    return GatewayHttpResponse{503, "Service Unavailable", "application/json",
+                             status.healthJson};
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace tt::gateway
