@@ -399,15 +399,19 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     num_inference_steps_used = status_list[0].num_inference_steps if status_list else 0
     benchmarks_data = {
         "num_requests": len(status_list),
-        "num_inference_steps": num_inference_steps_used,
-        "ttft_ms": ttft_value * 1000,
-        "inference_steps_per_second": inference_steps_per_second,
-        "tput_user": tput_user,
-        "accuracy_check": accuracy_check,
-        "target_checks": target_checks,
     }
     if max_concurrency:
         benchmarks_data["num_concurrent_requests"] = max_concurrency
+    benchmarks_data.update(
+        {
+            "num_inference_steps": num_inference_steps_used,
+            "ttft_ms": ttft_value * 1000,
+            "inference_steps_per_second": inference_steps_per_second,
+            "tput_user": tput_user,
+            "accuracy_check": accuracy_check,
+            "target_checks": target_checks,
+        }
+    )
     return Block(
         kind="benchmarks",
         task_type="image",
