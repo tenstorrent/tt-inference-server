@@ -698,8 +698,8 @@ void SessionManager::registerResponseId(const std::string& sessionId,
   // cleanup). The session only stores its current id so close/evict can find
   // the index entry; the cached length lives in the index entry below.
   std::string oldId;
-  bool sessionFound = sessions.modify(
-      sessionId, [&oldId, &responseId](domain::Session& s) {
+  bool sessionFound =
+      sessions.modify(sessionId, [&oldId, &responseId](domain::Session& s) {
         oldId = s.getResponseId();
         s.setResponseId(responseId);
       });

@@ -136,8 +136,8 @@ size_t applyResponseIdDelta(tt::domain::llm::LLMRequest& req,
   if (cachedLen == 0 || cachedLen >= fullLen) {
     return fullLen;
   }
-  std::vector<int> delta(tokens->begin() + static_cast<std::ptrdiff_t>(cachedLen),
-                         tokens->end());
+  std::vector<int> delta(
+      tokens->begin() + static_cast<std::ptrdiff_t>(cachedLen), tokens->end());
   req.prompt_tokens_count = static_cast<int>(delta.size());
   req.prompt = std::move(delta);
   return fullLen;
