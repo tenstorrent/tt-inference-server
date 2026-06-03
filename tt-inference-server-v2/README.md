@@ -18,6 +18,47 @@ the inference server on `localhost:8000`, accumulates per-test `Block`s into a
 single `ReportSchema`, applies acceptance criteria, and writes a markdown +
 JSON report into `output/<model>_<device>_<workflow>/`.
 
+## Repeated benchmark runs (`--repeat`)
+
+To characterise run-to-run variance, repeat a workflow N times and emit one
+aggregated summary report on top of the per-run reports:
+
+```bash
+python tt-inference-server-v2/run.py \
+    --model stable-diffusion-xl-base-1.0 \
+    --workflow benchmarks \
+    --device n150 \
+    --repeat 10
+```
+
+Each run keeps its own report; the summary is written alongside them:
+
+```
+workflow_logs/reports_output/<workflow>/<model>_<device>_<workflow>/
+├── run_01/report_<id>.{md,json}
+├── run_02/report_<id>.{md,json}
+├── ...
+├── run_10/report_<id>.{md,json}
+└── summary/report_summary_<id>.{md,json}
+```
+
+The summary aggregates every per-run `benchmarks` block into per-metric
+statistics (n, mean, median, stdev, min, max, p50/p90/p99, and coefficient of
+variation) and re-runs the acceptance criteria on the aggregated means.
+`--repeat 1` (the default) is unchanged: a single report, no `run_NN/`
+subfolder, no summary.
+
+When `--repeat > 1`, a failed run (e.g. a transient HTTP error mid-benchmark)
+is logged and skipped rather than aborting the whole sweep — the summary is
+still produced over the runs that succeeded. If *no* run produces a report the
+summary step fails (`rc=1`).
+
+Implementation: the pure stats core lives in `report_module/summary.py`; the
+disk-driven aggregation + `SummaryCommand` live in
+`workflow_module/summary_report.py`. The summary is built by reading each run's
+`report_<id>.json` back off disk (runs are independent processes, so the
+in-memory accumulator can't be shared across them).
+
 ## Architecture at a glance
 
 ```
