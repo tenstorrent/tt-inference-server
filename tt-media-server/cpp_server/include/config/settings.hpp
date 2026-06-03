@@ -107,8 +107,10 @@ std::string prefillServerId();
  * (decode/prefill/regular) for the LLM service or the service name otherwise,
  * and instance is prefillServerId() ("<hostname>:<SOCKET_PORT>" by default).
  *
- * @param workerIndex >=0 for a forked worker subprocess; sets role to
- *   "worker<index>" so worker lines are distinguishable from the HTTP node.
+ * @param workerIndex >=0 for a forked worker subprocess; appends
+ *   "-worker<index>" to the role (e.g. "decode-worker0") so worker lines stay
+ *   attributable to their node even when decode/prefill are colocated and
+ *   share host:SOCKET_PORT.
  */
 std::string logInstanceTag(int workerIndex = -1);
 

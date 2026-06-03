@@ -50,13 +50,16 @@ instance without relying on separate tee files:
 
 ```
 [2026-06-03 20:55:07.660] [decode/bh-47:9000 pid=3392269] [info] ...
+[2026-06-03 20:55:07.881] [decode-worker0/bh-47:9000 pid=3392294] [info] ...
 ```
 
 The tag is `<role>/<instance> pid=<pid>`:
 
 - `role` — `LLM_MODE` (`decode` / `prefill` / `regular`) for the LLM service,
-  the service name (`image` / `embedding`) otherwise, or `worker<index>` for a
-  forked worker subprocess.
+  the service name (`image` / `embedding`) otherwise. Forked worker
+  subprocesses append `-worker<index>` (e.g. `decode-worker0`) so they stay
+  attributable to their node even when decode and prefill are colocated and
+  share `host:SOCKET_PORT`.
 - `instance` — `PREFILL_SERVER_ID` if set, else `<hostname>:<SOCKET_PORT>`.
 - `pid` — process id, so HTTP nodes and their worker subprocesses are distinct.
 
