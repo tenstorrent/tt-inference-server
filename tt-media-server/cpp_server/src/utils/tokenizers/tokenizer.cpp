@@ -264,6 +264,8 @@ const StaticTokenizerInfo& kimiK26Info() {
       /*modelName=*/"moonshotai/Kimi-K2.6",
       /*stopTokenIds=*/{163586},
       /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
   };
   return kInfo;
 }
