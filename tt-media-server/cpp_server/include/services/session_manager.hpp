@@ -11,16 +11,19 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "domain/session.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/concurrent_queue.hpp"
+#include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
 
@@ -45,8 +48,17 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
+  struct Candidate {
+    std::string sessionId;
+    size_t
+        matchedBlocks;  // total matched blocks (1 for key + matched remaining)
+    size_t sessionBlocks;  // total blocks in the cached session
+    uint32_t thinkTokens;  // accumulated think tokens at matched block
+  };
+
   // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
   struct AcquiredSession {
+    bool sessionFound;
     std::string sessionId;
     uint32_t slotId;
     uint32_t numberOfMatchedTokens = 0;
@@ -54,6 +66,8 @@ class SessionManager {
     // (that turn's full prompt + generated tokens). Used by the response-id
     // path to prefill only tokens[cachedPromptLen:].
     size_t cachedPromptLen = 0;
+    uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
+    std::vector<Candidate> candidatesList;
   };
 
   SessionManager();
@@ -65,8 +79,10 @@ class SessionManager {
   void createSession(
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
-      trantor::EventLoop* eventLoop, size_t initialHash = 0,
-      std::optional<uint32_t> slotId = std::nullopt);
+      trantor::EventLoop* eventLoop,
+      std::vector<utils::BlockHashInfo> initialBlockInfos = {},
+      std::optional<uint32_t> slotId = std::nullopt,
+      std::optional<uint32_t> slotIdToCopyFrom = std::nullopt);
 
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
@@ -81,36 +97,47 @@ class SessionManager {
   domain::Session* getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
+  // Lock/unlock a slot to prevent eviction.
+  void lockSlot(uint32_t slotId);
+  void unlockSlot(uint32_t slotId);
+
   /**
-   * Try to find a session whose registered prefix hash matches, atomically
-   * mark it in-flight, and register the cancel function — all under the same
-   * lock so no concurrent request can steal it.
+   * Try to find a session whose registered prefix hash matches one of the
+   * provided block infos. Searches from the longest prefix (last hash) to
+   * the shortest (first hash) to maximize KV cache reuse. Atomically marks
+   * the session in-flight and registers the cancel function.
+   *
+   * @param blockInfos  Per-block hash and think count info (index 0 = first).
+   * @param cancelFn    Cancel function registered on the acquired session.
    *
    * Returns:
-   *   AcquiredSession — session found and successfully locked; contains both
-   *                     slotId and sessionId (UUID). Caller owns the in-flight
-   *                     state and MUST call releaseInFlight(sessionId) when
-   *                     the request completes (success or error).
-   *   nullopt         — no session registered under this hash. Caller should
+   *   AcquiredSession — session found; contains sessionId, slotId,
+   *                     numberOfMatchedTokens, and accumulatedThinkTokens.
+   *                     Caller owns the in-flight state and MUST release
+   *                     when the request completes.
+   *   nullopt         — no session registered under any hash. Caller should
    *                     fall back to createSession.
    *
    * Throws:
-   *   SessionInFlightException — all sessions under this hash are already
-   *                              serving other requests. Controller maps
-   *                              this to HTTP 429.
+   *   SessionInFlightException — all candidate sessions are already
+   *                              serving other requests (maps to HTTP 429).
    */
   std::optional<AcquiredSession> tryAcquireByPrefixHash(
-      uint64_t prefixHash, std::function<void()> cancelFn);
+      const std::vector<utils::BlockHashInfo>& blockInfos,
+      std::function<void()> cancelFn);
 
   /**
-   * Route future lookups of `prefixHash` to this session. This registers the
-   * session under the given hash so the next turn's lookup can find it.
+   * Route future lookups to this session by registering the given block infos.
+   * blockInfos[0].hash becomes the key in prefixIndex; blockInfos[1:] are
+   * stored as remainingBlocks in the entry. If an entry with identical
+   * remaining hashes already exists, the session is added to that entry;
+   * otherwise a new entry is created.
    *
-   * If the session was previously registered under a different hash, it is
-   * removed from that hash's index entry and added to the new hash's index
-   * entry.
+   * If the session was previously registered under a different key hash, it is
+   * removed from that hash's index entry first.
    */
-  void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
+  void registerPrefixHash(const std::string& sessionId,
+                          const std::vector<utils::BlockHashInfo>& blockInfos);
 
   /**
    * Response-id continuation lookup. Parallel to tryAcquireByPrefixHash but
@@ -157,6 +184,7 @@ class SessionManager {
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
+    std::optional<uint32_t> slotIdToCopyFrom;
   };
 
   struct DeferredDealloc {
@@ -188,11 +216,17 @@ class SessionManager {
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
   // An entry in the prefix index: a group of sessions sharing the same prefix
-  // path, together with the remaining block hashes that follow (used for deeper
+  // path, together with the remaining block info that follows (used for deeper
   // prefix matching / numberOfMatchedTokens calculation).
+  struct RemainingBlockInfo {
+    uint64_t hash;
+    uint32_t accumulatedThinkTokens;
+  };
+
   struct PrefixIndexEntry {
-    std::list<std::string> sessionIds;    // sessions registered here
-    std::list<uint64_t> remainingHashes;  // subsequent block hashes
+    std::list<std::string> sessionIds;              // sessions registered here
+    std::list<RemainingBlockInfo> remainingBlocks;  // subsequent block info
+    uint32_t keyBlockThinkTokens = 0;  // think tokens at key hash block
   };
 
   // Secondary index: block hash -> entries (each with different remaining
@@ -224,6 +258,10 @@ class SessionManager {
   std::atomic<bool> stopped{false};
   std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;
+
+  // Slots locked from eviction (O(1) lookup).
+  mutable std::mutex lockedSlotsMutex;
+  std::unordered_set<uint32_t> lockedSlots;
 };
 
 }  // namespace tt::services

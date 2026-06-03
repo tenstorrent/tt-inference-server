@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the V2_PREFIX_CACHE workflow venv (Python 3.11).
+# Used by direct invocations of tt-inference-server-v2/run.py when
+# --prefix-cache is set.
+#
+# This is a strict superset of requirements/benchmarks-aiperf.txt: the
+# v2 orchestrator additionally imports aiohttp at module-load time via
+# workflow_module -> test_module.context -> health_tests. Every other
+# v2 test runner (audio / image / video / CNN / TTS / embedding evals
+# and benchmarks, plus run_llm_performance) is lazy-loaded via PEP 562
+# __getattr__ in test_module/__init__.py and
+# test_module/llm_tests/__init__.py and is NEVER imported on the
+# prefix-cache code path -- so their transitive deps (torchvision,
+# open-clip-torch, pillow, scipy, numpy) intentionally do NOT appear
+# below. pip will still pull in numpy via transformers / aiperf, but
+# we leave that to pip's resolver instead of pinning it ourselves.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# AIPerf benchmarking tool (https://github.com/ai-dynamo/aiperf).
+# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
+# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
+# import of `AutoTokenizer`. aiperf itself only requires transformers>=4.56.
+torch==2.4.0+cpu
+aiperf
+transformers>=4.56,<5
+pyjwt
+requests
+datasets
+
+# v2 orchestrator eager-import: workflow_module -> test_module.context ->
+# health_tests uses aiohttp at module top.
+aiohttp

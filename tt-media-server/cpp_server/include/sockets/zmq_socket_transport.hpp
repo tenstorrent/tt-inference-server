@@ -4,18 +4,20 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <span>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
 #include "sockets/socket_transport_state.hpp"
+#include "sockets/zmq_send_queue.hpp"
 
 // Forward-declare ZMQ types to avoid leaking zmq.hpp into every TU.
 namespace zmq {
@@ -49,14 +51,14 @@ class ZmqSocketTransport : public ISocketTransport,
   bool isConnected() const override;
   std::string getStatus() const override;
 
-  bool sendRawData(const std::vector<uint8_t>& data) override;
+  bool sendRawData(std::span<const uint8_t> data) override;
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
   void setConnectionEstablishedCallback(
       std::function<void()> callback) override;
-  void setReconnectBackoff(uint32_t initialDelayMs,
-                           uint32_t maxDelayMs) override;
+  void setReconnectBackoff(std::chrono::milliseconds initialDelay,
+                           std::chrono::milliseconds maxDelay) override;
 
  private:
   struct SendRequest {
@@ -65,10 +67,10 @@ class ZmqSocketTransport : public ISocketTransport,
   };
 
   bool startIoThread();
-  void ioLoop(std::promise<bool> initialized);
+  void ioLoop(std::stop_token stopToken, std::promise<bool> initialized);
   bool initializeSocket();
   void setupMonitor();
-  void monitorLoop(std::promise<void> ready);
+  void monitorLoop(std::stop_token stopToken, std::promise<void> ready);
   bool processPendingSends();
   bool receiveAvailableMessages();
   void waitForIoWork();
@@ -90,15 +92,13 @@ class ZmqSocketTransport : public ISocketTransport,
   std::atomic<bool> ioActive_{false};
   std::atomic<bool> monitorActive_{false};
 
-  std::thread ioThread_;
-  std::thread monitorThread_;
+  std::jthread ioThread_;
+  std::jthread monitorThread_;
 
   std::vector<uint8_t>
       peerId_;  // ROUTER stores the connected DEALER's identity.
 
-  std::mutex sendMutex_;
-  std::condition_variable sendCv_;
-  std::deque<std::shared_ptr<SendRequest>> pendingSends_;
+  ZmqSendQueue<SendRequest> sendQueue;
 
   std::mutex receiveMutex_;
   std::deque<std::vector<uint8_t>> receivedMessages_;

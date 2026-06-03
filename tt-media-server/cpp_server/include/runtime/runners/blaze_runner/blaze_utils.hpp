@@ -7,7 +7,6 @@
 
 #include "config/settings.hpp"
 #include "domain/llm/sequence.hpp"
-#include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
 #include "runtime/runners/blaze_runner/blaze_types.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_scheduler.hpp"
 #include "tt_llm_engine/scheduler/decode/decode_types.hpp"
@@ -25,7 +24,7 @@ inline ds::ISRequest makeAllocateRequest(uint32_t requestId) {
 }
 
 inline ds::ISRequest makeEvictRequest(uint32_t requestId, uint32_t slotId) {
-  return {.type = ds::RequestType::CANCEL,
+  return {.type = ds::RequestType::EVICT,
           .request_id = requestId,
           .slot_id = slotId,
           .tokens = {},
@@ -51,7 +50,8 @@ inline ds::GenerationParams makeGenerationParams(
       .temperature = seq.getSamplingParams().temperature,
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
-      .disaggregated_decode = seq.isDisaggregated()};
+      .disaggregated_decode = seq.isDisaggregated(),
+      .stop_tokens = seq.getSamplingParams().stop_token_ids};
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,
@@ -70,11 +70,17 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq) {
+                                         const tt::domain::llm::Sequence& seq,
+                                         uint32_t currentPosition) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    req.gen.position_id = *seq.getKVPositionId();
+  } else {
+    req.gen.position_id = currentPosition;
+  }
   return req;
 }
 
@@ -101,7 +107,7 @@ struct SpecDelta {
 inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
                                         const SlotContext& slot,
                                         const ds::OutputMessage& output,
-                                        uint32_t taskId, bool hitStop) {
+                                        uint32_t taskId) {
   SpecDelta d{
       .accepts =
           sched.get_spec_accepts(output.slot_id) - slot.specAcceptsAtStart,
@@ -112,9 +118,9 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
   double acceptRate = total > 0 ? 100.0 * d.accepts / total : 0.0;
   TT_LOG_INFO(
       "slot {} turn: accepts={}/{} rate={:.1f}% taskId={} token_id={} "
-      "is_complete={} ignoreEos={} hitStop={} tokensGenerated={}",
+      "is_complete={} ignoreEos={} tokensGenerated={}",
       output.slot_id, d.accepts, total, acceptRate, taskId, output.token_id,
-      output.is_complete, slot.ignoreEos, hitStop, slot.tokensGenerated);
+      output.is_complete, slot.ignoreEos, slot.tokensGenerated);
   return d;
 }
 

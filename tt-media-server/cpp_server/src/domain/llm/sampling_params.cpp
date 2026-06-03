@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
 #include "domain/llm/sampling_params.hpp"
 
 #include <json/json.h>
@@ -168,7 +171,7 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   params->min_p = readOptional<float>(is);
   params->repetition_penalty = readOptional<float>(is);
   params->length_penalty = readScalar<float>(is);
-  params->stop_token_ids = readVector<int>(is);
+  params->stop_token_ids = readVector<uint32_t>(is);
   params->include_stop_str_in_output = readScalar<bool>(is);
   params->min_tokens = readScalar<int>(is);
   params->skip_special_tokens = readScalar<bool>(is);

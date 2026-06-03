@@ -3,9 +3,14 @@
 
 #include "dynamo/discovery.hpp"
 
+#include <blake3.h>
 #include <json/json.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -20,10 +25,49 @@ namespace {
 
 constexpr int K_CONTEXT_LENGTH = 131072;
 
-/// Frontend reads the checksum but doesn't validate it for routing — it's
-/// used only for cache invalidation.
+/// Used only when a referenced file is missing/unreadable. The frontend
+/// blake3-validates every file it fetches from the MDC, so for files that
+/// exist we must publish their real digest (see fileChecksum); an all-zero
+/// placeholder makes the frontend reject the model with a "checksum mismatch".
 constexpr const char* K_BLAKE3_PLACEHOLDER =
     "blake3:0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Compute the BLAKE3-256 digest of a file's bytes, formatted as the
+/// `blake3:<64 hex chars>` string the Dynamo frontend expects in an MDC. On
+/// any read failure, fall back to the placeholder so registration still
+/// succeeds for files the frontend won't actually fetch.
+std::string fileChecksum(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    TT_LOG_WARN(
+        "[DynamoDiscovery] cannot open {} for checksum; using placeholder",
+        path);
+    return K_BLAKE3_PLACEHOLDER;
+  }
+
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  std::array<char, 64 * 1024> buf{};
+  while (f) {
+    f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+    const std::streamsize n = f.gcount();
+    if (n > 0) {
+      blake3_hasher_update(&hasher, buf.data(), static_cast<size_t>(n));
+    }
+  }
+
+  std::array<uint8_t, BLAKE3_OUT_LEN> out{};
+  blake3_hasher_finalize(&hasher, out.data(), out.size());
+
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string result = "blake3:";
+  result.reserve(result.size() + out.size() * 2);
+  for (uint8_t byte : out) {
+    result += kHex[(byte >> 4) & 0xF];
+    result += kHex[byte & 0xF];
+  }
+  return result;
+}
 
 /// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
 /// model ids have `/` and uppercase, so map them to `-` and lowercase.
@@ -73,6 +117,54 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   return instance;
 }
 
+/// Dynamo frontend parser names advertised in the MDC runtime_config.
+struct RuntimeParsers {
+  const char* reasoning = nullptr;
+  const char* tool_call = nullptr;
+};
+
+/// Read HuggingFace `model_type` from config.json (empty if
+/// missing/unreadable).
+std::string readModelType(const std::string& configPath) {
+  std::ifstream f(configPath);
+  if (!f) {
+    return {};
+  }
+  Json::Value cfg;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, f, &cfg, &errs) ||
+      !cfg.isMember("model_type") || !cfg["model_type"].isString()) {
+    return {};
+  }
+  return cfg["model_type"].asString();
+}
+
+/// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
+RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
+  if (modelType == "kimi_k25") {
+    return {"kimi_k25", "kimi_k2"};
+  }
+  if (modelType == "llama") {
+    return {nullptr, nullptr};
+  }
+  // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
+  return {"deepseek_r1", nullptr};
+}
+
+RuntimeParsers runtimeParsersForModelPath(const std::string& modelPath) {
+  return runtimeParsersForModelType(readModelType(modelPath + "/config.json"));
+}
+
+void setRuntimeParserField(Json::Value& runtime, const char* field,
+                           const char* value) {
+  if (value != nullptr) {
+    runtime[field] = value;
+  } else {
+    runtime[field] = Json::Value::null;
+  }
+}
+
 /// Build the Model Descriptor Card JSON the frontend uses to tokenize and
 /// list the model. Paths point at the same files cpp_server itself loads so
 /// the frontend tokenization matches exactly.
@@ -90,28 +182,50 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   card["source_path"] = c.model_path;
 
   const std::string configPath = c.model_path + "/config.json";
-  const std::string tokenizerPath = c.model_path + "/tokenizer.json";
+  const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";
+  const std::string tiktokenModelPath = c.model_path + "/tiktoken.model";
   const std::string tokenizerConfigPath =
       c.model_path + "/tokenizer_config.json";
+  const std::string chatTemplatePath = c.model_path + "/chat_template.jinja";
 
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
   hfConfig["path"] = configPath;
-  hfConfig["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfConfig["checksum"] = fileChecksum(configPath);
   modelInfo["hf_config_json"] = std::move(hfConfig);
   card["model_info"] = std::move(modelInfo);
 
   Json::Value tokenizer(Json::objectValue);
-  Json::Value hfTok(Json::objectValue);
-  hfTok["path"] = tokenizerPath;
-  hfTok["checksum"] = K_BLAKE3_PLACEHOLDER;
-  tokenizer["hf_tokenizer_json"] = std::move(hfTok);
+  Json::Value tokFile(Json::objectValue);
+  const bool hasTiktoken = std::filesystem::exists(tiktokenModelPath) &&
+                           !std::filesystem::exists(tokenizerJsonPath);
+  if (hasTiktoken) {
+    tokFile["path"] = tiktokenModelPath;
+    tokFile["checksum"] = fileChecksum(tiktokenModelPath);
+    tokenizer["tik_token_model"] = std::move(tokFile);
+  } else {
+    tokFile["path"] = tokenizerJsonPath;
+    tokFile["checksum"] = fileChecksum(tokenizerJsonPath);
+    tokenizer["hf_tokenizer_json"] = std::move(tokFile);
+  }
   card["tokenizer"] = std::move(tokenizer);
+
+  if (std::filesystem::exists(chatTemplatePath)) {
+    Json::Value chatTemplateFile(Json::objectValue);
+    Json::Value hfChatTemplate(Json::objectValue);
+    hfChatTemplate["is_custom"] = false;
+    Json::Value jinjaFile(Json::objectValue);
+    jinjaFile["path"] = chatTemplatePath;
+    jinjaFile["checksum"] = fileChecksum(chatTemplatePath);
+    hfChatTemplate["file"] = std::move(jinjaFile);
+    chatTemplateFile["hf_chat_template_jinja"] = std::move(hfChatTemplate);
+    card["chat_template_file"] = std::move(chatTemplateFile);
+  }
 
   Json::Value promptFormatter(Json::objectValue);
   Json::Value hfTokCfg(Json::objectValue);
   hfTokCfg["path"] = tokenizerConfigPath;
-  hfTokCfg["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfTokCfg["checksum"] = fileChecksum(tokenizerConfigPath);
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
@@ -126,8 +240,9 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["total_kv_blocks"] = Json::Value::null;
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
+  const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
+  setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
   runtime["tool_call_parser"] = Json::Value::null;
-  runtime["reasoning_parser"] = "deepseek_r1";
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;

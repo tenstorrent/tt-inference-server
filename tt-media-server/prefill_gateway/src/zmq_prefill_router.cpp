@@ -53,9 +53,10 @@ void ZmqPrefillRouter::stop() {
   }
 
   running_ = false;
-  send_cv_.notify_all();
+  sendQueue.notifyStopped();
 
   if (io_thread_.joinable()) {
+    io_thread_.request_stop();
     io_thread_.join();
   }
 
@@ -98,21 +99,19 @@ std::vector<std::string> ZmqPrefillRouter::takeStaleServers(
   std::vector<std::string> staleServers;
 
   std::lock_guard<std::mutex> lock(peer_mutex_);
-  for (auto it = last_seen_by_server_.begin();
-       it != last_seen_by_server_.end();) {
-    if (now - it->second <= timeout) {
-      ++it;
-      continue;
+  std::erase_if(last_seen_by_server_, [&](const auto& lastSeen) {
+    if (now - lastSeen.second <= timeout) {
+      return false;
     }
 
-    staleServers.push_back(it->first);
-    auto peerIt = server_to_peer_.find(it->first);
+    staleServers.push_back(lastSeen.first);
+    auto peerIt = server_to_peer_.find(lastSeen.first);
     if (peerIt != server_to_peer_.end()) {
       peer_to_server_.erase(peerKey(peerIt->second));
       server_to_peer_.erase(peerIt);
     }
-    it = last_seen_by_server_.erase(it);
-  }
+    return true;
+  });
 
   return staleServers;
 }
@@ -130,16 +129,20 @@ std::optional<ZmqPrefillRouter::PeerIdentity> ZmqPrefillRouter::peerIdForServer(
 bool ZmqPrefillRouter::startIoThread() {
   std::promise<bool> initialized;
   auto fut = initialized.get_future();
-  io_thread_ =
-      std::thread(&ZmqPrefillRouter::ioLoop, this, std::move(initialized));
+  io_thread_ = std::jthread([this, initialized = std::move(initialized)](
+                                std::stop_token stopToken) mutable {
+    ioLoop(stopToken, std::move(initialized));
+  });
   bool initializedOk = fut.get();
   if (!initializedOk && io_thread_.joinable()) {
+    io_thread_.request_stop();
     io_thread_.join();
   }
   return initializedOk;
 }
 
-void ZmqPrefillRouter::ioLoop(std::promise<bool> initialized) {
+void ZmqPrefillRouter::ioLoop(std::stop_token stopToken,
+                              std::promise<bool> initialized) {
   if (!initializeSocket()) {
     initialized.set_value(false);
     return;
@@ -147,7 +150,7 @@ void ZmqPrefillRouter::ioLoop(std::promise<bool> initialized) {
 
   initialized.set_value(true);
 
-  while (running_) {
+  while (running_ && !stopToken.stop_requested()) {
     const bool sent = processPendingSends();
     const bool received = receiveAvailableMessages();
     if (!sent && !received) {
@@ -185,13 +188,8 @@ bool ZmqPrefillRouter::processPendingSends() {
 
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(send_mutex_);
-      if (pending_sends_.empty()) {
-        return processed;
-      }
-      request = std::move(pending_sends_.front());
-      pending_sends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return processed;
     }
 
     bool ok = false;
@@ -241,21 +239,14 @@ bool ZmqPrefillRouter::receiveAvailableMessages() {
 }
 
 void ZmqPrefillRouter::waitForIoWork() {
-  std::unique_lock<std::mutex> lock(send_mutex_);
-  send_cv_.wait_for(lock, IO_IDLE_WAIT,
-                    [this] { return !pending_sends_.empty() || !running_; });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !running_.load(); });
 }
 
 void ZmqPrefillRouter::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(send_mutex_);
-      if (pending_sends_.empty()) {
-        return;
-      }
-      request = std::move(pending_sends_.front());
-      pending_sends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return;
     }
     request->result.set_value(false);
   }
@@ -264,6 +255,16 @@ void ZmqPrefillRouter::failPendingSends() {
 void ZmqPrefillRouter::handleIncomingMessage(const PeerIdentity& peerId,
                                              const std::vector<uint8_t>& data) {
   try {
+    {
+      const std::string key = peerKey(peerId);
+      std::lock_guard<std::mutex> lock(peer_mutex_);
+      auto serverIt = peer_to_server_.find(key);
+      if (serverIt != peer_to_server_.end()) {
+        last_seen_by_server_[serverIt->second] =
+            std::chrono::steady_clock::now();
+      }
+    }
+
     std::string messageType = tt::sockets::wire::readMessageType(data);
     RawHandler handler;
     {

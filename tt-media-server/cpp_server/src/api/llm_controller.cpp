@@ -272,19 +272,33 @@ LLMController::makeStreamingCallback(
           sessionManager = std::move(sessionManager),
           responseId = std::move(responseId)](const LLMStreamChunk& chunk,
                                               bool isFinal) {
-    if (writer->isDone()) return;
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-    if (isFinal) {
-      // Record the slot's cached prefix (full prompt + generated tokens) under
-      // this turn's response id before releasing the session, so a follow-up
-      // previous_response_id turn sees the bumped length and prefills only the
-      // new delta. Done before clearInFlight so the next turn can't race in
-      // and read the stale resolve-time (prompt-only) length.
-      if (session && sessionManager && !responseId.empty()) {
+    // Accumulate token for prefix index (always, even if connection closed)
+    if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
+      session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
+    }
+
+    // Finalize session before isDone check (register partial progress on abort)
+    if (isFinal && session) {
+      session->finalizeAndRegisterHashes();
+      if (sessionManager && !responseId.empty()) {
         sessionManager->registerResponseId(session->getSessionId(), responseId,
                                            writer->totalProcessedTokens());
       }
-      if (session) session->clearInFlight();
+      session->clearInFlight();
+    }
+
+    if (writer->isDone()) return;
+
+    // Only forward chunks with content to the writer; suppressed tokens (e.g.,
+    // think markers with empty text) are tracked above but not sent to client.
+    if (!chunk.choices.empty() &&
+        (!chunk.choices[0].text.empty() ||
+         !chunk.choices[0].reasoning.value_or("").empty() ||
+         chunk.choices[0].tool_calls.has_value() ||
+         chunk.choices[0].finish_reason.has_value())) {
+      writer->handleTokenChunk(chunk);
+    }
+    if (isFinal) {
       writer->finalize();
     }
   };

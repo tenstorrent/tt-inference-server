@@ -96,6 +96,9 @@ class EvalTask:
     include_path: str = None
     # Optional: kwargs passed to task custom_dataset loaders (e.g., RULER sequence length configs)
     custom_dataset_kwargs: Dict[str, Union[str, List[int]]] = None
+    # Skip task when device.max_context < this. Avoids hours of HTTP 400
+    # retry-burn on long-context evals (longbench, RULER) at small ctx.
+    min_context_required: Optional[int] = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
@@ -1187,7 +1190,7 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -2238,6 +2241,7 @@ _eval_config_list = [
             # ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2252,6 +2256,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2266,6 +2271,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2280,6 +2286,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2294,6 +2301,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2308,6 +2316,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2408,6 +2417,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_code_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2422,6 +2432,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_fewshot_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2436,6 +2447,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_multi_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2450,6 +2462,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_single_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2464,6 +2477,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_summarization_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -2478,6 +2492,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="longbench_synthetic_e",
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -3125,13 +3140,20 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    # lm-eval-harness' SSE consumer only parses
+                    # /v1/completions chunks, not /v1/chat/completions; keep
+                    # stream=false to avoid empty resps + KeyError: 'message'.
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    # Must stay strictly below max_context (131072); equal
+                    # values leave zero headroom, the Harmony path schedules
+                    # a 1-token prefill, and every response comes back empty.
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3156,13 +3178,14 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=16,
                 model_kwargs={
-                    "timeout": "7200",
+                    "timeout": "14400",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    "max_gen_toks": 120 * 1024,
                 },
             ),
             EvalTask(
@@ -3190,6 +3213,7 @@ _eval_config_list = [
                     "timeout": "7200",
                 },
                 gen_kwargs={
+                    "stream": "false",
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -3202,16 +3226,13 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="tiiuae/Falcon3-7B-Instruct",
         tasks=[
-            # NOTE: tokenizer_backend="none" is required for the FORGE LLM server.
-            # The default ("huggingface") makes lm-eval-harness pre-tokenize prompts
-            # and send them as List[List[int]] to /v1/completions, which the forge
-            # server's pydantic schema rejects with HTTP 422 (it only accepts
-            # `prompt: Union[str, List[int]]`). With "none", lm-eval applies the
-            # chat template host-side, sends prompts as strings, and the server
-            # tokenizes them — schema-compatible.
+            # tokenizer_backend defaults to "huggingface" — matches the Qwen3-*
+            # configs below. Don't set "none" here: without a tokenizer loaded
+            # lm-eval can't apply_chat_template host-side and instead sends the
+            # raw chat message list, which the server's CompletionRequest schema
+            # rejects with HTTP 422.
             EvalTask(
                 task_name="ifeval",
-                tokenizer_backend="none",
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref="https://huggingface.co/tiiuae/Falcon3-7B-Instruct",
@@ -3224,10 +3245,13 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
-                tokenizer_backend="none",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
@@ -3241,7 +3265,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),

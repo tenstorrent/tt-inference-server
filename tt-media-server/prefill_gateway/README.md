@@ -54,6 +54,43 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
 - `--prefill-stale-timeout-ms=MS` controls how long the ZMQ gateway waits
   without a prefill registration before marking that prefill down. Default:
   `3000`.
+- `--request-timeout-ms=MS` controls how long the gateway lets a prefill
+  request stay in-flight before failing it back to decode with
+  `generated_text="timeout"`. Use `0` to disable. Default: `300000`.
+- `--timeout-window-ms=MS`, `--timeout-threshold=N`, and
+  `--timeout-cooldown-ms=MS` control repeated-timeout protection. By default,
+  if a prefill times out `3` requests within `60000`ms, the gateway stops
+  assigning new requests to it for `30000`ms. Use `--timeout-threshold=0` to
+  disable this protection.
+- `--metrics-port=PORT` exposes Prometheus metrics at `GET /metrics`. Default:
+  `9091`. Use `--metrics-port=0` to disable the endpoint.
+
+## Metrics
+
+PrefillGateway exposes a small Prometheus text endpoint independent of the
+decode/prefill sockets:
+
+```bash
+curl http://127.0.0.1:9091/metrics
+```
+
+To view the `TT Prefill Gateway` dashboard in Grafana, run the monitoring stack
+from [`monitoring/README.md`](../monitoring/README.md). If the gateway is
+running inside a Cursor/dev container, use that README's dev-container setup so
+Prometheus can scrape the gateway over Docker's `tt_net` network.
+
+Key metrics include:
+
+- `tt_gateway_routing_decisions_total{reason=...}` for prefix-match,
+  least-inflight, round-robin, fallback, and no-eligible-prefill decisions.
+- `tt_prefill_completed_total{server_id,outcome}` and
+  `tt_prefill_latency_seconds{server_id,outcome}` for request outcomes and
+  latency.
+- `tt_prefill_inflight`, `tt_prefill_accepting_tasks`,
+  `tt_prefill_last_heartbeat_age_seconds`, and `tt_prefill_cache_blocks` for
+  per-prefill state.
+- `tt_gateway_prefill_timeouts_total`, `tt_gateway_request_failures_total`, and
+  `tt_gateway_cancels_total` for failure and cancellation paths.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
@@ -95,6 +132,11 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --request-timeout-ms=2000 \
+  --timeout-window-ms=10000 \
+  --timeout-threshold=2 \
+  --timeout-cooldown-ms=15000 \
   --prefill=127.0.0.1:7200 \
   --prefill=127.0.0.1:7201
 ```
@@ -107,7 +149,8 @@ LLM_MODE=decode \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
-SOCKET_HOST=127.0.0.1 SOCKET_PORT=7100 \
+SOCKET_HOST=127.0.0.1 \
+SOCKET_PORT=7100 \
 TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8001
 ```
@@ -116,12 +159,17 @@ TT_LOG_LEVEL=info \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8002 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
-LLM_MODE=prefill LLM_DEVICE_BACKEND=mock MOCK_PREFILL_SLEEP_MS=10000 \
+TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
+TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
+PREFILL_TIMEOUT_MS=15000 \
+TT_LOG_LEVEL=info \
+LLM_MODE=prefill \
+LLM_DEVICE_BACKEND=mock \
+MOCK_PREFILL_SLEEP_MS=10000 \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
-SOCKET_HOST=0.0.0.0 SOCKET_PORT=7200 \
+SOCKET_HOST=0.0.0.0 \
+SOCKET_PORT=7200 \
 PREFILL_SERVER_ID=prefill-0 \
 ./build/tt_media_server_cpp -p 8002
 ```
@@ -130,12 +178,16 @@ PREFILL_SERVER_ID=prefill-0 \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8003 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
-LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
+TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
+PREFILL_TIMEOUT_MS=15000 \
+TT_LOG_LEVEL=info \
+LLM_MODE=prefill \
+LLM_DEVICE_BACKEND=mock \
 SOCKET_TRANSPORT=tcp \
 USE_PREFILL_GATEWAY=1 \
-SOCKET_HOST=0.0.0.0 SOCKET_PORT=7201 \
+SOCKET_HOST=0.0.0.0 \
+SOCKET_PORT=7201 \
 PREFILL_SERVER_ID=prefill-1 \
 ./build/tt_media_server_cpp -p 8003
 ```
@@ -151,6 +203,11 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --request-timeout-ms=2000 \
+  --timeout-window-ms=10000 \
+  --timeout-threshold=2 \
+  --timeout-cooldown-ms=15000 \
   --prefill-bind=127.0.0.1:7200
 ```
 
@@ -162,7 +219,8 @@ LLM_MODE=decode \
 SOCKET_TRANSPORT=zmq \
 USE_PREFILL_GATEWAY=1 \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
-SOCKET_HOST=127.0.0.1 SOCKET_PORT=7100 \
+SOCKET_HOST=127.0.0.1 \
+SOCKET_PORT=7100 \
 TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8001
 ```
@@ -171,12 +229,17 @@ TT_LOG_LEVEL=info \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8002 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
-LLM_MODE=prefill LLM_DEVICE_BACKEND=mock MOCK_PREFILL_SLEEP_MS=10000 \
+TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
+TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
+PREFILL_TIMEOUT_MS=15000 \
+TT_LOG_LEVEL=info \
+LLM_MODE=prefill \
+LLM_DEVICE_BACKEND=mock \
+MOCK_PREFILL_SLEEP_MS=10000 \
 SOCKET_TRANSPORT=zmq \
 USE_PREFILL_GATEWAY=1 \
-SOCKET_HOST=127.0.0.1 SOCKET_PORT=7200 \
+SOCKET_HOST=127.0.0.1 \
+SOCKET_PORT=7200 \
 PREFILL_SERVER_ID=prefill-0 \
 ./build/tt_media_server_cpp -p 8002
 ```
@@ -185,12 +248,16 @@ PREFILL_SERVER_ID=prefill-0 \
 
 ```bash
 cd tt-media-server/cpp_server
-TT_IPC_SHM_C2P=tt_ipc_c2p_8003 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 TT_LOG_LEVEL=info \
-LLM_MODE=prefill LLM_DEVICE_BACKEND=mock \
+TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
+TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
+PREFILL_TIMEOUT_MS=15000 \
+TT_LOG_LEVEL=info \
+LLM_MODE=prefill \
+LLM_DEVICE_BACKEND=mock \
 SOCKET_TRANSPORT=zmq \
 USE_PREFILL_GATEWAY=1 \
-SOCKET_HOST=127.0.0.1 SOCKET_PORT=7200 \
+SOCKET_HOST=127.0.0.1 \
+SOCKET_PORT=7200 \
 PREFILL_SERVER_ID=prefill-1 \
 ./build/tt_media_server_cpp -p 8003
 ```
@@ -225,6 +292,14 @@ If a prefill goes down mid-request, the gateway emits a
 to the decode for any task that was on that prefill, plus evicts the
 affected affinity entries.
 
+If a prefill accepts a request but does not return a result before
+`--request-timeout-ms`, the gateway emits a `PrefillResultMessage` with
+`error=true` and `generated_text="timeout"`, then drops any later result for
+that task. The gateway also sends a best-effort `CancelPrefillMessage` to the
+assigned prefill so it can stop the slow request if possible. Repeated timeouts
+temporarily make that prefill ineligible for new tasks according to
+`--timeout-window-ms`, `--timeout-threshold`, and `--timeout-cooldown-ms`.
+
 ---
 
 ## Direct prefill/decode split (no gateway)
@@ -241,7 +316,8 @@ cd tt-media-server/cpp_server
 LLM_MODE=decode \
 SOCKET_TRANSPORT=tcp \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
-SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+SOCKET_HOST=0.0.0.0 \
+SOCKET_PORT=9000 \
 TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8001
 ```
@@ -252,7 +328,8 @@ TT_LOG_LEVEL=info \
 cd tt-media-server/cpp_server
 LLM_MODE=prefill \
 SOCKET_TRANSPORT=tcp \
-SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+SOCKET_HOST=127.0.0.1 \
+SOCKET_PORT=9000 \
 LLM_DEVICE_BACKEND=mock \
 TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8002
