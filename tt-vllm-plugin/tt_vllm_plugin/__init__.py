@@ -1,6 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+# Register the qwen3_5 config at import time so that a bare
+# `import tt_vllm_plugin` is sufficient for AutoConfig to parse Qwen3.6-27B
+# checkpoints.  Must run before register_models() (which needs vllm) so that
+# off-device import tests can verify config registration without vllm present.
+try:
+    from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config
+
+    register_qwen3_5_config()
+except Exception as _e:
+    import logging as _logging
+
+    _logging.warning(f"tt_vllm_plugin: failed to register qwen3_5 config at import time: {_e}")
+
 
 def register():
     # At first we used ttnn.get_device_ids() to truly understand if the TT platform is supported.
@@ -15,6 +28,31 @@ def register_models():
     ensuring models are registered before the API server or engine starts.
     """
     from vllm import ModelRegistry
+
+    # Register the qwen3_5 config so vLLM's AutoConfig can parse Qwen3.6-27B
+    # (qwen3_5 is not in public transformers). Also called at import time above
+    # so tests work without vllm; the registration is idempotent.
+    try:
+        from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config
+
+        register_qwen3_5_config()
+        print("Registered qwen3_5 config")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to register qwen3_5 config: {e}")
+
+    # Register TT Qwen3.6-27B (galaxy v2, text-only)
+    try:
+        ModelRegistry.register_model(
+            "TTQwen3_5ForConditionalGeneration",
+            "models.demos.qwen3_6_galaxy_v2.tt.generator_vllm:Qwen3_5ForConditionalGeneration",
+        )
+        print("Registered TT Qwen3.6-27B")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to register TTQwen3_5ForConditionalGeneration: {e}")
 
     # Register TT Llama model
     ModelRegistry.register_model(
