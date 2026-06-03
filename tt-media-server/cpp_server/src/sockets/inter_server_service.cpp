@@ -286,8 +286,9 @@ void InterServerService::setupMessageHandlers() {
       });
 
   socket_manager_.registerHandler<PrefillHealthRequestMessage>(
-      tags::PREFILL_HEALTH_REQUEST,
-      [this](const PrefillHealthRequestMessage&) { sendPrefillHealthStatus(); });
+      tags::PREFILL_HEALTH_REQUEST, [this](const PrefillHealthRequestMessage&) {
+        sendPrefillHealthStatus();
+      });
 
   socket_manager_.registerHandler<PrefillHealthStatusMessage>(
       tags::PREFILL_HEALTH_STATUS,
@@ -369,8 +370,7 @@ void InterServerService::sendPrefillHealthRequest() {
   }
 
   PrefillHealthRequestMessage msg;
-  const bool ok =
-      socket_manager_.sendObject(tags::PREFILL_HEALTH_REQUEST, msg);
+  const bool ok = socket_manager_.sendObject(tags::PREFILL_HEALTH_REQUEST, msg);
   if (!ok) {
     markPrefillHealthUnavailable("prefill health probe send failed");
   }
