@@ -371,11 +371,6 @@ class GatewayHarness {
                                                        decodeSm_.isConnected());
           tt::sockets::PrefillHealthStatusMessage response;
           response.ready = health.ready;
-          response.error = health.error;
-          response.server_id = "prefill-gateway";
-          response.registered_prefills = health.registeredPrefills;
-          response.healthy_prefills = health.healthyPrefills;
-          response.accepting_prefills = health.acceptingPrefills;
           decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
                                response);
         });
@@ -589,11 +584,6 @@ class ZmqRouterGatewayHarness {
                                                        decodeSm_.isConnected());
           tt::sockets::PrefillHealthStatusMessage response;
           response.ready = health.ready;
-          response.error = health.error;
-          response.server_id = "prefill-gateway";
-          response.registered_prefills = health.registeredPrefills;
-          response.healthy_prefills = health.healthyPrefills;
-          response.accepting_prefills = health.acceptingPrefills;
           decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
                                response);
         });
@@ -701,10 +691,6 @@ TEST_F(GatewayE2ETest, HealthProbeReportsReadyPrefills) {
   const auto statuses = decode_->healthStatuses();
   ASSERT_EQ(statuses.size(), 1u);
   EXPECT_TRUE(statuses[0].ready);
-  EXPECT_TRUE(statuses[0].error.empty());
-  EXPECT_EQ(statuses[0].registered_prefills, 2u);
-  EXPECT_EQ(statuses[0].healthy_prefills, 2u);
-  EXPECT_EQ(statuses[0].accepting_prefills, 2u);
 }
 
 TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {

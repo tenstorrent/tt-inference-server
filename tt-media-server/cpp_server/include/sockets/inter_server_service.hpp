@@ -154,11 +154,6 @@ class InterServerService {
   bool isConnected() const;
 
   /**
-   * @brief Check if decode has a connected and ready prefill path.
-   */
-  bool isPrefillReady() const;
-
-  /**
    * @brief Get connection status
    */
   std::string getStatus() const;
@@ -179,7 +174,7 @@ class InterServerService {
   void sendPrefillHealthRequest();
   void sendPrefillHealthStatus();
   void recordPrefillHealthStatus(const PrefillHealthStatusMessage& message);
-  void markPrefillHealthUnavailable(const std::string& error);
+  void markPrefillHealthUnavailable();
   bool isPrefillHealthReady() const;
 
   SocketManager socket_manager_;
@@ -197,7 +192,6 @@ class InterServerService {
   std::jthread registration_thread_;
   mutable std::mutex prefillHealthMutex;
   bool prefillHealthReady = false;
-  std::string prefillHealthError = "prefill health unknown";
   std::condition_variable prefillHealthCv;
   std::jthread prefillHealthThread;
 };

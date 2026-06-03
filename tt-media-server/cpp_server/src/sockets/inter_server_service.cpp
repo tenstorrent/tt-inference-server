@@ -108,9 +108,9 @@ void InterServerService::start() {
   }
 
   if (prefillHealthProbeMode) {
-    markPrefillHealthUnavailable("prefill health unknown");
+    markPrefillHealthUnavailable();
     socket_manager_.setConnectionEstablishedCallback([this] {
-      markPrefillHealthUnavailable("prefill health unknown");
+      markPrefillHealthUnavailable();
       sendPrefillHealthRequest();
     });
   }
@@ -217,7 +217,7 @@ void InterServerService::setConnectionLostCallback(
     std::function<void()> callback) {
   socket_manager_.setConnectionLostCallback(
       [this, callback = std::move(callback)] {
-        markPrefillHealthUnavailable("prefill socket not connected");
+        markPrefillHealthUnavailable();
         if (callback) {
           callback();
         }
@@ -225,10 +225,6 @@ void InterServerService::setConnectionLostCallback(
 }
 
 bool InterServerService::isConnected() const {
-  return enabled_ && socket_manager_.isConnected() && isPrefillHealthReady();
-}
-
-bool InterServerService::isPrefillReady() const {
   return enabled_ && socket_manager_.isConnected() && isPrefillHealthReady();
 }
 
@@ -240,13 +236,9 @@ std::string InterServerService::getStatus() const {
     return socket_manager_.getStatus();
   }
 
-  std::lock_guard<std::mutex> lock(prefillHealthMutex);
   std::string status = socket_manager_.getStatus();
-  status += prefillHealthReady ? ", prefill_health=ready"
-                               : ", prefill_health=unavailable";
-  if (!prefillHealthReady && !prefillHealthError.empty()) {
-    status += " (" + prefillHealthError + ")";
-  }
+  status += isPrefillHealthReady() ? ", prefill_health=ready"
+                                   : ", prefill_health=unavailable";
   return status;
 }
 
@@ -365,14 +357,14 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
 
 void InterServerService::sendPrefillHealthRequest() {
   if (!prefillHealthProbeMode || !socket_manager_.isConnected()) {
-    markPrefillHealthUnavailable("prefill socket not connected");
+    markPrefillHealthUnavailable();
     return;
   }
 
   PrefillHealthRequestMessage msg;
   const bool ok = socket_manager_.sendObject(tags::PREFILL_HEALTH_REQUEST, msg);
   if (!ok) {
-    markPrefillHealthUnavailable("prefill health probe send failed");
+    markPrefillHealthUnavailable();
   }
 }
 
@@ -384,10 +376,6 @@ void InterServerService::sendPrefillHealthStatus() {
 
   PrefillHealthStatusMessage status;
   status.ready = true;
-  status.server_id = tt::config::prefillServerId();
-  status.registered_prefills = 1;
-  status.healthy_prefills = 1;
-  status.accepting_prefills = 1;
   (void)socket_manager_.sendObject(tags::PREFILL_HEALTH_STATUS, status);
 }
 
@@ -400,18 +388,15 @@ void InterServerService::recordPrefillHealthStatus(
   {
     std::lock_guard<std::mutex> lock(prefillHealthMutex);
     prefillHealthReady = message.ready;
-    prefillHealthError = message.error;
   }
   prefillHealthCv.notify_all();
 
   if (!message.ready) {
-    TT_LOG_WARN("[InterServerService] Prefill health unavailable: {}",
-                message.error.empty() ? "unknown" : message.error);
+    TT_LOG_WARN("[InterServerService] Prefill health unavailable");
   }
 }
 
-void InterServerService::markPrefillHealthUnavailable(
-    const std::string& error) {
+void InterServerService::markPrefillHealthUnavailable() {
   if (!prefillHealthProbeMode) {
     return;
   }
@@ -419,7 +404,6 @@ void InterServerService::markPrefillHealthUnavailable(
   {
     std::lock_guard<std::mutex> lock(prefillHealthMutex);
     prefillHealthReady = false;
-    prefillHealthError = error;
   }
   prefillHealthCv.notify_all();
 }

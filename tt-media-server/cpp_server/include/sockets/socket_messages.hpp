@@ -206,21 +206,14 @@ struct PrefillHealthRequestMessage
 struct PrefillHealthStatusMessage
     : SerializableMessage<PrefillHealthStatusMessage> {
   bool ready = false;
-  std::string error;
-  std::string server_id;
-  uint32_t registered_prefills = 0;
-  uint32_t healthy_prefills = 0;
-  uint32_t accepting_prefills = 0;
 
   template <class F>
   void fields(F&& f) {
-    f(ready, error, server_id, registered_prefills, healthy_prefills,
-      accepting_prefills);
+    f(ready);
   }
   template <class F>
   void fields(F&& f) const {
-    f(ready, error, server_id, registered_prefills, healthy_prefills,
-      accepting_prefills);
+    f(ready);
   }
 };
 

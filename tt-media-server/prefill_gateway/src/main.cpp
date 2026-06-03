@@ -445,11 +445,6 @@ int main(int argc, char** argv) {
         const auto health = healthProvider();
         tt::sockets::PrefillHealthStatusMessage response;
         response.ready = health.ready;
-        response.error = health.error;
-        response.server_id = "prefill-gateway";
-        response.registered_prefills = health.registeredPrefills;
-        response.healthy_prefills = health.healthyPrefills;
-        response.accepting_prefills = health.acceptingPrefills;
         (void)decodeSm.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
                                   response);
       });

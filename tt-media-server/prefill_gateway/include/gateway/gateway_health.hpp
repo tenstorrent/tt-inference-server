@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -16,9 +15,6 @@ struct GatewayHealthStatus {
   std::string healthJson;
   bool ready = false;
   std::string error;
-  uint32_t registeredPrefills = 0;
-  uint32_t healthyPrefills = 0;
-  uint32_t acceptingPrefills = 0;
 };
 
 GatewayHealthStatus buildGatewayHealthStatus(const PrefillRegistry& registry,
