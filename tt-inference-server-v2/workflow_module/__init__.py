@@ -24,6 +24,7 @@ _LAZY_FROM_WORKFLOWS = {
 _LAZY_FROM_COMMANDS = {
     "Command",
     "CommandResult",
+    "SummaryCommand",
     "WorkflowCommand",
 }
 
