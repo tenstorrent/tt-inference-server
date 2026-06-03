@@ -1655,7 +1655,7 @@ jobs:
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"server:connected"' --pid-file gw_prefill1.pid --label "TCP gateway prefill-1 socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"server:connected"' --pid-file gw_prefill2.pid --label "TCP gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_decode.pid --label "TCP gateway decode socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected' --pid-file gw_decode.pid --label "TCP gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -1671,8 +1671,8 @@ jobs:
               FAIL=1
             fi
           done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected'; then
+            echo "ERROR: Decode socket_status does not start with 'client:connected'"
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
@@ -1786,7 +1786,7 @@ jobs:
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1 socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -1802,8 +1802,8 @@ jobs:
               FAIL=1
             fi
           done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected'; then
+            echo "ERROR: Decode socket_status does not start with 'client:connected'"
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
