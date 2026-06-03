@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import aiohttp
-
 from report_module.schema import Block
 
 from .._test_common import BaseTest, TestConfig
@@ -46,7 +45,6 @@ class DeviceLivenessTest(BaseTest):
                         f"Expected status 200, got {response.status}"
                     )
                     data = await response.json()
-                    logger.info(f"Liveness check response: {data}")
 
                     # Check 1: Verify status is "alive"
                     status = data.get("status")
@@ -74,9 +72,22 @@ class DeviceLivenessTest(BaseTest):
                     ready_count = len(ready_workers)
                     alive_count = len(alive_workers)
 
+                    model_ready = data.get("model_ready")
+                    runner_in_use = data.get("runner_in_use")
                     logger.info(
-                        f"📊 Worker status - Ready: {ready_count}, Alive: {alive_count}, Expected: {expected_devices}"
+                        "📊 Liveness status=%s model_ready=%s runner=%s "
+                        "workers ready=%d alive=%d expected=%d",
+                        status,
+                        model_ready,
+                        runner_in_use,
+                        ready_count,
+                        alive_count,
+                        expected_devices,
                     )
+                    if ready_count >= expected_devices:
+                        logger.info("Liveness check response: %s", data)
+                    else:
+                        logger.debug("Liveness check response: %s", data)
 
                     # Check if number of ready workers is equal or bigger than expected devices
                     # we don't use equal to have a possibility to use i.e. 1 device on Galaxy to start some tests
@@ -110,8 +121,8 @@ class DeviceLivenessTest(BaseTest):
                         "alive_workers": alive_workers,
                         "ready_count": ready_count,
                         "alive_count": alive_count,
-                        "model_ready": data.get("model_ready"),
-                        "runner_in_use": data.get("runner_in_use"),
+                        "model_ready": model_ready,
+                        "runner_in_use": runner_in_use,
                     }
 
         except (
@@ -133,8 +144,20 @@ class DeviceLivenessTest(BaseTest):
             raise
 
 
-def run_device_liveness(ctx: MediaContext) -> Block:
-    """Run DeviceLivenessTest under ``ctx`` and return its Block."""
+def run_device_liveness(
+    ctx: MediaContext,
+    min_ready_devices: Optional[int] = None,
+) -> Block:
+    """Run DeviceLivenessTest under ``ctx`` and return its Block.
+
+    Args:
+        ctx: Media context (used for device + service-port resolution).
+        min_ready_devices: Minimum number of READY chips required for the
+            caller's task. ``None`` (default) means "full board" — i.e. the
+            device's ``max_concurrency`` — preserving historical behavior for
+            callers that haven't been updated yet. Pass ``1`` for eval-style
+            tasks that only need at least one working chip.
+    """
     test_config = TestConfig(
         {
             "timeout": 1200,
@@ -143,10 +166,9 @@ def run_device_liveness(ctx: MediaContext) -> Block:
             "break_on_failure": False,
         }
     )
-    num_devices = ctx.model_spec.device_model_spec.max_concurrency
-    targets = {
-        "num_of_devices": num_devices if num_devices and num_devices > 0 else None
-    }
+    full_board = ctx.model_spec.device_model_spec.max_concurrency
+    target = min_ready_devices if min_ready_devices is not None else full_board
+    targets = {"num_of_devices": target if target and target > 0 else None}
     return DeviceLivenessTest(test_config, targets, ctx=ctx).run_tests()
 
 

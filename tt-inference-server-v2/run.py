@@ -20,6 +20,14 @@ Prefix-caching benchmark (LLM-only, --workflow benchmarks):
             --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
             --prefix-cache --prefix-cache-preset ci --service-port 8000 \
             --jwt-secret "$JWT_SECRET"
+
+Agentic evals (LLM-only, --workflow agentic):
+    Agentic harnesses require the dedicated ``EVALS_AGENTIC`` venv. Use
+    ``run_agentic.py`` to select/create that venv and re-exec this script:
+
+        python tt-inference-server-v2/run_agentic.py \
+            --model Qwen3.6-27B --workflow agentic --device gpu \
+            --service-port 8000
 """
 
 from __future__ import annotations
@@ -112,6 +120,17 @@ def parse_args() -> argparse.Namespace:
             "SDXL_BENCHMARK_NUM_PROMPTS / SDXL_SD35_BENCHMARK_NUM_PROMPTS in "
             "test_module.benchmark_tests.image_benchmark_tests so a smoke "
             "run doesn't take an hour."
+        ),
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help=(
+            "Run the workflow N times, keeping each run's report under "
+            "<output>/<model>_<device>_<workflow>/run_NN/, then write an "
+            "aggregated benchmark summary (mean/median/stdev/percentiles + "
+            "acceptance on the means) into .../summary/. Default 1 (no summary)."
         ),
     )
     parser.add_argument(
@@ -233,6 +252,8 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be >= 1")
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "

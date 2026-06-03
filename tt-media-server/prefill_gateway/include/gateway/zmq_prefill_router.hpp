@@ -5,9 +5,7 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <future>
 #include <memory>
@@ -21,6 +19,7 @@
 #include <vector>
 
 #include "sockets/socket_serialization.hpp"
+#include "sockets/zmq_send_queue.hpp"
 
 namespace tt::gateway {
 
@@ -88,9 +87,7 @@ class ZmqPrefillRouter {
   std::unordered_map<std::string, std::chrono::steady_clock::time_point>
       last_seen_by_server_;
 
-  std::mutex send_mutex_;
-  std::condition_variable send_cv_;
-  std::deque<std::shared_ptr<SendRequest>> pending_sends_;
+  tt::sockets::ZmqSendQueue<SendRequest> sendQueue;
 
   mutable std::mutex handlers_mutex_;
   std::unordered_map<std::string, RawHandler> handlers_;
@@ -110,14 +107,10 @@ bool ZmqPrefillRouter::sendObject(const std::string& serverId,
     request->data = tt::sockets::wire::serializeMessage(messageType, obj);
     auto result = request->result.get_future();
 
-    {
-      std::lock_guard<std::mutex> lock(send_mutex_);
-      if (!running_) {
-        return false;
-      }
-      pending_sends_.push_back(std::move(request));
+    if (!sendQueue.pushIf(std::move(request),
+                          [this] { return running_.load(); })) {
+      return false;
     }
-    send_cv_.notify_one();
     return result.get();
   } catch (const std::exception&) {
     return false;
