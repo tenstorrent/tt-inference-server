@@ -879,13 +879,6 @@ jobs:
         run: |
           PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
           [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-          # Wait for the process to FULLY exit before freeing the port and
-          # starting the next backend. The HTTP port is released early in
-          # shutdown while the worker is still tearing down the default-named
-          # tt_warmup_signals queue in /dev/shm; the mock and mock_pipeline
-          # backends share that queue name, so a lingering mock worker would
-          # otherwise delete the queue mock_pipeline's worker just created
-          # ("Failed to open existing queue: tt_warmup_signals").
           bash cpp_server/scripts/ci/wait_for_pid_exit.sh --pid "$PID" --label "mock backend"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
@@ -936,8 +929,6 @@ jobs:
         run: |
           PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
           [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-          # See "Stop mock server": wait for full process exit (and its shared
-          # /dev/shm queue teardown) before freeing the port.
           bash cpp_server/scripts/ci/wait_for_pid_exit.sh --pid "$PID" --label "mock_pipeline backend"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
 
