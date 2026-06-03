@@ -134,6 +134,20 @@ elif [ -f "/opt/homebrew/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
     DROGON_FOUND=1
 fi
 
+# Honor a Drogon installed under any CMAKE_PREFIX_PATH entry (e.g. a node-local
+# prefix like /data/$USER/.local on exabox, which ships a CMake config but no
+# drogon.pc). CMAKE_PREFIX_PATH may be ':'- or ';'-separated.
+if [ "${DROGON_FOUND}" -eq 0 ] && [ -n "${CMAKE_PREFIX_PATH:-}" ]; then
+    _old_ifs="${IFS}"; IFS=':;'
+    for _p in ${CMAKE_PREFIX_PATH}; do
+        if [ -f "${_p}/lib/cmake/Drogon/DrogonConfig.cmake" ]; then
+            DROGON_FOUND=1
+            break
+        fi
+    done
+    IFS="${_old_ifs}"
+fi
+
 if [ "${DROGON_FOUND}" -eq 0 ]; then
     echo ""
     echo "Drogon not found. Installing dependencies..."
