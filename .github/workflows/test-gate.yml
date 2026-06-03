@@ -803,6 +803,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -818,6 +819,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -843,6 +845,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -861,6 +864,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -1003,6 +1007,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -1018,6 +1023,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -1161,6 +1167,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
@@ -1224,6 +1231,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
@@ -1350,6 +1358,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8000 \
@@ -1774,6 +1783,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
@@ -1905,6 +1915,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8200 \
@@ -2208,6 +2219,7 @@ jobs:
           # the load-balanced routing path end-to-end.
           vllm bench serve \
             --model "${MODEL_NAME}" \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8000 \
