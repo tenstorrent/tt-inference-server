@@ -64,15 +64,6 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
 
   bool isDone() const { return done.load(); }
 
-  /**
-   * Tokens this turn has committed to the slot KV cache: the full prompt that
-   * was prefilled plus every generated token. On a Responses API continuation
-   * this is exactly the prefix the next turn can reuse, so the controller
-   * records it under the turn's response id at completion.
-   */
-  int totalProcessedTokens() const {
-    return params.promptTokenCount + completionTokens.load();
-  }
 
  protected:
   explicit ResponseWriter(ResponseWriterParams params);

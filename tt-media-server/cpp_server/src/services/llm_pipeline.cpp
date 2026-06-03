@@ -107,36 +107,6 @@ void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
   req.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
-/**
- * Response-id continuation delta. Shrinks `req.prompt` (token-id vector) to the
- * suffix the slot has not cached yet: tokens[cachedLen:]. `cachedLen` is what
- * the matched session committed to its slot last turn (that turn's full prompt
- * + generated tokens), which equals the slot's KV prefix — so only the new
- * turn is prefilled, matching the content-hash path's delta without any header
- * detection.
- *
- * Returns the full token count (pre-shrink) so the caller can re-record it as
- * the next turn's cached length. The prompt is left untouched (full reprefill)
- * when there's no usable cached prefix (`cachedLen` 0, out of range, or a
- * string prompt), so we never dispatch an empty or misaligned delta.
- */
-size_t applyResponseIdDelta(tt::domain::llm::LLMRequest& req,
-                            size_t cachedLen) {
-  auto* tokens = std::get_if<std::vector<int>>(&req.prompt);
-  if (tokens == nullptr) {
-    return 0;
-  }
-  const size_t fullLen = tokens->size();
-  if (cachedLen == 0 || cachedLen >= fullLen) {
-    return fullLen;
-  }
-  std::vector<int> delta(
-      tokens->begin() + static_cast<std::ptrdiff_t>(cachedLen), tokens->end());
-  req.prompt_tokens_count = static_cast<int>(delta.size());
-  req.prompt = std::move(delta);
-  return fullLen;
-}
-
 }  // namespace
 
 void LLMPipeline::resolveSession(
@@ -197,19 +167,33 @@ void LLMPipeline::resolveSession(
         req->slotId = acquired->slotId;
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
-        const size_t fullLen =
-            applyResponseIdDelta(*req, acquired->cachedPromptLen);
+
+        auto [matchedTokens, thinkTokens] =
+            sessionManager_->computeMatchedTokens(acquired->sessionId,
+                                                  routingInfo.blocks);
+        req->kv_position_id = matchedTokens - 1 + thinkTokens;
+        applyDeltaPrompt(*req, matchedTokens);
         TT_LOG_INFO(
-            "[LLMPipeline] Response-id delta taskId={} cachedPromptLen={} "
-            "fullLen={} deltaTokens={}",
-            req->task_id, acquired->cachedPromptLen, fullLen,
+            "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
+            "thinkTokens={} deltaTokens={}",
+            req->task_id, matchedTokens, thinkTokens,
             req->prompt_tokens_count);
-        if (req->responseId.has_value()) {
-          sessionManager_->registerResponseId(acquired->sessionId,
-                                              *req->responseId, fullLen);
+
+        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+          req->session->initTokenAccumulator(
+              *deltaTokens, routingInfo.blocks,
+              [mgr = sessionManager_](
+                  const std::string& sessionId,
+                  const std::vector<tt::utils::BlockHashInfo>& blocks) {
+                mgr->registerPrefixHash(sessionId, blocks);
+              });
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
+        if (req->responseId.has_value()) {
+          sessionManager_->registerResponseId(acquired->sessionId,
+                                              *req->responseId);
+        }
         info.validSessionFound = true;
         info.registrationHashes = routingInfo.hashes();
         onResolved(info);
@@ -330,9 +314,7 @@ void LLMPipeline::resolveSession(
         // Register under this turn's response id (when present) so the
         // next request's previous_response_id resolves to this session/slot.
         if (req->responseId.has_value()) {
-          mgr->registerResponseId(
-              session.getSessionId(), *req->responseId,
-              static_cast<size_t>(req->full_prompt_tokens_count));
+          mgr->registerResponseId(session.getSessionId(), *req->responseId);
         }
 
         // Initialize token accumulator for end-of-stream hash computation

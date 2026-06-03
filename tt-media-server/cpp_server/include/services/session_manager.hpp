@@ -62,10 +62,6 @@ class SessionManager {
     std::string sessionId;
     uint32_t slotId;
     uint32_t numberOfMatchedTokens = 0;
-    // Tokens already committed to the slot's KV cache from the prior turn
-    // (that turn's full prompt + generated tokens). Used by the response-id
-    // path to prefill only tokens[cachedPromptLen:].
-    size_t cachedPromptLen = 0;
     uint32_t accumulatedThinkTokens = 0;  // Think tokens at matched block
     std::vector<Candidate> candidatesList;
   };
@@ -158,23 +154,23 @@ class SessionManager {
       const std::string& previousResponseId, std::function<void()> cancelFn);
 
   /**
-   * Route future lookups of `responseId` to this session, and record the
-   * number of tokens now committed to the slot's KV cache so the next turn
-   * can prefill only the delta. If the session was previously registered
-   * under a different response id, it is moved to the new id's index entry.
-   *
-   * Called twice per turn:
-   *   - at resolve time with the turn's full prompt length (a safe lower
-   *     bound, so a lookup that races the completion still under-prefills
-   *     rather than skipping uncached tokens), and
-   *   - at completion with full prompt + generated tokens (the actual slot
-   *     occupancy), which is what the next turn prefills on top of.
-   *
-   * `cachedLen` is that token count; pass 0 to leave the recorded length
-   * unchanged (only (re)pointing the id at this session).
+   * Route future lookups of `responseId` to this session. If the session was
+   * previously registered under a different response id, it is moved to the
+   * new id's index entry. The delta for prefill is derived from the prefix
+   * index (block matching), not stored here.
    */
   void registerResponseId(const std::string& sessionId,
-                          const std::string& responseId, size_t cachedLen);
+                          const std::string& responseId);
+
+  /**
+   * Compute how many tokens of `blockInfos` are already cached for `sessionId`
+   * in the prefix index. Used after response-id acquisition to derive the
+   * delta without a separate cached-length counter. Returns {matchedTokens,
+   * accumulatedThinkTokens} mirroring the prefix-hash path.
+   */
+  std::pair<uint32_t, uint32_t> computeMatchedTokens(
+      const std::string& sessionId,
+      const std::vector<utils::BlockHashInfo>& blockInfos);
 
  private:
   struct PendingAllocation {
@@ -234,20 +230,12 @@ class SessionManager {
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
 
-  // Value stored in responseIdIndex: the single session a given
-  // previous_response_id resolves to, plus the slot's cached prefix length
-  // (prior turn's full prompt + generated tokens) for delta prefill.
-  struct ResponseIdEntry {
-    std::string sessionId;
-    size_t cachedLen = 0;
-  };
-
   // Secondary index: previous_response_id -> the session registered under it.
   // Unlike prefixIndex (where many sessions can share a content hash), response
-  // ids are unique per turn, so each id maps to exactly one session and the
-  // value is a single entry rather than a list. Used by tryAcquireByResponseId
-  // / registerResponseId.
-  utils::ConcurrentMap<std::string, ResponseIdEntry> responseIdIndex;
+  // ids are unique per turn, so each id maps to exactly one session. The
+  // prefix delta is derived from block matching (computeMatchedTokens), not
+  // stored here. Used by tryAcquireByResponseId / registerResponseId.
+  utils::ConcurrentMap<std::string, std::string> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;

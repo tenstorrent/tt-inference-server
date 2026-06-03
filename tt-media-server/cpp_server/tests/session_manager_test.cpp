@@ -444,28 +444,25 @@ TEST(SessionManagerConcurrency,
 // Response-id continuation tests
 //
 // These cover the OpenAI Responses API routing path: registerResponseId stores
-// a session under `previous_response_id` along with the prompt length already
-// committed to its slot (cachedPromptLen), and tryAcquireByResponseId resolves
-// that id back to the session/slot/length so the pipeline can prefill only the
-// delta. Mirrors the prefix-hash tests above but keyed on a string id.
+// a session under `previous_response_id`, and tryAcquireByResponseId resolves
+// that id back to the session/slot. The prefix delta is derived from block
+// matching (computeMatchedTokens), not stored in the response-id index.
 // ---------------------------------------------------------------------------
 
-TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionSlotAndLen) {
+TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 50u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", /*cachedPromptLen=*/128);
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
   EXPECT_EQ(acquired->sessionId, sessionId);
   EXPECT_EQ(acquired->slotId, 50u);
-  EXPECT_EQ(acquired->cachedPromptLen, 128u);
 
-  // Acquire marks the session in-flight; release it for a clean teardown.
   auto session = manager.getSession(sessionId);
   ASSERT_TRUE(session);
   session->clearInFlight();
@@ -489,7 +486,7 @@ TEST(SessionManagerResponseId, RegisterEmptyId_IsNoOp) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 51u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "", 10);
+  manager.registerResponseId(sessionId, "");
 
   auto session = manager.getSession(sessionId);
   ASSERT_TRUE(session);
@@ -503,17 +500,16 @@ TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 52u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", 8);
-  manager.registerResponseId(sessionId, "resp-2", 16);
+  manager.registerResponseId(sessionId, "resp-1");
+  manager.registerResponseId(sessionId, "resp-2");
 
   // The previous turn's id no longer resolves once re-keyed.
   EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
 
-  // The new id resolves and carries the updated cached length.
+  // The new id resolves.
   auto acquired = manager.tryAcquireByResponseId("resp-2", nullptr);
   ASSERT_TRUE(acquired.has_value());
   EXPECT_EQ(acquired->sessionId, sessionId);
-  EXPECT_EQ(acquired->cachedPromptLen, 16u);
 
   manager.getSession(sessionId)->clearInFlight();
 }
@@ -525,7 +521,7 @@ TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 53u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", 4);
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(acquired.has_value());
@@ -544,7 +540,7 @@ TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 54u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", 4);
+  manager.registerResponseId(sessionId, "resp-1");
 
   auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
   ASSERT_TRUE(first.has_value());
@@ -556,23 +552,6 @@ TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
   manager.getSession(sessionId)->clearInFlight();
 }
 
-TEST(SessionManagerResponseId, CachedPromptLenZero_LeavesLengthUnchanged) {
-  tt::services::SessionManager manager;
-  LoopFixture lf;
-
-  auto sessionId = createSessionWithSlot(manager, lf.loop, 55u);
-  ASSERT_FALSE(sessionId.empty());
-
-  manager.registerResponseId(sessionId, "resp-1", 100);
-  // Re-registering the same id with length 0 must leave the recorded length.
-  manager.registerResponseId(sessionId, "resp-1", 0);
-
-  auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
-  ASSERT_TRUE(acquired.has_value());
-  EXPECT_EQ(acquired->cachedPromptLen, 100u);
-  manager.getSession(sessionId)->clearInFlight();
-}
-
 TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
   tt::services::SessionManager manager;
   LoopFixture lf;
@@ -580,7 +559,7 @@ TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 56u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", 12);
+  manager.registerResponseId(sessionId, "resp-1");
   ASSERT_EQ(manager.closeSession(sessionId),
             tt::services::CloseSessionResult::SUCCESS);
 
@@ -595,7 +574,7 @@ TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 57u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.registerResponseId(sessionId, "resp-1", 4);
+  manager.registerResponseId(sessionId, "resp-1");
 
   std::atomic<bool> cancelCalled{false};
   auto acquired = manager.tryAcquireByResponseId(
@@ -608,32 +587,29 @@ TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
   EXPECT_FALSE(manager.getSession(sessionId));
 }
 
-TEST(SessionManagerResponseId, TwoTurnContinuation_TracksGrowingPrefix) {
+TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
   // Simulates the two-turn response-id flow: turn 1 registers the session
-  // under id "r1" with the full prompt length; turn 2 acquires by "r1",
-  // reads the cached length (what the slot already holds), then re-keys under
-  // "r2" with the new, larger full prompt length for turn 3.
+  // under id "r1"; turn 2 acquires by "r1", re-keys under "r2" for turn 3.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 58u);
   ASSERT_FALSE(sessionId.empty());
 
-  // Turn 1: full prompt was 40 tokens.
-  manager.registerResponseId(sessionId, "r1", 40);
+  manager.registerResponseId(sessionId, "r1");
 
   // Turn 2: arrives with previous_response_id="r1".
   auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
   ASSERT_TRUE(t2.has_value());
-  EXPECT_EQ(t2->cachedPromptLen, 40u);  // delta = tokens[40:]
-  // Turn 2's full prompt was 90 tokens; re-key under its own id.
-  manager.registerResponseId(sessionId, "r2", 90);
+  EXPECT_EQ(t2->sessionId, sessionId);
+  // Re-key under turn 2's own id.
+  manager.registerResponseId(sessionId, "r2");
   manager.getSession(sessionId)->clearInFlight();
 
   // Turn 3: arrives with previous_response_id="r2".
   auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
   ASSERT_TRUE(t3.has_value());
-  EXPECT_EQ(t3->cachedPromptLen, 90u);  // delta = tokens[90:]
+  EXPECT_EQ(t3->sessionId, sessionId);
   EXPECT_FALSE(manager.tryAcquireByResponseId("r1", nullptr).has_value());
   manager.getSession(sessionId)->clearInFlight();
 }
