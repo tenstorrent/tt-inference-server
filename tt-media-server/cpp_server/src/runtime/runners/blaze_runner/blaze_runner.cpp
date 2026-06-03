@@ -336,7 +336,7 @@ inline void BlazeRunner::handleMemoryResponse(
       handleAllocateAck(taskId, slotId);
       break;
     }
-    case ds::RequestType::CANCEL: {
+    case ds::RequestType::EVICT: {
       handleEvictAck(taskId, slotId);
       break;
     }
