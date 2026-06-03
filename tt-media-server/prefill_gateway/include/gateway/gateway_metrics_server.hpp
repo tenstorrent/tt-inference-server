@@ -3,10 +3,11 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstdint>
-#include <future>
-#include <thread>
+#include <optional>
+#include <string_view>
+
+#include "gateway/gateway_http_server.hpp"
 
 namespace tt::gateway {
 
@@ -24,16 +25,11 @@ class GatewayMetricsServer {
   uint16_t port() const;
 
  private:
-  void serve(std::stop_token stopToken, uint16_t port,
-             std::promise<bool> initialized);
-  void serveClient(int clientFd);
-  static void closeFd(int fd);
+  std::optional<GatewayHttpResponse> handleRequest(
+      std::string_view request) const;
 
-  GatewayMetrics& metrics_;
-  std::atomic<bool> running_{false};
-  std::atomic<uint16_t> port_{0};
-  std::atomic<int> server_fd_{-1};
-  std::jthread server_thread_;
+  GatewayMetrics& gatewayMetrics;
+  GatewayHttpServer httpServer;
 };
 
 }  // namespace tt::gateway
