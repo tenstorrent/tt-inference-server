@@ -168,14 +168,16 @@ void LLMPipeline::resolveSession(
         // thinking tokens (accumulated in cache but not in hash)
         req->kv_position_id = --acquired->numberOfMatchedTokens +
                               acquired->accumulatedThinkTokens;
+
+        std::vector<int> fullPrompt;
+        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
+          fullPrompt = *p;
+        }
         applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
 
-        // Initialize token accumulator with DELTA tokens (after trim).
-        // At stream end, finalizeAndRegisterHashes() continues hashing from
-        // initialBlocks using delta + generated tokens.
-        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
-              *deltaTokens, routingInfo.blocks,
+              std::move(fullPrompt), /*initialBlocks=*/{},
               [mgr = sessionManager_](
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
@@ -235,11 +237,9 @@ void LLMPipeline::resolveSession(
         req->session = mgr->getSession(session.getSessionId());
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
-
-        // Initialize token accumulator for end-of-stream hash computation
         if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
           req->session->initTokenAccumulator(
-              *promptTokens, routingInfo.blocks,
+              *promptTokens, /*initialBlocks=*/{},
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
