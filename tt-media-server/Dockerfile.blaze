@@ -219,6 +219,28 @@ RUN set -eux; \
     fi; \
     echo "OK: first-party C/C++ source stripped (tt-metal + blaze kernels kept for runtime JIT)"
 
+# ==============================================================================
+# STRIP SYMBOLS - remove debug info + symbol tables from first-party artifacts
+# ==============================================================================
+# Deleting .cpp source is not enough: an unstripped binary/.so carries DWARF
+# debug info (.debug_*) and a full local symbol table (.symtab), which let a
+# decompiler (Ghidra/IDA) reconstruct near-source pseudocode with the original
+# names, types and line numbers, and embeds source paths. Strip our compiled
+# artifacts so only opaque machine code ships.
+#   * executable  -> --strip-all
+#   * shared libs -> --strip-debug --strip-unneeded (keeps .dynsym, so the
+#     LD_PRELOADed blaze symbols and any dlsym lookups still resolve)
+# tt-metal / ttnn libs are upstream open-source and intentionally left untouched.
+RUN set -eux; \
+    SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    BIN="${SRV}/cpp_server/build/tt_media_server_cpp"; \
+    if [ -f "${BIN}" ]; then strip --strip-all "${BIN}"; fi; \
+    find "${SRV}/cpp_server/build" "${ENG}/build-full" \
+        -type f \( -name '*.so' -o -name '*.so.*' \) \
+        -exec strip --strip-debug --strip-unneeded {} +; \
+    echo "OK: stripped symbols + debug info from first-party binary and shared libs"
+
 
 # ==============================================================================
 # RUNTIME STAGE - final lightweight image
