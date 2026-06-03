@@ -18,7 +18,7 @@
 #include "ipc/interface/task_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"

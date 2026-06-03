@@ -7,7 +7,7 @@
 
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 
 namespace tt::services {
 

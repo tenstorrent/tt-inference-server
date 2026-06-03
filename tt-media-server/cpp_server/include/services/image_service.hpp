@@ -13,7 +13,7 @@
 #include "domain/image_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 #include "services/media_worker_scheduler.hpp"
 
 namespace tt::services {
