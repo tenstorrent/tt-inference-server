@@ -9,7 +9,7 @@ try:
     from tt_vllm_plugin.qwen3_5_config import register_qwen3_5_config
 
     register_qwen3_5_config()
-except Exception as _e:
+except ImportError as _e:
     import logging as _logging
 
     _logging.warning(f"tt_vllm_plugin: failed to register qwen3_5 config at import time: {_e}")

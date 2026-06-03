@@ -49,6 +49,8 @@ class Qwen3_5Config(PretrainedConfig):
 
         # Ensure the conditional-generation arch name is set so that
         # platform.py resolves TTQwen3_5ForConditionalGeneration.
+        # Fallback only when the checkpoint omits architectures entirely;
+        # a present top-level value (set by super().__init__) is preserved.
         if not getattr(self, "architectures", None):
             self.architectures = ["Qwen3_5ForConditionalGeneration"]
 

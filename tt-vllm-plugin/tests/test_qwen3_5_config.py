@@ -29,3 +29,4 @@ def test_autoconfig_parses_checkpoint():
     assert cfg.vocab_size == 248320
     assert cfg.max_position_embeddings == 262144
     assert cfg.architectures == ["Qwen3_5ForConditionalGeneration"]
+    assert cfg.model_type == "qwen3_5"
