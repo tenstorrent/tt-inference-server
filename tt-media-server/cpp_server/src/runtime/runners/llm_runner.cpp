@@ -143,6 +143,11 @@ void LLMRunner::memoryLoop() {
     }
     switch (task->action) {
       case tt::domain::MemoryManagementAction::ALLOCATE:
+        if (task->slotIdToCopyFrom.has_value()) {
+          TT_LOG_INFO(
+              "[LLMRunner] ALLOCATE with slotIdToCopyFrom={} for taskId={}",
+              *task->slotIdToCopyFrom, task->taskId);
+        }
         memoryManager->replyAllocateSuccess(task->taskId, /*slotId=*/0);
         break;
       case tt::domain::MemoryManagementAction::DEALLOCATE:
