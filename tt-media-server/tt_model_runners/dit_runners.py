@@ -816,11 +816,16 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
                 WanPipelineI2VLora,
             )
 
+            lora_high = os.environ.get("LORA_HIGH_PATH")
+            lora_low = os.environ.get("LORA_LOW_PATH")
+
             return WanPipelineI2VLora.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
+                lora_high=lora_high,
+                lora_low=lora_low,
             )
         except Exception as e:
             log_exception_chain(
