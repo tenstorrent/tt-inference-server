@@ -589,8 +589,9 @@ void BlazePrefillRunner::handleOutput(const ps::OutputMessage& output) {
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
-    ipc::helpers::pushToken(*resultQueue, taskId, output.token_id,
-                            ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL, 0, 0);
+    ipc::helpers::pushToken(
+        *resultQueue, taskId, output.token_id,
+        ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL, 0, 0);
     return;
   }
   bool finished = output.prefill_complete;

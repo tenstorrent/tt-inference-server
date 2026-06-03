@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -21,7 +23,6 @@
 #include "ipc/in_memory/in_memory_memory_queue.hpp"
 #include "ipc/in_memory/in_memory_result_queue.hpp"
 #include "ipc/in_memory/in_memory_task_queue.hpp"
-#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 #include "services/memory_services/memory_manager.hpp"
 
 namespace tt::runners::blaze {
@@ -141,7 +142,8 @@ class BlazeDecodeRunnerHarness {
 
 }  // namespace
 
-TEST(BlazeDecodeRunnerIntegrationTest, InMemoryQueuesRoundTripThroughSimulator) {
+TEST(BlazeDecodeRunnerIntegrationTest,
+     InMemoryQueuesRoundTripThroughSimulator) {
   BlazeDecodeRunnerHarness harness;
 
   const uint32_t taskId = 4242;
