@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "config/types.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
@@ -153,6 +154,11 @@ class InterServerService {
   bool isConnected() const;
 
   /**
+   * @brief Check if decode has a connected and ready prefill path.
+   */
+  bool isPrefillReady() const;
+
+  /**
    * @brief Get connection status
    */
   std::string getStatus() const;
@@ -168,6 +174,13 @@ class InterServerService {
   void sendRegistrationIfGatewayModeIsEnabled();
   void startRegistrationThread();
   void stopRegistrationThread();
+  void startHealthProbeThread();
+  void stopHealthProbeThread();
+  void sendPrefillHealthRequest();
+  void sendPrefillHealthStatus();
+  void recordPrefillHealthStatus(const PrefillHealthStatusMessage& message);
+  void markPrefillHealthUnavailable(const std::string& error);
+  bool isPrefillHealthReady() const;
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -175,11 +188,18 @@ class InterServerService {
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+  tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
+  bool prefillHealthProbeMode = false;
   std::mutex registration_mutex_;
   std::condition_variable registration_cv_;
   std::jthread registration_thread_;
+  mutable std::mutex prefillHealthMutex;
+  bool prefillHealthReady = false;
+  std::string prefillHealthError = "prefill health unknown";
+  std::condition_variable prefillHealthCv;
+  std::jthread prefillHealthThread;
 };
 
 }  // namespace tt::sockets

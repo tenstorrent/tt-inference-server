@@ -52,6 +52,9 @@ GatewayHealthStatus buildGatewayHealthStatus(const PrefillRegistry& registry,
     result.error = "no prefills accepting tasks";
   }
   result.ready = result.error.empty();
+  result.registeredPrefills = static_cast<uint32_t>(prefills.size());
+  result.healthyPrefills = static_cast<uint32_t>(healthyPrefills);
+  result.acceptingPrefills = static_cast<uint32_t>(acceptingPrefills);
 
   result.livenessJson =
       buildHealthJsonBody("alive", "", transport, prefills.size(),

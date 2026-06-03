@@ -8,7 +8,6 @@
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -437,6 +436,22 @@ int main(int argc, char** argv) {
       tt::sockets::tags::CANCEL_PREFILL,
       [&dispatcherPtr](const tt::sockets::CancelPrefillMessage& msg) {
         dispatcherPtr->onPrefillCancel(msg);
+      });
+
+  decodeSm.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+      tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+      [&decodeSm, &healthProvider](
+          const tt::sockets::PrefillHealthRequestMessage&) {
+        const auto health = healthProvider();
+        tt::sockets::PrefillHealthStatusMessage response;
+        response.ready = health.ready;
+        response.error = health.error;
+        response.server_id = "prefill-gateway";
+        response.registered_prefills = health.registeredPrefills;
+        response.healthy_prefills = health.healthyPrefills;
+        response.accepting_prefills = health.acceptingPrefills;
+        (void)decodeSm.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                                  response);
       });
 
   decodeSm.setConnectionEstablishedCallback([&metrics]() {
