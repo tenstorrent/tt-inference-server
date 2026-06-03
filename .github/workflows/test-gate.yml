@@ -877,7 +877,10 @@ jobs:
       - name: Stop mock server
         if: always()
         run: |
-          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
       # ── Mock pipeline backend benchmarks ─────────────────────────────
@@ -925,7 +928,10 @@ jobs:
       - name: Stop mock_pipeline server
         if: always()
         run: |
-          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "mock_pipeline backend exit"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
 
       # ── Check thresholds ─────────────────────────────────────────────
