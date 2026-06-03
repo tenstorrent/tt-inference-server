@@ -50,9 +50,8 @@ class Session {
   void setHash(size_t hash) { hash_ = hash; }
 
   /**
-   * Get the response id this session is currently registered under (OpenAI
-   * Responses API continuation key). Empty when the session has never been
-   * registered under a response id.
+   * Get the response id this session is currently registered under.
+   * Empty when the session has never been registered under a response id.
    */
   const std::string& getResponseId() const { return response_id_; }
 

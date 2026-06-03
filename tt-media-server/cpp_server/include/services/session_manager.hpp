@@ -113,9 +113,9 @@ class SessionManager {
 
   /**
    * Response-id continuation lookup. Parallel to tryAcquireByPrefixHash but
-   * keyed on the OpenAI Responses API `previous_response_id` supplied by the
-   * frontend instead of a content hash. Atomically marks the matching session
-   * in-flight and registers the cancel function under the same lock.
+   * keyed on the OpenAI Responses API `previous_response_id`.
+   * Atomically marks the matching session in-flight and registers the cancel
+   * function under the same lock.
    *
    * Returns:
    *   AcquiredSession — session found under `previousResponseId` and locked.
