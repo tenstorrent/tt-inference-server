@@ -56,6 +56,7 @@ def test_get_performance_targets_image_models(model_name, device_str, expected):
 
 def test_get_performance_targets_unknown_model_returns_empty():
     """Unknown model/device yields all-None defaults (callers treat as NA)."""
-    assert get_performance_targets(
-        model_name="nonexistent-model", device_str="n150"
-    ) == PerformanceTargets()
+    assert (
+        get_performance_targets(model_name="nonexistent-model", device_str="n150")
+        == PerformanceTargets()
+    )
