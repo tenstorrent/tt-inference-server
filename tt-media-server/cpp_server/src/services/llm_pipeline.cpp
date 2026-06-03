@@ -168,14 +168,32 @@ void LLMPipeline::resolveSession(
         // thinking tokens (accumulated in cache but not in hash)
         req->kv_position_id = --acquired->numberOfMatchedTokens +
                               acquired->accumulatedThinkTokens;
+
+        // Capture the FULL prompt for hash registration BEFORE trimming it for
+        // the worker. The hash accumulator re-hashes [full prompt + generated]
+        // from scratch (think-filtered) at stream end, producing exactly the
+        // blocks a fresh lookup of the next turn will compute.
+        //
+        // We deliberately do NOT use a delta+parent shortcut here.
+        // matchedTokens counts NON-THINK tokens (the block boundary), but the
+        // raw prompt token vector also contains think-marker tokens — e.g.
+        // Kimi's template prefills <think> on every assistant turn, so each
+        // historical turn carries <think></think> markers (reasoning is
+        // stripped on feedback). Slicing the raw vector by a non-think count
+        // then misaligns the delta by however many think tokens fall in the
+        // matched prefix, corrupting every newly-registered block so the next
+        // turn can't match past the matched prefix. Re-hashing the full prompt
+        // sidesteps the raw↔non-think mapping entirely and is what the MISS
+        // path already does correctly.
+        std::vector<int> fullPrompt;
+        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
+          fullPrompt = *p;
+        }
         applyDeltaPrompt(*req, acquired->numberOfMatchedTokens);
 
-        // Initialize token accumulator with DELTA tokens (after trim).
-        // At stream end, finalizeAndRegisterHashes() continues hashing from
-        // initialBlocks using delta + generated tokens.
-        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
-              *deltaTokens, routingInfo.blocks,
+              std::move(fullPrompt), /*initialBlocks=*/{},
               [mgr = sessionManager_](
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
@@ -236,10 +254,19 @@ void LLMPipeline::resolveSession(
         req->continuation = false;
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
 
-        // Initialize token accumulator for end-of-stream hash computation
+        // Initialize token accumulator for end-of-stream hash computation.
+        // This is a NEW session: nothing was matched, so there are no
+        // already-hashed initial blocks. deltaTokens is the full prompt and
+        // finalize hashes [prompt + generated] fresh (parentHash=0). Passing
+        // routingInfo.blocks here would be a bug: finalize prepends
+        // initialBlocks_ AND re-hashes deltaTokens_, so seeding it with the
+        // prompt's own blocks while deltaTokens_ is the full prompt double-
+        // counts the prompt — inflating the session ~2x and (via the
+        // matched/sessionBlocks threshold) breaking multiturn prefix-cache hits
+        // for reasoning models that miss repeatedly.
         if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
           req->session->initTokenAccumulator(
-              *promptTokens, routingInfo.blocks,
+              *promptTokens, /*initialBlocks=*/{},
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
