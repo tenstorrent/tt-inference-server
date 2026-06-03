@@ -140,6 +140,22 @@ TcpStreamConnectionInfo parse_connection_info(const ConnectionInfo& info);
 // Streaming response chunk produced by the generate handler.
 // ---------------------------------------------------------------------------
 
+/// Optional token-accounting the worker reports to the frontend on the final
+/// chunk. Serialized as the OpenAI/async-openai `CompletionUsage` shape, which
+/// the Dynamo frontend reads from `BackendOutput.completion_usage` to populate
+/// the response `usage` block (prompt_tokens_details /
+/// completion_tokens_details).
+struct DynamoUsage {
+  int prompt_tokens = 0;
+  int completion_tokens = 0;
+  int total_tokens = 0;
+  /// -> usage.prompt_tokens_details.cached_tokens (prefix-cache reuse)
+  std::optional<int> cached_tokens;
+  /// -> usage.completion_tokens_details.reasoning_tokens (<think>…</think>
+  /// span)
+  std::optional<int> reasoning_tokens;
+};
+
 struct TokenChunk {
   std::vector<int> token_ids;
   std::optional<std::string> finish_reason;
@@ -148,6 +164,8 @@ struct TokenChunk {
   std::optional<std::string> error;
   /// HTTP status code to return when error is set (default: 500).
   std::optional<uint16_t> error_code;
+  /// Populated on the final chunk only; serialized as `completion_usage`.
+  std::optional<DynamoUsage> completion_usage;
 };
 
 /// Encode a TokenChunk as a NetworkStreamWrapper<Annotated<T>> JSON body.
