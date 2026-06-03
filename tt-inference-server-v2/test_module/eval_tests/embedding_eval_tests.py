@@ -17,7 +17,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from report_module.schema import Block
 
 from .._test_common import block_id
-from ..context import MediaContext, require_health
+from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def run_embedding_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     try:
         logger.info("Running embedding eval...")

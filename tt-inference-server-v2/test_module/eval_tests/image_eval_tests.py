@@ -19,8 +19,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from .image_generation_eval_test import ImageGenerationEvalsTest
 from report_module.schema import Block
+
 from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
@@ -30,8 +30,9 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
 from workflows.utils import is_sdxl_num_prompts_enabled
 
 from .._test_common import block_id
-from ..context import MediaContext, require_health
+from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import ImageGenerationTestStatus
+from .image_generation_eval_test import ImageGenerationEvalsTest
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +445,7 @@ def run_image_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
 
-    runner_in_use = require_health(ctx)
+    runner_in_use = require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     eval_method = IMAGE_EVAL_DISPATCH.get(runner_in_use, _run_image_generation_eval)
     try:
