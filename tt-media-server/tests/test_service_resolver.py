@@ -12,10 +12,6 @@ _orig_model_services_image_service = sys.modules.get("model_services.image_servi
 
 # Mock ALL problematic modules BEFORE any imports
 sys.modules["ttnn"] = Mock()
-sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
-sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
-sys.modules["models.demos.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
-sys.modules["tt_model_runners.sdxl_runner"] = Mock()
 sys.modules["model_services.scheduler"] = Mock()
 
 

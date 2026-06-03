@@ -151,9 +151,6 @@ class ModelServices(Enum):
 
 MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.IMAGE: {
-        ModelRunners.TT_SDXL_EDIT,
-        ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
-        ModelRunners.TT_SDXL_TRACE,
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
@@ -211,9 +208,6 @@ MODEL_SERVICE_RUNNER_MAP = {
 
 
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
-    ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
-    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
-    ModelRunners.TT_SDXL_TRACE: {ModelNames.STABLE_DIFFUSION_XL_BASE},
     ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
@@ -431,187 +425,6 @@ def _vllm_config(
 # also for CI testing
 
 ModelConfigs = {
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150X4): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150X4): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-        "request_processing_timeout_seconds": 3000,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X4): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X8): {
-        "device_mesh_shape": (2, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
-    },
     (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,

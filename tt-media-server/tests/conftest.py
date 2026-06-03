@@ -402,16 +402,6 @@ if "models" not in sys.modules:
 
     # Set up experimental submodule
     experimental_mock = MagicMock()
-    sdxl_base_mock = MagicMock()
-    sdxl_tests_mock = MagicMock()
-    sdxl_tests_mock.test_common = MagicMock()
-    sdxl_base_mock.tests = sdxl_tests_mock
-    sdxl_tt_mock = MagicMock()
-    sdxl_tt_mock.tt_sdxl_pipeline = MagicMock()
-    sdxl_tt_mock.tt_sdxl_img2img_pipeline = MagicMock()
-    sdxl_tt_mock.tt_sdxl_inpainting_pipeline = MagicMock()
-    sdxl_base_mock.tt = sdxl_tt_mock
-    experimental_mock.stable_diffusion_xl_base = sdxl_base_mock
     tt_dit_mock = MagicMock()
     pipelines_mock = MagicMock()
     sd35_large_mock = MagicMock()
@@ -451,21 +441,6 @@ if "models" not in sys.modules:
     sys.modules["models.demos.utils"] = utils_mock
     sys.modules["models.demos.utils.common_demo_utils"] = utils_mock.common_demo_utils
     sys.modules["models.experimental"] = experimental_mock
-    sys.modules["models.demos.stable_diffusion_xl_base"] = sdxl_base_mock
-    sys.modules["models.demos.stable_diffusion_xl_base.tests"] = sdxl_tests_mock
-    sys.modules["models.demos.stable_diffusion_xl_base.tests.test_common"] = (
-        sdxl_tests_mock.test_common
-    )
-    sys.modules["models.demos.stable_diffusion_xl_base.tt"] = sdxl_tt_mock
-    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline"] = (
-        sdxl_tt_mock.tt_sdxl_pipeline
-    )
-    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline"] = (
-        sdxl_tt_mock.tt_sdxl_img2img_pipeline
-    )
-    sys.modules[
-        "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
-    ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
     sys.modules["models.tt_dit"] = tt_dit_mock
     sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel
     sys.modules["models.tt_dit.parallel.config"] = tt_dit_mock.parallel.config
@@ -543,17 +518,6 @@ def create_mock_runner_class(class_name: str):
 # Create mock runner modules directly in sys.modules with our custom classes
 # This prevents Python from trying to import and execute the actual runner files
 runner_mocks = {
-    "tt_model_runners.sdxl_generate_runner_trace": {
-        "TTSDXLGenerateRunnerTrace": create_mock_runner_class(
-            "TTSDXLGenerateRunnerTrace"
-        )
-    },
-    "tt_model_runners.sdxl_image_to_image_runner_trace": {
-        "TTSDXLImageToImageRunner": create_mock_runner_class("TTSDXLImageToImageRunner")
-    },
-    "tt_model_runners.sdxl_edit_runner_trace": {
-        "TTSDXLEditRunner": create_mock_runner_class("TTSDXLEditRunner")
-    },
     "tt_model_runners.dit_runners": {
         "TTSD35Runner": create_mock_runner_class("TTSD35Runner"),
         "TTFlux1DevRunner": create_mock_runner_class("TTFlux1DevRunner"),
