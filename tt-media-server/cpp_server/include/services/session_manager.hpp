@@ -77,7 +77,8 @@ class SessionManager {
       std::function<void(std::string_view errorMessage)> onError,
       trantor::EventLoop* eventLoop,
       std::vector<utils::BlockHashInfo> initialBlockInfos = {},
-      std::optional<uint32_t> slotId = std::nullopt);
+      std::optional<uint32_t> slotId = std::nullopt,
+      std::optional<uint32_t> slotIdToCopyFrom = std::nullopt);
 
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
@@ -142,6 +143,7 @@ class SessionManager {
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
+    std::optional<uint32_t> slotIdToCopyFrom;
   };
 
   struct DeferredDealloc {
