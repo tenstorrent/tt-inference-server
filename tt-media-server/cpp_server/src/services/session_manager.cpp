@@ -35,9 +35,12 @@ int computeFailureCount(int attemptsRemaining) {
          attemptsRemaining;
 }
 
-domain::ManageMemoryTask makeAllocTask() {
-  return domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                                  domain::MemoryManagementAction::ALLOCATE);
+domain::ManageMemoryTask makeAllocTask(
+    std::optional<uint32_t> slotIdToCopyFrom = std::nullopt) {
+  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
+                                domain::MemoryManagementAction::ALLOCATE);
+  task.slotIdToCopyFrom = slotIdToCopyFrom;
+  return task;
 }
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
@@ -199,6 +202,18 @@ domain::Session* SessionManager::getSession(const std::string& sessionId) {
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
+void SessionManager::lockSlot(uint32_t slotId) {
+  std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+  lockedSlots.insert(slotId);
+  TT_LOG_DEBUG("[SessionManager] lockSlot: slotId={}", slotId);
+}
+
+void SessionManager::unlockSlot(uint32_t slotId) {
+  std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+  lockedSlots.erase(slotId);
+  TT_LOG_DEBUG("[SessionManager] unlockSlot: slotId={}", slotId);
+}
+
 void SessionManager::evictOldSessions() {
   bool expected = false;
   if (!evictionInProgress.compare_exchange_strong(expected, true)) {
@@ -226,10 +241,19 @@ void SessionManager::evictOldSessions() {
   using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
   std::vector<Entry> candidates;
 
-  sessions.forEach(
-      [&candidates](const std::string& id, const domain::Session& s) {
-        if (s.isIdle()) candidates.emplace_back(s.getLastActivityTime(), id);
-      });
+  // Snapshot locked slots for the duration of candidate selection.
+  std::unordered_set<uint32_t> lockedSnapshot;
+  {
+    std::lock_guard<std::mutex> lock(lockedSlotsMutex);
+    lockedSnapshot = lockedSlots;
+  }
+
+  sessions.forEach([&candidates, &lockedSnapshot](const std::string& id,
+                                                  const domain::Session& s) {
+    if (s.isIdle() &&
+        lockedSnapshot.find(s.getSlotId()) == lockedSnapshot.end())
+      candidates.emplace_back(s.getLastActivityTime(), id);
+  });
 
   size_t n = std::min(evictionCount, candidates.size());
   std::nth_element(
@@ -241,10 +265,14 @@ void SessionManager::evictOldSessions() {
                candidates.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : candidates) {
-    // A concurrent acquireInFlight call may mark the session in-flight
-    // between the forEach above and here; takeIf skips it atomically.
-    auto ms = sessions.takeIf(
-        sessionId, [](const domain::Session& s) { return s.isIdle(); });
+    // A concurrent acquireInFlight or lockSlot call may mark the session
+    // busy/locked between the forEach above and here; takeIf checks
+    // atomically under the map's entry lock.
+    auto ms = sessions.takeIf(sessionId, [&](const domain::Session& s) {
+      if (!s.isIdle()) return false;
+      std::lock_guard<std::mutex> lk(lockedSlotsMutex);
+      return lockedSlots.find(s.getSlotId()) == lockedSlots.end();
+    });
     if (!ms.has_value()) {
       TT_LOG_DEBUG(
           "[SessionManager] evictOldSessions: sessionId={} no longer idle, "
@@ -293,7 +321,7 @@ void SessionManager::createSession(
     std::function<void(std::string_view errorMessage)> onError,
     trantor::EventLoop* callerEventLoop,
     std::vector<utils::BlockHashInfo> initialBlockInfos,
-    std::optional<uint32_t> slotId) {
+    std::optional<uint32_t> slotId, std::optional<uint32_t> slotIdToCopyFrom) {
   TT_LOG_DEBUG(
       "[SessionManager] createSession called, slotId={}, activeSessions={}",
       slotId.has_value() ? std::to_string(slotId.value()) : "none",
@@ -333,6 +361,7 @@ void SessionManager::createSession(
       .eventLoop = callerEventLoop,
       .attemptsRemaining =
           static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+      .slotIdToCopyFrom = slotIdToCopyFrom,
   };
 
   sendAsyncAllocationRequest(pendingAllocation);
@@ -376,7 +405,7 @@ void SessionManager::sendAsyncAllocationRequest(
     return;
   }
 
-  auto task = makeAllocTask();
+  auto task = makeAllocTask(pendingAllocation.slotIdToCopyFrom);
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
@@ -522,13 +551,6 @@ SessionManager::tryAcquireByPrefixHash(
   // Snapshot candidates: for each entry under keyHash, count how many
   // consecutive remaining hashes match the caller's remaining hashes.
   // Pick the entry with the longest match.
-  struct Candidate {
-    std::string sessionId;
-    size_t
-        matchedBlocks;  // total matched blocks (1 for key + matched remaining)
-    size_t sessionBlocks;  // total blocks in the cached session
-    uint32_t thinkTokens;  // accumulated think tokens at matched block
-  };
   std::vector<Candidate> candidates;
 
   prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
@@ -611,8 +633,9 @@ SessionManager::tryAcquireByPrefixHash(
       s.updateActivityTime();
       s.markInFlight();
       s.setCancelFn(cancelFn);
-      acquired = AcquiredSession{candidate.sessionId, s.getSlotId(),
-                                 matchedTokens, candidate.thinkTokens};
+      acquired =
+          AcquiredSession{true,          candidate.sessionId,   s.getSlotId(),
+                          matchedTokens, candidate.thinkTokens, {}};
     });
 
     if (!found || stale) {
@@ -643,7 +666,9 @@ SessionManager::tryAcquireByPrefixHash(
       "[SessionManager] tryAcquireByPrefixHash: no acquirable session for "
       "keyHash={}",
       keyHash);
-  return std::nullopt;
+  // Return candidates sorted by matched tokens descending even though no
+  // session was acquired
+  return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
 void SessionManager::registerPrefixHash(
