@@ -12,11 +12,6 @@ from __future__ import annotations
 
 import logging
 
-import torch
-
-from models.demos.z_image_turbo.tt.vae.model_pt import VaeDecoderPT
-from models.demos.z_image_turbo.tt.vae.model_ttnn import VaeDecoderTTNN
-
 from ..image_generation_eval_test import AccuracyResult
 from ._common import pcc
 
@@ -31,6 +26,11 @@ LATENT_W = 64
 
 
 def run_vae_pcc(mesh_device) -> dict:
+    import torch
+
+    from models.demos.z_image_turbo.tt.vae.model_pt import VaeDecoderPT
+    from models.demos.z_image_turbo.tt.vae.model_ttnn import VaeDecoderTTNN
+
     logger.info("VAE PCC eval: %d passes, seeds %d-%d.",
                 NUM_PASSES, BASE_SEED, BASE_SEED + NUM_PASSES - 1)
 

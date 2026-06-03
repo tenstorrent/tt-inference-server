@@ -13,10 +13,6 @@ from __future__ import annotations
 import logging
 import time
 
-from PIL import Image
-
-from models.demos.z_image_turbo.tt.z_image_turbo import ZImageTurbo
-
 from ..image_generation_eval_test import AccuracyResult
 from ._common import INFERENCE_STEPS, PROMPTS
 
@@ -26,6 +22,10 @@ NUM_PERF_ITERATIONS = 5
 
 
 def run_pipeline_perf(mesh_device) -> dict:
+    from PIL import Image
+
+    from models.demos.z_image_turbo.tt.z_image_turbo import ZImageTurbo
+
     logger.info("Pipeline perf eval: warmup + %d iterations.", NUM_PERF_ITERATIONS)
 
     pipeline = ZImageTurbo(mesh_device=mesh_device)

@@ -12,14 +12,6 @@ from __future__ import annotations
 
 import logging
 
-import torch
-
-import ttnn
-from models.demos.z_image_turbo.tt.dit import model_pt
-from models.demos.z_image_turbo.tt.dit.model_ttnn import (
-    ZImageTransformerTTNN,
-)
-
 from ..image_generation_eval_test import AccuracyResult
 from ._common import pcc, to_device_bf16, tt_to_torch
 
@@ -35,6 +27,14 @@ BASE_SEED = 42
 
 
 def run_dit_pcc(mesh_device) -> dict:
+    import torch
+
+    import ttnn
+    from models.demos.z_image_turbo.tt.dit import model_pt
+    from models.demos.z_image_turbo.tt.dit.model_ttnn import (
+        ZImageTransformerTTNN,
+    )
+
     logger.info("DiT PCC eval: %d passes, seeds %d-%d.",
                 NUM_PASSES, BASE_SEED, BASE_SEED + NUM_PASSES - 1)
 

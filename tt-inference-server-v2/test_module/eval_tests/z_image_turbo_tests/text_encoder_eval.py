@@ -12,12 +12,6 @@ from __future__ import annotations
 
 import logging
 
-import ttnn
-from models.demos.z_image_turbo.tt.text_encoder import model_pt
-from models.demos.z_image_turbo.tt.text_encoder.model_ttnn import (
-    TextEncoderTTNN,
-)
-
 from ..image_generation_eval_test import AccuracyResult
 from ._common import PROMPTS, pcc, to_device_int32, tt_to_torch
 
@@ -28,6 +22,12 @@ PCC_THRESHOLD = 0.986
 
 
 def run_text_encoder_pcc(mesh_device) -> dict:
+    import ttnn
+    from models.demos.z_image_turbo.tt.text_encoder import model_pt
+    from models.demos.z_image_turbo.tt.text_encoder.model_ttnn import (
+        TextEncoderTTNN,
+    )
+
     logger.info("Text encoder PCC eval: %d prompts.", len(PROMPTS))
 
     pt_model = model_pt.load_model()
