@@ -7,8 +7,9 @@
 
 #include <sstream>
 
-#include "config/runner_config.hpp"
+#include "domain/llm/llm_response.hpp"
 #include "domain/llm/sampling_params.hpp"
+#include "ipc/interface/result_queue.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::runners::llm_engine {
@@ -51,6 +52,32 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   EXPECT_EQ(restored->prompt_logprobs, orig.prompt_logprobs);
   EXPECT_EQ(restored->truncate_prompt_tokens, orig.truncate_prompt_tokens);
   EXPECT_EQ(restored->fast_mode, orig.fast_mode);
+}
+
+TEST(LLMResponseTest, MakeTimeoutErrorChunkUsesTimeoutFinishReason) {
+  auto chunk = makeTimeoutErrorChunk(/*taskId=*/123, "prefill timeout");
+
+  ASSERT_EQ(chunk.task_id, 123u);
+  ASSERT_EQ(chunk.choices.size(), 1u);
+  ASSERT_TRUE(chunk.choices[0].finish_reason.has_value());
+  EXPECT_EQ(chunk.choices[0].finish_reason.value(), "timeout_error");
+  ASSERT_TRUE(chunk.error.has_value());
+  EXPECT_EQ(chunk.error.value(), "prefill timeout");
+}
+
+TEST(LLMResponseTest, TimeoutTokenFlagIsPreserved) {
+  TokenResult result(/*taskId=*/123, /*tokenId=*/0, std::nullopt,
+                     /*isError=*/true, /*isTimeoutError=*/true);
+  EXPECT_TRUE(result.isError);
+  EXPECT_TRUE(result.isTimeoutError);
+
+  tt::ipc::SharedToken token;
+  token.flags = tt::ipc::SharedToken::FLAG_FINAL |
+                tt::ipc::SharedToken::FLAG_ERROR |
+                tt::ipc::SharedToken::FLAG_TIMEOUT;
+  EXPECT_TRUE(token.isFinal());
+  EXPECT_TRUE(token.isError());
+  EXPECT_TRUE(token.isTimeout());
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {

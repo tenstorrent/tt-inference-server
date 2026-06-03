@@ -116,16 +116,22 @@ struct LLMStreamChunk : BaseResponse {
 };
 
 /**
- * Build a terminal error chunk carrying both `finish_reason="error"` on the
- * choice and a human-readable message in the chunk-level `error` field.
+ * Build a terminal error chunk carrying an error finish reason on the choice
+ * and a human-readable message in the chunk-level `error` field.
  */
-inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error) {
+inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error,
+                                     std::string finishReason = "error") {
   LLMStreamChunk chunk(taskId);
   LLMChoice choice;
-  choice.finish_reason = "error";
+  choice.finish_reason = std::move(finishReason);
   chunk.choices.push_back(std::move(choice));
   chunk.error = std::move(error);
   return chunk;
+}
+
+inline LLMStreamChunk makeTimeoutErrorChunk(uint32_t taskId,
+                                            std::string error = "timeout") {
+  return makeErrorChunk(taskId, std::move(error), "timeout_error");
 }
 
 /**

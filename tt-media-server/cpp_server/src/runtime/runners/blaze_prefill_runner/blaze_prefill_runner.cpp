@@ -58,7 +58,8 @@ void BlazePrefillRunner::run() {
     if (result->isError) {
       TT_LOG_WARN("[BlazePrefillRunner] Error token for task {}",
                   result->taskId);
-      ipc::helpers::pushErrorToken(*resultQueue, result->taskId);
+      ipc::helpers::pushErrorToken(*resultQueue, result->taskId,
+                                   result->isTimeoutError);
     } else {
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",

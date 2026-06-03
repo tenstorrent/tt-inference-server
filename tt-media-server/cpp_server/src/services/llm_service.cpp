@@ -319,6 +319,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool isError = token.isError();
       bool isFinal = token.isFinal();
       bool isAbort = token.isAbort();
+      bool isTimeout = token.isTimeout();
 
       if (isAbort && !isFinal) {
         // Client-initiated abort: LLMService::abortRequest has already taken
@@ -361,8 +362,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
         streamDecoders.erase(taskId);
         reasoningSuppressedMap.take(taskId);
-        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
-                                                                  "error");
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, isTimeout ? "timeout_error" : "error");
         if (reasoningParser) {
           reasoningParser->finalizeTask(taskId);
         }
@@ -378,7 +379,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
           toolCallParser->finalizeTask(taskId);
         }
         toolChoiceMap.take(taskId);  // Clean up
-        auto errorChunk = makeErrorChunk(taskId, "runner reported error");
+        auto errorChunk =
+            isTimeout ? makeTimeoutErrorChunk(taskId, "runner timeout")
+                      : makeErrorChunk(taskId, "runner reported error");
         entry->callback(errorChunk, /*isFinal=*/true);
         continue;
       }

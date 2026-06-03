@@ -23,14 +23,17 @@ struct TokenResult {
   uint64_t tokenId = 0;
   std::optional<bool> finished;
   bool isError = false;
+  bool isTimeoutError = false;
 
   TokenResult() = default;
   TokenResult(uint32_t taskId, uint64_t tokenId,
-              std::optional<bool> finished = {}, bool isError = false)
+              std::optional<bool> finished = {}, bool isError = false,
+              bool isTimeoutError = false)
       : taskId(taskId),
         tokenId(tokenId),
         finished(std::move(finished)),
-        isError(isError) {}
+        isError(isError),
+        isTimeoutError(isTimeoutError) {}
 };
 
 class Sequence {

@@ -28,11 +28,15 @@ inline void pushToken(tt::ipc::IResultQueue& queue, uint32_t taskId,
   }
 }
 
-inline void pushErrorToken(tt::ipc::IResultQueue& queue, uint32_t taskId) {
+inline void pushErrorToken(tt::ipc::IResultQueue& queue, uint32_t taskId,
+                           bool timeout = false) {
   tt::ipc::SharedToken token{};
   token.task_id = taskId;
   token.flags =
       tt::ipc::SharedToken::FLAG_FINAL | tt::ipc::SharedToken::FLAG_ERROR;
+  if (timeout) {
+    token.flags |= tt::ipc::SharedToken::FLAG_TIMEOUT;
+  }
   while (!queue.push(token)) {
     std::this_thread::yield();
   }
