@@ -12,6 +12,11 @@ import aiohttp
 
 from report_module.schema import Block
 from .._test_common import BaseTest, TestConfig
+from .image_generation_param_test import (
+    DEFAULT_DIFF_PARAMS_MAX_SSIM,
+    DEFAULT_SAME_SEED_MIN_SSIM,
+    compute_image_ssim,
+)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -119,17 +124,42 @@ class InpaintingGenerationParamTest(BaseTest):
                     "error": f"Request {i + 1} failed: {data}",
                 }
 
-        # Verify test assertions
-        same_requests_match = response_data_list[0] == response_data_list[1]
-        guidance_scale_differs = response_data_list[0] != response_data_list[2]
+        same_seed_min_ssim = self.targets.get(
+            "same_seed_min_ssim", DEFAULT_SAME_SEED_MIN_SSIM
+        )
+        diff_params_max_ssim = self.targets.get(
+            "diff_params_max_ssim", DEFAULT_DIFF_PARAMS_MAX_SSIM
+        )
 
-        logger.info(f"Same requests match: {same_requests_match}")
+        same_request_ssim = compute_image_ssim(
+            response_data_list[0], response_data_list[1]
+        )
+        guidance_scale_ssim = compute_image_ssim(
+            response_data_list[0], response_data_list[2]
+        )
+
+        # Inpainting can have small numeric drift across workers, so compare images
+        # by similarity rather than requiring byte-identical JSON responses.
+        same_requests_match = same_request_ssim >= same_seed_min_ssim
+        guidance_scale_differs = guidance_scale_ssim < diff_params_max_ssim
+
         logger.info(
-            f"Guidance scale change produces different output: {guidance_scale_differs}"
+            "SSIM(response[0], response[1])=%.4f (threshold >= %.2f): %s",
+            same_request_ssim,
+            same_seed_min_ssim,
+            same_requests_match,
+        )
+        logger.info(
+            "SSIM(response[0], response[2])=%.4f (threshold < %.2f): %s",
+            guidance_scale_ssim,
+            diff_params_max_ssim,
+            guidance_scale_differs,
         )
 
         return {
             "num_responses": len(response_data_list),
+            "same_request_ssim": same_request_ssim,
+            "guidance_scale_ssim": guidance_scale_ssim,
             "same_requests_match": same_requests_match,
             "guidance_scale_differs": guidance_scale_differs,
             "success": same_requests_match and guidance_scale_differs,
