@@ -15,7 +15,6 @@
 #include <stdexcept>
 #include <string>
 
-
 #include "config/settings.hpp"
 #include "dynamo/etcd_client.hpp"
 #include "utils/logger.hpp"
