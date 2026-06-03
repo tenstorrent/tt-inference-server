@@ -131,7 +131,18 @@ class PromptClient:
             include_v1: If True, append /v1 for OpenAI-compatible endpoints.
                        If False, return root URL for vLLM-specific endpoints.
         """
-        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        # An explicit port on deploy_url wins over service_port to avoid
+        # malformed double-port URLs like http://host:9000:8000 when
+        # --server-url already carries a port (e.g. via kubectl port-forward).
+        from urllib.parse import urlparse
+
+        deploy_url = self.env_config.deploy_url.rstrip("/")
+        parsed = urlparse(deploy_url)
+        base = (
+            deploy_url
+            if parsed.port is not None
+            else f"{deploy_url}:{self.env_config.service_port}"
+        )
         return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:

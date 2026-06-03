@@ -24,6 +24,18 @@ scrape_configs:
     scheme: http
     scrape_timeout: 4s
 
+  - job_name: "tt_prefill_gateway"
+    static_configs:
+      - targets:
+          - "__GATEWAY_TARGET__"
+        labels:
+          instance: "prefill_gateway"
+          service: "prefill_gateway"
+          language: "cpp"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s
+
   # Host process metrics (CPU / memory / threads / fds per binary).
   # Exposed by the process-exporter service on the monitoring network.
   - job_name: "tt_processes"

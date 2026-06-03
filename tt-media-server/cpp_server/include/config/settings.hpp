@@ -35,6 +35,17 @@ std::string runnerType();
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t numWorkers();
 
+/**
+ * Size of the process-wide ThreadPool that fronts inference dispatch (used by
+ * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
+ * threads for the full inference latency, so this caps the in-flight
+ * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
+ * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
+ * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
+ */
+size_t callbackPoolThreads();
+
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
@@ -138,6 +149,10 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** Max input sequence length (prompt tokens) from MAX_ISL. Default:
+ * defaults::MAX_ISL. */
+size_t maxISL();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -145,6 +160,11 @@ size_t kvCacheBlockSize();
 /** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
 size_t kvCacheFirstBlockSize();
+
+/** Minimum match percentage for prefix cache hit from
+ * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
+ * Set to 0 to disable threshold check (accept any match). */
+float prefixCacheHitThreshold();
 
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
