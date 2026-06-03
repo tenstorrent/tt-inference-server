@@ -130,14 +130,13 @@ pl::WireFormat wireFormatFromString(const std::string& s) {
   static const std::unordered_map<std::string, pl::WireFormat> formats = {
       {"deepseek", pl::WireFormat::DEEPSEEK},
       {"loopback", pl::WireFormat::LOOPBACK},
-      {"blaze",    pl::WireFormat::BLAZE}
-  };
+      {"blaze", pl::WireFormat::BLAZE}};
 
   auto it = formats.find(s);
   if (it != formats.end()) {
-      return it->second;
+    return it->second;
   }
-  
+
   throw std::runtime_error("Invalid wire format: " + s);
 }
 
