@@ -32,12 +32,12 @@ class GatewayMetricsServer {
   void serveClient(int clientFd);
   static void closeFd(int fd);
 
-  GatewayMetrics& metrics_;
-  std::function<std::string()> health_provider_;
-  std::atomic<bool> running_{false};
-  std::atomic<uint16_t> port_{0};
-  std::atomic<int> server_fd_{-1};
-  std::jthread server_thread_;
+  GatewayMetrics& gatewayMetrics;
+  std::function<std::string()> healthProvider;
+  std::atomic<bool> running{false};
+  std::atomic<uint16_t> listeningPort{0};
+  std::atomic<int> serverFd{-1};
+  std::jthread serverThread;
 };
 
 }  // namespace tt::gateway

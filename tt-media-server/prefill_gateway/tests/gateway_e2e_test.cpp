@@ -1043,6 +1043,10 @@ TEST(GatewayMetricsServerTest, ServesHealthJsonOnLivenessPath) {
            response.find(R"("decode_connected":false)") != std::string::npos;
   }));
 
+  const std::string healthResponse = httpGet(port, "/health");
+  EXPECT_NE(healthResponse.find("HTTP/1.1 200 OK"), std::string::npos);
+  EXPECT_NE(healthResponse.find(R"("healthy_prefills":2)"), std::string::npos);
+
   server.stop();
 }
 

@@ -52,7 +52,7 @@ bool isHealthRequest(std::string_view request) {
 }  // namespace
 
 GatewayMetricsServer::GatewayMetricsServer(GatewayMetrics& metrics)
-    : metrics_(metrics) {}
+    : gatewayMetrics(metrics) {}
 
 GatewayMetricsServer::~GatewayMetricsServer() { stop(); }
 
@@ -60,15 +60,15 @@ bool GatewayMetricsServer::start(uint16_t port) {
   if (port == 0) {
     return true;
   }
-  if (running_) {
+  if (running) {
     return false;
   }
 
-  running_ = true;
-  port_ = port;
+  running = true;
+  listeningPort = port;
   std::promise<bool> initialized;
   auto initializedFuture = initialized.get_future();
-  server_thread_ =
+  serverThread =
       std::jthread([this, port, initialized = std::move(initialized)](
                        std::stop_token stopToken) mutable {
         serve(stopToken, port, std::move(initialized));
@@ -81,37 +81,37 @@ bool GatewayMetricsServer::start(uint16_t port) {
 }
 
 void GatewayMetricsServer::stop() {
-  if (!running_) {
+  if (!running) {
     return;
   }
 
-  running_ = false;
-  const int serverFd = server_fd_.exchange(-1);
-  if (serverFd >= 0) {
-    shutdown(serverFd, SHUT_RDWR);
-    closeFd(serverFd);
+  running = false;
+  const int fd = serverFd.exchange(-1);
+  if (fd >= 0) {
+    shutdown(fd, SHUT_RDWR);
+    closeFd(fd);
   }
-  if (server_thread_.joinable()) {
-    server_thread_.request_stop();
-    server_thread_.join();
+  if (serverThread.joinable()) {
+    serverThread.request_stop();
+    serverThread.join();
   }
-  port_ = 0;
+  listeningPort = 0;
 }
 
-uint16_t GatewayMetricsServer::port() const { return port_; }
+uint16_t GatewayMetricsServer::port() const { return listeningPort; }
 
 void GatewayMetricsServer::setHealthProvider(
     std::function<std::string()> provider) {
-  health_provider_ = std::move(provider);
+  healthProvider = std::move(provider);
 }
 
 void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
                                  std::promise<bool> initialized) {
   const int serverFd = socket(AF_INET, SOCK_STREAM, 0);
-  server_fd_ = serverFd;
+  this->serverFd = serverFd;
   if (serverFd < 0) {
     TT_LOG_ERROR("[GatewayMetricsServer] socket() failed: {}", strerror(errno));
-    running_ = false;
+    running = false;
     initialized.set_value(false);
     return;
   }
@@ -128,8 +128,8 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
       0) {
     TT_LOG_ERROR("[GatewayMetricsServer] bind(:{}) failed: {}", port,
                  strerror(errno));
-    closeFd(server_fd_.exchange(-1));
-    running_ = false;
+    closeFd(this->serverFd.exchange(-1));
+    running = false;
     initialized.set_value(false);
     return;
   }
@@ -137,8 +137,8 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
   if (listen(serverFd, SOCKET_BACKLOG) < 0) {
     TT_LOG_ERROR("[GatewayMetricsServer] listen(:{}) failed: {}", port,
                  strerror(errno));
-    closeFd(server_fd_.exchange(-1));
-    running_ = false;
+    closeFd(this->serverFd.exchange(-1));
+    running = false;
     initialized.set_value(false);
     return;
   }
@@ -146,10 +146,10 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
   TT_LOG_INFO("[GatewayMetricsServer] Serving HTTP endpoints on port {}", port);
   initialized.set_value(true);
 
-  while (running_ && !stopToken.stop_requested()) {
+  while (running && !stopToken.stop_requested()) {
     sockaddr_in clientAddress{};
     socklen_t clientLength = sizeof(clientAddress);
-    const int activeServerFd = server_fd_.load();
+    const int activeServerFd = this->serverFd.load();
     if (activeServerFd < 0) {
       break;
     }
@@ -157,7 +157,7 @@ void GatewayMetricsServer::serve(std::stop_token stopToken, uint16_t port,
         accept(activeServerFd, reinterpret_cast<sockaddr*>(&clientAddress),
                &clientLength);
     if (clientFd < 0) {
-      if (running_ && errno != EINTR && errno != EBADF && errno != EINVAL) {
+      if (running && errno != EINTR && errno != EBADF && errno != EINVAL) {
         TT_LOG_WARN("[GatewayMetricsServer] accept() failed: {}",
                     strerror(errno));
       }
@@ -179,10 +179,10 @@ void GatewayMetricsServer::serveClient(int clientFd) {
   std::string response;
   if (isMetricsRequest(request)) {
     response = httpResponse(200, "OK", "text/plain; version=0.0.4",
-                            metrics_.renderText());
+                            gatewayMetrics.renderText());
   } else if (isLivenessRequest(request) || isHealthRequest(request)) {
     const std::string body =
-        health_provider_ ? health_provider_() : R"({"status":"alive"})";
+        healthProvider ? healthProvider() : R"({"status":"alive"})";
     response = httpResponse(200, "OK", "application/json", body);
   } else {
     response = httpResponse(404, "Not Found", "text/plain", "not found\n");
