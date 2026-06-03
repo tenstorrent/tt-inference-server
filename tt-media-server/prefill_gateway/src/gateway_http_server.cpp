@@ -163,8 +163,7 @@ void GatewayHttpServer::serveClient(int clientFd) {
 std::string GatewayHttpServer::formatHttpResponse(
     const GatewayHttpResponse& response) {
   std::ostringstream out;
-  out << "HTTP/1.1 " << response.status << " " << response.statusText
-      << "\r\n"
+  out << "HTTP/1.1 " << response.status << " " << response.statusText << "\r\n"
       << "Content-Type: " << response.contentType << "\r\n"
       << "Content-Length: " << response.body.size() << "\r\n"
       << "Connection: close\r\n\r\n"

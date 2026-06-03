@@ -17,14 +17,16 @@ bool isMetricsRequest(std::string_view request) {
 
 GatewayMetricsServer::GatewayMetricsServer(GatewayMetrics& metrics)
     : gatewayMetrics(metrics),
-      httpServer("GatewayMetricsServer", "Serving metrics endpoint",
-                 [this](std::string_view request) {
-                   return handleRequest(request);
-                 }) {}
+      httpServer(
+          "GatewayMetricsServer", "Serving metrics endpoint",
+          [this](std::string_view request) { return handleRequest(request); }) {
+}
 
 GatewayMetricsServer::~GatewayMetricsServer() = default;
 
-bool GatewayMetricsServer::start(uint16_t port) { return httpServer.start(port); }
+bool GatewayMetricsServer::start(uint16_t port) {
+  return httpServer.start(port);
+}
 
 void GatewayMetricsServer::stop() { httpServer.stop(); }
 

@@ -21,12 +21,14 @@ bool isHealthRequest(std::string_view request) {
 }  // namespace
 
 GatewayHealthServer::GatewayHealthServer()
-    : httpServer("GatewayHealthServer", "Serving health endpoints",
-                 [this](std::string_view request) {
-                   return handleRequest(request);
-                 }) {}
+    : httpServer(
+          "GatewayHealthServer", "Serving health endpoints",
+          [this](std::string_view request) { return handleRequest(request); }) {
+}
 
-bool GatewayHealthServer::start(uint16_t port) { return httpServer.start(port); }
+bool GatewayHealthServer::start(uint16_t port) {
+  return httpServer.start(port);
+}
 
 void GatewayHealthServer::stop() { httpServer.stop(); }
 
