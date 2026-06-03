@@ -123,6 +123,17 @@ class SessionManager {
       std::function<void()> cancelFn);
 
   /**
+   * Given a list of candidates, find one whose matched token count exceeds
+   * the MIN_TOKENS_TO_COPY threshold. Matched tokens = firstBlockSize for
+   * the first block + kvCacheBlockSize for each subsequent matched block.
+   * Candidates are assumed sorted by matchedBlocks descending.
+   *
+   * @return The best qualifying candidate, or std::nullopt if none qualifies.
+   */
+  std::optional<Candidate> findASlotToCopyFrom(
+      const std::vector<Candidate>& candidates) const;
+
+  /**
    * Route future lookups to this session by registering the given block infos.
    * blockInfos[0].hash becomes the key in prefixIndex; blockInfos[1:] are
    * stored as remainingBlocks in the entry. If an entry with identical
