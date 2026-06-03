@@ -16,7 +16,10 @@
 
 torch==2.4.0+cpu
 aiperf
-transformers
+# Our CPU-only torch is pinned to 2.4, so cap transformers at <5 to avoid
+# `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on import of
+# `AutoTokenizer`. aiperf itself only requires `transformers>=4.56`.
+transformers>=4.56,<5
 pyjwt
 requests
 datasets

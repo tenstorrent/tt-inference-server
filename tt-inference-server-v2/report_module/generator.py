@@ -72,6 +72,7 @@ class ReportGenerator:
             if k not in _METADATA_RENDERING_KEYS
         }
         self._file_saver.write_json(json_payload, json_path, strict=True)
+        self._write_report_data(out_dir, json_payload)
         logger.info("Generated report: md=%s, json=%s", md_path, json_path)
 
         return GenerateResult(
@@ -95,6 +96,20 @@ class ReportGenerator:
                 "Renderer for kind '%s' failed on block '%s'", block.kind, block.slug
             )
             return ""
+
+    def _write_report_data(
+        self,
+        out_dir: Path,
+        json_payload: Dict[str, Any],
+    ) -> None:
+        """Write report data JSON consumed by CI aggregation steps."""
+        report_id = str(json_payload.get("metadata", {}).get("report_id") or "")
+        if not report_id:
+            logger.warning("Skipping report data output: missing report_id")
+            return
+
+        data_path = out_dir / "data" / f"report_data_{report_id}.json"
+        self._file_saver.write_json(json_payload, data_path, strict=True)
 
 
 def _coerce_schema(schema: SchemaLike) -> ReportSchema:
