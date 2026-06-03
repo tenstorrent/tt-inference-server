@@ -21,15 +21,11 @@ enum class KvMemoryLayout : std::uint8_t {
 };
 
 struct ManageMemoryTask {
-  uint32_t taskId;
+  uint32_t taskId{};
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   KvMemoryLayout memoryLayout{KvMemoryLayout::PAGED};
   uint32_t slotId{};
   std::optional<uint32_t> slotIdToCopyFrom;
-
-  ManageMemoryTask() = default;
-  ManageMemoryTask(uint32_t id, MemoryManagementAction a)
-      : taskId(id), action(a) {}
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));
