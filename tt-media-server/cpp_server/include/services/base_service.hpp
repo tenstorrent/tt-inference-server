@@ -86,14 +86,11 @@ class BaseSyncService : public RequestPipeline<RequestType> {
 
   ResponseType submitRequest(RequestType request) {
     this->preProcess(request);
-    auto response = produceResponse(std::move(request));
-    postProcess(response);
-    return response;
+    return produceResponse(std::move(request));
   }
 
  protected:
   virtual ResponseType produceResponse(RequestType request) = 0;
-  virtual void postProcess(ResponseType& /*response*/) const {}
 };
 
 /** Streaming services: many chunks per request via callback. */
