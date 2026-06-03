@@ -42,9 +42,8 @@ void GatewayHealthServer::setHealthProvider(
 std::optional<GatewayHttpResponse> GatewayHealthServer::handleRequest(
     std::string_view request) {
   if (isLivenessRequest(request)) {
-    const std::string body =
-        healthProvider ? healthProvider().livenessJson
-                       : R"({"status":"alive"})";
+    const std::string body = healthProvider ? healthProvider().livenessJson
+                                            : R"({"status":"alive"})";
     return GatewayHttpResponse{200, "OK", "application/json", body};
   }
 
@@ -60,7 +59,7 @@ std::optional<GatewayHttpResponse> GatewayHealthServer::handleRequest(
                                  status.healthJson};
     }
     return GatewayHttpResponse{503, "Service Unavailable", "application/json",
-                             status.healthJson};
+                               status.healthJson};
   }
 
   return std::nullopt;

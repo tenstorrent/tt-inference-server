@@ -36,7 +36,8 @@ TEST(GatewayHealthTest, NotReadyWhenDecodeDisconnected) {
   EXPECT_FALSE(status.ready);
   EXPECT_EQ(status.error, "decode not connected");
   EXPECT_NE(status.livenessJson.find(R"("status":"alive")"), std::string::npos);
-  EXPECT_NE(status.healthJson.find(R"("status":"unhealthy")"), std::string::npos);
+  EXPECT_NE(status.healthJson.find(R"("status":"unhealthy")"),
+            std::string::npos);
   EXPECT_NE(status.healthJson.find(R"("error":"decode not connected")"),
             std::string::npos);
 }

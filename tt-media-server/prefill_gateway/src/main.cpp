@@ -316,7 +316,8 @@ int main(int argc, char** argv) {
   }
 
   auto healthProvider = [&registry, &decodeSm, transport]() {
-    return buildGatewayHealthStatus(registry, transport, decodeSm.isConnected());
+    return buildGatewayHealthStatus(registry, transport,
+                                    decodeSm.isConnected());
   };
   if (!metricsServer.start(cfg.metricsPort)) {
     TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
