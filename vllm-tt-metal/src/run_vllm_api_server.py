@@ -368,10 +368,20 @@ def register_tt_models(impl_id=None):
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
-    # Qwen3.5-9B (hybrid DeltaNet + Full Attention) - Blackhole P150
+    # Qwen3.5-9B (hybrid DeltaNet + Full Attention) - Blackhole P150.
+    # The HF arch is the *VL* name (Qwen3_5ForConditionalGeneration) even though
+    # this checkpoint is text-only. Point that arch at vLLM's native *text* class
+    # so ModelConfig validation sees a text-generation, non-multimodal model
+    # (passes --runner generate, skips the MM pipeline; it is never instantiated
+    # -- the TT loader builds the model). The TT-prefixed alias routes execution
+    # to the tt-metal class.
     ModelRegistry.register_model(
         "Qwen3_5ForConditionalGeneration",
-        "models.demos.blackhole.qwen3_5_9b.tt.qwen35_vllm:TTQwen35ForCausalLM",
+        "vllm.model_executor.models.qwen3_5:Qwen3_5ForCausalLM",
+    )
+    ModelRegistry.register_model(
+        "TTQwen3_5ForConditionalGeneration",
+        "models.demos.blackhole.qwen3_5_9b.tt.qwen35_vllm:Qwen35ForCausalLM",
     )
 
 

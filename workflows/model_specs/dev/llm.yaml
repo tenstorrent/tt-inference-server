@@ -228,8 +228,8 @@ templates:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
   version: "0.12.0"
-  tt_metal_commit: c3a8d6c
-  vllm_commit: 7c6685a
+  tt_metal_commit: c3a8d6c  # TODO: set to the SHA pushed to tenstorrent-metal/tt-metal (qwen35_vllm warmup-guard fix)
+  vllm_commit: 7c6685a  # TODO: set to the SHA pushed to tenstorrent/vllm (qwen3.5 registration + transformers pin relaxation)
   inference_engine: VLLM
   device_model_specs:
     - device: P150
@@ -240,8 +240,18 @@ templates:
       # requires chunked prefill -- forbidden by the TT platform.
       vllm_args:
         no-enable-prefix-caching: true
+      # Traced prefill currently hangs on prompts shorter than the 2048-token
+      # chunk: the eager-tail prefill compiles at un-warmed lengths and corrupts
+      # the resident traces. Run with tracing off until the tt-metal warmup is
+      # fixed to compile the eager-tail path. Slower decode, but functional.
+      override_tt_config:
+        trace_mode: none
   status: EXPERIMENTAL
   has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.5-9B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
 
 - weights:
     - Qwen/Qwen3-32B
