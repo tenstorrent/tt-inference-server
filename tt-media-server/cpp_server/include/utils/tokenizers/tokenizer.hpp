@@ -179,6 +179,7 @@ class Tokenizer {
  * Factory: create a Tokenizer for the given model, loading from path.
  * DEEPSEEK_R1_0528 -> DeepseekTokenizer
  * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
+ * KIMI_K2_6 -> DeepseekTokenizer (temporary behavior)
  */
 std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
                                            const std::string& path);

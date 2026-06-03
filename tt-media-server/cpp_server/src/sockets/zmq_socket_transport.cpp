@@ -164,7 +164,7 @@ void ZmqSocketTransport::stop() {
   ioActive_ = false;
   monitorActive_ = false;
   connected_ = false;
-  sendCv_.notify_all();
+  sendQueue.notifyStopped();
 
   if (ioThread_.joinable()) {
     ioThread_.request_stop();
@@ -245,12 +245,11 @@ bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
   request->data.assign(data.begin(), data.end());
   auto result = request->result.get_future();
 
-  {
-    std::lock_guard<std::mutex> lock(sendMutex_);
-    if (!running_ || !ioActive_) return false;
-    pendingSends_.push_back(std::move(request));
+  if (!sendQueue.pushIf(std::move(request), [this] {
+        return running_.load() && ioActive_.load();
+      })) {
+    return false;
   }
-  sendCv_.notify_one();
 
   try {
     return result.get();
@@ -265,11 +264,8 @@ bool ZmqSocketTransport::processPendingSends() {
 
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendMutex_);
-      if (pendingSends_.empty()) return processed;
-      request = std::move(pendingSends_.front());
-      pendingSends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return processed;
     }
 
     bool ok = false;
@@ -302,19 +298,14 @@ bool ZmqSocketTransport::receiveAvailableMessages() {
 }
 
 void ZmqSocketTransport::waitForIoWork() {
-  std::unique_lock<std::mutex> lock(sendMutex_);
-  sendCv_.wait_for(lock, IO_IDLE_WAIT,
-                   [this] { return !pendingSends_.empty() || !ioActive_; });
+  sendQueue.waitForWork(IO_IDLE_WAIT, [this] { return !ioActive_.load(); });
 }
 
 void ZmqSocketTransport::failPendingSends() {
   while (true) {
     std::shared_ptr<SendRequest> request;
-    {
-      std::lock_guard<std::mutex> lock(sendMutex_);
-      if (pendingSends_.empty()) return;
-      request = std::move(pendingSends_.front());
-      pendingSends_.pop_front();
+    if (!sendQueue.tryPop(request)) {
+      return;
     }
     request->result.set_value(false);
   }

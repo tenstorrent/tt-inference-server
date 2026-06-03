@@ -117,19 +117,42 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const int> tokens) {
   PrefixCachingInfo info;
 
-  // Hash all tokens into per-block hashes.
-  info.hashes = getPrefixCacheHashesByBlocks(tokens);
+  // Hash non-thinking tokens into per-block hashes, tracking think counts.
+  auto [thinkStart, thinkEnd] = tokenizers::thinkTokenIds();
+  info.blocks =
+      getPrefixCacheHashesByBlocksWithThinking(tokens, thinkStart, thinkEnd);
 
-  TT_LOG_INFO("[TokenHasher] tokens={} hashes={}", tokens.size(),
-              info.hashes.size());
+  TT_LOG_INFO("[TokenHasher] tokens={} blocks={}", tokens.size(),
+              info.blocks.size());
 
   return info;
 }
 
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(
-    std::span<const int> tokens) {
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens,
+                                                   uint64_t parentHash) {
   const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
   const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  // When continuing from a parent hash, use standard block size for all blocks
+  if (parentHash != 0) {
+    if (blockSize == 0 || tokens.size() < blockSize) {
+      return {};
+    }
+
+    std::vector<uint64_t> hashes;
+    size_t offset = 0;
+    while (offset + blockSize <= tokens.size()) {
+      const int* blockStart = tokens.data() + offset;
+      const size_t blockBytes = blockSize * sizeof(int);
+      parentHash = XXH64(blockStart, blockBytes, parentHash);
+      hashes.push_back(parentHash);
+      offset += blockSize;
+    }
+
+    return hashes;
+  }
+
+  // Fresh hashing: first block uses larger size
   if (firstBlockSize == 0 || blockSize == 0 || tokens.size() < firstBlockSize) {
     return {};
   }
@@ -141,7 +164,6 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
   // common token prefix produce identical hashes for their shared blocks.
   // The first block uses a larger size (e.g. system prompt) to capture the
   // common prefix shared across conversations with the same model config.
-  uint64_t parentHash = 0;
 
   // First block (larger, covers system prompt / preamble)
   const size_t firstBlockBytes = firstBlockSize * sizeof(int);
@@ -159,6 +181,59 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
   }
 
   return hashes;
+}
+
+std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
+    std::span<const int> tokens, int64_t thinkStartId, int64_t thinkEndId,
+    uint64_t parentHash, uint32_t parentThinkCount) {
+  const bool filterThinking = (thinkStartId != tokenizers::kNoThinkTokenId &&
+                               thinkEndId != tokenizers::kNoThinkTokenId);
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+
+  if (firstBlockSize == 0 || blockSize == 0) {
+    return {};
+  }
+
+  std::vector<BlockHashInfo> result;
+  std::vector<int> currentBlock;
+  currentBlock.reserve(std::max(firstBlockSize, blockSize));
+
+  bool inThinking = false;
+  uint32_t thinkCount = parentThinkCount;
+  size_t targetBlockSize = (parentHash == 0) ? firstBlockSize : blockSize;
+
+  for (int token : tokens) {
+    if (filterThinking) {
+      // Mirror ReasoningParser::processToken() state machine
+      if (token == static_cast<int>(thinkStartId)) {
+        inThinking = true;
+        continue;  // Skip marker, don't count
+      }
+      if (token == static_cast<int>(thinkEndId)) {
+        inThinking = false;
+        continue;  // Skip marker, don't count
+      }
+      if (inThinking) {
+        ++thinkCount;  // Count content token, don't hash
+        continue;
+      }
+    }
+
+    // Non-thinking token: add to current block
+    currentBlock.push_back(token);
+
+    if (currentBlock.size() == targetBlockSize) {
+      // Block complete: hash it
+      parentHash = XXH64(currentBlock.data(), currentBlock.size() * sizeof(int),
+                         parentHash);
+      result.push_back({parentHash, thinkCount});
+      currentBlock.clear();
+      targetBlockSize = blockSize;  // All subsequent blocks use standard size
+    }
+  }
+
+  return result;  // Partial block at end is not hashed
 }
 
 }  // namespace tt::utils

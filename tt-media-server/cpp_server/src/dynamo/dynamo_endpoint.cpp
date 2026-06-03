@@ -94,8 +94,9 @@ TokenChunk toTokenChunk(const tt::domain::llm::LLMStreamChunk& chunk,
 }
 
 /// Resolve the cpp_server tokenizers/<model>/ directory for the active
-/// tokenizer. `tokenizerPath()` is the absolute path to tokenizer.json so we
-/// strip the filename to get the directory the discovery MDC needs.
+/// tokenizer. `tokenizerPath()` returns an absolute tokenizer file path
+/// (`tokenizer.json` or `tiktoken.model`), so we strip the filename to get the
+/// directory the discovery MDC needs.
 std::string detectModelPath() {
   std::string tokJson = tt::config::tokenizerPath();
   if (tokJson.empty()) return {};
@@ -114,8 +115,8 @@ DynamoEndpoint::DynamoEndpoint(std::shared_ptr<services::LLMPipeline> pipeline,
     options_.advertise_host = detectAdvertiseHost();
   }
   if (options_.model_name.empty()) {
-    options_.model_name =
-        std::string(tt::utils::tokenizers::staticInfo().modelName);
+    // Use MODEL env var value for etcd registration (frontend routes by model)
+    options_.model_name = tt::config::toString(tt::config::model());
   }
   if (options_.model_path.empty()) {
     options_.model_path = detectModelPath();
@@ -198,6 +199,25 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       svc->abortRequest(taskId);
     };
 
+    // Reject requests whose prompt exceeds the maximum input sequence length.
+    const size_t maxInputSeqLen = tt::config::maxISL();
+    const size_t promptTokens =
+        static_cast<size_t>(req->full_prompt_tokens_count);
+    if (promptTokens > maxInputSeqLen) {
+      TT_LOG_WARN(
+          "[DynamoEndpoint] Prompt exceeds max input sequence length ({} > {})",
+          promptTokens, maxInputSeqLen);
+      TokenChunk err;
+      err.error = "Prompt exceeds maximum input sequence length (" +
+                  std::to_string(maxInputSeqLen) +
+                  " tokens): prompt_tokens=" + std::to_string(promptTokens);
+      err.error_code = 400;
+      sendChunk(err);
+      signalDone();
+      future.wait();
+      return;
+    }
+
     pipeline->resolveSession(
         req, loop,
         [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen,
@@ -265,9 +285,22 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                   probeId.empty() ? "?" : probeId, sinceRecvMs,
                   sinceDispatchMs);
             }
+
+            // Track token for prefix cache hash accumulation
+            if (req->session && !chunk.choices.empty() &&
+                chunk.choices[0].token_id) {
+              req->session->addGeneratedToken(
+                  static_cast<int>(*chunk.choices[0].token_id));
+            }
+
+            // Finalize session state before sending final chunk
+            if (isFinal && req->session) {
+              req->session->finalizeAndRegisterHashes();
+              req->session->clearInFlight();
+            }
+
             sendChunk(toTokenChunk(chunk, isFinal));
             if (isFinal) {
-              if (req->session) req->session->clearInFlight();
               signalDone();
             }
           };

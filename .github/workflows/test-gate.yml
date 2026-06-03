@@ -74,7 +74,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install ruff
-        run: pip install ruff==0.15.0
+        run: python -m pip install ruff==0.15.0
 
       - name: Run ruff linter
         run: ruff check .
@@ -223,9 +223,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -r tt-media-server/requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -r tt-media-server/requirements.txt
 
       - name: Run tt-inference-server tests
         run: |
@@ -277,10 +277,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -r tt-media-server/requirements.txt
-          pip install pytest-cov
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -r tt-media-server/requirements.txt
+          python -m pip install pytest-cov
 
       - name: Run tt-media-server tests
         env:
@@ -528,8 +528,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Run LLM Streaming Performance Test
         run: |
@@ -615,33 +615,16 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Validate OpenAPI spec against registered routes
         run: |
-          pip install openapi-spec-validator --quiet
+          python3 -m pip install openapi-spec-validator --quiet
           cd cpp_server
           python3 tools/validate_openapi.py
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
 
       - name: C++ format check (.clang-format)
         run: |
@@ -657,7 +640,7 @@ jobs:
       - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
-          ./build.sh --clang-tidy --blaze --no-fresh
+          ./build.sh --clang-tidy --blaze
 
   prefill-gateway-format-check:
     needs: detect-changes
@@ -733,32 +716,15 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze --no-fresh
+          ./build.sh --blaze
           cd ..
 
       - name: Run C++ unit tests
@@ -820,6 +786,7 @@ jobs:
       # ── Mock backend benchmarks ──────────────────────────────────────
       - name: Start C++ server (mock backend)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
           cd cpp_server/build
           LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
@@ -910,12 +877,16 @@ jobs:
       - name: Stop mock server
         if: always()
         run: |
-          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
-          sleep 1
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
       # ── Mock pipeline backend benchmarks ─────────────────────────────
       - name: Start C++ server (mock_pipeline backend)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
           cd cpp_server/build
           LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
           echo $! > ../../cpp_server.pid
@@ -957,7 +928,11 @@ jobs:
       - name: Stop mock_pipeline server
         if: always()
         run: |
-          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "mock_pipeline backend exit"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
 
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
@@ -1054,6 +1029,7 @@ jobs:
       # ── Round 1a: TCP Decode + Prefill split ─────────────────────────
       - name: "[TCP] Start Decode server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "TCP direct split decode"
           cd cpp_server/build
           NS=tcp_decode
           SOCKET_TRANSPORT=tcp LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1067,22 +1043,11 @@ jobs:
             ./tt_media_server_cpp -p 8001 -t 4 > ../../tcp_decode.log 2>&1 &
           echo $! > ../../tcp_decode.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Decode server ready on port 8001"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file tcp_decode.pid --label "TCP decode server"
 
       - name: "[TCP] Start Prefill server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
           cd cpp_server/build
           NS=tcp_prefill
           SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
@@ -1096,19 +1061,7 @@ jobs:
             ./tt_media_server_cpp -p 8002 -t 4 > ../../tcp_prefill.log 2>&1 &
           echo $! > ../../tcp_prefill.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill server ready on port 8002"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8002 --pid-file tcp_prefill.pid --label "TCP prefill server"
           sleep 2
 
       - name: "[TCP] Run vLLM bench serve against split servers"
@@ -1134,11 +1087,12 @@ jobs:
         run: |
           [ -f tcp_decode.pid ]  && kill $(cat tcp_decode.pid)  2>/dev/null || true
           [ -f tcp_prefill.pid ] && kill $(cat tcp_prefill.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "TCP direct split"
 
       # ── Round 1b: ZMQ Decode + Prefill split ─────────────────────────
       - name: "[ZMQ] Start Decode server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
           cd cpp_server/build
           NS=zmq_decode
           SOCKET_TRANSPORT=zmq LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1152,22 +1106,11 @@ jobs:
             ./tt_media_server_cpp -p 8001 -t 4 > ../../zmq_decode.log 2>&1 &
           echo $! > ../../zmq_decode.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Decode server ready on port 8001"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file zmq_decode.pid --label "ZMQ decode server"
 
       - name: "[ZMQ] Start Prefill server (direct split)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
           SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
@@ -1181,19 +1124,7 @@ jobs:
             ./tt_media_server_cpp -p 8002 -t 4 > ../../zmq_prefill.log 2>&1 &
           echo $! > ../../zmq_prefill.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill server ready on port 8002"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8002 --pid-file zmq_prefill.pid --label "ZMQ prefill server"
           sleep 2
 
       - name: "[ZMQ] Run vLLM bench serve against split servers"
@@ -1219,7 +1150,7 @@ jobs:
         run: |
           [ -f zmq_decode.pid ]  && kill $(cat zmq_decode.pid)  2>/dev/null || true
           [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
 
       # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
       - name: Clean shared memory segments
@@ -1245,6 +1176,7 @@ jobs:
 
       - name: Start Prefill server (mock_prefill_runner round)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock_prefill_runner prefill"
           cd cpp_server
           NS=r2_prefill
           TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
@@ -1262,23 +1194,11 @@ jobs:
             > ../prefill_server_runner.log 2>&1 &
           echo $! > ../prefill_server_runner.pid
           cd ..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill server ready on port 8001"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          echo "Prefill liveness response: $LIVENESS"
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file prefill_server_runner.pid --label "mock_prefill_runner prefill server"
 
       - name: Start Decode server (mock_prefill_runner round)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
           cd cpp_server
           NS=r2_decode
           LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
@@ -1294,35 +1214,20 @@ jobs:
             > ../decode_server_runner.log 2>&1 &
           echo $! > ../decode_server_runner.pid
           cd ..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Decode server ready on port 8000"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          echo "Decode liveness response: $LIVENESS"
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file decode_server_runner.pid --label "mock_prefill_runner decode server"
 
       - name: Verify prefill/decode socket connection
         run: |
-          for i in $(seq 1 30); do
-            PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"' \
-               && echo "$DECODE_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-              echo "✅ Prefill (client:connected) and Decode (server:connected) both ready"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --expect '"socket_status":"client:connected"' \
+            --pid-file prefill_server_runner.pid \
+            --label "mock_prefill_runner prefill socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8000 \
+            --expect '"socket_status":"server:connected"' \
+            --pid-file decode_server_runner.pid \
+            --label "mock_prefill_runner decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
           DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
           echo "Prefill liveness: $PREFILL_LIVENESS"
@@ -1347,7 +1252,6 @@ jobs:
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
-          sleep 2
 
       - name: Run vLLM bench serve against mock_prefill_runner split
         env:
@@ -1374,7 +1278,7 @@ jobs:
           [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
           [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
           rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-          sleep 1
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock_prefill_runner split"
 
       - name: Check benchmark thresholds
         run: |
@@ -1495,19 +1399,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          init-private-submodule: "false"
 
       - name: Configure prefill_gateway
         run: |
@@ -1563,19 +1458,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache C++ dependency sources
-        uses: actions/cache@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
-          restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+          init-private-submodule: "false"
 
       - name: Configure prefill_gateway with ThreadSanitizer
         run: |
@@ -1691,6 +1577,7 @@ jobs:
       # All components must use the same SOCKET_TRANSPORT;
       - name: "[TCP] Start Prefill server 1 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
           cd cpp_server/build
           NS=gw_prefill1
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
@@ -1705,22 +1592,11 @@ jobs:
             ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_prefill1.log 2>&1 &
           echo $! > ../../gw_prefill1.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-1 ready on port 8201"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --pid-file gw_prefill1.pid --label "TCP gateway prefill-1"
 
       - name: "[TCP] Start Prefill server 2 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
           cd cpp_server/build
           NS=gw_prefill2
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
@@ -1735,49 +1611,29 @@ jobs:
             ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_prefill2.log 2>&1 &
           echo $! > ../../gw_prefill2.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-2 ready on port 8202"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --pid-file gw_prefill2.pid --label "TCP gateway prefill-2"
 
       - name: "[TCP] Start PrefillGateway"
         run: |
-          SOCKET_TRANSPORT=tcp TT_LOG_LEVEL=debug \
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 9200 --label "TCP prefill gateway"
+          SOCKET_TRANSPORT=tcp \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill=127.0.0.1:9201 \
             --prefill=127.0.0.1:9202 \
+            --metrics-port=0 \
+            --health-port=9091 \
             > gw.log 2>&1 &
           echo $! > gw.pid
-          for i in $(seq 1 30); do
-            REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
-              break
-            fi
-            if ! kill -0 "$(cat gw.pid)" 2>/dev/null; then
-              echo "ERROR: Gateway process exited unexpectedly"
-              exit 1
-            fi
-            sleep 1
-          done
-          REG=$(grep -c "Prefill registered" gw.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 9091 \
+            --expect '"healthy_prefills":2' \
+            --pid-file gw.pid \
+            --label "TCP prefill gateway registrations"
 
       - name: "[TCP] Start Decode server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "TCP gateway decode server"
           cd cpp_server/build
           NS=gw_decode
           SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
@@ -1793,34 +1649,13 @@ jobs:
             ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_decode.log 2>&1 &
           echo $! > ../../gw_decode.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Decode server ready on port 8200"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --pid-file gw_decode.pid --label "TCP gateway decode server"
 
       - name: "[TCP] Verify gateway socket connections"
         run: |
-          for i in $(seq 1 30); do
-            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$P1"  | grep -q '"socket_status":"server:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"server:connected"' \
-               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 (server:connected) and Decode (client:connected) all verified"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"server:connected"' --pid-file gw_prefill1.pid --label "TCP gateway prefill-1 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"server:connected"' --pid-file gw_prefill2.pid --label "TCP gateway prefill-2 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_decode.pid --label "TCP gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -1841,7 +1676,6 @@ jobs:
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
-          sleep 2
 
       - name: "[TCP] Run vLLM bench serve through gateway"
         env:
@@ -1868,11 +1702,12 @@ jobs:
           [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
           [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
           [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
 
       # ── Round 2: ZMQ transport ────────────────────────────────────────────
       - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
           cd cpp_server/build
           NS=gw_zmq_prefill1
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
@@ -1888,22 +1723,11 @@ jobs:
             ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_zmq_prefill1.log 2>&1 &
           echo $! > ../../gw_zmq_prefill1.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-1 ready on port 8201"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-1 did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1"
 
       - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
           cd cpp_server/build
           NS=gw_zmq_prefill2
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
@@ -1919,48 +1743,28 @@ jobs:
             ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_zmq_prefill2.log 2>&1 &
           echo $! > ../../gw_zmq_prefill2.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Prefill-2 ready on port 8202"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill-2 did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2"
 
       - name: "[ZMQ] Start PrefillGateway"
         run: |
-          SOCKET_TRANSPORT=zmq TT_LOG_LEVEL=debug \
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 9200 --port 9201 --label "ZMQ prefill gateway"
+          SOCKET_TRANSPORT=zmq \
             ./prefill_gateway/build/prefill_gateway \
             --decode-port=9200 \
             --prefill-bind=127.0.0.1:9201 \
+            --metrics-port=0 \
+            --health-port=9092 \
             > gw_zmq.log 2>&1 &
           echo $! > gw_zmq.pid
-          for i in $(seq 1 30); do
-            REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-            if [ "$REG" -ge 2 ]; then
-              echo "✅ Both prefills registered with gateway"
-              break
-            fi
-            if ! kill -0 "$(cat gw_zmq.pid)" 2>/dev/null; then
-              echo "ERROR: Gateway process exited unexpectedly"
-              exit 1
-            fi
-            sleep 1
-          done
-          REG=$(grep -c "Prefill registered" gw_zmq.log 2>/dev/null || echo 0)
-          if [ "$REG" -lt 2 ]; then
-            echo "ERROR: Expected 2 prefill registrations in gateway log, got $REG"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 9092 \
+            --expect '"healthy_prefills":2' \
+            --pid-file gw_zmq.pid \
+            --label "ZMQ prefill gateway registrations"
 
       - name: "[ZMQ] Start Decode server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "ZMQ gateway decode server"
           cd cpp_server/build
           NS=gw_zmq_decode
           SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
@@ -1976,34 +1780,13 @@ jobs:
             ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_zmq_decode.log 2>&1 &
           echo $! > ../../gw_zmq_decode.pid
           cd ../..
-          for i in $(seq 1 30); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ Decode server ready on port 8200"
-              break
-            fi
-            sleep 1
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server did not become ready within 30 seconds"
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode server"
 
       - name: "[ZMQ] Verify gateway socket connections"
         run: |
-          for i in $(seq 1 30); do
-            P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-            P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-            DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-            if echo "$P1"  | grep -q '"socket_status":"client:connected"' \
-               && echo "$P2"  | grep -q '"socket_status":"client:connected"' \
-               && echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill-1, Prefill-2 and Decode (client:connected) all verified"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2 socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -2024,7 +1807,6 @@ jobs:
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
-          sleep 2
 
       - name: "[ZMQ] Run vLLM bench serve through gateway"
         env:
@@ -2051,7 +1833,7 @@ jobs:
           [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
           [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
           [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
-          sleep 2
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
 
       - name: Check benchmark thresholds
         run: |
@@ -2176,6 +1958,11 @@ jobs:
 
       - name: Start etcd
         run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          ss -ltnp '( sport = :2379 or sport = :2380 )' || true
+          pgrep -af etcd || true
           # --data-dir under /tmp so it gets wiped between runs; bind to
           # 127.0.0.1 only — the Dynamo frontend and both cpp_server
           # backends run on this same runner.
@@ -2183,15 +1970,16 @@ jobs:
             --data-dir /tmp/etcd-data \
             --advertise-client-urls=http://127.0.0.1:2379 \
             --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
             > etcd.log 2>&1 &
           echo $! > etcd.pid
-          for i in $(seq 1 30); do
-            if etcdctl --endpoints=http://127.0.0.1:2379 endpoint health 2>/dev/null; then
-              echo "✅ etcd ready after ${i}s"
-              break
-            fi
-            sleep 1
-          done
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
           etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
 
       - name: Set up uv for Dynamo
@@ -2222,37 +2010,31 @@ jobs:
       # once for the whole fleet.
       - name: Start cpp_server backend 1 (port 8001)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend 1"
           cd cpp_server
           ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
           echo $! > ../backend1.pid
           cd ..
-          for i in $(seq 1 60); do
-            if curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null \
-                 | grep -q '"model_ready":true'; then
-              echo "✅ Backend 1 ready (:8001) after ${i}*2s"
-              break
-            fi
-            sleep 2
-          done
-          curl -sf "http://127.0.0.1:8001/tt-liveness" | grep -q '"model_ready":true' \
-            || { echo "ERROR: backend 1 not ready"; cat backend1.log; exit 1; }
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file backend1.pid \
+            --label "Dynamo backend 1"
 
       - name: Start cpp_server backend 2 (port 8002)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "Dynamo backend 2"
           cd cpp_server
           ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
           echo $! > ../backend2.pid
           cd ..
-          for i in $(seq 1 60); do
-            if curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null \
-                 | grep -q '"model_ready":true'; then
-              echo "✅ Backend 2 ready (:8002) after ${i}*2s"
-              break
-            fi
-            sleep 2
-          done
-          curl -sf "http://127.0.0.1:8002/tt-liveness" | grep -q '"model_ready":true' \
-            || { echo "ERROR: backend 2 not ready"; cat backend2.log; exit 1; }
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8002 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file backend2.pid \
+            --label "Dynamo backend 2"
 
       - name: Assert tokenizer + config bundle from cpp-build artifact
         # cpp_server/build.sh's tokenizer pre-fetch is the single source of
@@ -2275,6 +2057,7 @@ jobs:
 
       - name: Start single Dynamo frontend (port 8000)
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
           # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
           # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
           # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
@@ -2294,16 +2077,13 @@ jobs:
               --model-path "${MODEL_PATH}" \
               > frontend.log 2>&1 &
           echo $! > frontend.pid
-          for i in $(seq 1 60); do
-            if curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null \
-                 | grep -q '"data"'; then
-              echo "✅ Frontend ready (:8000) after ${i}*2s"
-              break
-            fi
-            sleep 2
-          done
-          curl -sf "http://127.0.0.1:8000/v1/models" | grep -q '"data"' \
-            || { echo "ERROR: frontend not ready"; cat frontend.log; exit 1; }
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
 
       - name: Verify both backends registered in etcd
         # cpp_server's etcd discovery writes one instance + one MDC entry per
@@ -2405,10 +2185,13 @@ jobs:
           for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
             [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
           done
-          sleep 2
-          # Belt + suspenders: nuke any leftover frontends/backends still bound.
+          # Belt + suspenders: nuke any leftover frontends/backends/etcd still
+          # bound, so a cancelled/timed-out run doesn't leak :2379/:2380 (or the
+          # data-dir lock) into the next job on this persistent runner.
           pkill -f 'dynamo.frontend' 2>/dev/null || true
           pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --port 8002 --label "Dynamo integration"
 
       - name: Check benchmark result
         run: |
@@ -2478,32 +2261,35 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Configure git for private submodules
-        working-directory: .
-        run: git config --local url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf "https://github.com/"
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Init tt-llm-engine submodule (without tt-metal)
-        working-directory: .
-        run: git -c url."https://x-access-token:${{ secrets.TT_LLM_ENGINE }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
-
-      - name: Cache C++ dependency sources
+      - name: Restore cached tokenizer files
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            tt-media-server/.cache/ccache
-          key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
           restore-keys: |
-            cpp-deps-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+            cpp-server-tokenizers-
 
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
-          ./build.sh --tsan --no-fresh
+          ./build.sh --tsan
+
+      - name: Archive C++ tokenizer bundle
+        run: |
+          cd cpp_server
+          tar -czf cpp-server-tokenizers.tar.gz tokenizers
+
+      - name: Upload C++ tokenizer bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-tokenizers
+          path: tt-media-server/cpp_server/cpp-server-tokenizers.tar.gz
+          retention-days: 1
 
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
@@ -2521,25 +2307,17 @@ jobs:
         env:
           TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
         run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
           cd cpp_server/build
           ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
           echo $! > ../../tsan_server.pid
           cd ../..
-          # 180s timeout (TSan startup is slower than Release)
-          for i in $(seq 1 90); do
-            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
-              echo "✅ TSan-instrumented server ready (after ${i}*2s)"
-              break
-            fi
-            sleep 2
-          done
-          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: TSan server did not become ready within 180s"
-            tail -100 tsan_server.log
-            exit 1
-          fi
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 180 \
+            --interval 2 \
+            --pid-file tsan_server.pid \
+            --label "TSan-instrumented server"
 
       - name: Run concurrent multi-turn workload (8 users x 8 turns)
         env:
@@ -2565,7 +2343,7 @@ jobs:
         if: always()
         run: |
           [ -f tsan_server.pid ] && kill $(cat tsan_server.pid) 2>/dev/null || true
-          sleep 3
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
 
       - name: Analyze TSan output
         if: always()
@@ -2684,10 +2462,10 @@ jobs:
           python${{ env.PYTHON_VERSION }} -m venv venv-${{ env.PYTHON_VERSION }}
           source venv-${{ env.PYTHON_VERSION }}/bin/activate
           export VLLM_TARGET_DEVICE="empty"
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r tt_model_runners/forge_runners/requirements.txt
-          pip install pytest pytest-asyncio
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r tt_model_runners/forge_runners/requirements.txt
+          python -m pip install pytest pytest-asyncio
 
       - name: Run CPU-only tests
         shell: bash
@@ -2717,7 +2495,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install diff-cover
-        run: pip install diff-cover
+        run: python -m pip install diff-cover
 
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
@@ -2896,7 +2674,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: pip install "ruamel.yaml==0.18.6" pytest pyyaml
+        run: python -m pip install "ruamel.yaml==0.18.6" pytest pyyaml
 
       - name: Verify values.yaml matches workflows/model_spec.py
         run: pytest tests/test_helm_generator/test_values_in_sync.py -v
@@ -2971,6 +2749,99 @@ jobs:
       - name: Check results
         run: |
           STATUS=0
+          EVENT_NAME="${{ github.event_name }}"
+          SHOULD_TEST="${{ needs.detect-changes.outputs.should-test }}"
+          CPP_SERVER="${{ needs.detect-changes.outputs.cpp-server }}"
+          PREFILL_GATEWAY="${{ needs.detect-changes.outputs.prefill-gateway }}"
+          MEDIA_SERVER_DEPS="${{ needs.detect-changes.outputs.media-server-deps }}"
+          CHARTS="${{ needs.detect-changes.outputs.charts }}"
+          HELM_INPUTS="${{ needs.detect-changes.outputs.helm-inputs }}"
+          FORGE_RUNNER="${{ needs.forge-runner-changes.outputs.should-run }}"
+
+          skipped_reason() {
+            case "$1" in
+              lint|unit-tests-main|unit-tests-media|unit-tests-summary|llm-streaming-performance)
+                if [[ "$SHOULD_TEST" != "true" ]]; then
+                  echo "no Python, dependency, or workflow paths matched"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              verify-media-server-install)
+                if [[ "$MEDIA_SERVER_DEPS" != "true" ]]; then
+                  echo "media-server dependency or Docker inputs did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              test-coverage)
+                if [[ "$EVENT_NAME" != "pull_request" ]]; then
+                  echo "coverage comments only run on pull_request events"
+                elif [[ "$SHOULD_TEST" != "true" ]]; then
+                  echo "no Python, dependency, or workflow paths matched"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              cpp-format-check|cpp-build|cpp-server-benchmarks|cpp-server-prefill-decode-split|dynamo-frontend-integration|cpp-tsan)
+                if [[ "$CPP_SERVER" != "true" ]]; then
+                  echo "cpp_server paths did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              prefill-gateway-format-check|prefill-gateway-build|prefill-gateway-tsan|cpp-server-gateway-split)
+                if [[ "$CPP_SERVER" != "true" && "$PREFILL_GATEWAY" != "true" ]]; then
+                  echo "neither cpp_server nor prefill_gateway paths changed"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              forge-runner-cpu-tests)
+                if [[ "$EVENT_NAME" != "pull_request" ]]; then
+                  echo "forge runner path detection only runs on pull_request events"
+                elif [[ "$FORGE_RUNNER" != "true" ]]; then
+                  echo "forge runner paths did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              helm-chart-validate)
+                if [[ "$CHARTS" != "true" && "$HELM_INPUTS" != "true" ]]; then
+                  echo "chart and Helm generator inputs did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              *)
+                echo "job condition evaluated false"
+                ;;
+            esac
+          }
+
+          JOB_ORDER=(
+            detect-changes
+            lint
+            verify-media-server-install
+            unit-tests-main
+            unit-tests-media
+            unit-tests-summary
+            forge-runner-changes
+            forge-runner-cpu-tests
+            llm-streaming-performance
+            test-coverage
+            cpp-format-check
+            cpp-build
+            cpp-server-benchmarks
+            cpp-server-prefill-decode-split
+            prefill-gateway-format-check
+            prefill-gateway-build
+            prefill-gateway-tsan
+            cpp-server-gateway-split
+            dynamo-frontend-integration
+            cpp-tsan
+            helm-chart-validate
+          )
           declare -A JOBS=(
             [detect-changes]="${{ needs.detect-changes.result }}"
             [lint]="${{ needs.lint.result }}"
@@ -2994,14 +2865,26 @@ jobs:
             [cpp-tsan]="${{ needs.cpp-tsan.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
-          for job in "${!JOBS[@]}"; do
+          {
+            echo "## Test Gate Results"
+            echo ""
+            echo "| Job | Result | Notes |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for job in "${JOB_ORDER[@]}"; do
             result="${JOBS[$job]}"
-            if [[ "$result" == "success" || "$result" == "skipped" ]]; then
+            note=""
+            if [[ "$result" == "skipped" ]]; then
+              note="$(skipped_reason "$job")"
+              echo "✅ $job: skipped ($note)"
+            elif [[ "$result" == "success" ]]; then
               echo "✅ $job: $result"
             else
               echo "❌ $job: $result"
               STATUS=1
             fi
+            echo "| \`$job\` | \`$result\` | $note |" >> "$GITHUB_STEP_SUMMARY"
           done
           if [[ "$STATUS" -ne 0 ]]; then
             echo "CI gate failed: one or more jobs failed or were cancelled"

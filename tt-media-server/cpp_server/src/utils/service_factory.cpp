@@ -65,8 +65,14 @@ void initializeServices() {
 
   auto aux = buildAuxiliaryServices(activeService);
 
+  auto sessionManager = std::make_shared<services::SessionManager>();
+
+  if (aux.disaggregation) {
+    aux.disaggregation->setSessionManager(sessionManager);
+  }
+
   c.initialize(std::move(aux.socket), std::move(aux.disaggregation),
-               std::make_shared<services::SessionManager>());
+               std::move(sessionManager));
 
   if (c.sessionManager()) {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");

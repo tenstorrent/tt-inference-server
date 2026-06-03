@@ -2,7 +2,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 cmake_minimum_required(VERSION 3.24)
-project(tt_media_server_cpp CXX)
+# C and ASM are enabled for the BLAKE3 C library (FetchContent below), whose
+# optimized SIMD paths compile .c and .S sources. Enabling them on the
+# top-level project ensures CMake detects the C/ASM toolchain up front instead
+# of failing once BLAKE3's subdirectory pulls them in.
+project(tt_media_server_cpp CXX C ASM)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -103,6 +107,21 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(xxhash)
 add_library(xxhash_lib INTERFACE)
 target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
+# BLAKE3 (official C library). The Dynamo frontend blake3-validates every file
+# it fetches from a Model Descriptor Card (config.json, tokenizer, chat
+# template, tokenizer_config); a placeholder/zero checksum makes it reject the
+# model and the backend never becomes routable. We hash those files at
+# registration time in src/dynamo/discovery.cpp. SOURCE_SUBDIR points at the
+# repo's c/ project, which enables the C/ASM languages it needs in its own scope.
+FetchContent_Declare(
+    blake3
+    GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
+    GIT_TAG        1.5.4
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  c
+)
+FetchContent_MakeAvailable(blake3)
 
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
@@ -601,7 +620,7 @@ add_executable(session_test
     tests/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -670,8 +689,11 @@ target_include_directories(llm_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-add_executable(main_integration_test
-    tests/integration/main_integration_test.cpp
+# Common server-stack sources shared by every integration-test executable.
+# Each integration binary boots the full stack in-process and differs only by
+# its test-entry .cpp (and the MODEL it pins), so the source list is shared here
+# rather than duplicated per target.
+set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
@@ -717,6 +739,11 @@ add_executable(main_integration_test
     src/sockets/zmq_socket_transport.cpp
     src/sockets/socket_transport_factory.cpp
 )
+
+add_executable(main_integration_test
+    tests/integration/main_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
+)
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
     Drogon::Drogon
@@ -724,6 +751,7 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -741,50 +769,7 @@ target_include_directories(main_integration_test PRIVATE
 
 add_executable(tool_calling_integration_test
     tests/integration/tool_calling_integration_test.cpp
-    src/services/llm_service.cpp
-    src/services/embedding_service.cpp
-    src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
-    src/services/session_manager.cpp
-    src/services/memory_services/memory_manager.cpp
-    src/domain/session.cpp
-    src/runtime/worker/worker_manager.cpp
-    src/runtime/worker/process_liveness.cpp
-    src/runtime/worker/single_process_worker.cpp
-    src/runtime/worker/single_process_worker_metrics.cpp
-    src/runtime/worker/worker_metrics_shm.cpp
-    src/utils/ipc_runner_factory.cpp
-    src/utils/mapper.cpp
-    src/utils/conversation_hasher.cpp
-    src/utils/service_factory.cpp
-    src/runtime/runners/embedding_runner.cpp
-    src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/media_ipc_runner.cpp
-    src/runtime/runners/image_ipc_runner.cpp
-    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
-    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
-    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
-    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
-    src/services/image_service.cpp
-    src/services/media_worker_scheduler.cpp
-    src/utils/image_codec.cpp
-    src/metrics/metrics.cpp
-    src/profiling/tracy.cpp
-    src/api/llm_controller.cpp
-    src/api/stream_event_formatter.cpp
-    src/api/health_controller.cpp
-    src/api/response_writer/response_writer.cpp
-    src/api/response_writer/non_stream_response_writer.cpp
-    src/api/response_writer/streaming_response_writer.cpp
-    src/api/route_registry.cpp
-    src/services/service_container.cpp
-    src/services/disaggregation_service.cpp
-    src/services/llm_pipeline.cpp
-    src/sockets/inter_server_service.cpp
-    src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
-    src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
 )
 target_link_libraries(tool_calling_integration_test PRIVATE
     llm_runner_lib
@@ -816,10 +801,12 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
-set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 if(ENABLE_BLAZE)
@@ -847,6 +834,13 @@ add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
+
+add_executable(test_apply_delta_prompt tests/test_apply_delta_prompt.cpp)
+target_link_libraries(test_apply_delta_prompt PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(test_apply_delta_prompt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+add_test(NAME ApplyDeltaPrompt COMMAND test_apply_delta_prompt)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -1026,6 +1020,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# BLAKE3 for Dynamo MDC file checksums (src/dynamo/discovery.cpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE blake3)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "gateway/affinity_cache.hpp"
+#include "gateway/gateway_metrics.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/prefill_selector.hpp"
 #include "utils/logger.hpp"
@@ -37,9 +38,12 @@ void Dispatcher::onPrefillRequest(
   auto sticky =
       (affinityKey != 0) ? affinity_cache_.lookup(affinityKey) : std::nullopt;
 
-  auto chosenOpt =
+  auto selection =
       selectPrefill(prefills, affinityKey, sticky, round_robin_cursor_);
-  if (!chosenOpt.has_value()) {
+  GatewayMetrics::instance().recordRoutingDecision(
+      routingReasonName(selection.reason));
+  GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
+  if (!selection.server_id.has_value()) {
     const auto summary = summarizePrefillEligibility(prefills);
     TT_LOG_WARN(
         "[Dispatcher] taskId={} no eligible prefill (total={}, healthy={}, "
@@ -50,10 +54,16 @@ void Dispatcher::onPrefillRequest(
     return;
   }
 
-  const std::string& chosen = *chosenOpt;
-  const bool usedSticky = sticky.has_value() && *sticky == chosen;
-  TT_LOG_INFO("[Dispatcher] taskId={} -> prefill='{}' sticky={} hash={}",
-              msg.task_id, chosen, usedSticky, affinityKey);
+  const std::string& chosen = *selection.server_id;
+  const bool usedSticky = selection.reason == PrefillRoutingReason::PrefixMatch;
+  if (usedSticky) {
+    GatewayMetrics::instance().observePrefixMatchDepth(
+        msg.registration_hashes.size());
+  }
+  TT_LOG_INFO(
+      "[Dispatcher] taskId={} route prefill='{}' reason={} sticky={} hash={}",
+      msg.task_id, chosen, routingReasonName(selection.reason), usedSticky,
+      affinityKey);
 
   registry_.incrementInflight(chosen);
   {
@@ -79,11 +89,16 @@ void Dispatcher::onPrefillRequest(
         "[Dispatcher] taskId={} send to prefill='{}' failed, failing task",
         msg.task_id, chosen);
     registry_.decrementInflight(chosen);
+    InFlightEntry failedEntry;
     {
       std::lock_guard<std::mutex> lock(inflight_mutex_);
+      auto it = in_flight_.find(msg.task_id);
+      if (it != in_flight_.end()) {
+        failedEntry = it->second;
+      }
       in_flight_.erase(msg.task_id);
     }
-    failTaskToDecode(msg.task_id, "prefill_send_failed");
+    failTaskToDecode(msg.task_id, "prefill_send_failed", &failedEntry);
   }
 }
 
@@ -109,18 +124,25 @@ void Dispatcher::onPrefillResult(const std::string& fromServerId,
   // Decrement against the responder, not the original assignee, so a stray
   // result still decrements the right counter.
   registry_.decrementInflight(fromServerId);
+  const auto latency = Clock::now() - entry->started_at;
 
   // Don't cache failures — they'd resend to the same broken prefill.
   if (!msg.error && entry->affinity_key != 0) {
     affinity_cache_.record(entry->affinity_key, fromServerId);
+    GatewayMetrics::instance().setRoutingTableSize(affinity_cache_.size());
   }
 
   if (msg.error) {
     TT_LOG_ERROR("[Dispatcher] taskId={} result error from prefill='{}'",
                  msg.task_id, fromServerId);
+    GatewayMetrics::instance().recordRequestFailed("prefill_result_error");
+    GatewayMetrics::instance().recordRequestCompleted(fromServerId, "error",
+                                                      latency);
   } else {
     TT_LOG_INFO("[Dispatcher] taskId={} result ok from prefill='{}' tokens={}",
                 msg.task_id, fromServerId, msg.tokens_generated);
+    GatewayMetrics::instance().recordRequestCompleted(fromServerId, "success",
+                                                      latency);
   }
 
   if (senders_.sendResultToDecode) {
@@ -151,40 +173,41 @@ void Dispatcher::onPrefillCancel(const tt::sockets::CancelPrefillMessage& msg) {
   if (senders_.sendCancelToPrefill) {
     sent = senders_.sendCancelToPrefill(entry->prefill_id, msg);
   }
+  GatewayMetrics::instance().recordCancel(sent);
   if (sent) {
     TT_LOG_INFO("[Dispatcher] taskId={} cancel -> prefill='{}'", msg.task_id,
                 entry->prefill_id);
     return;
   }
-  if (!sent) {
-    TT_LOG_WARN(
-        "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
-        "cancellation is best-effort",
-        msg.task_id, entry->prefill_id);
-  }
+  TT_LOG_WARN(
+      "[Dispatcher] taskId={} cancel send to prefill='{}' failed; "
+      "cancellation is best-effort",
+      msg.task_id, entry->prefill_id);
 }
 
 void Dispatcher::onCacheBlocksAdded(
     const tt::sockets::PrefillCacheBlocksAddedMessage& msg) {
   registry_.addCachedBlocks(msg.server_id, msg.block_hashes);
+  GatewayMetrics::instance().recordCacheBlocksAdded(msg.block_hashes.size());
 }
 
 void Dispatcher::onCacheBlocksEvicted(
     const tt::sockets::PrefillCacheBlocksEvictedMessage& msg) {
   registry_.evictCachedBlocks(msg.server_id, msg.block_hashes);
+  GatewayMetrics::instance().recordCacheBlocksEvicted(msg.block_hashes.size());
 }
 
 void Dispatcher::onPrefillDown(const std::string& serverId) {
   affinity_cache_.evictPrefill(serverId);
 
-  std::vector<uint32_t> orphaned;
+  std::vector<std::pair<uint32_t, InFlightEntry>> orphaned;
   {
     std::lock_guard<std::mutex> lock(inflight_mutex_);
     std::erase_if(in_flight_, [&orphaned, &serverId](const auto& task) {
       if (task.second.prefill_id != serverId) {
         return false;
       }
-      orphaned.push_back(task.first);
+      orphaned.push_back(task);
       return true;
     });
   }
@@ -192,10 +215,11 @@ void Dispatcher::onPrefillDown(const std::string& serverId) {
   if (!orphaned.empty()) {
     TT_LOG_WARN("[Dispatcher] prefill='{}' down, failing {} in-flight tasks",
                 serverId, orphaned.size());
+    GatewayMetrics::instance().recordPrefillDownTasks(orphaned.size());
   }
 
-  for (uint32_t taskId : orphaned) {
-    failTaskToDecode(taskId, "prefill_down");
+  for (const auto& [taskId, entry] : orphaned) {
+    failTaskToDecode(taskId, "prefill_down", &entry);
   }
 }
 
@@ -240,6 +264,7 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
     TT_LOG_WARN("[Dispatcher] taskId={} timed out on prefill='{}'", taskId,
                 entry.prefill_id);
     registry_.decrementInflight(entry.prefill_id);
+    GatewayMetrics::instance().recordTimeout(entry.prefill_id);
 
     tt::sockets::CancelPrefillMessage cancel;
     cancel.task_id = taskId;
@@ -273,12 +298,18 @@ void Dispatcher::onRequestTimeouts(Clock::time_point now) {
       }
     }
 
-    failTaskToDecode(taskId, "timeout");
+    failTaskToDecode(taskId, "timeout", &entry);
   }
 }
 
-void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason) {
+void Dispatcher::failTaskToDecode(uint32_t taskId, const std::string& reason,
+                                  const InFlightEntry* entry) {
   TT_LOG_ERROR("[Dispatcher] taskId={} failed: {}", taskId, reason);
+  GatewayMetrics::instance().recordRequestFailed(reason);
+  if (entry != nullptr && !entry->prefill_id.empty()) {
+    GatewayMetrics::instance().recordRequestCompleted(
+        entry->prefill_id, reason, Clock::now() - entry->started_at);
+  }
 
   tt::sockets::PrefillResultMessage err(taskId);
   err.error = true;

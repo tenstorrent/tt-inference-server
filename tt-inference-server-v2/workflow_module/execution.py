@@ -17,7 +17,7 @@ import time
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, ClassVar, List, Optional, Sequence, Tuple
 
 from report_module import (
     GenerateResult,
@@ -26,7 +26,10 @@ from report_module import (
     acceptance_criteria_check,
     format_acceptance_summary_markdown,
 )
-from test_module import MediaContext, MediaTaskType, run_media_task
+from test_module.task_types import MediaTaskType
+
+if TYPE_CHECKING:
+    from test_module.context import MediaContext
 
 from .blocks_sink import BlockAccumulator, get_default_accumulator
 
@@ -62,6 +65,24 @@ class WorkflowResult:
 
 
 @dataclass(frozen=True)
+class PrefixCacheOptions:
+    """Prefix-caching benchmark knobs forwarded to ``BenchmarksWorkflow``.
+
+    Threaded through
+    ``OrchestratorMetadata`` so the CLI entry point in ``run.py`` stays
+    decoupled from ``llm_module``.
+    """
+
+    preset: str = "full"
+    scenarios: Optional[str] = None
+    arrival_pattern: Optional[str] = None
+    request_rate: Optional[float] = None
+    scenarios_json: Optional[str] = None
+    trace_path: Optional[str] = None
+    auth_token: str = ""
+
+
+@dataclass(frozen=True)
 class OrchestratorMetadata:
     """Top-level metadata the per-task runners can't see themselves.
 
@@ -72,6 +93,7 @@ class OrchestratorMetadata:
     server_mode: Optional[str] = None
     run_command: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
+    prefix_cache: Optional[PrefixCacheOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -135,7 +157,7 @@ class WorkflowExecution(ABC):
             )
 
         try:
-            self.apply_acceptance_criteria(schema)
+            accepted, _blockers = self.apply_acceptance_criteria(schema)
             self.inject_metadata(schema)
             gen = self.generate_report(schema)
         except Exception as e:
@@ -149,10 +171,16 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        self.logger.info("=== Workflow done: %s (rc=0) ===", self.name)
+        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        return_code = 0 if accepted and not failed_tasks else 1
+        if failed_tasks:
+            self.logger.error(
+                "Workflow %s had %d failed task(s)", self.name, len(failed_tasks)
+            )
+        self.logger.info("=== Workflow done: %s (rc=%d) ===", self.name, return_code)
         return WorkflowResult(
             workflow_name=self.name,
-            return_code=0,
+            return_code=return_code,
             task_outcomes=task_outcomes,
             markdown_path=gen.markdown_path,
             json_path=gen.json_path,
@@ -169,6 +197,8 @@ class WorkflowExecution(ABC):
         return [self._dispatch_task(t) for t in self.task_types]
 
     def _dispatch_task(self, task_type: MediaTaskType) -> TaskOutcome:
+        from test_module.dispatch import run_media_task
+
         self.logger.info("→ task=%s", task_type.value)
         started = time.time()
         try:
@@ -176,7 +206,7 @@ class WorkflowExecution(ABC):
         except Exception as e:
             elapsed = time.time() - started
             self.logger.exception(
-                "✘ task=%s raised after %.1fs: %s", task_type.value, elapsed, e
+                "❌ task=%s raised after %.1fs: %s", task_type.value, elapsed, e
             )
             return TaskOutcome(task_type.value, 1, elapsed, None)
 
@@ -184,7 +214,7 @@ class WorkflowExecution(ABC):
         block_kind = block.kind if block is not None else None
         if exit_code != 0 or block is None:
             self.logger.error(
-                "✘ task=%s rc=%d block=%s (%.1fs)",
+                "❌ task=%s rc=%d block=%s (%.1fs)",
                 task_type.value,
                 exit_code,
                 block_kind,
@@ -192,7 +222,7 @@ class WorkflowExecution(ABC):
             )
         else:
             self.logger.info(
-                "✓ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
+                "✅ task=%s block=%s (%.1fs)", task_type.value, block_kind, elapsed
             )
         return TaskOutcome(task_type.value, exit_code, elapsed, block_kind)
 
@@ -239,6 +269,7 @@ class WorkflowExecution(ABC):
 
 __all__ = [
     "OrchestratorMetadata",
+    "PrefixCacheOptions",
     "TaskOutcome",
     "WorkflowExecution",
     "WorkflowResult",

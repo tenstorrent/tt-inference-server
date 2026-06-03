@@ -29,6 +29,7 @@
 #include "support/chat_request.hpp"
 #include "support/http_client.hpp"
 #include "support/http_response.hpp"
+#include "support/multiturn_prefix_cache.hpp"
 #include "support/test_server.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
@@ -43,6 +44,15 @@ void configureEnv() {
   setenv("MAX_NUM_SESSIONS", "4", 1);
   setenv("KV_CACHE_FIRST_BLOCK_SIZE", "32", 1);
   setenv("KV_CACHE_BLOCK_SIZE", "32", 1);
+  // Disable the prefix-cache hit threshold by default: most tests assert that
+  // ANY prefix match reuses the session (the pre-threshold contract). With the
+  // production default (80%), a legitimate follow-up can be rejected when the
+  // seed session has grown past the matched prefix — e.g. it gets re-registered
+  // with the generated tokens, so a 1-block opener match becomes <80% of a
+  // 2-block session and falls through to ALLOCATE, hanging tests that have the
+  // memory auto-responder turned off. PrefixCacheHitThreshold_* opts back into
+  // 80% explicitly to exercise the rejection path.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 }  // namespace
@@ -174,6 +184,13 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   // fewer tokens than the full prompt are sent.
   EXPECT_TRUE(followUpSeq->getNumPromptTokens() > 0)
       << "continuation should still send some tokens";
+  // Verify kv_position_id matches (matched_tokens - 1) for the 0-indexed KV
+  // position. With block_size=32, first block matched = 32 tokens, so
+  // kv_position_id = 31 (0-indexed position of last matched token).
+  ASSERT_TRUE(followUpSeq->getKVPositionId().has_value())
+      << "continuation should have kv_position_id set";
+  EXPECT_EQ(*followUpSeq->getKVPositionId(), 31u)
+      << "kv_position_id should be one less than matched tokens (0-indexed)";
   tt::test::WorkerResponse(followUpSeq->taskId)
       .token(43)
       .finalize()
@@ -240,6 +257,163 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
 
     convo.assistant("ok");  // simulate the assistant reply for the next turn
   }
+}
+
+TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
+  // Walk a 4-turn conversation and verify the EXACT number of prefix-cache
+  // matched tokens reported on every continuation.
+  //
+  // The contract: when turn N+1 arrives, the seed session registered by turn N
+  // covers [turn N's full prompt + the token(s) it generated]. Turn N+1's
+  // prompt shares turn N's full prompt as a prefix, then diverges — the seed
+  // continues with the generated token, the new prompt continues with the
+  // fed-back assistant reply. Prefix matching is block-aligned, so the matched
+  // prefix is exactly the COMPLETE blocks of turn N's full prompt:
+  //
+  //     matched_tokens(turn N+1) == block_size * floor(full_prompt(N) /
+  //     block_size)
+  //
+  // We don't hardcode any tokenizer output: each turn's full prompt length is
+  // reconstructed from the server's own reported numbers
+  //     full_prompt = delta_tokens_sent_to_worker + kv_position_id
+  // (the worker is sent the prompt minus the first matched_tokens-1 tokens).
+  // In general kv_position_id == matched_tokens-1 + accumulated_think_tokens.
+  // Think-filtering IS active in this harness (it defaults to DeepSeek-R1,
+  // whose think ids 128798/128799 are live), but this conversation is plain
+  // text and contains no <think>/</think> marker tokens, so
+  // accumulated_think_tokens is 0 and kv_position_id == matched_tokens-1. The
+  // assertions are therefore exact yet independent of the active tokenizer.
+  // This is the regression guard for the multiturn matched-token accounting:
+  // the pre-fix bug registered corrupt blocks past the matched prefix, so the
+  // next turn matched fewer blocks than the prior prompt held.
+  constexpr uint32_t kBlock =
+      32;  // KV_CACHE_(FIRST_)BLOCK_SIZE in configureEnv
+
+  // Each user turn is long enough to add at least one full 32-token block, so
+  // the matched prefix strictly grows turn over turn.
+  const std::vector<std::string> userMessages = {
+      "opening message for the matched token accounting test with plenty of "
+      "words so that this first turn alone tokenizes to well over thirty two "
+      "tokens and therefore forms at least one complete prefix cache block",
+      "second user turn that again carries more than enough words to push the "
+      "running conversation across another full block boundary for the cache",
+      "third user turn continuing the conversation with yet more words so the "
+      "prefix keeps growing by at least one more complete block this turn too",
+      "fourth and final user turn with a comfortable number of additional "
+      "words "
+      "to guarantee the matched prefix advances by another whole block again",
+  };
+  // A distinctive multi-word assistant reply fed back as history each turn. Its
+  // first token differs from the mock's generated token (42), so the seed and
+  // the next prompt diverge exactly at the end of the prior full prompt.
+  const std::string assistantReply =
+      "acknowledged and here is a sufficiently long assistant reply that is "
+      "fed "
+      "back into the conversation history on the following turn";
+
+  ChatRequest convo;
+  size_t priorFullPrompt = 0;  // full prompt token count of the previous turn
+  uint32_t prevMatched = 0;    // matched tokens on the previous continuation
+
+  for (size_t turn = 0; turn < userMessages.size(); ++turn) {
+    convo.user(userMessages[turn]).maxTokens(1).stream();
+    auto future = asyncRequest(convo);
+
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "turn " << turn;
+
+    if (turn == 0) {
+      // First turn: fresh allocation, nothing to match.
+      EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate";
+      EXPECT_FALSE(seq->getKVPositionId().has_value()) << "turn 0";
+      priorFullPrompt = seq->getNumPromptTokens();
+      ASSERT_GE(priorFullPrompt, kBlock)
+          << "opener must form at least one block";
+    } else {
+      // Every later turn must HIT the same seed session.
+      ASSERT_TRUE(seq->isContinuation())
+          << "turn " << turn << " must hit the prefix cache";
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn " << turn;
+
+      // No think-marker tokens in this plain-text conversation, so
+      // accumulated_think_tokens == 0 and matched == kv_position_id + 1.
+      const uint32_t matched = *seq->getKVPositionId() + 1;
+      const uint32_t expected =
+          kBlock * static_cast<uint32_t>(priorFullPrompt / kBlock);
+
+      EXPECT_EQ(matched, expected)
+          << "turn " << turn << ": matched tokens must equal the complete "
+          << "blocks of the prior full prompt (" << priorFullPrompt
+          << " tokens)";
+      EXPECT_EQ(matched % kBlock, 0u)
+          << "turn " << turn << ": matched prefix must be block-aligned";
+      EXPECT_GT(matched, prevMatched)
+          << "turn " << turn << ": matched prefix must grow as the "
+          << "conversation grows (it must not reset or alternate)";
+
+      // Reconstruct this turn's full prompt from the worker-facing delta plus
+      // the matched offset, for the next iteration's expectation.
+      priorFullPrompt = seq->getNumPromptTokens() + *seq->getKVPositionId();
+      prevMatched = matched;
+    }
+
+    mockWorkerResponse(seq->taskId);
+    future.get();
+    convo.assistant(assistantReply);  // history for the next turn
+  }
+}
+
+TEST_F(MainIntegrationTest,
+       MultiTurn_MatchedPrefixGrowsWithThinkMarkersInHistory) {
+  // Reasoning-model multiturn: the bug we fixed only bites when the prompt's
+  // conversation HISTORY carries <think>/</think> marker tokens (so the raw
+  // token positions diverge from the non-think block count the matched prefix
+  // is measured in). A real Kimi deployment produces that via its chat template
+  // prefilling <think> on every assistant turn; here we reproduce the identical
+  // on-the-wire condition with the working DeepSeek tokenizer by feeding back
+  // assistant replies that literally contain the <think>…</think> tags — those
+  // tag strings tokenize to the reasoning markers (128798/128799), which the
+  // prefix-cache hasher must filter. (A Kimi-tokenizer variant can't run in
+  // this in-process harness: cpp_server has no Kimi/tiktoken encoder — in
+  // production the Dynamo frontend tokenizes Kimi and sends token IDs — so a
+  // text-based Kimi request tokenizes to nothing here.)
+  //
+  // Pre-fix, the matched prefix plateaued (corrupt blocks past the matched
+  // prefix); the shared helper asserts it instead advances by a full block
+  // every turn.
+  const std::vector<std::string> userMessages = {
+      "opening reasoning turn for the think-marker multiturn prefix cache test "
+      "with plenty of words so this first message tokenizes to well over "
+      "thirty "
+      "two tokens and forms at least one complete prefix cache block by itself",
+      "second user turn that again carries more than enough words to push the "
+      "running conversation across another full block boundary for the cache",
+      "third user turn continuing the conversation with yet more words so the "
+      "matched prefix keeps growing by at least one more complete block again",
+      "fourth and final user turn with a comfortable number of additional "
+      "words "
+      "to guarantee the matched prefix advances by another whole block as well",
+  };
+  // Assistant reply fed back as history each turn, carrying reasoning markers
+  // so the prompt history contains think tokens that must be filtered from
+  // blocks.
+  const std::string assistantReply =
+      "<think> this is the hidden reasoning trace that is wrapped in think "
+      "markers and must be excluded from the prefix cache block hashes "
+      "</think> "
+      "and here is the visible assistant answer fed back into the next turn";
+
+  // Run at the PRODUCTION threshold (80%), not the suite's disabled default.
+  // This is what makes the test discriminating: the bug registered corrupt,
+  // duplicated blocks past the matched prefix, inflating the session block
+  // count so matched/session fell below 80% and the next turn was REJECTED
+  // (the alternating HIT/MISS we saw live). The fix keeps the session block
+  // count exact, so match% stays ~100% and every turn HITs. At threshold 0 the
+  // bug is masked, so 80% is required to guard it.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
+  tt::test::verifyMultiTurnPrefixGrowth(*server, userMessages, assistantReply,
+                                        /*blockSize=*/32);
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);  // restore suite default
 }
 
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
@@ -501,6 +675,116 @@ TEST_F(MainIntegrationTest, SystemMessage_DoesNotTriggerContinuation) {
 
   mockWorkerResponse(seq->taskId);
   future.get();
+}
+
+TEST_F(MainIntegrationTest, PrefixCacheHitThreshold_RejectsLowMatchPercentage) {
+  // Build a session with many blocks (long conversation), then send a short
+  // request that only matches the first block. With PREFIX_CACHE_HIT_THRESHOLD
+  // at 80% (default), the session should be rejected and a new one allocated.
+  //
+  // Setup: opener (1 block) -> many assistant/user turns (many more blocks)
+  // Test request: same opener only -> matches 1 block out of many -> rejected
+  //
+  // Steps 1-2 BUILD the long session and must run with the threshold disabled
+  // (the suite default, see configureEnv): each growth turn only matches the
+  // leading block(s) of the session-so-far, which is below 80%, so an active
+  // threshold would reject these legitimate continuations and the session
+  // would never grow. The threshold is enabled only for step 3 — the actual
+  // rejection assertion — and restored to "0" at the end.
+  server->setMemoryAutoRespond(false);
+
+  // Step 1: Create a long conversation to build up many blocks.
+  // The opener must be long enough to form at least one block (32 tokens).
+  const std::string opener =
+      "prefix-threshold-test-unique-opener-v2 with enough tokens to form "
+      "exactly one block when tokenized this needs at least thirty two tokens "
+      "after tokenization so we add more words here";
+
+  // First turn: establishes the session with opener
+  auto future1 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  tt::domain::ManageMemoryTask memReq1{};
+  server->memoryRequestQueue().receive(memReq1);
+  EXPECT_EQ(memReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
+
+  tt::domain::ManageMemoryResult memRes1{};
+  memRes1.taskId = memReq1.taskId;
+  memRes1.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes1.slotId = 0;
+  server->memoryResultQueue().push(memRes1);
+
+  auto seq1 = server->taskQueue().receive();
+  ASSERT_NE(seq1, nullptr);
+  EXPECT_FALSE(seq1->isContinuation())
+      << "First turn should not be continuation";
+
+  tt::test::WorkerResponse(seq1->taskId)
+      .token(100)
+      .finalize()
+      .sendTo(server->resultQueue());
+  future1.get();
+
+  // Step 2: Add several more turns to grow the session's block count.
+  // Each turn adds more blocks, making the session much longer than just
+  // opener.
+  ChatRequest convo;
+  convo.user(opener).assistant("ok");
+
+  for (int i = 0; i < 5; ++i) {
+    std::string longMessage =
+        "additional turn " + std::to_string(i) +
+        " with enough words to add more blocks to this session making it "
+        "much longer than the original opener so that a short request "
+        "matching only the opener will have a low match percentage";
+    convo.user(longMessage).maxTokens(1).stream();
+
+    auto future = asyncRequest(convo);
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_TRUE(seq->isContinuation())
+        << "Turn " << i << " should be continuation";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .token(101 + i)
+        .finalize()
+        .sendTo(server->resultQueue());
+    future.get();
+
+    convo.assistant("got it");
+  }
+
+  // Step 3: Enable the production 80% threshold, then send a NEW request with
+  // only the opener (no history). This matches only the first block of the
+  // multi-block session, so the ~10-20% match should be rejected.
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "80", 1);
+  auto future2 = asyncRequest(ChatRequest().user(opener).maxTokens(1).stream());
+
+  // Should allocate a NEW session because match percentage is below threshold.
+  // An ALLOCATE request indicates the prefix cache candidate was rejected.
+  tt::domain::ManageMemoryTask memReq2{};
+  server->memoryRequestQueue().receive(memReq2);
+  EXPECT_EQ(memReq2.action, tt::domain::MemoryManagementAction::ALLOCATE)
+      << "Low match percentage should trigger new ALLOCATE, not reuse session";
+
+  tt::domain::ManageMemoryResult memRes2{};
+  memRes2.taskId = memReq2.taskId;
+  memRes2.status = tt::domain::ManageMemoryStatus::SUCCESS;
+  memRes2.slotId = 1;  // Different slot
+  server->memoryResultQueue().push(memRes2);
+
+  auto seq2 = server->taskQueue().receive();
+  ASSERT_NE(seq2, nullptr);
+  EXPECT_FALSE(seq2->isContinuation())
+      << "Short request should NOT be continuation due to threshold rejection";
+
+  tt::test::WorkerResponse(seq2->taskId)
+      .token(200)
+      .finalize()
+      .sendTo(server->resultQueue());
+  future2.get();
+
+  server->setMemoryAutoRespond(true);
+  setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 }
 
 // ---------------------------------------------------------------------------
