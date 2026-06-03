@@ -28,8 +28,7 @@ from .runners import (
     ForgeResnetRunner,
     ForgeSegformerRunner,
     ForgeVitRunner,
-    # Disable Vovnet for now due to https://github.com/tenstorrent/tt-xla/issues/2390.
-    # ForgeVovnetRunner,
+    ForgeVovnetRunner,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -63,7 +62,7 @@ class TestForgeRunners:
             for runner_class in [
                 ForgeMobilenetv2Runner,
                 ForgeResnetRunner,
-                # ForgeVovnetRunner,
+                ForgeVovnetRunner,
                 ForgeEfficientnetRunner,
                 ForgeSegformerRunner,
                 # ForgeUnetRunner,
