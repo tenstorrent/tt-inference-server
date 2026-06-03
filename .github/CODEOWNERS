@@ -17,7 +17,12 @@ vllm-tt-metal/ @tstescoTT @bgoelTT @stisiTT
 run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
 workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners
 workflows/model_spec.py @tstescoTT @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
-workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
+workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
+
+# helm charts
+charts/tt-inference-server/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
+workflows/helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
+tests/test_helm_generator/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
 
 # benchmarking
 benchmarking/ @tstescoTT @bgoelTT @stisiTT @gtobarTT @arobergeTT @ssanjayTT @tenstorrent/tt-inference-server-codeowners
@@ -36,7 +41,8 @@ scripts/* @tstescoTT @tenstorrent/tt-inference-server-codeowners
 scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 
 # github actions
-.github/workflows/ @tstescoTT @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @tenstorrent/tt-inference-server-codeowners
+.github/CODEOWNERS @tstescoTT @bgoelTT @idjuricTT @dmadicTT @fivanovicTT @ztorlakTT
+.github/workflows/ @tstescoTT @bgoelTT @idjuricTT @acvejicTT @vmaksimovicTT @mjeremicTT @mdobrosavljevicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
 
 # docs
 docs/ @tenstorrent/tt-inference-server-codeowners

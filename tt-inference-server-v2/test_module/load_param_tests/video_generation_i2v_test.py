@@ -17,12 +17,12 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiohttp
-
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig
-from typing import TYPE_CHECKING
+
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -69,6 +69,7 @@ def _load_fixture_image_base64() -> str:
 class VideoGenerationI2VTest(BaseTest):
     KIND = "video_generation_i2v"
     TASK_TYPE = "video"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     """Happy-path test for the I2V endpoint end-to-end."""
 
