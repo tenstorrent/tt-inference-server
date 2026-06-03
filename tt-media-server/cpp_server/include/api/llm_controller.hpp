@@ -101,9 +101,15 @@ class LLMController : public drogon::HttpController<LLMController> {
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
    * ResponseWriter. Common to both streaming and non-streaming code paths.
+   *
+   * When `responseId` is non-empty the final chunk records the slot's cached
+   * prefix (prompt + generated tokens) under that id via `sessionManager`, so
+   * the next previous_response_id turn prefills only the new delta.
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
-      std::shared_ptr<ResponseWriter> writer, domain::Session* session);
+      std::shared_ptr<ResponseWriter> writer, domain::Session* session,
+      std::shared_ptr<services::SessionManager> sessionManager,
+      std::string responseId);
 };
 
 }  // namespace tt::api

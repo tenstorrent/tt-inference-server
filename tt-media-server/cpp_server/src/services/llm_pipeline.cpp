@@ -115,10 +115,10 @@ void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
 
 /**
  * Response-id continuation delta. Shrinks `req.prompt` (token-id vector) to the
- * suffix the slot has not cached yet: tokens[cachedLen:]. `cachedLen` is the
- * prompt length the matched session recorded last turn (its full prompt token
- * count), which equals the slot's committed KV prefix — so only the new turn
- * is prefilled, matching the content-hash path's delta without any header
+ * suffix the slot has not cached yet: tokens[cachedLen:]. `cachedLen` is what
+ * the matched session committed to its slot last turn (that turn's full prompt
+ * + generated tokens), which equals the slot's KV prefix — so only the new
+ * turn is prefilled, matching the content-hash path's delta without any header
  * detection.
  *
  * Returns the full token count (pre-shrink) so the caller can re-record it as
@@ -128,18 +128,16 @@ void applyDeltaPrompt(tt::domain::llm::LLMRequest& req,
  */
 size_t applyResponseIdDelta(tt::domain::llm::LLMRequest& req,
                             size_t cachedLen) {
-  auto* toks = std::get_if<std::vector<int>>(&req.prompt);
-  if (toks == nullptr) {
-    return 0;  // String prompt: not the Dynamo token path.
+  auto* tokens = std::get_if<std::vector<int>>(&req.prompt);
+  if (tokens == nullptr) {
+    return 0;
   }
-  const size_t fullLen = toks->size();
+  const size_t fullLen = tokens->size();
   if (cachedLen == 0 || cachedLen >= fullLen) {
-    // Nothing cached yet, or the recorded prefix is stale/longer than the new
-    // prompt — prefill the whole thing rather than risk dropping context.
     return fullLen;
   }
-  std::vector<int> delta(toks->begin() + static_cast<std::ptrdiff_t>(cachedLen),
-                         toks->end());
+  std::vector<int> delta(tokens->begin() + static_cast<std::ptrdiff_t>(cachedLen),
+                         tokens->end());
   req.prompt_tokens_count = static_cast<int>(delta.size());
   req.prompt = std::move(delta);
   return fullLen;
@@ -182,8 +180,8 @@ void LLMPipeline::resolveSession(
           : "none",
       routingInfo.registrationHash);
 
-  // Layer 1a: Responses API continuation. When the frontend supplies a
-  // previous_response_id we route by that id instead of the content-prefix
+  // Layer 1a: Responses API continuation. When the previous_response_id is
+  // supplied, we route by that id instead of the content-prefix
   // hash (parallel to the prefixIndex path below). The token delta is still
   // computed by the hasher so we only prefill the new turn.
   const bool useResponseId =
@@ -212,8 +210,8 @@ void LLMPipeline::resolveSession(
         req->session = sessionManager_->getSession(acquired->sessionId);
         req->continuation = true;
         // Prefill only the delta: the slot already holds the first
-        // `cachedPromptLen` tokens (recorded last turn), so dispatch
-        // tokens[cachedPromptLen:].
+        // `cachedPromptLen` tokens (prior turn's prompt + generated, recorded
+        // at that turn's completion), so dispatch tokens[cachedPromptLen:].
         const size_t fullLen =
             applyResponseIdDelta(*req, acquired->cachedPromptLen);
         TT_LOG_INFO(
@@ -221,8 +219,9 @@ void LLMPipeline::resolveSession(
             "fullLen={} deltaTokens={}",
             req->task_id, acquired->cachedPromptLen, fullLen,
             req->prompt_tokens_count);
-        // Re-key the session under this turn's id and record this turn's full
-        // prompt length as the next turn's cached prefix.
+        // Re-key the session under this turn's id with the full prompt length
+        // as a lower-bound cached prefix; the completion hook bumps it to
+        // prompt + generated tokens once this turn finishes.
         if (req->responseId.has_value()) {
           sessionManager_->registerResponseId(acquired->sessionId,
                                               *req->responseId, fullLen);
@@ -333,9 +332,9 @@ void LLMPipeline::resolveSession(
         mgr->registerPrefixHash(session.getSessionId(),
                                 routingInfo.registrationHash);
         // Also register under this turn's response id (when present) so the
-        // next request's previous_response_id resolves to this session/slot,
-        // recording the full prompt length now in the slot as the cached
-        // prefix the next turn prefills on top of.
+        // next request's previous_response_id resolves to this session/slot.
+        // The full prompt length is a lower-bound cached prefix; the
+        // completion hook bumps it to prompt + generated tokens.
         if (req->responseId.has_value()) {
           mgr->registerResponseId(
               session.getSessionId(), *req->responseId,

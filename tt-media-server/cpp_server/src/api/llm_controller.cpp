@@ -24,6 +24,7 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/service_container.hpp"
+#include "services/session_manager.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
@@ -263,13 +264,26 @@ ResponseWriterParams LLMController::makeWriterParams(
 }
 
 std::function<void(const LLMStreamChunk&, bool)>
-LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
-                                     domain::Session* session) {
-  return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
-                                               bool isFinal) {
+LLMController::makeStreamingCallback(
+    std::shared_ptr<ResponseWriter> writer, domain::Session* session,
+    std::shared_ptr<services::SessionManager> sessionManager,
+    std::string responseId) {
+  return [writer = std::move(writer), session,
+          sessionManager = std::move(sessionManager),
+          responseId = std::move(responseId)](const LLMStreamChunk& chunk,
+                                              bool isFinal) {
     if (writer->isDone()) return;
     if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
     if (isFinal) {
+      // Record the slot's cached prefix (full prompt + generated tokens) under
+      // this turn's response id before releasing the session, so a follow-up
+      // previous_response_id turn sees the bumped length and prefills only the
+      // new delta. Done before clearInFlight so the next turn can't race in
+      // and read the stale resolve-time (prompt-only) length.
+      if (session && sessionManager && !responseId.empty()) {
+        sessionManager->registerResponseId(session->getSessionId(), responseId,
+                                           writer->totalProcessedTokens());
+      }
       if (session) session->clearInFlight();
       writer->finalize();
     }
@@ -327,7 +341,9 @@ void LLMController::handleStreaming(
         try {
           pipeline->dispatchGeneration(
               *reqPtr, sessionInfo,
-              makeStreamingCallback(writer, reqPtr->session));
+              makeStreamingCallback(writer, reqPtr->session,
+                                    pipeline->sessionManager(),
+                                    reqPtr->responseId.value_or("")));
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
@@ -393,7 +409,9 @@ void LLMController::handleNonStreaming(
         try {
           pipeline->dispatchGeneration(
               *reqPtr, sessionInfo,
-              makeStreamingCallback(writer, reqPtr->session));
+              makeStreamingCallback(writer, reqPtr->session,
+                                    pipeline->sessionManager(),
+                                    reqPtr->responseId.value_or("")));
         } catch (const services::QueueFullException& e) {
           writer->sendError(drogon::k429TooManyRequests, e.what(),
                             "rate_limit_exceeded");

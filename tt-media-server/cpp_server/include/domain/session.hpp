@@ -65,15 +65,6 @@ class Session {
   }
 
   /**
-   * Number of leading prompt tokens already committed to this session's slot
-   * KV cache (the full prompt length of the turn last prefilled into the
-   * slot). On a continuation the next request only needs to prefill
-   * tokens[cachedPromptLen:]. 0 until the first turn is registered.
-   */
-  size_t getCachedPromptLen() const { return cached_prompt_len_; }
-  void setCachedPromptLen(size_t len) { cached_prompt_len_ = len; }
-
-  /**
    * Get the assigned slot ID.
    * @return Slot ID, or max uint32_t if unassigned
    */
@@ -118,9 +109,9 @@ class Session {
   std::string session_id_;   // Stable UUID, never changes
   size_t hash_;              // Current content hash, changes with conversation
   std::string response_id_;  // Current response id (Responses API key), empty
-                             // until registered
-  size_t cached_prompt_len_ =
-      0;  // Prompt tokens already in the slot KV cache (for delta prefill)
+                             // until registered. Kept on the session only so
+                             // close/evict can remove the matching index entry;
+                             // the cached prefix length lives in the index.
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;

@@ -50,8 +50,9 @@ class SessionManager {
     std::string sessionId;
     uint32_t slotId;
     uint32_t numberOfMatchedTokens = 0;
-    // Prompt tokens already cached in the slot (prior turn's full prompt
-    // length). Used by the response-id path to prefill only tokens[len:].
+    // Tokens already committed to the slot's KV cache from the prior turn
+    // (that turn's full prompt + generated tokens). Used by the response-id
+    // path to prefill only tokens[cachedPromptLen:].
     size_t cachedPromptLen = 0;
   };
 
@@ -131,18 +132,22 @@ class SessionManager {
 
   /**
    * Route future lookups of `responseId` to this session, and record the
-   * prompt-token length now committed to the slot's KV cache so the next turn
-   * can prefill only the delta. Mirrors registerPrefixHash: if the session
-   * was previously registered under a different response id, it is moved to
-   * the new id's index entry.
+   * number of tokens now committed to the slot's KV cache so the next turn
+   * can prefill only the delta. If the session was previously registered
+   * under a different response id, it is moved to the new id's index entry.
    *
-   * `cachedPromptLen` is the full prompt token count of the turn just
-   * dispatched (after this turn the slot holds that prefix); pass 0 to leave
-   * the recorded length unchanged.
+   * Called twice per turn:
+   *   - at resolve time with the turn's full prompt length (a safe lower
+   *     bound, so a lookup that races the completion still under-prefills
+   *     rather than skipping uncached tokens), and
+   *   - at completion with full prompt + generated tokens (the actual slot
+   *     occupancy), which is what the next turn prefills on top of.
+   *
+   * `cachedLen` is that token count; pass 0 to leave the recorded length
+   * unchanged (only (re)pointing the id at this session).
    */
   void registerResponseId(const std::string& sessionId,
-                          const std::string& responseId,
-                          size_t cachedPromptLen);
+                          const std::string& responseId, size_t cachedLen);
 
  private:
   struct PendingAllocation {
@@ -174,10 +179,9 @@ class SessionManager {
   void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
   void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
 
-  // Response-id index helpers: maintain responseIdIndex alongside the sessions
-  // map. Mirror the prefix-index helpers above.
-  void addToResponseIdIndex(const std::string& sessionId,
-                            const std::string& responseId);
+  // Drop the responseId -> session mapping when it points at `sessionId`
+  // (called on close/evict). No-op if the id is empty or has been re-pointed
+  // at a different session.
   void removeFromResponseIdIndex(const std::string& sessionId,
                                  const std::string& responseId);
 
@@ -196,11 +200,20 @@ class SessionManager {
   // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
   utils::ConcurrentMap<uint64_t, std::vector<PrefixIndexEntry>> prefixIndex;
 
-  // Secondary index: previous_response_id -> sessions registered under it.
-  // Parallel to prefixIndex but keyed on the Responses API response id instead
-  // of a content hash; no block hashing is involved. Used by
-  // tryAcquireByResponseId / registerResponseId.
-  utils::ConcurrentMap<std::string, std::list<std::string>> responseIdIndex;
+  // Value stored in responseIdIndex: the single session a given
+  // previous_response_id resolves to, plus the slot's cached prefix length
+  // (prior turn's full prompt + generated tokens) for delta prefill.
+  struct ResponseIdEntry {
+    std::string sessionId;
+    size_t cachedLen = 0;
+  };
+
+  // Secondary index: previous_response_id -> the session registered under it.
+  // Unlike prefixIndex (where many sessions can share a content hash), response
+  // ids are unique per turn, so each id maps to exactly one session and the
+  // value is a single entry rather than a list. Used by tryAcquireByResponseId
+  // / registerResponseId.
+  utils::ConcurrentMap<std::string, ResponseIdEntry> responseIdIndex;
 
   std::unique_ptr<ipc::boost::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::boost::MemoryResultQueue> memoryResultQueue;
