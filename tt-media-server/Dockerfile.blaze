@@ -64,14 +64,16 @@ ENV PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env
 # but some configs symlink build/ → build_Release/.
 ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build_Release/lib:${TT_METAL_HOME}/build/lib:/opt/tt-llm-engine/lib
 # Lets cpp_server's CMake find_package(tt-llm-engine CONFIG) succeed.
-# IMPORTANT: point at the lib/cmake/<pkg> install-tree layout for tt-metalium,
-# NOT at build_Release/ directly — tt-metal also emits a non-relocatable
-# build-tree config at build_Release/tt-metalium-config.cmake that
-# `include()`s a sibling Metalium.cmake which is not present in the engine
-# image. With prefix = build_Release/, CMake finds the broken config first.
-# This matches what tt-llm-engine's own build.sh --with-metal does
-# ("${TT_METAL_SOURCE_DIR}/build/lib/cmake" on its prefix path).
-ENV CMAKE_PREFIX_PATH=/opt/tt-llm-engine:${TT_METAL_HOME}/build_Release/lib/cmake
+# IMPORTANT: this mirrors what tt-llm-engine's own build.sh --with-metal does:
+#   CMAKE_PREFIX_PATH=".../build/lib/cmake;.../build_Release/_deps/nlohmann_json-build"
+# Three components, each addressing a specific find_package call in the chain:
+#   1. /opt/tt-llm-engine                                  → find_package(tt-llm-engine)
+#   2. .../tt-metal/build_Release/lib/cmake                → find_dependency(TT-Metalium) [transitive]
+#       (NOT .../build_Release/ — tt-metal also emits a non-relocatable build-
+#        tree config there which includes a sibling Metalium.cmake not present
+#        in the engine image; with that prefix CMake finds the broken one first.)
+#   3. .../tt-metal/build_Release/_deps/nlohmann_json-build → find_dependency(nlohmann_json) [transitive from tt-metalium-config]
+ENV CMAKE_PREFIX_PATH=/opt/tt-llm-engine:${TT_METAL_HOME}/build_Release/lib/cmake:${TT_METAL_HOME}/build_Release/_deps/nlohmann_json-build
 
 # System deps for the cpp_server build itself (Drogon + tokenizers-cpp + misc).
 # The heavy engine-build deps (protobuf-compiler, libprotobuf-dev) are no longer
@@ -203,7 +205,7 @@ ENV ENVIRONMENT=development \
     PYTHONPATH=/opt/tt-llm-engine-src/tt-metal \
     PYTHON_ENV_DIR=/opt/tt-llm-engine-src/tt-metal/python_env \
     LD_LIBRARY_PATH=/opt/tt-llm-engine-src/tt-metal/build_Release/lib:/opt/tt-llm-engine-src/tt-metal/build/lib:/opt/tt-llm-engine/lib \
-    CMAKE_PREFIX_PATH=/opt/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib/cmake \
+    CMAKE_PREFIX_PATH=/opt/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib/cmake:/opt/tt-llm-engine-src/tt-metal/build_Release/_deps/nlohmann_json-build \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
 RUN apt-get update && apt-get install -y \
