@@ -1103,3 +1103,7 @@ templates:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: EXPERIMENTAL
   has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes

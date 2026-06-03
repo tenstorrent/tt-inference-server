@@ -12964,7 +12964,10 @@
             "subdevice_type": null,
             "uses_tensor_model_cache": true,
             "has_builtin_warmup": true,
-            "metadata": {},
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            },
             "cli_args": {}
           }
         }
