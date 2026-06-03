@@ -813,10 +813,10 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     def create_pipeline(self):
         try:
             from models.tt_dit.experimental.pipelines.pipeline_wan_lora import (
-                WanLoraPipelineI2V,
+                WanPipelineI2VLora,
             )
 
-            return WanLoraPipelineI2V.create_pipeline(
+            return WanPipelineI2VLora.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
                 width=self.resolution.width,
