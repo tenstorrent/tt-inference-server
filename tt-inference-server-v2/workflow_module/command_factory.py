@@ -11,6 +11,7 @@ import logging
 import os
 import shlex
 import sys
+from pathlib import Path
 from typing import List, Optional, Sequence
 
 from workflows.model_spec import get_runtime_model_spec
@@ -19,7 +20,7 @@ from workflows.workflow_types import DeviceTypes
 
 from test_module import MediaContext
 
-from .commands import Command, WorkflowCommand
+from .commands import Command, SummaryCommand, WorkflowCommand
 from .execution import OrchestratorMetadata, PrefixCacheOptions
 
 logger = logging.getLogger(__name__)
@@ -34,28 +35,67 @@ class CommandFactory:
 
     @staticmethod
     def build(args: argparse.Namespace) -> List[Command]:
-        ctx = _build_context(args)
         metadata = _build_orchestrator_metadata(args)
-        commands: List[Command] = [
-            WorkflowCommand(
-                ctx=ctx,
-                workflow_name=args.workflow,
-                orchestrator_metadata=metadata,
-                num_prompts=args.num_prompts,
-            ),
-        ]
-        return commands
+        repeat = max(1, int(getattr(args, "repeat", 1) or 1))
+        if repeat == 1:
+            return [_workflow_command(args, _build_context(args), metadata)]
+        return _build_repeated_commands(args, metadata, repeat)
 
 
-def _build_context(args: argparse.Namespace) -> MediaContext:
+def _workflow_command(
+    args: argparse.Namespace,
+    ctx: MediaContext,
+    metadata: OrchestratorMetadata,
+    *,
+    continue_on_failure: bool = False,
+) -> WorkflowCommand:
+    return WorkflowCommand(
+        ctx=ctx,
+        workflow_name=args.workflow,
+        orchestrator_metadata=metadata,
+        num_prompts=args.num_prompts,
+        continue_on_failure=continue_on_failure,
+    )
+
+
+def _build_repeated_commands(
+    args: argparse.Namespace,
+    metadata: OrchestratorMetadata,
+    repeat: int,
+) -> List[Command]:
+    """N per-run workflows into ``run_NN/`` subfolders + a final summary."""
+    leaf = f"{args.model}_{args.device}_{args.workflow}"
+    container = Path(args.output_dir) / leaf
+    commands: List[Command] = []
+    for run_index in range(1, repeat + 1):
+        run_output = container / f"run_{run_index:02d}" / leaf
+        ctx = _build_context(args, output_path=run_output)
+        commands.append(
+            _workflow_command(args, ctx, metadata, continue_on_failure=True)
+        )
+    commands.append(
+        SummaryCommand(
+            container_dir=container,
+            summary_output_dir=container / "summary",
+        )
+    )
+    return commands
+
+
+def _build_context(
+    args: argparse.Namespace, output_path: Optional[Path] = None
+) -> MediaContext:
     model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
 
     device = DeviceTypes.from_string(args.device)
+    runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
-    output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+    if output_path is None:
+        output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+    output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
     eval_cfg = _resolve_eval_config(args.model)
@@ -68,6 +108,7 @@ def _build_context(args: argparse.Namespace) -> MediaContext:
         output_path=str(output_path),
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
+        runtime_config=runtime_config,
     )
 
 
