@@ -60,7 +60,6 @@ def _configure_logging():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     logging.getLogger("server_tests").setLevel(logging.INFO)
-    logging.getLogger("whisper_eval_test").setLevel(logging.INFO)
 
 
 class TestFrameworkRunner:

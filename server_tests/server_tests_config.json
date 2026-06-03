@@ -513,68 +513,6 @@
                 "mock_mode": false
             }
         },
-        "AudioTranscriptionLoadTest": {
-            "module": "server_tests.test_cases.audio_transcription_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionParamTest": {
-            "module": "server_tests.test_cases.audio_transcription_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk5Test": {
-            "module": "server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk30Test": {
-            "module": "server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
         "DeviceStabilityTest": {
             "module": "server_tests.test_cases.device_stability_test",
             "markers": [

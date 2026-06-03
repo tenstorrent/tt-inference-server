@@ -748,89 +748,6 @@ class TestCnnMatrixExpansion:
         assert suite_map["resnet-50-n150"]["weights"] == ["resnet-50"]
 
 
-class TestAudioMatrixExpansion:
-    """Validate that the migrated audio.json produces the same suites as before."""
-
-    ORIGINAL_AUDIO_IDS = {
-        "distil-whisper-n150",
-        "distil-whisper-t3k",
-        "distil-whisper-galaxy",
-        "whisper-n150",
-        "whisper-t3k",
-        "whisper-galaxy",
-    }
-
-    def test_audio_suite_count(self):
-        suites = load_suite_files_by_category("audio")
-        assert len(suites) == 6
-
-    def test_audio_suite_ids(self):
-        suites = load_suite_files_by_category("audio")
-        ids = {s["id"] for s in suites}
-        assert ids == self.ORIGINAL_AUDIO_IDS
-
-    def test_audio_n150_explicit_suites(self):
-        """n150 suites are explicit (not matrix-expanded) due to unique test lists."""
-        suites = load_suite_files_by_category("audio")
-        suite_map = {s["id"]: s for s in suites}
-
-        dw_n150 = suite_map["distil-whisper-n150"]
-        assert len(dw_n150["test_cases"]) == 4
-        templates = [tc["template"] for tc in dw_n150["test_cases"]]
-        assert "DeviceStabilityTest" in templates
-
-        w_n150 = suite_map["whisper-n150"]
-        assert len(w_n150["test_cases"]) == 3
-        templates = [tc["template"] for tc in w_n150["test_cases"]]
-        assert "AudioTranscriptionParamTest" not in templates
-
-    def test_audio_t3k_model_targets(self):
-        """t3k suites should have model-specific timing targets from model_targets."""
-        suites = load_suite_files_by_category("audio")
-        suite_map = {s["id"]: s for s in suites}
-
-        dw_t3k = suite_map["distil-whisper-t3k"]
-        assert len(dw_t3k["test_cases"]) == 4
-        load_30s = dw_t3k["test_cases"][0]
-        assert load_30s["targets"]["audio_transcription_time"] == 4
-
-        w_t3k = suite_map["whisper-t3k"]
-        load_30s = w_t3k["test_cases"][0]
-        assert load_30s["targets"]["audio_transcription_time"] == 5
-
-    def test_audio_galaxy_dp2_tests(self):
-        """Galaxy suites should include DP2 tests with shared targets."""
-        suites = load_suite_files_by_category("audio")
-        suite_map = {s["id"]: s for s in suites}
-
-        for suite_id in ["distil-whisper-galaxy", "whisper-galaxy"]:
-            suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 6
-            dp2_5 = suite["test_cases"][0]
-            assert dp2_5["template"] == "AudioTranscriptionLoadDp2Chunk5Test"
-            assert dp2_5["targets"] == {"num_concurrent": 64, "dataset": "60s"}
-
-    def test_audio_galaxy_model_specific_targets(self):
-        suites = load_suite_files_by_category("audio")
-        suite_map = {s["id"]: s for s in suites}
-
-        dw_galaxy = suite_map["distil-whisper-galaxy"]
-        load_30s = next(
-            tc
-            for tc in dw_galaxy["test_cases"]
-            if tc["description"] == "Test audio 30s load"
-        )
-        assert load_30s["targets"]["audio_transcription_time"] == 2
-
-        w_galaxy = suite_map["whisper-galaxy"]
-        load_30s = next(
-            tc
-            for tc in w_galaxy["test_cases"]
-            if tc["description"] == "Test audio 30s load"
-        )
-        assert load_30s["targets"]["audio_transcription_time"] == 4
-
-
 class TestEmbeddingMatrixExpansion:
     """Validate that the migrated embedding.json produces the same suites as before."""
 
@@ -1052,7 +969,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 57
+        assert len(all_suites) == 51
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()
