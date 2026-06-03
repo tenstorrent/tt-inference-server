@@ -363,7 +363,8 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
   }
 }
 
-TEST_F(MainIntegrationTest, MultiTurn_MatchedPrefixGrowsWithThinkMarkersInHistory) {
+TEST_F(MainIntegrationTest,
+       MultiTurn_MatchedPrefixGrowsWithThinkMarkersInHistory) {
   // Reasoning-model multiturn: the bug we fixed only bites when the prompt's
   // conversation HISTORY carries <think>/</think> marker tokens (so the raw
   // token positions diverge from the non-think block count the matched prefix
@@ -382,20 +383,24 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedPrefixGrowsWithThinkMarkersInHistor
   // every turn.
   const std::vector<std::string> userMessages = {
       "opening reasoning turn for the think-marker multiturn prefix cache test "
-      "with plenty of words so this first message tokenizes to well over thirty "
+      "with plenty of words so this first message tokenizes to well over "
+      "thirty "
       "two tokens and forms at least one complete prefix cache block by itself",
       "second user turn that again carries more than enough words to push the "
       "running conversation across another full block boundary for the cache",
       "third user turn continuing the conversation with yet more words so the "
       "matched prefix keeps growing by at least one more complete block again",
-      "fourth and final user turn with a comfortable number of additional words "
+      "fourth and final user turn with a comfortable number of additional "
+      "words "
       "to guarantee the matched prefix advances by another whole block as well",
   };
-  // Assistant reply fed back as history each turn, carrying reasoning markers so
-  // the prompt history contains think tokens that must be filtered from blocks.
+  // Assistant reply fed back as history each turn, carrying reasoning markers
+  // so the prompt history contains think tokens that must be filtered from
+  // blocks.
   const std::string assistantReply =
       "<think> this is the hidden reasoning trace that is wrapped in think "
-      "markers and must be excluded from the prefix cache block hashes </think> "
+      "markers and must be excluded from the prefix cache block hashes "
+      "</think> "
       "and here is the visible assistant answer fed back into the next turn";
 
   // Run at the PRODUCTION threshold (80%), not the suite's disabled default.
