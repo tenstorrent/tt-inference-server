@@ -367,8 +367,8 @@ class GatewayHarness {
     decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
         tt::sockets::tags::PREFILL_HEALTH_REQUEST,
         [this](const tt::sockets::PrefillHealthRequestMessage&) {
-          const auto health = buildGatewayHealthStatus(
-              registry_, "tcp", decodeSm_.isConnected());
+          const auto health = buildGatewayHealthStatus(registry_, "tcp",
+                                                       decodeSm_.isConnected());
           tt::sockets::PrefillHealthStatusMessage response;
           response.ready = health.ready;
           response.error = health.error;
@@ -585,8 +585,8 @@ class ZmqRouterGatewayHarness {
     decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
         tt::sockets::tags::PREFILL_HEALTH_REQUEST,
         [this](const tt::sockets::PrefillHealthRequestMessage&) {
-          const auto health = buildGatewayHealthStatus(
-              registry_, "zmq", decodeSm_.isConnected());
+          const auto health = buildGatewayHealthStatus(registry_, "zmq",
+                                                       decodeSm_.isConnected());
           tt::sockets::PrefillHealthStatusMessage response;
           response.ready = health.ready;
           response.error = health.error;

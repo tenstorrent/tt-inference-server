@@ -440,8 +440,8 @@ int main(int argc, char** argv) {
 
   decodeSm.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
       tt::sockets::tags::PREFILL_HEALTH_REQUEST,
-      [&decodeSm, &healthProvider](
-          const tt::sockets::PrefillHealthRequestMessage&) {
+      [&decodeSm,
+       &healthProvider](const tt::sockets::PrefillHealthRequestMessage&) {
         const auto health = healthProvider();
         tt::sockets::PrefillHealthStatusMessage response;
         response.ready = health.ready;
