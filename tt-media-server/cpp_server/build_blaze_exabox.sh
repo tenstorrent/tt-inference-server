@@ -15,8 +15,8 @@
 # Use --fresh-engine to force a rebuild of tt-metal + tt-llm-engine.
 #
 # Usage:
-#   ./build_blaze.sh
-#   ./build_blaze.sh --fresh-engine
+#   ./build_blaze_exabox.sh
+#   ./build_blaze_exabox.sh --fresh-engine
 #
 # After building, run the server with:
 #   export LD_LIBRARY_PATH="$(pwd)/tt-llm-engine/tt-metal/build/lib:$LD_LIBRARY_PATH"
@@ -130,12 +130,12 @@ cat <<EOF
 ==========================================================================
   Blaze build complete.
 ==========================================================================
-Run the server with the real decode scheduler:
+Run the server (real decode scheduler via pipeline_manager) with:
 
-  export LD_LIBRARY_PATH="${TT_METAL_HOME}/build/lib:\${LD_LIBRARY_PATH:-}"
-  LD_PRELOAD="${ENGINE_DIR}/build-full/libtt_llm_engine.so.0" \\
-    ${SCRIPT_DIR}/build/tt_media_server_cpp
+  ${SCRIPT_DIR}/run_blaze_exabox.sh
 
-If Drogon / other deps live in a local prefix, prepend it too:
-  export LD_LIBRARY_PATH="/data/\${USER}/.local/lib:\${LD_LIBRARY_PATH}"
+That wrapper sets LD_PRELOAD, LD_LIBRARY_PATH, the engine backend and — most
+importantly — DEVICE_IDS so the worker opens the same devices as the running
+model. Make sure the model is up first. Override PORT / DEVICE_IDS /
+DEVICE_MESH_SHAPE / BLAZE_SOCKET_DESCRIPTOR_PREFIX via env as needed.
 EOF
