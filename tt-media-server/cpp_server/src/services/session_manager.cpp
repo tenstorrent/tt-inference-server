@@ -548,6 +548,7 @@ SessionManager::tryAcquireByPrefixHash(
         {blockInfos[i].hash, blockInfos[i].accumulatedThinkTokens});
   }
 
+  
   // Snapshot candidates: for each entry under keyHash, count how many
   // consecutive remaining hashes match the caller's remaining hashes.
   // Pick the entry with the longest match.
