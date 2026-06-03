@@ -226,6 +226,8 @@ void LLMPipeline::resolveSession(
           sessionManager_->registerResponseId(acquired->sessionId,
                                               *req->responseId, fullLen);
         }
+        sessionManager_->registerPrefixHash(acquired->sessionId,
+                                            routingInfo.registrationHash);
         info.validSessionFound = true;
         info.registrationHash = routingInfo.registrationHash;
         onResolved(info);
