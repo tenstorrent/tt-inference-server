@@ -127,15 +127,20 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 namespace pl = tt_llm_engine::pipeline;
 
 pl::WireFormat wireFormatFromString(const std::string& s) {
-  if (s == "deepseek") {
-    return pl::WireFormat::DEEPSEEK;
-  } else if (s == "loopback") {
-    return pl::WireFormat::LOOPBACK;
-  } else if (s == "blaze") {
-    return pl::WireFormat::BLAZE;
+  static const std::unordered_map<std::string, pl::WireFormat> formats = {
+      {"deepseek", pl::WireFormat::DEEPSEEK},
+      {"loopback", pl::WireFormat::LOOPBACK},
+      {"blaze",    pl::WireFormat::BLAZE}
+  };
+
+  auto it = formats.find(s);
+  if (it != formats.end()) {
+      return it->second;
   }
+  
   throw std::runtime_error("Invalid wire format: " + s);
 }
+
 inline pl::PipelineConfig makePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
