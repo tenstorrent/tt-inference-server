@@ -541,6 +541,18 @@ std::string prefillServerId() {
   return cached;
 }
 
+std::string logInstanceTag(int workerIndex) {
+  std::string role;
+  if (workerIndex >= 0) {
+    role = "worker" + std::to_string(workerIndex);
+  } else if (isLlmService()) {
+    role = std::string(toString(llmMode()));
+  } else {
+    role = std::string(toString(modelService()));
+  }
+  return role + "/" + prefillServerId() + " pid=" + std::to_string(::getpid());
+}
+
 uint32_t prefillMaxInFlight() {
   return static_cast<uint32_t>(
       envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));

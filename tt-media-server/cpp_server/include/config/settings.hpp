@@ -101,6 +101,17 @@ bool usePrefillGateway();
  * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
 std::string prefillServerId();
 
+/**
+ * Per-process identity for log lines, e.g. "decode/bh-47:9000 pid=3363530".
+ * Format: "<role>/<instance> pid=<pid>" where role is the LLM_MODE
+ * (decode/prefill/regular) for the LLM service or the service name otherwise,
+ * and instance is prefillServerId() ("<hostname>:<SOCKET_PORT>" by default).
+ *
+ * @param workerIndex >=0 for a forked worker subprocess; sets role to
+ *   "worker<index>" so worker lines are distinguishable from the HTTP node.
+ */
+std::string logInstanceTag(int workerIndex = -1);
+
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
