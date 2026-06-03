@@ -141,8 +141,8 @@ inline pl::PipelineConfig makePipelineConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::SocketConfig{
-          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
-          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
+          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix(),
+          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
           .wire_format = wireFormatFromString(tt::config::wireFormat())};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
