@@ -17,6 +17,7 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_connection_wiring.hpp"
@@ -313,13 +314,17 @@ int main(int argc, char** argv) {
   if (useZmqPrefillRouter && !cfg.prefills.empty()) {
     TT_LOG_WARN("[Gateway] Ignoring --prefill endpoints in ZMQ ROUTER mode");
   }
+  if (cfg.healthPort != 0 && cfg.healthPort == cfg.metricsPort) {
+    std::cerr << "--health-port must be different from --metrics-port.\n";
+    return 1;
+  }
 
   TT_LOG_INFO("[Gateway] Starting — decode port={}, transport={}",
               cfg.decodePort, transport);
 
   auto& metrics = tt::gateway::GatewayMetrics::instance();
   tt::gateway::GatewayMetricsServer metricsServer(metrics);
-  tt::gateway::GatewayMetricsServer healthServer(metrics);
+  tt::gateway::GatewayHealthServer healthServer;
 
   tt::gateway::PrefillRegistry registry;
   tt::gateway::AffinityCache affinity;
@@ -334,13 +339,12 @@ int main(int argc, char** argv) {
   auto healthProvider = [&registry, &decodeSm, transport]() {
     return buildHealthJson(registry, decodeSm, transport);
   };
-  metricsServer.setHealthProvider(healthProvider);
   if (!metricsServer.start(cfg.metricsPort)) {
     TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
                  cfg.metricsPort);
     return 1;
   }
-  if (cfg.healthPort != 0 && cfg.healthPort != cfg.metricsPort) {
+  if (cfg.healthPort != 0) {
     healthServer.setHealthProvider(healthProvider);
     if (!healthServer.start(cfg.healthPort)) {
       TT_LOG_ERROR("[Gateway] Failed to start health endpoint on port {}",

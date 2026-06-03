@@ -23,6 +23,7 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_registry.hpp"
@@ -1017,16 +1018,15 @@ TEST(GatewayMetricsServerTest, ServesPrometheusTextOnMetricsPath) {
            response.find("tt_gateway_routing_decisions_total") !=
                std::string::npos;
   }));
+  const std::string healthResponse = httpGet(port, "/health");
+  EXPECT_NE(healthResponse.find("HTTP/1.1 404 Not Found"), std::string::npos);
 
   server.stop();
 }
 
-TEST(GatewayMetricsServerTest, ServesHealthJsonOnLivenessPath) {
-  auto& metrics = GatewayMetrics::instance();
-  metrics.resetForTests();
-
+TEST(GatewayHealthServerTest, ServesHealthJsonOnLivenessPath) {
   const uint16_t port = ephemeralPort();
-  GatewayMetricsServer server(metrics);
+  GatewayHealthServer server;
   server.setHealthProvider([] {
     return std::string(
         R"({"status":"alive","transport":"tcp","registered_prefills":2,"healthy_prefills":2,"accepting_prefills":2,"decode_connected":false})"
