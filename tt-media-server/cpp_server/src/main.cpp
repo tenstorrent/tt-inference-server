@@ -321,7 +321,7 @@ int main(int argc, char* argv[]) {
       .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
-  TT_LOG_INFO("[Main] Starting Drogon HTTP server at http://{}:{}", host, port);
+  TT_LOG_INFO("[Main] Starting Drogon HTTP server, listening at http://{}:{}", host, port);
 
   TT_LOG_INFO("[Main] Endpoints for MODEL_SERVICE='{}':",
               tt::config::toString(modelSvc));

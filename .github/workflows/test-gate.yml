@@ -684,25 +684,24 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
-    # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
-    # find every shared lib the binary was linked against. Splitting build
-    # (ubuntu-latest = noble, newer Python) from bench (jammy, default Python)
-    # has produced repeated runtime "missing libfoo.so" failures (libpq5,
-    # libpython from the build runner, ...). Same OS image on both sides eliminates the class.
-    runs-on: tt-ubuntu-2204-large-stable
+    # Runs on GitHub-hosted ubuntu-latest. Every downstream consumer of the
+    # cpp-server-build artifact (cpp-server-benchmarks,
+    # cpp-server-prefill-decode-split, cpp-server-gateway-split,
+    # dynamo-frontend-integration) also runs on ubuntu-latest, so the binary
+    # links against the same glibc / libstdc++ / libpython at runtime. The
+    # only self-hosted (jammy) C++ job, cpp-server-mock-pipeline-bench, builds
+    # its own binary in-job rather than downloading this artifact — a binary
+    # built on noble fails on jammy with "missing libfoo.so".
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
-      # The aus2 self-hosted runners auto-inject http(s)_proxy pointing at
-      # proxy.restricted-proxy.svc.cluster.local:3128 but do not set no_proxy
-      # for loopback. Without this, curl/requests calls to a server we start
-      # on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness probe) are routed
-      # through the internal proxy, which has no route back and fails every
-      # probe, making the server appear to never become ready. GitHub
-      # Actions treats env keys as case-insensitive, so we set only the
-      # lowercase form (which curl and Python requests both read).
+      # Loopback must bypass any injected HTTP proxy so curl/requests probes
+      # to a server on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness) resolve
+      # directly. Harmless on GitHub runners; required on the self-hosted
+      # runners, which inject http(s)_proxy without a loopback no_proxy.
+      # Env keys are case-insensitive, so the lowercase form suffices.
       no_proxy: "localhost,127.0.0.1,::1"
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
@@ -749,13 +748,13 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Benchmarks
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      # Loopback must bypass any injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
@@ -883,7 +882,112 @@ jobs:
             --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
-      # ── Mock pipeline backend benchmarks ─────────────────────────────
+      # NOTE: the mock_pipeline benchmark lives in its own self-hosted job
+      # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
+      # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
+      # throughput thresholds unmeetable — so it stays on the xlarge
+      # self-hosted runner while the mock / structured-output benches here run
+      # on ubuntu-latest.
+
+      # ── Check thresholds ─────────────────────────────────────────────
+      - name: Check all benchmark thresholds
+        run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          FAIL=0
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
+            --result vllm-bench-mock.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
+            --result vllm-bench-structured-output-json-object.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
+            --result vllm-bench-structured-output-json-schema.json || FAIL=1
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+
+      # ── Artifacts & logs ─────────────────────────────────────────────
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Mock Server Logs ==="
+          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-results
+          path: |
+            tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-structured-output-json-object.json
+            tt-media-server/vllm-bench-structured-output-json-schema.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-logs
+          path: |
+            tt-media-server/cpp_server_mock.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        if: always()
+        run: exit "${BENCH_FAIL:-0}"
+
+  cpp-server-mock-pipeline-bench:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Mock Pipeline Benchmark
+    # The mock_pipeline backend's tt-llm-engine decode_scheduler pins 3 CPU
+    # cores; on a 4-core GitHub runner that starves the rest of the process
+    # and the throughput thresholds become unmeetable. Keep this one bench on
+    # the self-hosted xlarge runner. Unlike the other bench jobs it does NOT
+    # download the cpp-build artifact — that artifact is built on
+    # ubuntu-latest (noble) and fails at runtime on this jammy runner with
+    # "missing libfoo.so" — so it builds its own binary in-job instead.
+    runs-on: tt-ubuntu-2204-xlarge-stable
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass the self-hosted runner's injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh --blaze
+          cd ..
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
+
+      # ── Mock pipeline backend benchmark ──────────────────────────────
       - name: Start C++ server (mock_pipeline backend)
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
@@ -935,17 +1039,11 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
 
       # ── Check thresholds ─────────────────────────────────────────────
-      - name: Check all benchmark thresholds
+      - name: Check benchmark thresholds
         run: |
           CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
           CHECK=cpp_server/scripts/ci/check_vllm_result.py
           FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
-            --result vllm-bench-mock.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
-            --result vllm-bench-structured-output-json-object.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
-            --result vllm-bench-structured-output-json-schema.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
             --result vllm-bench-mock-pipeline.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
@@ -954,9 +1052,6 @@ jobs:
       - name: Show server logs
         if: always()
         run: |
-          echo "=== Mock Server Logs ==="
-          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
-          echo ""
           echo "=== Mock Pipeline Server Logs ==="
           [ -f cpp_server_mock_pipeline.log ] && cat cpp_server_mock_pipeline.log || echo "No log"
 
@@ -964,11 +1059,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cpp-server-bench-results
+          name: cpp-server-mock-pipeline-bench-results
           path: |
-            tt-media-server/vllm-bench-mock.json
-            tt-media-server/vllm-bench-structured-output-json-object.json
-            tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
           retention-days: 1
           if-no-files-found: warn
@@ -977,9 +1069,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cpp-server-bench-logs
+          name: cpp-server-mock-pipeline-bench-logs
           path: |
-            tt-media-server/cpp_server_mock.log
             tt-media-server/cpp_server_mock_pipeline.log
           retention-days: 1
           if-no-files-found: warn
@@ -992,13 +1083,13 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      # Loopback must bypass any injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
@@ -1381,9 +1472,9 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    # Same jammy image as cpp-build so the prefill_gateway binary is
-    # compatible with the tt-ubuntu-2204-xlarge-stable bench runner.
-    runs-on: tt-ubuntu-2204-large-stable
+    # Same ubuntu-latest image as cpp-build so the prefill_gateway binary is
+    # compatible with the cpp-server-gateway-split bench runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1528,7 +1619,7 @@ jobs:
     needs: [detect-changes, cpp-build, prefill-gateway-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: C++ Server Gateway Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1892,9 +1983,12 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server + Dynamo Frontend Integration
-    # Same jammy runner as the cpp-server bench jobs so the artifact built by
-    # cpp-build links against the same glibc / libstdc++ at runtime.
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    # Runs on ubuntu-latest, the same image as cpp-build, so the downloaded
+    # artifact links against the same glibc / libstdc++ / libpython at runtime.
+    # This job uses the mock_pipeline backend but asserts only request success
+    # (no latency thresholds), so the 3-core decode_scheduler pinning that
+    # forces cpp-server-mock-pipeline-bench onto self-hosted is tolerable here.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
@@ -2736,6 +2830,7 @@ jobs:
       - cpp-format-check
       - cpp-build
       - cpp-server-benchmarks
+      - cpp-server-mock-pipeline-bench
       - cpp-server-prefill-decode-split
       - prefill-gateway-format-check
       - prefill-gateway-build
@@ -2783,7 +2878,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build|cpp-server-benchmarks|cpp-server-prefill-decode-split|dynamo-frontend-integration|cpp-tsan)
+              cpp-format-check|cpp-build|cpp-server-benchmarks|cpp-server-mock-pipeline-bench|cpp-server-prefill-decode-split|dynamo-frontend-integration|cpp-tsan)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -2833,6 +2928,7 @@ jobs:
             cpp-format-check
             cpp-build
             cpp-server-benchmarks
+            cpp-server-mock-pipeline-bench
             cpp-server-prefill-decode-split
             prefill-gateway-format-check
             prefill-gateway-build
@@ -2856,6 +2952,7 @@ jobs:
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
+            [cpp-server-mock-pipeline-bench]="${{ needs.cpp-server-mock-pipeline-bench.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
