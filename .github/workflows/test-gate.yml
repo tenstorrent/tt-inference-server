@@ -2266,11 +2266,6 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
-      # Reuse tokenizer files across runs: fetch_tokenizers.sh (invoked by
-      # build.sh) skips any model whose files already exist, so restoring this
-      # directory turns the fetch into a no-op and avoids hitting HuggingFace.
-      # Keyed on the fetch script so a change to the model list / download logic
-      # invalidates the cache.
       - name: Restore cached tokenizer files
         uses: actions/cache@v4
         with:
