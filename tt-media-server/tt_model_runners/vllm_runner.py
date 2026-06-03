@@ -48,7 +48,9 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
                 "cpu_sampling": True,
-                "optimization_level": 1,
+                # opt_level>=1 crashes the tt-mlir optimizer during warmup on
+                # the 1.2.0 wheel; keep 0 until tenstorrent/tt-xla#4990 lands.
+                "optimization_level": 0,
             },
         )
         self.logger.info(
