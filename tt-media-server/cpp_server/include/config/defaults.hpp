@@ -67,7 +67,6 @@ constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 128;
-constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
@@ -78,6 +77,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
+constexpr const char* WIRE_FORMAT = "deepseek";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;

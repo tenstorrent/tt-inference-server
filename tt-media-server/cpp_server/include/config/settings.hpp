@@ -245,9 +245,7 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
-/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
- * defaults::USE_DEEPSEEK_MD_FORMAT. */
-bool useDeepseekMdFormat();
+std::string wireFormat();
 
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:
