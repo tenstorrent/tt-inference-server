@@ -2266,10 +2266,35 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
+      # Reuse tokenizer files across runs: fetch_tokenizers.sh (invoked by
+      # build.sh) skips any model whose files already exist, so restoring this
+      # directory turns the fetch into a no-op and avoids hitting HuggingFace.
+      # Keyed on the fetch script so a change to the model list / download logic
+      # invalidates the cache.
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v4
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
       - name: Build C++ server with ThreadSanitizer
         run: |
           cd cpp_server
           ./build.sh --tsan
+
+      - name: Archive C++ tokenizer bundle
+        run: |
+          cd cpp_server
+          tar -czf cpp-server-tokenizers.tar.gz tokenizers
+
+      - name: Upload C++ tokenizer bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-tokenizers
+          path: tt-media-server/cpp_server/cpp-server-tokenizers.tar.gz
+          retention-days: 1
 
       - name: Set up uv (for guidellm)
         uses: astral-sh/setup-uv@v7
