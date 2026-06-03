@@ -32,11 +32,11 @@ BlazeRunner::BlazeRunner(
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePipelineConfig(config);
-  auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
   ds::SchedulerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers()),
-      .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
-      .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
+      .eos_token = 163585,
+      .think_open_token_id = 163606,
+      .think_close_token_id = 163607,
   };
   decodeScheduler =
       std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
