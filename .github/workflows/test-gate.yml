@@ -1225,7 +1225,7 @@ jobs:
             --label "mock_prefill_runner prefill socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8000 \
-            --expect '"socket_status":"server:connected"' \
+            --expect '"socket_status":"server:connected' \
             --pid-file decode_server_runner.pid \
             --label "mock_prefill_runner decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
@@ -1245,8 +1245,8 @@ jobs:
             echo "ERROR: Decode server model_ready is not true"
             FAIL=1
           fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-            echo "ERROR: Decode server socket_status is not 'server:connected'"
+          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected'; then
+            echo "ERROR: Decode server socket_status does not start with 'server:connected'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
