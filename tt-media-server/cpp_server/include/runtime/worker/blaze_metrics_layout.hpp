@@ -26,12 +26,20 @@ namespace tt::worker::sp_pipeline {
 constexpr size_t SCRATCH_STEP_EPOCH_MS = 0;
 constexpr size_t SCRATCH_LAST_OUTPUT_EPOCH_MS = 1;
 constexpr size_t SCRATCH_ACTIVE_REQUESTS = 2;
-// reserved for future sp_pipeline metrics:
-// constexpr size_t SCRATCH_KV_CACHE_BPS    = 3;  // basis points 0-10000
-// constexpr size_t SCRATCH_NUM_DECODING    = 4;
+
+// Cumulative event counters for the BlazeRunner slot state machine. These are
+// monotonic since worker (re)start and let ops see whether the defer/supersede
+// paths — otherwise invisible — actually fire in production.
+constexpr size_t SCRATCH_EV_IDLE_TO_RUNNING = 3;
+constexpr size_t SCRATCH_EV_RUNNING_TO_STOP_ACK = 4;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_REPLAYED = 5;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_LATCHED = 6;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED = 7;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED = 8;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_LATCHED = 9;
 // ... up to index 31
 
-static_assert(SCRATCH_ACTIVE_REQUESTS < WORKER_SCRATCH_U64_COUNT,
+static_assert(SCRATCH_EV_DEFERRED_EVICT_LATCHED < WORKER_SCRATCH_U64_COUNT,
               "sp_pipeline scratch indices exceed scratch capacity");
 
 }  // namespace tt::worker::sp_pipeline

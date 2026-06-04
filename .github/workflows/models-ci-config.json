@@ -126,7 +126,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -264,7 +264,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P300X2",
             "T3K"
           ]
@@ -363,7 +363,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -377,7 +377,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -532,7 +532,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -618,35 +618,49 @@
       }
     },
     "stable-diffusion-xl-base-1.0": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "GALAXY_BH",
-            "N150",
-            "N300",
-            "P300X2"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY",
-            "T3K"
-          ],
-          "device-args": {
-            "T3K": {
-              "additional-args": "--sdxl_num_prompts 5000",
-              "throttle-perf": "5"
+      "implementations": [
+        {
+          "inference_engine": "MEDIA",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "BH_GALAXY",
+                "N150",
+                "N300",
+                "P300X2"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY",
+                "T3K"
+              ],
+              "device-args": {
+                "T3K": {
+                  "additional-args": "--sdxl_num_prompts 5000",
+                  "throttle-perf": "5"
+                }
+              }
+            },
+            "release": {
+              "devices": [
+                "GALAXY"
+              ]
             }
           }
         },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P150X8"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "unet": {
       "inference_engine": "FORGE",
@@ -684,7 +698,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "N150",
             "P150",
             "P300X2"

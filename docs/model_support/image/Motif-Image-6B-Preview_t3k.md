@@ -10,6 +10,7 @@
 
 - [WH Galaxy](Motif-Image-6B-Preview_galaxy.md)
 - [BH LoudBox](Motif-Image-6B-Preview_p150x8.md)
+- [BH QuietBox 2](Motif-Image-6B-Preview_p300x2.md)
 
 ## Quickstart - Deploy Motif-Image-6B-Preview Inference Server on WH LoudBox/QuietBox
 
