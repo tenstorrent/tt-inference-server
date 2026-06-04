@@ -181,7 +181,7 @@ void BlazePrefillRunner::step() {
     TT_LOG_DEBUG(
         "[BlazePrefillRunner] step: got Sequence taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
-        request->taskId, request->getKVCacheSlot(),
+        request->taskId, request->getPrefillKVCacheSlot(),
         request->getNumPromptTokens(), request->getTokenIds().size());
     handleRequest(std::move(request));
   }
@@ -628,7 +628,7 @@ void BlazePrefillRunner::checkOutputHang() {
 
 void BlazePrefillRunner::handleRequest(
     std::unique_ptr<tt::domain::llm::Sequence> request) {
-  auto slotId = request->getKVCacheSlot();
+  auto slotId = request->getPrefillKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
   assert(slotId < tt::config::psMaxUsers());
 
