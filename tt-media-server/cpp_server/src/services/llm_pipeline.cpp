@@ -186,7 +186,8 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              });
+              },
+              /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);

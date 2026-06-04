@@ -51,12 +51,16 @@ void Session::initTokenAccumulator(
     std::vector<utils::BlockHashInfo> initialBlocks,
     std::function<void(const std::string&,
                        const std::vector<utils::BlockHashInfo>&)>
-        onComplete) {
+        onComplete,
+    uint32_t parentThinkCount) {
   deltaTokens_ = std::move(deltaTokens);
   initialBlocks_ = std::move(initialBlocks);
   parentHash_ = initialBlocks_.empty() ? 0 : initialBlocks_.back().hash;
-  parentThinkCount_ =
-      initialBlocks_.empty() ? 0 : initialBlocks_.back().accumulatedThinkTokens;
+  // Think tokens live in the KV cache but are excluded from block hashes, so
+  // re-hashing the prompt cannot recover the count from earlier turns (the
+  // prompt does not re-encode prior <think> markers). Seed it explicitly from
+  // the matched KV prefix on a HIT so the count accumulates across turns.
+  parentThinkCount_ = parentThinkCount;
   onComplete_ = std::move(onComplete);
   generatedTokens_.clear();
 
