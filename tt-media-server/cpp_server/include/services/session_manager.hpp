@@ -165,8 +165,6 @@ class SessionManager {
 
   /**
    * First-time registration: associate a brand-new session with a response id.
-   * Use when allocating a fresh session that has never been in the
-   * response-id index.
    */
   void initResponseId(const std::string& sessionId,
                       const std::string& responseId);
