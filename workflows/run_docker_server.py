@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import json
 import logging
 import os
 import shlex
@@ -216,6 +217,66 @@ def format_docker_command(docker_command):
     return " \\\n  ".join(lines)
 
 
+# run_vllm_api_server consumes these as its own wrapper args (parse_known_args), so passing them via --vllm-override-args would change wrapper behavior.
+# Reject them so the override channel stays genuinely vLLM-only.
+_RESERVED_WRAPPER_FLAGS = {
+    "model",
+    "tt-device",
+    "device",
+    "engine",
+    "impl",
+    "no-auth",
+    "disable-trace-capture",
+    "service-port",
+}
+
+
+def _vllm_override_cli_args(vllm_override_args) -> List[str]:
+    """Render --vllm-override-args (a JSON object string) into vLLM passthrough CLI flags for the docker-server container.
+
+    run_vllm_api_server parses known wrapper args and forwards the rest straight to ``vllm serve`` (parse_known_args). 
+    Keys that collide with run_vllm_api_server's own wrapper flags are rejected.
+
+    Args:
+        vllm_override_args: JSON string of vLLM overrides
+
+    Returns:
+        List of vLLM passthrough CLI flags
+    """
+    if not vllm_override_args:
+        return []
+    try:
+        overrides = json.loads(vllm_override_args)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Ignoring malformed --vllm-override-args: {vllm_override_args!r}"
+        )
+        return []
+    if not isinstance(overrides, dict):
+        logger.warning(
+            f"--vllm-override-args must be a JSON object, got: {vllm_override_args!r}"
+        )
+        return []
+    cli_args: List[str] = []
+    for key, value in overrides.items():
+        if key.replace("_", "-") in _RESERVED_WRAPPER_FLAGS:
+            logger.warning(
+                "Ignoring reserved run_vllm_api_server wrapper flag in "
+                f"--vllm-override-args: {key!r}"
+            )
+            continue
+        flag = f"--{key}"
+        if value is None or value is False:
+            continue
+        if value is True:
+            cli_args.append(flag)
+        elif isinstance(value, (dict, list)):
+            cli_args += [flag, json.dumps(value)]
+        else:
+            cli_args += [flag, str(value)]
+    return cli_args
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -408,6 +469,11 @@ def generate_docker_run_command(
             docker_command.append("--disable-trace-capture")
         if runtime_config.service_port and str(runtime_config.service_port) != "8000":
             docker_command.extend(["--service-port", str(runtime_config.service_port)])
+        # Forward explicit vLLM overrides (e.g. --enable-auto-tool-choice /
+        # --tool-call-parser) as passthrough args. run_vllm_api_server forwards
+        # unrecognized args straight to `vllm serve`, so this honors overrides in
+        # normal (non-dev) deployments without mounting the whole runtime spec.
+        docker_command += _vllm_override_cli_args(runtime_config.vllm_override_args)
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 
