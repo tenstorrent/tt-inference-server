@@ -199,13 +199,21 @@ class TTModelRunner:
             if req_index is not None:
                 removed_req_indices.append(req_index)
 
-        # Free the cached encoder outputs.
-        for req_id, input_id in scheduler_output.free_encoder_input_ids:
-            encoder_outputs = self.encoder_cache.get(req_id)
-            if encoder_outputs is not None:
-                encoder_outputs.pop(input_id, None)
-                if not encoder_outputs:
-                    self.encoder_cache.pop(req_id, None)
+        # Free the cached encoder outputs. vLLM renamed the field to
+        # free_encoder_mm_hashes (list[str], encoder_cache keyed by mm_hash);
+        # older vLLM used free_encoder_input_ids (list[(req_id, input_id)]).
+        # Text-only models have no encoder cache, so this is a no-op either way.
+        free_mm_hashes = getattr(scheduler_output, "free_encoder_mm_hashes", None)
+        if free_mm_hashes is not None:
+            for mm_hash in free_mm_hashes:
+                self.encoder_cache.pop(mm_hash, None)
+        else:
+            for req_id, input_id in scheduler_output.free_encoder_input_ids:
+                encoder_outputs = self.encoder_cache.get(req_id)
+                if encoder_outputs is not None:
+                    encoder_outputs.pop(input_id, None)
+                    if not encoder_outputs:
+                        self.encoder_cache.pop(req_id, None)
 
         # Remove the unscheduled requests from the persistent batch.
         # NOTE(woosuk): The unscheduled requests are either preempted requests
