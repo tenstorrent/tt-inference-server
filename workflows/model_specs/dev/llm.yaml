@@ -1122,6 +1122,14 @@ templates:
         # kernel (QWEN36_GDN_SEQ_PREFILL default 1), whose static circular
         # buffers clash with L1 on the head cores during prefill.
         QWEN36_GDN_SEQ_PREFILL: "0"
+        # Decode L1-residual contract (the "verified at 64L" decode path). Required:
+        # the decode CCL pre-allocates an L1 width-sharded LAYERNORM stats buffer
+        # (llama_ccl.get_all_gather_buffers), so the decode RMSNorm MUST run the
+        # decode-mode sharded primitive (norm_mlp_mode="decode" -> fused_rms_minimal),
+        # not the prefill tt_distributed_rmsnorm (which passes a DRAM memcfg and
+        # collides with the L1 buffer -> all_gather_async output-memcfg FATAL).
+        # This flag also enables the 32-row carry the decode rms_allgather needs.
+        QWEN36_DECODE_L1_RESIDUAL: "1"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
