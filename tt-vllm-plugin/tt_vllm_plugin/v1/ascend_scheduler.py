@@ -66,6 +66,9 @@ class AscendScheduler(Scheduler):
         structured_output_request_ids: dict[str, int] = {}
 
         req_to_new_block_ids: dict[str, tuple[list[int], ...]] = {}
+        # vLLM's _make_cached_request_data now takes KVCacheBlocks objects (it
+        # calls .get_block_ids() itself), so keep the blocks alongside the ids.
+        req_to_new_blocks: dict = {}
         num_scheduled_tokens: dict[str, int] = {}
         token_budget = self.max_num_scheduled_tokens
         # Spec decode-related.
@@ -371,6 +374,7 @@ class AscendScheduler(Scheduler):
                     structured_output_request_ids[request.request_id] = req_index
                 self.scheduled_req_ids.add(request.request_id)
                 req_to_new_block_ids[request.request_id] = new_blocks.get_block_ids()
+                req_to_new_blocks[request.request_id] = new_blocks
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 req_index += 1
@@ -441,7 +445,7 @@ class AscendScheduler(Scheduler):
             scheduled_resumed_reqs,
             num_scheduled_tokens,
             scheduled_spec_decode_tokens,
-            req_to_new_block_ids,
+            req_to_new_blocks,
         )
         scheduled_cached_reqs = cached_reqs_data
 
