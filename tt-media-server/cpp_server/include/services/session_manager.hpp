@@ -147,7 +147,7 @@ class SessionManager {
                           const std::vector<utils::BlockHashInfo>& blockInfos);
 
   /**
-   * Response-id continuation lookup. 
+   * Response-id continuation lookup.
    * Atomically marks the matching session in-flight and registers the cancel
    * function under the same lock.
    *

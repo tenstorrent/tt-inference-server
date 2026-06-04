@@ -807,8 +807,7 @@ SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
   // avoid holding both simultaneously).
   std::string sessionId;
   bool present = responseIdIndex.modify(
-      previousResponseId,
-      [&sessionId](std::string& sid) { sessionId = sid; });
+      previousResponseId, [&sessionId](std::string& sid) { sessionId = sid; });
 
   if (!present) {
     TT_LOG_INFO(
@@ -867,12 +866,12 @@ SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
 }
 
 void SessionManager::initResponseId(const std::string& sessionId,
-                                     const std::string& responseId) {
+                                    const std::string& responseId) {
   if (responseId.empty()) {
     return;
   }
-  TT_LOG_INFO("[SessionManager] initResponseId: sessionId={}, id={}",
-              sessionId, responseId);
+  TT_LOG_INFO("[SessionManager] initResponseId: sessionId={}, id={}", sessionId,
+              responseId);
 
   sessions.modify(sessionId, [&responseId](domain::Session& s) {
     s.setResponseId(responseId);
@@ -896,8 +895,7 @@ void SessionManager::registerResponseId(const std::string& previousResponseId,
 
   std::string sessionId;
   bool found = responseIdIndex.modify(
-      previousResponseId,
-      [&sessionId](std::string& sid) { sessionId = sid; });
+      previousResponseId, [&sessionId](std::string& sid) { sessionId = sid; });
 
   if (!found) {
     TT_LOG_WARN(
@@ -944,33 +942,32 @@ std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(
   size_t matchedBlocks = 0;
   uint32_t thinkTokens = 0;
 
-  prefixIndex.modify(
-      keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
-        for (const auto& entry : entries) {
-          bool hasSession = std::find(entry.sessionIds.begin(),
-                                      entry.sessionIds.end(),
-                                      sessionId) != entry.sessionIds.end();
-          if (!hasSession) continue;
+  prefixIndex.modify(keyHash, [&](std::vector<PrefixIndexEntry>& entries) {
+    for (const auto& entry : entries) {
+      bool hasSession =
+          std::find(entry.sessionIds.begin(), entry.sessionIds.end(),
+                    sessionId) != entry.sessionIds.end();
+      if (!hasSession) continue;
 
-          size_t matched = 0;
-          uint32_t lastThink = entry.keyBlockThinkTokens;
-          auto callerIt = callerRemaining.begin();
-          auto entryIt = entry.remainingBlocks.begin();
-          while (callerIt != callerRemaining.end() &&
-                 entryIt != entry.remainingBlocks.end() &&
-                 callerIt->hash == entryIt->hash) {
-            lastThink = entryIt->accumulatedThinkTokens;
-            ++matched;
-            ++callerIt;
-            ++entryIt;
-          }
-          size_t total = 1 + matched;
-          if (total > matchedBlocks) {
-            matchedBlocks = total;
-            thinkTokens = lastThink;
-          }
-        }
-      });
+      size_t matched = 0;
+      uint32_t lastThink = entry.keyBlockThinkTokens;
+      auto callerIt = callerRemaining.begin();
+      auto entryIt = entry.remainingBlocks.begin();
+      while (callerIt != callerRemaining.end() &&
+             entryIt != entry.remainingBlocks.end() &&
+             callerIt->hash == entryIt->hash) {
+        lastThink = entryIt->accumulatedThinkTokens;
+        ++matched;
+        ++callerIt;
+        ++entryIt;
+      }
+      size_t total = 1 + matched;
+      if (total > matchedBlocks) {
+        matchedBlocks = total;
+        thinkTokens = lastThink;
+      }
+    }
+  });
 
   if (matchedBlocks == 0) {
     return {0, 0};
@@ -1030,9 +1027,10 @@ void SessionManager::removeFromResponseIdIndex(const std::string& sessionId,
                                                const std::string& responseId) {
   if (responseId.empty()) return;
   bool matches = false;
-  bool found = responseIdIndex.modify(
-      responseId,
-      [&sessionId, &matches](std::string& sid) { matches = (sid == sessionId); });
+  bool found = responseIdIndex.modify(responseId,
+                                      [&sessionId, &matches](std::string& sid) {
+                                        matches = (sid == sessionId);
+                                      });
   if (found && matches) {
     responseIdIndex.erase(responseId);
   }

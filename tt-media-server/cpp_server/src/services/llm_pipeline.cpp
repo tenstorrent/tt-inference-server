@@ -179,8 +179,7 @@ void LLMPipeline::resolveSession(
         TT_LOG_INFO(
             "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
             "thinkTokens={} deltaTokens={}",
-            req->task_id, matchedTokens, thinkTokens,
-            req->prompt_tokens_count);
+            req->task_id, matchedTokens, thinkTokens, req->prompt_tokens_count);
 
         if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
           req->session->initTokenAccumulator(
