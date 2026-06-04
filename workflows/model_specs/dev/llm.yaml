@@ -1109,10 +1109,15 @@ templates:
         # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
         hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
       override_tt_config:
-        # Run eager: the worker defaults trace_mode=True, but the DeltaNet GDN
-        # chunk kernel under trace-capture prefill hits an L1/CB clash (V2-9
-        # trace-capture is a known blocker). Eager prefill/decode are known-good.
-        trace_mode: false
+        # trace_mode=true enables DECODE tracing (the demo's proven decode path:
+        # set_trace_decode_mode + per-step refresh_decode_per_step_buffers, wired
+        # into the generator trace path). PREFILL stays eager regardless — the
+        # generator's _disable_prefill_tracing hook (set in generator_vllm) forces
+        # enable_trace=False for prefill because the DeltaNet GDN chunk kernel hits
+        # an L1/CB clash under trace-capture (V2-9 blocker). So this is eager
+        # prefill + trace decode, matching text_demo_qwen36. (Eager decode produced
+        # garbage past token 1 — it was never multi-step-verified in v2.)
+        trace_mode: true
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
         fabric_config: FABRIC_1D_RING
