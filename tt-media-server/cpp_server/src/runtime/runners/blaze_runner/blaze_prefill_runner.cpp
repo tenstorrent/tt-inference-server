@@ -258,7 +258,8 @@ inline void BlazePrefillRunner::handleEvictRequest(
         return;
       }
       if (pendingRequests.pendingTask &&
-          pendingRequests.pendingTask->getPrefillKVCacheSlot() == request.slotId) {
+          pendingRequests.pendingTask->getPrefillKVCacheSlot() ==
+              request.slotId) {
         auto droppedTaskId = pendingRequests.pendingTask->taskId;
         pendingRequests.pendingTask.reset();
         TT_LOG_DEBUG(
@@ -643,7 +644,8 @@ void BlazePrefillRunner::handleRequest(
           request->taskId, slotId, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
           slotManager.activeRunningCount());
-      ps::ISRequest req = utils::makeSubmitRequest(slotId, *request, std::make_optional(request->getKVCacheSlot()));
+      ps::ISRequest req = utils::makeSubmitRequest(
+          slotId, *request, std::make_optional(request->getKVCacheSlot()));
       if (!prefillScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazePrefillRunner] handleRequest: failed to push request, "
