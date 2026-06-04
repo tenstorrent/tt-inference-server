@@ -21,10 +21,18 @@ python run.py --model <model> --device <device> --workflow benchmarks --docker-s
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools genai
 ```
 
-### AIPerf - detailed percentile metrics (mean, P50, P99)
+### AIPerf - detailed percentile metrics (mean, P50, P95, P99)
 ```
 python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
 ```
+
+#### Prefix-caching benchmark (v2 only)
+
+The prefix-caching AIPerf sweep lives in `tt-inference-server-v2/` — use
+`tt-inference-server-v2/run.py` with `--workflow benchmarks --prefix-cache`
+against an already-running vLLM server. See
+[tt-inference-server-v2/README.md](../tt-inference-server-v2/README.md#prefix-caching-benchmark)
+and [Prefix-Caching Benchmarks](../docs/benchmarking_tools.md#prefix-caching-benchmarks-v2).
 
 ### GuideLLM - dataset-driven multi-turn and omni-modal benchmarking
 ```
@@ -46,6 +54,9 @@ Purpose: Docker orchestration script for GenAI-Perf benchmarks using NVIDIA Trit
 ### `run_benchmarks_aiperf.py`
 
 Purpose: Main script for AIPerf benchmarks with detailed percentile metrics and warm-up logic.
+
+Prefix-caching benchmarks are implemented in `tt-inference-server-v2/` (see
+`llm_module/prefix_cache/` and `run.py --prefix-cache`).
 
 ### `run_guidellm_benchmarks.py`
 

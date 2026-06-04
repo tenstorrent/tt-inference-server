@@ -42,6 +42,8 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
 ```bash
 ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --health-port=9092 \
   --prefill=127.0.0.1:7200 \
   --prefill=127.0.0.1:7201
 ```
@@ -62,6 +64,37 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   if a prefill times out `3` requests within `60000`ms, the gateway stops
   assigning new requests to it for `30000`ms. Use `--timeout-threshold=0` to
   disable this protection.
+- `--metrics-port=PORT` exposes Prometheus metrics at `GET /metrics`. Default:
+  `9091`. Use `--metrics-port=0` to disable the endpoint.
+- `--health-port=PORT` — `GET /tt-liveness` (liveness) and `GET /health`
+  (readiness). Default: `0` (disabled). Must differ from `--metrics-port`.
+
+## HTTP endpoints
+
+| Flag | Default | Paths |
+| ---- | ------- | ----- |
+| `--metrics-port` | `9091` | `GET /metrics` (Prometheus) |
+| `--health-port` | `0` | `GET /tt-liveness`, `GET /health` |
+
+`GET /tt-liveness` always returns **200** with JSON (`status: alive`) so
+orchestrators can tell the process is up even when degraded.
+
+`GET /health` returns **200** when the gateway can route (`status: healthy`) and
+**503** when it cannot (`status: unhealthy`), for example when
+`decode_connected` is false, `healthy_prefills` is 0, or
+`accepting_prefills` is 0.
+
+Both responses include `transport`, `registered_prefills`, `healthy_prefills`,
+`accepting_prefills`, and `decode_connected`.
+
+```bash
+curl -s http://127.0.0.1:9091/metrics | head
+curl -s http://127.0.0.1:9092/tt-liveness | jq .
+curl -s http://127.0.0.1:9092/health | jq .
+```
+
+For Grafana, see [`monitoring/README.md`](../monitoring/README.md). Notable
+series: `tt_gateway_routing_decisions_total`, `tt_prefill_*`, `tt_gateway_*`.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
@@ -103,6 +136,8 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --health-port=9092 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -173,6 +208,8 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --health-port=9092 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -232,6 +269,9 @@ PREFILL_SERVER_ID=prefill-1 \
 ```
 
 ### Terminal E — drive a request through decode
+
+After prefills register, `curl -s http://127.0.0.1:9092/tt-liveness | jq .`
+should show `healthy_prefills: 2` and `decode_connected: true`.
 
 ```bash
 curl -N http://localhost:8001/v1/chat/completions \

@@ -1010,6 +1010,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VLLM__GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of GPU memory to use for model weights and KV cache. |
 | `MAX_MODEL_LENGTH` | `4096` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_model_length`) |
 | `MAX_NUM_SEQS` | `1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.max_num_seqs`) |
+| `GPU_MEMORY_UTILIZATION` | `0.1` | Top-level alias used when constructing `VLLMSettings`; if set, takes effect even before nested `VLLM__*` parsing (used as the default for `vllm.gpu_memory_utilization`) |
 
 ## Audio Processing Settings
 

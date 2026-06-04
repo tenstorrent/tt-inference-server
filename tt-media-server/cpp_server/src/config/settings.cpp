@@ -135,6 +135,24 @@ std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
 
+size_t callbackPoolThreads() {
+  static const size_t cached = [] {
+    // CALLBACK_POOL_THREADS=N picks an explicit size; 0 or unset auto-scales.
+    const size_t fromEnv =
+        static_cast<size_t>(envUlong("CALLBACK_POOL_THREADS", 0));
+    if (fromEnv > 0) {
+      return std::min(fromEnv, defaults::CALLBACK_POOL_THREADS_MAX);
+    }
+    // Auto: at least the legacy floor, never less than the per-deploy worker
+    // count so HTTP dispatch threads never silently cap below DEVICE_IDS
+    // (the root cause of 16-wide serialization on 32-chip Galaxy SDXL).
+    return std::min(
+        std::max<size_t>(numWorkers(), defaults::CALLBACK_POOL_THREADS_MIN),
+        defaults::CALLBACK_POOL_THREADS_MAX);
+  }();
+  return cached;
+}
+
 unsigned batchTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
@@ -162,9 +180,13 @@ std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
   std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
-  std::filesystem::path p = base / modelDir / "tokenizer.json";
-  if (std::filesystem::exists(p)) {
-    return std::filesystem::absolute(p).string();
+  std::filesystem::path jsonPath = base / modelDir / "tokenizer.json";
+  if (std::filesystem::exists(jsonPath)) {
+    return std::filesystem::absolute(jsonPath).string();
+  }
+  std::filesystem::path tiktokenPath = base / modelDir / "tiktoken.model";
+  if (std::filesystem::exists(tiktokenPath)) {
+    return std::filesystem::absolute(tiktokenPath).string();
   }
   return "";
 }
@@ -216,13 +238,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -432,8 +453,14 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
 }
 
 ModelType modelType() {
-  static const ModelType cached = modelTypeFromDeviceBackend(
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  static const ModelType cached = [] {
+    // Derive model type from MODEL env var
+    std::string m = envString("MODEL", defaults::MODEL);
+    if (m == "moonshotai/Kimi-K2.6") return ModelType::KIMI_K2_6;
+    if (m == "meta-llama/Llama-3.1-8B-Instruct")
+      return ModelType::LLAMA_3_1_8B_INSTRUCT;
+    return ModelType::DEEPSEEK_R1_0528;
+  }();
   return cached;
 }
 
@@ -564,6 +591,18 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t maxISL() {
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
+  return cached;
+}
+
 size_t kvCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
@@ -578,6 +617,19 @@ size_t kvCacheFirstBlockSize() {
                               defaults::KV_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
+}
+
+float prefixCacheHitThreshold() {
+  const unsigned long val = envUlong("PREFIX_CACHE_HIT_THRESHOLD",
+                                     defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  if (val > 100) {
+    TT_LOG_WARN(
+        "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
+        "using {}",
+        val, defaults::PREFIX_CACHE_HIT_THRESHOLD);
+    return static_cast<float>(defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  }
+  return static_cast<float>(val);
 }
 
 bool useFastMode() {

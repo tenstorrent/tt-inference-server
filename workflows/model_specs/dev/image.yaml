@@ -32,7 +32,7 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
     - device: GALAXY
-      max_concurrency: 16
+      max_concurrency: 32
       max_context: 65536  # 64 * 1024
       default_impl: true
     - device: P150
@@ -52,6 +52,36 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: COMPLETE
+
+# Forge full-on-device SDXL (PR #3485) — UNet (+ text encoders/VAE via
+# TTXLA_SDXL_FULL_ON_DEVICE) on Blackhole. Distinct sdxl_forge impl avoids a
+# model_id collision with the media SDXL spec above on shared devices.
+# NOTE: version/tt_metal_commit must point to the tt-media-inference-server-forge
+# image that ships sdxl_forge_runner.py + #3485 (+ Forge LoRA) for this to pass;
+# the values below mirror the current forge image family and should be confirmed
+# at PR time.
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0
+  version: "0.13.0"
+  tt_metal_commit: 079a2c2
+  impl: sdxl_forge
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: FORGE
+  status: EXPERIMENTAL
+  env_vars:
+    TTXLA_SDXL_FULL_ON_DEVICE: "true"
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: false
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: false
 
 - weights:
     - stabilityai/stable-diffusion-3.5-large

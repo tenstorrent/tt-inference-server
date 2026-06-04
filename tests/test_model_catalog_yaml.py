@@ -153,6 +153,7 @@ templates:
 import pytest
 
 MODEL_SPECS_DIR = Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
+EXPECTED_CATALOG_ENVS = ("prod", "dev")
 EXPECTED_CATALOG_FILES = (
     "llm.yaml",
     "vlm.yaml",
@@ -164,20 +165,25 @@ EXPECTED_CATALOG_FILES = (
 )
 
 
-def test_all_expected_catalog_files_exist():
-    found = {p.name for p in MODEL_SPECS_DIR.glob("*.yaml")}
+@pytest.mark.parametrize("env", EXPECTED_CATALOG_ENVS)
+def test_all_expected_catalog_files_exist(env):
+    found = {p.name for p in (MODEL_SPECS_DIR / env).glob("*.yaml")}
     missing = set(EXPECTED_CATALOG_FILES) - found
-    assert not missing, f"Missing catalog YAML files: {missing}"
+    assert not missing, f"Missing catalog YAML files in {env}/: {missing}"
 
 
-@pytest.mark.parametrize("yaml_name", EXPECTED_CATALOG_FILES)
-def test_catalog_yaml_loads_and_every_template_expands(yaml_name):
-    """Each per-category catalog YAML must load and every template must expand
-    to >=1 spec. Surfaces typos and missing-field errors with a per-file,
-    per-template assertion message instead of one opaque import-time exception.
+@pytest.mark.parametrize(
+    "env,yaml_name",
+    [(env, name) for env in EXPECTED_CATALOG_ENVS for name in EXPECTED_CATALOG_FILES],
+)
+def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
+    """Each per-category catalog YAML (in each env) must load and every
+    template must expand to >=1 spec. Surfaces typos and missing-field errors
+    with a per-env, per-file, per-template assertion message instead of one
+    opaque import-time exception.
     """
-    templates = load_templates_from_yaml(MODEL_SPECS_DIR / yaml_name)
-    assert templates, f"{yaml_name} produced zero templates"
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / env / yaml_name)
+    assert templates, f"{env}/{yaml_name} produced zero templates"
     for t in templates:
         specs = t.expand_to_specs()
-        assert specs, f"{yaml_name}: template {t.weights} expanded to zero specs"
+        assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"

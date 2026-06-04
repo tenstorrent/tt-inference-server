@@ -249,39 +249,6 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
-      p300x2:
-        defaultImpl: gpt_oss
-        impls:
-          gpt_oss:
-            progressDeadlineSeconds: 7200
-            image:
-              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-747215b-7678b70
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
-            resources:
-              requests:
-                memory: 300Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: (1, 4)
-              - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_MESH_GRAPH_DESC_PATH
-                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
-              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-                value: '1'
-              - name: VLLM_CONFIGURE_LOGGING
-                value: '1'
-              - name: VLLM_RPC_TIMEOUT
-                value: '900000'
-              - name: VLLM_TARGET_DEVICE
-                value: tt
     defaultEngine: vllm
   AFM-4.5B:
     vllm:
@@ -628,6 +595,34 @@ models:
                 value: '32'
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 12Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.6'
+              - name: MAX_MODEL_LENGTH
+                value: '4096'
+              - name: MAX_NUM_SEQS
+                value: '16'
+              - name: MESH_DEVICE
+                value: P150
   Qwen3-32B:
     vllm:
       galaxy:
@@ -768,7 +763,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -906,42 +901,6 @@ models:
             resources:
               requests:
                 memory: 17Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: MESH_DEVICE
-                value: T3K
-              - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-                value: '1'
-              - name: VLLM_CONFIGURE_LOGGING
-                value: '1'
-              - name: VLLM_RPC_TIMEOUT
-                value: '900000'
-              - name: VLLM_TARGET_DEVICE
-                value: tt
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
-    defaultEngine: vllm
-  Mistral-Small-3.1-24B-Instruct-2503:
-    vllm:
-      t3k:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-9e3b1b3-1d0aa18
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
-            resources:
-              requests:
-                memory: 60Gi
             env:
               - name: ARCH_NAME
                 value: wormhole_b0
@@ -1497,7 +1456,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1526,7 +1485,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1555,7 +1514,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1690,7 +1649,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1719,7 +1678,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1748,7 +1707,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1916,7 +1875,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1945,7 +1904,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -1974,7 +1933,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2109,7 +2068,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2138,7 +2097,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2167,7 +2126,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 3600
@@ -2558,8 +2517,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -2572,17 +2531,45 @@ models:
             env:
               - name: ARCH_NAME
                 value: wormhole_b0
-              - name: MAX_NUM_SEQS
-                value: '2'
               - name: MESH_DEVICE
                 value: N150
               - name: VLLM__MAX_MODEL_LENGTH
-                value: '4096'
+                value: '2048'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '4096'
+                value: '2048'
               - name: VLLM__MIN_MODEL_LENGTH
                 value: '32'
       n300:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 8Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: N300
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '2048'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '2048'
+              - name: VLLM__MIN_MODEL_LENGTH
+                value: '32'
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
         defaultImpl: forge_vllm_plugin
         impls:
           forge_vllm_plugin:
@@ -2601,19 +2588,15 @@ models:
                 memory: 8Gi
             env:
               - name: ARCH_NAME
-                value: wormhole_b0
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.7'
+              - name: MAX_MODEL_LENGTH
+                value: '8192'
               - name: MAX_NUM_SEQS
-                value: '2'
+                value: '16'
               - name: MESH_DEVICE
-                value: N300
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '4096'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '4096'
-              - name: VLLM__MIN_MODEL_LENGTH
-                value: '32'
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
+                value: P150
     defaultEngine: vllm
   Llama-3.2-3B-Instruct:
     vllm:
@@ -2772,6 +2755,34 @@ models:
                 value: '32'
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 8Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.7'
+              - name: MAX_MODEL_LENGTH
+                value: '8192'
+              - name: MAX_NUM_SEQS
+                value: '16'
+              - name: MESH_DEVICE
+                value: P150
   Llama-3.1-8B:
     vllm:
       n150:
@@ -2957,7 +2968,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.0-55fd115-aa4ae1e
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -2986,7 +2997,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3015,7 +3026,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-80180b9-7678b70
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3044,7 +3055,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-80180b9-7678b70
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3320,7 +3331,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.0-55fd115-aa4ae1e
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3349,7 +3360,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-555f240-22be241
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3378,7 +3389,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-80180b9-7678b70
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3407,7 +3418,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.14.0-80180b9-7678b70
+              tag: 0.10.1-555f240-22be241
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3557,6 +3568,34 @@ models:
                 value: '32'
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 12Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.6'
+              - name: MAX_MODEL_LENGTH
+                value: '4096'
+              - name: MAX_NUM_SEQS
+                value: '16'
+              - name: MESH_DEVICE
+                value: P150
   Qwen2.5-Coder-32B-Instruct:
     vllm:
       t3k:
@@ -3639,7 +3678,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-c254ee3-c4f2327
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3668,7 +3707,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-c254ee3-c4f2327
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3762,7 +3801,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-c254ee3-c4f2327
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3791,7 +3830,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-c254ee3-c4f2327
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3885,7 +3924,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3916,7 +3955,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3951,7 +3990,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4014,7 +4053,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4045,7 +4084,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4080,7 +4119,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-aecd1d7-0da90eb
+              tag: 0.9.0-0b10c51-3499ffa
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4246,7 +4285,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.12.0-c18569e-b2894d3
+              tag: 0.9.0-c18569e-b2894d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4731,7 +4770,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4755,7 +4794,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4777,7 +4816,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4799,7 +4838,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.1-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5020,6 +5059,55 @@ models:
               - name: MESH_DEVICE
                 value: P150
     defaultEngine: media
+    forge:
+      p150x8:
+        defaultImpl: sdxl_forge
+        impls:
+          sdxl_forge:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150x8
+              - name: TTXLA_SDXL_FULL_ON_DEVICE
+                value: 'true'
+      p300x2:
+        defaultImpl: sdxl_forge
+        impls:
+          sdxl_forge:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TTXLA_SDXL_FULL_ON_DEVICE
+                value: 'true'
   stable-diffusion-xl-base-1.0-img-2-img:
     media:
       n150:
@@ -5444,7 +5532,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5468,7 +5556,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5490,7 +5578,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5534,7 +5622,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5556,7 +5644,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.1-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5581,7 +5669,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5605,7 +5693,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5627,7 +5715,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5649,7 +5737,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.1-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5671,7 +5759,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5693,7 +5781,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-80180b9
+              tag: 0.10.1-555f240
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5913,7 +6001,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5935,7 +6023,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5959,7 +6047,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5981,7 +6069,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6005,7 +6093,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6053,7 +6141,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6080,7 +6168,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6102,7 +6190,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6126,7 +6214,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6148,7 +6236,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6172,7 +6260,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6220,7 +6308,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6247,7 +6335,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.9.0-a9b09e0
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6269,7 +6357,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.9.0-a9b09e0
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6293,7 +6381,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6341,7 +6429,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-2508216
+              tag: 0.15.0-25891d3
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6501,151 +6589,6 @@ models:
                 value: '3072'
               - name: VLLM__MAX_NUM_SEQS
                 value: '8'
-              - name: VLLM__MIN_CONTEXT_LENGTH
-                value: '32'
-    defaultEngine: media
-  bge-m3:
-    media:
-      n150:
-        defaultImpl: tt_vllm_plugin
-        impls:
-          tt_vllm_plugin:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-                path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
-            resources:
-              requests:
-                memory: 6Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: DEFAULT_THROTTLE_LEVEL
-                value: '0'
-              - name: MAX_BATCH_SIZE
-                value: '32'
-              - name: MESH_DEVICE
-                value: N150
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '8192'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '262144'
-              - name: VLLM__MAX_NUM_SEQS
-                value: '32'
-              - name: VLLM__MIN_CONTEXT_LENGTH
-                value: '32'
-      n300:
-        defaultImpl: tt_vllm_plugin
-        impls:
-          tt_vllm_plugin:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-                path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
-            resources:
-              requests:
-                memory: 6Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: DEFAULT_THROTTLE_LEVEL
-                value: '0'
-              - name: MAX_BATCH_SIZE
-                value: '32'
-              - name: MESH_DEVICE
-                value: N300
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '8192'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '262144'
-              - name: VLLM__MAX_NUM_SEQS
-                value: '32'
-              - name: VLLM__MIN_CONTEXT_LENGTH
-                value: '32'
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
-      t3k:
-        defaultImpl: tt_vllm_plugin
-        impls:
-          tt_vllm_plugin:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-                path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
-            resources:
-              requests:
-                memory: 6Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: DEFAULT_THROTTLE_LEVEL
-                value: '0'
-              - name: MAX_BATCH_SIZE
-                value: '32'
-              - name: MESH_DEVICE
-                value: T3K
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '8192'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '262144'
-              - name: VLLM__MAX_NUM_SEQS
-                value: '32'
-              - name: VLLM__MIN_CONTEXT_LENGTH
-                value: '32'
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
-      galaxy:
-        defaultImpl: tt_vllm_plugin
-        impls:
-          tt_vllm_plugin:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.14.0-ec28d12
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-                path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
-            resources:
-              requests:
-                memory: 6Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: DEFAULT_THROTTLE_LEVEL
-                value: '0'
-              - name: MAX_BATCH_SIZE
-                value: '32'
-              - name: MESH_DEVICE
-                value: TG
-              - name: TT_METAL_INSPECTOR_RPC
-                value: '0'
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '8192'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '262144'
-              - name: VLLM__MAX_NUM_SEQS
-                value: '32'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: media
@@ -6927,8 +6870,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6944,12 +6887,42 @@ models:
               - name: MESH_DEVICE
                 value: N150
               - name: VLLM__MAX_MODEL_LENGTH
-                value: '4096'
+                value: '2048'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '4096'
+                value: '2048'
               - name: VLLM__MIN_MODEL_LENGTH
                 value: '32'
       n300:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 8Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: N300
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '2048'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '2048'
+              - name: VLLM__MIN_MODEL_LENGTH
+                value: '32'
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
         defaultImpl: forge_vllm_plugin
         impls:
           forge_vllm_plugin:
@@ -6968,17 +6941,15 @@ models:
                 memory: 8Gi
             env:
               - name: ARCH_NAME
-                value: wormhole_b0
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.7'
+              - name: MAX_MODEL_LENGTH
+                value: '4096'
+              - name: MAX_NUM_SEQS
+                value: '16'
               - name: MESH_DEVICE
-                value: N300
-              - name: VLLM__MAX_MODEL_LENGTH
-                value: '4096'
-              - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '4096'
-              - name: VLLM__MIN_MODEL_LENGTH
-                value: '32'
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
+                value: P150
     defaultEngine: forge
   resnet-50:
     forge:
@@ -7498,4 +7469,32 @@ models:
                 value: '32'
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 12Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GPU_MEMORY_UTILIZATION
+                value: '0.6'
+              - name: MAX_MODEL_LENGTH
+                value: '4096'
+              - name: MAX_NUM_SEQS
+                value: '16'
+              - name: MESH_DEVICE
+                value: P150
     defaultEngine: forge
