@@ -244,7 +244,9 @@ class TTModelRunner:
             req_id = new_req_data.req_id
             sampling_params = new_req_data.sampling_params
 
-            self.requests[req_id] = CachedRequestState(
+            import dataclasses
+
+            _crs_kwargs = dict(
                 req_id=req_id,
                 prompt_token_ids=new_req_data.prompt_token_ids,
                 sampling_params=sampling_params,
@@ -254,9 +256,17 @@ class TTModelRunner:
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
             )
+            # vLLM replaced mm_kwargs/mm_positions with mm_features on
+            # CachedRequestState. Populate whichever the installed vLLM has
+            # (empty for text-only serving).
+            _crs_fields = {f.name for f in dataclasses.fields(CachedRequestState)}
+            if "mm_features" in _crs_fields:
+                _crs_kwargs["mm_features"] = getattr(new_req_data, "mm_features", [])
+            else:
+                _crs_kwargs["mm_kwargs"] = getattr(new_req_data, "mm_kwargs", [])
+                _crs_kwargs["mm_positions"] = getattr(new_req_data, "mm_positions", [])
+            self.requests[req_id] = CachedRequestState(**_crs_kwargs)
 
             req_ids_to_add.append(req_id)
 
