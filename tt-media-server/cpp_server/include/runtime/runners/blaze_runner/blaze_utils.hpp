@@ -65,20 +65,21 @@ inline void fillSequenceFields(sch::ISRequest& req,
   req.gen = makeGenerationParams(seq);
 }
 
-inline sch::ISRequest makeSubmitRequest(uint32_t slotId,
-                                        const tt::domain::llm::Sequence& seq) {
+inline sch::ISRequest makeSubmitRequest(uint32_t slotId, const tt::domain::llm::Sequence& seq , std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::SUBMIT;
   req.slot_id = slotId;
+  req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
   return req;
 }
 
 inline sch::ISRequest makeContinueRequest(uint32_t slotId,
-                                          const tt::domain::llm::Sequence& seq) {
+                                          const tt::domain::llm::Sequence& seq, std::optional<uint32_t> destSlotId = std::nullopt) {
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
+  req.dest_slot_id = destSlotId;
   fillSequenceFields(req, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
