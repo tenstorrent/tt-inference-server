@@ -237,10 +237,15 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
   ChatRequest convo;
   const std::vector<std::string> userMessages = {
       "multi-turn-test-unique-opener with enough words to produce at least "
-      "thirty two tokens after tokenization so that the prefix cache can "
-      "register a block for subsequent turns to match against",
-      "how are you",
-      "tell me a joke",
+      "more than we expect to have which is "
+      "thirty two tokens after tokenization so that the prefix cache can be "
+      "sure that all works fine and that new blocks are being created "
+      "register a block for subsequent turns to match against list of the "
+      "blocks in the session manager and reuse those blocks ",
+      "how are you today? Is everything good? Did you sleep well? Hope you had "
+      "some rest. ",
+      "tell me a joke that involves elephants, dogs, cats and mouses. Make the "
+      "joke about mouse that tricks everyone else",
       "thanks",
   };
 
@@ -250,6 +255,22 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
 
     auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "turn " << i;
+
+    // first turn is 72 tokens
+    if (i == 0) {
+      EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
+    } else if (i == 1) {
+      // 2nd turn is 96 tokens -> 63 from cache, 33 new
+      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
+      EXPECT_EQ(*seq->getKVPositionId(), 63u) << "turn 1 kvPositionId value";
+    } else if (i == 2) {
+      // 3rd turn is 123 tokens -> 95 from cache, 28 new
+      EXPECT_EQ(seq->getTokenIds().size(), 28u) << "turn 2 tokenIds size";
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
+      EXPECT_EQ(*seq->getKVPositionId(), 95u) << "turn 2 kvPositionId value";
+    }
+    // after first turn it should be a continuation
     EXPECT_EQ(seq->isContinuation(), i > 0) << "turn " << i;
 
     mockWorkerResponse(seq->taskId);
