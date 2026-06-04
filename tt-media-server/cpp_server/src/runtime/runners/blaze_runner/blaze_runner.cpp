@@ -616,8 +616,7 @@ void BlazeRunner::handleRequest(
           slotManager.activeRunningCount());
       ds::ISRequest req =
           isNew ? utils::makeSubmitRequest(slotId, *request)
-                : utils::makeContinueRequest(slotId, *request,
-                                             slotContext.currentPosition);
+                : utils::makeContinueRequest(slotId, *request);
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeRunner] handleRequest: failed to push request, taskId={}, "
