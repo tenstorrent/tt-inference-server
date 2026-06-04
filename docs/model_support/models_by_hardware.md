@@ -71,6 +71,8 @@ This page lists all supported models organized by hardware type.
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p300x2.md) |
 | 🟢 Complete | Image | [FLUX.1-dev](image/FLUX.1-dev_p300x2.md) |
+| 🟢 Complete | Image | [FLUX.1-schnell](image/FLUX.1-schnell_p300x2.md) |
+| 🟢 Complete | Image | [Motif-Image-6B-Preview](image/Motif-Image-6B-Preview_p300x2.md) |
 | 🟢 Complete | Video | [mochi-1-preview](video/mochi-1-preview_p300x2.md) |
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
@@ -133,22 +135,22 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_n150.md) |
+| 🟢 Complete | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
+| 🟢 Complete | CNN | [vit](cnn/vit_n150.md) |
+| 🟢 Complete | CNN | [vovnet](cnn/vovnet_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n150.md) |
 | 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n150.md) |
 | 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_n150.md) |
 | 🟢 Complete | TTS | [speecht5_tts](tts/speecht5_tts_n150.md) |
+| 🟡 Functional | CNN | [resnet-50](cnn/resnet-50_n150.md) |
+| 🟡 Functional | CNN | [segformer](cnn/segformer_n150.md) |
 | 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_n150.md) |
 | 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_n150.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_n150.md) |
 | 🟡 Functional | VLM | [Llama-3.2-11B-Vision](vlm/Llama-3.2-11B-Vision_n150.md) |
 | 🛠️ Experimental | CNN | [efficientnet](cnn/efficientnet_n150.md) |
-| 🛠️ Experimental | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
-| 🛠️ Experimental | CNN | [resnet-50](cnn/resnet-50_n150.md) |
-| 🛠️ Experimental | CNN | [segformer](cnn/segformer_n150.md) |
 | 🛠️ Experimental | CNN | [unet](cnn/unet_n150.md) |
-| 🛠️ Experimental | CNN | [vit](cnn/vit_n150.md) |
-| 🛠️ Experimental | CNN | [vovnet](cnn/vovnet_n150.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_n150.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_n150.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_n150.md) |
@@ -164,21 +166,21 @@ This page lists all supported models organized by hardware type.
 | Status | Type | Model |
 |--------|------|-------|
 | 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_n150.md) |
+| 🟢 Complete | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
+| 🟢 Complete | CNN | [vit](cnn/vit_n150.md) |
+| 🟢 Complete | CNN | [vovnet](cnn/vovnet_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-1.0-inpainting-0.1](image/stable-diffusion-xl-1.0-inpainting-0.1_n150.md) |
 | 🟢 Complete | Image | [stable-diffusion-xl-base-1.0](image/stable-diffusion-xl-base-1.0_n150.md) |
 | 🟢 Complete | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_n150.md) |
 | 🟢 Complete | LLM | [Mistral-7B-Instruct-v0.3](llm/Mistral-7B-Instruct-v0.3_n150.md) |
 | 🟢 Complete | TTS | [speecht5_tts](tts/speecht5_tts_n150.md) |
+| 🟡 Functional | CNN | [resnet-50](cnn/resnet-50_n150.md) |
+| 🟡 Functional | CNN | [segformer](cnn/segformer_n150.md) |
 | 🟡 Functional | LLM | [Llama-3.2-1B](llm/Llama-3.2-1B_n150.md) |
 | 🟡 Functional | LLM | [Llama-3.2-3B](llm/Llama-3.2-3B_n150.md) |
 | 🟡 Functional | LLM | [Qwen3-8B](llm/Qwen3-8B_n150.md) |
 | 🛠️ Experimental | CNN | [efficientnet](cnn/efficientnet_n150.md) |
-| 🛠️ Experimental | CNN | [mobilenetv2](cnn/mobilenetv2_n150.md) |
-| 🛠️ Experimental | CNN | [resnet-50](cnn/resnet-50_n150.md) |
-| 🛠️ Experimental | CNN | [segformer](cnn/segformer_n150.md) |
 | 🛠️ Experimental | CNN | [unet](cnn/unet_n150.md) |
-| 🛠️ Experimental | CNN | [vit](cnn/vit_n150.md) |
-| 🛠️ Experimental | CNN | [vovnet](cnn/vovnet_n150.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_n150.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_n150.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_n150.md) |

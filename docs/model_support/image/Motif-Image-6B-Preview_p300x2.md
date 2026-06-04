@@ -1,18 +1,18 @@
-# Motif-Image-6B-Preview Tenstorrent Support on BH LoudBox
+# Motif-Image-6B-Preview Tenstorrent Support on BH QuietBox 2
 
 #### Useful links
 
-- [BH LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `Motif-Image-6B-Preview` is also supported on hardware:
 
 - [WH Galaxy](Motif-Image-6B-Preview_galaxy.md)
-- [BH QuietBox 2](Motif-Image-6B-Preview_p300x2.md)
+- [BH LoudBox](Motif-Image-6B-Preview_p150x8.md)
 - [WH LoudBox/QuietBox](Motif-Image-6B-Preview_t3k.md)
 
-## Quickstart - Deploy Motif-Image-6B-Preview Inference Server on BH LoudBox
+## Quickstart - Deploy Motif-Image-6B-Preview Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -21,7 +21,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model Motif-Image-6B-Preview --device p150x8 --workflow server --docker-server
+python3 run.py --model Motif-Image-6B-Preview --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
