@@ -620,6 +620,16 @@ jobs:
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
+      # See cpp-build: cache the tokenizer bundle so the clang-tidy build's
+      # tokenizer pre-fetch skips HuggingFace (avoids 429s on GitHub runners).
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v4
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
+
       - name: Validate OpenAPI spec against registered routes
         run: |
           python3 -m pip install openapi-spec-validator --quiet
@@ -719,6 +729,18 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+
+      # Reuse the tokenizer bundle across runs so build.sh's pre-fetch skips
+      # HuggingFace entirely on a cache hit. GitHub runners share egress IPs
+      # and routinely get HTTP 429 from HF; the restore-keys prefix lets this
+      # land on the cache cpp-tsan already populates with the same key.
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v4
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
 
       - name: Build C++ server
         run: |
