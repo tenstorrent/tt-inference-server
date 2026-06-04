@@ -57,7 +57,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
-| Max Context Length | 32768 |
+| Max Context Length | 65536 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
 | tt-metal Commit | `25305db` |
 | vLLM Commit | `6e67d2d` |
@@ -97,7 +97,7 @@ python3 run.py --model Llama-3.1-8B --device n300 --workflow server --docker-ser
 | Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
-| Max Context Length | 32768 |
+| Max Context Length | 131072 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
 | tt-metal Commit | `25305db` |
 | vLLM Commit | `6e67d2d` |

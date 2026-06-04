@@ -8,6 +8,6 @@ This page lists all supported text-to-speech models and their device compatibili
 
 Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 
-| Model Name | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) |
-| --- | --- | --- |
-| [speecht5_tts](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p100.md) |
+| Model Name | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P100/P150](https://tenstorrent.com/hardware/blackhole) | [N150/N300](https://tenstorrent.com/hardware/wormhole) |
+| --- | --- | --- | --- |
+| [speecht5_tts](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p100.md) | [🟢 Complete](speecht5_tts_n150.md) |
