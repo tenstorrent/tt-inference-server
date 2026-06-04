@@ -4,7 +4,7 @@
 *       @tenstorrent/tt-inference-server-codeowners
 
 # tt-media-server
-tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT @lmuravljovTT @nanicicTT
+tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT @lmuravljovTT @nanicicTT @visnjakrsmanovicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic @mcupacTT @mmilosevicTT
 
 # tt-vllm-plugin
