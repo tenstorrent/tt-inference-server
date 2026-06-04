@@ -1100,6 +1100,11 @@ templates:
       default_impl: true
       vllm_args:
         trust_remote_code: true
+        # vLLM main ships a native multimodal qwen3_5; ModelConfig resolves it
+        # (setting multimodal_config) BEFORE the plugin's TT prefix is applied.
+        # Pre-set the already-TT-prefixed arch so ModelConfig resolves our
+        # text-only class from the start (text-only serving; no MM processor).
+        hf_overrides: '{"architectures": ["TTQwen3_5ForConditionalGeneration"]}'
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: EXPERIMENTAL

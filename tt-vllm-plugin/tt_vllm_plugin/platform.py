@@ -78,7 +78,8 @@ class TTPlatform(Platform):
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            if envs.VLLM_USE_V1:
+            # vLLM main dropped the VLLM_USE_V1 env (V1 is always-on); default True.
+            if getattr(envs, "VLLM_USE_V1", True):
                 parallel_config.worker_cls = (
                     "tt_vllm_plugin.v1.worker.tt_worker.TTWorker"
                 )
@@ -128,7 +129,7 @@ class TTPlatform(Platform):
         # or if any of the requests in the batch require it.
         # For now, it is only supported with host-side sampling.
 
-        if envs.VLLM_USE_V1:  # type: ignore[attr-defined]
+        if getattr(envs, "VLLM_USE_V1", True):  # type: ignore[attr-defined]
             logger.warning(
                 "Disabling compatibility sampling as it's not yet support for "
                 "V1 TT backend."
@@ -144,7 +145,7 @@ class TTPlatform(Platform):
                 "always_compat_sampling must be a boolean"
             )
             if always_compat_sampling:
-                if envs.VLLM_USE_V1:
+                if getattr(envs, "VLLM_USE_V1", True):
                     raise ValueError(
                         "always_compat_sampling is not yet supported for V1 TT backend."
                     )
@@ -173,7 +174,7 @@ class TTPlatform(Platform):
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         # V1 support on TT is experimental.
         # Allow users to opt in, but give a warning.
-        if envs.is_set("VLLM_USE_V1") and envs.VLLM_USE_V1:
+        if envs.is_set("VLLM_USE_V1") and getattr(envs, "VLLM_USE_V1", True):
             if model_config.is_encoder_decoder:
                 raise ValueError(
                     "VLLM_USE_V1=1 was set but encoder-decoder models aren't "
@@ -183,7 +184,7 @@ class TTPlatform(Platform):
                 "Enabling V1 since VLLM_USE_V1=1, however V1 is still "
                 "experimental for TT backend."
             )
-            return envs.VLLM_USE_V1
+            return getattr(envs, "VLLM_USE_V1", True)
         return False
 
     @classmethod

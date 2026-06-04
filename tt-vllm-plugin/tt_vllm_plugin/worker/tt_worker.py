@@ -27,7 +27,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     scheduler_config = vllm_config.scheduler_config
     cache_config = vllm_config.cache_config
 
-    if envs.VLLM_USE_V1:
+    if getattr(envs, "VLLM_USE_V1", True):
         data_parallel = vllm_config.parallel_config.data_parallel_size
     else:
         data_parallel = 1
@@ -131,7 +131,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     max_batch = scheduler_config.max_num_seqs
     max_tokens_all_users += cache_config.block_size * max_batch
 
-    if not envs.VLLM_USE_V1:
+    if not getattr(envs, "VLLM_USE_V1", True):
         # For multi-step, to fit (max_tokens_all_users / max batch) per user,
         # allocate an extra num_lookahead_slots (num_scheduler_steps - 1 when
         # not using speculative decoding) per user.
@@ -140,7 +140,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
 
     num_tt_blocks = math.ceil(max_tokens_all_users / cache_config.block_size)
 
-    if not envs.VLLM_USE_V1:
+    if not getattr(envs, "VLLM_USE_V1", True):
         # Add 1% to account for vLLM's watermark_blocks
         num_tt_blocks = int(num_tt_blocks * 1.01)
 
