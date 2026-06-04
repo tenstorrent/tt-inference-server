@@ -118,7 +118,7 @@ void DisaggregationService::setupSocketHandlers() {
     // side's connection-lost handler can fail in-flight streams instead of
     // hanging on requests nobody can answer.  Assumes WorkerManager does not
     // auto-restart workers; if that changes, the callback will fire again on
-    // the replacement worker's first crash and stop a possibly-rearmed socket
+    // the replacement worker's first crash and stop a possibly-rearmed socket.
     if (auto* workerManager = llmService->getWorkerManager()) {
       workerManager->setWorkerDeathCallback(
           [socket = socketService](size_t workerIdx, pid_t pid) {
@@ -267,7 +267,7 @@ void DisaggregationService::resolvePrefillSession(
 
   auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
 
-  if (acquired.has_value()) {
+  if (acquired.has_value() && acquired->sessionFound) {
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache HIT taskId={} "
         "sessionId={} slotId={} matchedTokens={}",
@@ -277,26 +277,70 @@ void DisaggregationService::resolvePrefillSession(
     applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
   } else {
+    // Check if there's a candidate slot worth copying from.
+    std::optional<uint32_t> slotToCopyFrom;
+    uint32_t copyMatchedTokens = 0;
+    if (acquired.has_value() && !acquired->candidatesList.empty()) {
+      auto copyCandidate =
+          sessionManager->findASlotToCopyFrom(acquired->candidatesList);
+      if (copyCandidate.has_value()) {
+        uint32_t sourceSlot =
+            sessionManager->getSlotIdBySessionId(copyCandidate->sessionId);
+        if (sourceSlot != tt::domain::INVALID_SLOT_ID) {
+          sessionManager->lockSlot(sourceSlot);
+          slotToCopyFrom = sourceSlot;
+          const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+          const size_t blockSize = tt::config::kvCacheBlockSize();
+          copyMatchedTokens = static_cast<uint32_t>(
+              firstBlockSize +
+              (copyCandidate->matchedBlocks > 1
+                   ? (copyCandidate->matchedBlocks - 1) * blockSize
+                   : 0));
+          TT_LOG_INFO(
+              "[DisaggregationService] Found slot to copy from: slotId={} "
+              "matchedTokens={} for taskId={}",
+              sourceSlot, copyMatchedTokens, request.task_id);
+        }
+      }
+    }
+
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request.task_id, routingHashes.size());
+
+    // If copying, set continuation and kv_position_id on the request.
+    if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
+      request.continuation = true;
+      request.kv_position_id = copyMatchedTokens - 1;
+      applyDeltaPrompt(request, copyMatchedTokens);
+    }
+
     sessionManager->createSession(
         [taskId = request.task_id, infos = std::move(blockInfos),
-         sm = sessionManager](const tt::domain::Session& session) mutable {
+         sm = sessionManager,
+         slotToCopyFrom](const tt::domain::Session& session) mutable {
+          if (slotToCopyFrom.has_value()) {
+            sm->unlockSlot(*slotToCopyFrom);
+          }
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
               taskId, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
         },
-        [taskId = request.task_id](std::string_view errorMessage) {
+        [taskId = request.task_id, sm = sessionManager,
+         slotToCopyFrom](std::string_view errorMessage) {
+          if (slotToCopyFrom.has_value()) {
+            sm->unlockSlot(*slotToCopyFrom);
+          }
           TT_LOG_WARN(
               "[DisaggregationService] Failed to create session for "
               "taskId={}: {}",
               taskId, errorMessage);
         },
-        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos);
+        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos,
+        /*slotId=*/std::nullopt, slotToCopyFrom);
   }
 }
 
