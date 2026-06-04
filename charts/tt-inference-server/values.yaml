@@ -5063,6 +5063,55 @@ models:
               - name: MESH_DEVICE
                 value: P150
     defaultEngine: media
+    forge:
+      p150x8:
+        defaultImpl: sdxl_forge
+        impls:
+          sdxl_forge:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150x8
+              - name: TTXLA_SDXL_FULL_ON_DEVICE
+                value: 'true'
+      p300x2:
+        defaultImpl: sdxl_forge
+        impls:
+          sdxl_forge:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.13.0-079a2c2
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TTXLA_SDXL_FULL_ON_DEVICE
+                value: 'true'
   stable-diffusion-xl-base-1.0-img-2-img:
     media:
       n150:
