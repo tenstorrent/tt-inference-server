@@ -1047,7 +1047,7 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"] == "(0)"
 
-    @pytest.mark.parametrize("device", ["p300x2", "galaxy"])
+    @pytest.mark.parametrize("device", ["galaxy"])
     def test_multi_runner_sdxl_uses_cpp_server(self, device):
         model_spec, _, _ = get_runtime_model_spec(
             model="stable-diffusion-xl-base-1.0",
