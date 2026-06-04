@@ -228,22 +228,18 @@ templates:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
   version: "0.12.0"
-  tt_metal_commit: 07e4d5fe7c4  # conform decode to std Generator + consolidate masked-bucket prefill (qwen9b-p150 on tenstorrent/tt-metal)
-  vllm_commit: 0410f6b0c  # raise max_num_batched_tokens>=max_model_len when chunked prefill disabled (atupe/qwen9b on tenstorrent/vllm)
+  tt_metal_commit: 07e4d5fe7c4
+  vllm_commit: 0410f6b0c
   inference_engine: VLLM
   device_model_specs:
     - device: P150
       max_concurrency: 1
-      max_context: 131072  # 128 * 1024
+      max_context: 131072
       default_impl: true
-      # Prefix caching forces vLLM into "align" mamba-cache mode, which
-      # requires chunked prefill -- forbidden by the TT platform.
+      # Prefix caching forces vLLM into "align" mamba-cache mode,
+      # which requires chunked prefill
       vllm_args:
         no-enable-prefix-caching: true
-      # Tracing on: the masked fixed-bucket prefill fix (see tt_metal_commit) warms
-      # every short-prompt bucket before trace capture, so no request-time compile
-      # can clobber the resident traces. trace_region_size must hold the ~81MB
-      # chunk-prefill trace + the decode trace (the 50MB default is too small).
       override_tt_config:
         trace_mode: all
         trace_region_size: 268435456  # 256 MB

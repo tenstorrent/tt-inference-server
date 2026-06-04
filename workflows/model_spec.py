@@ -1017,8 +1017,8 @@ class ModelSpecTemplate:
         return specs
 
 
-# Catalog data lives in per-category YAML files under workflows/model_specs/.
-# spec_templates below loads from those files at import time.
+# Catalog data lives in workflows/model_specs/catalog.yaml.
+# spec_templates below loads from that file at import time.
 
 
 def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirements"]:
