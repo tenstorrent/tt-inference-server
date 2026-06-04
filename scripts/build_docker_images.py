@@ -1050,22 +1050,22 @@ def build_tt_metal_base_image(
             cwd=tt_metal_dir,
         )
 
-        # Build the Docker image
+        # tt-metal's Dockerfile uses Docker Buildx Bake — plain `docker build` is not
+        # supported because tool layers (cmake, zstd, openmpi) are FROM scratch stubs
+        # that Bake overrides with pre-built images (see dockerfile/docker-bake.hcl).
         logger.info("Building tt-metal Docker image...")
         build_command = [
-            "docker",
-            "build",
-            "--platform",
-            "linux/amd64",
-            "-t",
-            tt_metal_base_tag,
-            "--build-arg",
+            "env",
             f"UBUNTU_VERSION={ubuntu_version}",
-            "--target",
-            "ci-build",
+            "docker",
+            "buildx",
+            "bake",
             "-f",
-            "dockerfile/Dockerfile",
-            ".",
+            "dockerfile/docker-bake.hcl",
+            "--set",
+            f"ci-build.tags={tt_metal_base_tag}",
+            "--load",
+            "ci-build",
         ]
 
         run_command_with_logging(
