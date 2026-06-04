@@ -9,7 +9,7 @@
 `speecht5_tts` is also supported on hardware:
 
 - [BH QuietBox 2](speecht5_tts_p300x2.md)
-- [P100/P150](speecht5_tts_p100.md)
+- [P150](speecht5_tts_p150.md)
 
 ## Quickstart - Deploy speecht5_tts Inference Server on n150
 

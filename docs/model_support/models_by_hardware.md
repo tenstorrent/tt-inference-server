@@ -80,19 +80,19 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p300x2.md) |
 
-## [p150](https://tenstorrent.com/hardware/blackhole)
-
-| Status | Type | Model |
-|--------|------|-------|
-| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p100.md) |
-| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
-| 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p100.md) |
-
 ## [p100](https://tenstorrent.com/hardware/blackhole)
 
 | Status | Type | Model |
 |--------|------|-------|
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p100.md) |
+
+## [p150](https://tenstorrent.com/hardware/blackhole)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | Audio | [whisper-large-v3](audio/whisper-large-v3_p150.md) |
+| 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
+| 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p150.md) |
 
 ## [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox)
 

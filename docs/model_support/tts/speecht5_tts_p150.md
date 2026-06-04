@@ -1,8 +1,8 @@
-# speecht5_tts Tenstorrent Support on P100/P150
+# speecht5_tts Tenstorrent Support on P150
 
 #### Useful links
 
-- [P100/P150 details](https://tenstorrent.com/hardware/blackhole)
+- [P150 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other tts models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
