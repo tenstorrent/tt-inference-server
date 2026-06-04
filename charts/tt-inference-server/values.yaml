@@ -2666,6 +2666,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.7'
               - name: MAX_MODEL_LENGTH
@@ -2856,6 +2858,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.7'
               - name: MAX_MODEL_LENGTH

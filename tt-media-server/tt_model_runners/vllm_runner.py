@@ -41,6 +41,16 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # behavior: optimization_level=1, cpu_sampling enabled.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
+        # enable_trace replays the decode graph (skips per-step host dispatch),
+        # recovering the 1.2.0-wheel decode regression on Llama-3.2-3B at batch=4
+        # (~2x aggregate tok/s vs untraced). Caveats, so it stays off by default:
+        #   - vllm_tt's TTConfig rejects enable_trace=True + opt>=1 + cpu_sampling=False,
+        #     so it's only valid at optimization_level=0.
+        #   - it crashes at high batch (b16 hits a RuntimeError in
+        #     tt::runtime::ttnn::operations::trace::run) and b16/16K won't compile.
+        #   - trace-capture needs extra HBM scratch; validate fit on 7B+ models
+        #     before enabling (Falcon3-7B already OOMs trace-capture at TT_KV_POOL_GB=16).
+        enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -59,6 +69,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 # until the upstream tt-mlir fix lands.
                 "cpu_sampling": cpu_sampling,
                 "optimization_level": optimization_level,
+                "enable_trace": enable_trace,
             },
         )
         self.logger.info(

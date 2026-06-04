@@ -55,6 +55,11 @@ templates:
       # Internal batch at 4 (proven by peer commit 8ab810b6) so trace-capture
       # scratch fits alongside weights + KV pool on 32 GB P150. TT_KV_POOL_GB
       # lifts the forge wheel's 12 GB hardcode (vllm_tt/worker.py:236).
+      # ENABLE_TRACE=true recovers the 1.2.0-wheel decode regression here
+      # (validated at b4/16K: ~2x aggregate tok/s vs untraced, back to ~1.1.0
+      # levels). Requires OPTIMIZATION_LEVEL=0 and breaks at b16, so it's scoped
+      # to this batch=4 spec; the other forge LLMs (4B-8B) need a trace-capture
+      # HBM-fit check before enabling.
       max_concurrency: 4
       max_context: 16384
       default_impl: false
@@ -65,6 +70,7 @@ templates:
         GPU_MEMORY_UTILIZATION: "0.7"
         TT_KV_POOL_GB: "16"
         OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
 
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
