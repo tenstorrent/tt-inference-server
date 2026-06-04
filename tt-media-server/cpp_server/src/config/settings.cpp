@@ -541,6 +541,20 @@ std::string prefillServerId() {
   return cached;
 }
 
+std::string logInstanceTag(int workerIndex) {
+  // Base role distinguishes the node: LLM_MODE for the LLM service, else the
+  // service name. Worker subprocesses keep the base role and append their
+  // index, so colocated decode/prefill nodes (which share host:SOCKET_PORT)
+  // stay distinguishable as "decode-worker0" vs "prefill-worker0" in a merged
+  // log; otherwise only the pid would tell them apart.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role + "/" + prefillServerId() + " pid=" + std::to_string(::getpid());
+}
+
 uint32_t prefillMaxInFlight() {
   return static_cast<uint32_t>(
       envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));

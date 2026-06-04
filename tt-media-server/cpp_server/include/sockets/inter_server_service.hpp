@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "config/types.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
@@ -92,7 +93,8 @@ class InterServerService {
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
-                          const tt::domain::llm::SamplingParams& sampling = {});
+                          const tt::domain::llm::SamplingParams& sampling = {},
+                          int numberOfDecodeSkipTokens = 0);
 
   /**
    * @brief Send prefill result back to the decode server
@@ -168,6 +170,13 @@ class InterServerService {
   void sendRegistrationIfGatewayModeIsEnabled();
   void startRegistrationThread();
   void stopRegistrationThread();
+  void startHealthProbeThread();
+  void stopHealthProbeThread();
+  void sendPrefillHealthRequest();
+  void sendPrefillHealthStatus();
+  void recordPrefillHealthStatus(const PrefillHealthStatusMessage& message);
+  void markPrefillHealthUnavailable();
+  bool isPrefillHealthReady() const;
 
   SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
@@ -175,11 +184,17 @@ class InterServerService {
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;
   bool enabled_ = false;
+  tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
   bool gateway_mode_ = false;
   bool periodic_registration_mode_ = false;
+  bool prefillHealthProbeMode = false;
   std::mutex registration_mutex_;
   std::condition_variable registration_cv_;
   std::jthread registration_thread_;
+  mutable std::mutex prefillHealthMutex;
+  bool prefillHealthReady = false;
+  std::condition_variable prefillHealthCv;
+  std::jthread prefillHealthThread;
 };
 
 }  // namespace tt::sockets

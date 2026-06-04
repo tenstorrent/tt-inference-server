@@ -265,6 +265,14 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
+# Distinct impl for forge SDXL so its model_id does not collide with the media
+# SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
+sdxl_forge_impl = ImplSpec(
+    impl_id="sdxl_forge",
+    impl_name="sdxl-forge",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -276,6 +284,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
+    "sdxl_forge": sdxl_forge_impl,
 }
 
 

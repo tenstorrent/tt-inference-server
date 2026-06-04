@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -135,3 +136,60 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
     assert final_chunk["type"] == "final_result"
     expected_full_text = ""
     assert final_chunk["data"].text == expected_full_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "env, expected",
+    [
+        # Defaults — no env set
+        (
+            {},
+            {"optimization_level": 0, "cpu_sampling": True, "enable_trace": False},
+        ),
+        # All env vars set
+        (
+            {
+                "OPTIMIZATION_LEVEL": "2",
+                "CPU_SAMPLING": "false",
+                "ENABLE_TRACE": "true",
+            },
+            {"optimization_level": 2, "cpu_sampling": False, "enable_trace": True},
+        ),
+    ],
+)
+@patch("tt_model_runners.vllm_runner.AsyncLLMEngine")
+@patch("tt_model_runners.vllm_runner.AsyncEngineArgs")
+@patch("tt_model_runners.base_device_runner.get_settings")
+async def test_warmup_reads_env_into_additional_config(
+    mock_get_settings, mock_engine_args, mock_llm_engine, env, expected
+):
+    """warmup() must thread OPTIMIZATION_LEVEL/CPU_SAMPLING/ENABLE_TRACE env vars
+    into AsyncEngineArgs(additional_config=...) so the forge runtime sees them."""
+    mock_settings = MagicMock()
+    mock_settings.device_mesh_shape = (1, 8)
+    mock_get_settings.return_value = mock_settings
+
+    # warmup() iterates the engine.generate() async-generator until exhausted; an
+    # empty async generator is enough to let it complete.
+    async def empty_gen(*_args, **_kwargs):
+        if False:
+            yield  # pragma: no cover
+
+    mock_engine_instance = MagicMock()
+    mock_engine_instance.generate = empty_gen
+    mock_llm_engine.from_engine_args = MagicMock(return_value=mock_engine_instance)
+
+    runner = VLLMForgeRunner(device_id="test-device")
+    with patch.dict(os.environ, env, clear=False):
+        # Strip any inherited env keys so defaults assert correctly
+        for k in ("OPTIMIZATION_LEVEL", "CPU_SAMPLING", "ENABLE_TRACE"):
+            if k not in env:
+                os.environ.pop(k, None)
+        result = await runner.warmup()
+
+    assert result is True
+    add_cfg = mock_engine_args.call_args.kwargs["additional_config"]
+    assert add_cfg["optimization_level"] == expected["optimization_level"]
+    assert add_cfg["cpu_sampling"] is expected["cpu_sampling"]
+    assert add_cfg["enable_trace"] is expected["enable_trace"]
