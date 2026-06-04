@@ -56,12 +56,4 @@ std::string TraceIdGenerator::generate(std::string_view role) {
   return out;
 }
 
-std::string TraceIdGenerator::resolveOrGenerate(
-    std::string_view inboundRequestId) {
-  if (!inboundRequestId.empty()) {
-    return std::string(inboundRequestId);
-  }
-  return generate();
-}
-
 }  // namespace tt::utils

@@ -64,11 +64,6 @@ class TraceIdGenerator {
   /** Generate a new trace id using an explicit role prefix. Useful in tests or
    * non-LLM services that don't have an LLM_MODE. */
   static std::string generate(std::string_view role);
-
-  /** Shared HTTP entry-point policy: returns `inboundRequestId` verbatim when
-   * non-empty (honoring a caller- or gateway-supplied `X-Request-Id`),
-   * otherwise mints a fresh trace id via generate(). */
-  static std::string resolveOrGenerate(std::string_view inboundRequestId);
 };
 
 }  // namespace tt::utils

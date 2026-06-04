@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
-
-#include "api/embedding_controller.hpp"
 
 #include <chrono>
 #include <optional>
-#include <string>
 
+#include "api/embedding_controller.hpp"
 #include "api/error_response.hpp"
 #include "config/settings.hpp"
 #include "services/base_service.hpp"
 #include "services/service_container.hpp"
-#include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/thread_pool.hpp"
 
@@ -40,26 +38,17 @@ void EmbeddingController::createEmbedding(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   auto startTime = std::chrono::steady_clock::now();
 
-  // Resolved up front so every response on this request - including early
-  // validation failures - echoes the same `X-Request-Id` back to the client.
-  const std::string traceId =
-      tt::utils::TraceIdGenerator::resolveOrGenerate(
-          req->getHeader("x-request-id"));
-
   auto json = req->getJsonObject();
   if (!json) {
-    callback(withRequestId(errorResponse(drogon::k400BadRequest,
-                                         "Invalid JSON body",
-                                         "invalid_request_error"),
-                           traceId));
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
     return;
   }
 
   if (!json->isMember("input")) {
-    callback(withRequestId(errorResponse(drogon::k400BadRequest,
-                                         "Missing required field: input",
-                                         "invalid_request_error"),
-                           traceId));
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Missing required field: input",
+                           "invalid_request_error"));
     return;
   }
 
@@ -68,13 +57,11 @@ void EmbeddingController::createEmbedding(
   try {
     requestOpt = domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
   } catch (const std::invalid_argument& e) {
-    callback(withRequestId(errorResponse(drogon::k400BadRequest, e.what(),
-                                         "invalid_request_error"),
-                           traceId));
+    callback(errorResponse(drogon::k400BadRequest, e.what(),
+                           "invalid_request_error"));
     return;
   }
   auto request = std::move(*requestOpt);
-  request.trace_id = traceId;
 
   if (request.model.empty()) {
     request.model = "BAAI/bge-large-en-v1.5";
@@ -93,10 +80,8 @@ void EmbeddingController::createEmbedding(
       auto gotResponseTime = std::chrono::steady_clock::now();
 
       if (!response.error.empty()) {
-        callback(withRequestId(
-            errorResponse(drogon::k500InternalServerError, response.error,
-                          "server_error"),
-            request.trace_id));
+        callback(errorResponse(drogon::k500InternalServerError, response.error,
+                               "server_error"));
         return;
       }
 
@@ -104,9 +89,6 @@ void EmbeddingController::createEmbedding(
       auto builtJsonTime = std::chrono::steady_clock::now();
 
       auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
-      if (!request.trace_id.empty()) {
-        resp->addHeader("X-Request-Id", request.trace_id);
-      }
 
       if (reqNum % 100 == 0) {
         double parseMs =
@@ -130,15 +112,12 @@ void EmbeddingController::createEmbedding(
       callback(resp);
 
     } catch (const services::QueueFullException& e) {
-      callback(withRequestId(errorResponse(drogon::k429TooManyRequests,
-                                           e.what(), "rate_limit_exceeded"),
-                             request.trace_id));
+      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                             "rate_limit_exceeded"));
     } catch (const std::exception& e) {
-      callback(withRequestId(
-          errorResponse(drogon::k500InternalServerError,
-                        std::string("Internal error: ") + e.what(),
-                        "server_error"),
-          request.trace_id));
+      callback(errorResponse(drogon::k500InternalServerError,
+                             std::string("Internal error: ") + e.what(),
+                             "server_error"));
     }
   });
 }

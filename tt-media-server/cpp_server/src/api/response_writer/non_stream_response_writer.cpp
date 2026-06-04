@@ -162,7 +162,7 @@ void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
   if (params.onSessionRelease) params.onSessionRelease();
   if (httpCallback) {
     auto cb = std::move(httpCallback);
-    cb(withRequestId(errorResponse(status, message, type), params.traceId));
+    cb(errorResponse(status, message, type));
   }
 }
 
