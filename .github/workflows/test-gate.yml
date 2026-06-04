@@ -501,99 +501,6 @@ jobs:
               });
             }
 
-  llm-streaming-performance:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
-    name: LLM Streaming Performance Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: 'tt-media-server/requirements.txt'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Run LLM Streaming Performance Test
-        run: |
-          # Run pytest and capture output (visible in job logs via tee)
-          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
-          TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-          # Extract only the CI report section (between markers) to avoid matching source code
-          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
-
-          # Parse CI report metrics from the extracted section
-          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-
-          # Determine status
-          if [ $TEST_EXIT_CODE -eq 0 ]; then
-            STATUS="✅ PASSED"
-          else
-            STATUS="❌ FAILED"
-          fi
-
-          # Write formatted summary
-          {
-            echo "## 🚀 LLM Streaming Performance Test"
-            echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| **Status** | $STATUS |"
-            echo "| **Tokens Received** | $TOKENS |"
-            echo "| **Total Time** | ${TOTAL_TIME}ms |"
-            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
-            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
-            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
-          } >> $GITHUB_STEP_SUMMARY
-
-          # Store exit code for later
-          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
-
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Server Logs ==="
-          if [ -f performance_tests/server.log ]; then
-            cat performance_tests/server.log
-          else
-            echo "No server.log file found"
-          fi
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-streaming-server-logs
-          path: tt-media-server/performance_tests/server.log
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Check test result
-        run: exit ${{ env.TEST_EXIT_CODE }}
-
   cpp-format-check:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -619,6 +526,16 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+
+      # See cpp-build: cache the tokenizer bundle so the clang-tidy build's
+      # tokenizer pre-fetch skips HuggingFace (avoids 429s on GitHub runners).
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v4
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
 
       - name: Validate OpenAPI spec against registered routes
         run: |
@@ -684,25 +601,20 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Match the bench runner's image (tenstorrent ARC ubuntu-jammy) so the
-    # downstream cpp-server-benchmarks / cpp-server-prefill-decode-split jobs
-    # find every shared lib the binary was linked against. Splitting build
-    # (ubuntu-latest = noble, newer Python) from bench (jammy, default Python)
-    # has produced repeated runtime "missing libfoo.so" failures (libpq5,
-    # libpython from the build runner, ...). Same OS image on both sides eliminates the class.
-    runs-on: tt-ubuntu-2204-large-stable
+    # Per-commit compile + unit-test gate on ubuntu-latest. It also uploads the
+    # cpp-server-build artifact consumed by the per-commit cpp-server-benchmarks
+    # (mock backend) job. The heavier benchmarks/sanitizers moved to the
+    # scheduled cpp-heavy-checks.yml workflow (which builds its own artifact).
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
-      # The aus2 self-hosted runners auto-inject http(s)_proxy pointing at
-      # proxy.restricted-proxy.svc.cluster.local:3128 but do not set no_proxy
-      # for loopback. Without this, curl/requests calls to a server we start
-      # on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness probe) are routed
-      # through the internal proxy, which has no route back and fails every
-      # probe, making the server appear to never become ready. GitHub
-      # Actions treats env keys as case-insensitive, so we set only the
-      # lowercase form (which curl and Python requests both read).
+      # Loopback must bypass any injected HTTP proxy so curl/requests probes
+      # to a server on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness) resolve
+      # directly. Harmless on GitHub runners; required on the self-hosted
+      # runners, which inject http(s)_proxy without a loopback no_proxy.
+      # Env keys are case-insensitive, so the lowercase form suffices.
       no_proxy: "localhost,127.0.0.1,::1"
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
@@ -720,6 +632,19 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+
+      # Reuse the tokenizer bundle across runs so build.sh's pre-fetch skips
+      # HuggingFace entirely on a cache hit. GitHub runners share egress IPs
+      # and routinely get HTTP 429 from HF; the restore-keys prefix lets this
+      # land on the shared cpp-server-tokenizers-* cache (also populated by
+      # cpp-format-check here and by the cpp-heavy-checks.yml build jobs).
+      - name: Restore cached tokenizer files
+        uses: actions/cache@v4
+        with:
+          path: tt-media-server/cpp_server/tokenizers
+          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
+          restore-keys: |
+            cpp-server-tokenizers-
 
       - name: Build C++ server
         run: |
@@ -749,13 +674,13 @@ jobs:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Benchmarks
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
+      # Loopback must bypass any injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
     defaults:
       run:
@@ -804,6 +729,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -819,6 +745,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -844,6 +771,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -862,6 +790,7 @@ jobs:
         run: |
           vllm bench serve \
             --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
@@ -883,56 +812,12 @@ jobs:
             --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
 
-      # ── Mock pipeline backend benchmarks ─────────────────────────────
-      - name: Start C++ server (mock_pipeline backend)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
-          cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock_pipeline.log 2>&1 &
-          echo $! > ../../cpp_server.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock_pipeline backend"
-
-      - name: Warm up mock_pipeline backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 32 \
-            --random-output-len 32 \
-            --num-prompts 32 \
-            --max-concurrency 16 \
-            > /dev/null
-
-      - name: Bench mock_pipeline backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 32\
-            --random-output-len 1024\
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-mock-pipeline.json" \
-            2>&1 | tee bench_mock_pipeline_output.txt
-
-      - name: Stop mock_pipeline server
-        if: always()
-        run: |
-          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
-          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command "! kill -0 $PID 2>/dev/null" --label "mock_pipeline backend exit"
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock_pipeline backend"
+      # NOTE: the mock_pipeline benchmark lives in its own self-hosted job
+      # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
+      # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
+      # throughput thresholds unmeetable — so it stays on the xlarge
+      # self-hosted runner while the mock / structured-output benches here run
+      # on ubuntu-latest.
 
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
@@ -946,8 +831,6 @@ jobs:
             --result vllm-bench-structured-output-json-object.json || FAIL=1
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
             --result vllm-bench-structured-output-json-schema.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock_pipeline \
-            --result vllm-bench-mock-pipeline.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
@@ -956,9 +839,6 @@ jobs:
         run: |
           echo "=== Mock Server Logs ==="
           [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
-          echo ""
-          echo "=== Mock Pipeline Server Logs ==="
-          [ -f cpp_server_mock_pipeline.log ] && cat cpp_server_mock_pipeline.log || echo "No log"
 
       - name: Upload benchmark results
         if: always()
@@ -969,7 +849,6 @@ jobs:
             tt-media-server/vllm-bench-mock.json
             tt-media-server/vllm-bench-structured-output-json-object.json
             tt-media-server/vllm-bench-structured-output-json-schema.json
-            tt-media-server/vllm-bench-mock-pipeline.json
           retention-days: 1
           if-no-files-found: warn
 
@@ -980,396 +859,6 @@ jobs:
           name: cpp-server-bench-logs
           path: |
             tt-media-server/cpp_server_mock.log
-            tt-media-server/cpp_server_mock_pipeline.log
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Check benchmark result
-        if: always()
-        run: exit "${BENCH_FAIL:-0}"
-
-  cpp-server-prefill-decode-split:
-    needs: [detect-changes, cpp-build]
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server Prefill/Decode Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass the runner's injected proxy (see cpp-build).
-      no_proxy: "localhost,127.0.0.1,::1"
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download C++ build
-        uses: actions/download-artifact@v4
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
-
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Install Python test dependencies
-        run: bash cpp_server/scripts/ci/install_bench_client.sh
-
-      # ── Round 1a: TCP Decode + Prefill split ─────────────────────────
-      - name: "[TCP] Start Decode server (direct split)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "TCP direct split decode"
-          cd cpp_server/build
-          NS=tcp_decode
-          SOCKET_TRANSPORT=tcp LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8001 -t 4 > ../../tcp_decode.log 2>&1 &
-          echo $! > ../../tcp_decode.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file tcp_decode.pid --label "TCP decode server"
-
-      - name: "[TCP] Start Prefill server (direct split)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
-          cd cpp_server/build
-          NS=tcp_prefill
-          SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8002 -t 4 > ../../tcp_prefill.log 2>&1 &
-          echo $! > ../../tcp_prefill.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8002 --pid-file tcp_prefill.pid --label "TCP prefill server"
-          sleep 2
-
-      - name: "[TCP] Run vLLM bench serve against split servers"
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8001 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-split-tcp-result.json" \
-            2>&1 | tee bench_split_tcp_output.txt
-
-      - name: "[TCP] Stop split servers"
-        if: always()
-        run: |
-          [ -f tcp_decode.pid ]  && kill $(cat tcp_decode.pid)  2>/dev/null || true
-          [ -f tcp_prefill.pid ] && kill $(cat tcp_prefill.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "TCP direct split"
-
-      # ── Round 1b: ZMQ Decode + Prefill split ─────────────────────────
-      - name: "[ZMQ] Start Decode server (direct split)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
-          cd cpp_server/build
-          NS=zmq_decode
-          SOCKET_TRANSPORT=zmq LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8001 -t 4 > ../../zmq_decode.log 2>&1 &
-          echo $! > ../../zmq_decode.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file zmq_decode.pid --label "ZMQ decode server"
-
-      - name: "[ZMQ] Start Prefill server (direct split)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
-          cd cpp_server/build
-          NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8002 -t 4 > ../../zmq_prefill.log 2>&1 &
-          echo $! > ../../zmq_prefill.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8002 --pid-file zmq_prefill.pid --label "ZMQ prefill server"
-          sleep 2
-
-      - name: "[ZMQ] Run vLLM bench serve against split servers"
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8001 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-split-zmq-result.json" \
-            2>&1 | tee bench_split_zmq_output.txt
-
-      - name: "[ZMQ] Stop split servers"
-        if: always()
-        run: |
-          [ -f zmq_decode.pid ]  && kill $(cat zmq_decode.pid)  2>/dev/null || true
-          [ -f zmq_prefill.pid ] && kill $(cat zmq_prefill.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 8002 --port 9000 --label "ZMQ direct split"
-
-      # ── Round 2: mock_prefill_runner + Prefill + Decode split ────────
-      - name: Clean shared memory segments
-        run: |
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-
-      - name: Start mock_prefill_runner (rank 0 coordinator)
-        run: |
-          cd cpp_server
-          TT_IPC_SHM_P2C=tt_ipc_p2c \
-          TT_IPC_SHM_C2P=tt_ipc_c2p \
-          LLM_DEVICE_BACKEND=ttrun \
-            python src/runtime/runners/mock_prefill_runner.py \
-            > ../mock_prefill_runner.log 2>&1 &
-          echo $! > ../mock_prefill_runner.pid
-          cd ..
-          sleep 2
-          if ! kill -0 "$(cat mock_prefill_runner.pid)" 2>/dev/null; then
-            echo "ERROR: mock_prefill_runner exited during startup"
-            cat mock_prefill_runner.log || true
-            exit 1
-          fi
-
-      - name: Start Prefill server (mock_prefill_runner round)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "mock_prefill_runner prefill"
-          cd cpp_server
-          NS=r2_prefill
-          TT_IPC_SHM_C2P=tt_ipc_c2p TT_IPC_SHM_P2C=tt_ipc_p2c \
-          TT_LOG_LEVEL=debug \
-          LLM_MODE=prefill LLM_DEVICE_BACKEND=prefill \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./build/tt_media_server_cpp -p 8001 -t 4 \
-            > ../prefill_server_runner.log 2>&1 &
-          echo $! > ../prefill_server_runner.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8001 --pid-file prefill_server_runner.pid --label "mock_prefill_runner prefill server"
-
-      - name: Start Decode server (mock_prefill_runner round)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
-          cd cpp_server
-          NS=r2_decode
-          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
-          TT_LOG_LEVEL=debug \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./build/tt_media_server_cpp -p 8000 -t 4 \
-            > ../decode_server_runner.log 2>&1 &
-          echo $! > ../decode_server_runner.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file decode_server_runner.pid --label "mock_prefill_runner decode server"
-
-      - name: Verify prefill/decode socket connection
-        run: |
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8001 \
-            --expect '"socket_status":"client:connected"' \
-            --pid-file prefill_server_runner.pid \
-            --label "mock_prefill_runner prefill socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8000 \
-            --expect '"socket_status":"server:connected"' \
-            --pid-file decode_server_runner.pid \
-            --label "mock_prefill_runner decode socket"
-          PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-          DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-          echo "Prefill liveness: $PREFILL_LIVENESS"
-          echo "Decode liveness:  $DECODE_LIVENESS"
-          FAIL=0
-          if ! echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Prefill server model_ready is not true"
-            FAIL=1
-          fi
-          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Prefill server socket_status is not 'client:connected'"
-            FAIL=1
-          fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"model_ready":true'; then
-            echo "ERROR: Decode server model_ready is not true"
-            FAIL=1
-          fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-            echo "ERROR: Decode server socket_status is not 'server:connected'"
-            FAIL=1
-          fi
-          if [ "$FAIL" -ne 0 ]; then
-            exit 1
-          fi
-
-      - name: Run vLLM bench serve against mock_prefill_runner split
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8000 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-split-runner-result.json" \
-            2>&1 | tee bench_split_runner_output.txt
-
-      - name: Stop split servers (round 2)
-        if: always()
-        run: |
-          [ -f decode_server_runner.pid ] && kill $(cat decode_server_runner.pid) 2>/dev/null || true
-          [ -f prefill_server_runner.pid ] && kill $(cat prefill_server_runner.pid) 2>/dev/null || true
-          [ -f mock_prefill_runner.pid ] && kill $(cat mock_prefill_runner.pid) 2>/dev/null || true
-          rm -f /dev/shm/tt_ipc_p2c /dev/shm/tt_ipc_c2p 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 8001 --port 9000 --label "mock_prefill_runner split"
-
-      - name: Check benchmark thresholds
-        run: |
-          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
-          CHECK=cpp_server/scripts/ci/check_vllm_result.py
-          FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_tcp \
-            --result vllm-bench-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_zmq \
-            --result vllm-bench-split-zmq-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario prefill_decode_split_runner \
-            --result vllm-bench-split-runner-result.json || FAIL=1
-          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
-
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Decode Server Logs (TCP round) ==="
-          if [ -f tcp_decode.log ]; then
-            cat tcp_decode.log
-          else
-            echo "No tcp_decode.log file found"
-          fi
-          echo ""
-          echo "=== Prefill Server Logs (TCP round) ==="
-          if [ -f tcp_prefill.log ]; then
-            cat tcp_prefill.log
-          else
-            echo "No tcp_prefill.log file found"
-          fi
-          echo ""
-          echo "=== Decode Server Logs (ZMQ round) ==="
-          if [ -f zmq_decode.log ]; then
-            cat zmq_decode.log
-          else
-            echo "No zmq_decode.log file found"
-          fi
-          echo ""
-          echo "=== Prefill Server Logs (ZMQ round) ==="
-          if [ -f zmq_prefill.log ]; then
-            cat zmq_prefill.log
-          else
-            echo "No zmq_prefill.log file found"
-          fi
-          echo ""
-          echo "=== mock_prefill_runner Logs (round 2) ==="
-          if [ -f mock_prefill_runner.log ]; then
-            cat mock_prefill_runner.log
-          else
-            echo "No mock_prefill_runner.log file found"
-          fi
-          echo ""
-          echo "=== Prefill Server Logs (round 2) ==="
-          if [ -f prefill_server_runner.log ]; then
-            cat prefill_server_runner.log
-          else
-            echo "No prefill_server_runner.log file found"
-          fi
-          echo ""
-          echo "=== Decode Server Logs (round 2) ==="
-          if [ -f decode_server_runner.log ]; then
-            cat decode_server_runner.log
-          else
-            echo "No decode_server_runner.log file found"
-          fi
-
-      - name: Upload benchmark result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-prefill-decode-split-result
-          path: |
-            tt-media-server/vllm-bench-split-tcp-result.json
-            tt-media-server/vllm-bench-split-zmq-result.json
-            tt-media-server/vllm-bench-split-runner-result.json
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-prefill-decode-split-logs
-          path: |
-            tt-media-server/tcp_decode.log
-            tt-media-server/tcp_prefill.log
-            tt-media-server/zmq_decode.log
-            tt-media-server/zmq_prefill.log
-            tt-media-server/mock_prefill_runner.log
-            tt-media-server/prefill_server_runner.log
-            tt-media-server/decode_server_runner.log
           retention-days: 1
           if-no-files-found: warn
 
@@ -1381,9 +870,11 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    # Same jammy image as cpp-build so the prefill_gateway binary is
-    # compatible with the tt-ubuntu-2204-xlarge-stable bench runner.
-    runs-on: tt-ubuntu-2204-large-stable
+    # Build + clang-tidy + unit-test validation for prefill_gateway on
+    # ubuntu-latest. The cpp-server-gateway-split perf bench builds its own
+    # gateway binary in-job (it runs on the jammy self-hosted runner), so this
+    # job no longer needs to publish an artifact for it.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1431,971 +922,6 @@ jobs:
           cd prefill_gateway/build
           SOCKET_TRANSPORT=zmq ctest --output-on-failure
 
-      - name: Upload prefill_gateway binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: prefill-gateway-build
-          path: tt-media-server/prefill_gateway/build/prefill_gateway
-          retention-days: 1
-
-  prefill-gateway-tsan:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
-    name: Prefill Gateway ThreadSanitizer
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      no_proxy: "localhost,127.0.0.1,::1"
-      CI_CCACHE: "1"
-      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up C++ CI dependencies
-        uses: ./.github/actions/setup-cpp-ci
-        with:
-          init-private-submodule: "false"
-
-      - name: Configure prefill_gateway with ThreadSanitizer
-        run: |
-          cmake -S prefill_gateway -B prefill_gateway/tsan_build \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
-
-      - name: Build prefill_gateway (TSan)
-        run: cmake --build prefill_gateway/tsan_build -j "$(nproc)"
-
-      - name: Run prefill_gateway tests under TSan (TCP)
-        env:
-          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:history_size=7"
-        run: |
-          cd prefill_gateway/tsan_build
-          SOCKET_TRANSPORT=tcp ctest --output-on-failure 2>&1 | tee ../../gw_tsan_tcp.log
-
-      - name: Run prefill_gateway tests under TSan (ZMQ)
-        env:
-          TSAN_OPTIONS: "halt_on_error=1:second_deadlock_stack=1:history_size=7"
-        run: |
-          cd prefill_gateway/tsan_build
-          SOCKET_TRANSPORT=zmq ctest --output-on-failure 2>&1 | tee ../../gw_tsan_zmq.log
-
-      - name: Check TSan output
-        if: always()
-        run: |
-          RACES=0
-          for LOG in gw_tsan_tcp.log gw_tsan_zmq.log; do
-            N=$(grep -c "WARNING: ThreadSanitizer" "$LOG" 2>/dev/null || echo 0)
-            N=$(echo "$N" | tr -dc '0-9'); N=${N:-0}
-            RACES=$((RACES + N))
-          done
-          {
-            echo "## 🧵 Prefill Gateway ThreadSanitizer"
-            echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| **Race reports (TCP)** | $(grep -c 'WARNING: ThreadSanitizer' gw_tsan_tcp.log 2>/dev/null || echo 0) |"
-            echo "| **Race reports (ZMQ)** | $(grep -c 'WARNING: ThreadSanitizer' gw_tsan_zmq.log 2>/dev/null || echo 0) |"
-            echo ""
-          } >> $GITHUB_STEP_SUMMARY
-          if [ "$RACES" -gt 0 ]; then
-            echo "::error::ThreadSanitizer detected $RACES data race(s) in prefill_gateway"
-            exit 1
-          fi
-          echo "✅ No data races detected" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload TSan logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: prefill-gateway-tsan-log
-          path: |
-            tt-media-server/gw_tsan_tcp.log
-            tt-media-server/gw_tsan_zmq.log
-          retention-days: 7
-          if-no-files-found: warn
-
-  cpp-server-gateway-split:
-    needs: [detect-changes, cpp-build, prefill-gateway-build]
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
-    name: C++ Server Gateway Split Test
-    runs-on: tt-ubuntu-2204-xlarge-stable
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      no_proxy: "localhost,127.0.0.1,::1"
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download C++ server build
-        uses: actions/download-artifact@v4
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
-
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
-      - name: Download prefill_gateway binary
-        uses: actions/download-artifact@v4
-        with:
-          name: prefill-gateway-build
-          path: tt-media-server/prefill_gateway/build
-
-      - name: Make binaries executable
-        run: chmod +x prefill_gateway/build/prefill_gateway
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Install Python test dependencies
-        run: bash cpp_server/scripts/ci/install_bench_client.sh
-
-      # ── Round 1: TCP transport ────────────────────────────────────────────
-      # Startup order: prefill-1 → prefill-2 → gateway → decode.
-      # In gateway mode the prefill is a server (listens) and the gateway
-      # dials each prefill.  Decode dials the gateway's decode-facing port.
-      # All components must use the same SOCKET_TRANSPORT;
-      - name: "[TCP] Start Prefill server 1 (gateway mode)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
-          cd cpp_server/build
-          NS=gw_prefill1
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_prefill1.log 2>&1 &
-          echo $! > ../../gw_prefill1.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --pid-file gw_prefill1.pid --label "TCP gateway prefill-1"
-
-      - name: "[TCP] Start Prefill server 2 (gateway mode)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
-          cd cpp_server/build
-          NS=gw_prefill2
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_prefill2.log 2>&1 &
-          echo $! > ../../gw_prefill2.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --pid-file gw_prefill2.pid --label "TCP gateway prefill-2"
-
-      - name: "[TCP] Start PrefillGateway"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 9200 --label "TCP prefill gateway"
-          SOCKET_TRANSPORT=tcp \
-            ./prefill_gateway/build/prefill_gateway \
-            --decode-port=9200 \
-            --prefill=127.0.0.1:9201 \
-            --prefill=127.0.0.1:9202 \
-            --metrics-port=0 \
-            --health-port=9091 \
-            > gw.log 2>&1 &
-          echo $! > gw.pid
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 9091 \
-            --expect '"healthy_prefills":2' \
-            --pid-file gw.pid \
-            --label "TCP prefill gateway registrations"
-
-      - name: "[TCP] Start Decode server"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "TCP gateway decode server"
-          cd cpp_server/build
-          NS=gw_decode
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
-          TT_LOG_LEVEL=debug \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_decode.log 2>&1 &
-          echo $! > ../../gw_decode.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --pid-file gw_decode.pid --label "TCP gateway decode server"
-
-      - name: "[TCP] Verify gateway socket connections"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"server:connected"' --pid-file gw_prefill1.pid --label "TCP gateway prefill-1 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"server:connected"' --pid-file gw_prefill2.pid --label "TCP gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_decode.pid --label "TCP gateway decode socket"
-          P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          echo "Prefill-1 liveness: $P1"
-          echo "Prefill-2 liveness: $P2"
-          echo "Decode liveness:    $DEC"
-          FAIL=0
-          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
-            NAME="${VAR_NAME%%:*}"
-            VAL="${VAR_NAME#*:}"
-            if ! echo "$VAL" | grep -q '"socket_status":"server:connected"'; then
-              echo "ERROR: $NAME socket_status is not 'server:connected'"
-              FAIL=1
-            fi
-          done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
-            FAIL=1
-          fi
-          [ "$FAIL" -eq 0 ] || exit 1
-
-      - name: "[TCP] Run vLLM bench serve through gateway"
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8200 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-gateway-split-tcp-result.json" \
-            2>&1 | tee bench_gateway_tcp_output.txt
-
-      - name: "[TCP] Stop gateway and servers"
-        if: always()
-        run: |
-          [ -f gw_decode.pid ]   && kill $(cat gw_decode.pid)   2>/dev/null || true
-          [ -f gw.pid ]          && kill $(cat gw.pid)           2>/dev/null || true
-          [ -f gw_prefill1.pid ] && kill $(cat gw_prefill1.pid) 2>/dev/null || true
-          [ -f gw_prefill2.pid ] && kill $(cat gw_prefill2.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9091 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --port 9202 --label "TCP gateway split"
-
-      # ── Round 2: ZMQ transport ────────────────────────────────────────────
-      - name: "[ZMQ] Start Prefill server 1 (gateway mode)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
-          cd cpp_server/build
-          NS=gw_zmq_prefill1
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8201 -t 4 > ../../gw_zmq_prefill1.log 2>&1 &
-          echo $! > ../../gw_zmq_prefill1.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1"
-
-      - name: "[ZMQ] Start Prefill server 2 (gateway mode)"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
-          cd cpp_server/build
-          NS=gw_zmq_prefill2
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
-          PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8202 -t 4 > ../../gw_zmq_prefill2.log 2>&1 &
-          echo $! > ../../gw_zmq_prefill2.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2"
-
-      - name: "[ZMQ] Start PrefillGateway"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 9200 --port 9201 --label "ZMQ prefill gateway"
-          SOCKET_TRANSPORT=zmq \
-            ./prefill_gateway/build/prefill_gateway \
-            --decode-port=9200 \
-            --prefill-bind=127.0.0.1:9201 \
-            --metrics-port=0 \
-            --health-port=9092 \
-            > gw_zmq.log 2>&1 &
-          echo $! > gw_zmq.pid
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 9092 \
-            --expect '"healthy_prefills":2' \
-            --pid-file gw_zmq.pid \
-            --label "ZMQ prefill gateway registrations"
-
-      - name: "[ZMQ] Start Decode server"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "ZMQ gateway decode server"
-          cd cpp_server/build
-          NS=gw_zmq_decode
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
-          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
-          TT_LOG_LEVEL=debug \
-          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
-          TT_TASK_QUEUE=tt_tasks_$NS \
-          TT_RESULT_QUEUE=tt_results_$NS \
-          TT_CANCEL_QUEUE=tt_cancels_$NS \
-          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
-          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
-          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
-            ./tt_media_server_cpp -p 8200 -t 4 > ../../gw_zmq_decode.log 2>&1 &
-          echo $! > ../../gw_zmq_decode.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode server"
-
-      - name: "[ZMQ] Verify gateway socket connections"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
-          P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
-          P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
-          DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
-          echo "Prefill-1 liveness: $P1"
-          echo "Prefill-2 liveness: $P2"
-          echo "Decode liveness:    $DEC"
-          FAIL=0
-          for VAR_NAME in "Prefill-1:$P1" "Prefill-2:$P2"; do
-            NAME="${VAR_NAME%%:*}"
-            VAL="${VAR_NAME#*:}"
-            if ! echo "$VAL" | grep -q '"socket_status":"client:connected"'; then
-              echo "ERROR: $NAME socket_status is not 'client:connected'"
-              FAIL=1
-            fi
-          done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
-            FAIL=1
-          fi
-          [ "$FAIL" -eq 0 ] || exit 1
-
-      - name: "[ZMQ] Run vLLM bench serve through gateway"
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8200 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-gateway-split-zmq-result.json" \
-            2>&1 | tee bench_gateway_zmq_output.txt
-
-      - name: "[ZMQ] Stop gateway and servers"
-        if: always()
-        run: |
-          [ -f gw_zmq_decode.pid ]   && kill $(cat gw_zmq_decode.pid)   2>/dev/null || true
-          [ -f gw_zmq.pid ]          && kill $(cat gw_zmq.pid)           2>/dev/null || true
-          [ -f gw_zmq_prefill1.pid ] && kill $(cat gw_zmq_prefill1.pid) 2>/dev/null || true
-          [ -f gw_zmq_prefill2.pid ] && kill $(cat gw_zmq_prefill2.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 9092 --port 8200 --port 8201 --port 8202 --port 9200 --port 9201 --label "ZMQ gateway split"
-
-      - name: Check benchmark thresholds
-        run: |
-          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
-          CHECK=cpp_server/scripts/ci/check_vllm_result.py
-          FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_tcp \
-            --result vllm-bench-gateway-split-tcp-result.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario gateway_split_zmq \
-            --result vllm-bench-gateway-split-zmq-result.json || FAIL=1
-          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
-
-      - name: Show server logs
-        if: always()
-        run: |
-          for LOG in gw.log gw_prefill1.log gw_prefill2.log gw_decode.log \
-                     gw_zmq.log gw_zmq_prefill1.log gw_zmq_prefill2.log gw_zmq_decode.log; do
-            echo "=== $LOG ==="
-            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
-            echo ""
-          done
-
-      - name: Upload benchmark results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-gateway-split-result
-          path: |
-            tt-media-server/vllm-bench-gateway-split-tcp-result.json
-            tt-media-server/vllm-bench-gateway-split-zmq-result.json
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-gateway-split-logs
-          path: |
-            tt-media-server/gw.log
-            tt-media-server/gw_prefill1.log
-            tt-media-server/gw_prefill2.log
-            tt-media-server/gw_decode.log
-            tt-media-server/gw_zmq.log
-            tt-media-server/gw_zmq_prefill1.log
-            tt-media-server/gw_zmq_prefill2.log
-            tt-media-server/gw_zmq_decode.log
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Check benchmark result
-        if: always()
-        run: exit "${BENCH_FAIL:-0}"
-
-  dynamo-frontend-integration:
-    needs: [detect-changes, cpp-build]
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server + Dynamo Frontend Integration
-    # Same jammy runner as the cpp-server bench jobs so the artifact built by
-    # cpp-build links against the same glibc / libstdc++ at runtime.
-    runs-on: tt-ubuntu-2204-xlarge-stable
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      no_proxy: "localhost,127.0.0.1,::1"
-      # Shared by the Dynamo frontend and every cpp_server backend in this
-      # job so all processes agree on discovery store, request/event plane,
-      # and endpoint identity (NAMESPACE/COMPONENT/ENDPOINT). Mirrors the
-      # exports in cpp_server/scripts/start_dynamo.sh — we set them at the
-      # job level so we can launch one frontend + N backends without
-      # repeating the env block on every step.
-      DYN_DISCOVERY_BACKEND: etcd
-      ETCD_ENDPOINTS: http://127.0.0.1:2379
-      DYN_REQUEST_PLANE: tcp
-      DYN_EVENT_PLANE: zmq
-      DYNAMO_DISCOVERY_BACKEND: etcd
-      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
-      DYNAMO_NAMESPACE: default
-      DYNAMO_COMPONENT: backend
-      DYNAMO_ENDPOINT_NAME: generate
-      DYNAMO_ENDPOINT_ENABLED: "1"
-      LLM_DEVICE_BACKEND: mock_pipeline
-      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download C++ build
-        uses: actions/download-artifact@v4
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
-
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
-      # No-docker etcd: grab the upstream signed binary tarball from the
-      # etcd-io GitHub release. Two cpp_server backends registering under the
-      # same DYNAMO_NAMESPACE/COMPONENT/ENDPOINT need a shared discovery
-      # store; the script's default `file` backend does an unconditional
-      # `rm -rf ${DYN_FILE_STORE}` at startup, so concurrent starts would
-      # race-delete each other's registrations. etcd avoids that.
-      - name: Install etcd from upstream release
-        working-directory: .
-        run: |
-          ETCD_VER=v3.5.13
-          curl -fsSL \
-            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
-            -o /tmp/etcd.tar.gz
-          mkdir -p /tmp/etcd
-          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
-          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
-          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
-          etcd --version
-          etcdctl version
-
-      - name: Start etcd
-        run: |
-          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
-          rm -rf /tmp/etcd-data
-          ss -ltnp '( sport = :2379 or sport = :2380 )' || true
-          pgrep -af etcd || true
-          # --data-dir under /tmp so it gets wiped between runs; bind to
-          # 127.0.0.1 only — the Dynamo frontend and both cpp_server
-          # backends run on this same runner.
-          etcd \
-            --data-dir /tmp/etcd-data \
-            --advertise-client-urls=http://127.0.0.1:2379 \
-            --listen-client-urls=http://127.0.0.1:2379 \
-            --listen-peer-urls=http://127.0.0.1:2380 \
-            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
-            --initial-cluster='default=http://127.0.0.1:2380' \
-            > etcd.log 2>&1 &
-          echo $! > etcd.pid
-          bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
-            --pid-file etcd.pid \
-            --failure-log etcd.log \
-            --label "etcd"
-          etcdctl --endpoints=http://127.0.0.1:2379 endpoint health
-
-      - name: Set up uv for Dynamo
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Create dynamo venv with ai-dynamo + vllm
-        run: |
-          mkdir -p "$HOME/.venvs"
-          # vllm is the bench client. transformers<5.6 mirrors the other
-          # cpp-server bench jobs — 5.6.x regresses tokenizer cost and
-          # inflates client-side TTFT/TPOT independently of the backend.
-          bash cpp_server/scripts/ci/install_bench_client.sh \
-            --venv "$HOME/.venvs/dynamo" \
-            --python ${{ env.PYTHON_VERSION }} \
-            --package ai-dynamo \
-            --package uvloop
-
-      # Two cpp_server backends + one Dynamo frontend. The frontend
-      # discovers both backends through the shared etcd store (one instance
-      # key per backend under v1/instances/<ns>/<component>/<endpoint>/) and
-      # load-balances requests across them. Backends register the same
-      # NAMESPACE/COMPONENT/ENDPOINT (inherited from job-level env) and are
-      # only differentiated by their cpp_server HTTP port (8001 vs 8002)
-      # and their etcd lease id; the frontend's display model_name is set
-      # once for the whole fleet.
-      - name: Start cpp_server backend 1 (port 8001)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend 1"
-          cd cpp_server
-          ./build/tt_media_server_cpp -p 8001 > ../backend1.log 2>&1 &
-          echo $! > ../backend1.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8001 \
-            --timeout 120 \
-            --interval 2 \
-            --pid-file backend1.pid \
-            --label "Dynamo backend 1"
-
-      - name: Start cpp_server backend 2 (port 8002)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "Dynamo backend 2"
-          cd cpp_server
-          ./build/tt_media_server_cpp -p 8002 > ../backend2.log 2>&1 &
-          echo $! > ../backend2.pid
-          cd ..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8002 \
-            --timeout 120 \
-            --interval 2 \
-            --pid-file backend2.pid \
-            --label "Dynamo backend 2"
-
-      - name: Assert tokenizer + config bundle from cpp-build artifact
-        # cpp_server/build.sh's tokenizer pre-fetch is the single source of
-        # truth for what lands in the build artifact. The Dynamo frontend
-        # needs all three files (tokenizer.json, tokenizer_config.json,
-        # config.json) under the model dir or it dies at startup with
-        # `unable to extract config.json from directory ...`. Fail loudly
-        # here rather than discover it via a 60s frontend-ready timeout.
-        run: |
-          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
-          for f in config.json tokenizer.json tokenizer_config.json; do
-            [ -f "${MODEL_DIR}/${f}" ] || {
-              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
-              echo "  Expected cpp_server/build.sh's download_tokenizer to pre-fetch this."
-              exit 1
-            }
-          done
-          echo "✅ Tokenizer + config files present:"
-          ls -la "${MODEL_DIR}"
-
-      - name: Start single Dynamo frontend (port 8000)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
-          # MODEL_PATH resolution mirrors cpp_server/scripts/start_dynamo.sh
-          # for the mock_pipeline backend (LLM_DEVICE_BACKEND default →
-          # deepseek-ai/DeepSeek-R1-0528 tokenizer dir). Keeping the
-          # frontend tokenizer in sync with the backend avoids vocab
-          # mismatches that show up as model-routing rejections.
-          #
-          # --router-mode kv: required for the per-worker last-observed
-          # ITL/TTFT gauges to populate per cpp_server instance. The
-          # default round-robin router doesn't attach the worker label,
-          # so the "both backends took traffic" verification step below
-          # would have nothing to count.
-          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
-          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
-              --http-port 8000 \
-              --router-mode kv \
-              --model-name "${MODEL_NAME}" \
-              --model-path "${MODEL_PATH}" \
-              > frontend.log 2>&1 &
-          echo $! > frontend.pid
-          bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
-            --timeout 120 \
-            --interval 2 \
-            --pid-file frontend.pid \
-            --failure-log frontend.log \
-            --label "Dynamo frontend"
-
-      - name: Verify both backends registered in etcd
-        # cpp_server's etcd discovery writes one instance + one MDC entry per
-        # backend under v1/instances/<ns>/<component>/<endpoint>/<id_hex>
-        # (see tt-media-server/cpp_server/src/dynamo/discovery.cpp).
-        # With NAMESPACE/COMPONENT/ENDPOINT defaulted to
-        # default/backend/generate, expect ≥2 distinct instance keys.
-        run: |
-          KEYS=$(etcdctl --endpoints=http://127.0.0.1:2379 \
-            get --prefix --keys-only "v1/instances/default/backend/generate/")
-          echo "etcd instance keys:"
-          echo "$KEYS"
-          COUNT=$(printf '%s\n' "$KEYS" | grep -c "v1/instances/default/backend/generate/" || true)
-          if [ "$COUNT" -lt 2 ]; then
-            echo "::error::Expected ≥2 backend registrations in etcd, got $COUNT"
-            exit 1
-          fi
-          echo "✅ $COUNT cpp_server backends registered in etcd"
-
-      - name: Run vllm bench serve against the Dynamo frontend
-        env:
-          # ai-dynamo/Dynamo's OpenAI surface still requires a bearer; any
-          # non-empty string works for the mock backend.
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          # Single frontend on :8000 fans requests out across both
-          # cpp_server backends discovered via etcd; success here proves
-          # the load-balanced routing path end-to-end.
-          vllm bench serve \
-            --model "${MODEL_NAME}" \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --base-url http://127.0.0.1:8000 \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-dynamo.json" \
-            2>&1 | tee bench_dynamo_output.txt
-
-      - name: Verify both backends served traffic (per-worker ITL gauge)
-        # Dynamo's frontend exposes per-worker last-observed gauges on
-        # /metrics (same HTTP port as the API). With --router-mode kv
-        # every served chunk is tagged with the worker_id of the
-        # cpp_server instance that produced it, so after a bench of
-        # 1000 random prompts at concurrency 64 we expect ≥2 distinct
-        # worker_id labels with a non-zero
-        # `dynamo_frontend_worker_last_inter_token_latency_seconds`.
-        #
-        # A single active worker means the load-balancer collapsed onto
-        # one backend — the regression mode this whole job exists to
-        # detect (most recently caused by the etcd-empty-host bug in
-        # cpp_server's discovery.cpp silencing one of the two
-        # instances).
-        #
-        # Must run before the cleanup step below — once the frontend is
-        # killed /metrics goes away.
-        run: |
-          METRICS=$(curl -sS http://127.0.0.1:8000/metrics)
-          echo "--- per-worker ITL gauges ---"
-          echo "$METRICS" \
-            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
-            || echo "(no ITL gauges emitted — frontend never observed ≥2 tokens from any worker)"
-          echo ""
-          echo "--- per-worker TTFT gauges ---"
-          echo "$METRICS" \
-            | grep -E '^dynamo_frontend_worker_last_time_to_first_token_seconds\{' \
-            || true
-          echo ""
-          # Count workers with non-zero ITL. The metric format is:
-          #   dynamo_frontend_worker_last_inter_token_latency_seconds{...,worker_id="<decimal>",...} <float>
-          # awk -F'} ' splits on the closing label brace + space, putting
-          # the float value in $2.
-          ACTIVE=$(printf '%s\n' "$METRICS" \
-            | grep -E '^dynamo_frontend_worker_last_inter_token_latency_seconds\{' \
-            | awk -F'} ' '$2 + 0 > 0 {n++} END {print n+0}')
-          # Cross-check: count distinct cpp_server backends in etcd. The
-          # ITL count must match — fewer means at least one registered
-          # backend never received a request.
-          REGISTERED=$(etcdctl --endpoints=http://127.0.0.1:2379 \
-            get --prefix --keys-only "v1/instances/default/backend/generate/" \
-            | grep -c "v1/instances/default/backend/generate/" || true)
-          echo "registered_backends=${REGISTERED}  active_backends=${ACTIVE}"
-          if [ "$ACTIVE" -lt 2 ]; then
-            echo "::error::Only ${ACTIVE} backend(s) reported non-zero ITL after bench (registered=${REGISTERED}, expected ≥2 active)."
-            echo "  Routing collapsed onto a single cpp_server instance — check etcd lease"
-            echo "  registrations and the kv-event subscription in frontend.log."
-            exit 1
-          fi
-          echo "✅ ${ACTIVE} cpp_server backends served traffic (matches ${REGISTERED} registered)" \
-            >> "$GITHUB_STEP_SUMMARY"
-          echo "✅ ${ACTIVE} cpp_server backends served traffic"
-
-      - name: Stop Dynamo frontend, cpp_server backends, and etcd
-        if: always()
-        run: |
-          for pidfile in frontend.pid backend1.pid backend2.pid etcd.pid; do
-            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
-          done
-          # Belt + suspenders: nuke any leftover frontends/backends/etcd still
-          # bound, so a cancelled/timed-out run doesn't leak :2379/:2380 (or the
-          # data-dir lock) into the next job on this persistent runner.
-          pkill -f 'dynamo.frontend' 2>/dev/null || true
-          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
-          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --port 8002 --label "Dynamo integration"
-
-      - name: Check benchmark result
-        run: |
-          # Integration gate: every request must succeed. Latency is not
-          # asserted here — the backend is a mock and the value of this job
-          # is proving the wiring (Dynamo frontend -> etcd discovery ->
-          # cpp_server TCP transport) works end-to-end.
-          python3 cpp_server/scripts/ci/check_vllm_result.py \
-            --config cpp_server/scripts/ci/vllm_thresholds.json \
-            --scenario dynamo_frontend \
-            --result vllm-bench-dynamo.json
-
-      - name: Show server logs
-        if: always()
-        run: |
-          for LOG in etcd.log frontend.log backend1.log backend2.log; do
-            echo "=== $LOG ==="
-            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
-            echo ""
-          done
-
-      - name: Upload benchmark result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynamo-frontend-integration-result
-          path: tt-media-server/vllm-bench-dynamo.json
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynamo-frontend-integration-logs
-          path: |
-            tt-media-server/etcd.log
-            tt-media-server/frontend.log
-            tt-media-server/backend1.log
-            tt-media-server/backend2.log
-          retention-days: 1
-          if-no-files-found: warn
-
-  cpp-tsan:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ ThreadSanitizer
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      no_proxy: "localhost,127.0.0.1,::1"
-      CI_CCACHE: "1"
-      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
-    # Gating: any TSan race report after suppressions fails this job and the
-    # whole pipeline. Known issues are listed in tsan_suppressions.txt with
-    # their tracking issue IDs; remove the corresponding suppression line
-    # when the issue is fixed so the regression check protects the fix.
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
-
-      - name: Set up C++ CI dependencies
-        uses: ./.github/actions/setup-cpp-ci
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
-
-      - name: Restore cached tokenizer files
-        uses: actions/cache@v4
-        with:
-          path: tt-media-server/cpp_server/tokenizers
-          key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
-          restore-keys: |
-            cpp-server-tokenizers-
-
-      - name: Build C++ server with ThreadSanitizer
-        run: |
-          cd cpp_server
-          ./build.sh --tsan
-
-      - name: Archive C++ tokenizer bundle
-        run: |
-          cd cpp_server
-          tar -czf cpp-server-tokenizers.tar.gz tokenizers
-
-      - name: Upload C++ tokenizer bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-tokenizers
-          path: tt-media-server/cpp_server/cpp-server-tokenizers.tar.gz
-          retention-days: 1
-
-      - name: Set up uv (for guidellm)
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Install guidellm
-        run: |
-          uv venv
-          uv pip install guidellm
-          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Start TSan-instrumented server (mock_pipeline)
-        env:
-          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
-          cd cpp_server/build
-          ./tt_media_server_cpp -p 8001 -t 4 > ../../tsan_server.log 2>&1 &
-          echo $! > ../../tsan_server.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh \
-            --port 8001 \
-            --timeout 180 \
-            --interval 2 \
-            --pid-file tsan_server.pid \
-            --label "TSan-instrumented server"
-
-      - name: Run concurrent multi-turn workload (8 users x 8 turns)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-          # Suppressions are loaded by the server itself — the bench client
-          # doesn't need them, but inheriting the env is harmless.
-          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
-        run: |
-          mkdir -p bench_results/tsan_ci
-          guidellm benchmark run \
-            --target "http://localhost:8001" \
-            --model "deepseek-ai/DeepSeek-R1-0528" \
-            --request-format "/v1/chat/completions" \
-            --profile concurrent \
-            --rate 8 \
-            --max-requests 64 \
-            --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
-            --backend-kwargs "{\"api_key\": \"${OPENAI_API_KEY}\"}" \
-            --output-path "bench_results/tsan_ci" \
-            2>&1 | tee tsan_bench.log
-
-      - name: Stop server
-        if: always()
-        run: |
-          [ -f tsan_server.pid ] && kill $(cat tsan_server.pid) 2>/dev/null || true
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "TSan-instrumented server"
-
-      - name: Analyze TSan output
-        if: always()
-        run: |
-          set -u
-          TOTAL=0
-          {
-            echo "## 🧵 ThreadSanitizer Results"
-            echo ""
-            echo "| Source | Race reports |"
-            echo "|--------|------:|"
-          } >> $GITHUB_STEP_SUMMARY
-
-          shopt -s nullglob
-          for f in cpp_server/build/tsan-server.*; do
-            [ -f "$f" ] || continue
-            COUNT=$(grep -c "WARNING: ThreadSanitizer" "$f" 2>/dev/null || echo 0)
-            COUNT=$(echo "$COUNT" | tr -dc '0-9'); COUNT=${COUNT:-0}
-            echo "$(basename "$f"): $COUNT"
-            echo "| \`$(basename "$f")\` | $COUNT |" >> $GITHUB_STEP_SUMMARY
-            TOTAL=$(( TOTAL + COUNT ))
-          done
-
-          {
-            echo "| **Total (after suppressions)** | **$TOTAL** |"
-            echo ""
-          } >> $GITHUB_STEP_SUMMARY
-
-          if [ "$TOTAL" -gt 0 ]; then
-            echo "::warning::ThreadSanitizer detected $TOTAL data race(s) — see cpp-tsan-output artifact"
-            {
-              echo "⚠️ **$TOTAL data race(s) detected.** Stack traces in the \`cpp-tsan-output\` artifact."
-              echo ""
-              echo "Suppressions file: \`tt-media-server/cpp_server/tsan_suppressions.txt\`"
-            } >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          echo "✅ No data races detected after suppressions" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload TSan artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-tsan-output
-          path: |
-            tt-media-server/cpp_server/build/tsan-server.*
-            tt-media-server/tsan_server.log
-            tt-media-server/tsan_bench.log
-            tt-media-server/bench_results/tsan_ci/
-          retention-days: 7
-          if-no-files-found: warn
-
   forge-runner-changes:
     name: Detect Forge Runner Changes
     runs-on: ubuntu-latest
@@ -2416,7 +942,6 @@ jobs:
             forge_runner:
               - 'tt-media-server/requirements.txt'
               - 'tt-media-server/tt_model_runners/**'
-
 
   forge-runner-cpu-tests:
     needs: forge-runner-changes
@@ -2731,18 +1256,12 @@ jobs:
       - unit-tests-summary
       - forge-runner-changes
       - forge-runner-cpu-tests
-      - llm-streaming-performance
       - test-coverage
       - cpp-format-check
       - cpp-build
       - cpp-server-benchmarks
-      - cpp-server-prefill-decode-split
       - prefill-gateway-format-check
       - prefill-gateway-build
-      - prefill-gateway-tsan
-      - cpp-server-gateway-split
-      - cpp-tsan
-      - dynamo-frontend-integration
       - helm-chart-validate
     if: always()
     steps:
@@ -2760,7 +1279,7 @@ jobs:
 
           skipped_reason() {
             case "$1" in
-              lint|unit-tests-main|unit-tests-media|unit-tests-summary|llm-streaming-performance)
+              lint|unit-tests-main|unit-tests-media|unit-tests-summary)
                 if [[ "$SHOULD_TEST" != "true" ]]; then
                   echo "no Python, dependency, or workflow paths matched"
                 else
@@ -2783,14 +1302,14 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build|cpp-server-benchmarks|cpp-server-prefill-decode-split|dynamo-frontend-integration|cpp-tsan)
+              cpp-format-check|cpp-build|cpp-server-benchmarks)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
                   echo "job condition evaluated false"
                 fi
                 ;;
-              prefill-gateway-format-check|prefill-gateway-build|prefill-gateway-tsan|cpp-server-gateway-split)
+              prefill-gateway-format-check|prefill-gateway-build)
                 if [[ "$CPP_SERVER" != "true" && "$PREFILL_GATEWAY" != "true" ]]; then
                   echo "neither cpp_server nor prefill_gateway paths changed"
                 else
@@ -2828,18 +1347,12 @@ jobs:
             unit-tests-summary
             forge-runner-changes
             forge-runner-cpu-tests
-            llm-streaming-performance
             test-coverage
             cpp-format-check
             cpp-build
             cpp-server-benchmarks
-            cpp-server-prefill-decode-split
             prefill-gateway-format-check
             prefill-gateway-build
-            prefill-gateway-tsan
-            cpp-server-gateway-split
-            dynamo-frontend-integration
-            cpp-tsan
             helm-chart-validate
           )
           declare -A JOBS=(
@@ -2851,18 +1364,12 @@ jobs:
             [unit-tests-summary]="${{ needs.unit-tests-summary.result }}"
             [forge-runner-changes]="${{ needs.forge-runner-changes.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
-            [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
-            [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
-            [prefill-gateway-tsan]="${{ needs.prefill-gateway-tsan.result }}"
-            [cpp-server-gateway-split]="${{ needs.cpp-server-gateway-split.result }}"
-            [dynamo-frontend-integration]="${{ needs.dynamo-frontend-integration.result }}"
-            [cpp-tsan]="${{ needs.cpp-tsan.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
           )
           {
