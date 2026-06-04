@@ -37,8 +37,8 @@ Browse models by hardware:
 - [p100](docs/model_support/models_by_hardware.md#p100)
 - [p150](docs/model_support/models_by_hardware.md#p150)
 - [WH LoudBox/QuietBox](docs/model_support/models_by_hardware.md#wh-loudboxquietbox)
-- [n300](docs/model_support/models_by_hardware.md#n300)
 - [n150](docs/model_support/models_by_hardware.md#n150)
+- [n300](docs/model_support/models_by_hardware.md#n300)
 <!-- MODEL_SUPPORT_END -->
 
 # Workflow automation in tt-inference-server
