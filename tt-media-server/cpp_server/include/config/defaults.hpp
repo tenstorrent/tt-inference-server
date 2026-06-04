@@ -44,6 +44,8 @@ constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
 constexpr size_t MAX_ISL = 51200;             // 50k (max input sequence length)
+constexpr size_t MIN_TOKENS_TO_COPY =
+    1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
