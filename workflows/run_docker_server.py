@@ -320,13 +320,8 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
-        # In CI, redirect automatic tt-triage hang logs to the persistent
-        # cache_root volume. The default /home/container_app_user/logs (see
-        # run_vllm_api_server.py set_metal_timeout_env_vars) lives on ephemeral
-        # docker overlay storage and is lost on container teardown, so triage
-        # reports generated in Models CI are not recoverable. cache_root is a
-        # mounted volume, so logs written there survive.
-        # See https://github.com/tenstorrent/tt-inference-server/issues/2670.
+        # In CI, persist tt-triage hang logs on the cache_root volume; the default
+        # /home/container_app_user/logs is ephemeral and lost on teardown. See #2670.
         if runtime_config.ci_mode:
             docker_env_vars["TT_METAL_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
 

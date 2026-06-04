@@ -495,10 +495,8 @@ def set_metal_timeout_env_vars():
     triage_old = Path(tt_metal_home) / "scripts" / "debugging_scripts" / "triage.py"
     triage_script = str(triage_new if triage_new.exists() else triage_old)
 
-    # mkdir -p so the redirect below succeeds even when log_dir does not exist
-    # yet. In CI, TT_METAL_LOGS_PATH points at {cache_root}/logs on a mounted
-    # volume that has no pre-existing logs/ subdir (see run_docker_server.py and
-    # issue #2670); without this the redirect fails and the triage report is lost.
+    # mkdir -p so the redirect succeeds when log_dir doesn't exist yet (in CI it
+    # points at the cache_root volume, which has no pre-created logs/ dir). See #2670.
     timeout_cmd = (
         f"mkdir -p {log_dir} && "
         f"{python_env_dir}/bin/python {triage_script} "
