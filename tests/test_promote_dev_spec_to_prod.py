@@ -561,23 +561,52 @@ def test_real_repo_dry_run_against_prod_succeeds(tmp_path):
     assert report["unmatched"] == set()
 
 
-def test_real_repo_promote_is_noop_when_dev_equals_prod(tmp_path):
-    """Promoting must not reformat untouched templates.
+def test_real_repo_promote_only_touches_release_blocks(tmp_path):
+    """Promoting against the real catalogues must be surgical.
 
-    dev and prod are currently byte-identical, so every release template already
-    matches its prod copy exactly. A real write must therefore change nothing and
-    leave each prod file byte-for-byte identical.
+    dev and prod diverge over time, so release blocks legitimately change. But a
+    template block that was NOT promoted must never be altered or reformatted:
+    every non-promoted prod block stays byte-identical.
     """
+    import shutil
+
+    from scripts.release.promote_dev_spec_to_prod import parse_block
+
+    prod_copy = tmp_path / "prod"
+    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
+    combos = collect_release_combos(json.loads(DEFAULT_CI_CONFIG.read_text()))
+    matches_by_file, _ = find_matches(DEFAULT_DEV_DIR, combos)
+    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
+
+    def blocks(text):
+        return {
+            template_identity(parse_block(lines)): "".join(lines)
+            for kind, lines in split_into_blocks(text)
+            if kind == "block"
+        }
+
+    for filename in report["changed_files"]:
+        promoted = {mb.identity for mb in matches_by_file.get(filename, [])}
+        before = blocks((DEFAULT_PROD_DIR / filename).read_text())
+        after = blocks((prod_copy / filename).read_text())
+        changed = {i for i in before if before[i] != after.get(i)}
+        added = set(after) - set(before)
+        assert changed <= promoted, (
+            f"{filename}: non-release blocks changed: {changed - promoted}"
+        )
+        assert added <= promoted, (
+            f"{filename}: non-release blocks added: {added - promoted}"
+        )
+
+
+def test_real_repo_promote_is_idempotent(tmp_path):
+    """A second promote run against the same prod produces no further change."""
     import shutil
 
     prod_copy = tmp_path / "prod"
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    before = {p.name: p.read_text() for p in prod_copy.glob("*.yaml")}
-
+    promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
+    snapshot = {p.name: p.read_text() for p in prod_copy.glob("*.yaml")}
     report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, dry_run=False)
-
-    assert report["changed_files"] == [], (
-        f"promote reformatted untouched templates: {report['changed_files']}"
-    )
-    after = {p.name: p.read_text() for p in prod_copy.glob("*.yaml")}
-    assert after == before
+    assert report["changed_files"] == []
+    assert {p.name: p.read_text() for p in prod_copy.glob("*.yaml")} == snapshot
