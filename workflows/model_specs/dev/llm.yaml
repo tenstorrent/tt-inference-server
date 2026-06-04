@@ -1112,6 +1112,9 @@ templates:
         # chunk kernel under trace-capture prefill hits an L1/CB clash (V2-9
         # trace-capture is a known blocker). Eager prefill/decode are known-good.
         trace_mode: false
+        # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
+        # the distributed-norm all_gather_async hangs under the wrong fabric.
+        fabric_config: FABRIC_1D_RING
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
         # Use the ttnn chunk GDN prefill kernel, not the C++ seq parallel-scan
