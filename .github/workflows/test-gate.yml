@@ -684,14 +684,14 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Runs on GitHub-hosted ubuntu-latest. Every downstream consumer of the
-    # cpp-server-build artifact (cpp-server-benchmarks,
-    # cpp-server-prefill-decode-split, cpp-server-gateway-split,
-    # dynamo-frontend-integration) also runs on ubuntu-latest, so the binary
-    # links against the same glibc / libstdc++ / libpython at runtime. The
-    # only self-hosted (jammy) C++ job, cpp-server-mock-pipeline-bench, builds
-    # its own binary in-job rather than downloading this artifact — a binary
-    # built on noble fails on jammy with "missing libfoo.so".
+    # Runs on GitHub-hosted ubuntu-latest. Its downstream consumers
+    # (cpp-server-benchmarks, dynamo-frontend-integration) also run on
+    # ubuntu-latest, so the binary links against the same glibc / libstdc++ /
+    # libpython at runtime. The self-hosted (jammy) perf-bench jobs
+    # (cpp-server-mock-pipeline-bench, cpp-server-prefill-decode-split,
+    # cpp-server-gateway-split) do NOT consume this artifact — they build
+    # their own binary in-job, since a noble-built binary fails on jammy with
+    # "missing libfoo.so".
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -1086,17 +1086,25 @@ jobs:
         run: exit "${BENCH_FAIL:-0}"
 
   cpp-server-prefill-decode-split:
-    needs: [detect-changes, cpp-build]
+    needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
-    runs-on: ubuntu-latest
+    # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)
+    # concurrently. On a 4-core GitHub runner that oversubscribes the CPU and
+    # inflates TTFT past the thresholds, which are tuned for this xlarge
+    # runner. Like cpp-server-mock-pipeline-bench it builds its own binary
+    # in-job rather than downloading the ubuntu-latest cpp-build artifact (a
+    # noble-built binary fails on this jammy runner with "missing libfoo.so").
+    runs-on: tt-ubuntu-2204-xlarge-stable
     timeout-minutes: 60
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass any injected proxy (see cpp-build).
+      # Loopback must bypass the self-hosted runner's injected proxy (see cpp-build).
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -1104,15 +1112,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download C++ build
-        uses: actions/download-artifact@v4
         with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh --blaze
+          cd ..
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -1481,8 +1493,10 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Build & Unit Tests
-    # Same ubuntu-latest image as cpp-build so the prefill_gateway binary is
-    # compatible with the cpp-server-gateway-split bench runner.
+    # Build + clang-tidy + unit-test validation for prefill_gateway on
+    # ubuntu-latest. The cpp-server-gateway-split perf bench builds its own
+    # gateway binary in-job (it runs on the jammy self-hosted runner), so this
+    # job no longer needs to publish an artifact for it.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -1530,13 +1544,6 @@ jobs:
         run: |
           cd prefill_gateway/build
           SOCKET_TRANSPORT=zmq ctest --output-on-failure
-
-      - name: Upload prefill_gateway binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: prefill-gateway-build
-          path: tt-media-server/prefill_gateway/build/prefill_gateway
-          retention-days: 1
 
   prefill-gateway-tsan:
     needs: detect-changes
@@ -1625,16 +1632,25 @@ jobs:
           if-no-files-found: warn
 
   cpp-server-gateway-split:
-    needs: [detect-changes, cpp-build, prefill-gateway-build]
+    needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: C++ Server Gateway Split Test
-    runs-on: ubuntu-latest
+    # Self-hosted: this job launches a PrefillGateway plus 3-4 cpp_server
+    # processes (each -t 4) concurrently. On a 4-core GitHub runner that
+    # oversubscribes the CPU and inflates TTFT past the thresholds, which are
+    # tuned for this xlarge runner. Like cpp-server-mock-pipeline-bench it
+    # builds both binaries (cpp_server + prefill_gateway) in-job rather than
+    # downloading the ubuntu-latest artifacts (a noble-built binary fails on
+    # this jammy runner with "missing libfoo.so").
+    runs-on: tt-ubuntu-2204-xlarge-stable
     timeout-minutes: 60
     permissions:
       contents: read
     env:
       PYTHONPATH: ${{ github.workspace }}/tt-media-server
       no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
       run:
         working-directory: tt-media-server
@@ -1642,24 +1658,29 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download C++ server build
-        uses: actions/download-artifact@v4
         with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
-      - name: Download prefill_gateway binary
-        uses: actions/download-artifact@v4
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
         with:
-          name: prefill-gateway-build
-          path: tt-media-server/prefill_gateway/build
+          token: ${{ secrets.TT_LLM_ENGINE }}
 
-      - name: Make binaries executable
-        run: chmod +x prefill_gateway/build/prefill_gateway
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh --blaze
+          cd ..
+
+      - name: Configure prefill_gateway
+        run: |
+          cmake -S prefill_gateway -B prefill_gateway/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache
+
+      - name: Build prefill_gateway
+        run: cmake --build prefill_gateway/build -j "$(nproc)"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
