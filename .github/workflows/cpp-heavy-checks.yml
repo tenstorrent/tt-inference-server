@@ -86,7 +86,7 @@ jobs:
     # download the cpp-build artifact — that artifact is built on
     # ubuntu-latest (noble) and fails at runtime on this jammy runner with
     # "missing libfoo.so" — so it builds its own binary in-job instead.
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -228,7 +228,7 @@ jobs:
     # runner. Like cpp-server-mock-pipeline-bench it builds its own binary
     # in-job rather than downloading the ubuntu-latest cpp-build artifact (a
     # noble-built binary fails on this jammy runner with "missing libfoo.so").
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -631,7 +631,7 @@ jobs:
     # builds both binaries (cpp_server + prefill_gateway) in-job rather than
     # downloading the ubuntu-latest artifacts (a noble-built binary fails on
     # this jammy runner with "missing libfoo.so").
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -1592,3 +1592,4 @@ jobs:
             tt-media-server/gw_tsan_zmq.log
           retention-days: 7
           if-no-files-found: warn
+
