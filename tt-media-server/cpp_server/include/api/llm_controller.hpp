@@ -75,7 +75,7 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
-   * Handle non-streaming responses. Drives the same Streamable producer as
+   * Handle non-streaming responses. Drives the same streaming producer as
    * handleStreaming and accumulates chunks into a single JSON body, so
    * disaggregated and prefill-on-decode routing is honored identically. The
    * `builder` converts the accumulated LLMResponse into the wire format

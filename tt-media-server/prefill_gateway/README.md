@@ -87,6 +87,12 @@ orchestrators can tell the process is up even when degraded.
 Both responses include `transport`, `registered_prefills`, `healthy_prefills`,
 `accepting_prefills`, and `decode_connected`.
 
+Decode servers also send periodic socket-level health probes over the existing
+inter-server connection. In direct mode the prefill replies with its own status;
+in gateway mode the PrefillGateway replies with the same aggregate readiness
+used by `GET /health`. Decode falls back to local prefill while that path is not
+ready.
+
 ```bash
 curl -s http://127.0.0.1:9091/metrics | head
 curl -s http://127.0.0.1:9092/tt-liveness | jq .

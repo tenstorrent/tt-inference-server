@@ -34,7 +34,9 @@ BlazeDecodeRunner::BlazeDecodeRunner(
       "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
   auto pipelineConfig = utils::makeDecodePipelineConfig(config);
   auto thinkTokenIds = tt::utils::tokenizers::thinkTokenIds();
+  auto eosTokenId = tt::utils::tokenizers::staticInfo().eosTokenId;
   ds::SchedulerParams managerParams{
+      .eos_token = static_cast<uint32_t>(eosTokenId),
       .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
       .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
   };
