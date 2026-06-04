@@ -61,19 +61,35 @@ jobs:
               - 'tests/test_helm_generator/test_values_in_sync.py'
 
       # Separate step: the Python LLM streaming perf test must NOT run on C++
-      # changes. cpp_server contains .py runner files, so the broad 'code'
-      # filter above would otherwise flag a pure-C++ PR. predicate-quantifier
-      # 'every' requires a file to match ALL patterns, which turns the '!'
-      # lines into real exclusions (subtracting cpp_server / prefill_gateway).
+      # changes. It exercises the Python media server (main.py + its packages),
+      # so this is an explicit allow-list of those source paths. cpp_server and
+      # prefill_gateway are deliberately NOT listed, so a pure-C++ PR leaves
+      # llm_streaming false and the test is skipped. (A positive list is used
+      # rather than '! exclusions' because dorny matches with "any pattern",
+      # which makes negation patterns ineffective without predicate-quantifier.)
       - uses: dorny/paths-filter@v3
         id: filter_llm
         with:
-          predicate-quantifier: 'every'
           filters: |
             llm_streaming:
-              - 'tt-media-server/**'
-              - '!tt-media-server/cpp_server/**'
-              - '!tt-media-server/prefill_gateway/**'
+              - 'tt-media-server/*.py'
+              - 'tt-media-server/requirements.txt'
+              - 'tt-media-server/pyproject.toml'
+              - 'tt-media-server/run_uvicorn.sh'
+              - 'tt-media-server/run_cpp.sh'
+              - 'tt-media-server/config/**'
+              - 'tt-media-server/device_workers/**'
+              - 'tt-media-server/domain/**'
+              - 'tt-media-server/ipc/**'
+              - 'tt-media-server/model_services/**'
+              - 'tt-media-server/monitoring/**'
+              - 'tt-media-server/open_ai_api/**'
+              - 'tt-media-server/performance_tests/**'
+              - 'tt-media-server/resolver/**'
+              - 'tt-media-server/security/**'
+              - 'tt-media-server/telemetry/**'
+              - 'tt-media-server/tt_model_runners/**'
+              - 'tt-media-server/utils/**'
 
   lint:
     needs: detect-changes
