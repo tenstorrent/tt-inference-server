@@ -615,6 +615,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.30'
               - name: MAX_MODEL_LENGTH
@@ -623,6 +625,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
   Qwen3-32B:
@@ -2595,6 +2599,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.35'
               - name: MAX_MODEL_LENGTH
@@ -2603,6 +2609,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
     defaultEngine: vllm
@@ -2783,6 +2791,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.35'
               - name: MAX_MODEL_LENGTH
@@ -2791,6 +2801,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
   Llama-3.1-8B:
@@ -3598,6 +3610,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.30'
               - name: MAX_MODEL_LENGTH
@@ -3606,6 +3620,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
   Qwen2.5-Coder-32B-Instruct:
@@ -6905,6 +6921,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.35'
               - name: MAX_MODEL_LENGTH
@@ -6913,6 +6931,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
     defaultEngine: forge
@@ -7454,6 +7474,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: ENABLE_TRACE
+                value: 'true'
               - name: GPU_MEMORY_UTILIZATION
                 value: '0.225'
               - name: MAX_MODEL_LENGTH
@@ -7462,6 +7484,8 @@ models:
                 value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: OPTIMIZATION_LEVEL
+                value: '0'
               - name: TT_KV_POOL_GB
                 value: '32'
     defaultEngine: forge

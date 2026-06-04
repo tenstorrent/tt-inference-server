@@ -36,6 +36,22 @@ class VLLMForgeRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Loading VLLM model...")
         prompt = "Hello, it's me"
+        # Tunable per-run via env vars. Defaults preserve prior behavior:
+        # optimization_level=0 (required for the 1.2.0 wheel — opt>=1 aborts in
+        # the tt-mlir MemoryLayoutPropagation pass; see tt-xla#4990),
+        # cpu_sampling enabled. ENABLE_TRACE is off-by-default and gated on
+        # opt_level=0; replaying the decode graph recovers the 1.2.0 decode
+        # regression (~2x aggregate tok/s validated on Llama-3.2-3B b4/16K).
+        # Caveats for ENABLE_TRACE:
+        #   - vllm_tt's TTConfig rejects enable_trace=True + opt>=1 + cpu_sampling=False
+        #     (only safe at optimization_level=0).
+        #   - crashes at high batch (b16 hits a RuntimeError in
+        #     tt::runtime::ttnn::operations::trace::run; b16/16K won't compile).
+        #   - trace-capture needs extra DRAM scratch — validate fit on 7B+ models
+        #     before enabling.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -47,10 +63,9 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": True,
-                # opt_level>=1 crashes the tt-mlir optimizer during warmup on
-                # the 1.2.0 wheel; keep 0 until tenstorrent/tt-xla#4990 lands.
-                "optimization_level": 0,
+                "cpu_sampling": cpu_sampling,
+                "optimization_level": optimization_level,
+                "enable_trace": enable_trace,
             },
         )
         self.logger.info(
