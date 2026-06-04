@@ -1017,7 +1017,7 @@ templates:
   impl: tt_transformers
   version: "0.11.1"
   tt_metal_commit: bac8b34
-  vllm_commit: f4b029385  # tenstorrent/vllm main (clone HEAD); platform.py import-deferred for compat
+  vllm_commit: 7c6685a
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
