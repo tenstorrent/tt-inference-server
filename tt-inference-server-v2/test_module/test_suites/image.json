@@ -306,7 +306,7 @@
         },
         {
             "models": [
-                "tt-z-image-turbo"
+                "z_image_turbo"
             ],
             "devices": [
                 "p300x2"
