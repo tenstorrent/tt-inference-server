@@ -39,5 +39,6 @@ async def generate_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 router = APIRouter()
 router.include_router(generate_image_router)

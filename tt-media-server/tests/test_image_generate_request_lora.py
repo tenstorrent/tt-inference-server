@@ -41,4 +41,3 @@ class TestImageGenerateRequestLoraFields:
     def test_lora_scale_above_range_raises(self):
         with pytest.raises(ValidationError):
             ImageGenerateRequest(prompt="a cat", guidance_scale=5.0, lora_scale=2.5)
-

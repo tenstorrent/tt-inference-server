@@ -99,4 +99,3 @@ def _setup_galaxy_mesh_config(tt_metal_home: str):
         os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
             f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
         )
-
