@@ -41,7 +41,7 @@ inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 
 inline ds::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
-  return {
+  ds::GenerationParams params = {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
               static_cast<int>(tt::config::maxContextLength()))),
@@ -52,6 +52,11 @@ inline ds::GenerationParams makeGenerationParams(
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids};
+
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    params.position_id = *seq.getKVPositionId();
+  }
+  return params;
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,
@@ -70,17 +75,11 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq,
-                                         uint32_t currentPosition) {
+                                         const tt::domain::llm::Sequence& seq) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    req.gen.position_id = *seq.getKVPositionId();
-  } else {
-    req.gen.position_id = currentPosition;
-  }
   return req;
 }
 
