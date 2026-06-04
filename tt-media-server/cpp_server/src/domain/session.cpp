@@ -8,6 +8,7 @@
 #include <random>
 
 #include "utils/conversation_hasher.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
@@ -88,6 +89,44 @@ void Session::addGeneratedToken(int tokenId) {
 
 void Session::finalizeAndRegisterHashes() {
   if (!onComplete_) return;
+
+  // [EOS-DIAG] Confirm whether generation ran past the turn-end token
+  // <|im_end|>. The blaze scheduler eos (commit 5d83c0b set it to 163585
+  // [EOS]) must match the model's per-turn terminator (163586 <|im_end|>).
+  // If <|im_end|> appears before the end of generatedTokens_, decode is
+  // over-generating and the polluted tail gets registered into the prefix —
+  // which breaks multi-turn prefix-cache reuse (only block 0 matches).
+  // tokensAfterImEnd > 0  => over-generation (eos mismatch confirmed)
+  // tokensAfterImEnd == 0 && firstImEndIdx >= 0 => clean stop at <|im_end|>
+  // firstImEndIdx == -1   => <|im_end|> never emitted (stopped on EOS/length)
+  // Remove after diagnosis.
+  {
+    const auto& stops = utils::tokenizers::staticInfo().stopTokenIds;
+    const int64_t imEnd = stops.empty() ? -1 : stops.front();
+    int firstImEndIdx = -1;
+    for (size_t i = 0; i < generatedTokens_.size(); ++i) {
+      if (generatedTokens_[i] == imEnd) {
+        firstImEndIdx = static_cast<int>(i);
+        break;
+      }
+    }
+    const size_t tokensAfterImEnd =
+        firstImEndIdx >= 0
+            ? generatedTokens_.size() - 1 - static_cast<size_t>(firstImEndIdx)
+            : 0;
+    std::string tailIds;
+    const size_t start =
+        generatedTokens_.size() > 16 ? generatedTokens_.size() - 16 : 0;
+    for (size_t i = start; i < generatedTokens_.size(); ++i) {
+      tailIds += std::to_string(generatedTokens_[i]);
+      tailIds += ' ';
+    }
+    TT_LOG_WARN(
+        "[EOS-DIAG] session={} generatedTokens={} stopTok(im_end)={} "
+        "firstImEndIdx={} tokensAfterImEnd={} lastTokenIds=[{}]",
+        session_id_, generatedTokens_.size(), imEnd, firstImEndIdx,
+        tokensAfterImEnd, tailIds);
+  }
 
   // Combine delta prompt + generated tokens
   std::vector<int> allDeltaTokens = deltaTokens_;

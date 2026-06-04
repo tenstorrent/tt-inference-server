@@ -51,7 +51,10 @@ inline ds::GenerationParams makeGenerationParams(
       .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
-      .stop_tokens = {163585}};
+      // Stop on the per-turn terminator <|im_end|> (163586) as well as the
+      // full-sequence [EOS] (163585); stopping only on [EOS] lets the model
+      // run past the turn boundary. See blaze_runner.cpp eos_token note.
+      .stop_tokens = {163585, 163586}};
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,

@@ -34,7 +34,12 @@ BlazeRunner::BlazeRunner(
   auto pipelineConfig = utils::makePipelineConfig(config);
   ds::SchedulerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::dsMaxUsers()),
-      .eos_token = 163585,
+      // <|im_end|> (163586) terminates every Kimi assistant turn; [EOS]
+      // (163585) only ends a full sequence. The scheduler must stop on the
+      // per-turn terminator, otherwise decode over-generates past the turn
+      // boundary and the polluted tail is registered into the prefix cache
+      // (only block 0 matches on the next turn). See [EOS-DIAG] in Session.
+      .eos_token = 163586,
       .think_open_token_id = 163606,
       .think_close_token_id = 163607,
   };
