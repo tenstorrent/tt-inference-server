@@ -319,7 +319,6 @@ def _generate_image_z_image_turbo(
     payload = {
         "prompt": prompt,
         "seed": seed,
-        "guidance_scale": Z_IMAGE_TURBO_GUIDANCE_SCALE,
         "number_of_images": 1,
         "num_inference_steps": num_inference_steps,
     }
