@@ -228,8 +228,8 @@ templates:
     - Qwen/Qwen3.5-9B
   impl: qwen35_9b_blackhole
   version: "0.12.0"
-  tt_metal_commit: c3a8d6c  # TODO: set to the SHA pushed to tenstorrent-metal/tt-metal (qwen35_vllm warmup-guard fix)
-  vllm_commit: 7c6685a  # TODO: set to the SHA pushed to tenstorrent/vllm (qwen3.5 registration + transformers pin relaxation)
+  tt_metal_commit: 07e4d5fe7c4  # conform decode to std Generator + consolidate masked-bucket prefill (qwen9b-p150 on tenstorrent/tt-metal)
+  vllm_commit: 0410f6b0c  # raise max_num_batched_tokens>=max_model_len when chunked prefill disabled (atupe/qwen9b on tenstorrent/vllm)
   inference_engine: VLLM
   device_model_specs:
     - device: P150
@@ -240,12 +240,13 @@ templates:
       # requires chunked prefill -- forbidden by the TT platform.
       vllm_args:
         no-enable-prefix-caching: true
-      # Traced prefill currently hangs on prompts shorter than the 2048-token
-      # chunk: the eager-tail prefill compiles at un-warmed lengths and corrupts
-      # the resident traces. Run with tracing off until the tt-metal warmup is
-      # fixed to compile the eager-tail path. Slower decode, but functional.
+      # Tracing on: the masked fixed-bucket prefill fix (see tt_metal_commit) warms
+      # every short-prompt bucket before trace capture, so no request-time compile
+      # can clobber the resident traces. trace_region_size must hold the ~81MB
+      # chunk-prefill trace + the decode trace (the 50MB default is too small).
       override_tt_config:
-        trace_mode: none
+        trace_mode: all
+        trace_region_size: 268435456  # 256 MB
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
