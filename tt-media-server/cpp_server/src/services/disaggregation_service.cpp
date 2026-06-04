@@ -132,12 +132,12 @@ void DisaggregationService::setupSocketHandlers() {
 
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-          auto request = LLMRequest(message.task_id);
-          request.max_tokens = 1;
-          request.temperature = message.temperature;
-          request.top_p = message.top_p;
-          request.top_k = message.top_k;
-          request.fast_mode = message.fast_mode;
+          auto request = std::make_shared<LLMRequest>(message.task_id);
+          request->max_tokens = 1;
+          request->temperature = message.temperature;
+          request->top_p = message.top_p;
+          request->top_k = message.top_k;
+          request->fast_mode = message.fast_mode;
 
           TT_LOG_DEBUG(
               "[DisaggregationService] Prefill request taskId={} "
@@ -146,49 +146,70 @@ void DisaggregationService::setupSocketHandlers() {
 
           auto maxTokens = message.max_tokens;
 
-          request.prompt.emplace<std::vector<int>>(message.token_ids.begin(),
-                                                   message.token_ids.end());
+          request->prompt.emplace<std::vector<int>>(message.token_ids.begin(),
+                                                    message.token_ids.end());
           auto slotId = message.slot_id;
-          request.slotId = slotId;
+          request->slotId = slotId;
+          request->number_of_decode_skip_tokens =
+              message.number_of_decode_skip_tokens;
 
-          // Resolve prefix cache: on HIT sets prefillSlotId and trims prompt.
-          resolvePrefillSession(request, message.registration_hashes);
+          // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
+          // and trims prompt, on MISS allocates a new session first.
+          resolvePrefillSession(
+              request, message.registration_hashes,
+              [this, request, message, maxTokens, slotId]() {
+                llmService->submitStreamingRequest(
+                    *request,
+                    [this, message, maxTokens, slotId](
+                        const LLMStreamChunk& response, bool /*isFinal*/) {
+                      auto prefillResult =
+                          tt::sockets::PrefillResultMessage(message.task_id);
+                      prefillResult.slot_id = slotId;
+                      prefillResult.temperature = message.temperature;
+                      prefillResult.top_p = message.top_p;
+                      prefillResult.top_k = message.top_k;
+                      prefillResult.fast_mode = message.fast_mode;
 
-          llmService->submitStreamingRequest(
-              request, [this, message, maxTokens, slotId](
-                           const LLMStreamChunk& response, bool /*isFinal*/) {
+                      bool isError =
+                          !response.choices.empty() &&
+                          response.choices.back().finish_reason == "error";
+                      if (isError) {
+                        TT_LOG_WARN(
+                            "[DisaggregationService] Prefill error for task "
+                            "{}, propagating to decode server",
+                            message.task_id);
+                        prefillResult.error = true;
+                        prefillResult.finished = true;
+                      } else {
+                        prefillResult.remaining_tokens =
+                            maxTokens.has_value()
+                                ? std::optional<int>(
+                                      std::max(0, maxTokens.value() - 1))
+                                : std::nullopt;
+                        prefillResult.token_ids.insert(
+                            prefillResult.token_ids.end(),
+                            message.token_ids.begin(), message.token_ids.end());
+                        if (response.choices.back().token_id.has_value()) {
+                          prefillResult.token_ids.push_back(
+                              response.choices.back().token_id.value());
+                        }
+                        prefillResult.generated_text =
+                            response.choices.back().text;
+                      }
+
+                      socketService->sendPrefillResult(prefillResult);
+                    });
+              },
+              [this, message, slotId](std::string_view error) {
+                TT_LOG_WARN(
+                    "[DisaggregationService] Session resolution failed for "
+                    "taskId={}: {}",
+                    message.task_id, error);
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
-                prefillResult.temperature = message.temperature;
-                prefillResult.top_p = message.top_p;
-                prefillResult.top_k = message.top_k;
-                prefillResult.fast_mode = message.fast_mode;
-
-                bool isError = !response.choices.empty() &&
-                               response.choices.back().finish_reason == "error";
-                if (isError) {
-                  TT_LOG_WARN(
-                      "[DisaggregationService] Prefill error for task {}, "
-                      "propagating to decode server",
-                      message.task_id);
-                  prefillResult.error = true;
-                  prefillResult.finished = true;
-                } else {
-                  prefillResult.remaining_tokens =
-                      maxTokens.has_value() ? std::optional<int>(std::max(
-                                                  0, maxTokens.value() - 1))
-                                            : std::nullopt;
-                  prefillResult.token_ids.insert(prefillResult.token_ids.end(),
-                                                 message.token_ids.begin(),
-                                                 message.token_ids.end());
-                  if (response.choices.back().token_id.has_value()) {
-                    prefillResult.token_ids.push_back(
-                        response.choices.back().token_id.value());
-                  }
-                  prefillResult.generated_text = response.choices.back().text;
-                }
-
+                prefillResult.error = true;
+                prefillResult.finished = true;
                 socketService->sendPrefillResult(prefillResult);
               });
         });
@@ -256,8 +277,12 @@ void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
 }
 
 void DisaggregationService::resolvePrefillSession(
-    LLMRequest& request, const std::vector<uint64_t>& routingHashes) {
+    std::shared_ptr<LLMRequest> request,
+    const std::vector<uint64_t>& routingHashes,
+    std::function<void()> onResolved,
+    std::function<void(std::string_view)> onError) {
   if (!sessionManager || routingHashes.empty()) {
+    onResolved();
     return;
   }
 
@@ -271,11 +296,12 @@ void DisaggregationService::resolvePrefillSession(
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache HIT taskId={} "
         "sessionId={} slotId={} matchedTokens={}",
-        request.task_id, acquired->sessionId, acquired->slotId,
+        request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
-    request.prefillSlotId = acquired->slotId;
-    applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
+    request->prefillSlotId = acquired->slotId;
+    applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
+    onResolved();
   } else {
     // Check if there's a candidate slot worth copying from.
     std::optional<uint32_t> slotToCopyFrom;
@@ -299,7 +325,7 @@ void DisaggregationService::resolvePrefillSession(
           TT_LOG_INFO(
               "[DisaggregationService] Found slot to copy from: slotId={} "
               "matchedTokens={} for taskId={}",
-              sourceSlot, copyMatchedTokens, request.task_id);
+              sourceSlot, copyMatchedTokens, request->task_id);
         }
       }
     }
@@ -307,37 +333,42 @@ void DisaggregationService::resolvePrefillSession(
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
-        request.task_id, routingHashes.size());
-
-    // If copying, set continuation and kv_position_id on the request.
-    if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
-      request.continuation = true;
-      request.kv_position_id = copyMatchedTokens - 1;
-      applyDeltaPrompt(request, copyMatchedTokens);
-    }
+        request->task_id, routingHashes.size());
 
     sessionManager->createSession(
-        [taskId = request.task_id, infos = std::move(blockInfos),
-         sm = sessionManager,
-         slotToCopyFrom](const tt::domain::Session& session) mutable {
+        [this, request, infos = std::move(blockInfos), sm = sessionManager,
+         slotToCopyFrom, copyMatchedTokens, onResolved = std::move(onResolved)](
+            const tt::domain::Session& session) mutable {
           if (slotToCopyFrom.has_value()) {
             sm->unlockSlot(*slotToCopyFrom);
           }
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
-              taskId, session.getSessionId(), session.getSlotId());
+              request->task_id, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
+          request->sessionId = session.getSessionId();
+          request->prefillSlotId =
+              sm->acquireInFlight(session.getSessionId(), nullptr);
+
+          // If copying, set continuation and kv_position_id on the request.
+          if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
+            request->continuation = true;
+            request->kv_position_id = copyMatchedTokens - 1;
+            applyDeltaPrompt(*request, copyMatchedTokens);
+          }
+          onResolved();
         },
-        [taskId = request.task_id, sm = sessionManager,
-         slotToCopyFrom](std::string_view errorMessage) {
+        [request, sm = sessionManager, slotToCopyFrom,
+         onError = std::move(onError)](std::string_view errorMessage) {
           if (slotToCopyFrom.has_value()) {
             sm->unlockSlot(*slotToCopyFrom);
           }
           TT_LOG_WARN(
               "[DisaggregationService] Failed to create session for "
               "taskId={}: {}",
-              taskId, errorMessage);
+              request->task_id, errorMessage);
+          onError(errorMessage);
         },
         /*eventLoop=*/eventLoopThread.getLoop(), blockInfos,
         /*slotId=*/std::nullopt, slotToCopyFrom);
@@ -353,10 +384,14 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    int decodeSkipTokens = request.kv_position_id.has_value()
+                               ? static_cast<int>(*request.kv_position_id + 1)
+                               : 0;
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request));
+        slotId, tt::utils::mapper::mapSamplingParams(request),
+        decodeSkipTokens);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

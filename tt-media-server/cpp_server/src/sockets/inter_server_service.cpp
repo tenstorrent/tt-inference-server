@@ -13,6 +13,7 @@ namespace tt::sockets {
 namespace {
 
 constexpr auto REGISTRATION_INTERVAL = std::chrono::milliseconds(1000);
+constexpr auto PREFILL_HEALTH_INTERVAL = std::chrono::milliseconds(1000);
 
 }  // namespace
 
@@ -22,6 +23,7 @@ InterServerService::~InterServerService() { stop(); }
 
 bool InterServerService::initializeFromConfig() {
   auto mode = tt::config::llmMode();
+  llmMode = mode;
 
   if (mode == tt::config::LLMMode::REGULAR) {
     TT_LOG_INFO(
@@ -52,6 +54,7 @@ bool InterServerService::initializeFromConfig() {
           port);
       success = socket_manager_.initializeAsServer(port);
     }
+    prefillHealthProbeMode = success;
   } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     if (gatewayMode) {
       if (zmqTransport) {
@@ -104,12 +107,22 @@ void InterServerService::start() {
         [this] { sendRegistration(); });
   }
 
+  if (prefillHealthProbeMode) {
+    markPrefillHealthUnavailable();
+    socket_manager_.setConnectionEstablishedCallback([this] {
+      markPrefillHealthUnavailable();
+      sendPrefillHealthRequest();
+    });
+  }
   socket_manager_.start();
   if (periodic_registration_mode_ && socket_manager_.isConnected()) {
     sendRegistration();
   }
   if (periodic_registration_mode_) {
     startRegistrationThread();
+  }
+  if (prefillHealthProbeMode) {
+    startHealthProbeThread();
   }
   TT_LOG_INFO("[InterServerService] Started socket communication");
 }
@@ -120,6 +133,7 @@ void InterServerService::stop() {
   }
 
   stopRegistrationThread();
+  stopHealthProbeThread();
   socket_manager_.stop();
   TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
@@ -130,7 +144,8 @@ bool InterServerService::sendPrefillRequest(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
-    const tt::domain::llm::SamplingParams& sampling) {
+    const tt::domain::llm::SamplingParams& sampling,
+    int numberOfDecodeSkipTokens) {
   if (!enabled_) {
     return false;
   }
@@ -144,6 +159,7 @@ bool InterServerService::sendPrefillRequest(
   message.top_p = sampling.top_p;
   message.top_k = sampling.top_k;
   message.fast_mode = sampling.fast_mode;
+  message.number_of_decode_skip_tokens = numberOfDecodeSkipTokens;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -201,18 +217,31 @@ void InterServerService::setHealthCheckCallback(HealthCallback callback) {
 
 void InterServerService::setConnectionLostCallback(
     std::function<void()> callback) {
-  socket_manager_.setConnectionLostCallback(std::move(callback));
+  socket_manager_.setConnectionLostCallback(
+      [this, callback = std::move(callback)] {
+        markPrefillHealthUnavailable();
+        if (callback) {
+          callback();
+        }
+      });
 }
 
 bool InterServerService::isConnected() const {
-  return enabled_ && socket_manager_.isConnected();
+  return enabled_ && socket_manager_.isConnected() && isPrefillHealthReady();
 }
 
 std::string InterServerService::getStatus() const {
   if (!enabled_) {
     return "disabled";
   }
-  return socket_manager_.getStatus();
+  if (!prefillHealthProbeMode) {
+    return socket_manager_.getStatus();
+  }
+
+  std::string status = socket_manager_.getStatus();
+  status += isPrefillHealthReady() ? ", prefill_health=ready"
+                                   : ", prefill_health=unavailable";
+  return status;
 }
 
 void InterServerService::setupMessageHandlers() {
@@ -248,6 +277,17 @@ void InterServerService::setupMessageHandlers() {
   socket_manager_.registerHandler<RegistrationProbeMessage>(
       tags::REGISTRATION_PROBE, [this](const RegistrationProbeMessage&) {
         sendRegistrationIfGatewayModeIsEnabled();
+      });
+
+  socket_manager_.registerHandler<PrefillHealthRequestMessage>(
+      tags::PREFILL_HEALTH_REQUEST, [this](const PrefillHealthRequestMessage&) {
+        sendPrefillHealthStatus();
+      });
+
+  socket_manager_.registerHandler<PrefillHealthStatusMessage>(
+      tags::PREFILL_HEALTH_STATUS,
+      [this](const PrefillHealthStatusMessage& message) {
+        recordPrefillHealthStatus(message);
       });
 
   socket_manager_.registerHandler<PrefillRegistrationMessage>(
@@ -317,6 +357,68 @@ void InterServerService::sendRegistrationIfGatewayModeIsEnabled() {
   sendRegistration();
 }
 
+void InterServerService::sendPrefillHealthRequest() {
+  if (!prefillHealthProbeMode || !socket_manager_.isConnected()) {
+    markPrefillHealthUnavailable();
+    return;
+  }
+
+  PrefillHealthRequestMessage msg;
+  const bool ok = socket_manager_.sendObject(tags::PREFILL_HEALTH_REQUEST, msg);
+  if (!ok) {
+    markPrefillHealthUnavailable();
+  }
+}
+
+void InterServerService::sendPrefillHealthStatus() {
+  if (llmMode != tt::config::LLMMode::PREFILL_ONLY ||
+      !socket_manager_.isConnected()) {
+    return;
+  }
+
+  PrefillHealthStatusMessage status;
+  status.ready = true;
+  (void)socket_manager_.sendObject(tags::PREFILL_HEALTH_STATUS, status);
+}
+
+void InterServerService::recordPrefillHealthStatus(
+    const PrefillHealthStatusMessage& message) {
+  if (!prefillHealthProbeMode) {
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(prefillHealthMutex);
+    prefillHealthReady = message.ready;
+  }
+  prefillHealthCv.notify_all();
+
+  if (!message.ready) {
+    TT_LOG_WARN("[InterServerService] Prefill health unavailable");
+  }
+}
+
+void InterServerService::markPrefillHealthUnavailable() {
+  if (!prefillHealthProbeMode) {
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(prefillHealthMutex);
+    prefillHealthReady = false;
+  }
+  prefillHealthCv.notify_all();
+}
+
+bool InterServerService::isPrefillHealthReady() const {
+  if (!prefillHealthProbeMode) {
+    return true;
+  }
+
+  std::lock_guard<std::mutex> lock(prefillHealthMutex);
+  return prefillHealthReady;
+}
+
 void InterServerService::startRegistrationThread() {
   stopRegistrationThread();
 
@@ -339,6 +441,29 @@ void InterServerService::stopRegistrationThread() {
   registration_cv_.notify_all();
   if (registration_thread_.joinable()) {
     registration_thread_.join();
+  }
+}
+
+void InterServerService::startHealthProbeThread() {
+  stopHealthProbeThread();
+
+  prefillHealthThread = std::jthread([this](std::stop_token stopToken) {
+    while (!stopToken.stop_requested()) {
+      sendPrefillHealthRequest();
+
+      std::unique_lock<std::mutex> lock(prefillHealthMutex);
+      prefillHealthCv.wait_for(lock, PREFILL_HEALTH_INTERVAL, [&stopToken] {
+        return stopToken.stop_requested();
+      });
+    }
+  });
+}
+
+void InterServerService::stopHealthProbeThread() {
+  prefillHealthThread.request_stop();
+  prefillHealthCv.notify_all();
+  if (prefillHealthThread.joinable()) {
+    prefillHealthThread.join();
   }
 }
 

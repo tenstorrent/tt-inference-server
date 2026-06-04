@@ -46,8 +46,9 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   request.skip_special_tokens = true;
   request.enable_reasoning = true;
 
-  ASSERT_NO_THROW(llmService->processStreamingRequest(
-      std::move(request), [](tt::domain::llm::LLMStreamChunk&, bool) {}));
+  ASSERT_NO_THROW(llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true));
 
   ASSERT_FALSE(taskQueue->empty());
   auto pushed = taskQueue->tryPop();
