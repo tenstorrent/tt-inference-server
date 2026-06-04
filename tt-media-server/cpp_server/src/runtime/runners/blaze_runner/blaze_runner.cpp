@@ -527,7 +527,8 @@ inline void BlazeRunner::handleStopRequest(uint32_t taskId) {
 }
 
 void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
-  tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+  auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+  metrics.updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
   if (slotContext.state != SlotState::RUNNING) {
@@ -557,13 +558,14 @@ void BlazeRunner::handleOutput(const ds::OutputMessage& output) {
 
   slotContext.tokensGenerated++;
   slotContext.currentPosition = output.position_id;
+  metrics.onOutputToken(output.slot_id);
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
                                          taskId);
+    metrics.onTurnComplete(output.slot_id, spec.accepts, spec.rejects);
     slotManager.setSlotAsIdle(output.slot_id);
-    tt::worker::SingleProcessWorkerMetrics::instance()
-        .decrementActiveRequests();
+    metrics.decrementActiveRequests();
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag,
@@ -632,8 +634,10 @@ void BlazeRunner::handleRequest(
       utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
-      tt::worker::SingleProcessWorkerMetrics::instance()
-          .incrementActiveRequests();
+      auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+      metrics.incrementActiveRequests();
+      metrics.onTurnStart(
+          slotId, static_cast<uint32_t>(request->getTokenIds().size()));
       break;
     }
 
