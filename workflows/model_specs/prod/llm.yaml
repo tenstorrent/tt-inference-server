@@ -738,10 +738,6 @@ templates:
       tensor_cache_timeout: 5400.0
       override_tt_config:
         trace_region_size: 402653184  # 384 * 1024 * 1024
-      known_issues:
-        - workflow_type: TESTS
-          task_name: test_penalties
-          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289) is over-strict for short, low-repetition prompts decoded near-greedily; presence_penalty=1.2 legitimately produced identical output. Model meets FUNCTIONAL expectations. Tracked in #3888."
   status: FUNCTIONAL
   has_builtin_warmup: true
   metadata:
