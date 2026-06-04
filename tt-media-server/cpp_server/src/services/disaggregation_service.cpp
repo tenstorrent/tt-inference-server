@@ -55,8 +55,9 @@ void DisaggregationService::setupSocketHandlers() {
                 message.task_id);
             const bool timeout = message.generated_text == "timeout";
             callback.value()(
-                timeout ? makeTimeoutErrorChunk(message.task_id, "prefill timeout")
-                        : makeErrorChunk(message.task_id, "prefill error"),
+                timeout
+                    ? makeTimeoutErrorChunk(message.task_id, "prefill timeout")
+                    : makeErrorChunk(message.task_id, "prefill error"),
                 /*isFinal=*/true);
             return;
           }
@@ -173,13 +174,11 @@ void DisaggregationService::setupSocketHandlers() {
                     response.choices.empty()
                         ? std::optional<std::string>{}
                         : response.choices.back().finish_reason;
-                const bool isTimeout =
-                    finishReason.has_value() &&
-                    finishReason.value() == "timeout_error";
+                const bool isTimeout = finishReason.has_value() &&
+                                       finishReason.value() == "timeout_error";
                 const bool isError =
-                    isTimeout ||
-                    (finishReason.has_value() &&
-                     finishReason.value() == "error");
+                    isTimeout || (finishReason.has_value() &&
+                                  finishReason.value() == "error");
                 if (isError) {
                   TT_LOG_WARN(
                       "[DisaggregationService] Prefill error for task {}, "

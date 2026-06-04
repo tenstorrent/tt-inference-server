@@ -64,9 +64,9 @@ std::optional<tt::domain::llm::TokenResult> BlazePrefillModelRunner::forward(
       }
 
       // Return timeout error token
-      return tt::domain::llm::TokenResult(
-          taskId, 0, std::nullopt, /*isError=*/true,
-          /*isTimeoutError=*/true);
+      return tt::domain::llm::TokenResult(taskId, 0, std::nullopt,
+                                          /*isError=*/true,
+                                          /*isTimeoutError=*/true);
     }
 
     if (deviceOutput.tryRead(readBuf)) {
