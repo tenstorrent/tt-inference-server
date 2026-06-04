@@ -1,10 +1,9 @@
 name: C++ Heavy Checks (scheduled)
 
-# Heavy cpp_server jobs (full benchmarks, the 3 self-hosted perf benches,
-# Dynamo integration, and the ThreadSanitizers) are too slow / queue-bound to
-# gate every PR. They run on a schedule (and on demand) instead, and post the
-# result to Slack. The fast per-commit checks (lint, compile, unit tests) stay
-# in test-gate.yml.
+# Heavy cpp_server jobs (the 3 self-hosted perf benches, Dynamo integration,
+# and the ThreadSanitizers) are too slow / queue-bound to gate every PR. They
+# run on a schedule (and on demand) instead. The fast per-commit checks (lint,
+# compile, unit tests, and the mock-backend benchmark) stay in test-gate.yml.
 on:
   schedule:
     # GitHub cron is UTC and does NOT observe DST. CET=UTC+1 (winter),
@@ -27,9 +26,9 @@ env:
 jobs:
   cpp-build:
     name: C++ Build (artifact for benches)
-    # Built on ubuntu-latest and consumed only by the ubuntu-latest bench jobs
-    # below (cpp-server-benchmarks, dynamo-frontend-integration). The
-    # self-hosted/jammy jobs build their own binary in-job.
+    # Built on ubuntu-latest and consumed only by dynamo-frontend-integration
+    # (also ubuntu-latest). The self-hosted/jammy jobs build their own binary
+    # in-job.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -77,201 +76,6 @@ jobs:
           name: cpp-server-build
           path: tt-media-server/cpp_server/cpp-server-build.tar.gz
           retention-days: 1
-
-  cpp-server-benchmarks:
-    needs: cpp-build
-    name: C++ Server Benchmarks
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass any injected proxy (see cpp-build).
-      no_proxy: "localhost,127.0.0.1,::1"
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download C++ build
-        uses: actions/download-artifact@v4
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
-
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Install Python test dependencies
-        run: bash cpp_server/scripts/ci/install_bench_client.sh
-
-      # ── Mock backend benchmarks ──────────────────────────────────────
-      - name: Start C++ server (mock backend)
-        run: |
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
-          cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
-          echo $! > ../../cpp_server.pid
-          cd ../..
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock backend"
-
-      # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
-      # tokenizer init cost (#3179) before the measured bench starts. Without
-      # this, mean_ttft_ms on the first bench is dominated by the cold-start
-      # P99 tail. Concurrency of 16 across 4 IO threads reliably touches every
-      # thread.
-      - name: Warm up mock backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 32 \
-            --max-concurrency 16 \
-            > /dev/null
-
-      - name: Bench mock backend
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --save-result \
-            --result-filename "vllm-bench-mock.json" \
-            2>&1 | tee bench_mock_output.txt
-
-      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
-      # small smoke test that asserts the response shape (no perf thresholds —
-      # the non-streaming path is gated on correctness, not latency).
-      - name: Smoke test mock backend (non-streaming)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: python cpp_server/tests/test_non_streaming_chat.py
-
-      - name: Bench mock backend (structured output - json_object)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --extra-body '{"response_format": {"type": "json_object"}}' \
-            --save-result \
-            --result-filename "vllm-bench-structured-output-json-object.json" \
-            2>&1 | tee bench_structured_output_json_object.txt
-
-      - name: Bench mock backend (structured output - json_schema)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
-            --save-result \
-            --result-filename "vllm-bench-structured-output-json-schema.json" \
-            2>&1 | tee bench_structured_output_json_schema.txt
-
-      - name: Stop mock server
-        if: always()
-        run: |
-          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
-          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
-          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
-            --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
-          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
-
-      # NOTE: the mock_pipeline benchmark lives in its own self-hosted job
-      # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
-      # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
-      # throughput thresholds unmeetable — so it stays on the xlarge
-      # self-hosted runner while the mock / structured-output benches here run
-      # on ubuntu-latest.
-
-      # ── Check thresholds ─────────────────────────────────────────────
-      - name: Check all benchmark thresholds
-        run: |
-          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
-          CHECK=cpp_server/scripts/ci/check_vllm_result.py
-          FAIL=0
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
-            --result vllm-bench-mock.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
-            --result vllm-bench-structured-output-json-object.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
-            --result vllm-bench-structured-output-json-schema.json || FAIL=1
-          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
-
-      # ── Artifacts & logs ─────────────────────────────────────────────
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Mock Server Logs ==="
-          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
-
-      - name: Upload benchmark results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-bench-results
-          path: |
-            tt-media-server/vllm-bench-mock.json
-            tt-media-server/vllm-bench-structured-output-json-object.json
-            tt-media-server/vllm-bench-structured-output-json-schema.json
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-server-bench-logs
-          path: |
-            tt-media-server/cpp_server_mock.log
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Check benchmark result
-        if: always()
-        run: exit "${BENCH_FAIL:-0}"
 
   cpp-server-mock-pipeline-bench:
     name: C++ Server Mock Pipeline Benchmark
@@ -1788,56 +1592,3 @@ jobs:
             tt-media-server/gw_tsan_zmq.log
           retention-days: 7
           if-no-files-found: warn
-
-  notify:
-    name: Notify Slack
-    needs:
-      - cpp-build
-      - cpp-server-benchmarks
-      - cpp-server-mock-pipeline-bench
-      - cpp-server-prefill-decode-split
-      - cpp-server-gateway-split
-      - dynamo-frontend-integration
-      - cpp-tsan
-      - prefill-gateway-tsan
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    # HAS_WEBHOOK lets the Slack post no-op gracefully until the
-    # CPP_CI_SLACK_WEBHOOK_URL secret is created (secrets can't be referenced
-    # directly in a step `if`, but evaluating them into env is allowed).
-    env:
-      HAS_WEBHOOK: ${{ secrets.CPP_CI_SLACK_WEBHOOK_URL != '' }}
-    steps:
-      - name: Compose status payload
-        id: r
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          OVERALL=success
-          LINES=""
-          while IFS=$'\t' read -r name result; do
-            icon="white_check_mark"
-            case "$result" in
-              success|skipped) : ;;
-              *) icon="x"; OVERALL=failure ;;
-            esac
-            LINES="${LINES}:${icon}: ${name}: ${result}"$'\n'
-          done < <(echo "$NEEDS_JSON" | jq -r 'to_entries[] | "\(.key)\t\(.value.result)"')
-          if [ "$OVERALL" = success ]; then HEAD=":white_check_mark: *C++ Heavy Checks* passed"; else HEAD=":x: *C++ Heavy Checks* FAILED"; fi
-          MSG=$(printf '%s — <%s|run> (%s)\n%s' "$HEAD" "$RUN_URL" "$REF_NAME" "$LINES")
-          PAYLOAD=$(jq -nc --arg text "$MSG" '{text:$text}')
-          echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
-          echo "payload=$PAYLOAD" >> "$GITHUB_OUTPUT"
-          echo "$MSG"
-
-      - name: Post to Slack
-        if: ${{ always() && env.HAS_WEBHOOK == 'true' }}
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: ${{ steps.r.outputs.payload }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.CPP_CI_SLACK_WEBHOOK_URL }}

@@ -31,6 +31,7 @@ jobs:
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
       charts: ${{ steps.filter.outputs.charts }}
       helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
+      llm-streaming: ${{ steps.filter_llm.outputs.llm_streaming }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -58,6 +59,21 @@ jobs:
               - 'workflows/helm_generator/**'
               - 'charts/tt-inference-server/values.yaml'
               - 'tests/test_helm_generator/test_values_in_sync.py'
+
+      # Separate step: the Python LLM streaming perf test must NOT run on C++
+      # changes. cpp_server contains .py runner files, so the broad 'code'
+      # filter above would otherwise flag a pure-C++ PR. predicate-quantifier
+      # 'every' requires a file to match ALL patterns, which turns the '!'
+      # lines into real exclusions (subtracting cpp_server / prefill_gateway).
+      - uses: dorny/paths-filter@v3
+        id: filter_llm
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            llm_streaming:
+              - 'tt-media-server/**'
+              - '!tt-media-server/cpp_server/**'
+              - '!tt-media-server/prefill_gateway/**'
 
   lint:
     needs: detect-changes
@@ -503,7 +519,9 @@ jobs:
 
   llm-streaming-performance:
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.should-test == 'true' }}
+    # Gated on tt-media-server Python changes only (excludes cpp_server /
+    # prefill_gateway) so it does not run on C++-only PRs.
+    if: ${{ needs.detect-changes.outputs.llm-streaming == 'true' }}
     name: LLM Streaming Performance Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -694,11 +712,10 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Per-commit compile + unit-test gate on ubuntu-latest. The heavy
-    # benchmarks/sanitizers that used to consume this build moved to the
-    # scheduled cpp-heavy-checks.yml workflow (which builds its own artifact),
-    # so this job no longer uploads one — it just proves the server compiles
-    # and its ctest unit tests pass on every commit.
+    # Per-commit compile + unit-test gate on ubuntu-latest. It also uploads the
+    # cpp-server-build artifact consumed by the per-commit cpp-server-benchmarks
+    # (mock backend) job. The heavier benchmarks/sanitizers moved to the
+    # scheduled cpp-heavy-checks.yml workflow (which builds its own artifact).
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -751,6 +768,214 @@ jobs:
           cd cpp_server/build
           ctest --output-on-failure
           cd ../..
+
+      - name: Archive C++ build
+        run: |
+          cd cpp_server
+          tar -czf cpp-server-build.tar.gz build tokenizers
+
+      - name: Upload C++ build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server/cpp-server-build.tar.gz
+          retention-days: 1
+
+  cpp-server-benchmarks:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      # Loopback must bypass any injected proxy (see cpp-build).
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
+
+      # ── Mock backend benchmarks ──────────────────────────────────────
+      - name: Start C++ server (mock backend)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_mock.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "mock backend"
+
+      # Pre-warm the Drogon IO thread pool so each thread pays its per-thread
+      # tokenizer init cost (#3179) before the measured bench starts. Without
+      # this, mean_ttft_ms on the first bench is dominated by the cold-start
+      # P99 tail. Concurrency of 16 across 4 IO threads reliably touches every
+      # thread.
+      - name: Warm up mock backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 32 \
+            --max-concurrency 16 \
+            > /dev/null
+
+      - name: Bench mock backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-mock.json" \
+            2>&1 | tee bench_mock_output.txt
+
+      # `vllm bench serve` hard-codes stream=True, so cover stream=False with a
+      # small smoke test that asserts the response shape (no perf thresholds —
+      # the non-streaming path is gated on correctness, not latency).
+      - name: Smoke test mock backend (non-streaming)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: python cpp_server/tests/test_non_streaming_chat.py
+
+      - name: Bench mock backend (structured output - json_object)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_object"}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-object.json" \
+            2>&1 | tee bench_structured_output_json_object.txt
+
+      - name: Bench mock backend (structured output - json_schema)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-schema.json" \
+            2>&1 | tee bench_structured_output_json_schema.txt
+
+      - name: Stop mock server
+        if: always()
+        run: |
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "mock backend exit"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "mock backend"
+
+      # NOTE: the mock_pipeline benchmark lives in its own self-hosted job
+      # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
+      # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
+      # throughput thresholds unmeetable — so it stays on the xlarge
+      # self-hosted runner while the mock / structured-output benches here run
+      # on ubuntu-latest.
+
+      # ── Check thresholds ─────────────────────────────────────────────
+      - name: Check all benchmark thresholds
+        run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          FAIL=0
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
+            --result vllm-bench-mock.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
+            --result vllm-bench-structured-output-json-object.json || FAIL=1
+          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
+            --result vllm-bench-structured-output-json-schema.json || FAIL=1
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+
+      # ── Artifacts & logs ─────────────────────────────────────────────
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Mock Server Logs ==="
+          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-results
+          path: |
+            tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-structured-output-json-object.json
+            tt-media-server/vllm-bench-structured-output-json-schema.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-logs
+          path: |
+            tt-media-server/cpp_server_mock.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        if: always()
+        run: exit "${BENCH_FAIL:-0}"
 
   prefill-gateway-build:
     needs: detect-changes
@@ -1146,6 +1371,7 @@ jobs:
       - test-coverage
       - cpp-format-check
       - cpp-build
+      - cpp-server-benchmarks
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1188,7 +1414,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build)
+              cpp-format-check|cpp-build|cpp-server-benchmarks)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -1237,6 +1463,7 @@ jobs:
             test-coverage
             cpp-format-check
             cpp-build
+            cpp-server-benchmarks
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1254,6 +1481,7 @@ jobs:
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
+            [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
