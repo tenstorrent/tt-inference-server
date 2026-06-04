@@ -18,6 +18,8 @@ run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
 workflows/ @tstescoTT @tenstorrent/tt-inference-server-codeowners
 workflows/model_spec.py @tstescoTT @bgoelTT @idjuricTT @tenstorrent/tt-inference-server-codeowners
 workflows/run_reports.py @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tenstorrent/tt-inference-server-codeowners
+workflows/model_specs/dev/ @tenstorrent/tt-inference-server-codeowners
+workflows/model_specs/prod/ @acvejicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @vcankovicTT @tstescoTT @bgoelTT
 
 # helm charts
 charts/tt-inference-server/ @acvejicTT @vcankovicTT @mjeremicTT @mdobrosavljevicTT @vmaksimovicTT @tenstorrent/tt-inference-server-codeowners
