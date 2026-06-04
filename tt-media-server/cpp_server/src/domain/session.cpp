@@ -77,8 +77,8 @@ void Session::addGeneratedToken(int tokenId) {
 
   // Track thinking state using same state machine as ReasoningParser
   const bool thinkingEnabled =
-      thinkStartTokenId_ != utils::tokenizers::kNoThinkTokenId &&
-      thinkEndTokenId_ != utils::tokenizers::kNoThinkTokenId;
+      thinkStartTokenId_ != utils::tokenizers::kNoTokenId &&
+      thinkEndTokenId_ != utils::tokenizers::kNoTokenId;
   if (!thinkingEnabled) return;
 
   if (tokenId == static_cast<int>(thinkStartTokenId_)) {
