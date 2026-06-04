@@ -44,8 +44,9 @@ class InputBatch:
         self.num_prompt_tokens = np.zeros(max_num_reqs, dtype=np.int32)
         self.num_computed_tokens_cpu = np.zeros(max_num_reqs, dtype=np.int32)
 
-        # Block table.
-        self.block_table = MultiGroupBlockTable(
+        # Block table. Newer vLLM requires kernel_block_sizes (same length as
+        # block_sizes); kernel block size == logical block size for TT.
+        _mgbt_kwargs = dict(
             max_num_reqs=max_num_reqs,
             max_model_len=max_model_len,
             max_num_batched_tokens=max_num_batched_tokens,
@@ -53,6 +54,12 @@ class InputBatch:
             device="cpu",
             block_sizes=block_sizes,
         )
+        try:
+            self.block_table = MultiGroupBlockTable(
+                **_mgbt_kwargs, kernel_block_sizes=block_sizes
+            )
+        except TypeError:  # older vLLM without kernel_block_sizes
+            self.block_table = MultiGroupBlockTable(**_mgbt_kwargs)
 
         self.req_output_token_ids: list[Optional[list[int]]] = []
 

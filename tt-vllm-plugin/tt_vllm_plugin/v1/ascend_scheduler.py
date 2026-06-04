@@ -33,23 +33,10 @@ class AscendScheduler(Scheduler):
     """This Scheduler extends vllm's original v1 scheduler
     with prefill-first scheduling strategy."""
 
-    def __init__(
-        self,
-        vllm_config: VllmConfig,
-        kv_cache_config: KVCacheConfig,
-        structured_output_manager: StructuredOutputManager,
-        mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
-        include_finished_set: bool = False,
-        log_stats: bool = False,
-    ) -> None:
-        super().__init__(
-            vllm_config,
-            kv_cache_config,
-            structured_output_manager,
-            mm_registry,
-            include_finished_set,
-            log_stats,
-        )
+    def __init__(self, *args, **kwargs) -> None:
+        # Pure passthrough so new vLLM Scheduler args (e.g. block_size) flow
+        # to the base regardless of signature changes across vLLM versions.
+        super().__init__(*args, **kwargs)
         self.scheduled_req_ids: set[str] = set()
         self.running: list[Request] = []
         # Optional execution mode gate (None=auto, 1=prefill, 0=decode)
@@ -422,11 +409,19 @@ class AscendScheduler(Scheduler):
         )
         if self.running:
             any_request = self.running[0]
-            num_common_prefix_blocks = (
-                self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request, len(self.running)
+            # vLLM changed the signature to take a single request_id (str).
+            try:
+                num_common_prefix_blocks = (
+                    self.kv_cache_manager.get_num_common_prefix_blocks(
+                        any_request.request_id
+                    )
                 )
-            )
+            except TypeError:  # older vLLM: (request, num_running_requests)
+                num_common_prefix_blocks = (
+                    self.kv_cache_manager.get_num_common_prefix_blocks(
+                        any_request, len(self.running)
+                    )
+                )
 
         # Generate grammar bitmask for structured output requests
         grammar_bitmask = self.structured_output_manager.grammar_bitmask(
@@ -450,6 +445,16 @@ class AscendScheduler(Scheduler):
         )
         scheduled_cached_reqs = cached_reqs_data
 
+        # vLLM renamed get_freed_ids()->get_freed_mm_hashes() and the
+        # SchedulerOutput field free_encoder_input_ids->free_encoder_mm_hashes.
+        if hasattr(self.encoder_cache_manager, "get_freed_mm_hashes"):
+            _free_encoder = {
+                "free_encoder_mm_hashes": self.encoder_cache_manager.get_freed_mm_hashes()
+            }
+        else:
+            _free_encoder = {
+                "free_encoder_input_ids": self.encoder_cache_manager.get_freed_ids()
+            }
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=new_reqs_data,
             scheduled_cached_reqs=scheduled_cached_reqs,
@@ -463,9 +468,9 @@ class AscendScheduler(Scheduler):
             # It contains the request IDs that are finished in between
             # the previous and the current steps.
             finished_req_ids=self.finished_req_ids,  # type: ignore
-            free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
             structured_output_request_ids=structured_output_request_ids,
             grammar_bitmask=grammar_bitmask,
+            **_free_encoder,
         )
 
         # NOTE(Kuntai): this function is designed for multiple purposes:

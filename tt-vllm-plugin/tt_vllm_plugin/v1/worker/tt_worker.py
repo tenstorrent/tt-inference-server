@@ -194,12 +194,12 @@ class TTWorker(WorkerBase):
             else STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
         )
 
+        # vLLM dropped the `use_mla` kwarg from FullAttentionSpec.
         attn_spec = FullAttentionSpec(
             block_size=cache_config.block_size,
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
