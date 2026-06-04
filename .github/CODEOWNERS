@@ -50,5 +50,8 @@ scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 docs/ @tenstorrent/tt-inference-server-codeowners
 README.md @tstescoTT @bgoelTT @idjuricTT
 
-# tt-infenrece-server-v2
-tt-infenrece-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+# dynamo_frontend
+dynamo_frontend/ @idjuricTT @ljovanovicTT @lmuravljovTT @vpetrovicTT @ztorlakTT
+
+# tt-inference-server-v2
+tt-inference-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
