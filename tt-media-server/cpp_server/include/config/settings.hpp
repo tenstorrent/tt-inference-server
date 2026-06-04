@@ -153,6 +153,10 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Minimum matched tokens required to justify a slot copy operation.
+ * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
+size_t minTokensToCopy();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -245,9 +249,7 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
-/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
- * defaults::USE_DEEPSEEK_MD_FORMAT. */
-bool useDeepseekMdFormat();
+std::string wireFormat();
 
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:

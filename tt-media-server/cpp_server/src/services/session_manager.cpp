@@ -35,9 +35,12 @@ int computeFailureCount(int attemptsRemaining) {
          attemptsRemaining;
 }
 
-domain::ManageMemoryTask makeAllocTask() {
-  return domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                                  domain::MemoryManagementAction::ALLOCATE);
+domain::ManageMemoryTask makeAllocTask(
+    std::optional<uint32_t> slotIdToCopyFrom = std::nullopt) {
+  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
+                                domain::MemoryManagementAction::ALLOCATE);
+  task.slotIdToCopyFrom = slotIdToCopyFrom;
+  return task;
 }
 
 domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
@@ -318,7 +321,7 @@ void SessionManager::createSession(
     std::function<void(std::string_view errorMessage)> onError,
     trantor::EventLoop* callerEventLoop,
     std::vector<utils::BlockHashInfo> initialBlockInfos,
-    std::optional<uint32_t> slotId) {
+    std::optional<uint32_t> slotId, std::optional<uint32_t> slotIdToCopyFrom) {
   TT_LOG_DEBUG(
       "[SessionManager] createSession called, slotId={}, activeSessions={}",
       slotId.has_value() ? std::to_string(slotId.value()) : "none",
@@ -358,6 +361,7 @@ void SessionManager::createSession(
       .eventLoop = callerEventLoop,
       .attemptsRemaining =
           static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+      .slotIdToCopyFrom = slotIdToCopyFrom,
   };
 
   sendAsyncAllocationRequest(pendingAllocation);
@@ -401,7 +405,7 @@ void SessionManager::sendAsyncAllocationRequest(
     return;
   }
 
-  auto task = makeAllocTask();
+  auto task = makeAllocTask(pendingAllocation.slotIdToCopyFrom);
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
@@ -665,6 +669,37 @@ SessionManager::tryAcquireByPrefixHash(
   // Return candidates sorted by matched tokens descending even though no
   // session was acquired
   return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
+}
+
+std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
+    const std::vector<Candidate>& candidates) const {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+  const size_t minTokens = tt::config::minTokensToCopy();
+
+  for (const auto& candidate : candidates) {
+    if (candidate.matchedBlocks == 0) continue;
+
+    const size_t matchedTokens =
+        firstBlockSize + (candidate.matchedBlocks > 1
+                              ? (candidate.matchedBlocks - 1) * blockSize
+                              : 0);
+
+    if (matchedTokens >= minTokens) {
+      TT_LOG_DEBUG(
+          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
+          "matchedBlocks={} matchedTokens={} >= minTokensToCopy={}",
+          candidate.sessionId, candidate.matchedBlocks, matchedTokens,
+          minTokens);
+      return candidate;
+    }
+  }
+
+  TT_LOG_DEBUG(
+      "[SessionManager] findASlotToCopyFrom: no candidate meets threshold "
+      "(minTokensToCopy={}, candidates={})",
+      minTokens, candidates.size());
+  return std::nullopt;
 }
 
 void SessionManager::registerPrefixHash(

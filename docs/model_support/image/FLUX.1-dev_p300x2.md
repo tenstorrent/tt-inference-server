@@ -1,12 +1,5 @@
 # FLUX.1-dev Tenstorrent Support on BH QuietBox 2
 
-Supported weights variants for this model implementation are:
-
-- `FLUX.1-dev`: [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) **(default)** 
-- `FLUX.1-schnell`: [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
-
-To use non-default weights, replace `FLUX.1-dev` in commands below.
-
 #### Useful links
 
 - [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
@@ -37,7 +30,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev), [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) |
+| Weights | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers) |

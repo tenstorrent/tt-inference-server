@@ -20,6 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
+
 from workflows.utils import get_num_calls
 
 from .._test_common import (
@@ -28,7 +29,7 @@ from .._test_common import (
     block_id,
     run_tiered_check,
 )
-from ..context import MediaContext, require_health
+from ..context import HardwareRequirement, MediaContext, require_health
 from ..test_status import TtsTestStatus
 
 logger = logging.getLogger(__name__)
@@ -219,7 +220,7 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     try:
         num_calls = _tts_num_calls(ctx, is_eval=True)
