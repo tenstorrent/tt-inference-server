@@ -1,8 +1,7 @@
+#!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-
-#!/bin/bash
 
 # Navigate to the cpp_server directory
 cd "$(dirname "$0")"
