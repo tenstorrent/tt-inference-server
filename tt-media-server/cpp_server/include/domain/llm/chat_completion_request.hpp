@@ -173,9 +173,9 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("length_penalty"))
       req.length_penalty = getFloat(json["length_penalty"], "length_penalty");
 
-    if (json.isMember("stop_token_ids") && json["stop_token_ids"].isArray()) {
-      for (const auto& id : json["stop_token_ids"])
-        req.stop_token_ids.push_back(getInt(id, "stop_token_ids[]"));
+    if (json.isMember("stop") && json["stop"].isArray()) {
+      for (const auto& id : json["stop"])
+        req.stop.push_back(getString(id, "stop[]"));
     }
 
     if (json.isMember("include_stop_str_in_output"))
