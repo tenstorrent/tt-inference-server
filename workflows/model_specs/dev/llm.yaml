@@ -1107,6 +1107,11 @@ templates:
         # `--runner generate` check. The platform then prepends TT ->
         # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
         hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
+      override_tt_config:
+        # Run eager: the worker defaults trace_mode=True, but the DeltaNet GDN
+        # chunk kernel under trace-capture prefill hits an L1/CB clash (V2-9
+        # trace-capture is a known blocker). Eager prefill/decode are known-good.
+        trace_mode: false
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: EXPERIMENTAL
