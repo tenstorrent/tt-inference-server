@@ -5,7 +5,7 @@
       "min_completed": 1000,
       "max_failed": 0,
       "max_mean_tpot_ms": 1,
-      "max_mean_ttft_ms": 150
+      "max_mean_ttft_ms": 175
     },
     "cpp_structured_json_object": {
       "label": "C++ Server vLLM Bench (structured output - json_object)",

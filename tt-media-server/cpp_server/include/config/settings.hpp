@@ -101,6 +101,19 @@ bool usePrefillGateway();
  * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
 std::string prefillServerId();
 
+/**
+ * Per-process identity for log lines, e.g. "decode/bh-47:9000 pid=3363530".
+ * Format: "<role>/<instance> pid=<pid>" where role is the LLM_MODE
+ * (decode/prefill/regular) for the LLM service or the service name otherwise,
+ * and instance is prefillServerId() ("<hostname>:<SOCKET_PORT>" by default).
+ *
+ * @param workerIndex >=0 for a forked worker subprocess; appends
+ *   "-worker<index>" to the role (e.g. "decode-worker0") so worker lines stay
+ *   attributable to their node even when decode/prefill are colocated and
+ *   share host:SOCKET_PORT.
+ */
+std::string logInstanceTag(int workerIndex = -1);
+
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
@@ -153,6 +166,10 @@ size_t maxContextLength();
  * defaults::MAX_ISL. */
 size_t maxISL();
 
+/** Minimum matched tokens required to justify a slot copy operation.
+ * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
+size_t minTokensToCopy();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -160,6 +177,11 @@ size_t kvCacheBlockSize();
 /** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
 size_t kvCacheFirstBlockSize();
+
+/** Minimum match percentage for prefix cache hit from
+ * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
+ * Set to 0 to disable threshold check (accept any match). */
+float prefixCacheHitThreshold();
 
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
@@ -240,9 +262,7 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
-/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
- * defaults::USE_DEEPSEEK_MD_FORMAT. */
-bool useDeepseekMdFormat();
+std::string wireFormat();
 
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:

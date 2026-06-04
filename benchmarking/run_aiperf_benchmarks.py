@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -471,8 +472,16 @@ def send_warmup_requests(
         try:
             logger.info(f"Sending warm-up request {i + 1}/{num_requests}...")
 
-            # Use the prompt client's URL and auth
-            url = f"http://localhost:{prompt_client.env_config.service_port}/v1/chat/completions"
+            # Use the prompt client's URL and auth. Honor an explicit port on
+            # env_config.deploy_url to avoid double-port URLs when --server-url
+            # already carries one.
+            _parsed = urlparse(prompt_client.env_config.deploy_url.rstrip("/"))
+            _base = (
+                prompt_client.env_config.deploy_url.rstrip("/")
+                if _parsed.port is not None
+                else f"{prompt_client.env_config.deploy_url.rstrip('/')}:{prompt_client.env_config.service_port}"
+            )
+            url = f"{_base}/v1/chat/completions"
             headers = {"Content-Type": "application/json"}
 
             # Add auth if available
@@ -561,6 +570,15 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
+    deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
+        "DEPLOY_URL", "http://127.0.0.1"
+    )
+    # An explicit port on deploy_url wins over service_port so AIPerf doesn't
+    # connect to host:service_port when --server-url already carries a port.
+    _parsed = urlparse(deploy_url.rstrip("/"))
+    aiperf_host = _parsed.hostname or "localhost"
+    aiperf_port = str(_parsed.port) if _parsed.port is not None else str(service_port)
+    aiperf_url = f"{aiperf_host}:{aiperf_port}"
 
     device = DeviceTypes.from_string(device_str)
     logger.info(f"model_spec=: {model_spec}")
@@ -640,6 +658,7 @@ def main():
     env_config.jwt_secret = jwt_secret
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    env_config.deploy_url = deploy_url
 
     prompt_client = PromptClient(
         env_config,
@@ -703,7 +722,7 @@ def main():
             model_name=model_spec.hf_model_repo,
             model_id=model_spec.model_id,
             tokenizer=model_spec.hf_model_repo,
-            url=f"localhost:{service_port}",
+            url=aiperf_url,
             auth_token=auth_token,
             artifact_base=str(artifact_base),
             output_dir=args.output_path,

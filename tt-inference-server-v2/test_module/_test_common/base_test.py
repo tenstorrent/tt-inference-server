@@ -14,10 +14,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import requests
-
 from report_module.schema import Block
 
 from .blockify import block_id
+from .hardware_requirements import HardwareRequirement
 from .test_classes import TestConfig
 
 if TYPE_CHECKING:
@@ -48,6 +48,17 @@ class BaseTest(ABC):
     # Subclasses set these so run_tests() can build a properly-tagged Block.
     KIND: str = "base"
     TASK_TYPE: str = "infra"
+
+    # Hardware-readiness tier the test needs to produce a meaningful result.
+    # ``ANY_CHIP`` (default) is the lenient/safe choice — evals, param tests,
+    # connectivity probes, and unit/integration tests all sit here. Throughput
+    # tests (``*LoadTest`` classes, ``DeviceStabilityTest``) override to
+    # ``FULL_BOARD`` because partial-board concurrency invalidates their
+    # numbers. The actual gate runs in :meth:`_assert_hardware_ready` and is
+    # invoked once by :meth:`run_tests` before the retry loop; on probe
+    # failure (server unreachable / malformed response) the gate falls through
+    # so the underlying test surfaces the real error instead.
+    HARDWARE_REQUIREMENT: HardwareRequirement = HardwareRequirement.ANY_CHIP
 
     def __init__(
         self,
@@ -124,6 +135,79 @@ class BaseTest(ABC):
             data=data,
         )
 
+    def _assert_hardware_ready(self) -> Optional[Dict[str, Any]]:
+        """Hardware-readiness gate consulted by :meth:`run_tests`.
+
+        Returns ``None`` if the board has enough ready chips for this test's
+        :attr:`HARDWARE_REQUIREMENT`, else a "skipped" dict that
+        :meth:`run_tests` wraps into a Block.
+
+        The check is intentionally non-fatal on "we can't tell" failure modes
+        (server unreachable, non-200 response, non-JSON body): those return
+        ``None`` and let the underlying test surface whatever real error it
+        encounters. The gate only fires when we have a clean ``/tt-liveness``
+        response that shows insufficient chips, e.g. a ``*LoadTest`` running
+        on a Galaxy board where some workers aren't ready.
+        """
+        health_url = f"http://localhost:{self.service_port}/tt-liveness"
+        try:
+            response = requests.get(health_url, timeout=HEALTH_CHECK_CONFIG.TIMEOUT)
+        except requests.exceptions.RequestException as e:
+            logger.warning(
+                "Hardware-readiness probe at %s failed (%s); "
+                "skipping gate so the test can surface the underlying error.",
+                health_url,
+                e,
+            )
+            return None
+        if response.status_code != 200:
+            logger.warning(
+                "Hardware-readiness probe got HTTP %s; skipping gate.",
+                response.status_code,
+            )
+            return None
+        try:
+            data = response.json()
+        except ValueError as e:
+            logger.warning(
+                "Hardware-readiness probe returned non-JSON (%s); skipping gate.",
+                e,
+            )
+            return None
+
+        workers = data.get("worker_info") or {}
+        total = len(workers)
+        ready = sum(1 for w in workers.values() if w.get("is_ready"))
+        required = (
+            total if self.HARDWARE_REQUIREMENT is HardwareRequirement.FULL_BOARD else 1
+        )
+
+        if ready >= required:
+            logger.info(
+                "✅ %s hardware-readiness OK (%s): %d/%d ready (needed ≥%d)",
+                type(self).__name__,
+                self.HARDWARE_REQUIREMENT.value,
+                ready,
+                total,
+                required,
+            )
+            return None
+
+        reason = (
+            f"{type(self).__name__} requires {required} ready chip(s) "
+            f"({self.HARDWARE_REQUIREMENT.value}); found {ready}/{total} ready."
+        )
+        logger.warning("⏭  Skipping %s — %s", type(self).__name__, reason)
+        return {
+            "success": False,
+            "skipped": True,
+            "reason": reason,
+            "hardware_requirement": self.HARDWARE_REQUIREMENT.value,
+            "ready_count": ready,
+            "total_workers": total,
+            "required_count": required,
+        }
+
     def run_tests(self) -> Block:
         """Run the test with retry/log accounting and return a Block.
 
@@ -156,6 +240,15 @@ class BaseTest(ABC):
         last_exception: Optional[BaseException] = None
         attempts_used = 0
         run_started = time.monotonic()
+
+        skip_data = self._assert_hardware_ready()
+        if skip_data is not None:
+            skip_data.setdefault("attempts", 0)
+            skip_data.setdefault("logs", list(self.logs))
+            skip_data.setdefault("elapsed_seconds", time.monotonic() - run_started)
+            skip_data.setdefault("test_name", type(self).__name__)
+            skip_data.setdefault("description", self.description)
+            return self._block(skip_data)
 
         for attempt in range(self.retry_attempts + 1):
             attempts_used = attempt + 1
@@ -202,7 +295,10 @@ class BaseTest(ABC):
                     f"Tests timed out after {self.timeout} seconds "
                     f"(attempt {attempts_used}/{self.retry_attempts + 1})"
                 )
-                logger.error(error_msg)
+                log_fn = (
+                    logger.error if attempt >= self.retry_attempts else logger.warning
+                )
+                log_fn(error_msg)
                 self.logs.append(
                     {
                         "timestamp": time.time(),
@@ -240,10 +336,16 @@ class BaseTest(ABC):
                     f"Test failed with exception "
                     f"(attempt {attempts_used}/{self.retry_attempts + 1}): {e}"
                 )
-                logger.error(error_msg)
-                logger.error(f"Exception type: {type(e).__name__}")
+                log_fn = (
+                    logger.error if attempt >= self.retry_attempts else logger.warning
+                )
+                log_fn(error_msg)
+                log_fn(f"Exception type: {type(e).__name__}")
                 traceback_str = traceback.format_exc()
-                logger.error(f"Traceback: {traceback_str}")
+                if attempt >= self.retry_attempts:
+                    logger.error(f"Traceback: {traceback_str}")
+                else:
+                    logger.debug(f"Traceback: {traceback_str}")
                 self.logs.append(
                     {
                         "timestamp": time.time(),

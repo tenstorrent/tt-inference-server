@@ -41,7 +41,7 @@ inline ds::ISRequest makeStopRequest(uint32_t requestId, uint32_t slotId) {
 
 inline ds::GenerationParams makeGenerationParams(
     const tt::domain::llm::Sequence& seq) {
-  return {
+  ds::GenerationParams params = {
       .max_new_tokens =
           static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
               static_cast<int>(tt::config::maxContextLength()))),
@@ -52,6 +52,11 @@ inline ds::GenerationParams makeGenerationParams(
       .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
       .disaggregated_decode = seq.isDisaggregated(),
       .stop_tokens = seq.getSamplingParams().stop_token_ids};
+
+  if (seq.getKVPositionId().has_value()) {  // override position id
+    params.position_id = *seq.getKVPositionId();
+  }
+  return params;
 }
 
 inline void fillSequenceFields(ds::ISRequest& req,
@@ -70,17 +75,11 @@ inline ds::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline ds::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const tt::domain::llm::Sequence& seq,
-                                         uint32_t currentPosition) {
+                                         const tt::domain::llm::Sequence& seq) {
   ds::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
-  if (seq.getKVPositionId().has_value()) {  // override position id
-    req.gen.position_id = *seq.getKVPositionId();
-  } else {
-    req.gen.position_id = currentPosition;
-  }
   return req;
 }
 
@@ -126,15 +125,29 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 
 namespace pl = tt_llm_engine::pipeline;
 
+pl::WireFormat wireFormatFromString(const std::string& s) {
+  static const std::unordered_map<std::string, pl::WireFormat> formats = {
+      {"deepseek", pl::WireFormat::DEEPSEEK},
+      {"loopback", pl::WireFormat::LOOPBACK},
+      {"blaze", pl::WireFormat::BLAZE}};
+
+  auto it = formats.find(s);
+  if (it != formats.end()) {
+    return it->second;
+  }
+
+  throw std::runtime_error("Invalid wire format: " + s);
+}
+
 inline pl::PipelineConfig makePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::SocketConfig{
-          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
-          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
+          .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix(),
+          .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-          .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+          .wire_format = wireFormatFromString(tt::config::wireFormat())};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PipelineSimulatorConfig{
           .num_stages = 64,

@@ -265,6 +265,14 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
+# Distinct impl for forge SDXL so its model_id does not collide with the media
+# SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
+sdxl_forge_impl = ImplSpec(
+    impl_id="sdxl_forge",
+    impl_name="sdxl-forge",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -276,6 +284,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
+    "sdxl_forge": sdxl_forge_impl,
 }
 
 
@@ -523,7 +532,6 @@ class ModelSpec:
 
         # Generate default docker image if not provided
         if not self.docker_image:
-            # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
                 self.version,
@@ -840,11 +848,6 @@ class ModelSpec:
             }
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
-        if runtime_config.dev_mode:
-            object.__setattr__(
-                self, "docker_image", self.docker_image.replace("-release-", "-dev-")
-            )
-
         if runtime_config.override_docker_image:
             object.__setattr__(
                 self, "docker_image", runtime_config.override_docker_image
@@ -890,6 +893,13 @@ class ModelSpecTemplate:
     version: str = VERSION
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     docker_image: Optional[str] = None
+    # True when the catalog explicitly pinned the image via `version` or
+    # `docker_image`. When neither is set, the docker tag is synthesized from the
+    # repo-wide VERSION + commits rather than a real published image, so these
+    # specs are excluded from IMAGE_PINNED_MODEL_SPECS (the list the helm chart
+    # generator consumes). Set by _build_template from YAML key presence;
+    # defaults True for directly constructed templates so they are never dropped.
+    image_pinned: bool = True
     model_type: Optional[ModelType] = ModelType.LLM
     min_disk_gb: Optional[int] = None
     min_ram_gb: Optional[int] = None
@@ -1065,6 +1075,12 @@ def _build_template(data: Dict) -> "ModelSpecTemplate":
         kwargs["model_type"] = ModelType[kwargs["model_type"]]
     if "status" in kwargs:
         kwargs["status"] = ModelStatusTypes[kwargs["status"]]
+    # An image is "pinned" when the catalog gives an explicit `version` or
+    # `docker_image`. Without either, the tag falls back to the repo-wide
+    # VERSION and is not a real published image.
+    kwargs["image_pinned"] = (
+        data.get("version") is not None or data.get("docker_image") is not None
+    )
     return ModelSpecTemplate(**kwargs)
 
 
@@ -1077,6 +1093,16 @@ def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
 
 
 _MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
+
+# Catalog environments live in sibling directories under _MODEL_SPECS_DIR.
+# Set MODEL_SPECS_ENV=dev to load the dev set instead of prod.
+_VALID_MODEL_SPECS_ENVS = ("prod", "dev")
+_MODEL_SPECS_ENV = os.getenv("MODEL_SPECS_ENV", "prod")
+if _MODEL_SPECS_ENV not in _VALID_MODEL_SPECS_ENVS:
+    raise ValueError(
+        f"MODEL_SPECS_ENV must be one of {_VALID_MODEL_SPECS_ENVS}, "
+        f"got {_MODEL_SPECS_ENV!r}"
+    )
 
 # One catalog file per model category. Load order determines spec_templates
 # order, which in turn determines MODEL_SPECS dict insertion order.
@@ -1093,7 +1119,9 @@ _CATALOG_FILES = (
 spec_templates: List["ModelSpecTemplate"] = [
     template
     for fname in _CATALOG_FILES
-    for template in load_templates_from_yaml(_MODEL_SPECS_DIR / fname)
+    for template in load_templates_from_yaml(
+        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
+    )
 ]
 
 
@@ -1161,6 +1189,24 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
 # Final model specifications generated from templates
 MODEL_SPECS = get_model_spec_map(spec_templates)
 
+# model_ids whose catalog template pins no image (set neither `version` nor
+# `docker_image`); their docker tag would be synthesized from the repo VERSION.
+_UNPINNED_IMAGE_MODEL_IDS = {
+    spec.model_id
+    for template in spec_templates
+    if not template.image_pinned
+    for spec in template.expand_to_specs()
+}
+
+# The list of "valid" specs the helm chart generator consumes: every spec EXCEPT
+# the unpinned ones above. MODEL_SPECS still holds all specs for other consumers
+# (run.py, model-support docs, the release_model_spec.json export).
+IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
+    spec
+    for spec in MODEL_SPECS.values()
+    if spec.model_id not in _UNPINNED_IMAGE_MODEL_IDS
+]
+
 
 def get_runtime_model_spec(
     model: str,
@@ -1168,7 +1214,13 @@ def get_runtime_model_spec(
     engine: Optional[str] = None,
     impl: Optional[str] = None,
 ) -> Tuple[ModelSpec, str, str]:
-    """Select a ModelSpec from MODEL_SPECS.
+    """Select a ModelSpec from the active catalog.
+
+    The active catalog is whatever was loaded into MODEL_SPECS at module
+    import time, controlled by MODEL_SPECS_ENV (default "prod"). Callers that
+    want the dev catalog must set MODEL_SPECS_ENV=dev in the environment
+    before importing this module -- run.py does this automatically when
+    --dev-mode is on the command line.
 
     Pure function -- does **not** mutate any external state.
 
@@ -1190,7 +1242,8 @@ def get_runtime_model_spec(
         engine_msg = f", engine={engine}" if engine else ""
         impl_msg = f", impl={impl}" if impl else ""
         raise ValueError(
-            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg}"
+            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg} "
+            f"in the {_MODEL_SPECS_ENV!r} catalog"
         )
 
     default_spec = next(
@@ -1202,7 +1255,7 @@ def get_runtime_model_spec(
     if selected_spec is None:
         raise ValueError(
             f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine}; "
+            f"device:={device}, engine:={engine} in the {_MODEL_SPECS_ENV!r} catalog; "
             f"you must pass --impl or --engine"
         )
 

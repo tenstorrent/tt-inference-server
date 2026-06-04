@@ -16,6 +16,8 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health.hpp"
+#include "gateway/gateway_health_server.hpp"
 #include "gateway/gateway_metrics.hpp"
 #include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_connection_wiring.hpp"
@@ -43,6 +45,7 @@ struct GatewayConfig {
   std::chrono::milliseconds timeoutCooldown{30000};
   uint32_t timeoutThreshold = 3;
   uint16_t metricsPort = 9091;
+  uint16_t healthPort = 0;
 };
 
 void printUsage(const char* prog) {
@@ -73,6 +76,8 @@ void printUsage(const char* prog) {
          "disable. Default: 3.\n"
       << "  --metrics-port=PORT  Port for Prometheus GET /metrics. Use 0 to "
          "disable. Default: 9091.\n"
+      << "  --health-port=PORT   Port for GET /tt-liveness and /health. Use "
+         "0 to disable. Default: 0.\n"
       << "  --help               Print this message.\n\n"
       << "Example:\n"
       << "  " << prog
@@ -189,6 +194,17 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
       continue;
     }
 
+    if (auto v = flagValue(arg, "--health-port=")) {
+      int port = std::stoi(std::string(*v));
+      if (port < 0 || port > 65535) {
+        std::cerr << "Invalid --health-port value: " << *v
+                  << " (expected 0-65535)\n";
+        return std::nullopt;
+      }
+      cfg.healthPort = static_cast<uint16_t>(port);
+      continue;
+    }
+
     if (auto v = flagValue(arg, "--prefill=")) {
       auto ep = parsePrefillArg(*v);
       if (!ep) {
@@ -262,6 +278,7 @@ int main(int argc, char** argv) {
   const GatewayConfig& cfg = *cfgOpt;
   const bool useZmqPrefillRouter =
       socketTransportFromEnv() == tt::sockets::transport_names::ZMQ;
+  const std::string_view transport = useZmqPrefillRouter ? "zmq" : "tcp";
 
   if (useZmqPrefillRouter && cfg.prefillBindPort == 0) {
     std::cerr
@@ -275,17 +292,17 @@ int main(int argc, char** argv) {
   if (useZmqPrefillRouter && !cfg.prefills.empty()) {
     TT_LOG_WARN("[Gateway] Ignoring --prefill endpoints in ZMQ ROUTER mode");
   }
+  if (cfg.healthPort != 0 && cfg.healthPort == cfg.metricsPort) {
+    std::cerr << "--health-port must be different from --metrics-port.\n";
+    return 1;
+  }
 
   TT_LOG_INFO("[Gateway] Starting — decode port={}, transport={}",
-              cfg.decodePort, useZmqPrefillRouter ? "zmq" : "tcp");
+              cfg.decodePort, transport);
 
   auto& metrics = tt::gateway::GatewayMetrics::instance();
   tt::gateway::GatewayMetricsServer metricsServer(metrics);
-  if (!metricsServer.start(cfg.metricsPort)) {
-    TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
-                 cfg.metricsPort);
-    return 1;
-  }
+  tt::gateway::GatewayHealthServer healthServer;
 
   tt::gateway::PrefillRegistry registry;
   tt::gateway::AffinityCache affinity;
@@ -295,6 +312,24 @@ int main(int argc, char** argv) {
   if (!decodeSm.initializeAsServer(cfg.decodePort)) {
     TT_LOG_ERROR("[Gateway] Failed to bind decode port {}", cfg.decodePort);
     return 1;
+  }
+
+  auto healthProvider = [&registry, &decodeSm, transport]() {
+    return buildGatewayHealthStatus(registry, transport,
+                                    decodeSm.isConnected());
+  };
+  if (!metricsServer.start(cfg.metricsPort)) {
+    TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
+                 cfg.metricsPort);
+    return 1;
+  }
+  if (cfg.healthPort != 0) {
+    healthServer.setHealthProvider(healthProvider);
+    if (!healthServer.start(cfg.healthPort)) {
+      TT_LOG_ERROR("[Gateway] Failed to start health endpoint on port {}",
+                   cfg.healthPort);
+      return 1;
+    }
   }
 
   tt::gateway::ZmqPrefillRouter zmqPrefillRouter;
@@ -403,6 +438,17 @@ int main(int argc, char** argv) {
         dispatcherPtr->onPrefillCancel(msg);
       });
 
+  decodeSm.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+      tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+      [&decodeSm,
+       &healthProvider](const tt::sockets::PrefillHealthRequestMessage&) {
+        const auto health = healthProvider();
+        tt::sockets::PrefillHealthStatusMessage response;
+        response.ready = health.ready;
+        (void)decodeSm.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                                  response);
+      });
+
   decodeSm.setConnectionEstablishedCallback([&metrics]() {
     metrics.setDecodeConnected(true);
     TT_LOG_INFO("[Gateway] Decode connected");
@@ -486,6 +532,7 @@ int main(int argc, char** argv) {
   decodeSm.stop();
   for (auto& sm : prefillSms) sm->stop();
   zmqPrefillRouter.stop();
+  healthServer.stop();
   metricsServer.stop();
   TT_LOG_INFO("[Gateway] Stopped.");
 

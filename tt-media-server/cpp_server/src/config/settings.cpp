@@ -238,13 +238,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -542,6 +541,20 @@ std::string prefillServerId() {
   return cached;
 }
 
+std::string logInstanceTag(int workerIndex) {
+  // Base role distinguishes the node: LLM_MODE for the LLM service, else the
+  // service name. Worker subprocesses keep the base role and append their
+  // index, so colocated decode/prefill nodes (which share host:SOCKET_PORT)
+  // stay distinguishable as "decode-worker0" vs "prefill-worker0" in a merged
+  // log; otherwise only the pid would tell them apart.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role + "/" + prefillServerId() + " pid=" + std::to_string(::getpid());
+}
+
 uint32_t prefillMaxInFlight() {
   return static_cast<uint32_t>(
       envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));
@@ -598,6 +611,12 @@ size_t maxISL() {
   return cached;
 }
 
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
+  return cached;
+}
+
 size_t kvCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
@@ -612,6 +631,19 @@ size_t kvCacheFirstBlockSize() {
                               defaults::KV_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
+}
+
+float prefixCacheHitThreshold() {
+  const unsigned long val = envUlong("PREFIX_CACHE_HIT_THRESHOLD",
+                                     defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  if (val > 100) {
+    TT_LOG_WARN(
+        "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
+        "using {}",
+        val, defaults::PREFIX_CACHE_HIT_THRESHOLD);
+    return static_cast<float>(defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  }
+  return static_cast<float>(val);
 }
 
 bool useFastMode() {

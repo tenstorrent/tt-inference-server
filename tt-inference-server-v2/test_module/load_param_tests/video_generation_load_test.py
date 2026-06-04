@@ -5,12 +5,12 @@
 import asyncio
 import logging
 import time
+from typing import TYPE_CHECKING
 
 import aiohttp
-
 from report_module.schema import Block
-from .._test_common import BaseTest, TestConfig
-from typing import TYPE_CHECKING
+
+from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -35,6 +35,7 @@ headers = {
 class VideoGenerationLoadTest(BaseTest):
     KIND = "video_generation_load"
     TASK_TYPE = "video"
+    HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
