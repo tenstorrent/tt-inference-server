@@ -229,7 +229,7 @@ templates:
   impl: qwen3_32b_galaxy
   version: "0.11.1"
   tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
+  vllm_commit: f4b029385  # tenstorrent/vllm main (clone HEAD); platform.py import-deferred for compat
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -1017,7 +1017,7 @@ templates:
   impl: tt_transformers
   version: "0.11.1"
   tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
+  vllm_commit: f4b029385  # tenstorrent/vllm main (clone HEAD); platform.py import-deferred for compat
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
@@ -1089,12 +1089,13 @@ templates:
 - weights:
     - Qwen/Qwen3.6-27B
   impl: qwen3_6_galaxy
-  version: "0.1.0"
+  version: "0.11.1"  # must be >= run.py floor v0.11.0
   tt_metal_commit: fa021238662
+  vllm_commit: f4b029385  # tenstorrent/vllm main (clone HEAD); platform.py import-deferred for compat
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 32
+      max_concurrency: 1  # batch-1 bring-up test (raise to 32 after validation)
       max_context: 262144  # 256 * 1024
       default_impl: true
       vllm_args:

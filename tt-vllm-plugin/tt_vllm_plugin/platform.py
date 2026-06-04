@@ -1,18 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+# Defer annotation evaluation so the type-only vLLM imports below stay lazy.
+# platform.py is imported during vLLM's platform resolution; eagerly importing
+# heavy modules (ProcessorInputs/SamplingParams) here re-enters vLLM and
+# triggers a circular import on recent vLLM. Keep these under TYPE_CHECKING and
+# import the runtime-needed one (SamplingParams, for isinstance) at call time.
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import PromptType
+    from vllm.multimodal.processing.inputs import ProcessorInputs
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
@@ -198,6 +206,7 @@ class TTPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
