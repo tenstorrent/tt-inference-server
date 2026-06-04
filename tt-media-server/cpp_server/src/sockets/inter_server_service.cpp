@@ -131,8 +131,7 @@ bool InterServerService::sendPrefillRequest(
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling,
-    int numberOfDecodeSkipTokens, const std::string& traceId,
-    const std::string& sessionId) {
+    int numberOfDecodeSkipTokens, const std::string& traceId) {
   if (!enabled_) {
     return false;
   }
@@ -148,13 +147,11 @@ bool InterServerService::sendPrefillRequest(
   message.fast_mode = sampling.fast_mode;
   message.number_of_decode_skip_tokens = numberOfDecodeSkipTokens;
   message.trace_id = traceId;
-  message.session_id = sessionId;
 
   TT_LOG_DEBUG(
       "[InterServerService] Sending prefill request: trace_id={} task_id={} "
-      "session_id={} tokens={}",
-      traceId.empty() ? "none" : traceId, taskId,
-      sessionId.empty() ? "none" : sessionId, tokenIds.size());
+      "tokens={}",
+      traceId.empty() ? "none" : traceId, taskId, tokenIds.size());
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -232,11 +229,9 @@ void InterServerService::setupMessageHandlers() {
       "prefill_request", [this](const PrefillRequestMessage& message) {
         TT_LOG_INFO(
             "[InterServerService] Received prefill request: trace_id={} "
-            "task_id={} session_id={} tokens={}",
+            "task_id={} tokens={}",
             message.trace_id.empty() ? "none" : message.trace_id,
-            message.task_id,
-            message.session_id.empty() ? "none" : message.session_id,
-            message.token_ids.size());
+            message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
         }
@@ -275,20 +270,18 @@ void InterServerService::setupMessageHandlers() {
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
       "prefill_result", [this](const PrefillResultMessage& message) {
-        const auto& trace = message.trace_id.empty() ? "none" : message.trace_id;
-        const auto& session =
-            message.session_id.empty() ? "none" : message.session_id;
+        const auto& trace =
+            message.trace_id.empty() ? "none" : message.trace_id;
         if (message.error) {
           TT_LOG_ERROR(
               "[InterServerService] Received prefill error for trace_id={} "
-              "task_id={} session_id={}",
-              trace, message.task_id, session);
+              "task_id={}",
+              trace, message.task_id);
         } else {
           TT_LOG_INFO(
               "[InterServerService] Received prefill result: trace_id={} "
-              "task_id={} session_id={} text='{}' remaining={} token_ids={}",
-              trace, message.task_id, session,
-              message.generated_text.substr(0, 50),
+              "task_id={} text='{}' remaining={} token_ids={}",
+              trace, message.task_id, message.generated_text.substr(0, 50),
               message.remaining_tokens.has_value()
                   ? std::to_string(message.remaining_tokens.value())
                   : "none",

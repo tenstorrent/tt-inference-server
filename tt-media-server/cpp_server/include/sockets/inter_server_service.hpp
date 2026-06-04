@@ -94,8 +94,7 @@ class InterServerService {
                           std::optional<uint32_t> slotId = std::nullopt,
                           const tt::domain::llm::SamplingParams& sampling = {},
                           int numberOfDecodeSkipTokens = 0,
-                          const std::string& traceId = "",
-                          const std::string& sessionId = "");
+                          const std::string& traceId = "");
 
   /**
    * @brief Send prefill result back to the decode server
