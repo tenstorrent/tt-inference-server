@@ -543,12 +543,10 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
   ASSERT_NE(seqC, nullptr);
   EXPECT_TRUE(seqC->isContinuation())
       << "request C should be a continuation (slot copy)";
-  EXPECT_EQ(seqC->getTokenIds().size(), 66u)
-      << "request C tokenIds size";
+  EXPECT_EQ(seqC->getTokenIds().size(), 66u) << "request C tokenIds size";
   ASSERT_TRUE(seqC->getKVPositionId().has_value())
       << "slot copy should set kv_position_id";
-  EXPECT_EQ(*seqC->getKVPositionId(), 63u)
-      << "request C kvPositionId value";
+  EXPECT_EQ(*seqC->getKVPositionId(), 63u) << "request C kvPositionId value";
 
   // Complete request C.
   tt::test::WorkerResponse(seqC->taskId)
@@ -593,12 +591,10 @@ TEST_F(MainIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
       << "request D should hit C's session (slot 1)";
   EXPECT_EQ(seqD->getKVCacheSlot(), 1u)
       << "request D should reuse slot 1 from request C";
-  EXPECT_EQ(seqD->getTokenIds().size(), 14u)
-      << "request D tokenIds size";
+  EXPECT_EQ(seqD->getTokenIds().size(), 14u) << "request D tokenIds size";
   ASSERT_TRUE(seqD->getKVPositionId().has_value())
       << "request D should have kv_position_id set";
-  EXPECT_EQ(*seqD->getKVPositionId(), 127u)
-      << "request D kvPositionId value";
+  EXPECT_EQ(*seqD->getKVPositionId(), 127u) << "request D kvPositionId value";
 
   tt::test::WorkerResponse(seqD->taskId)
       .token(101)
