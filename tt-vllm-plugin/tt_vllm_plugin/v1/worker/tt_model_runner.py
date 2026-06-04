@@ -302,7 +302,9 @@ class TTModelRunner:
 
             # Update the persistent batch.
             self.input_batch.num_computed_tokens_cpu[req_index] = num_computed_tokens
-            self.input_batch.block_table.append_row(new_block_ids, req_index)
+            # new_block_ids is None on decode steps that allocated no new blocks.
+            if new_block_ids is not None:
+                self.input_batch.block_table.append_row(new_block_ids, req_index)
 
         # Add the new or resumed requests to the persistent batch.
         # The smaller empty indices are filled first.
