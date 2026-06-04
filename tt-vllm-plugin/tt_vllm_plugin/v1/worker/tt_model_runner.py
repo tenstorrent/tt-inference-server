@@ -281,9 +281,12 @@ class TTModelRunner:
             # Update the cached states.
             req_state.num_computed_tokens = num_computed_tokens
             if not resumed_from_preemption:
-                # Append the new blocks to the existing block IDs.
-                for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
-                    block_ids.extend(new_ids)
+                # Append the new blocks to the existing block IDs. vLLM now
+                # returns None (get_block_ids(allow_none=True)) for steps with
+                # no newly-allocated blocks (e.g. decode within a filled block).
+                if new_block_ids is not None:
+                    for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
+                        block_ids.extend(new_ids)
             else:
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
