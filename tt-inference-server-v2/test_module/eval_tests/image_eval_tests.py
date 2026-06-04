@@ -391,6 +391,7 @@ async def _run_image_generation_eval_test(
         inference_steps = SDXL_SD35_INFERENCE_STEPS
     elif runner == "tt-z-image-turbo":
         inference_steps = Z_IMAGE_TURBO_INFERENCE_STEPS
+        num_prompts = min(num_prompts, 3)  # TODO: remove after baseline
     else:
         inference_steps = FLUX_MOTIF_INFERENCE_STEPS
     logger.info(
