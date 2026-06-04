@@ -15,9 +15,9 @@ struct BaseRequest {
   // Per-process atomic `task_id` resets on restart and collides across nodes,
   // so it can't be used to follow one user request across decode HTTP, decode
   // worker, prefill HTTP, prefill worker and the inter-server socket. The
-  // `trace_id` (issue #3929) is set once at HTTP entry — either copied from
-  // the inbound `X-Request-Id` header or generated via TraceIdGenerator —
-  // and is propagated through every downstream message and log line for that
+  // `trace_id` is set once at HTTP entry — either copied from the inbound
+  // `X-Request-Id` header or generated via TraceIdGenerator — and is
+  // propagated through every downstream message and log line for that
   // request.
   std::string trace_id;
 

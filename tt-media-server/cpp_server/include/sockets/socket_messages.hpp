@@ -34,10 +34,10 @@ struct SerializableMessage {
 /**
  * @brief Prefill request message - sent from decode server to prefill server
  *
- * `trace_id` and `session_id` (issue #3929) are added so prefill logs can be
+ * `trace_id` and `session_id` are sent on the wire so prefill logs can be
  * correlated with the originating decode HTTP request and the decode-side
- * SessionManager UUID. They are always sent on the wire (empty string when
- * unset) so older payload schemas don't decode partially.
+ * SessionManager UUID. They are always sent (empty string when unset) so
+ * older payload schemas don't decode partially.
  */
 struct PrefillRequestMessage {
   uint32_t task_id;

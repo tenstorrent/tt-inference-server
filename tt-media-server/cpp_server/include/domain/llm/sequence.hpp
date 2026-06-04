@@ -50,8 +50,8 @@ class Sequence {
   static Sequence deserialize(std::istream& is);
 
   uint32_t taskId;
-  // End-to-end trace id (issue #3929): set on the HTTP node, carried through
-  // taskQueue serialization so worker logs can grep the same id as the
+  // End-to-end trace id: set on the HTTP node, carried through taskQueue
+  // serialization so worker logs can grep the same id as the
   // controller/socket layer logs.
   std::string traceId;
 
