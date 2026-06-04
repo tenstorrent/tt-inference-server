@@ -1114,6 +1114,10 @@ templates:
         trace_mode: false
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        # Use the ttnn chunk GDN prefill kernel, not the C++ seq parallel-scan
+        # kernel (QWEN36_GDN_SEQ_PREFILL default 1), whose static circular
+        # buffers clash with L1 on the head cores during prefill.
+        QWEN36_GDN_SEQ_PREFILL: "0"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
