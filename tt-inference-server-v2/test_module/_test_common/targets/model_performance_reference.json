@@ -5872,8 +5872,8 @@
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 11000,
-                        "tput_user": 0.111
+                        "ttft_ms": 12000,
+                        "tput_user": 0.083
                     }
                 }
             }
