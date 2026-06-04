@@ -96,6 +96,36 @@ void SingleProcessWorkerMetrics::decrementActiveRequests() {
   shm_->fetchSubScratch(workerId_, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 1);
 }
 
+void SingleProcessWorkerMetrics::incrementSpPipelineEvent(
+    SpPipelineEvent event) {
+  if (shm_ == nullptr) return;
+  size_t idx = 0;
+  switch (event) {
+    case SpPipelineEvent::IDLE_TO_RUNNING:
+      idx = sp_pipeline::SCRATCH_EV_IDLE_TO_RUNNING;
+      break;
+    case SpPipelineEvent::RUNNING_TO_STOP_ACK:
+      idx = sp_pipeline::SCRATCH_EV_RUNNING_TO_STOP_ACK;
+      break;
+    case SpPipelineEvent::DEFERRED_EVICT_REPLAYED:
+      idx = sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_REPLAYED;
+      break;
+    case SpPipelineEvent::DEFERRED_SUBMIT_LATCHED:
+      idx = sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_LATCHED;
+      break;
+    case SpPipelineEvent::DEFERRED_SUBMIT_REPLAYED:
+      idx = sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED;
+      break;
+    case SpPipelineEvent::DEFERRED_SUBMIT_SUPERSEDED:
+      idx = sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED;
+      break;
+    case SpPipelineEvent::DEFERRED_EVICT_LATCHED:
+      idx = sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_LATCHED;
+      break;
+  }
+  shm_->fetchAddScratch(workerId_, idx, 1);
+}
+
 void SingleProcessWorkerMetrics::scratchStoreU64(size_t idx, uint64_t value) {
   if (shm_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
   shm_->storeScratch(workerId_, idx, value);
