@@ -1141,8 +1141,21 @@ templates:
         # path falls through to the prefill _carry32 tail (tt_distributed_rmsnorm),
         # which collides with the decode CCL's L1 LAYERNORM buffer -> all_gather_async
         # output-memcfg FATAL. =1 routes batch-1 onto the unified decode tail (the
-        # combo the perf test / demo use: switch_mode + L1_RESIDUAL + FORCE_SWITCH).
+        # combo the demo uses: switch_mode + L1_RESIDUAL + FORCE_SWITCH).
         QWEN36_FORCE_SWITCH_DECODE: "1"
+        # The remaining correctness-critical decode flags from the working demo
+        # (models/demos/qwen3_6_galaxy_v2/demo/run_text_demo.sh). WITHOUT these the
+        # decode tail produces garbage even though prefill + first token are correct:
+        #   - RESIDUAL_BUF_BF16: bf16 residual buffer paired with L1_RESIDUAL; the
+        #     decode rms_allgather final norm needs it (else POST-NORM PCC ~0.40).
+        #   - LM_HEAD_PLAIN_DECODE: route the decode lm_head ring -> minimal_matmul;
+        #     the ring lm_head emits garbage logits in decode (PCC ~0) without it.
+        QWEN36_RESIDUAL_BUF_BF16: "1"
+        QWEN36_LM_HEAD_PLAIN_DECODE: "1"
+        # Standard perf tuning the demo runs with (safe; matches the validated path).
+        QWEN36_FULLATTN_WO_TUNED: "1"
+        QWEN36_DELTA_OP_TUNED: "1"
+        QWEN36_CCL_NUM_LINKS_DELTA: "2"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
