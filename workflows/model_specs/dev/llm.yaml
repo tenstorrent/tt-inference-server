@@ -1095,8 +1095,8 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 32  # galaxy is batch-32 native (on-device sampling asserts
-      # max_batch_size % 32 == 0); serving a single request just leaves slots idle
+      max_concurrency: 1  # batch-1: max_batch_size=32 L1-OOMs the per-batch
+      # activation buffers at 256k; warmup is skipped + host sampling used
       max_context: 262144  # 256 * 1024
       default_impl: true
       vllm_args:
