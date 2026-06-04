@@ -173,6 +173,76 @@ RUN rm -rf ${HOME_DIR}/.rustup \
 
 
 # ==============================================================================
+# STRIP SOURCE - remove first-party C/C++ source from the app tree
+# ==============================================================================
+# Done in the BUILDER, before the cross-stage COPY, so source bytes never enter
+# any layer of the final image. A copy-then-rm in the runtime stage would only
+# add a whiteout: the source would still live in the COPY layer, fully
+# recoverable via `docker save`.
+#
+# Policy: ship the Python app + compiled artifacts only.
+#   DELETE: our cpp_server source (src/include), the blaze engine source
+#           (tt-llm-engine/{src,include}), prefill_gateway, and the build-only
+#           third_party tree (boost/mooncake/...). Then sweep any remaining
+#           C/C++ source under cpp_server (e.g. CMake _deps, generated headers).
+#   KEEP:   every compiled artifact (tt_media_server_cpp, *.so, build-full libs),
+#           the vendored tt-metal tree in full (its kernels are JIT-compiled
+#           from source at runtime, and it holds python_env + build/lib), the
+#           blaze kernels tree (potential runtime JIT), and the runtime data
+#           dirs (tokenizers/resources/monitoring) plus all *.py.
+#
+# NOTE: `-prune` is incompatible with `-delete` (which forces `-depth`), so the
+# sweep collects with `-print0` and removes via `xargs` to honour the excludes.
+RUN set -eux; \
+    SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    rm -rf "${SRV}/cpp_server/src" "${SRV}/cpp_server/include" \
+           "${SRV}/prefill_gateway" \
+           "${ENG}/src" "${ENG}/include" "${ENG}/third_party"; \
+    find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print0 \
+      | xargs -0 -r rm -f; \
+    REMAIN="$(find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print)"; \
+    if [ -n "${REMAIN}" ]; then \
+        echo "ERROR: first-party C/C++ source survived the strip:"; echo "${REMAIN}"; exit 1; \
+    fi; \
+    echo "OK: first-party C/C++ source stripped (tt-metal + blaze kernels kept for runtime JIT)"
+
+# ==============================================================================
+# STRIP SYMBOLS - remove debug info + symbol tables from first-party artifacts
+# ==============================================================================
+# Deleting .cpp source is not enough: an unstripped binary/.so carries DWARF
+# debug info (.debug_*) and a full local symbol table (.symtab), which let a
+# decompiler (Ghidra/IDA) reconstruct near-source pseudocode with the original
+# names, types and line numbers, and embeds source paths. Strip our compiled
+# artifacts so only opaque machine code ships.
+#   * executable  -> --strip-all
+#   * shared libs -> --strip-debug --strip-unneeded (keeps .dynsym, so the
+#     LD_PRELOADed blaze symbols and any dlsym lookups still resolve)
+# tt-metal / ttnn libs are upstream open-source and intentionally left untouched.
+RUN set -eux; \
+    SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    BIN="${SRV}/cpp_server/build/tt_media_server_cpp"; \
+    if [ -f "${BIN}" ]; then strip --strip-all "${BIN}"; fi; \
+    find "${SRV}/cpp_server/build" "${ENG}/build-full" \
+        -type f \( -name '*.so' -o -name '*.so.*' \) \
+        -exec strip --strip-debug --strip-unneeded {} +; \
+    echo "OK: stripped symbols + debug info from first-party binary and shared libs"
+
+
+# ==============================================================================
 # RUNTIME STAGE - final lightweight image
 # ==============================================================================
 # This is the final image that will be used. Only the built artifacts from the builder stage
@@ -229,6 +299,40 @@ RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# ── Verify the final image carries no first-party C/C++ source ──────────────
+# The builder already strips + gates this; re-asserted here so a regression in
+# the wholesale COPY can never ship first-party source to production. The
+# vendored tt-metal tree and the blaze kernels tree are excluded on purpose
+# (their source is JIT-compiled at runtime).
+RUN SRV="${APP_DIR}/server"; \
+    ENG="${SRV}/cpp_server/tt-llm-engine"; \
+    SRC="$(find "${SRV}/cpp_server" \
+        -path "${ENG}/tt-metal" -prune -o \
+        -path "${ENG}/kernels" -prune -o \
+        -type f \( \
+           -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' -o -name '*.cxx' \
+        -o -name '*.h'  -o -name '*.hh'  -o -name '*.hpp' -o -name '*.hxx' \
+        -o -name '*.cu' -o -name '*.cuh' \) -print)"; \
+    if [ -n "${SRC}" ]; then \
+        echo "ERROR: first-party C/C++ source present in runtime image:"; echo "${SRC}"; exit 1; \
+    fi; \
+    echo "verified: no first-party C/C++ source under ${SRV}/cpp_server (tt-metal + kernels excluded)"
+
+# ── Informational: surface any unresolved shared libs for the C++ binary ────
+# A linking gap (e.g. Drogon, the blaze libtt_llm_engine, or an RPATH into a
+# stripped build tree) shows up here in the build log. Non-fatal by design.
+RUN BIN="${APP_DIR}/server/cpp_server/build/tt_media_server_cpp"; \
+    if [ -x "$BIN" ]; then \
+        echo "ldd $BIN:"; ldd "$BIN" || true; \
+        if ldd "$BIN" 2>/dev/null | grep -q "not found"; then \
+            echo "WARNING: unresolved shared libraries for $BIN (see 'not found' above)"; \
+        else \
+            echo "ldd: all shared libraries resolved for $BIN"; \
+        fi; \
+    else \
+        echo "note: cpp binary absent; skipping ldd check"; \
+    fi
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
