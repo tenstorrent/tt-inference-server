@@ -12,6 +12,21 @@
 namespace tt::worker {
 
 /**
+ * Cumulative slot state-machine events published by the BlazeRunner
+ * (MetricsLayout::SP_PIPELINE_RUNNER). Each maps to one append-only scratch
+ * index in blaze_metrics_layout.hpp.
+ */
+enum class SpPipelineEvent {
+  IDLE_TO_RUNNING,
+  RUNNING_TO_STOP_ACK,
+  DEFERRED_EVICT_REPLAYED,
+  DEFERRED_SUBMIT_LATCHED,
+  DEFERRED_SUBMIT_REPLAYED,
+  DEFERRED_SUBMIT_SUPERSEDED,
+  DEFERRED_EVICT_LATCHED,
+};
+
+/**
  * Per-worker metrics writer for single-process workers, backed by a POSIX
  * shared-memory slot.
  *
@@ -44,6 +59,7 @@ class SingleProcessWorkerMetrics {
   void updateOutputHeartbeat();
   void incrementActiveRequests();
   void decrementActiveRequests();
+  void incrementSpPipelineEvent(SpPipelineEvent event);
 
   // ----- low-level layout-agnostic writers ----------------------------------
   void scratchStoreU64(size_t idx, uint64_t value);
