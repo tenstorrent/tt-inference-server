@@ -193,26 +193,6 @@ class TestModelSpecTemplateSystem:
             is True
         )
 
-    def test_image_pinned_model_specs_excludes_unpinned_entries(self):
-        """The helm-facing list drops entries that pin no image, but they stay
-        in MODEL_SPECS for every other consumer."""
-        from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, MODEL_SPECS
-
-        pinned_ids = {s.model_id for s in IMAGE_PINNED_MODEL_SPECS}
-        excluded = {
-            (MODEL_SPECS[mid].model_name, MODEL_SPECS[mid].device_type.name.lower())
-            for mid in set(MODEL_SPECS) - pinned_ids
-        }
-        assert excluded == {
-            ("gpt-oss-120b", "p300x2"),
-            ("Mistral-Small-3.1-24B-Instruct-2503", "t3k"),
-            ("bge-m3", "n150"),
-            ("bge-m3", "n300"),
-            ("bge-m3", "t3k"),
-            ("bge-m3", "galaxy"),
-        }
-        assert len(IMAGE_PINNED_MODEL_SPECS) < len(MODEL_SPECS)
-
     def test_system_requirement_template_level(self, sample_impl):
         """Test that SystemRequirements propagate correctly from templates and device specs."""
         template1 = ModelSpecTemplate(

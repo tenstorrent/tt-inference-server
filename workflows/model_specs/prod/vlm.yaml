@@ -10,8 +10,8 @@ templates:
     - google/medgemma-4b-it
   impl: tt_transformers
   version: "0.9.0"
-  tt_metal_commit: aecd1d7
-  vllm_commit: 0da90eb
+  tt_metal_commit: c254ee3
+  vllm_commit: c4f2327
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -34,27 +34,6 @@ templates:
       override_tt_config:
         l1_small_size: 4096
         fabric_config: FABRIC_1D
-    - device: T3K
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-      vllm_args:
-        limit-mm-per-prompt: '{"image": 10}'
-        data_parallel_size: 8
-        mm-processor-cache-gb: 0
-      override_tt_config:
-        l1_small_size: 4096
-        fabric_config: FABRIC_1D
-    - device: P150
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-      vllm_args:
-        limit-mm-per-prompt: '{"image": 10}'
-        mm-processor-cache-gb: 0
-      override_tt_config:
-        l1_small_size: 4096
-        fabric_config: FABRIC_1D
   model_type: VLM
   status: EXPERIMENTAL
   supported_modalities:
@@ -67,8 +46,8 @@ templates:
     - google/medgemma-27b-it
   impl: tt_transformers
   version: "0.9.0"
-  tt_metal_commit: aecd1d7
-  vllm_commit: 0da90eb
+  tt_metal_commit: 0b10c51
+  vllm_commit: 3499ffa
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -110,25 +89,6 @@ templates:
         l1_small_size: 4096
         fabric_config: FABRIC_1D_RING
         sample_on_device_mode: decode_only
-    - device: P300X2
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
-      vllm_args:
-        limit-mm-per-prompt: '{"image": 10}'
-        mm-processor-cache-gb: 0
-      override_tt_config:
-        l1_small_size: 4096
-        fabric_config: FABRIC_1D
-        sample_on_device_mode: decode_only
-        trace_region_size: 402653184  # 384 * 1024 * 1024
-      system_requirements:
-        firmware:
-          specifier: ">=19.2.0"
-          mode: STRICT
-        kmd:
-          specifier: ">=2.5.0"
-          mode: STRICT
   model_type: VLM
   status: EXPERIMENTAL
   supported_modalities:
@@ -194,6 +154,10 @@ templates:
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 32768  # 32 * 1024
+      default_impl: true
     - device: N300
       max_concurrency: 32
       max_context: 32768  # 32 * 1024
@@ -254,10 +218,6 @@ templates:
         mm-processor-cache-gb: 0
       override_tt_config:
         trace_region_size: 28467200
-    - device: GPU
-      max_concurrency: 32
-      max_context: 131072  # 128 * 1024
-      default_impl: true
   status: FUNCTIONAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
