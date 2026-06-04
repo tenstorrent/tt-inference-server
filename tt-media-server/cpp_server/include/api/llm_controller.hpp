@@ -88,9 +88,12 @@ class LLMController : public drogon::HttpController<LLMController> {
 
   /**
    * Translate a pipeline session error into a drogon HTTP error response.
+   * `traceId` is echoed back as `X-Request-Id` so failed requests stay
+   * correlatable with logs.
    */
   static drogon::HttpResponsePtr makeSessionErrorResponse(
-      const services::LLMPipeline::SessionError& err);
+      const services::LLMPipeline::SessionError& err,
+      const std::string& traceId);
 
   /**
    * Build the ResponseWriterParams shared by both streaming and non-streaming

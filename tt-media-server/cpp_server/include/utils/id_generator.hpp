@@ -42,10 +42,14 @@ class TaskIDGenerator {
  * keeps the id short enough to fit on one log line and to be carried in the
  * `X-Request-Id` HTTP response header.
  *
- * The 8 hex chars come from a per-process random64 counter mixed with a
- * one-shot random seed; collisions across nodes/restarts are mitigated by the
- * role prefix and the random seed (i.e. trace id is unique with very high
- * probability for the lifetime of a request).
+ * The 8 hex chars are the high word of an additive golden-ratio (Weyl)
+ * sequence seeded once per process with a random 64-bit value. Within a
+ * process the ids stay distinct for far longer than a random 32-bit space
+ * would (no birthday clustering until ~2^32 requests); the role prefix plus
+ * the random seed keep them effectively unique for the lifetime of a request
+ * even across nodes/restarts. The space is still only 32 bits, so de-duplicate
+ * a fleet-wide log search with task_id/timestamps if you aggregate millions of
+ * ids from same-role replicas.
  *
  * The generator does NOT enforce inbound format - if a client supplies an
  * `X-Request-Id` header (or OpenAI-compatible header) the controller stores
@@ -60,6 +64,11 @@ class TraceIdGenerator {
   /** Generate a new trace id using an explicit role prefix. Useful in tests or
    * non-LLM services that don't have an LLM_MODE. */
   static std::string generate(std::string_view role);
+
+  /** Shared HTTP entry-point policy: returns `inboundRequestId` verbatim when
+   * non-empty (honoring a caller- or gateway-supplied `X-Request-Id`),
+   * otherwise mints a fresh trace id via generate(). */
+  static std::string resolveOrGenerate(std::string_view inboundRequestId);
 };
 
 }  // namespace tt::utils

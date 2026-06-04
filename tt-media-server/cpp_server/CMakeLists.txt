@@ -509,6 +509,13 @@ target_include_directories(lockfree_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(socket_messages_test tests/socket_messages_test.cpp)
+target_link_libraries(socket_messages_test PRIVATE
+    llm_runner_lib cereal::cereal GTest::gtest_main)
+target_include_directories(socket_messages_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer test
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
@@ -815,6 +822,7 @@ if(ENABLE_BLAZE)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
+gtest_discover_tests(socket_messages_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)

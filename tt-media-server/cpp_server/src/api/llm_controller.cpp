@@ -59,10 +59,16 @@ void LLMController::chatCompletions(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::chat_completions");
 
+  // Resolved up front so every response on this request - including early
+  // validation failures - echoes the same `X-Request-Id` back to the client.
+  const std::string traceId = resolveTraceId(req);
+
   auto json = req->getJsonObject();
   if (!json) {
-    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
-                           "invalid_request_error"));
+    callback(withRequestId(errorResponse(drogon::k400BadRequest,
+                                         "Invalid JSON body",
+                                         "invalid_request_error"),
+                           traceId));
     return;
   }
 
@@ -71,27 +77,33 @@ void LLMController::chatCompletions(
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     chatReqOpt = ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
-    callback(errorResponse(drogon::k400BadRequest,
-                           std::string("Failed to parse request: ") + e.what(),
-                           "invalid_request_error"));
+    callback(withRequestId(
+        errorResponse(drogon::k400BadRequest,
+                      std::string("Failed to parse request: ") + e.what(),
+                      "invalid_request_error"),
+        traceId));
     return;
   }
 
   ChatCompletionRequest& chatReq = *chatReqOpt;
-  chatReq.trace_id = resolveTraceId(req);
+  chatReq.trace_id = traceId;
 
   TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
   if (chatReq.messages.empty()) {
-    callback(errorResponse(drogon::k400BadRequest,
-                           "messages is required and must be a non-empty array",
-                           "invalid_request_error", Json::Value("messages")));
+    callback(withRequestId(
+        errorResponse(drogon::k400BadRequest,
+                      "messages is required and must be a non-empty array",
+                      "invalid_request_error", Json::Value("messages")),
+        traceId));
     return;
   }
 
   if (!service->isModelReady()) {
-    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
-                           "service_unavailable"));
+    callback(withRequestId(errorResponse(drogon::k503ServiceUnavailable,
+                                         "Model is not ready",
+                                         "service_unavailable"),
+                           traceId));
     return;
   }
 
@@ -113,11 +125,13 @@ void LLMController::chatCompletions(
     if (reqPtr->max_tokens.has_value()) {
       detail += ", max_tokens=" + std::to_string(*reqPtr->max_tokens);
     }
-    callback(errorResponse(drogon::k400BadRequest,
-                           "Request exceeds maximum context length (" +
-                               std::to_string(maxContextLength) +
-                               " tokens): " + detail,
-                           "invalid_request_error"));
+    callback(withRequestId(
+        errorResponse(drogon::k400BadRequest,
+                      "Request exceeds maximum context length (" +
+                          std::to_string(maxContextLength) +
+                          " tokens): " + detail,
+                      "invalid_request_error"),
+        traceId));
     return;
   }
 
@@ -136,10 +150,16 @@ void LLMController::responses(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::responses");
 
+  // Resolved up front so every response on this request - including early
+  // validation failures - echoes the same `X-Request-Id` back to the client.
+  const std::string traceId = resolveTraceId(req);
+
   auto json = req->getJsonObject();
   if (!json) {
-    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
-                           "invalid_request_error"));
+    callback(withRequestId(errorResponse(drogon::k400BadRequest,
+                                         "Invalid JSON body",
+                                         "invalid_request_error"),
+                           traceId));
     return;
   }
 
@@ -148,13 +168,15 @@ void LLMController::responses(
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
-    callback(errorResponse(drogon::k400BadRequest,
-                           std::string("Failed to parse request: ") + e.what(),
-                           "invalid_request_error"));
+    callback(withRequestId(
+        errorResponse(drogon::k400BadRequest,
+                      std::string("Failed to parse request: ") + e.what(),
+                      "invalid_request_error"),
+        traceId));
     return;
   }
 
-  respReqOpt->trace_id = resolveTraceId(req);
+  respReqOpt->trace_id = traceId;
 
   auto respReqPtr =
       std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
@@ -165,8 +187,10 @@ void LLMController::responses(
               respReq.task_id, respReq.model.value_or("default"));
 
   if (!service->isModelReady()) {
-    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
-                           "service_unavailable"));
+    callback(withRequestId(errorResponse(drogon::k503ServiceUnavailable,
+                                         "Model is not ready",
+                                         "service_unavailable"),
+                           traceId));
     return;
   }
 
@@ -301,25 +325,27 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
 }
 
 std::string LLMController::resolveTraceId(const drogon::HttpRequestPtr& req) {
-  // Accept either canonical OpenAI-style header, drogon lowercases incoming
-  // header names so a single lookup covers all casings.
-  auto header = req->getHeader("x-request-id");
-  if (!header.empty()) {
-    return header;
-  }
-  return tt::utils::TraceIdGenerator::generate();
+  // drogon lowercases incoming header names, so a single lookup covers all
+  // casings of the canonical OpenAI-style `X-Request-Id`. The honor-or-mint
+  // policy is shared with other HTTP entry points via TraceIdGenerator.
+  return tt::utils::TraceIdGenerator::resolveOrGenerate(
+      req->getHeader("x-request-id"));
 }
 
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
-    const services::LLMPipeline::SessionError& err) {
+    const services::LLMPipeline::SessionError& err,
+    const std::string& traceId) {
   if (err.type == services::LLMPipeline::SessionErrorType::RATE_LIMIT) {
-    return errorResponse(drogon::k429TooManyRequests, err.message,
-                         "rate_limit_exceeded");
+    return withRequestId(errorResponse(drogon::k429TooManyRequests, err.message,
+                                       "rate_limit_exceeded"),
+                         traceId);
   }
-  return errorResponse(
-      drogon::k503ServiceUnavailable,
-      std::string("Failed to allocate memory resources: ") + err.message,
-      "service_unavailable");
+  return withRequestId(
+      errorResponse(
+          drogon::k503ServiceUnavailable,
+          std::string("Failed to allocate memory resources: ") + err.message,
+          "service_unavailable"),
+      traceId);
 }
 
 void LLMController::handleStreaming(
@@ -345,13 +371,15 @@ void LLMController::handleStreaming(
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
+          (*cb)(withRequestId(errorResponse(drogon::k429TooManyRequests,
+                                            e.what(), "rate_limit_exceeded"),
+                              reqPtr->trace_id));
           return;
         } catch (const std::exception& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                              "invalid_request_error"));
+          (*cb)(withRequestId(errorResponse(drogon::k400BadRequest, e.what(),
+                                            "invalid_request_error"),
+                              reqPtr->trace_id));
           return;
         }
 
@@ -364,22 +392,25 @@ void LLMController::handleStreaming(
               makeStreamingCallback(writer, reqPtr->session));
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
+          (*cb)(withRequestId(errorResponse(drogon::k429TooManyRequests,
+                                            e.what(), "rate_limit_exceeded"),
+                              reqPtr->trace_id));
           return;
         } catch (const std::exception& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k500InternalServerError, e.what(),
-                              "internal_error"));
+          (*cb)(withRequestId(errorResponse(drogon::k500InternalServerError,
+                                            e.what(), "internal_error"),
+                              reqPtr->trace_id));
           return;
         }
 
         (*cb)(writer->buildResponse());
       },
-      [cb](const services::LLMPipeline::SessionError& err) {
+      [cb, traceId = reqPtr->trace_id](
+          const services::LLMPipeline::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
-        (*cb)(makeSessionErrorResponse(err));
+        (*cb)(makeSessionErrorResponse(err, traceId));
       },
       std::move(cancelFn));
 }
@@ -407,13 +438,15 @@ void LLMController::handleNonStreaming(
           service->preProcess(*reqPtr);
         } catch (const services::QueueFullException& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                              "rate_limit_exceeded"));
+          (*cb)(withRequestId(errorResponse(drogon::k429TooManyRequests,
+                                            e.what(), "rate_limit_exceeded"),
+                              reqPtr->trace_id));
           return;
         } catch (const std::exception& e) {
           if (reqPtr->session) reqPtr->session->clearInFlight();
-          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
-                              "invalid_request_error"));
+          (*cb)(withRequestId(errorResponse(drogon::k400BadRequest, e.what(),
+                                            "invalid_request_error"),
+                              reqPtr->trace_id));
           return;
         }
 
@@ -436,10 +469,11 @@ void LLMController::handleNonStreaming(
                             "internal_error");
         }
       },
-      [cb](const services::LLMPipeline::SessionError& err) {
+      [cb, traceId = reqPtr->trace_id](
+          const services::LLMPipeline::SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
                      err.message);
-        (*cb)(makeSessionErrorResponse(err));
+        (*cb)(makeSessionErrorResponse(err, traceId));
       },
       std::move(cancelFn));
 }

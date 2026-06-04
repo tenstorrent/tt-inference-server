@@ -25,4 +25,15 @@ inline drogon::HttpResponsePtr errorResponse(
   return resp;
 }
 
+// Stamps the end-to-end trace id onto a response as `X-Request-Id` so clients
+// can correlate failures with server logs. No-op when traceId is empty.
+// Returns the same response to allow inline wrapping at callback sites.
+inline const drogon::HttpResponsePtr& withRequestId(
+    const drogon::HttpResponsePtr& resp, const std::string& traceId) {
+  if (!traceId.empty()) {
+    resp->addHeader("X-Request-Id", traceId);
+  }
+  return resp;
+}
+
 }  // namespace tt::api

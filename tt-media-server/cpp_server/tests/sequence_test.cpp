@@ -136,6 +136,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setContinuation(true);
   orig.setDisaggregated(true);
   orig.setKVPositionId(17);
+  orig.traceId = "decode-3a9f2b1c";
 
   std::ostringstream os;
   orig.serialize(os);
@@ -144,6 +145,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   Sequence restored = Sequence::deserialize(is);
 
   EXPECT_EQ(restored.taskId, orig.taskId);
+  EXPECT_EQ(restored.traceId, orig.traceId);
   EXPECT_EQ(restored.getLastToken(), orig.getLastToken());
   EXPECT_EQ(restored.getNumPromptTokens(), orig.getNumPromptTokens());
   EXPECT_EQ(restored.getNumCachedTokens(), orig.getNumCachedTokens());
@@ -186,6 +188,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   EXPECT_EQ(restored.getNumPromptTokens(), 0u);
   EXPECT_EQ(restored.getLastToken(), 0);
   EXPECT_FALSE(restored.getKVPositionId().has_value());
+  EXPECT_TRUE(restored.traceId.empty());
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
