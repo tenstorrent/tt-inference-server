@@ -377,7 +377,7 @@ struct ResponsesRequest : BaseRequest {
   /** Convert to LLMRequest: applies chat template to the input, then copies
    * sampling parameters for the LLM pipeline. */
   LLMRequest toLLMRequest() const {
-    LLMRequest out(task_id);
+    LLMRequest out(task_id, trace_id);
     out.model = model;
     const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
     auto promptStr = tokenizer.applyChatTemplate(toMessages(), true,

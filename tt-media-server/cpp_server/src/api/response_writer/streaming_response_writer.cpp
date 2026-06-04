@@ -193,6 +193,9 @@ drogon::HttpResponsePtr StreamingResponseWriter::buildResponse() {
   resp->addHeader("Cache-Control", "no-cache");
   resp->addHeader("Connection", "keep-alive");
   resp->addHeader("X-Accel-Buffering", "no");
+  if (!params.traceId.empty()) {
+    resp->addHeader("X-Request-Id", params.traceId);
+  }
 
   return resp;
 }

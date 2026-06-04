@@ -368,6 +368,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/llm/sequence.cpp
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/id_generator.cpp
     src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp

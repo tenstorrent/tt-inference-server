@@ -104,6 +104,13 @@ class LLMController : public drogon::HttpController<LLMController> {
    */
   static std::function<void(const LLMStreamChunk&, bool)> makeStreamingCallback(
       std::shared_ptr<ResponseWriter> writer, domain::Session* session);
+
+  /**
+   * Resolve the trace id for an inbound HTTP request: returns the inbound
+   * `X-Request-Id` (or, if absent/empty, a freshly generated trace id).
+   * Centralized so all entry points stay consistent.
+   */
+  static std::string resolveTraceId(const drogon::HttpRequestPtr& req);
 };
 
 }  // namespace tt::api

@@ -145,6 +145,9 @@ void NonStreamResponseWriter::finalize() {
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   resp->setBody(builder(llmResponse));
+  if (!params.traceId.empty()) {
+    resp->addHeader("X-Request-Id", params.traceId);
+  }
 
   if (httpCallback) {
     auto cb = std::move(httpCallback);

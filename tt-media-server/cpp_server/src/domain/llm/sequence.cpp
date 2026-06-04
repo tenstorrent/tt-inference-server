@@ -36,8 +36,9 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
                    bool disaggregated,
                    std::unique_ptr<SamplingParams> inputSamplingParams,
                    std::optional<uint32_t> kvPositionId,
-                   int numberOfDecodeSkipTokens)
+                   int numberOfDecodeSkipTokens, std::string traceId)
     : taskId(taskId),
+      traceId(std::move(traceId)),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(inputTokenIds)),
       kvPositionId(std::move(kvPositionId)),
@@ -114,6 +115,11 @@ void Sequence::serialize(std::ostream& os) const {
   }
   os.write(reinterpret_cast<const char*>(&numberOfDecodeSkipTokens),
            sizeof(numberOfDecodeSkipTokens));
+  size_t traceIdLen = traceId.size();
+  os.write(reinterpret_cast<const char*>(&traceIdLen), sizeof(traceIdLen));
+  if (traceIdLen > 0) {
+    os.write(traceId.data(), static_cast<std::streamsize>(traceIdLen));
+  }
 }
 
 Sequence Sequence::deserialize(std::istream& is) {
@@ -166,6 +172,14 @@ Sequence Sequence::deserialize(std::istream& is) {
   }
   is.read(reinterpret_cast<char*>(&seq.numberOfDecodeSkipTokens),
           sizeof(seq.numberOfDecodeSkipTokens));
+  size_t traceIdLen = 0;
+  is.read(reinterpret_cast<char*>(&traceIdLen), sizeof(traceIdLen));
+  if (traceIdLen > 0) {
+    seq.traceId.resize(traceIdLen);
+    is.read(seq.traceId.data(), static_cast<std::streamsize>(traceIdLen));
+  } else {
+    seq.traceId.clear();
+  }
   return seq;
 }
 

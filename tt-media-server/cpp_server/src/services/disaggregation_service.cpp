@@ -41,19 +41,24 @@ void DisaggregationService::setupSocketHandlers() {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     socketService->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& message) {
+          const auto& trace =
+              message.trace_id.empty() ? "none" : message.trace_id;
+          const auto& session =
+              message.session_id.empty() ? "none" : message.session_id;
           auto callback = streamCallbacks.get(message.task_id);
           if (!callback.has_value()) {
-            TT_LOG_WARN("[DisaggregationService] No callback for task_id: {}",
-                        message.task_id);
+            TT_LOG_WARN(
+                "[DisaggregationService] No callback for trace_id={} task_id={}",
+                trace, message.task_id);
             return;
           }
           streamCallbacks.erase(message.task_id);
 
           if (message.error) {
             TT_LOG_ERROR(
-                "[DisaggregationService] Prefill error received for task {}, "
-                "propagating error to client",
-                message.task_id);
+                "[DisaggregationService] Prefill error received trace_id={} "
+                "task_id={} session_id={}, propagating error to client",
+                trace, message.task_id, session);
             callback.value()(makeErrorChunk(message.task_id, "prefill error"),
                              /*isFinal=*/true);
             return;
@@ -76,7 +81,11 @@ void DisaggregationService::setupSocketHandlers() {
                                             message.token_ids.back(),
                                             /*decodedText=*/"");
             }
-            auto request = LLMRequest(message.task_id);
+            auto request = LLMRequest(message.task_id, message.trace_id);
+            request.sessionId =
+                message.session_id.empty()
+                    ? std::optional<std::string>{}
+                    : std::optional<std::string>(message.session_id);
             request.disaggregated = true;
             // -2 because last token doesnt count, and we need current pos in kv
             // cache.
@@ -91,6 +100,11 @@ void DisaggregationService::setupSocketHandlers() {
             request.top_p = message.top_p;
             request.top_k = message.top_k;
             request.fast_mode = message.fast_mode;
+            TT_LOG_DEBUG(
+                "[DisaggregationService] Continuing decode trace_id={} "
+                "task_id={} session_id={} kv_position_id={}",
+                trace, message.task_id, session,
+                request.kv_position_id.value_or(0));
             llmService->submitStreamingRequest(request, callback.value());
           } else {
             auto finalResponse = LLMStreamChunk(message.task_id);
@@ -132,17 +146,29 @@ void DisaggregationService::setupSocketHandlers() {
 
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-          auto request = LLMRequest(message.task_id);
+          auto request = LLMRequest(message.task_id, message.trace_id);
+          // Carry the decode-side SessionManager UUID so prefill logs and any
+          // downstream sites that already know how to render `sessionId` light
+          // up with the same id used on the decode node.
+          request.sessionId =
+              message.session_id.empty()
+                  ? std::optional<std::string>{}
+                  : std::optional<std::string>(message.session_id);
           request.max_tokens = 1;
           request.temperature = message.temperature;
           request.top_p = message.top_p;
           request.top_k = message.top_k;
           request.fast_mode = message.fast_mode;
 
+          const auto& trace =
+              message.trace_id.empty() ? "none" : message.trace_id;
+          const auto& session =
+              message.session_id.empty() ? "none" : message.session_id;
           TT_LOG_DEBUG(
-              "[DisaggregationService] Prefill request taskId={} "
-              "registration_hashes={}",
-              message.task_id, message.registration_hashes.size());
+              "[DisaggregationService] Prefill request trace_id={} task_id={} "
+              "session_id={} registration_hashes={}",
+              trace, message.task_id, session,
+              message.registration_hashes.size());
 
           auto maxTokens = message.max_tokens;
 
@@ -166,13 +192,16 @@ void DisaggregationService::setupSocketHandlers() {
                 prefillResult.top_p = message.top_p;
                 prefillResult.top_k = message.top_k;
                 prefillResult.fast_mode = message.fast_mode;
+                prefillResult.trace_id = message.trace_id;
+                prefillResult.session_id = message.session_id;
 
                 bool isError = !response.choices.empty() &&
                                response.choices.back().finish_reason == "error";
                 if (isError) {
                   TT_LOG_WARN(
-                      "[DisaggregationService] Prefill error for task {}, "
-                      "propagating to decode server",
+                      "[DisaggregationService] Prefill error trace_id={} "
+                      "task_id={}, propagating to decode server",
+                      message.trace_id.empty() ? "none" : message.trace_id,
                       message.task_id);
                   prefillResult.error = true;
                   prefillResult.finished = true;
@@ -362,7 +391,7 @@ void DisaggregationService::handleStreamingRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
         slotId, tt::utils::mapper::mapSamplingParams(request),
-        decodeSkipTokens);
+        decodeSkipTokens, request.trace_id, request.sessionId.value_or(""));
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

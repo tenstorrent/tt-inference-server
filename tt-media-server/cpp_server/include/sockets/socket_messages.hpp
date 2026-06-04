@@ -33,6 +33,11 @@ struct SerializableMessage {
 
 /**
  * @brief Prefill request message - sent from decode server to prefill server
+ *
+ * `trace_id` and `session_id` (issue #3929) are added so prefill logs can be
+ * correlated with the originating decode HTTP request and the decode-side
+ * SessionManager UUID. They are always sent on the wire (empty string when
+ * unset) so older payload schemas don't decode partially.
  */
 struct PrefillRequestMessage {
   uint32_t task_id;
@@ -45,6 +50,8 @@ struct PrefillRequestMessage {
   std::optional<int> top_k;
   bool fast_mode = false;
   int number_of_decode_skip_tokens = 0;
+  std::string trace_id;
+  std::string session_id;
 
   explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -60,7 +67,7 @@ struct PrefillRequestMessage {
     int topKVal = top_k.value_or(0);
     ar(task_id, registration_hashes, token_ids, mt, sid, hasTemp, tempVal,
        hasTopP, topPVal, hasTopK, topKVal, fast_mode,
-       number_of_decode_skip_tokens);
+       number_of_decode_skip_tokens, trace_id, session_id);
   }
 
   template <class Archive>
@@ -78,8 +85,10 @@ struct PrefillRequestMessage {
     int topKVal;
     bool fastMode;
     int decodeSkipTokens;
+    std::string traceId;
+    std::string sessionId;
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fastMode, decodeSkipTokens);
+       topKVal, fastMode, decodeSkipTokens, traceId, sessionId);
     PrefillRequestMessage msg(tid);
     msg.registration_hashes = std::move(hashes);
     msg.token_ids = std::move(tids);
@@ -92,6 +101,8 @@ struct PrefillRequestMessage {
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
     msg.number_of_decode_skip_tokens = decodeSkipTokens;
+    msg.trace_id = std::move(traceId);
+    msg.session_id = std::move(sessionId);
     return msg;
   }
 };
@@ -117,6 +128,10 @@ struct PrefillResultMessage {
   std::optional<float> top_p;
   std::optional<int> top_k;
   bool fast_mode = false;
+  // Echoed back from PrefillRequestMessage so decode-side logs and the client
+  // response can correlate on the same trace id and (decode-side) session id.
+  std::string trace_id;
+  std::string session_id;
 
   explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -132,7 +147,7 @@ struct PrefillResultMessage {
     int topKVal = top_k.value_or(0);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
        token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fast_mode);
+       topKVal, fast_mode, trace_id, session_id);
   }
 
   template <class Archive>
@@ -153,8 +168,10 @@ struct PrefillResultMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
+    std::string traceId;
+    std::string sessionId;
     ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode);
+       topPVal, hasTopK, topKVal, fastMode, traceId, sessionId);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -170,6 +187,8 @@ struct PrefillResultMessage {
     if (hasTopP) msg.top_p = topPVal;
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
+    msg.trace_id = std::move(traceId);
+    msg.session_id = std::move(sessionId);
     return msg;
   }
 };

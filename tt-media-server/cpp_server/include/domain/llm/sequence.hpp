@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "domain/llm/sampling_params.hpp"
@@ -43,12 +44,16 @@ class Sequence {
            std::optional<uint32_t> prefillSlotId, bool continuation,
            bool disaggregated, std::unique_ptr<SamplingParams> samplingParams,
            std::optional<uint32_t> kvPositionId = std::nullopt,
-           int numberOfDecodeSkipTokens = 0);
+           int numberOfDecodeSkipTokens = 0, std::string traceId = "");
 
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
 
   uint32_t taskId;
+  // End-to-end trace id (issue #3929): set on the HTTP node, carried through
+  // taskQueue serialization so worker logs can grep the same id as the
+  // controller/socket layer logs.
+  std::string traceId;
 
   size_t size() const { return tokenIds.size(); }
   int64_t operator[](size_t i) const { return tokenIds[i]; }

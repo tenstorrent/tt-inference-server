@@ -78,6 +78,7 @@ void LLMController::chatCompletions(
   }
 
   ChatCompletionRequest& chatReq = *chatReqOpt;
+  chatReq.trace_id = resolveTraceId(req);
 
   TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
@@ -153,11 +154,14 @@ void LLMController::responses(
     return;
   }
 
+  respReqOpt->trace_id = resolveTraceId(req);
+
   auto respReqPtr =
       std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
   const domain::ResponsesRequest& respReq = *respReqPtr;
 
-  TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
+  TT_LOG_INFO("[LLMController] /v1/responses trace_id={} task_id={} model={}",
+              respReq.trace_id.empty() ? "none" : respReq.trace_id,
               respReq.task_id, respReq.model.value_or("default"));
 
   if (!service->isModelReady()) {
@@ -251,6 +255,7 @@ ResponseWriterParams LLMController::makeWriterParams(
           : 0;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
+  params.traceId = request.trace_id;
   params.onAbortRequest = [pipeline = pipeline](uint32_t taskId) {
     pipeline->abortRequest(taskId);
   };
@@ -293,6 +298,16 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
       writer->finalize();
     }
   };
+}
+
+std::string LLMController::resolveTraceId(const drogon::HttpRequestPtr& req) {
+  // Accept either canonical OpenAI-style header, drogon lowercases incoming
+  // header names so a single lookup covers all casings.
+  auto header = req->getHeader("x-request-id");
+  if (!header.empty()) {
+    return header;
+  }
+  return tt::utils::TraceIdGenerator::generate();
 }
 
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(

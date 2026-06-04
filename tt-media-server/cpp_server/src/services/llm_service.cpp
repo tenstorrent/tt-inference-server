@@ -632,7 +632,8 @@ void LLMService::processStreamingRequest(
       request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
-      request.kv_position_id, request.number_of_decode_skip_tokens);
+      request.kv_position_id, request.number_of_decode_skip_tokens,
+      request.trace_id);
   taskQueue->push(*std::move(sequence));
 }
 

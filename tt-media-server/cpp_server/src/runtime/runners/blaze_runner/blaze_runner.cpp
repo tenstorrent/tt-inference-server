@@ -169,10 +169,11 @@ void BlazeRunner::step() {
   auto request = getRequest();
   if (request) {
     TT_LOG_DEBUG(
-        "[BlazeRunner] step: got Sequence taskId={}, slotId={}, "
+        "[BlazeRunner] step: got Sequence trace_id={} taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
-        request->taskId, request->getKVCacheSlot(),
-        request->getNumPromptTokens(), request->getTokenIds().size());
+        request->traceId.empty() ? "none" : request->traceId, request->taskId,
+        request->getKVCacheSlot(), request->getNumPromptTokens(),
+        request->getTokenIds().size());
     handleRequest(std::move(request));
   }
   checkOutputHang();

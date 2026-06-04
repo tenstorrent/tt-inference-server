@@ -28,6 +28,11 @@ struct ResponseWriterParams {
   int cachedTokenCount = 0;
   std::optional<std::string> sessionId;
   uint32_t taskId;
+  // End-to-end trace id (issue #3929). Echoed back to the client as
+  // `X-Request-Id` so callers can correlate a hung HTTP request with logs.
+  // Empty means "no trace id was assigned" — usually impossible in practice
+  // because the controller generates one if the inbound header is missing.
+  std::string traceId;
   std::function<void(uint32_t)> onAbortRequest;
   std::function<void()> onSessionRelease;
   bool enableDisconnectHeartbeat = false;

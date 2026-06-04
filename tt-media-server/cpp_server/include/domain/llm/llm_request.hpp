@@ -177,7 +177,8 @@ struct LLMRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id << " model=" << model.value_or("default")
+    out << "trace_id=" << (trace_id.empty() ? "none" : trace_id)
+        << " task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " prompt=" << promptInfo
         << " max_tokens=" << detail::optStr(max_tokens)
         << " temperature=" << detail::optStr(temperature)

@@ -124,10 +124,11 @@ void LLMPipeline::resolveSession(
     promptKind = "tokens";
   }
   TT_LOG_INFO(
-      "[LLMPipeline] Request received taskId={} model={} stream={} "
+      "[LLMPipeline] Request received trace_id={} taskId={} model={} stream={} "
       "messages={} promptKind={} promptTokens={}",
-      req->task_id, req->model.value_or("default"), req->stream,
-      req->messages.size(), promptKind, promptTokens);
+      req->trace_id.empty() ? "none" : req->trace_id, req->task_id,
+      req->model.value_or("default"), req->stream, req->messages.size(),
+      promptKind, promptTokens);
 
   SessionInfo info;
 
@@ -326,13 +327,17 @@ void LLMPipeline::dispatchGeneration(
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (shouldDoPrefillOnDecode(request)) {
-      TT_LOG_DEBUG("[LLMPipeline] Using prefill on decode for sessionId: {}",
-                   request.sessionId.value_or("none"));
+      TT_LOG_DEBUG(
+          "[LLMPipeline] Using prefill on decode trace_id={} task_id={} "
+          "sessionId={}",
+          request.trace_id.empty() ? "none" : request.trace_id, request.task_id,
+          request.sessionId.value_or("none"));
       service_->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
     } else {
       TT_LOG_DEBUG(
-          "[LLMPipeline] Using disaggregated prefill for request with "
-          "sessionId: {}",
+          "[LLMPipeline] Using disaggregated prefill trace_id={} task_id={} "
+          "sessionId={}",
+          request.trace_id.empty() ? "none" : request.trace_id, request.task_id,
           request.sessionId.value_or("none"));
       disaggregationService_->handleStreamingRequest(
           request, sessionInfo.registrationHashes, cb);

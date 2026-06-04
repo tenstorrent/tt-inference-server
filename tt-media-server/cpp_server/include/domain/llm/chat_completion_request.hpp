@@ -246,7 +246,8 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id << " model=" << model.value_or("default")
+    out << "trace_id=" << (trace_id.empty() ? "none" : trace_id)
+        << " task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
         << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
@@ -267,7 +268,7 @@ struct ChatCompletionRequest : BaseRequest {
   /** Convert to LLMRequest: applies chat template to messages, then copies
    * sampling parameters for the LLM pipeline. */
   LLMRequest toLLMRequest() const {
-    LLMRequest out(task_id);
+    LLMRequest out(task_id, trace_id);
     out.model = model;
     out.messages = messages;
     out.skip_apply_chat_template = skip_apply_chat_template;

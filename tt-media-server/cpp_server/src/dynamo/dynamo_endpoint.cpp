@@ -43,7 +43,8 @@ namespace {
 std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
     const GenerateRequest& dyn) {
   auto req = std::make_shared<tt::domain::llm::LLMRequest>(
-      tt::utils::TaskIDGenerator::generate());
+      tt::utils::TaskIDGenerator::generate(),
+      tt::utils::TraceIdGenerator::generate());
   req->stream = true;
   req->skip_apply_chat_template = true;
   // Dynamo's TokenChunk wire format carries only token_ids; the frontend

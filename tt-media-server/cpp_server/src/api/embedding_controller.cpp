@@ -62,6 +62,10 @@ void EmbeddingController::createEmbedding(
     return;
   }
   auto request = std::move(*requestOpt);
+  auto inboundTraceId = req->getHeader("x-request-id");
+  request.trace_id = inboundTraceId.empty()
+                         ? tt::utils::TraceIdGenerator::generate()
+                         : inboundTraceId;
 
   if (request.model.empty()) {
     request.model = "BAAI/bge-large-en-v1.5";
@@ -89,6 +93,9 @@ void EmbeddingController::createEmbedding(
       auto builtJsonTime = std::chrono::steady_clock::now();
 
       auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
+      if (!request.trace_id.empty()) {
+        resp->addHeader("X-Request-Id", request.trace_id);
+      }
 
       if (reqNum % 100 == 0) {
         double parseMs =

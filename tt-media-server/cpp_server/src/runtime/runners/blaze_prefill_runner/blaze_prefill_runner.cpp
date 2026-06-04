@@ -39,13 +39,17 @@ void BlazePrefillRunner::run() {
       std::this_thread::yield();
       continue;
     }
-    TT_LOG_DEBUG("[BlazePrefillRunner] Starting prefill for task {}",
-                 sequence->taskId);
+    const auto& trace =
+        sequence->traceId.empty() ? "none" : sequence->traceId;
+    TT_LOG_DEBUG(
+        "[BlazePrefillRunner] Starting prefill trace_id={} task_id={}", trace,
+        sequence->taskId);
 
     if (sequence->getNumberOfDecodeSkipTokens() > 0) {
       TT_LOG_INFO(
-          "[BlazePrefillRunner] task {} has numberOfDecodeSkipTokens={}",
-          sequence->taskId, sequence->getNumberOfDecodeSkipTokens());
+          "[BlazePrefillRunner] trace_id={} task_id={} has "
+          "numberOfDecodeSkipTokens={}",
+          trace, sequence->taskId, sequence->getNumberOfDecodeSkipTokens());
     }
 
     auto result = modelRunner->forward(
@@ -53,22 +57,24 @@ void BlazePrefillRunner::run() {
 
     if (!result) {
       TT_LOG_DEBUG(
-          "[BlazePrefillRunner] forward returned without result for task {}",
-          sequence->taskId);
+          "[BlazePrefillRunner] forward returned without result trace_id={} "
+          "task_id={}",
+          trace, sequence->taskId);
       break;  // stopped
     }
 
-    TT_LOG_DEBUG("[BlazePrefillRunner] forward finished for task {}",
-                 result->taskId);
+    TT_LOG_DEBUG("[BlazePrefillRunner] forward finished trace_id={} task_id={}",
+                 trace, result->taskId);
 
     if (result->isError) {
-      TT_LOG_WARN("[BlazePrefillRunner] Error token for task {}",
-                  result->taskId);
+      TT_LOG_WARN("[BlazePrefillRunner] Error token trace_id={} task_id={}",
+                  trace, result->taskId);
       ipc::helpers::pushErrorToken(*resultQueue, result->taskId);
     } else {
       TT_LOG_DEBUG(
-          "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
-          result->taskId, result->tokenId, true);
+          "[BlazePrefillRunner] pushToken trace_id={} task_id={} token_id={} "
+          "finished={}",
+          trace, result->taskId, result->tokenId, true);
       ipc::helpers::pushToken(*resultQueue, sequence->taskId, result->tokenId,
                               ipc::SharedToken::FLAG_FINAL);
     }
