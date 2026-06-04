@@ -32,8 +32,8 @@ jobs:
       charts: ${{ steps.filter.outputs.charts }}
       helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -66,10 +66,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -92,7 +92,7 @@ jobs:
       run:
         working-directory: tt-media-server
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -134,7 +134,7 @@ jobs:
       # docker-related files change. Posts at most once per PR; removes itself
       # if all docker changes are later reverted.
       - name: Create or remove sticky reminder
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         env:
           SHOULD_HAVE_COMMENT: ${{ needs.detect-changes.outputs.media-server-deps }}
@@ -210,10 +210,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload main test output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: main-test-output
           path: |
@@ -264,10 +264,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -305,7 +305,7 @@ jobs:
 
       - name: Upload media test output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: media-test-output
           path: |
@@ -316,7 +316,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-data
           path: coverage.xml
@@ -338,14 +338,14 @@ jobs:
       issues: write
     steps:
       - name: Download main test output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         continue-on-error: true
         with:
           name: main-test-output
           path: .
 
       - name: Download media test output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         continue-on-error: true
         with:
           name: media-test-output
@@ -446,7 +446,7 @@ jobs:
 
       - name: Comment on PR
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
@@ -518,7 +518,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -530,7 +530,7 @@ jobs:
       # See cpp-build: cache the tokenizer bundle so the clang-tidy build's
       # tokenizer pre-fetch skips HuggingFace (avoids 429s on GitHub runners).
       - name: Restore cached tokenizer files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: tt-media-server/cpp_server/tokenizers
           key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
@@ -570,7 +570,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install clang-format-20
         run: |
@@ -624,7 +624,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -639,7 +639,7 @@ jobs:
       # land on the shared cpp-server-tokenizers-* cache (also populated by
       # cpp-format-check here and by the cpp-heavy-checks.yml build jobs).
       - name: Restore cached tokenizer files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: tt-media-server/cpp_server/tokenizers
           key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
@@ -664,7 +664,7 @@ jobs:
           tar -czf cpp-server-build.tar.gz build tokenizers
 
       - name: Upload C++ build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server/cpp-server-build.tar.gz
@@ -688,10 +688,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download C++ build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server
@@ -842,7 +842,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-bench-results
           path: |
@@ -854,7 +854,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-bench-logs
           path: |
@@ -888,7 +888,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
@@ -930,13 +930,13 @@ jobs:
       should-run: ${{ steps.filter.outputs.forge_runner }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Evaluate forge runner paths
         id: filter
         if: ${{ github.event_name == 'pull_request' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             forge_runner:
@@ -957,7 +957,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Pin to v1.3.1's commit SHA so this privileged cleanup action is reproducible.
       - name: Free Disk Space (Ubuntu)
@@ -972,7 +972,7 @@ jobs:
           swap-storage: true
 
       - name: Set up Forge Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           # Dissable pip caching for now, it take longer than install sometimes
@@ -1010,12 +1010,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1023,7 +1023,7 @@ jobs:
         run: python -m pip install diff-cover
 
       - name: Download coverage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         continue-on-error: true
         with:
           name: coverage-data
@@ -1119,7 +1119,7 @@ jobs:
 
       - name: Comment coverage on PR
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
@@ -1173,7 +1173,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-reports
           path: |
@@ -1191,10 +1191,10 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
