@@ -674,6 +674,37 @@ SessionManager::tryAcquireByPrefixHash(
   return AcquiredSession{false, {}, 0, 0, 0, std::move(candidates)};
 }
 
+std::optional<SessionManager::Candidate> SessionManager::findASlotToCopyFrom(
+    const std::vector<Candidate>& candidates) const {
+  const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+  const size_t blockSize = tt::config::kvCacheBlockSize();
+  const size_t minTokens = tt::config::minTokensToCopy();
+
+  for (const auto& candidate : candidates) {
+    if (candidate.matchedBlocks == 0) continue;
+
+    const size_t matchedTokens =
+        firstBlockSize + (candidate.matchedBlocks > 1
+                              ? (candidate.matchedBlocks - 1) * blockSize
+                              : 0);
+
+    if (matchedTokens >= minTokens) {
+      TT_LOG_DEBUG(
+          "[SessionManager] findASlotToCopyFrom: candidate sessionId={} "
+          "matchedBlocks={} matchedTokens={} >= minTokensToCopy={}",
+          candidate.sessionId, candidate.matchedBlocks, matchedTokens,
+          minTokens);
+      return candidate;
+    }
+  }
+
+  TT_LOG_DEBUG(
+      "[SessionManager] findASlotToCopyFrom: no candidate meets threshold "
+      "(minTokensToCopy={}, candidates={})",
+      minTokens, candidates.size());
+  return std::nullopt;
+}
+
 void SessionManager::registerPrefixHash(
     const std::string& sessionId,
     const std::vector<utils::BlockHashInfo>& blockInfos) {
