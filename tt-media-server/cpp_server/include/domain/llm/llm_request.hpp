@@ -131,6 +131,10 @@ struct LLMRequest : BaseRequest {
   // `disaggregated == true`.
   std::optional<uint32_t> kv_position_id;
 
+  // Number of tokens already in the decode-side KV cache that the prefill
+  // prefill should not send this part of KV.
+  int number_of_decode_skip_tokens = 0;
+
   std::optional<bool> disaggregation_override;
 
   bool parallel_tool_calls = true;
