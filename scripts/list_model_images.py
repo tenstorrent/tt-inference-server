@@ -63,7 +63,7 @@ def iter_leaf_specs(obj):
 
 
 def main():
-    spec_path = Path(__file__).parent / "release_model_spec.json"
+    spec_path = Path(__file__).parent.parent / "release_model_spec.json"
     with open(spec_path) as f:
         data = json.load(f)
 

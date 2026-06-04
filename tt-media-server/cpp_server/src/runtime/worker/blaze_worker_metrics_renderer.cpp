@@ -4,6 +4,7 @@
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
 
 #include <chrono>
+#include <iterator>
 #include <string>
 
 #include "runtime/worker/blaze_metrics_layout.hpp"
@@ -11,6 +12,27 @@
 namespace tt::worker {
 
 namespace {
+
+// Maps each exposed event series (the `event` label) to its scratch index.
+// Order must match WorkerGauges::events. Append-only, like the scratch layout.
+struct BlazeEventDef {
+  const char* label;
+  size_t scratchIdx;
+};
+
+constexpr BlazeEventDef BLAZE_EVENTS[] = {
+    {"idle_to_running", sp_pipeline::SCRATCH_EV_IDLE_TO_RUNNING},
+    {"running_to_stop_ack", sp_pipeline::SCRATCH_EV_RUNNING_TO_STOP_ACK},
+    {"deferred_evict_replayed",
+     sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_REPLAYED},
+    {"deferred_submit_latched",
+     sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_LATCHED},
+    {"deferred_submit_replayed",
+     sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED},
+    {"deferred_submit_superseded",
+     sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED},
+    {"deferred_evict_latched", sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_LATCHED},
+};
 
 uint64_t nowMs() {
   return static_cast<uint64_t>(
@@ -47,6 +69,13 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
              .Name("tt_worker_active_requests")
              .Help("Number of requests currently in the worker pipeline")
              .Register(registry);
+    events_family_ =
+        &prometheus::BuildGauge()
+             .Name("tt_worker_blaze_events")
+             .Help(
+                 "Cumulative count of BlazeRunner slot state transitions and "
+                 "defer-path events since the worker last (re)started")
+             .Register(registry);
   }
 
   const std::string idStr = std::to_string(workerId);
@@ -55,6 +84,11 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
   g.step_age = &step_age_family_->Add({{"worker_id", idStr}});
   g.output_age = &output_age_family_->Add({{"worker_id", idStr}});
   g.active_requests = &active_family_->Add({{"worker_id", idStr}});
+  g.events.reserve(std::size(BLAZE_EVENTS));
+  for (const auto& def : BLAZE_EVENTS) {
+    g.events.push_back(
+        &events_family_->Add({{"worker_id", idStr}, {"event", def.label}}));
+  }
   gauges_[workerId] = g;
 }
 
@@ -75,6 +109,11 @@ void SpPipelineWorkerMetricsRenderer::render(const WorkerMetricsShm& shm,
   g.step_age->Set(ageSeconds(stepMs, now));
   g.output_age->Set(ageSeconds(outputMs, now));
   g.active_requests->Set(static_cast<double>(active));
+
+  for (size_t i = 0; i < g.events.size(); ++i) {
+    g.events[i]->Set(
+        static_cast<double>(shm.loadScratch(slot, BLAZE_EVENTS[i].scratchIdx)));
+  }
 }
 
 }  // namespace tt::worker

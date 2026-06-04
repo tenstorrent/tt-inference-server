@@ -1,6 +1,6 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-tt-forge==1.1.0
-torchvision
+--extra-index-url https://download.pytorch.org/whl/cpu
+tt-forge==1.2.0
 
 tabulate
 timm # input preprocessing
