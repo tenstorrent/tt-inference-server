@@ -3,6 +3,7 @@
 
 #include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -28,7 +29,6 @@ BlazeDecodeRunner::BlazeDecodeRunner(
       taskQueue(taskQueue),
       stopQueue(stopQueue),
       slotManager(tt::config::dsMaxUsers()),
-      lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO(
       "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
@@ -301,12 +301,18 @@ inline void BlazeDecodeRunner::handleEvictRequest(
         ipc::helpers::pushToken(
             *resultQueue, droppedTaskId, 0,
             ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+        tt::worker::SingleProcessWorkerMetrics::instance()
+            .incrementSpPipelineEvent(
+                tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_SUPERSEDED);
       }
       TT_LOG_DEBUG(
           "[BlazeDecodeRunner] handleEvictRequest: latching deferredEvict on "
           "slotId={} (waiting for STOP ack)",
           request.slotId);
       slotContext.deferredEvict = std::move(evictRequest);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_EVICT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK:
@@ -456,9 +462,14 @@ inline void BlazeDecodeRunner::handleDeferred(SlotContext& slot) {
       ipc::helpers::pushToken(
           *resultQueue, droppedTaskId, 0,
           ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ABORT, 0, 0);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_SUPERSEDED);
     }
     auto evictReq = std::move(*slot.deferredEvict);
     slot.deferredEvict = std::nullopt;
+    tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+        tt::worker::SpPipelineEvent::DEFERRED_EVICT_REPLAYED);
     handleEvictRequest(tt::domain::ManageMemoryTask{
         .taskId = evictReq.request_id,
         .action = tt::domain::MemoryManagementAction::DEALLOCATE,
@@ -466,6 +477,8 @@ inline void BlazeDecodeRunner::handleDeferred(SlotContext& slot) {
     });
   } else if (slot.deferredContinue) {
     // move clears slot.deferredContinue
+    tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+        tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_REPLAYED);
     handleRequest(std::move(slot.deferredContinue));
   }
 }
@@ -549,11 +562,12 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
   ipc::helpers::pushToken(*resultQueue, taskId, 0, ipc::SharedToken::FLAG_ABORT,
                           0, 0);
   tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+  tt::worker::SingleProcessWorkerMetrics::instance().incrementSpPipelineEvent(
+      tt::worker::SpPipelineEvent::RUNNING_TO_STOP_ACK);
 }
 
 void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
-  lastOutputTime = std::chrono::steady_clock::now();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
   if (slotContext.state != SlotState::RUNNING) {
     if (slotContext.state == SlotState::AWAITING_STOP_ACK ||
@@ -578,6 +592,7 @@ void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
     assert(false && "scheduler output for slot not RUNNING/AWAITING_*_ACK");
     return;
   }
+  slotContext.lastProgressTime = std::chrono::steady_clock::now();
   bool finished = output.is_complete;
   auto taskId = slotContext.taskId.value();
 
@@ -597,23 +612,46 @@ void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
 }
 
 void BlazeDecodeRunner::checkOutputHang() {
-  auto runningCount = slotManager.activeRunningCount();
-  if (runningCount == 0) {
-    lastOutputTime = std::chrono::steady_clock::now();
-    return;
+  auto currentTime = std::chrono::steady_clock::now();
+
+  for (const auto& slot : slotManager.getSlots()) {
+    const char* hangKind = nullptr;
+    switch (slot.state) {
+      case SlotState::RUNNING:
+        hangKind = "no model output (decode/TTFT stall)";
+        break;
+      case SlotState::AWAITING_STOP_ACK:
+        hangKind = "no STOP ack from scheduler";
+        break;
+      case SlotState::AWAITING_EVICT_ACK:
+        hangKind = "no EVICT ack from scheduler";
+        break;
+      case SlotState::FREE:
+      case SlotState::IDLE:
+        continue;
+    }
+
+    auto stalledFor = std::chrono::duration_cast<std::chrono::milliseconds>(
+        currentTime - slot.lastProgressTime);
+    if (stalledFor <= outputHangTimeout) {
+      continue;
+    }
+
+    TT_LOG_CRITICAL(
+        "[BlazeRunner] Hang detected on Slot {} in state {}: {} for {} ms "
+        "(threshold {} ms). Total in-flight generations: {}. "
+        "Self-terminating worker for infrastructure restart.",
+        slot.slotId,                        // Which slot broke?
+        toString(slot.state),               // What was it waiting on?
+        hangKind,                           // Human-readable cause
+        stalledFor.count(),                 // How bad is it?
+        outputHangTimeout.count(),          // What was the limit?
+        slotManager.activeRunningCount());  // Global context
+
+    TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
+                    slotManager.dumpSlotStates());
+    std::abort();
   }
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - lastOutputTime);
-  if (elapsed <= outputHangTimeout) {
-    return;
-  }
-  TT_LOG_CRITICAL(
-      "[BlazeDecodeRunner] Output hang detected: no model output for {} ms "
-      "with {} "
-      "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
-      "infrastructure can restart the server.",
-      elapsed.count(), runningCount, outputHangTimeout.count());
-  std::abort();
 }
 
 void BlazeDecodeRunner::handleRequest(
@@ -641,10 +679,8 @@ void BlazeDecodeRunner::handleRequest(
           request->taskId, slotId, isNew, request->isContinuation(),
           request->getNumPromptTokens(), request->getTokenIds().size(),
           slotManager.activeRunningCount());
-      ds::ISRequest req =
-          isNew ? utils::makeSubmitRequest(slotId, *request)
-                : utils::makeContinueRequest(slotId, *request,
-                                             slotContext.currentPosition);
+      ds::ISRequest req = isNew ? utils::makeSubmitRequest(slotId, *request)
+                                : utils::makeContinueRequest(slotId, *request);
       if (!decodeScheduler->push_request(req)) {
         TT_LOG_DEBUG(
             "[BlazeDecodeRunner] handleRequest: failed to push request, "
@@ -654,14 +690,14 @@ void BlazeDecodeRunner::handleRequest(
         pendingRequests.pendingTask = std::move(request);
         return;
       }
-      if (slotManager.activeRunningCount() == 0) {
-        lastOutputTime = std::chrono::steady_clock::now();
-      }
       utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       tt::worker::SingleProcessWorkerMetrics::instance()
           .incrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::IDLE_TO_RUNNING);
       break;
     }
 
@@ -680,6 +716,9 @@ void BlazeDecodeRunner::handleRequest(
           "on slotId={} (waiting for STOP ack)",
           request->taskId, slotId);
       slotContext.deferredContinue = std::move(request);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .incrementSpPipelineEvent(
+              tt::worker::SpPipelineEvent::DEFERRED_SUBMIT_LATCHED);
       break;
     }
     case SlotState::AWAITING_EVICT_ACK: {

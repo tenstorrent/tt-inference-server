@@ -150,6 +150,8 @@ void DisaggregationService::setupSocketHandlers() {
                                                    message.token_ids.end());
           auto slotId = message.slot_id;
           request.slotId = slotId;
+          request.number_of_decode_skip_tokens =
+              message.number_of_decode_skip_tokens;
 
           // Resolve prefix cache: on HIT sets prefillSlotId and trims prompt.
           resolvePrefillSession(request, message.registration_hashes);
@@ -273,26 +275,70 @@ void DisaggregationService::resolvePrefillSession(
     applyDeltaPrompt(request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
   } else {
+    // Check if there's a candidate slot worth copying from.
+    std::optional<uint32_t> slotToCopyFrom;
+    uint32_t copyMatchedTokens = 0;
+    if (acquired.has_value() && !acquired->candidatesList.empty()) {
+      auto copyCandidate =
+          sessionManager->findASlotToCopyFrom(acquired->candidatesList);
+      if (copyCandidate.has_value()) {
+        uint32_t sourceSlot =
+            sessionManager->getSlotIdBySessionId(copyCandidate->sessionId);
+        if (sourceSlot != tt::domain::INVALID_SLOT_ID) {
+          sessionManager->lockSlot(sourceSlot);
+          slotToCopyFrom = sourceSlot;
+          const size_t firstBlockSize = tt::config::kvCacheFirstBlockSize();
+          const size_t blockSize = tt::config::kvCacheBlockSize();
+          copyMatchedTokens = static_cast<uint32_t>(
+              firstBlockSize +
+              (copyCandidate->matchedBlocks > 1
+                   ? (copyCandidate->matchedBlocks - 1) * blockSize
+                   : 0));
+          TT_LOG_INFO(
+              "[DisaggregationService] Found slot to copy from: slotId={} "
+              "matchedTokens={} for taskId={}",
+              sourceSlot, copyMatchedTokens, request.task_id);
+        }
+      }
+    }
+
     TT_LOG_INFO(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request.task_id, routingHashes.size());
+
+    // If copying, set continuation and kv_position_id on the request.
+    if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
+      request.continuation = true;
+      request.kv_position_id = copyMatchedTokens - 1;
+      applyDeltaPrompt(request, copyMatchedTokens);
+    }
+
     sessionManager->createSession(
         [taskId = request.task_id, infos = std::move(blockInfos),
-         sm = sessionManager](const tt::domain::Session& session) mutable {
+         sm = sessionManager,
+         slotToCopyFrom](const tt::domain::Session& session) mutable {
+          if (slotToCopyFrom.has_value()) {
+            sm->unlockSlot(*slotToCopyFrom);
+          }
           TT_LOG_INFO(
               "[DisaggregationService] New session allocated taskId={} "
               "sessionId={} slotId={}",
               taskId, session.getSessionId(), session.getSlotId());
           sm->registerPrefixHash(session.getSessionId(), infos);
         },
-        [taskId = request.task_id](std::string_view errorMessage) {
+        [taskId = request.task_id, sm = sessionManager,
+         slotToCopyFrom](std::string_view errorMessage) {
+          if (slotToCopyFrom.has_value()) {
+            sm->unlockSlot(*slotToCopyFrom);
+          }
           TT_LOG_WARN(
               "[DisaggregationService] Failed to create session for "
               "taskId={}: {}",
               taskId, errorMessage);
         },
-        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos);
+        /*eventLoop=*/eventLoopThread.getLoop(), blockInfos,
+        /*slotId=*/std::nullopt, slotToCopyFrom);
   }
 }
 
@@ -305,10 +351,14 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    int decodeSkipTokens = request.kv_position_id.has_value()
+                               ? static_cast<int>(*request.kv_position_id + 1)
+                               : 0;
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request));
+        slotId, tt::utils::mapper::mapSamplingParams(request),
+        decodeSkipTokens);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

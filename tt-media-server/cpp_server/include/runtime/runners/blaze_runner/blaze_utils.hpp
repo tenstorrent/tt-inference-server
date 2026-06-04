@@ -75,16 +75,13 @@ inline sch::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline sch::ISRequest makeContinueRequest(uint32_t slotId,
-                                          const tt::domain::llm::Sequence& seq,
-                                          uint32_t currentPosition) {
+                                          const tt::domain::llm::Sequence& seq) {
   sch::ISRequest req{};
   req.type = ds::RequestType::CONTINUE;
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   if (seq.getKVPositionId().has_value()) {  // override position id
     req.position_id = *seq.getKVPositionId();
-  } else {
-    req.position_id = currentPosition;
   }
   return req;
 }
@@ -141,7 +138,7 @@ inline SpecDelta computeAndLogSpecDelta(ds::DecodeScheduler& sched,
 
 namespace pl = tt_llm_engine::pipeline;
 
-pl::WireFormat wireFormatFromString(const std::string& s) {
+inline pl::WireFormat wireFormatFromString(const std::string& s) {
   static const std::unordered_map<std::string, pl::WireFormat> formats = {
       {"deepseek", pl::WireFormat::DEEPSEEK},
       {"loopback", pl::WireFormat::LOOPBACK},
@@ -155,7 +152,7 @@ pl::WireFormat wireFormatFromString(const std::string& s) {
   throw std::runtime_error("Invalid wire format: " + s);
 }
 
-inline pl::PipelineConfig makePipelineConfig(
+inline pl::PipelineConfig makeDecodePipelineConfig(
     const tt::config::LLMConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:

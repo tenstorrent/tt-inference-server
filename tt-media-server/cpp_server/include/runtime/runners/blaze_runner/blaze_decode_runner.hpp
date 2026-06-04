@@ -71,7 +71,6 @@ class BlazeDecodeRunner : public IRunner {
   SlotManager slotManager;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
-  std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
 };
 }  // namespace tt::runners::blaze
