@@ -238,13 +238,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -595,6 +594,12 @@ size_t maxContextLength() {
 size_t maxISL() {
   static const size_t cached =
       static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
   return cached;
 }
 
