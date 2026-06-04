@@ -1182,7 +1182,7 @@ class TTModelRunner:
             req_ids=self.input_batch.req_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=sampled_token_ids.tolist(),
-            spec_token_ids=None,
+            # spec_token_ids removed from ModelRunnerOutput in newer vLLM.
             logprobs=None,
             prompt_logprobs_dict=prompt_logprobs_dict,
             pooler_output=[],
