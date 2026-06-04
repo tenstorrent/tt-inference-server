@@ -162,10 +162,6 @@ struct LLMRequest : BaseRequest {
   bool continuation =
       false;  // True if this request continues an existing session
 
-  // Responses API continuation keys. When `previousResponseId`
-  // is set, session resolution looks up the slot under that id instead of the
-  // content-prefix hash. `responseId` is the current turn's id the session is
-  // re-registered under so the next turn's previous_response_id can find it.
   std::optional<std::string> previousResponseId;
   std::optional<std::string> responseId;
 

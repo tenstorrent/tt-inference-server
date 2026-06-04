@@ -266,7 +266,7 @@ std::function<void(const LLMStreamChunk&, bool)>
 LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
                                      domain::Session* session) {
   return [writer = std::move(writer), session](const LLMStreamChunk& chunk,
-                                              bool isFinal) {
+                                               bool isFinal) {
     // Accumulate token for prefix index (always, even if connection closed)
     if (session && !chunk.choices.empty() && chunk.choices[0].token_id) {
       session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));

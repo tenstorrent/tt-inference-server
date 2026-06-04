@@ -147,8 +147,7 @@ class SessionManager {
                           const std::vector<utils::BlockHashInfo>& blockInfos);
 
   /**
-   * Response-id continuation lookup. Parallel to tryAcquireByPrefixHash but
-   * keyed on the OpenAI Responses API `previous_response_id`.
+   * Response-id continuation lookup. 
    * Atomically marks the matching session in-flight and registers the cancel
    * function under the same lock.
    *
@@ -168,7 +167,7 @@ class SessionManager {
    * Route future lookups of `responseId` to this session. If the session was
    * previously registered under a different response id, it is moved to the
    * new id's index entry. The delta for prefill is derived from the prefix
-   * index (block matching), not stored here.
+   * index.
    */
   void registerResponseId(const std::string& sessionId,
                           const std::string& responseId);
@@ -176,8 +175,7 @@ class SessionManager {
   /**
    * Compute how many tokens of `blockInfos` are already cached for `sessionId`
    * in the prefix index. Used after response-id acquisition to derive the
-   * delta without a separate cached-length counter. Returns {matchedTokens,
-   * accumulatedThinkTokens} mirroring the prefix-hash path.
+   * delta. Returns {matchedTokens, accumulatedThinkTokens}.
    */
   std::pair<uint32_t, uint32_t> computeMatchedTokens(
       const std::string& sessionId,
