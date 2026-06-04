@@ -39,11 +39,9 @@ void BlazePrefillRunner::run() {
       std::this_thread::yield();
       continue;
     }
-    const auto& trace =
-        sequence->traceId.empty() ? "none" : sequence->traceId;
-    TT_LOG_DEBUG(
-        "[BlazePrefillRunner] Starting prefill trace_id={} task_id={}", trace,
-        sequence->taskId);
+    const auto& trace = sequence->traceId.empty() ? "none" : sequence->traceId;
+    TT_LOG_DEBUG("[BlazePrefillRunner] Starting prefill trace_id={} task_id={}",
+                 trace, sequence->taskId);
 
     if (sequence->getNumberOfDecodeSkipTokens() > 0) {
       TT_LOG_INFO(
