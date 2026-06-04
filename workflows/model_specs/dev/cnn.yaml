@@ -17,14 +17,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 4
+      max_context: 16384
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.7"
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.35"
+        TT_KV_POOL_GB: "32"
 
 - weights:
     - meta-llama/Llama-3.2-3B
@@ -39,14 +40,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 16
-      max_context: 8192
+      max_concurrency: 4
+      max_context: 16384
       default_impl: false
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "8192"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.7"
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.35"
+        TT_KV_POOL_GB: "32"
 
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
@@ -60,14 +62,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 4
+      max_context: 16384
       default_impl: false
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.6"
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.30"
+        TT_KV_POOL_GB: "32"
 
 - weights:
     - Qwen/Qwen3-8B
@@ -81,14 +84,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 4
+      max_context: 16384
       default_impl: false
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.6"
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.30"
+        TT_KV_POOL_GB: "32"
 
 - weights:
     - tiiuae/Falcon3-7B-Instruct
@@ -102,14 +106,15 @@ templates:
   uses_tensor_model_cache: false
   device_model_specs:
     - device: P150
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 4
+      max_context: 16384
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
-        GPU_MEMORY_UTILIZATION: "0.6"
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.225"
+        TT_KV_POOL_GB: "32"
 
 - weights:
     - resnet-50
