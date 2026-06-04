@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 SDXL_SD35_INFERENCE_STEPS = 20
+Z_IMAGE_TURBO_INFERENCE_STEPS = 9
 IMAGE_FORMAT_FOR_EVALS = "PNG"
 IMAGE_QUALITY_FOR_EVALS = 100
 SDXL_INPAINTING_INFERENCE_STEPS = 20
@@ -388,6 +389,8 @@ async def _run_image_generation_eval_test(
         inference_steps = FLUX_1_SCHNELL_INFERENCE_STEPS
     elif runner in ("tt-sdxl-trace", "tt-sd3.5"):
         inference_steps = SDXL_SD35_INFERENCE_STEPS
+    elif runner == "tt-z-image-turbo":
+        inference_steps = Z_IMAGE_TURBO_INFERENCE_STEPS
     else:
         inference_steps = FLUX_MOTIF_INFERENCE_STEPS
     logger.info(
@@ -402,6 +405,8 @@ async def _run_image_generation_eval_test(
         "num_inference_steps": inference_steps,
         "server_url": ctx.base_url,
     }
+    if runner == "tt-z-image-turbo":
+        request_dict["image_resolution"] = (512, 512)
     eval_test = ImageGenerationEvalsTest(test_config, {"request": request_dict})
     eval_test.service_port = ctx.service_port
 
@@ -436,7 +441,7 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-flux.1-dev": _run_image_generation_eval_test,
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
-    "tt-z-image-turbo": run_z_image_turbo_eval,
+    "tt-z-image-turbo": _run_image_generation_eval_test,
 }
 
 
