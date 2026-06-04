@@ -164,12 +164,19 @@ class SessionManager {
       const std::string& previousResponseId, std::function<void()> cancelFn);
 
   /**
-   * Route future lookups of `responseId` to this session. If the session was
-   * previously registered under a different response id, it is moved to the
-   * new id's index entry. The delta for prefill is derived from the prefix
-   * index.
+   * First-time registration: associate a brand-new session with a response id.
+   * Use when allocating a fresh session that has never been in the
+   * response-id index.
    */
-  void registerResponseId(const std::string& sessionId,
+  void initResponseId(const std::string& sessionId,
+                      const std::string& responseId);
+
+  /**
+   * Re-key an existing response-id index entry. Looks up the session currently
+   * registered under `previousResponseId`, removes that entry, and inserts a
+   * new entry under `responseId`. No-op when either id is empty.
+   */
+  void registerResponseId(const std::string& previousResponseId,
                           const std::string& responseId);
 
   /**

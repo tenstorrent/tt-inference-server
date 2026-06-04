@@ -866,45 +866,62 @@ SessionManager::tryAcquireByResponseId(const std::string& previousResponseId,
   return std::nullopt;
 }
 
-void SessionManager::registerResponseId(const std::string& sessionId,
-                                        const std::string& responseId) {
+void SessionManager::initResponseId(const std::string& sessionId,
+                                     const std::string& responseId) {
   if (responseId.empty()) {
     return;
   }
-  TT_LOG_INFO("[SessionManager] registerResponseId: sessionId={}, id={}",
+  TT_LOG_INFO("[SessionManager] initResponseId: sessionId={}, id={}",
               sessionId, responseId);
 
-  // Point the session at the new id and pick up the old one (for index
-  // cleanup).
-  std::string oldId;
-  bool sessionFound =
-      sessions.modify(sessionId, [&oldId, &responseId](domain::Session& s) {
-        oldId = s.getResponseId();
-        s.setResponseId(responseId);
-      });
+  sessions.modify(sessionId, [&responseId](domain::Session& s) {
+    s.setResponseId(responseId);
+  });
 
-  if (!sessionFound) {
-    TT_LOG_WARN("[SessionManager] registerResponseId: sessionId={} not found",
-                sessionId);
+  bool existed = responseIdIndex.modify(
+      responseId, [&sessionId](std::string& sid) { sid = sessionId; });
+  if (!existed) {
+    responseIdIndex.insert(responseId, sessionId);
+  }
+}
+
+void SessionManager::registerResponseId(const std::string& previousResponseId,
+                                        const std::string& responseId) {
+  if (previousResponseId.empty() || responseId.empty()) {
+    return;
+  }
+  if (previousResponseId == responseId) {
     return;
   }
 
-  // Re-keyed to a different id: drop the entry under the old id.
-  if (!oldId.empty() && oldId != responseId) {
-    removeFromResponseIdIndex(sessionId, oldId);
+  std::string sessionId;
+  bool found = responseIdIndex.modify(
+      previousResponseId,
+      [&sessionId](std::string& sid) { sessionId = sid; });
+
+  if (!found) {
+    TT_LOG_WARN(
+        "[SessionManager] registerResponseId: previousId={} not in index",
+        previousResponseId);
+    return;
   }
 
-  // Upsert the entry.
+  TT_LOG_INFO(
+      "[SessionManager] registerResponseId: re-keying sessionId={} from "
+      "id={} to id={}",
+      sessionId, previousResponseId, responseId);
+
+  responseIdIndex.erase(previousResponseId);
+
   bool existed = responseIdIndex.modify(
       responseId, [&sessionId](std::string& sid) { sid = sessionId; });
   if (!existed) {
     responseIdIndex.insert(responseId, sessionId);
   }
 
-  TT_LOG_INFO(
-      "[SessionManager] registerResponseId: registered sessionId={} under "
-      "id={}",
-      sessionId, responseId);
+  sessions.modify(sessionId, [&responseId](domain::Session& s) {
+    s.setResponseId(responseId);
+  });
 }
 
 std::pair<uint32_t, uint32_t> SessionManager::computeMatchedTokens(

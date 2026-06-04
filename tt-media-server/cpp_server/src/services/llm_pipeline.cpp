@@ -194,7 +194,7 @@ void LLMPipeline::resolveSession(
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
         if (req->responseId.has_value()) {
-          sessionManager_->registerResponseId(acquired->sessionId,
+          sessionManager_->registerResponseId(*req->previousResponseId,
                                               *req->responseId);
         }
         info.validSessionFound = true;
@@ -350,7 +350,7 @@ void LLMPipeline::resolveSession(
         // Register under this turn's response id (when present) so the
         // next request's previous_response_id resolves to this session/slot.
         if (req->responseId.has_value()) {
-          mgr->registerResponseId(session.getSessionId(), *req->responseId);
+          mgr->initResponseId(session.getSessionId(), *req->responseId);
         }
 
         // If we copied from a slot, mark as continuation with kv_position_id.
