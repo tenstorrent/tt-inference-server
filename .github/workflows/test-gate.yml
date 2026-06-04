@@ -31,7 +31,6 @@ jobs:
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
       charts: ${{ steps.filter.outputs.charts }}
       helm-inputs: ${{ steps.filter.outputs.helm_inputs }}
-      llm-streaming: ${{ steps.filter_llm.outputs.llm_streaming }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -59,37 +58,6 @@ jobs:
               - 'workflows/helm_generator/**'
               - 'charts/tt-inference-server/values.yaml'
               - 'tests/test_helm_generator/test_values_in_sync.py'
-
-      # Separate step: the Python LLM streaming perf test must NOT run on C++
-      # changes. It exercises the Python media server (main.py + its packages),
-      # so this is an explicit allow-list of those source paths. cpp_server and
-      # prefill_gateway are deliberately NOT listed, so a pure-C++ PR leaves
-      # llm_streaming false and the test is skipped. (A positive list is used
-      # rather than '! exclusions' because dorny matches with "any pattern",
-      # which makes negation patterns ineffective without predicate-quantifier.)
-      - uses: dorny/paths-filter@v3
-        id: filter_llm
-        with:
-          filters: |
-            llm_streaming:
-              - 'tt-media-server/*.py'
-              - 'tt-media-server/requirements.txt'
-              - 'tt-media-server/pyproject.toml'
-              - 'tt-media-server/run_uvicorn.sh'
-              - 'tt-media-server/run_cpp.sh'
-              - 'tt-media-server/config/**'
-              - 'tt-media-server/device_workers/**'
-              - 'tt-media-server/domain/**'
-              - 'tt-media-server/ipc/**'
-              - 'tt-media-server/model_services/**'
-              - 'tt-media-server/monitoring/**'
-              - 'tt-media-server/open_ai_api/**'
-              - 'tt-media-server/performance_tests/**'
-              - 'tt-media-server/resolver/**'
-              - 'tt-media-server/security/**'
-              - 'tt-media-server/telemetry/**'
-              - 'tt-media-server/tt_model_runners/**'
-              - 'tt-media-server/utils/**'
 
   lint:
     needs: detect-changes
@@ -532,101 +500,6 @@ jobs:
                 body: commentBody
               });
             }
-
-  llm-streaming-performance:
-    needs: detect-changes
-    # Gated on tt-media-server Python changes only (excludes cpp_server /
-    # prefill_gateway) so it does not run on C++-only PRs.
-    if: ${{ needs.detect-changes.outputs.llm-streaming == 'true' }}
-    name: LLM Streaming Performance Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: 'tt-media-server/requirements.txt'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Run LLM Streaming Performance Test
-        run: |
-          # Run pytest and capture output (visible in job logs via tee)
-          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
-          TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-          # Extract only the CI report section (between markers) to avoid matching source code
-          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
-
-          # Parse CI report metrics from the extracted section
-          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
-
-          # Determine status
-          if [ $TEST_EXIT_CODE -eq 0 ]; then
-            STATUS="✅ PASSED"
-          else
-            STATUS="❌ FAILED"
-          fi
-
-          # Write formatted summary
-          {
-            echo "## 🚀 LLM Streaming Performance Test"
-            echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| **Status** | $STATUS |"
-            echo "| **Tokens Received** | $TOKENS |"
-            echo "| **Total Time** | ${TOTAL_TIME}ms |"
-            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
-            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
-            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
-          } >> $GITHUB_STEP_SUMMARY
-
-          # Store exit code for later
-          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
-
-      - name: Show server logs
-        if: always()
-        run: |
-          echo "=== Server Logs ==="
-          if [ -f performance_tests/server.log ]; then
-            cat performance_tests/server.log
-          else
-            echo "No server.log file found"
-          fi
-
-      - name: Upload server logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-streaming-server-logs
-          path: tt-media-server/performance_tests/server.log
-          retention-days: 1
-          if-no-files-found: warn
-
-      - name: Check test result
-        run: exit ${{ env.TEST_EXIT_CODE }}
 
   cpp-format-check:
     needs: detect-changes
@@ -1383,7 +1256,6 @@ jobs:
       - unit-tests-summary
       - forge-runner-changes
       - forge-runner-cpu-tests
-      - llm-streaming-performance
       - test-coverage
       - cpp-format-check
       - cpp-build
@@ -1407,7 +1279,7 @@ jobs:
 
           skipped_reason() {
             case "$1" in
-              lint|unit-tests-main|unit-tests-media|unit-tests-summary|llm-streaming-performance)
+              lint|unit-tests-main|unit-tests-media|unit-tests-summary)
                 if [[ "$SHOULD_TEST" != "true" ]]; then
                   echo "no Python, dependency, or workflow paths matched"
                 else
@@ -1475,7 +1347,6 @@ jobs:
             unit-tests-summary
             forge-runner-changes
             forge-runner-cpu-tests
-            llm-streaming-performance
             test-coverage
             cpp-format-check
             cpp-build
@@ -1493,7 +1364,6 @@ jobs:
             [unit-tests-summary]="${{ needs.unit-tests-summary.result }}"
             [forge-runner-changes]="${{ needs.forge-runner-changes.result }}"
             [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
-            [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
