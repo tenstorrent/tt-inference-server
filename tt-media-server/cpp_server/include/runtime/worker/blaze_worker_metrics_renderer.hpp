@@ -22,6 +22,7 @@ namespace tt::worker {
  *   - tt_worker_heartbeat_age_seconds
  *   - tt_worker_last_output_age_seconds
  *   - tt_worker_active_requests
+ *   - tt_worker_blaze_events{event="..."}  (cumulative since worker restart)
  *
  * Class is named after the layout it reads (sp_pipeline), not after the
  * runner that writes it, so a future second runner producing the same
@@ -52,6 +53,9 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
     prometheus::Gauge* spec_rejects_total{nullptr};
     prometheus::Gauge* total_acceptance_rate{nullptr};
     std::vector<SlotGauges> slots;
+    // One gauge per BlazeRunner event, parallel to the BLAZE_EVENTS table in
+    // the .cpp (same order).
+    std::vector<prometheus::Gauge*> events;
   };
 
   prometheus::Family<prometheus::Gauge>* alive_family_{nullptr};
@@ -69,6 +73,7 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
       slot_current_output_tokens_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_tpot_seconds_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_acceptance_rate_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* events_family_{nullptr};
 
   std::unordered_map<int, WorkerGauges> gauges_;
 };

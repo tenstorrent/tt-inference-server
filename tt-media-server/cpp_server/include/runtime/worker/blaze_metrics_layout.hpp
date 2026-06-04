@@ -31,7 +31,18 @@ constexpr size_t SCRATCH_TOTAL_PROMPT_TOKENS = 3;
 constexpr size_t SCRATCH_TOTAL_GENERATION_TOKENS = 4;
 constexpr size_t SCRATCH_TOTAL_SPEC_ACCEPTS = 5;
 constexpr size_t SCRATCH_TOTAL_SPEC_REJECTS = 6;
-// Indices 7..31 reserved for future aggregates.
+
+// Cumulative event counters for the BlazeRunner slot state machine. These are
+// monotonic since worker (re)start and let ops see whether the defer/supersede
+// paths — otherwise invisible — actually fire in production.
+constexpr size_t SCRATCH_EV_IDLE_TO_RUNNING = 7;
+constexpr size_t SCRATCH_EV_RUNNING_TO_STOP_ACK = 8;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_REPLAYED = 9;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_LATCHED = 10;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED = 11;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED = 12;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_LATCHED = 13;
+// Indices 14..31 reserved for future aggregates.
 
 // ---------------------------------------------------------------------------
 //  Per-LLM-slot region (starts at index LLM_SLOT_BASE).
@@ -66,6 +77,8 @@ inline size_t llmSlotIdx(uint32_t slotId, size_t field) {
 
 static_assert(SCRATCH_TOTAL_SPEC_REJECTS < LLM_SLOT_BASE,
               "sp_pipeline aggregate indices overlap per-slot region");
+static_assert(SCRATCH_EV_DEFERRED_EVICT_LATCHED < LLM_SLOT_BASE,
+              "sp_pipeline event indices overlap per-slot region");
 static_assert(LLM_SLOT_BASE + MAX_LLM_SLOTS * LLM_SLOT_FIELDS <=
                   WORKER_SCRATCH_U64_COUNT,
               "sp_pipeline per-slot region exceeds scratch capacity");
