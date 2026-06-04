@@ -233,7 +233,7 @@ _RESERVED_WRAPPER_FLAGS = {
 def _vllm_override_cli_args(vllm_override_args) -> List[str]:
     """Render --vllm-override-args (a JSON object string) into vLLM passthrough CLI flags for the docker-server container.
 
-    run_vllm_api_server parses known wrapper args and forwards the rest straight to ``vllm serve`` (parse_known_args). 
+    run_vllm_api_server parses known wrapper args and forwards the rest straight to ``vllm serve`` (parse_known_args).
     Keys that collide with run_vllm_api_server's own wrapper flags are rejected.
 
     Args:
