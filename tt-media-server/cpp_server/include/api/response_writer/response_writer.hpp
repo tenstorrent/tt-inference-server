@@ -64,7 +64,6 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
 
   bool isDone() const { return done.load(); }
 
-
  protected:
   explicit ResponseWriter(ResponseWriterParams params);
 
