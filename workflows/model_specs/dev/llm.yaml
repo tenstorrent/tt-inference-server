@@ -1130,6 +1130,14 @@ templates:
         # collides with the L1 buffer -> all_gather_async output-memcfg FATAL).
         # This flag also enables the 32-row carry the decode rms_allgather needs.
         QWEN36_DECODE_L1_RESIDUAL: "1"
+        # Batch-1 must take the decode-mode final norm + lm_head tail (Path A in
+        # TtTransformer.forward). The generator calls switch_mode("decode") so the
+        # model runs on the decode CCL; without FORCE_SWITCH_DECODE the batch-1
+        # path falls through to the prefill _carry32 tail (tt_distributed_rmsnorm),
+        # which collides with the decode CCL's L1 LAYERNORM buffer -> all_gather_async
+        # output-memcfg FATAL. =1 routes batch-1 onto the unified decode tail (the
+        # combo the perf test / demo use: switch_mode + L1_RESIDUAL + FORCE_SWITCH).
+        QWEN36_FORCE_SWITCH_DECODE: "1"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
