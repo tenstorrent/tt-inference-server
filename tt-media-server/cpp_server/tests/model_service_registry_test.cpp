@@ -10,7 +10,7 @@
 #include "config/types.hpp"
 #include "runtime/runners/media_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 #include "services/service_container.hpp"
 #include "services/service_registry.hpp"
 

@@ -1,0 +1,29 @@
+{
+    "name": "TT-Inference-Server Dev Container",
+    "build": {
+      "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+      "--device=/dev/tenstorrent",
+      "-v", "/dev/shm:/dev/shm",
+      "--ipc=host"
+    ],
+    "mounts": [
+      "source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind",
+      "source=/data/TT_USER,target=/data/TT_USER,type=bind"
+    ],
+    "forwardPorts": [8000, 9000],
+    "containerEnv": {
+      "TT_METAL_HOME": "/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/tt-metal",
+      "LD_LIBRARY_PATH": "/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/tt-metal/build/lib:/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/build-full:${containerEnv:LD_LIBRARY_PATH}"
+    },
+    "postCreateCommand": "cd /data/TT_USER/tt-inference-server/tt-media-server/cpp_server && ./install_dependencies.sh && cd tt-llm-engine && ./setup.sh --all && cd .. && ./build.sh --blaze",
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "ms-vscode.cpptools",
+          "ms-vscode.cmake-tools"
+        ]
+      }
+    }
+  }
