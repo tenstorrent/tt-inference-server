@@ -616,13 +616,15 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.6'
+                value: '0.30'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
   Qwen3-32B:
     vllm:
       galaxy:
@@ -2594,13 +2596,15 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.7'
+                value: '0.35'
               - name: MAX_MODEL_LENGTH
-                value: '8192'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
     defaultEngine: vllm
   Llama-3.2-3B-Instruct:
     vllm:
@@ -2780,13 +2784,15 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.7'
+                value: '0.35'
               - name: MAX_MODEL_LENGTH
-                value: '8192'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
   Llama-3.1-8B:
     vllm:
       n150:
@@ -3593,13 +3599,15 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.6'
+                value: '0.30'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
   Qwen2.5-Coder-32B-Instruct:
     vllm:
       t3k:
@@ -6898,13 +6906,15 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.7'
+                value: '0.35'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
     defaultEngine: forge
   resnet-50:
     forge:
@@ -7445,11 +7455,13 @@ models:
               - name: ARCH_NAME
                 value: blackhole
               - name: GPU_MEMORY_UTILIZATION
-                value: '0.6'
+                value: '0.225'
               - name: MAX_MODEL_LENGTH
-                value: '4096'
+                value: '16384'
               - name: MAX_NUM_SEQS
-                value: '16'
+                value: '4'
               - name: MESH_DEVICE
                 value: P150
+              - name: TT_KV_POOL_GB
+                value: '32'
     defaultEngine: forge
