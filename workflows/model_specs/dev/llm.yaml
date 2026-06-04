@@ -1091,7 +1091,7 @@ templates:
   impl: qwen3_6_galaxy
   version: "0.11.1"  # must be >= run.py floor v0.11.0
   tt_metal_commit: fa021238662
-  vllm_commit: f4b029385  # tenstorrent/vllm main (clone HEAD); platform.py import-deferred for compat
+  vllm_commit: 8f36910  # Llama70B-galaxy pin (plugin-matched era; same Generator base)
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY
@@ -1100,11 +1100,13 @@ templates:
       default_impl: true
       vllm_args:
         trust_remote_code: true
-        # vLLM main ships a native multimodal qwen3_5; ModelConfig resolves it
-        # (setting multimodal_config) BEFORE the plugin's TT prefix is applied.
-        # Pre-set the already-TT-prefixed arch so ModelConfig resolves our
-        # text-only class from the start (text-only serving; no MM processor).
-        hf_overrides: '{"architectures": ["TTQwen3_5ForConditionalGeneration"]}'
+        # vLLM's runner/multimodal checks resolve `architectures` to a NATIVE
+        # vLLM class BEFORE the plugin's TT prefix is applied. qwen3_5 isn't a
+        # native generative arch, so present native Qwen3ForCausalLM (Qwen3.6 is
+        # Qwen3-family text): native => generative + non-multimodal => passes the
+        # `--runner generate` check. The platform then prepends TT ->
+        # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
+        hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   status: EXPERIMENTAL

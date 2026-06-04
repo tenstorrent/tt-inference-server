@@ -102,5 +102,22 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Qwen3.6-27B (galaxy v2) serves under the native Qwen3ForCausalLM arch
+    # (via hf_overrides) so vLLM's runner check sees a native generative model;
+    # the platform prepends TT, so map TTQwen3ForCausalLM -> our qwen3.6 class.
+    # NOTE: this intentionally shadows the Qwen3-Embedding TTQwen3ForCausalLM
+    # *fallback* above (embedding still resolves via its primary TTQwen3Model).
+    # Registered last so it wins for a qwen3.6 server.
+    try:
+        ModelRegistry.register_model(
+            "TTQwen3ForCausalLM",
+            "models.demos.qwen3_6_galaxy_v2.tt.generator_vllm:Qwen3_5ForConditionalGeneration",
+        )
+        print("Registered TT Qwen3.6-27B under TTQwen3ForCausalLM")
+    except Exception as e:
+        import logging
+
+        logging.warning(f"Failed to register TTQwen3ForCausalLM (Qwen3.6): {e}")
+
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")

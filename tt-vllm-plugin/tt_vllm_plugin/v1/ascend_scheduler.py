@@ -14,7 +14,10 @@ from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from vllm.utils import cdiv
+try:
+    from vllm.utils.math_utils import cdiv
+except ImportError:  # older vLLM
+    from vllm.utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs

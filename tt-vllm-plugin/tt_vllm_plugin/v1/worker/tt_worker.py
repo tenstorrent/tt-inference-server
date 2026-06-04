@@ -9,7 +9,11 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+try:
+    # vLLM moved this out of the vllm.utils package root into torch_utils.
+    from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
+except ImportError:  # older vLLM
+    from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase

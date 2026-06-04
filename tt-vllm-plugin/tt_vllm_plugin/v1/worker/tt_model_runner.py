@@ -12,7 +12,11 @@ from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.multimodal.inputs import MultiModalKwargs
 from vllm.sequence import IntermediateTensors
-from vllm.utils import LayerBlockType, cdiv
+try:
+    # vLLM relocated these out of the vllm.utils package root.
+    from vllm.utils.math_utils import cdiv
+except ImportError:  # older vLLM
+    from vllm.utils import cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
 from vllm.v1.outputs import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -163,8 +167,9 @@ class TTModelRunner:
             kv_cache_spec.head_size,
         )
         dtype = kv_cache_spec.dtype
+        # vLLM changed LayerBlockType from an Enum to a Literal; pass the string.
         num_layers = model_config.get_num_layers_by_block_type(
-            self.parallel_config, LayerBlockType.attention
+            self.parallel_config, "attention"
         )
 
         # Allocate KV cache tensors.

@@ -45,6 +45,15 @@ class Qwen3_5Config(PretrainedConfig):
             if key in text_config and key not in kwargs:
                 kwargs[key] = text_config[key]
 
+        # Drop the nested sub-config dicts. If `text_config` stayed set,
+        # PretrainedConfig.get_text_config() would return that raw dict and
+        # vLLM (patch_rope_parameters, etc.) would fail trying to set
+        # attributes on a dict. With it removed, get_text_config() returns this
+        # top-level config (which carries the promoted text fields). Text-only
+        # serving, so vision_config is dropped too (keeps is_multimodal off).
+        kwargs.pop("text_config", None)
+        kwargs.pop("vision_config", None)
+
         super().__init__(**kwargs)
 
         # Ensure the conditional-generation arch name is set so that

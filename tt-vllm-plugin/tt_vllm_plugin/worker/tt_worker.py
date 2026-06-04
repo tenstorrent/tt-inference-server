@@ -293,6 +293,7 @@ def get_mesh_grid(dp_rank=0):
         "T3K": (1, 8),
         "P150x8": (1, 8),
         "TG": (8, 4),
+        "BH-Galaxy": (8, 4),  # BH galaxy: 32x P150, 8x4 mesh (matches qwen3.6 v2)
     }
     mesh_device_env = os.environ.get("MESH_DEVICE")
     if mesh_device_env is not None:
