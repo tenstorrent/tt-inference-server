@@ -494,8 +494,8 @@ class TestHostSetupIntegration:
             host_volume=host_volume,
         )
 
-        # Should raise assertion error due to insufficient disk space
-        with pytest.raises(AssertionError, match="Insufficient disk space"):
+        # Should raise due to insufficient disk space
+        with pytest.raises(ValueError, match="disk space"):
             manager.setup_model_environment()
 
     def test_hf_token_validation_failure(
@@ -519,8 +519,8 @@ class TestHostSetupIntegration:
             hf_token="invalid_token",
         )
 
-        # Should raise assertion error due to invalid token
-        with pytest.raises(AssertionError, match="HF_TOKEN validation failed"):
+        # Should raise due to invalid token
+        with pytest.raises(ValueError, match="HF_TOKEN validation"):
             manager.setup_model_environment()
 
 
@@ -635,8 +635,9 @@ class TestMainWorkflowIntegration:
         ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            with pytest.raises(RuntimeError, match="validation failed"):
+            with pytest.raises(SystemExit) as exc_info:
                 main()
+            assert exc_info.value.code == 1
 
         assert not mock_run_workflows.called
 
@@ -661,8 +662,9 @@ class TestMainWorkflowIntegration:
         ), patch("run.run_workflows") as mock_run_workflows, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            with pytest.raises(RuntimeError, match="host setup failed"):
+            with pytest.raises(SystemExit) as exc_info:
                 main()
+            assert exc_info.value.code == 1
 
         assert not mock_run_workflows.called
 
