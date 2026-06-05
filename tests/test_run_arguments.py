@@ -1034,7 +1034,10 @@ class TestOverrideArgsIntegration:
 
 
 class TestMediaServerDockerEnvVars:
-    def test_single_runner_sdxl_uses_cpp_server(self):
+    # REGRESSION TEST branch: _is_cpp_media_spec() is forced False, so SDXL
+    # routes to the old python uvicorn media-server (MODEL+DEVICE env, no
+    # SERVER_MODE=cpp) instead of cpp_server.
+    def test_single_runner_sdxl_uses_python_server(self):
         model_spec, _, _ = get_runtime_model_spec(
             model="stable-diffusion-xl-base-1.0",
             device="n150",
@@ -1042,13 +1045,12 @@ class TestMediaServerDockerEnvVars:
 
         env_vars = get_media_server_docker_env_vars(model_spec)
 
-        assert env_vars["SERVER_MODE"] == "cpp"
-        assert env_vars["MODEL_SERVICE"] == "image"
-        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
-        assert env_vars["DEVICE_IDS"] == "(0)"
+        assert "SERVER_MODE" not in env_vars
+        assert env_vars["MODEL"] == "stable-diffusion-xl-base-1.0"
+        assert env_vars["DEVICE"] == "n150"
 
     @pytest.mark.parametrize("device", ["galaxy"])
-    def test_multi_runner_sdxl_uses_cpp_server(self, device):
+    def test_multi_runner_sdxl_uses_python_server(self, device):
         model_spec, _, _ = get_runtime_model_spec(
             model="stable-diffusion-xl-base-1.0",
             device=device,
@@ -1056,10 +1058,9 @@ class TestMediaServerDockerEnvVars:
 
         env_vars = get_media_server_docker_env_vars(model_spec)
 
-        assert env_vars["SERVER_MODE"] == "cpp"
-        assert env_vars["MODEL_SERVICE"] == "image"
-        assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
-        assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
+        assert "SERVER_MODE" not in env_vars
+        assert env_vars["MODEL"] == "stable-diffusion-xl-base-1.0"
+        assert env_vars["DEVICE"] == device
 
 
 class TestSecretsHandling:
