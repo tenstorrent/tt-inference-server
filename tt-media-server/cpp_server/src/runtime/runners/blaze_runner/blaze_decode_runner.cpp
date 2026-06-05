@@ -476,6 +476,7 @@ inline void BlazeDecodeRunner::handleDeferred(SlotContext& slot) {
         .taskId = evictReq.request_id,
         .action = tt::domain::MemoryManagementAction::DEALLOCATE,
         .slotId = evictReq.slot_id,
+        .slotIdToCopyFrom = std::nullopt,
     });
   } else if (slot.deferredContinue) {
     // move clears slot.deferredContinue
@@ -569,7 +570,8 @@ inline void BlazeDecodeRunner::handleStopRequest(uint32_t taskId) {
 }
 
 void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
-  tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+  auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+  metrics.updateOutputHeartbeat();
   auto& slotContext = slotManager.getSlotContext(output.slot_id);
   if (slotContext.state != SlotState::RUNNING) {
     if (slotContext.state == SlotState::AWAITING_STOP_ACK ||
@@ -600,13 +602,14 @@ void BlazeDecodeRunner::handleOutput(const ds::OutputMessage& output) {
 
   slotContext.tokensGenerated++;
   slotContext.currentPosition = output.position_id;
+  metrics.onOutputToken(output.slot_id);
   utils::SpecDelta spec{};
   if (finished) {
     spec = utils::computeAndLogSpecDelta(*decodeScheduler, slotContext, output,
                                          taskId);
+    metrics.onTurnComplete(output.slot_id, spec.accepts, spec.rejects);
     slotManager.setSlotAsIdle(output.slot_id);
-    tt::worker::SingleProcessWorkerMetrics::instance()
-        .decrementActiveRequests();
+    metrics.decrementActiveRequests();
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag,
@@ -695,11 +698,12 @@ void BlazeDecodeRunner::handleRequest(
       utils::initSlotForRun(slotContext, *request, *decodeScheduler);
       slotManager.bindTaskToSlot(request->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
-      tt::worker::SingleProcessWorkerMetrics::instance()
-          .incrementActiveRequests();
-      tt::worker::SingleProcessWorkerMetrics::instance()
-          .incrementSpPipelineEvent(
-              tt::worker::SpPipelineEvent::IDLE_TO_RUNNING);
+      auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+      metrics.incrementActiveRequests();
+      metrics.onTurnStart(slotId,
+                          static_cast<uint32_t>(request->getTokenIds().size()));
+      metrics.incrementSpPipelineEvent(
+          tt::worker::SpPipelineEvent::IDLE_TO_RUNNING);
       break;
     }
 
