@@ -53,8 +53,13 @@ class ZeroOverheadLogger {
   /**
    * Initialize logger with environment variable configuration.
    * This should be called once at application startup.
+   *
+   * @param instanceTag Role shown in every log line in place of the generic
+   *   process name, e.g. "decode", "prefill-worker0". Lets a shared aggregator
+   *   attribute mixed decode/prefill/worker lines to a role without separate
+   *   tee files.
    */
-  static void initialize();
+  static void initialize(std::string instanceTag = "tt-media-server");
 
   /**
    * Get the current log level

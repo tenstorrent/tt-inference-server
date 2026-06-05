@@ -51,9 +51,16 @@ download_hf_file() {
         return 0
     fi
 
-    local wget_args=()
-    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
-        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
+    # Retry transient HuggingFace failures. Anonymous downloads from shared
+    # CI egress IPs (e.g. GitHub-hosted runners) routinely hit HTTP 429 rate
+    # limits; without retries a single 429 fails the whole build. wget treats
+    # 4xx as fatal by default, so --retry-on-http-error is required to retry
+    # 429. Sending the token (when present) for every request also raises the
+    # rate limit for public repos, not just gated ones.
+    local wget_args=(--tries=5 --waitretry=10 --retry-connrefused
+                     --retry-on-http-error=429,500,502,503,504)
+    if [ -n "${HF_TOKEN_RESOLVED}" ]; then
+        wget_args+=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
     fi
 
     if wget -q "${wget_args[@]}" -O "${dest}" "${url}" 2>&1; then

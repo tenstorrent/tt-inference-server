@@ -10,6 +10,16 @@ inputs:
     description: Whether to configure and initialize the private tt-llm-engine submodule.
     required: false
     default: "true"
+  ccache-key-suffix:
+    description: >-
+      Per-job suffix for the ccache cache key. Every C++ job must pass a
+      distinct value (e.g. "server", "gateway") so its ccache persists on its
+      own key. Previously all jobs shared one immutable cpp-deps-* key, so the
+      first job to finish (prefill-gateway, ~4 min) won the save race and only
+      its tiny ccache survived -- cpp-build's full ccache hit "cache already
+      exists" and was discarded, leaving every build cold.
+    required: false
+    default: shared
 
 runs:
   using: composite
@@ -24,16 +34,30 @@ runs:
       shell: bash
       run: git -c url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf="https://github.com/" submodule update --init tt-media-server/cpp_server/tt-llm-engine
 
-    - name: Cache C++ dependency sources
-      uses: actions/cache@v4
+    # Per-job key (like ccache below): the gateway job doesn't build the
+    # tokenizers-cpp Rust crates, so a shared key let it win the save race and
+    # persist a thin registry, starving the cpp_server jobs of their crates.
+    - name: Cache Cargo registry
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          tt-media-server/.cache/ccache
-        key: cpp-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
+        key: cpp-cargo-${{ inputs.ccache-key-suffix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tt-media-server/cpp_server/CMakeLists.txt', 'tt-media-server/prefill_gateway/CMakeLists.txt', 'tt-media-server/cpp_server/build.sh') }}
         restore-keys: |
-          cpp-deps-${{ runner.os }}-${{ runner.arch }}-
+          cpp-cargo-${{ inputs.ccache-key-suffix }}-${{ runner.os }}-${{ runner.arch }}-
+
+    # ccache uses a PER-JOB key (ccache-key-suffix) stamped with github.sha so
+    # each run saves a fresh, fuller cache; the prefix restore-key warms the
+    # next run. Replaces the old single cpp-deps-* key whose immutable-key save
+    # race let the smallest job persist a near-empty ccache -> cold builds.
+    - name: Restore ccache
+      uses: actions/cache@v5
+      with:
+        path: tt-media-server/.cache/ccache
+        key: cpp-ccache-${{ inputs.ccache-key-suffix }}-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+        restore-keys: |
+          cpp-ccache-${{ inputs.ccache-key-suffix }}-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install C++ build dependencies
       shell: bash

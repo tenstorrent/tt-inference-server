@@ -212,6 +212,13 @@ class FakeDecode {
           assignments_.push_back(msg);
           cv_.notify_all();
         });
+    sm_.registerHandler<tt::sockets::PrefillHealthStatusMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_STATUS,
+        [this](const tt::sockets::PrefillHealthStatusMessage& msg) {
+          std::lock_guard<std::mutex> lock(mutex_);
+          healthStatuses_.push_back(msg);
+          cv_.notify_all();
+        });
   }
 
   ~FakeDecode() { sm_.stop(); }
@@ -238,6 +245,11 @@ class FakeDecode {
     sm_.sendObject(tt::sockets::tags::CANCEL_PREFILL, cancel);
   }
 
+  void sendHealthRequest() {
+    sm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+                   tt::sockets::PrefillHealthRequestMessage{});
+  }
+
   bool isConnected() const { return sm_.isConnected(); }
 
   size_t resultCount() {
@@ -256,6 +268,10 @@ class FakeDecode {
     std::lock_guard<std::mutex> lock(mutex_);
     return assignments_;
   }
+  std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return healthStatuses_;
+  }
 
  private:
   tt::sockets::SocketManager sm_;
@@ -263,6 +279,7 @@ class FakeDecode {
   std::condition_variable cv_;
   std::vector<tt::sockets::PrefillResultMessage> results_;
   std::vector<tt::sockets::PrefillAssignmentMessage> assignments_;
+  std::vector<tt::sockets::PrefillHealthStatusMessage> healthStatuses_;
 };
 
 // Real-sockets gateway wired the same way as main.cpp.
@@ -346,6 +363,16 @@ class GatewayHarness {
         tt::sockets::tags::CANCEL_PREFILL,
         [this](const tt::sockets::CancelPrefillMessage& msg) {
           dispatcher_->onPrefillCancel(msg);
+        });
+    decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+        [this](const tt::sockets::PrefillHealthRequestMessage&) {
+          const auto health = buildGatewayHealthStatus(registry_, "tcp",
+                                                       decodeSm_.isConnected());
+          tt::sockets::PrefillHealthStatusMessage response;
+          response.ready = health.ready;
+          decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                               response);
         });
   }
 
@@ -550,6 +577,16 @@ class ZmqRouterGatewayHarness {
         [this](const tt::sockets::CancelPrefillMessage& msg) {
           dispatcher_->onPrefillCancel(msg);
         });
+    decodeSm_.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+        tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+        [this](const tt::sockets::PrefillHealthRequestMessage&) {
+          const auto health = buildGatewayHealthStatus(registry_, "zmq",
+                                                       decodeSm_.isConnected());
+          tt::sockets::PrefillHealthStatusMessage response;
+          response.ready = health.ready;
+          decodeSm_.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                               response);
+        });
   }
 
   ~ZmqRouterGatewayHarness() {
@@ -644,6 +681,16 @@ TEST_F(GatewayE2ETest, RequestIsRoutedAndResultFlowsBack) {
   uint32_t total =
       prefillA_->receivedTaskCount() + prefillB_->receivedTaskCount();
   EXPECT_EQ(total, 1u);
+}
+
+TEST_F(GatewayE2ETest, HealthProbeReportsReadyPrefills) {
+  decode_->sendHealthRequest();
+
+  ASSERT_TRUE(waitFor([&] { return !decode_->healthStatuses().empty(); }))
+      << "Decode should receive gateway prefill health status";
+  const auto statuses = decode_->healthStatuses();
+  ASSERT_EQ(statuses.size(), 1u);
+  EXPECT_TRUE(statuses[0].ready);
 }
 
 TEST_F(GatewayE2ETest, RequestForwardsAllRegistrationHashesToPrefill) {
