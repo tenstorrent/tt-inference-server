@@ -115,7 +115,7 @@ def _raise_local_server_storage_permission_error(path: Path, error: PermissionEr
     host_uid = os.getuid() if hasattr(os, "getuid") else "unknown"
     uid_suffix = f" (uid={host_uid})" if isinstance(host_uid, int) else ""
     chown_command = f"sudo chown -R $(id -u):$(id -g) {shlex.quote(str(path.parent))}"
-    user_error(
+    raise PermissionError(
         f"ERROR: The local server cannot write to its storage directory.\n"
         f"  Path: {path}\n"
         f"  This script runs as the current host user{uid_suffix}, but the directory\n"
@@ -124,7 +124,7 @@ def _raise_local_server_storage_permission_error(path: Path, error: PermissionEr
         f"  Option A — fix ownership:  {chown_command}\n"
         f"  Option B — remove the stale directory and rerun: rm -rf {path.parent}\n"
         "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
-    )
+    ) from error
 
 
 def ensure_local_server_storage_paths(

@@ -439,7 +439,7 @@ class TestRunLocalServer:
         assert env["MODEL_WEIGHTS_DIR"] == str(weights_dir.resolve())
 
     def test_build_local_server_env_reports_host_user_permission_mismatch(
-        self, tmp_path, capsys
+        self, tmp_path
     ):
         repo_root = tmp_path / "repo"
         entrypoint = repo_root / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
@@ -469,7 +469,10 @@ class TestRunLocalServer:
             "workflows.run_local_server.ensure_readwriteable_dir",
             side_effect=fail_on_logs,
         ):
-            with pytest.raises(SystemExit):
+            with pytest.raises(
+                PermissionError,
+                match="current host user",
+            ) as exc_info:
                 build_local_server_env(
                     self._make_model_spec(),
                     runtime_config,
@@ -478,9 +481,8 @@ class TestRunLocalServer:
                     repo_root=repo_root,
                 )
 
-        err = capsys.readouterr().err
-        assert "owned by a different user" in err
-        assert "sudo chown -R $(id -u):$(id -g)" in err
+        assert "owned by a different user" in str(exc_info.value)
+        assert "sudo chown -R $(id -u):$(id -g)" in str(exc_info.value)
 
     def test_format_env_exports_only_logs_overrides(self):
         env = {

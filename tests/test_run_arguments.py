@@ -684,7 +684,7 @@ class TestRuntimeValidation:
             {mock_model_spec.model_id: mock_model_spec},
         ):
             # Should fail without docker or local server
-            with pytest.raises(SystemExit):
+            with pytest.raises(ValueError, match="--docker-server"):
                 validate_runtime_args(mock_model_spec, mock_runtime_config)
 
             # Should pass with docker server
@@ -705,7 +705,7 @@ class TestRuntimeValidation:
             "workflows.validate_setup.MODEL_SPECS",
             {mock_model_spec.model_id: mock_model_spec},
         ):
-            with pytest.raises(SystemExit):
+            with pytest.raises(ValueError, match="cannot be used at the same time"):
                 validate_runtime_args(mock_model_spec, mock_runtime_config)
 
 

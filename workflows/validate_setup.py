@@ -61,7 +61,7 @@ def _check_image_version_supported(model_spec):
     if parsed < MIN_SUPPORTED_IMAGE_VERSION:
         min_str = ".".join(str(p) for p in MIN_SUPPORTED_IMAGE_VERSION)
         tag = f"v{model_spec.version}"
-        user_error(
+        raise RuntimeError(
             f"ERROR: Docker image v{model_spec.version} is not supported by this version of run.py.\n"
             f"This run.py requires vLLM image v{min_str} or newer (the Docker interface changed in v{min_str}).\n"
             f"\nTo fix this:\n"

@@ -221,7 +221,7 @@ def http_request(
     except urllib.error.HTTPError as e:
         return e.read(), e.getcode(), dict(e.headers)
     except Exception as e:
-        user_error(
+        raise RuntimeError(
             f"ERROR: Could not reach {url} ({type(e).__name__}: {e})\n"
             "A network request to HuggingFace failed before a response was received.\n"
             "\nTo fix this:\n"
@@ -229,7 +229,7 @@ def http_request(
             "  2. Check that https://huggingface.co is reachable from this host\n"
             "  3. If you are behind a proxy, set HTTPS_PROXY and re-run this script\n"
             "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
-        )
+        ) from e
 
 
 class HostSetupManager:

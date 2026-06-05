@@ -10,7 +10,6 @@ import os
 import re
 import shlex
 import subprocess
-import sys
 import tempfile
 import threading
 import uuid
@@ -21,9 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def user_error(message: str) -> None:
-    """Print a plain-English error block and exit with code 1."""
-    print(f"\n{message}\n", file=sys.stderr)
-    raise SystemExit(1)
+    """Raise a plain-English ValueError for user-fixable errors.
+
+    Library functions call this to signal a misconfiguration.  The
+    top-level entry-point (run.py / setup_host.py main()) catches
+    ValueError and either prints it cleanly (default) or re-raises with
+    a full traceback when --debug is set.
+    """
+    raise ValueError(message)
 
 
 # SDXL num prompts limits
