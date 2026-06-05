@@ -144,6 +144,12 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
 
+# tt-metal's C++/pybind SDXL path is built against /opt/venv, so dependencies
+# imported from embedded Python need to exist there as well as in python_env.
+RUN uv pip install --no-cache-dir --python /opt/venv/bin/python3 \
+    "transformers==4.55.0" \
+    "peft==0.18.1"
+
 # Install tt-vllm-plugin
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
