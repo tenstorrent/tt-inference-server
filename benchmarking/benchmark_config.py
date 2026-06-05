@@ -11,7 +11,6 @@ from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
-    InferenceEngine,
     ModelType,
     WorkflowVenvType,
 )
@@ -652,19 +651,6 @@ for model_id, model_spec in MODEL_SPECS.items():
     # Structured-output benchmarks: llms and vlms, can be extended
     structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
     if structured_output_eligible:
-        # xgrammar_bench drives long (~6-8K token) input prompts. On
-        # forge_vllm_plugin the prefill path for those prompts is too slow to
-        # meet the benchmark client's hard ~15s TTFT probe budget (observed
-        # 144.5s on Falcon3-7B-Instruct P150, run 26941582252), so the probe
-        # raises ValueError and the bench step exits non-zero. Skip the
-        # xgrammar_bench rows for forge until upstream xgrammar prefill is
-        # fast enough; json + json-unique rows still run.
-        is_forge = model_spec.inference_engine == InferenceEngine.FORGE.value
-        structured_pairs = [
-            (dataset, ratio)
-            for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
-            if not (is_forge and dataset == "xgrammar_bench")
-        ]
         tasks.append(
             BenchmarkTaskStructuredOutput(
                 param_map={
@@ -677,7 +663,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                             structured_dataset=dataset,
                             structured_output_ratio=ratio,
                         )
-                        for dataset, ratio in structured_pairs
+                        for dataset, ratio in STRUCTURED_OUTPUT_PAIRS
                     ]
                 }
             )
