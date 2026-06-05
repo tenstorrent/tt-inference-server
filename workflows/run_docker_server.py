@@ -78,12 +78,19 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
 
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
-    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
-    return (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
-        and defaults is not None
-    )
+    # REGRESSION TEST: force SDXL back onto the old python uvicorn media-server
+    # (pre-#3391, cpp_server migration 2026-05-15) to A/B the regression seen
+    # between the May 7 and June 2 runs. tt_metal_commit is pinned to
+    # 7463e586f3b5 in image.yaml to match the June 2 run, so only the server
+    # backend differs.
+    # Original body:
+    #   defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
+    #   return (
+    #       model_spec.inference_engine == InferenceEngine.MEDIA.value
+    #       and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
+    #       and defaults is not None
+    #   )
+    return False
 
 
 def _get_cpp_media_server_docker_env_vars(model_spec):
