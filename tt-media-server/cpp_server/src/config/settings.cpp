@@ -541,6 +541,19 @@ std::string prefillServerId() {
   return cached;
 }
 
+std::string logInstanceTag(int workerIndex) {
+  // Role distinguishes the node: LLM_MODE for the LLM service, else the service
+  // name. Worker subprocesses keep the base role and append their index, so a
+  // merged log still separates "decode" vs "prefill" nodes and their
+  // "decode-worker0" / "prefill-worker0" workers.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role;
+}
+
 uint32_t prefillMaxInFlight() {
   return static_cast<uint32_t>(
       envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));
@@ -594,6 +607,12 @@ size_t maxContextLength() {
 size_t maxISL() {
   static const size_t cached =
       static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
   return cached;
 }
 

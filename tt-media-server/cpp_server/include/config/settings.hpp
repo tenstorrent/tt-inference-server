@@ -101,6 +101,17 @@ bool usePrefillGateway();
  * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
 std::string prefillServerId();
 
+/**
+ * Role shown in every log line, e.g. "decode", "prefill", "prefill-worker0".
+ * The role is the LLM_MODE (decode/prefill/regular) for the LLM service or the
+ * service name (image/embedding) otherwise; a forked worker subprocess appends
+ * "-worker<index>" so worker lines are distinguishable from the HTTP node.
+ *
+ * @param workerIndex >=0 for a forked worker subprocess; appends
+ *   "-worker<index>" to the role (e.g. "decode-worker0").
+ */
+std::string logInstanceTag(int workerIndex = -1);
+
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
@@ -152,6 +163,10 @@ size_t maxContextLength();
 /** Max input sequence length (prompt tokens) from MAX_ISL. Default:
  * defaults::MAX_ISL. */
 size_t maxISL();
+
+/** Minimum matched tokens required to justify a slot copy operation.
+ * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
+size_t minTokensToCopy();
 
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
