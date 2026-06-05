@@ -141,7 +141,7 @@ RUN --mount=type=secret,id=github_token \
     && git clone --depth 1 --branch main https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-llm-engine.git ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && cd ${APP_DIR}/server/cpp_server/tt-llm-engine \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh) \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler && ./create_venv.sh --bundle-python) \
     && ./setup.sh --ds-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
@@ -292,10 +292,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-# Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
+# Note: --bundle-python copies the interpreter directly into the venv,
+# so we no longer need to copy /root/.local/share/uv separately.
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
