@@ -4885,7 +4885,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4907,7 +4907,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4931,7 +4931,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -4955,7 +4955,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5117,7 +5117,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5139,7 +5139,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5163,7 +5163,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -5187,7 +5187,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.11.1-bac8b34
+              tag: 0.11.1-7463e586f3b5
             probes:
               liveness:
                 initialDelaySeconds: 2400
