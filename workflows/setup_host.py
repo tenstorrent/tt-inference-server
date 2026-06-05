@@ -548,7 +548,7 @@ class HostSetupManager:
                 "ERROR: JWT_SECRET is empty.\n"
                 "A non-empty secret is required to sign API authentication tokens.\n"
                 "\nTo fix this:\n"
-                "  1. Generate a secret: python3 -c \"import secrets; print(secrets.token_hex(32))\"\n"
+                '  1. Generate a secret: python3 -c "import secrets; print(secrets.token_hex(32))"\n'
                 "  2. Run: export JWT_SECRET=<the generated secret>\n"
                 "  3. Re-run this script\n"
                 "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
@@ -637,7 +637,9 @@ class HostSetupManager:
                 f"ERROR: Model '{self.model_spec.model_name}' uses repacked weights, which cannot be downloaded directly from HuggingFace.\n"
                 "Repacked weight formats must be prepared locally before use.\n"
                 "\nTo fix this:\n"
-                "  1. Download the raw weights manually: huggingface-cli download " + self.model_spec.hf_weights_repo + "\n"
+                "  1. Download the raw weights manually: huggingface-cli download "
+                + self.model_spec.hf_weights_repo
+                + "\n"
                 "  2. Repack them following the instructions in vllm-tt-metal/README.md\n"
                 "  3. Use --host-weights-dir to point at the repacked directory\n"
                 "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
@@ -737,7 +739,9 @@ class HostSetupManager:
                 f"ERROR: The local weights directory does not exist: {self.setup_config.host_model_weights_mount_dir}\n"
                 "The MODEL_WEIGHTS_DIR path must point to a directory containing model weights.\n"
                 "\nTo fix this:\n"
-                "  1. Check that the path is correct: ls " + str(self.setup_config.host_model_weights_mount_dir) + "\n"
+                "  1. Check that the path is correct: ls "
+                + str(self.setup_config.host_model_weights_mount_dir)
+                + "\n"
                 "  2. Update MODEL_WEIGHTS_DIR or --host-weights-dir to the correct path\n"
                 "  3. Re-run this script\n"
                 "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"

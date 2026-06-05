@@ -258,7 +258,7 @@ def validate_runtime_args(model_spec, runtime_config):
             "This setting was deprecated and has been replaced by --vllm-override-args.\n"
             "\nTo fix this:\n"
             "  1. Unset the variable: unset ENABLE_AUTO_TOOL_CHOICE\n"
-            '  2. Pass the setting via the CLI flag instead:\n'
+            "  2. Pass the setting via the CLI flag instead:\n"
             '     --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\'\n'
             "  3. Re-run this script\n"
             "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"

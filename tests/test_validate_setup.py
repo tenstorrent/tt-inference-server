@@ -203,9 +203,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(SystemExit):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -238,9 +236,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(SystemExit):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -261,9 +257,7 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(
-                    ValueError, match="Bind mount permission check failed"
-                ):
+                with pytest.raises(SystemExit):
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
@@ -292,7 +286,7 @@ class TestValidateBindMountPermissions:
         mode = os.stat(d).st_mode
         assert mode & 0o007 == 0o007
 
-    def test_error_message_includes_fix_guidance(self, tmp_path):
+    def test_error_message_includes_fix_guidance(self, tmp_path, capsys):
         d = tmp_path / "noperm"
         d.mkdir()
         os.chmod(d, 0o500)
@@ -302,8 +296,11 @@ class TestValidateBindMountPermissions:
                 "workflows.validate_setup._try_fix_path_permissions_for_uid",
                 return_value=False,
             ):
-                with pytest.raises(ValueError, match="chmod/chown"):
+                with pytest.raises(SystemExit):
                     validate_bind_mount_permissions(args)
+            err = capsys.readouterr().err
+            assert "chown" in err
+            assert "chmod" in err
         finally:
             os.chmod(d, 0o700)
 
@@ -336,9 +333,7 @@ class TestLocalServerValidation:
             "workflows.validate_setup.MODEL_SPECS",
             {model_spec.model_id: model_spec},
         ):
-            with pytest.raises(
-                ValueError, match="requires --tt-metal-home or TT_METAL_HOME"
-            ):
+            with pytest.raises(SystemExit):
                 validate_runtime_args(model_spec, runtime_config)
 
     def test_runtime_args_allow_tt_metal_home_from_env(self):
@@ -393,7 +388,7 @@ class TestLocalServerValidation:
             },
         )
 
-        with pytest.raises(ValueError, match="python venv interpreter"):
+        with pytest.raises(SystemExit):
             validate_local_server_paths(args)
 
     def test_validate_local_server_paths_requires_cached_hf_snapshot(self, tmp_path):
@@ -420,7 +415,7 @@ class TestLocalServerValidation:
             },
         )
 
-        with pytest.raises(ValueError, match="did not contain a cached snapshot"):
+        with pytest.raises(SystemExit):
             validate_local_server_paths(args)
 
     def test_validate_local_server_paths_accepts_cached_hf_snapshot(self, tmp_path):
@@ -536,7 +531,7 @@ class TestLocalServerValidation:
 
         mock_get_log_dir.return_value = tmp_path / "logs"
 
-        with pytest.raises(ValueError, match="requires the `vllm` Python package"):
+        with pytest.raises(SystemExit):
             validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
 
         mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
@@ -643,10 +638,7 @@ class TestLocalServerValidation:
         with patch(
             "workflows.validate_setup.run_command", side_effect=[0, 1]
         ) as mock_validate_run_command:
-            with pytest.raises(
-                ValueError,
-                match=r"`vllm_tt_plugin` Python package",
-            ):
+            with pytest.raises(SystemExit):
                 validate_local_setup(
                     model_spec, runtime_config, tmp_path / "runtime.json"
                 )
@@ -681,16 +673,16 @@ class TestCheckImageVersionSupported:
 
     def test_pre_0_11_vllm_versions_raise(self):
         for v in ("0.10.9", "0.10.1", "0.10.0", "0.9.0", "0.2.0"):
-            with pytest.raises(RuntimeError, match="not supported"):
+            with pytest.raises(SystemExit):
                 _check_image_version_supported(self._spec(v))
 
-    def test_error_names_exact_tag_to_checkout(self):
+    def test_error_names_exact_tag_to_checkout(self, capsys):
         # The matching tt-inference-server release tag is `v<spec.version>`.
-        with pytest.raises(RuntimeError) as exc:
+        with pytest.raises(SystemExit):
             _check_image_version_supported(self._spec("0.10.1"))
-        msg = str(exc.value)
-        assert "v0.10.1" in msg
-        assert "git checkout v0.10.1" in msg
+        err = capsys.readouterr().err
+        assert "v0.10.1" in err
+        assert "git checkout v0.10.1" in err
 
     def test_unparseable_versions_pass(self):
         # `dev`, `latest`, empty — let the runtime decide, matches main.

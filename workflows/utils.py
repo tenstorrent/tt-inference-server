@@ -25,6 +25,7 @@ def user_error(message: str) -> None:
     print(f"\n{message}\n", file=sys.stderr)
     raise SystemExit(1)
 
+
 # SDXL num prompts limits
 SDXL_DEFAULT_NUM_PROMPTS = 100
 SDXL_LOWER_BOUND_NUM_PROMPTS = 2

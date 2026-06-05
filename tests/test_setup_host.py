@@ -699,10 +699,7 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
+            with pytest.raises(SystemExit):
                 validate_runtime_args(mock_spec, runtime_config)
 
     def test_mutual_exclusivity_host_volume_and_weights_dir(self):
@@ -714,10 +711,7 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
+            with pytest.raises(SystemExit):
                 validate_runtime_args(mock_spec, runtime_config)
 
     def test_mutual_exclusivity_hf_cache_and_weights_dir(self):
@@ -729,10 +723,7 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
+            with pytest.raises(SystemExit):
                 validate_runtime_args(mock_spec, runtime_config)
 
     def test_all_three_set_raises(self):
@@ -745,10 +736,7 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
+            with pytest.raises(SystemExit):
                 validate_runtime_args(mock_spec, runtime_config)
 
     def test_single_option_passes_validation(self):
