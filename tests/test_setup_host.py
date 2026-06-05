@@ -702,6 +702,12 @@ class TestVllmOverrideCliArgs:
             "hermes",
         ]
 
+    def test_snake_case_keys_are_normalized_to_kebab_case(self):
+        assert _vllm_override_cli_args('{"max_model_len": 4096}') == [
+            "--max-model-len",
+            "4096",
+        ]
+
     def test_false_and_null_omitted(self):
         assert _vllm_override_cli_args('{"a": false, "b": null}') == []
 

@@ -258,13 +258,14 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         return []
     cli_args: List[str] = []
     for key, value in overrides.items():
-        if key.replace("_", "-") in _RESERVED_WRAPPER_FLAGS:
+        normalized_key = key.replace("_", "-")
+        if normalized_key in _RESERVED_WRAPPER_FLAGS:
             logger.warning(
                 "Ignoring reserved run_vllm_api_server wrapper flag in "
                 f"--vllm-override-args: {key!r}"
             )
             continue
-        flag = f"--{key}"
+        flag = f"--{normalized_key}"
         if value is None or value is False:
             continue
         if value is True:
