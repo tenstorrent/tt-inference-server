@@ -10,6 +10,7 @@
 #include "domain/llm/llm_response.hpp"
 #include "domain/llm/sampling_params.hpp"
 #include "ipc/interface/result_queue.hpp"
+#include "sockets/socket_messages.hpp"
 #include "utils/id_generator.hpp"
 
 namespace tt::runners::llm_engine {
@@ -65,7 +66,19 @@ TEST(LLMResponseTest, MakeTimeoutErrorChunkUsesTimeoutFinishReason) {
   EXPECT_EQ(chunk.error.value(), "prefill timeout");
 }
 
-TEST(LLMResponseTest, TimeoutTokenFlagIsPreserved) {
+TEST(LLMResponseTest, ErrorReasonMapsToFinishReason) {
+  EXPECT_EQ(finishReasonForError(LLMErrorReason::GENERIC),
+            std::string(GENERIC_ERROR_FINISH_REASON));
+  EXPECT_EQ(finishReasonForError(LLMErrorReason::TIMEOUT),
+            std::string(TIMEOUT_ERROR_FINISH_REASON));
+  EXPECT_TRUE(isErrorFinishReason(std::string(GENERIC_ERROR_FINISH_REASON)));
+  EXPECT_TRUE(isErrorFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)));
+  EXPECT_FALSE(isErrorFinishReason(std::string("stop")));
+  EXPECT_EQ(errorReasonFromFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)),
+            LLMErrorReason::TIMEOUT);
+}
+
+TEST(LLMResponseTest, TimeoutTokenFlagMapsToTimeoutErrorReason) {
   TokenResult result(/*taskId=*/123, /*tokenId=*/0, std::nullopt,
                      /*isError=*/true, /*isTimeoutError=*/true);
   EXPECT_TRUE(result.isError);
@@ -78,6 +91,22 @@ TEST(LLMResponseTest, TimeoutTokenFlagIsPreserved) {
   EXPECT_TRUE(token.isFinal());
   EXPECT_TRUE(token.isError());
   EXPECT_TRUE(token.isTimeout());
+  EXPECT_EQ(tt::ipc::errorReasonFromToken(token), LLMErrorReason::TIMEOUT);
+}
+
+TEST(LLMResponseTest, PrefillTimeoutTextMapsToTimeoutErrorReason) {
+  tt::sockets::PrefillResultMessage result(/*taskId=*/123);
+  result.error = true;
+  result.generated_text = std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT);
+
+  EXPECT_EQ(tt::sockets::errorReasonFromPrefillResult(result),
+            LLMErrorReason::TIMEOUT);
+  EXPECT_EQ(tt::sockets::prefillErrorTextForReason(LLMErrorReason::TIMEOUT,
+                                                   "ignored"),
+            std::string(tt::sockets::PREFILL_TIMEOUT_ERROR_TEXT));
+  EXPECT_EQ(tt::sockets::prefillErrorTextForReason(LLMErrorReason::GENERIC,
+                                                   "prefill_down"),
+            "prefill_down");
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "domain/base_response.hpp"
+#include "domain/llm/llm_error_reason.hpp"
 
 namespace tt::domain::llm {
 
@@ -120,10 +121,11 @@ struct LLMStreamChunk : BaseResponse {
  * and a human-readable message in the chunk-level `error` field.
  */
 inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error,
-                                     std::string finishReason = "error") {
+                                     LLMErrorReason reason =
+                                         LLMErrorReason::GENERIC) {
   LLMStreamChunk chunk(taskId);
   LLMChoice choice;
-  choice.finish_reason = std::move(finishReason);
+  choice.finish_reason = finishReasonForError(reason);
   chunk.choices.push_back(std::move(choice));
   chunk.error = std::move(error);
   return chunk;
@@ -131,7 +133,7 @@ inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error,
 
 inline LLMStreamChunk makeTimeoutErrorChunk(uint32_t taskId,
                                             std::string error = "timeout") {
-  return makeErrorChunk(taskId, std::move(error), "timeout_error");
+  return makeErrorChunk(taskId, std::move(error), LLMErrorReason::TIMEOUT);
 }
 
 /**

@@ -302,12 +302,7 @@ void InterServerService::sendRegistration() {
   msg.max_in_flight = tt::config::prefillMaxInFlight();
 
   bool ok = socket_manager_.sendObject(tags::PREFILL_REGISTRATION, msg);
-  if (ok) {
-    TT_LOG_DEBUG(
-        "[InterServerService] Sent PrefillRegistration: id='{}' "
-        "max_in_flight={}",
-        msg.server_id, msg.max_in_flight);
-  } else {
+  if (!ok) {
     TT_LOG_WARN("[InterServerService] Failed to send PrefillRegistration");
   }
 }

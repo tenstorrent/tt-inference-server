@@ -53,12 +53,14 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            const bool timeout = message.generated_text == "timeout";
-            callback.value()(
-                timeout
-                    ? makeTimeoutErrorChunk(message.task_id, "prefill timeout")
-                    : makeErrorChunk(message.task_id, "prefill error"),
-                /*isFinal=*/true);
+            const auto reason = tt::sockets::errorReasonFromPrefillResult(
+                message);
+            callback.value()(makeErrorChunk(message.task_id,
+                                            isTimeoutError(reason)
+                                                ? "prefill timeout"
+                                                : "prefill error",
+                                            reason),
+                             /*isFinal=*/true);
             return;
           }
 
@@ -174,11 +176,7 @@ void DisaggregationService::setupSocketHandlers() {
                     response.choices.empty()
                         ? std::optional<std::string>{}
                         : response.choices.back().finish_reason;
-                const bool isTimeout = finishReason.has_value() &&
-                                       finishReason.value() == "timeout_error";
-                const bool isError =
-                    isTimeout || (finishReason.has_value() &&
-                                  finishReason.value() == "error");
+                const bool isError = isErrorFinishReason(finishReason);
                 if (isError) {
                   TT_LOG_WARN(
                       "[DisaggregationService] Prefill error for task {}, "
@@ -186,8 +184,10 @@ void DisaggregationService::setupSocketHandlers() {
                       message.task_id);
                   prefillResult.error = true;
                   prefillResult.finished = true;
+                  const auto reason = errorReasonFromFinishReason(finishReason);
                   prefillResult.generated_text =
-                      isTimeout ? "timeout" : response.error.value_or("error");
+                      tt::sockets::prefillErrorTextForReason(
+                          reason, response.error.value_or("error"));
                 } else {
                   prefillResult.remaining_tokens =
                       maxTokens.has_value() ? std::optional<int>(std::max(

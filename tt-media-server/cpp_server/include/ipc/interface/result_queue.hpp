@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <iostream>
 
+#include "domain/llm/llm_error_reason.hpp"
+
 namespace tt::ipc {
 
 struct SharedToken {
@@ -53,6 +55,12 @@ struct SharedToken {
     return token;
   }
 };
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromToken(
+    const SharedToken& token) {
+  return token.isTimeout() ? tt::domain::llm::LLMErrorReason::TIMEOUT
+                           : tt::domain::llm::LLMErrorReason::GENERIC;
+}
 
 /**
  * Abstract interface for a token result queue (worker -> main process).

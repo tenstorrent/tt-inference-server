@@ -9,8 +9,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include "domain/llm/llm_error_reason.hpp"
 #include "domain/sentinel_values.hpp"
 
 namespace tt::sockets {
@@ -173,6 +175,23 @@ struct PrefillResultMessage {
     return msg;
   }
 };
+
+inline constexpr std::string_view PREFILL_TIMEOUT_ERROR_TEXT = "timeout";
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromPrefillResult(
+    const PrefillResultMessage& message) {
+  return message.error && message.generated_text == PREFILL_TIMEOUT_ERROR_TEXT
+             ? tt::domain::llm::LLMErrorReason::TIMEOUT
+             : tt::domain::llm::LLMErrorReason::GENERIC;
+}
+
+inline std::string prefillErrorTextForReason(
+    tt::domain::llm::LLMErrorReason reason, std::string genericError) {
+  if (tt::domain::llm::isTimeoutError(reason)) {
+    return std::string(PREFILL_TIMEOUT_ERROR_TEXT);
+  }
+  return genericError.empty() ? "error" : std::move(genericError);
+}
 
 /**
  * @brief Health check message
