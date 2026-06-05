@@ -32,7 +32,7 @@ WORKDIR /app
 # Install ai-dynamo
 RUN uv venv .venv --python 3.12 \
     && . .venv/bin/activate \
-    && uv pip install ai-dynamo
+    && uv pip install "ai-dynamo==1.2.0.post1"
 
 # Patch owned_by: "nvidia" -> "TT Inc" in the compiled binary
 COPY dynamo_frontend/patch_owned_by.sh /app/patch_owned_by.sh
