@@ -1117,7 +1117,7 @@ templates:
         # an L1/CB clash under trace-capture (V2-9 blocker). So this is eager
         # prefill + trace decode, matching text_demo_qwen36. (Eager decode produced
         # garbage past token 1 — it was never multi-step-verified in v2.)
-        trace_mode: true
+        trace_mode: false
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
         fabric_config: FABRIC_1D_RING
