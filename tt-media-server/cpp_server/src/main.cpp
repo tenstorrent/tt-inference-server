@@ -89,7 +89,8 @@ int main(int argc, char* argv[]) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
     tracy_config::tracyStartupWorker(workerId);
-    tt::utils::ZeroOverheadLogger::initialize();
+    tt::utils::ZeroOverheadLogger::initialize(
+        tt::config::logInstanceTag(workerId));
 
     tt::worker::SingleProcessWorkerMetrics::instance().initialize(
         workerId, metricsLayoutFromConfig());
@@ -146,7 +147,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Initialize logger first
-  tt::utils::ZeroOverheadLogger::initialize();
+  tt::utils::ZeroOverheadLogger::initialize(tt::config::logInstanceTag());
 
   // Setup signal handlers
   std::signal(SIGINT, signalHandler);
@@ -321,7 +322,8 @@ int main(int argc, char* argv[]) {
       .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
-  TT_LOG_INFO("[Main] Starting Drogon HTTP server at http://{}:{}", host, port);
+  TT_LOG_INFO("[Main] Starting Drogon HTTP server, listening at http://{}:{}",
+              host, port);
 
   TT_LOG_INFO("[Main] Endpoints for MODEL_SERVICE='{}':",
               tt::config::toString(modelSvc));

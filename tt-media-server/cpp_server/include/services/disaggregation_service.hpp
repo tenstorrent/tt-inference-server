@@ -46,10 +46,14 @@ class DisaggregationService {
                               const StreamCallback& callback);
   void abortRequest(uint32_t taskId);
 
-  /// Resolve a prefill-side session via prefix-cache lookup. On HIT, sets
-  /// request.prefillSlotId and trims the prompt. No async allocation needed.
-  void resolvePrefillSession(LLMRequest& request,
-                             const std::vector<uint64_t>& routingHashes);
+  /// Resolve a prefill-side session via prefix-cache lookup.
+  /// On HIT, sets request.prefillSlotId and trims the prompt, then calls
+  /// onResolved. On MISS, allocates a new session asynchronously and calls
+  /// onResolved once allocated (or onError on failure).
+  void resolvePrefillSession(std::shared_ptr<LLMRequest> request,
+                             const std::vector<uint64_t>& routingHashes,
+                             std::function<void()> onResolved,
+                             std::function<void(std::string_view)> onError);
 
   void setSessionManager(std::shared_ptr<SessionManager> sm) {
     sessionManager = std::move(sm);

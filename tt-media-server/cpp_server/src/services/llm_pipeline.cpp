@@ -260,7 +260,8 @@ void LLMPipeline::resolveSession(
                   const std::string& sessionId,
                   const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);
-              });
+              },
+              /*parentThinkCount=*/acquired->accumulatedThinkTokens);
         }
         sessionManager_->registerPrefixHash(acquired->sessionId,
                                             routingInfo.blocks);
@@ -352,6 +353,11 @@ void LLMPipeline::resolveSession(
           mgr->initResponseId(session.getSessionId(), *req->responseId);
         }
 
+        std::vector<int> fullPrompt;
+        if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
+          fullPrompt = *p;
+        }
+
         // If we copied from a slot, mark as continuation with kv_position_id.
         if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
           req->continuation = true;
@@ -362,9 +368,9 @@ void LLMPipeline::resolveSession(
         }
 
         mgr->registerPrefixHash(session.getSessionId(), routingInfo.blocks);
-        if (auto* promptTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+        if (!fullPrompt.empty()) {
           req->session->initTokenAccumulator(
-              *promptTokens, /*initialBlocks=*/{},
+              std::move(fullPrompt), /*initialBlocks=*/{},
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
                 mgr->registerPrefixHash(sessionId, blocks);

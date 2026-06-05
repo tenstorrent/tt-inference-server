@@ -198,7 +198,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       const auto think = tt::utils::tokenizers::thinkTokenIds();
       usage->thinkStart = think.first;
       usage->thinkEnd = think.second;
-      const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+      const auto kNo = tt::utils::tokenizers::kNoTokenId;
       usage->inReasoning =
           usage->thinkStart != kNo && !dynReq.token_ids.empty() &&
           dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
@@ -328,7 +328,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             // Usage accounting: count generated tokens and the reasoning span.
             if (!chunk.choices.empty() && chunk.choices[0].token_id) {
               const int tid = static_cast<int>(*chunk.choices[0].token_id);
-              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              const auto kNo = tt::utils::tokenizers::kNoTokenId;
               usage->completion += 1;
               if (usage->thinkStart != kNo && tid == usage->thinkStart) {
                 usage->inReasoning = true;
@@ -356,7 +356,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                                              : 0;
               du.cached_tokens = cached < 0 ? 0 : cached;
               // Only report reasoning_tokens for models that have think tokens.
-              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              const auto kNo = tt::utils::tokenizers::kNoTokenId;
               if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
                 du.reasoning_tokens = usage->reasoning;
               }
