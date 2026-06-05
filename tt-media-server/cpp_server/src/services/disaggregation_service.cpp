@@ -53,14 +53,14 @@ void DisaggregationService::setupSocketHandlers() {
                 "[DisaggregationService] Prefill error received for task {}, "
                 "propagating error to client",
                 message.task_id);
-            const auto reason = tt::sockets::errorReasonFromPrefillResult(
-                message);
-            callback.value()(makeErrorChunk(message.task_id,
-                                            isTimeoutError(reason)
-                                                ? "prefill timeout"
-                                                : "prefill error",
-                                            reason),
-                             /*isFinal=*/true);
+            const auto reason =
+                tt::sockets::errorReasonFromPrefillResult(message);
+            callback.value()(
+                makeErrorChunk(message.task_id,
+                               isTimeoutError(reason) ? "prefill timeout"
+                                                      : "prefill error",
+                               reason),
+                /*isFinal=*/true);
             return;
           }
 

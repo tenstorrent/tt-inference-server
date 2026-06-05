@@ -33,7 +33,8 @@ inline bool isErrorFinishReason(const std::string& finishReason) {
   return isErrorFinishReason(std::string_view(finishReason));
 }
 
-inline bool isErrorFinishReason(const std::optional<std::string>& finishReason) {
+inline bool isErrorFinishReason(
+    const std::optional<std::string>& finishReason) {
   return finishReason.has_value() &&
          isErrorFinishReason(std::string_view(finishReason.value()));
 }
@@ -51,10 +52,9 @@ inline LLMErrorReason errorReasonFromFinishReason(
 
 inline LLMErrorReason errorReasonFromFinishReason(
     const std::optional<std::string>& finishReason) {
-  return finishReason.has_value()
-             ? errorReasonFromFinishReason(
-                   std::string_view(finishReason.value()))
-             : LLMErrorReason::GENERIC;
+  return finishReason.has_value() ? errorReasonFromFinishReason(
+                                        std::string_view(finishReason.value()))
+                                  : LLMErrorReason::GENERIC;
 }
 
 inline bool isTimeoutError(LLMErrorReason reason) {

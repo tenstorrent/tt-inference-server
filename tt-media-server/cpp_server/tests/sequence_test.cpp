@@ -74,8 +74,9 @@ TEST(LLMResponseTest, ErrorReasonMapsToFinishReason) {
   EXPECT_TRUE(isErrorFinishReason(std::string(GENERIC_ERROR_FINISH_REASON)));
   EXPECT_TRUE(isErrorFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)));
   EXPECT_FALSE(isErrorFinishReason(std::string("stop")));
-  EXPECT_EQ(errorReasonFromFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)),
-            LLMErrorReason::TIMEOUT);
+  EXPECT_EQ(
+      errorReasonFromFinishReason(std::string(TIMEOUT_ERROR_FINISH_REASON)),
+      LLMErrorReason::TIMEOUT);
 }
 
 TEST(LLMResponseTest, TimeoutTokenFlagMapsToTimeoutErrorReason) {

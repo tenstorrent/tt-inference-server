@@ -120,9 +120,9 @@ struct LLMStreamChunk : BaseResponse {
  * Build a terminal error chunk carrying an error finish reason on the choice
  * and a human-readable message in the chunk-level `error` field.
  */
-inline LLMStreamChunk makeErrorChunk(uint32_t taskId, std::string error,
-                                     LLMErrorReason reason =
-                                         LLMErrorReason::GENERIC) {
+inline LLMStreamChunk makeErrorChunk(
+    uint32_t taskId, std::string error,
+    LLMErrorReason reason = LLMErrorReason::GENERIC) {
   LLMStreamChunk chunk(taskId);
   LLMChoice choice;
   choice.finish_reason = finishReasonForError(reason);
