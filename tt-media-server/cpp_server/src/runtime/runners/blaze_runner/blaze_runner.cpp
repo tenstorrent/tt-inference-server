@@ -673,8 +673,8 @@ void BlazeRunner::handleRequest(
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
       metrics.incrementActiveRequests();
-      metrics.onTurnStart(
-          slotId, static_cast<uint32_t>(request->getTokenIds().size()));
+      metrics.onTurnStart(slotId,
+                          static_cast<uint32_t>(request->getTokenIds().size()));
       metrics.incrementSpPipelineEvent(
           tt::worker::SpPipelineEvent::IDLE_TO_RUNNING);
       break;

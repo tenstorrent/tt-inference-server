@@ -69,8 +69,8 @@ class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
   prometheus::Family<prometheus::Gauge>* total_acceptance_rate_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_input_tokens_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_output_tokens_family_{nullptr};
-  prometheus::Family<prometheus::Gauge>*
-      slot_current_output_tokens_family_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_current_output_tokens_family_{
+      nullptr};
   prometheus::Family<prometheus::Gauge>* slot_tpot_seconds_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* slot_acceptance_rate_family_{nullptr};
   prometheus::Family<prometheus::Gauge>* events_family_{nullptr};
