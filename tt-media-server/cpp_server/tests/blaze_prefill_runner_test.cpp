@@ -77,7 +77,7 @@ class BlazePrefillRunnerHarness {
                       const tt::domain::llm::SamplingParams& samplingParams) {
     tt::domain::llm::Sequence seq(taskId, DEFAULT_BLOCK_SIZE, promptTokens,
                                   samplingParams);
-    seq.setKVCacheSlot(slotId);
+    seq.setPrefillKVCacheSlot(slotId);
     taskQueue.push(seq);
   }
 
