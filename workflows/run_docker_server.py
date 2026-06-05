@@ -216,7 +216,7 @@ def format_docker_command(docker_command):
     return " \\\n  ".join(lines)
 
 
-# run_vllm_api_server consumes these as its own wrapper args (parse_known_args), so passing them via --vllm-override-args would change wrapper behavior.
+# run_vllm_api_server consumes these either as its own wrapper args (parse_known_args), or as flags that the orchestrator manages (port, host). Passing them via --vllm-override-args would change wrapper behavior.
 # Reject them so the override channel stays genuinely vLLM-only.
 _RESERVED_WRAPPER_FLAGS = {
     "model",
@@ -227,6 +227,8 @@ _RESERVED_WRAPPER_FLAGS = {
     "no-auth",
     "disable-trace-capture",
     "service-port",
+    "port",
+    "host",
 }
 
 
@@ -267,6 +269,12 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
             continue
         flag = f"--{normalized_key}"
         if value is None or value is False:
+            # No CLI flag is emitted for false/null, so the vLLM default applies.
+            # There's no safe generic "--no-<flag>" form (only BooleanOptionalAction flags have one).
+            logger.warning(
+                f"--vllm-override-args: {key!r}={value!r} emits no flag "
+                "(false/null are not forwarded); vLLM's default applies."
+            )
             continue
         if value is True:
             cli_args.append(flag)
