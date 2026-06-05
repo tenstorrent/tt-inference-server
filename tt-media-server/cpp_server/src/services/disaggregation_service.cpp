@@ -222,10 +222,6 @@ void DisaggregationService::setupSocketHandlers() {
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
                 prefillResult.slot_id = slotId;
-                prefillResult.temperature = message.temperature;
-                prefillResult.top_p = message.top_p;
-                prefillResult.top_k = message.top_k;
-                prefillResult.fast_mode = message.fast_mode;
                 prefillResult.error = true;
                 prefillResult.finished = true;
                 prefillResult.generated_text =
