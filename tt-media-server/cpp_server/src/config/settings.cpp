@@ -271,6 +271,14 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
+std::string prefillH2DServiceId() {
+  return envString("PREFILL_H2D_SERVICE_ID", defaults::PREFILL_H2D_SERVICE_ID);
+}
+
+std::string prefillNumLayers() {
+  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
 std::string ttMemoryRequestQueueName() {
   return envString("TT_MEMORY_REQUEST_QUEUE",
                    defaults::TT_MEMORY_REQUEST_QUEUE);

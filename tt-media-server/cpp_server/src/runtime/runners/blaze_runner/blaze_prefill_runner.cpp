@@ -35,11 +35,11 @@ BlazePrefillRunner::BlazePrefillRunner(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{
-      .layers_per_chunk = 61,
+      .layers_per_chunk = static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
       .chunk_size = 5120,
   };
   managerParams.max_users = static_cast<uint32_t>(tt::config::psMaxUsers());
-  auto ackChannelConfig = utils::makePrefillAckChannelConfig();
+  auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
       pipelineConfig, ackChannelConfig, managerParams);
   TT_LOG_INFO(
@@ -77,7 +77,7 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens(5120,12345);
+  std::vector<int64_t> warmupTokens(5120, 12345);
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(

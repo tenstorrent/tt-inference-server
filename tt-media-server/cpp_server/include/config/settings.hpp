@@ -223,6 +223,13 @@ size_t dsMaxUsers();
  * defaults::PS_MAX_USERS. */
 size_t psMaxUsers();
 
+/** Prefill H2D service ID from PREFILL_H2D_SERVICE_ID. Default:
+ * defaults::PREFILL_H2D_SERVICE_ID. */
+std::string prefillH2DServiceId();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
 unsigned warmupTimeoutMs();
