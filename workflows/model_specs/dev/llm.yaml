@@ -1109,17 +1109,17 @@ templates:
         # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
         hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
       override_tt_config:
-        # trace_mode=true enables DECODE tracing — the demo's fast self-contained
-        # on-device decode loop (~10x faster than eager). PREFILL stays eager
-        # regardless: generator_vllm._disable_prefill_tracing forces enable_trace=False
-        # for prefill (DeltaNet GDN chunk kernel L1/CB clash under trace-capture).
-        trace_mode: true
-        # On-device sampling (decode): the decode trace keeps logits ON DEVICE and
-        # samples via the separate sampling trace (enable_split_sampling) — no per-step
-        # 248k-vocab to_torch / full-logits gather (which is what made host sampling
-        # ~10x slower and forced reset_inputs every step). Required for the fast trace
-        # loop; the sampler runs 32-wide at batch-1 (TTSampling rounds up to 32).
-        sample_on_device_mode: decode_only
+        # WORKING config = EAGER decode (coherent + correct, but slow ~3 tok/s).
+        # TRACE decode (trace_mode: true + sample_on_device_mode: decode_only) is the
+        # ~10x perf path but is NOT yet shippable: it works for short request #1 but
+        # degrades over length and corrupts across requests. ROOT CAUSE (per the
+        # atupe/qwen35-9b-inf-server reference): the DeltaNet recurrent state must be
+        # managed as a vLLM MAMBA/SSM cache (vLLM resets it per-request) instead of our
+        # internal-buffer + manual clear_state approach. That requires NOT overriding
+        # architectures->Qwen3ForCausalLM so vLLM sees the hybrid model. Until that
+        # rework lands, ship eager. To debug trace: flip trace_mode: true +
+        # sample_on_device_mode: decode_only (+ QWEN36_TRACE_DBG=1 for per-step dumps).
+        trace_mode: false
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
         fabric_config: FABRIC_1D_RING
@@ -1158,6 +1158,9 @@ templates:
         QWEN36_FULLATTN_WO_TUNED: "1"
         QWEN36_DELTA_OP_TUNED: "1"
         QWEN36_CCL_NUM_LINKS_DELTA: "2"
+        # TEMP: per-step trace-decode debug dump (current_pos / tt_out_tok) — remove
+        # once trace decode advances correctly.
+        QWEN36_TRACE_DBG: "0"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
