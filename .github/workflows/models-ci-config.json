@@ -524,7 +524,8 @@
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "P300X2"
           ]
         }
       }
