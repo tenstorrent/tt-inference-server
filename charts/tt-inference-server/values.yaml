@@ -7498,3 +7498,30 @@ models:
               - name: MESH_DEVICE
                 value: P150
     defaultEngine: forge
+  gemma-4-31b-it:
+    forge:
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: 97aea20e33246455fa81b1d2bc5270093415ee23_fd9296b_79608294867
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 32Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+    defaultEngine: forge

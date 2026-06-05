@@ -64,6 +64,44 @@ templates:
         VLLM__MIN_MODEL_LENGTH: "32"
 
 - weights:
+    # NOTE: basename MUST be lowercase "gemma-4-31b-it" so model_name matches the
+    # tt-media-server ModelNames.GEMMA_4_31B_IT enum value ("gemma-4-31b-it").
+    # ModelNames(MODEL) is an exact (case-sensitive) lookup; an uppercase "B"
+    # here would raise ValueError on the server. The container loads the real
+    # weights repo ("google/gemma-4-31B-it") internally from its constants, so
+    # this lowercase repo string is only used host-side for naming (no host-side
+    # HF download happens without --host-volume/--host-hf-cache/--host-weights-dir).
+    - google/gemma-4-31b-it
+  tt_metal_commit: "97aea20e33246455fa81b1d2bc5270093415ee23"
+  vllm_commit: "fd9296b"
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:97aea20e33246455fa81b1d2bc5270093415ee23_fd9296b_79608294867"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    # 512 seq len, concurrency 1. The tt-media-server already pins
+    # (VLLMForge_GEMMA4_31B, P300X2) to max_model_length=512, max_num_seqs=1,
+    # max_num_batched_tokens=2560, mesh (1,4) across all 4 chips, so no env_vars
+    # override is needed here — these values are informational/host-side.
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 512
+      default_impl: true
+      env_vars:
+        # 4-chip (1,4) tensor-parallel mesh. The gemma runner does NOT auto-set
+        # TT_MESH_GRAPH_DESC_PATH (only whisper/tts do), so without this it falls
+        # back to whatever is in the host .env -- which on QB2 is often pinned to
+        # the single-chip p150 descriptor (a Qwen3-4B workaround leftover). A
+        # 1-chip mesh can't satisfy the (1,4) sharded @mesh, producing
+        # "stablehlo ... unknown mesh: @mesh" at compile. Pin the p300_x2
+        # descriptor here; this -e value overrides --env-file for this model only.
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+
+- weights:
     - resnet-50
   version: "0.13.0"
   tt_metal_commit: "079a2c2"
