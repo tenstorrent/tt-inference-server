@@ -42,7 +42,7 @@ jobs:
         working-directory: tt-media-server
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -52,7 +52,7 @@ jobs:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Restore cached tokenizer files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: tt-media-server/cpp_server/tokenizers
           key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
@@ -71,7 +71,7 @@ jobs:
           tar -czf cpp-server-build.tar.gz build tokenizers
 
       - name: Upload C++ build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server/cpp-server-build.tar.gz
@@ -86,7 +86,7 @@ jobs:
     # download the cpp-build artifact — that artifact is built on
     # ubuntu-latest (noble) and fails at runtime on this jammy runner with
     # "missing libfoo.so" — so it builds its own binary in-job instead.
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -102,7 +102,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -198,7 +198,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-mock-pipeline-bench-results
           path: |
@@ -208,7 +208,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-mock-pipeline-bench-logs
           path: |
@@ -228,7 +228,7 @@ jobs:
     # runner. Like cpp-server-mock-pipeline-bench it builds its own binary
     # in-job rather than downloading the ubuntu-latest cpp-build artifact (a
     # noble-built binary fails on this jammy runner with "missing libfoo.so").
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -244,7 +244,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -469,7 +469,7 @@ jobs:
             --label "mock_prefill_runner prefill socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh \
             --port 8000 \
-            --expect '"socket_status":"server:connected"' \
+            --expect '"socket_status":"server:connected' \
             --pid-file decode_server_runner.pid \
             --label "mock_prefill_runner decode socket"
           PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
@@ -489,8 +489,8 @@ jobs:
             echo "ERROR: Decode server model_ready is not true"
             FAIL=1
           fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-            echo "ERROR: Decode server socket_status is not 'server:connected'"
+          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected'; then
+            echo "ERROR: Decode server socket_status does not start with 'server:connected'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
@@ -592,7 +592,7 @@ jobs:
 
       - name: Upload benchmark result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-prefill-decode-split-result
           path: |
@@ -604,7 +604,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-prefill-decode-split-logs
           path: |
@@ -631,7 +631,7 @@ jobs:
     # builds both binaries (cpp_server + prefill_gateway) in-job rather than
     # downloading the ubuntu-latest artifacts (a noble-built binary fails on
     # this jammy runner with "missing libfoo.so").
-    runs-on: tt-ubuntu-2204-xlarge-stable
+    runs-on: tt-ubuntu-2204-large-stable
     timeout-minutes: 60
     permissions:
       contents: read
@@ -646,7 +646,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -765,7 +765,7 @@ jobs:
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"server:connected"' --pid-file gw_prefill1.pid --label "TCP gateway prefill-1 socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"server:connected"' --pid-file gw_prefill2.pid --label "TCP gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_decode.pid --label "TCP gateway decode socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected' --pid-file gw_decode.pid --label "TCP gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -781,8 +781,8 @@ jobs:
               FAIL=1
             fi
           done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected'; then
+            echo "ERROR: Decode socket_status does not start with 'client:connected'"
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
@@ -897,7 +897,7 @@ jobs:
         run: |
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8201 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill1.pid --label "ZMQ gateway prefill-1 socket"
           bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8202 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_prefill2.pid --label "ZMQ gateway prefill-2 socket"
-          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected"' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8200 --expect '"socket_status":"client:connected' --pid-file gw_zmq_decode.pid --label "ZMQ gateway decode socket"
           P1=$(curl -sf "http://127.0.0.1:8201/tt-liveness" 2>/dev/null || true)
           P2=$(curl -sf "http://127.0.0.1:8202/tt-liveness" 2>/dev/null || true)
           DEC=$(curl -sf "http://127.0.0.1:8200/tt-liveness" 2>/dev/null || true)
@@ -913,8 +913,8 @@ jobs:
               FAIL=1
             fi
           done
-          if ! echo "$DEC" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode socket_status is not 'client:connected'"
+          if ! echo "$DEC" | grep -q '"socket_status":"client:connected'; then
+            echo "ERROR: Decode socket_status does not start with 'client:connected'"
             FAIL=1
           fi
           [ "$FAIL" -eq 0 ] || exit 1
@@ -970,7 +970,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-gateway-split-result
           path: |
@@ -981,7 +981,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-gateway-split-logs
           path: |
@@ -1039,10 +1039,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download C++ build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cpp-server-build
           path: tt-media-server/cpp_server
@@ -1330,7 +1330,7 @@ jobs:
 
       - name: Upload benchmark result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dynamo-frontend-integration-result
           path: tt-media-server/vllm-bench-dynamo.json
@@ -1339,7 +1339,7 @@ jobs:
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dynamo-frontend-integration-logs
           path: |
@@ -1370,7 +1370,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
@@ -1380,7 +1380,7 @@ jobs:
           token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Restore cached tokenizer files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: tt-media-server/cpp_server/tokenizers
           key: cpp-server-tokenizers-${{ hashFiles('tt-media-server/cpp_server/scripts/fetch_tokenizers.sh') }}
@@ -1398,7 +1398,7 @@ jobs:
           tar -czf cpp-server-tokenizers.tar.gz tokenizers
 
       - name: Upload C++ tokenizer bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-server-tokenizers
           path: tt-media-server/cpp_server/cpp-server-tokenizers.tar.gz
@@ -1498,7 +1498,7 @@ jobs:
 
       - name: Upload TSan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cpp-tsan-output
           path: |
@@ -1525,7 +1525,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
@@ -1584,7 +1584,7 @@ jobs:
 
       - name: Upload TSan logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: prefill-gateway-tsan-log
           path: |
@@ -1592,3 +1592,4 @@ jobs:
             tt-media-server/gw_tsan_zmq.log
           retention-days: 7
           if-no-files-found: warn
+

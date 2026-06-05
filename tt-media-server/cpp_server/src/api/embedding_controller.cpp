@@ -8,7 +8,7 @@
 #include "api/embedding_controller.hpp"
 #include "api/error_response.hpp"
 #include "config/settings.hpp"
-#include "services/base_service.hpp"
+#include "services/request_pipeline.hpp"
 #include "services/service_container.hpp"
 #include "utils/logger.hpp"
 #include "utils/thread_pool.hpp"
