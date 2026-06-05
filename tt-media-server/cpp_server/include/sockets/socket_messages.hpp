@@ -212,6 +212,34 @@ struct HealthCheckMessage : SerializableMessage<HealthCheckMessage> {
   }
 };
 
+struct PrefillHealthRequestMessage
+    : SerializableMessage<PrefillHealthRequestMessage> {
+  uint32_t nonce = 0;
+
+  template <class F>
+  void fields(F&& f) {
+    f(nonce);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(nonce);
+  }
+};
+
+struct PrefillHealthStatusMessage
+    : SerializableMessage<PrefillHealthStatusMessage> {
+  bool ready = false;
+
+  template <class F>
+  void fields(F&& f) {
+    f(ready);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(ready);
+  }
+};
+
 /**
  * @brief Load balancing info message
  */
@@ -339,6 +367,8 @@ constexpr std::string_view PREFILL_CACHE_BLOCKS_EVICTED =
     "prefill_cache_evicted";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";
+constexpr std::string_view PREFILL_HEALTH_STATUS = "prefill_health_status";
 }  // namespace tags
 
 }  // namespace tt::sockets

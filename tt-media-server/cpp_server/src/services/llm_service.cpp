@@ -96,7 +96,7 @@ void LLMService::start() {
   tracy_config::tracyStartupSchedulerParent();
   startConsumers();
 
-  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
   TT_LOG_INFO("[LLMService] Service started");
 }
 
@@ -109,7 +109,7 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 }
 
 void LLMService::preProcess(LLMRequest& request) const {
-  BaseService::preProcess(request);
+  enforceQueueCapacity();
 
   if (request.tool_choice.has_value()) {
     const auto& type = request.tool_choice->type;
@@ -402,7 +402,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       // that the regular branch does at the end of this iteration: clear
       // the small per-task maps. Reasoning / tool-call parsers were never
       // initialized for this task in the first place (Dynamo requests
-      // don't go through processStreamingRequest's parser init paths in
+      // don't go through produceStream's parser init paths in
       // a way that matters here) so no finalize calls are needed either.
       if (entry->skip_text_decode) {
         tt::metrics::ServerMetrics::instance().onToken(taskId);
@@ -552,20 +552,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-tt::domain::llm::LLMResponse LLMService::processRequest(
-    tt::domain::llm::LLMRequest /*request*/) {
-  throw std::runtime_error(
-      "LLMService::processRequest is not supported; use streaming interface");
-}
-
-void LLMService::processStreamingRequest(
+void LLMService::produceStream(
     LLMRequest request,
     std::function<void(LLMStreamChunk&, bool isFinal)> callback) {
   if (!callback) {
     throw std::invalid_argument("streaming callback must not be null");
   }
 
-  ZoneScopedN("LLMService::processStreamingRequest");
+  ZoneScopedN("LLMService::produceStream");
   if (request.task_id == 0) {
     throw std::runtime_error("task_id must be set before submitting request");
   }

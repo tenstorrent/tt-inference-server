@@ -651,7 +651,7 @@ target_include_directories(worker_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# LLMService unit test: drives processStreamingRequest in-process.
+# LLMService unit test: drives produceStream via submitStreamingRequest.
 # Pulls in the same translation units that the main server links so the
 # real LLMService can be constructed without forking workers.
 add_executable(llm_service_test

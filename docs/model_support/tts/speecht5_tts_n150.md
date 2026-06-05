@@ -6,6 +6,11 @@
 - [Search other tts models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`speecht5_tts` is also supported on hardware:
+
+- [BH QuietBox 2](speecht5_tts_p300x2.md)
+- [P100/P150](speecht5_tts_p100.md)
+
 ## Quickstart - Deploy speecht5_tts Inference Server on n150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
