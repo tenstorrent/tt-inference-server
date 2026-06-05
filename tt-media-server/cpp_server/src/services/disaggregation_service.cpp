@@ -63,6 +63,9 @@ void DisaggregationService::setupSocketHandlers() {
           LLMChoice choice;
           choice.text = message.generated_text;
           response.choices.push_back(std::move(choice));
+          // Surface the prefill server's prefix-cache reuse count to the
+          // transport's usage accounting (prompt_tokens_details.cached_tokens).
+          response.cached_prompt_tokens = message.cached_tokens;
 
           callback.value()(response, false);
 
@@ -158,9 +161,19 @@ void DisaggregationService::setupSocketHandlers() {
           resolvePrefillSession(
               request, message.registration_hashes,
               [this, request, message, maxTokens, slotId]() {
+                // Tokens the prefill server served from its KV cache
+                // (prefix-cache reuse) = prompt tokens trimmed off by
+                // resolvePrefillSession (full prompt - remaining delta).
+                const size_t fullPromptTokens = message.token_ids.size();
+                const size_t trimmedPromptTokens =
+                    std::get<std::vector<int>>(request->prompt).size();
+                const int cachedTokens = static_cast<int>(
+                    fullPromptTokens >= trimmedPromptTokens
+                        ? fullPromptTokens - trimmedPromptTokens
+                        : 0);
                 llmService->submitStreamingRequest(
                     *request,
-                    [this, message, maxTokens, slotId](
+                    [this, message, maxTokens, slotId, cachedTokens](
                         const LLMStreamChunk& response, bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
@@ -169,6 +182,7 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.top_p = message.top_p;
                       prefillResult.top_k = message.top_k;
                       prefillResult.fast_mode = message.fast_mode;
+                      prefillResult.cached_tokens = cachedTokens;
 
                       bool isError =
                           !response.choices.empty() &&
