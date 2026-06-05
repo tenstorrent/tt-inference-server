@@ -142,6 +142,11 @@ void DisaggregationService::setupSocketHandlers() {
           request->top_k = message.top_k;
           request->fast_mode = message.fast_mode;
 
+          TT_LOG_DEBUG(
+              "[DisaggregationService] Prefill request taskId={} "
+              "registration_hashes={}",
+              message.task_id, message.registration_hashes.size());
+
           auto maxTokens = message.max_tokens;
 
           request->prompt.emplace<std::vector<int>>(message.token_ids.begin(),
@@ -179,10 +184,17 @@ void DisaggregationService::setupSocketHandlers() {
                         : 0);
                 const int cachedTokens =
                     std::max(prefillTrim, message.number_of_decode_skip_tokens);
+                // Capture the resolved sessionId by value:
+                // submitStreamingRequest hands the request to the pipeline, so
+                // request->sessionId is no longer reliable by the time this
+                // async callback fires.
+                const std::string prefillSessionId =
+                    request->sessionId.value_or("");
                 llmService->submitStreamingRequest(
                     *request,
-                    [this, message, maxTokens, slotId, cachedTokens](
-                        const LLMStreamChunk& response, bool /*isFinal*/) {
+                    [this, prefillSessionId, message, maxTokens, slotId,
+                     cachedTokens](const LLMStreamChunk& response,
+                                   bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
@@ -220,6 +232,22 @@ void DisaggregationService::setupSocketHandlers() {
                       }
 
                       socketService->sendPrefillResult(prefillResult);
+
+                      // Release the prefill session's in-flight hold now that
+                      // this one-shot prefill (max_tokens=1) is done. Unlike
+                      // the decode/HTTP transports, the prefill path has no
+                      // stream-end release, so without this the session stays
+                      // IN_FLIGHT forever — and evictOldSessions only reclaims
+                      // IDLE sessions, so the prefill pool fills with
+                      // un-evictable sessions and allocation eventually fails.
+                      // Releasing to IDLE-but-cached also lets the next turn's
+                      // prefix cache match it. clearInFlight() is idempotent.
+                      if (!prefillSessionId.empty()) {
+                        if (auto* s =
+                                sessionManager->getSession(prefillSessionId)) {
+                          s->clearInFlight();
+                        }
+                      }
                     });
               },
               [this, message, slotId](std::string_view error) {
@@ -321,6 +349,9 @@ void DisaggregationService::resolvePrefillSession(
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
+    // Record the acquired session so the prefill completion can release its
+    // in-flight hold (see clearInFlight below).
+    request->sessionId = acquired->sessionId;
     applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     onResolved();
