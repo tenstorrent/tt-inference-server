@@ -92,6 +92,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_gemma4_31b",
         fromlist=["VLLMForgeGemma4_31BRunner"],
     ).VLLMForgeGemma4_31BRunner(wid),
+    ModelRunners.VLLMForge_QWEN_32B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_qwen_32b",
+        fromlist=["VLLMForgeQwen32BRunner"],
+    ).VLLMForgeQwen32BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),

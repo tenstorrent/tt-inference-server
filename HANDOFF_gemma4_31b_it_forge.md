@@ -81,6 +81,33 @@ Firmware/config identical to the working `p01t05` (10.32.48.15, degree `{2:4}`).
 Healthy = a `link UP ... connected to chip` crossing the {0,1} and {2,3} card pairs. `tt-smi -s`
 does NOT reveal this (passes on both boxes).
 
+## Qwen3-32B (added as a Forge LLM the same way — follow-up commit)
+
+Qwen3-32B is wired as a Forge LLM TP model mirroring gemma. **Server-side support was added to
+this repo's tt-media-server** (it did not exist before):
+- `tt-media-server/tt_model_runners/vllm_forge_qwen_32b.py` — `VLLMForgeQwen32BRunner` (text-only
+  copy of the gemma runner; same TP additional_config: `enable_tensor_parallel`, `use_2d_mesh=False`,
+  `bfp_bf8`, `optimization_level=0`, `cpu_sampling`).
+- `tt-media-server/config/constants.py` — `SupportedModels.QWEN_3_32B`, `ModelNames.QWEN_3_32B
+  ("Qwen3-32B")`, `ModelRunners.VLLMForge_QWEN_32B`, LLM service map, model-names map, and a
+  `(VLLMForge_QWEN_32B, P300X2)` config (mesh (1,4), 512/1, `DEVICE_IDS_4_GROUP`).
+- `tt-media-server/tt_model_runners/runner_fabric.py` — runner mapping.
+- `workflows/model_specs/prod/cnn.yaml` — spec `weights: Qwen/Qwen3-32B` (basename `Qwen3-32B`
+  matches `ModelNames.QWEN_3_32B`; no lowercase issue unlike gemma), P300X2, 512/1, same p300_x2
+  mesh-descriptor override.
+- `run_server_qwen3_32b_forge.sh` — launcher (port 8014).
+
+**CRITICAL for testing:** the prebuilt gemma image (`97aea20…`) does **NOT** contain the
+`VLLMForge_QWEN_32B` runner (it only knows Qwen3-4B/8B, no `QWEN_3_32B`; its generic `(VLLMForge,
+P300X2)` config is single-chip `(1,1)`, not TP). So `run_server_qwen3_32b_forge.sh` against that
+image will fail the server's `ModelNames("Qwen3-32B")` lookup. To test, you need a forge image
+**built from this repo's updated tt-media-server**, OR dev-mount the updated tt-media-server into
+the container. Set `IMAGE=` in the launch script accordingly. (Reference that it can work at all:
+tt-xla `test_vllm_tp_benchmark[qwen3-32b-qb2-tp]`, `use_2d_mesh=False`.)
+
+Note: Qwen3-32B also already runs on P300X2 via the **native** path (`prod/llm.yaml`,
+`impl: tt_transformers`, `inference_engine: VLLM`, v0.14.0) — independent of this forge work.
+
 ## Next session TODO (on the working machine)
 
 1. Confirm `system_health` shows a connected 4-chip mesh (cross-card links UP).
