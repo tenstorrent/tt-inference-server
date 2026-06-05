@@ -279,8 +279,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, preProcessMs);
 
           const auto tDispatch = SteadyClock::now();
-          auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-                     tDispatch,
+          auto cb = [req, svc, sendChunk, signalDone, recvT, firstChunkSeen,
+                     probeId, tDispatch,
                      usage](const tt::domain::llm::LLMStreamChunk& chunk,
                             bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
@@ -354,9 +354,18 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               }
               out.completion_usage = du;
             }
-            sendChunk(out);
+            const bool sent = sendChunk(out);
             if (isFinal) {
               signalDone();
+              return;
+            }
+            if (!sent) {
+              TT_LOG_WARN(
+                  "[DynamoEndpoint] downstream send failed for task {}; "
+                  "aborting generation",
+                  req->task_id);
+              svc->abortRequest(req->task_id);
+              return;
             }
           };
 
