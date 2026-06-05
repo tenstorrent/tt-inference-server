@@ -29,15 +29,17 @@ worker image and runs that binary — no `--cpp-server-dir` and no image rebuild
 
 ## Options
 
-| Flag | Default | Purpose |
-|---|---|---|
-| `--kimi` / `--deepseek` | `--deepseek` | Model to serve (sets `HF_MODEL_ID` + the worker's blaze prefix / MD-format env) |
-| `--hf-model-id <id>` | `deepseek-ai/DeepSeek-R1-0528` | Explicit HF model id (overrides `--kimi`/`--deepseek`) |
-| `--local-build` | off | Run this repo's `cpp_server/build` binary in the worker |
-| `--etcd-image <img>` | `quay.io/coreos/etcd:v3.5.13` | etcd image |
-| `--worker-image <img>` | `…/tt-media-inference-server-blaze:<tag>` | cpp_server image |
-| `--frontend-image <img>` | `…/tt-dynamo-frontend:<tag>` | Dynamo frontend image |
-| `--device-ids <ids>` | `10,11,14,15,18,19,22,23` | `DEVICE_IDS` env on the worker |
+
+| Flag                     | Default                                   | Purpose                                                                         |
+| ------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| `--kimi` / `--deepseek`  | `--deepseek`                              | Model to serve (sets `HF_MODEL_ID` + the worker's blaze prefix / MD-format env) |
+| `--hf-model-id <id>`     | `deepseek-ai/DeepSeek-R1-0528`            | Explicit HF model id (overrides `--kimi`/`--deepseek`)                          |
+| `--local-build`          | off                                       | Run this repo's `cpp_server/build` binary in the worker                         |
+| `--etcd-image <img>`     | `quay.io/coreos/etcd:v3.5.13`             | etcd image                                                                      |
+| `--worker-image <img>`   | `…/tt-media-inference-server-blaze:<tag>` | cpp_server image                                                                |
+| `--frontend-image <img>` | `…/tt-dynamo-frontend:<tag>`              | Dynamo frontend image                                                           |
+| `--device-ids <ids>`     | `10,11,14,15,18,19,22,23`                 | `DEVICE_IDS` env on the worker                                                  |
+
 
 Fixed (not flags): network `dynamo-net`, container names `etcd` / `tt-cpp-worker`
 / `dynamo-frontend`, frontend host port `8080`, `LLM_DEVICE_BACKEND=pipeline_manager`,
@@ -50,22 +52,22 @@ from the calling shell's environment if set.
 ## What it does, step by step
 
 1. **Network** — creates `dynamo-net` if missing; all three containers join it
-   and resolve each other by name.
+  and resolve each other by name.
 2. **etcd** — starts it (publishing `:2379`) and waits until
-   `etcdctl endpoint health` passes.
+  `etcdctl endpoint health` passes.
 3. **Worker** — starts cpp_server with etcd discovery
-   (`DYNAMO_ETCD_ENDPOINTS=http://etcd:2379`), the model-specific env, and
+  (`DYNAMO_ETCD_ENDPOINTS=http://etcd:2379`), the model-specific env, and
    `--device /dev/tenstorrent` when the card is present. Waits up to 60s for it
    to register `v1/instances/…`; on failure it dumps the worker logs and exits.
    With `--local-build`, the entrypoint runs the bind-mounted binary
    (`LD_PRELOAD`ing the image's `libtt_llm_engine.so.0` only if present).
 4. **Frontend** — starts it against the same etcd and maps `:8000 → :8080`.
-   `MODEL_PATH` points at the tokenizer tree **baked into the frontend image**
+  `MODEL_PATH` points at the tokenizer tree **baked into the frontend image**
    (same `fetch_tokenizers.sh` the worker uses), so no tokenizer bind-mount is
    needed.
 5. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.
 6. **Teardown** — `trap cleanup EXIT INT TERM` removes the three containers
-   (the `dynamo-net` network is left in place).
+  (the `dynamo-net` network is left in place).
 
 ## Verify (from a second shell)
 
@@ -92,18 +94,18 @@ docker exec etcd etcdctl get --prefix --keys-only v1/
 ## Troubleshooting
 
 - **Worker never registers** — usually a device or model-env problem; the worker
-  log dump on timeout shows the cause. On a box without the card, use
-  `--local-build` with a mock build to exercise the discovery + frontend wiring.
-- **`/v1/models` is empty** — frontend and worker aren't talking to the same etcd.
-  Check `docker exec dynamo-frontend curl -s http://etcd:2379/version` and that
-  both use namespace `default` / component `backend` / endpoint `generate`.
+log dump on timeout shows the cause. On a box without the card, use
+`--local-build` with a mock build to exercise the discovery + frontend wiring.
+- `**/v1/models` is empty** — frontend and worker aren't talking to the same etcd.
+Check `docker exec dynamo-frontend curl -s http://etcd:2379/version` and that
+both use namespace `default` / component `backend` / endpoint `generate`.
 - **Frontend 404s the model** (`huggingface.co/api/models//home/...`) — the
-  frontend image is missing the baked tokenizer tree at
-  `/home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.
-  Confirm with
-  `docker exec dynamo-frontend ls /home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.
-- **Frontend dials the worker and fails** (`Invalid TCP address` / `Connection
-  refused`) — the worker advertises its `dynamo-net` IPv4 in `transport.tcp`, so
-  the frontend must share that network. Leave `DYN_TCP_RPC_HOST` unset so the
-  worker auto-detects a numeric IP. Check:
-  `docker exec etcd etcdctl get --prefix v1/instances/ -w json | jq -r '.kvs[].value | @base64d | fromjson | .transport.tcp'`.
+frontend image is missing the baked tokenizer tree at
+`/home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.
+Confirm with
+`docker exec dynamo-frontend ls /home/container_app_user/app/server/cpp_server/tokenizers/<hf-model-id>/`.
+- **Frontend dials the worker and fails** (`Invalid TCP address` / `Connection refused`) — the worker advertises its `dynamo-net` IPv4 in `transport.tcp`, so
+the frontend must share that network. Leave `DYN_TCP_RPC_HOST` unset so the
+worker auto-detects a numeric IP. Check:
+`docker exec etcd etcdctl get --prefix v1/instances/ -w json | jq -r '.kvs[].value | @base64d | fromjson | .transport.tcp'`.
+
