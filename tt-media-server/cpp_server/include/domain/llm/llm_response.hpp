@@ -131,9 +131,8 @@ inline LLMStreamChunk makeErrorChunk(
   return chunk;
 }
 
-inline LLMStreamChunk makeTimeoutErrorChunk(uint32_t taskId,
-                                            std::string error = "timeout") {
-  return makeErrorChunk(taskId, std::move(error), LLMErrorReason::TIMEOUT);
+inline LLMStreamChunk makeTimeoutErrorChunk(uint32_t taskId) {
+  return makeErrorChunk(taskId, "timeout", LLMErrorReason::TIMEOUT);
 }
 
 /**

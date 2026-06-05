@@ -179,7 +179,9 @@ void DisaggregationService::setupSocketHandlers() {
                           response.choices.empty()
                               ? std::optional<std::string>{}
                               : response.choices.back().finish_reason;
-                      const bool isError = isErrorFinishReason(finishReason);
+                      const bool isError =
+                          finishReason.has_value() &&
+                          isErrorFinishReason(finishReason.value());
                       if (isError) {
                         TT_LOG_WARN(
                             "[DisaggregationService] Prefill error for task "
@@ -188,7 +190,7 @@ void DisaggregationService::setupSocketHandlers() {
                         prefillResult.error = true;
                         prefillResult.finished = true;
                         const auto reason =
-                            errorReasonFromFinishReason(finishReason);
+                            errorReasonFromFinishReason(finishReason.value());
                         prefillResult.generated_text =
                             tt::sockets::prefillErrorTextForReason(
                                 reason, response.error.value_or("error"));

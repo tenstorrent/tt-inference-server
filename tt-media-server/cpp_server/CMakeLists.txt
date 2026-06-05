@@ -503,6 +503,7 @@ target_link_libraries(sequence_test PRIVATE
     GTest::gtest_main)
 target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
 )
 
 add_executable(lockfree_queue_test tests/lockfree_queue_test.cpp)

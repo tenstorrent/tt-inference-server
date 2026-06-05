@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <optional>
 #include <string>
 #include <string_view>
 
@@ -29,32 +28,10 @@ inline bool isErrorFinishReason(std::string_view finishReason) {
          finishReason == TIMEOUT_ERROR_FINISH_REASON;
 }
 
-inline bool isErrorFinishReason(const std::string& finishReason) {
-  return isErrorFinishReason(std::string_view(finishReason));
-}
-
-inline bool isErrorFinishReason(
-    const std::optional<std::string>& finishReason) {
-  return finishReason.has_value() &&
-         isErrorFinishReason(std::string_view(finishReason.value()));
-}
-
 inline LLMErrorReason errorReasonFromFinishReason(
     std::string_view finishReason) {
   return finishReason == TIMEOUT_ERROR_FINISH_REASON ? LLMErrorReason::TIMEOUT
                                                      : LLMErrorReason::GENERIC;
-}
-
-inline LLMErrorReason errorReasonFromFinishReason(
-    const std::string& finishReason) {
-  return errorReasonFromFinishReason(std::string_view(finishReason));
-}
-
-inline LLMErrorReason errorReasonFromFinishReason(
-    const std::optional<std::string>& finishReason) {
-  return finishReason.has_value() ? errorReasonFromFinishReason(
-                                        std::string_view(finishReason.value()))
-                                  : LLMErrorReason::GENERIC;
 }
 
 inline bool isTimeoutError(LLMErrorReason reason) {

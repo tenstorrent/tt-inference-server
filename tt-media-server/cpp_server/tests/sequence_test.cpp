@@ -56,14 +56,14 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
 }
 
 TEST(LLMResponseTest, MakeTimeoutErrorChunkUsesTimeoutFinishReason) {
-  auto chunk = makeTimeoutErrorChunk(/*taskId=*/123, "prefill timeout");
+  auto chunk = makeTimeoutErrorChunk(/*taskId=*/123);
 
   ASSERT_EQ(chunk.task_id, 123u);
   ASSERT_EQ(chunk.choices.size(), 1u);
   ASSERT_TRUE(chunk.choices[0].finish_reason.has_value());
   EXPECT_EQ(chunk.choices[0].finish_reason.value(), "timeout_error");
   ASSERT_TRUE(chunk.error.has_value());
-  EXPECT_EQ(chunk.error.value(), "prefill timeout");
+  EXPECT_EQ(chunk.error.value(), "timeout");
 }
 
 TEST(LLMResponseTest, ErrorReasonMapsToFinishReason) {
