@@ -292,6 +292,11 @@
           "devices": [
             "GALAXY"
           ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
         }
       }
     },
@@ -519,7 +524,8 @@
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "P300X2"
           ]
         }
       }
