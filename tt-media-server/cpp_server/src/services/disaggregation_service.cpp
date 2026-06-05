@@ -142,11 +142,6 @@ void DisaggregationService::setupSocketHandlers() {
           request->top_k = message.top_k;
           request->fast_mode = message.fast_mode;
 
-          TT_LOG_DEBUG(
-              "[DisaggregationService] Prefill request taskId={} "
-              "registration_hashes={}",
-              message.task_id, message.registration_hashes.size());
-
           auto maxTokens = message.max_tokens;
 
           request->prompt.emplace<std::vector<int>>(message.token_ids.begin(),
@@ -167,10 +162,23 @@ void DisaggregationService::setupSocketHandlers() {
                 const size_t fullPromptTokens = message.token_ids.size();
                 const size_t trimmedPromptTokens =
                     std::get<std::vector<int>>(request->prompt).size();
-                const int cachedTokens = static_cast<int>(
+                // Cached (reused) prompt tokens = the leading prefix that did
+                // NOT need a fresh prefill. Two sources describe that same
+                // prefix; take the larger:
+                //   - decode_skip_tokens: the prefix the decode node already
+                //     holds in its KV from earlier turns. The decode node does
+                //     the multi-turn prefix match and ships the full prompt
+                //     plus this skip count (it does not trim itself); the
+                //     prefill runner honors it. This is the dominant source in
+                //     chat.
+                //   - prefill-side trim (fullPrompt - delta): when the prefill
+                //     server independently hits its own prefix cache.
+                const int prefillTrim = static_cast<int>(
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
+                const int cachedTokens =
+                    std::max(prefillTrim, message.number_of_decode_skip_tokens);
                 llmService->submitStreamingRequest(
                     *request,
                     [this, message, maxTokens, slotId, cachedTokens](
@@ -401,6 +409,7 @@ void DisaggregationService::handleStreamingRequest(
     int decodeSkipTokens = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
+
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
