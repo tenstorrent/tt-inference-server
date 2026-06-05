@@ -31,6 +31,7 @@ This module provides:
 3. **Install forge dependencies:**
    ```bash
    pip install -r tt_model_runners/forge_runners/requirements.txt
+   pip install -no-deps --no-build-isolation -r tt_model_runners/forge_runners/requirements-no-build-isolation.txt
    ```
 
 ## Usage
