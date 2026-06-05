@@ -26,20 +26,61 @@ namespace tt::worker::sp_pipeline {
 constexpr size_t SCRATCH_STEP_EPOCH_MS = 0;
 constexpr size_t SCRATCH_LAST_OUTPUT_EPOCH_MS = 1;
 constexpr size_t SCRATCH_ACTIVE_REQUESTS = 2;
+// Cumulative aggregates across all turns / slots in this worker.
+constexpr size_t SCRATCH_TOTAL_PROMPT_TOKENS = 3;
+constexpr size_t SCRATCH_TOTAL_GENERATION_TOKENS = 4;
+constexpr size_t SCRATCH_TOTAL_SPEC_ACCEPTS = 5;
+constexpr size_t SCRATCH_TOTAL_SPEC_REJECTS = 6;
 
 // Cumulative event counters for the BlazeRunner slot state machine. These are
 // monotonic since worker (re)start and let ops see whether the defer/supersede
 // paths — otherwise invisible — actually fire in production.
-constexpr size_t SCRATCH_EV_IDLE_TO_RUNNING = 3;
-constexpr size_t SCRATCH_EV_RUNNING_TO_STOP_ACK = 4;
-constexpr size_t SCRATCH_EV_DEFERRED_EVICT_REPLAYED = 5;
-constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_LATCHED = 6;
-constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED = 7;
-constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED = 8;
-constexpr size_t SCRATCH_EV_DEFERRED_EVICT_LATCHED = 9;
-// ... up to index 31
+constexpr size_t SCRATCH_EV_IDLE_TO_RUNNING = 7;
+constexpr size_t SCRATCH_EV_RUNNING_TO_STOP_ACK = 8;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_REPLAYED = 9;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_LATCHED = 10;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_REPLAYED = 11;
+constexpr size_t SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED = 12;
+constexpr size_t SCRATCH_EV_DEFERRED_EVICT_LATCHED = 13;
+// Indices 14..31 reserved for future aggregates.
 
-static_assert(SCRATCH_EV_DEFERRED_EVICT_LATCHED < WORKER_SCRATCH_U64_COUNT,
-              "sp_pipeline scratch indices exceed scratch capacity");
+// ---------------------------------------------------------------------------
+//  Per-LLM-slot region (starts at index LLM_SLOT_BASE).
+//
+//  Layout:  scratch[LLM_SLOT_BASE + slot_id * LLM_SLOT_FIELDS + field]
+//
+//  Fields are written by the runner on its step thread (single writer per
+//  worker) and read by the main process at scrape time. All accesses use
+//  relaxed atomics — visibility across the scrape-to-step boundary is
+//  acceptable to be a few ms stale.
+// ---------------------------------------------------------------------------
+constexpr size_t LLM_SLOT_BASE = 32;
+constexpr size_t MAX_LLM_SLOTS = 128;  // matches defaults::PM_MAX_USERS
+constexpr size_t LLM_SLOT_FIELDS = 7;
+
+constexpr size_t LLM_FIELD_LAST_INPUT_TOKENS = 0;  // ISL of last submitted turn
+constexpr size_t LLM_FIELD_CURRENT_OUTPUT_TOKENS =
+    1;  // tokens emitted so far in current turn
+constexpr size_t LLM_FIELD_LAST_OUTPUT_TOKENS =
+    2;  // OSL of last completed turn
+constexpr size_t LLM_FIELD_TURN_START_EPOCH_MS = 3;
+constexpr size_t LLM_FIELD_FIRST_TOKEN_EPOCH_MS =
+    4;  // 0 until first decode token of current turn
+constexpr size_t LLM_FIELD_LAST_TPOT_US =
+    5;  // (last_token_ms - first_token_ms) * 1000 / (osl - 1)
+constexpr size_t LLM_FIELD_LAST_ACCEPTANCE_RATE_BPS =
+    6;  // basis points 0-10000
+
+inline size_t llmSlotIdx(uint32_t slotId, size_t field) {
+  return LLM_SLOT_BASE + static_cast<size_t>(slotId) * LLM_SLOT_FIELDS + field;
+}
+
+static_assert(SCRATCH_TOTAL_SPEC_REJECTS < LLM_SLOT_BASE,
+              "sp_pipeline aggregate indices overlap per-slot region");
+static_assert(SCRATCH_EV_DEFERRED_EVICT_LATCHED < LLM_SLOT_BASE,
+              "sp_pipeline event indices overlap per-slot region");
+static_assert(LLM_SLOT_BASE + MAX_LLM_SLOTS * LLM_SLOT_FIELDS <=
+                  WORKER_SCRATCH_U64_COUNT,
+              "sp_pipeline per-slot region exceeds scratch capacity");
 
 }  // namespace tt::worker::sp_pipeline
