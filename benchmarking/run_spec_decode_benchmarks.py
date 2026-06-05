@@ -120,6 +120,11 @@ def build_aiperf_cmd(
         tokens. When unset (the default), the model decodes to its natural
         EOS — variable-length outputs that better exercise real decode
         behavior across prompt types.
+      - When ``run_spec.max_completion_tokens`` is set, it is injected as
+        ``--extra-inputs max_completion_tokens:<N>``: an upper bound on the
+        generated tokens that still lets requests stop early at EOS. Used on
+        the throughput sweep to keep a few long-decoding prompts from
+        dominating wall-clock.
     """
     if not url.startswith("http"):
         url = f"http://{url}"
@@ -152,6 +157,11 @@ def build_aiperf_cmd(
             "0",
             "--extra-inputs",
             "ignore_eos:true",
+        ]
+    if run_spec.max_completion_tokens is not None:
+        cmd += [
+            "--extra-inputs",
+            f"max_completion_tokens:{run_spec.max_completion_tokens}",
         ]
     cmd += [
         "--extra-inputs",

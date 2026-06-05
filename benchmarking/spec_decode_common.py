@@ -34,6 +34,13 @@ class SpecDecodeRunSpec:
     max_concurrency: int
     num_prompts: Optional[int] = None
     output_len: Optional[int] = None
+    # Upper bound on tokens generated per request, injected as
+    # ``--extra-inputs max_completion_tokens:<N>``. Unlike ``output_len``
+    # (which forces *exactly* N tokens via ``--output-tokens-mean`` +
+    # ``ignore_eos:true``), this is only a cap — the model still stops early
+    # at its natural EOS. Used to bound wall-clock on throughput sweeps where
+    # a few prompts would otherwise decode for a very long time.
+    max_completion_tokens: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not self.public_dataset:
@@ -46,10 +53,11 @@ class SpecDecodeRunSpec:
         ``osl-<N>`` is included only when ``output_len`` is set; omitting it
         signals that the run let the model decode to its natural EOS.
         ``n-<N>`` is included only when ``num_prompts`` is set; omitting it
-        signals the run consumed every prompt in the public dataset (aiperf
-        defaults ``--request-count`` to the dataset size). Together this
-        keeps the spec-decode sweeps stress-testing real decode behavior
-        without a fixed token or prompt budget when not explicitly requested.
+        signals the run consumed every prompt in the public dataset.
+
+        ``max_completion_tokens`` is intentionally left out of the slug: it is
+        a wall-clock guard rail, not a workload dimension, and the report
+        parsers key off the dataset/osl/maxcon/n fields only.
         """
         parts = [self.public_dataset]
         if self.output_len is not None:

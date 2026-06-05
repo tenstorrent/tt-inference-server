@@ -131,6 +131,19 @@ SPEED_BENCH_THROUGHPUT_ISLS = ("1k", "2k", "8k", "16k", "32k")
 
 THROUGHPUT_CONCURRENCY_SWEEP = (1, 16, 64)
 
+# Every SPEED-Bench qualitative category holds exactly 80 prompts. aiperf does
+# NOT auto-size --request-count to the dataset; left unset it falls back to
+# max(10, concurrency*2) == 10 for conc=1, so the count must be passed
+# explicitly to consume the whole category. The default SHUFFLE sampler draws
+# without replacement, so a count equal to the category size sends each prompt
+# exactly once.
+SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
+
+# Cap output tokens on the throughput sweep so a handful of long-decoding
+# prompts can't blow up the wall-clock. Injected as
+# ``--extra-inputs max_completion_tokens:<N>`` (a ceiling, not a forced length).
+THROUGHPUT_MAX_COMPLETION_TOKENS = 8192
+
 SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
     "smoke": [
         SpecDecodeRunSpec(
@@ -141,13 +154,14 @@ SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
     ],
     # Full sweep — output length is left natural
     #   - speed_bench_<category> × 11 categories × conc=1 (every prompt in
-    #     the category; aiperf defaults --request-count to dataset size)
-    #   - speed_bench_throughput_{1k..32k} × conc{1,16,64}
+    #     the category; request-count pinned to the 80-prompt category size)
+    #   - speed_bench_throughput_{1k..32k} × conc{1,16,64}, output capped at
+    #     THROUGHPUT_MAX_COMPLETION_TOKENS to bound wall-clock
     "full": [
         SpecDecodeRunSpec(
             public_dataset=f"speed_bench_{category}",
             max_concurrency=1,
-            num_prompts=None,  # use full dataset
+            num_prompts=SPEED_BENCH_QUALITATIVE_NUM_PROMPTS,  # whole category
         )
         for category in SPEED_BENCH_QUALITATIVE_CATEGORIES
     ]
@@ -156,6 +170,7 @@ SPEC_DECODE_PROFILES: Dict[str, List[SpecDecodeRunSpec]] = {
             public_dataset=f"speed_bench_throughput_{isl}",
             max_concurrency=concurrency,
             num_prompts=max(32, 4 * concurrency),
+            max_completion_tokens=THROUGHPUT_MAX_COMPLETION_TOKENS,
         )
         for isl in SPEED_BENCH_THROUGHPUT_ISLS
         for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
