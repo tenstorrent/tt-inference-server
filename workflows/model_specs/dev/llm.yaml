@@ -1109,16 +1109,10 @@ templates:
         # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
         hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
       override_tt_config:
-        # WORKING config = EAGER decode (coherent + correct, but slow ~3 tok/s).
-        # TRACE decode (trace_mode: true + sample_on_device_mode: decode_only) is the
-        # ~10x perf path but is NOT yet shippable: it works for short request #1 but
-        # degrades over length and corrupts across requests. ROOT CAUSE (per the
-        # atupe/qwen35-9b-inf-server reference): the DeltaNet recurrent state must be
-        # managed as a vLLM MAMBA/SSM cache (vLLM resets it per-request) instead of our
-        # internal-buffer + manual clear_state approach. That requires NOT overriding
-        # architectures->Qwen3ForCausalLM so vLLM sees the hybrid model. Until that
-        # rework lands, ship eager. To debug trace: flip trace_mode: true +
-        # sample_on_device_mode: decode_only (+ QWEN36_TRACE_DBG=1 for per-step dumps).
+        # SHIPPING config = EAGER decode + host sampling (coherent, correct,
+        # cross-request OK; ~3 tok/s). TRACE decode (trace_mode: true +
+        # sample_on_device_mode: decode_only) is the ~10x perf path but is WIP —
+        # see models/demos/qwen3_6_galaxy_v2/MAMBA_CACHE_REWORK_PLAN.md + memory.
         trace_mode: false
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
