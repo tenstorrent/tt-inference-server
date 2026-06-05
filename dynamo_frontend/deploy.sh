@@ -15,8 +15,8 @@ WORKER_TOKENIZER_DIR="/home/container_app_user/app/server/cpp_server/tokenizers"
 
 # Image defaults (override with the matching flag if needed).
 ETCD_IMAGE="quay.io/coreos/etcd:v3.5.13"
-WORKER_IMAGE="tt-cpp-worker:mock"
-FRONTEND_IMAGE="dynamo-frontend:latest"
+WORKER_IMAGE="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:ef76035_20260605_091948"
+FRONTEND_IMAGE="ghcr.io/tenstorrent/tt-shield/tt-dynamo-frontend:ef76035_20260605_091917"
 
 KIMI_MODEL_ID="moonshotai/Kimi-K2.6"
 DEEPSEEK_MODEL_ID="deepseek-ai/DeepSeek-R1-0528"
@@ -27,7 +27,6 @@ DEVICE_IDS="10,11,14,15,18,19,22,23"
 # runs the local binary; defaults to the in-repo cpp_server so no path is needed.
 LOCAL_BUILD=""
 CPP_SERVER_DIR="${SCRIPT_DIR}/../tt-media-server/cpp_server"
-TOKENIZERS_TEMP_DIR=""
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] %s\n' "$*" >&2; exit 1; }
@@ -79,7 +78,6 @@ fi
 cleanup() {
     log "tearing down"
     docker rm -f "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
-    [[ -n "$TOKENIZERS_TEMP_DIR" && -d "$TOKENIZERS_TEMP_DIR" ]] && rm -rf "$TOKENIZERS_TEMP_DIR"
 }
 trap cleanup EXIT INT TERM
 
@@ -143,39 +141,12 @@ done
 log "worker registered:"
 docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
 
-# ── tokenizers ──────────────────────────────────────────────────────────────
-# The worker advertises absolute model/tokenizer paths (inside its container) in
-# its MDC; the frontend needs the same files at the same path or Dynamo treats
-# them as HF repo ids and 404s. So extract them from the worker image and
-# bind-mount them in. Scratch dir lives under SCRIPT_DIR, NOT /tmp: with dockerd
-# PrivateTmp a /tmp bind mount would silently be empty.
-TOKENIZERS_TEMP_DIR="$(mktemp -d "${SCRIPT_DIR}/.deploy-tokenizers.XXXXXX")"
-log "extracting tokenizers from worker image -> $TOKENIZERS_TEMP_DIR"
-TMP_CID="$(docker create "$WORKER_IMAGE")"
-docker cp "${TMP_CID}:${WORKER_TOKENIZER_DIR}/." "$TOKENIZERS_TEMP_DIR/" >/dev/null 2>&1 \
-    || { docker rm "$TMP_CID" >/dev/null 2>&1 || true; die "worker image has no tokenizers at ${WORKER_TOKENIZER_DIR}"; }
-docker rm "$TMP_CID" >/dev/null 2>&1 || true
-
-# Required files: HF config + tokenizer config, a tokenizer (json or tiktoken),
-# and (Kimi only) the chat template.
-MODEL_SUBDIR="$TOKENIZERS_TEMP_DIR/$HF_MODEL_ID"
-[[ -d "$MODEL_SUBDIR" ]] || die "no tokenizers for $HF_MODEL_ID in $WORKER_IMAGE"
-for f in config.json tokenizer_config.json; do
-    [[ -f "$MODEL_SUBDIR/$f" ]] || die "missing $f under $MODEL_SUBDIR"
-done
-[[ -f "$MODEL_SUBDIR/tokenizer.json" || -f "$MODEL_SUBDIR/tiktoken.model" ]] \
-    || die "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
-[[ "$HF_MODEL_ID" != *[Kk]imi* || -f "$MODEL_SUBDIR/chat_template.jinja" ]] \
-    || die "missing chat_template.jinja under $MODEL_SUBDIR"
-log "tokenizer files for $HF_MODEL_ID:"
-find "$MODEL_SUBDIR" -maxdepth 1 -type f | sed 's/^/[deploy]   /'
-
 # ── frontend ────────────────────────────────────────────────────────────────
-# Mount :rw (not :ro): the entrypoint runs `mkdir -p "$MODEL_PATH"` under set -e;
-# on a read-only mount that mkdir fails with EROFS and the container exits.
+# The frontend image bakes the tokenizer tree at WORKER_TOKENIZER_DIR (same
+# fetch_tokenizers.sh the worker uses), so MODEL_PATH just points the entrypoint
+# at the baked dir — no tokenizer extraction or bind-mount needed.
 log "starting frontend ($FRONTEND_IMAGE)"
 docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
-    -v "${TOKENIZERS_TEMP_DIR}:${WORKER_TOKENIZER_DIR}:rw" \
     -e MODEL_PATH="${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}" \
     -e DYN_DISCOVERY_BACKEND=etcd \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
