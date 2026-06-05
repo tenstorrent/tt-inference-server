@@ -13,11 +13,21 @@ from transformers import TopPLogitsWarper
 class TTSamplingParams:
     """
     Used by TTModelInput.
+
+    Duck-type compatible with models.common.sampling.generator.SamplingParams so
+    format_sampling_params()'s dataclasses.replace(...) (which writes the penalty /
+    seed fields) works. The penalty/seed/log-prob fields carry defaults so existing
+    callers that build TTSamplingParams(temperature, top_k, top_p) are unaffected.
     """
 
     temperature: Union[float, list[float]]
     top_k: Union[int, list[int]]
     top_p: Union[float, list[float]]
+    presence_penalty: Union[float, list[float]] = 0.0
+    frequency_penalty: Union[float, list[float]] = 0.0
+    repetition_penalty: Union[float, list[float]] = 1.0
+    seed: Union[int, list[int], None] = None
+    enable_log_probs: Union[bool, list[bool]] = False
 
 
 @dataclass(frozen=True)
