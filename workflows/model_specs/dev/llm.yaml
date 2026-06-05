@@ -1109,15 +1109,17 @@ templates:
         # TTQwen3ForCausalLM, which the plugin maps to our qwen3.6 TT class.
         hf_overrides: '{"architectures": ["Qwen3ForCausalLM"]}'
       override_tt_config:
-        # trace_mode=true enables DECODE tracing (the demo's proven decode path:
-        # set_trace_decode_mode + per-step refresh_decode_per_step_buffers, wired
-        # into the generator trace path). PREFILL stays eager regardless — the
-        # generator's _disable_prefill_tracing hook (set in generator_vllm) forces
-        # enable_trace=False for prefill because the DeltaNet GDN chunk kernel hits
-        # an L1/CB clash under trace-capture (V2-9 blocker). So this is eager
-        # prefill + trace decode, matching text_demo_qwen36. (Eager decode produced
-        # garbage past token 1 — it was never multi-step-verified in v2.)
-        trace_mode: false
+        # trace_mode=true enables DECODE tracing — the demo's fast self-contained
+        # on-device decode loop (~10x faster than eager). PREFILL stays eager
+        # regardless: generator_vllm._disable_prefill_tracing forces enable_trace=False
+        # for prefill (DeltaNet GDN chunk kernel L1/CB clash under trace-capture).
+        trace_mode: true
+        # On-device sampling (decode): the decode trace keeps logits ON DEVICE and
+        # samples via the separate sampling trace (enable_split_sampling) — no per-step
+        # 248k-vocab to_torch / full-logits gather (which is what made host sampling
+        # ~10x slower and forced reset_inputs every step). Required for the fast trace
+        # loop; the sampler runs 32-wide at batch-1 (TTSampling rounds up to 32).
+        sample_on_device_mode: decode_only
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
         fabric_config: FABRIC_1D_RING
