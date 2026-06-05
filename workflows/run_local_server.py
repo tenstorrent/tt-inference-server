@@ -22,6 +22,7 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     get_repo_root_path,
     run_command,
+    user_error,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine, WorkflowType
 
@@ -114,14 +115,16 @@ def _raise_local_server_storage_permission_error(path: Path, error: PermissionEr
     host_uid = os.getuid() if hasattr(os, "getuid") else "unknown"
     uid_suffix = f" (uid={host_uid})" if isinstance(host_uid, int) else ""
     chown_command = f"sudo chown -R $(id -u):$(id -g) {shlex.quote(str(path.parent))}"
-    raise PermissionError(
-        f"Local server storage path is not writable: {path}. "
-        f"--local-server runs as the invoking host user{uid_suffix} and ignores "
-        "--image-user. This usually means the existing persistent_volume tree was "
-        "created by Docker or another UID. Try "
-        f"`{chown_command}` or adjust the path with chmod, or remove the stale "
-        "directory and rerun."
-    ) from error
+    user_error(
+        f"ERROR: The local server cannot write to its storage directory.\n"
+        f"  Path: {path}\n"
+        f"  This script runs as the current host user{uid_suffix}, but the directory\n"
+        f"  appears to be owned by a different user (e.g. created by Docker).\n"
+        "\nTo fix this:\n"
+        f"  Option A — fix ownership:  {chown_command}\n"
+        f"  Option B — remove the stale directory and rerun: rm -rf {path.parent}\n"
+        "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+    )
 
 
 def ensure_local_server_storage_paths(
@@ -180,9 +183,15 @@ def build_local_server_env(
         )
     elif setup_config.host_hf_cache:
         if not setup_config.host_model_weights_snapshot_dir:
-            raise ValueError(
-                f"Could not resolve a Hugging Face snapshot for {model_spec.hf_weights_repo} "
-                f"under {setup_config.host_hf_cache}"
+            user_error(
+                f"ERROR: Could not find a downloaded snapshot for '{model_spec.hf_weights_repo}' in the HuggingFace cache.\n"
+                f"Cache directory: {setup_config.host_hf_cache}\n"
+                "\nTo fix this:\n"
+                f"  1. Download the model weights: huggingface-cli download {model_spec.hf_weights_repo}\n"
+                f"     (ensure HF_HOME or HF_CACHE_DIR points to {setup_config.host_hf_cache})\n"
+                "  2. Or remove --host-hf-cache to let the server handle weights automatically\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
             )
         hf_home = Path(setup_config.host_hf_cache).resolve()
         snapshot_dir = Path(setup_config.host_model_weights_snapshot_dir).resolve()
@@ -208,8 +217,13 @@ def generate_local_run_command(
     model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
 ):
     if model_spec.inference_engine != InferenceEngine.VLLM.value:
-        raise NotImplementedError(
-            "--local-server currently supports only vLLM-backed model specs."
+        user_error(
+            f"ERROR: --local-server only supports vLLM-backed models, but '{model_spec.model_name}' uses engine '{model_spec.inference_engine}'.\n"
+            "Local server mode is not yet implemented for other inference engines.\n"
+            "\nTo fix this:\n"
+            "  1. Use --docker-server instead, OR\n"
+            "  2. Choose a vLLM-backed model\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
@@ -287,8 +301,13 @@ def install_local_server_requirements(runtime_config, repo_root=None):
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
     requirements_path = paths["requirements_path"]
     if not requirements_path.exists():
-        raise FileNotFoundError(
-            f"Missing local server requirements file: {requirements_path}"
+        user_error(
+            f"ERROR: The local server requirements file is missing: {requirements_path}\n"
+            "This file is part of the tt-inference-server repository and should exist after cloning.\n"
+            "\nTo fix this:\n"
+            "  1. Verify you are running from the correct tt-inference-server directory\n"
+            "  2. Re-clone or restore the repository if the file was accidentally deleted\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
         )
 
     install_command = (
@@ -359,7 +378,16 @@ def run_local_command(
         if process.poll() is not None:
             logger.error(f"Local server process {process_name} exited before startup.")
             logger.error(f"Local server logs are streamed to: {local_log_file_path}")
-            raise RuntimeError("Local server process failed to start.")
+            user_error(
+                "ERROR: The local inference server process exited immediately after starting.\n"
+                "This usually means a configuration error, missing library, or driver issue.\n"
+                f"\nTo diagnose:\n"
+                f"  1. Check the server log for the error:\n"
+                f"     cat {local_log_file_path}\n"
+                "  2. Make sure TT_METAL_HOME is built correctly and the device is accessible\n"
+                "  3. Re-run this script with --debug for the full Python traceback\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         time.sleep(0.1)
 
     skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}

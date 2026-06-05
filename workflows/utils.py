@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -17,6 +18,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def user_error(message: str) -> None:
+    """Print a plain-English error block and exit with code 1."""
+    print(f"\n{message}\n", file=sys.stderr)
+    raise SystemExit(1)
 
 # SDXL num prompts limits
 SDXL_DEFAULT_NUM_PROMPTS = 100

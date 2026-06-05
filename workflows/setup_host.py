@@ -27,6 +27,7 @@ from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_persistent_volume_root,
     resolve_hf_snapshot_dir,
+    user_error,
 )
 from workflows.validate_setup import _try_fix_path_permissions_for_uid
 from workflows.workflow_types import ModelSource, WorkflowVenvType
@@ -155,7 +156,15 @@ class SetupConfig:
         try:
             ModelSource(self.model_source)
         except ValueError:
-            raise ValueError("⛔ Invalid model source.")
+            valid = ", ".join(s.value for s in ModelSource)
+            user_error(
+                f"ERROR: '{self.model_source}' is not a valid model source.\n"
+                f"Valid choices are: {valid}\n"
+                "\nTo fix this:\n"
+                f"  1. Set MODEL_SOURCE to one of: {valid}\n"
+                "  2. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
@@ -212,8 +221,15 @@ def http_request(
     except urllib.error.HTTPError as e:
         return e.read(), e.getcode(), dict(e.headers)
     except Exception as e:
-        logger.error(f"⛔ Error making {method} request to {url}: {e}")
-        raise Exception from e
+        user_error(
+            f"ERROR: Could not reach {url} ({type(e).__name__}: {e})\n"
+            "A network request to HuggingFace failed before a response was received.\n"
+            "\nTo fix this:\n"
+            "  1. Check your internet connection\n"
+            "  2. Check that https://huggingface.co is reachable from this host\n"
+            "  3. If you are behind a proxy, set HTTPS_PROXY and re-run this script\n"
+            "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+        )
 
 
 class HostSetupManager:
@@ -325,7 +341,15 @@ class HostSetupManager:
             logger.info("Assuming that server self-provides the weights.")
             return True
         else:
-            raise ValueError("⛔ Invalid model source.")
+            valid = ", ".join(s.value for s in ModelSource)
+            user_error(
+                f"ERROR: '{self.setup_config.model_source}' is not a valid model source.\n"
+                f"Valid choices are: {valid}\n"
+                "\nTo fix this:\n"
+                f"  1. Set MODEL_SOURCE to one of: {valid}\n"
+                "  2. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     def check_disk_space(self) -> bool:
         if self.setup_config.model_source != ModelSource.HUGGINGFACE.value:
@@ -378,7 +402,16 @@ class HostSetupManager:
         self.hf_token = self.hf_token or os.getenv("HF_TOKEN", "")
         if not self.hf_token and not self.automatic:
             self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
-        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+        if not self.check_hf_access(self.hf_token):
+            user_error(
+                "ERROR: HF_TOKEN validation failed.\n"
+                "The token was either missing, invalid, or rejected by HuggingFace.\n"
+                "\nTo fix this:\n"
+                "  1. Go to https://huggingface.co/settings/tokens and create or copy a token\n"
+                "  2. Run: export HF_TOKEN=your_token_here\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
         if self.setup_config.host_hf_cache:
             hf_home = Path(self.setup_config.host_hf_cache)
@@ -389,14 +422,19 @@ class HostSetupManager:
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
-            logger.error("⛔ Invalid HF_TOKEN.")
+            logger.debug(
+                "HF_TOKEN is missing or has an unexpected format (expected it to start with 'hf_')."
+            )
             return False
         data, status, _ = http_request(
             "https://huggingface.co/api/whoami-v2",
             headers={"Authorization": f"Bearer {token}"},
         )
         if status != 200:
-            logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
+            logger.debug(
+                "HuggingFace rejected the HF_TOKEN (HTTP %d).",
+                status,
+            )
             return False
         model_url = (
             f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
@@ -407,28 +445,47 @@ class HostSetupManager:
         try:
             json_data = json.loads(data.decode("utf-8"))
         except json.JSONDecodeError:
-            logger.error("⛔ Invalid JSON response from Hugging Face.")
+            logger.debug(
+                "Received an unexpected response from the HuggingFace API (not valid JSON)."
+            )
             return False
         siblings = json_data.get("siblings", [])
         if not siblings:
-            logger.error("⛔ No files found in repository.")
+            logger.debug(
+                "The HuggingFace repository '%s' appears to have no files.",
+                self.model_spec.hf_weights_repo,
+            )
             return False
         first_file = siblings[0].get("rfilename")
         if not first_file:
-            logger.error("⛔ Unexpected repository structure.")
+            logger.debug(
+                "Unexpected structure in the HuggingFace repository response for '%s'.",
+                self.model_spec.hf_weights_repo,
+            )
             return False
         head_url = f"https://huggingface.co/{self.model_spec.hf_weights_repo}/resolve/main/{first_file}"
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
         if head_headers.get("x-error-code"):
-            logger.error("⛔ The model is gated and you don't have access.")
+            logger.debug(
+                "Access to model '%s' was denied — this model is gated.",
+                self.model_spec.hf_weights_repo,
+            )
             return False
         logger.info("✅ HF_TOKEN is valid.")
         return True
 
     def setup_model_environment(self):
-        assert self.check_ram(), "⛔ Insufficient host RAM."
+        if not self.check_ram():
+            user_error(
+                f"ERROR: This host does not have enough RAM to run the model '{self.model_spec.model_name}'.\n"
+                f"Required: {self.model_spec.min_ram_gb} GB  —  see log above for the amount detected.\n"
+                "\nTo fix this:\n"
+                "  1. Free up RAM by stopping other processes, or\n"
+                "  2. Use a smaller model that fits in the available memory\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
         if not self.automatic and os.getenv("MODEL_SOURCE") is None:
             print("\nHow do you want to provide a model?")
@@ -441,16 +498,28 @@ class HostSetupManager:
             elif choice == "2":
                 self.setup_config.model_source = ModelSource.LOCAL.value
             else:
-                raise ValueError("⛔ Invalid model source choice.")
+                user_error(
+                    f"ERROR: '{choice}' is not a valid choice for the model source.\n"
+                    "Please enter '1' for HuggingFace or '2' for a local folder.\n"
+                    "\nTo fix this:\n"
+                    "  1. Re-run this script and enter 1 or 2 when prompted\n"
+                    "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+                )
 
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
             self.get_hf_env_vars()
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
-                assert _host_model_weights_mount_dir, (
-                    "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
-                )
+                if not _host_model_weights_mount_dir:
+                    user_error(
+                        "ERROR: MODEL_WEIGHTS_DIR is not set but is required when using a local model source in automatic mode.\n"
+                        "In automatic mode the script cannot prompt for the weights directory interactively.\n"
+                        "\nTo fix this:\n"
+                        "  1. Run: export MODEL_WEIGHTS_DIR=/path/to/your/weights\n"
+                        "  2. Re-run this script\n"
+                        "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+                    )
             else:
                 _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
@@ -459,14 +528,31 @@ class HostSetupManager:
             self.setup_config.update_host_model_weights_mount_dir(
                 Path(_host_model_weights_mount_dir)
             )
-        assert self.check_disk_space(), "⛔ Insufficient disk space."
+        if not self.check_disk_space():
+            user_error(
+                f"ERROR: Not enough disk space to download weights for '{self.model_spec.model_name}'.\n"
+                f"Required: {self.model_spec.min_disk_gb} GB free  —  see log above for the amount detected.\n"
+                "\nTo fix this:\n"
+                "  1. Free up disk space on the target volume, or\n"
+                "  2. Point to a volume with more free space using --host-volume or --host-hf-cache\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
         if not self.jwt_secret:
             self.jwt_secret = os.getenv("JWT_SECRET", "")
         if not self.jwt_secret and not self.automatic:
             self.jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
 
-        assert self.jwt_secret, "⛔ JWT_SECRET cannot be empty."
+        if not self.jwt_secret:
+            user_error(
+                "ERROR: JWT_SECRET is empty.\n"
+                "A non-empty secret is required to sign API authentication tokens.\n"
+                "\nTo fix this:\n"
+                "  1. Generate a secret: python3 -c \"import secrets; print(secrets.token_hex(32))\"\n"
+                "  2. Run: export JWT_SECRET=<the generated secret>\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     def repack_weights(self, source_dir: Path, target_dir: Path):
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -504,7 +590,15 @@ class HostSetupManager:
         )
         repack_url = "https://github.com/tenstorrent/tt-metal/raw/refs/tags/v0.56.0-rc47/models/demos/t3000/llama2_70b/scripts/repack_weights.py"
         data, status, _ = http_request(repack_url)
-        assert status == 200, "⛔ Failed to download repack_weights.py"
+        if status != 200:
+            user_error(
+                f"ERROR: Failed to download the weight repacking script (HTTP {status}).\n"
+                "The script is needed to convert weights to the tt-metal format.\n"
+                "\nTo fix this:\n"
+                "  1. Check your internet connection\n"
+                "  2. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         repack_script = Path("repack_weights.py")
         with repack_script.open("wb") as f:
             f.write(data)
@@ -539,16 +633,31 @@ class HostSetupManager:
 
         assert self.hf_token, "⛔ HF_TOKEN not set."
         if self.model_spec.repacked == 1:
-            raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
+            user_error(
+                f"ERROR: Model '{self.model_spec.model_name}' uses repacked weights, which cannot be downloaded directly from HuggingFace.\n"
+                "Repacked weight formats must be prepared locally before use.\n"
+                "\nTo fix this:\n"
+                "  1. Download the raw weights manually: huggingface-cli download " + self.model_spec.hf_weights_repo + "\n"
+                "  2. Repack them following the instructions in vllm-tt-metal/README.md\n"
+                "  3. Use --host-weights-dir to point at the repacked directory\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         hf_exec = venv_config.venv_path / "bin" / "hf"
-        assert hf_exec.exists(), (
-            f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
-        )
+        if not hf_exec.exists():
+            user_error(
+                f"ERROR: The 'hf' CLI tool was not found after setting up the HF venv.\n"
+                f"Expected at: {hf_exec}\n"
+                "\nTo fix this:\n"
+                "  1. Delete the HF venv and let it be recreated: rm -rf .workflow_venvs/hf_setup\n"
+                "  2. Re-run this script\n"
+                "  3. If the problem persists, run with --debug for the full traceback\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         hf_repo = self.model_spec.hf_weights_repo
         if self.setup_config.host_hf_cache:
             os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
@@ -563,7 +672,16 @@ class HostSetupManager:
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
             result = subprocess.run(cmd)
-            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+            if result.returncode != 0:
+                user_error(
+                    f"ERROR: Downloading model weights from HuggingFace failed.\n"
+                    f"Repository: {hf_repo}\n"
+                    "\nTo fix this:\n"
+                    "  1. Check your HF_TOKEN is valid: huggingface-cli whoami\n"
+                    "  2. Check your internet connection\n"
+                    "  3. Retry: the download may have been interrupted\n"
+                    "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+                )
             snapshot_dir = resolve_hf_snapshot_dir(
                 self.model_spec.hf_weights_repo, Path(self.setup_config.host_hf_cache)
             )
@@ -594,7 +712,18 @@ class HostSetupManager:
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
-        assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+        if result.returncode != 0:
+            user_error(
+                f"ERROR: Downloading model weights from HuggingFace to the host volume failed.\n"
+                f"Repository: {hf_repo}\n"
+                f"Target directory: {host_weights_dir}\n"
+                "\nTo fix this:\n"
+                "  1. Check your HF_TOKEN is valid: huggingface-cli whoami\n"
+                "  2. Check your internet connection\n"
+                "  3. Check that the target directory is writable\n"
+                "  4. Retry: the download may have been interrupted\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
@@ -604,7 +733,15 @@ class HostSetupManager:
             )
             self.check_model_weights_dir(self.setup_config.host_model_weights_mount_dir)
         else:
-            raise ValueError("⛔ Weights directory does not exist.")
+            user_error(
+                f"ERROR: The local weights directory does not exist: {self.setup_config.host_model_weights_mount_dir}\n"
+                "The MODEL_WEIGHTS_DIR path must point to a directory containing model weights.\n"
+                "\nTo fix this:\n"
+                "  1. Check that the path is correct: ls " + str(self.setup_config.host_model_weights_mount_dir) + "\n"
+                "  2. Update MODEL_WEIGHTS_DIR or --host-weights-dir to the correct path\n"
+                "  3. Re-run this script\n"
+                "\nIf you need help, see https://docs.tenstorrent.com/getting-started/README.html#before-you-begin"
+            )
 
     def make_host_dirs(self):
         dirs_to_create = [
@@ -744,6 +881,12 @@ def main():
         help="Model implementation to use",
         default=os.getenv("MODEL_IMPL", "tt-transformers"),
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Show full Python tracebacks on error instead of plain-English messages (for developers).",
+    )
 
     args = parser.parse_args()
 
@@ -805,4 +948,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        if "--debug" in sys.argv:
+            raise
+        print(
+            f"\nERROR: An unexpected error occurred: {exc}\n"
+            "\nRun with --debug to see the full traceback.\n"
+            "If this looks like a bug, please open a GitHub issue.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)

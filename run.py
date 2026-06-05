@@ -351,6 +351,12 @@ def parse_arguments():
         default=os.getenv("SERVER_TESTS", "false"),
         help="Run server tests using server_tests/run.py (true/false). Default is false.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Show full Python tracebacks on error instead of plain-English messages (for developers).",
+    )
 
     # SPEC_TESTS workflow arguments (server tests filtering)
     spec_tests_group = parser.add_argument_group(
@@ -693,7 +699,20 @@ def main():
     logger.info(f"Runtime model spec saved to: {json_fpath}")
 
     # validate setup after run logger has been initialized
-    validate_setup(model_spec, runtime_config, json_fpath)
+    try:
+        validate_setup(model_spec, runtime_config, json_fpath)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        if args.debug:
+            raise
+        print(
+            f"\nERROR: Setup validation failed: {exc}\n"
+            "\nRun with --debug to see the full traceback.\n"
+            "If this looks like a bug, please open a GitHub issue.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     setup_config = None
     if runtime_config.docker_server or runtime_config.local_server:
@@ -701,19 +720,32 @@ def main():
             logger.info("Running inference server in Docker container ...")
         else:
             logger.info("Resolving local-server host storage ...")
-        setup_config = setup_host(
-            model_spec=model_spec,
-            jwt_secret=os.getenv("JWT_SECRET"),
-            hf_token=os.getenv("HF_TOKEN"),
-            automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
-            host_volume=runtime_config.host_volume,
-            host_hf_cache=runtime_config.host_hf_cache,
-            host_weights_dir=runtime_config.host_weights_dir,
-            image_user=(
-                runtime_config.image_user if runtime_config.docker_server else None
-            ),
-            local_server=runtime_config.local_server,
-        )
+        try:
+            setup_config = setup_host(
+                model_spec=model_spec,
+                jwt_secret=os.getenv("JWT_SECRET"),
+                hf_token=os.getenv("HF_TOKEN"),
+                automatic_setup=os.getenv("AUTOMATIC_HOST_SETUP"),
+                host_volume=runtime_config.host_volume,
+                host_hf_cache=runtime_config.host_hf_cache,
+                host_weights_dir=runtime_config.host_weights_dir,
+                image_user=(
+                    runtime_config.image_user if runtime_config.docker_server else None
+                ),
+                local_server=runtime_config.local_server,
+            )
+        except SystemExit:
+            raise
+        except Exception as exc:
+            if args.debug:
+                raise
+            print(
+                f"\nERROR: Host setup failed: {exc}\n"
+                "\nRun with --debug to see the full traceback.\n"
+                "If this looks like a bug, please open a GitHub issue.\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     # step 4: optionally run inference server
     if runtime_config.docker_server:
@@ -768,7 +800,20 @@ def main():
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
+        try:
+            run_local_server(model_spec, runtime_config, json_fpath, setup_config)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            if args.debug:
+                raise
+            print(
+                f"\nERROR: Local server launch failed: {exc}\n"
+                "\nRun with --debug to see the full traceback.\n"
+                "If this looks like a bug, please open a GitHub issue.\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     main_return_code = 0
 
