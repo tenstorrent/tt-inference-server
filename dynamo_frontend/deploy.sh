@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Directory this script lives in. Used as the base for the tokenizer scratch
-# dir: it must NOT be under /tmp, because on hosts where dockerd runs with
-# systemd PrivateTmp a `-v /tmp/x:…` bind mount sees the daemon's (empty) /tmp
-# rather than ours, silently producing an empty tokenizer mount (the frontend
-# then 404s the model). See DEPLOY.md / MANUAL_KIMI_MOCK.md §D.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Fixed names / ports (no longer CLI-configurable) ───────────────────────
+# Fixed names/ports (not CLI-configurable).
 NETWORK_NAME="dynamo-net"
 ETCD_NAME="etcd"
 WORKER_NAME="tt-cpp-worker"
@@ -18,56 +13,38 @@ MODEL_NAME="tt-cpp-server"
 LLM_DEVICE_BACKEND="pipeline_manager"
 WORKER_TOKENIZER_DIR="/home/container_app_user/app/server/cpp_server/tokenizers"
 
-# ── Image defaults (all optional; override only if you need to) ─────────────
+# Image defaults (override with the matching flag if needed).
 ETCD_IMAGE="quay.io/coreos/etcd:v3.5.13"
 WORKER_IMAGE="tt-cpp-worker:mock"
 FRONTEND_IMAGE="dynamo-frontend:latest"
 
-# ── Model selection ─────────────────────────────────────────────────────────
 KIMI_MODEL_ID="moonshotai/Kimi-K2.6"
 DEEPSEEK_MODEL_ID="deepseek-ai/DeepSeek-R1-0528"
-HF_MODEL_ID="$DEEPSEEK_MODEL_ID"   # default
-
+HF_MODEL_ID="$DEEPSEEK_MODEL_ID"
 DEVICE_IDS="10,11,14,15,18,19,22,23"
 
-# Local-build: bind-mount this repo's cpp_server/build over the worker image
-# and run the local binary. Defaults to the in-repo cpp_server next to this
-# script, so --local-build needs no extra path argument.
+# --local-build mounts this repo's cpp_server/build over the worker image and
+# runs the local binary; defaults to the in-repo cpp_server so no path is needed.
 LOCAL_BUILD=""
 CPP_SERVER_DIR="${SCRIPT_DIR}/../tt-media-server/cpp_server"
-
 TOKENIZERS_TEMP_DIR=""
+
+log() { printf '[deploy] %s\n' "$*"; }
+die() { printf '[deploy] %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat >&2 <<EOF
 Usage: $0 [options]
+  --kimi | --deepseek          model to serve (default: --deepseek)
+  --hf-model-id <id>           explicit HF model id (overrides the above)
+  --local-build                run this repo's cpp_server/build in the worker
+  --etcd-image <img>           (default: ${ETCD_IMAGE})
+  --worker-image <img>         (default: ${WORKER_IMAGE})
+  --frontend-image <img>       (default: ${FRONTEND_IMAGE})
+  --device-ids <ids>           cpp_server DEVICE_IDS (default: ${DEVICE_IDS})
 
-Model (pick one; default: --deepseek):
-  --kimi                      serve ${KIMI_MODEL_ID}
-  --deepseek                  serve ${DEEPSEEK_MODEL_ID}
-  --hf-model-id <id>          explicit HF model id (overrides --kimi/--deepseek)
-
-Build:
-  --local-build               bind-mount <repo>/tt-media-server/cpp_server/build
-                              over the worker image and run the local binary
-                              (no --worker-image needed)
-
-Images (all optional; sensible defaults):
-  --etcd-image <img>          (default: ${ETCD_IMAGE})
-  --worker-image <img>        (default: ${WORKER_IMAGE})
-  --frontend-image <img>      (default: ${FRONTEND_IMAGE})
-
-Other:
-  --device-ids <ids>          cpp_server DEVICE_IDS env (default: ${DEVICE_IDS})
-
-The HF_TOKEN env var, if set in the calling shell, is forwarded to the
-frontend for gated HuggingFace models. Performance knobs (DYN_TOKENIZER,
-RAYON_NUM_THREADS, DYN_RUNTIME_*, RUST_LOG, DYN_TX_TRACE, DYN_ENABLE_ANTHROPIC_API)
-are read from the environment if set.
-
-Examples:
-  $0 --deepseek
-  $0 --kimi --local-build
+HF_TOKEN and perf knobs (DYN_TOKENIZER, RAYON_NUM_THREADS, DYN_RUNTIME_*,
+RUST_LOG, DYN_TX_TRACE, DYN_ENABLE_ANTHROPIC_API) are read from the environment.
 EOF
     exit 1
 }
@@ -86,213 +63,120 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-log() { printf '[deploy] %s\n' "$*"; }
-
+# Local-build: validate the binary and prepare the bind-mount + entrypoint.
+LOCAL_BUILD_MOUNT=()
+WORKER_ENTRYPOINT=()
 if [[ -n "$LOCAL_BUILD" ]]; then
     CPP_SERVER_DIR_ABS="$(readlink -f "$CPP_SERVER_DIR" 2>/dev/null || true)"
-    if [[ -z "$CPP_SERVER_DIR_ABS" || ! -d "$CPP_SERVER_DIR_ABS" ]]; then
-        echo "cpp_server directory not found: $CPP_SERVER_DIR" >&2
-        exit 1
-    fi
-    if [[ ! -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]]; then
-        echo "cpp_server binary not found at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" >&2
-        echo "  run ./build.sh in the cpp_server directory first" >&2
-        exit 1
-    fi
+    [[ -d "$CPP_SERVER_DIR_ABS" ]] || die "cpp_server directory not found: $CPP_SERVER_DIR"
+    [[ -f "$CPP_SERVER_DIR_ABS/build/tt_media_server_cpp" ]] \
+        || die "no binary at $CPP_SERVER_DIR_ABS/build/tt_media_server_cpp — run ./build.sh first"
     log "using local build from $CPP_SERVER_DIR_ABS"
+    LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
+    WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
 fi
 
 cleanup() {
     log "tearing down"
     docker rm -f "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
-    if [[ -n "$TOKENIZERS_TEMP_DIR" && -d "$TOKENIZERS_TEMP_DIR" ]]; then
-        rm -rf "$TOKENIZERS_TEMP_DIR"
-    fi
+    [[ -n "$TOKENIZERS_TEMP_DIR" && -d "$TOKENIZERS_TEMP_DIR" ]] && rm -rf "$TOKENIZERS_TEMP_DIR"
 }
 trap cleanup EXIT INT TERM
 
-if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
-    log "creating network $NETWORK_NAME"
-    docker network create "$NETWORK_NAME" >/dev/null
-else
-    log "network $NETWORK_NAME already exists"
-fi
+docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 \
+    || { log "creating network $NETWORK_NAME"; docker network create "$NETWORK_NAME" >/dev/null; }
 
+# ── etcd ──────────────────────────────────────────────────────────────────
 log "starting etcd ($ETCD_IMAGE)"
-docker run -d --name "$ETCD_NAME" \
-    --network "$NETWORK_NAME" \
-    -p 2379:2379 \
-    "$ETCD_IMAGE" \
-    /usr/local/bin/etcd \
-        --name dyn-etcd \
+docker run -d --name "$ETCD_NAME" --network "$NETWORK_NAME" -p 2379:2379 \
+    "$ETCD_IMAGE" /usr/local/bin/etcd --name dyn-etcd \
         --advertise-client-urls http://0.0.0.0:2379 \
         --listen-client-urls http://0.0.0.0:2379 >/dev/null
 
-log "waiting for etcd to become healthy"
+log "waiting for etcd"
 for _ in $(seq 1 30); do
-    if docker exec "$ETCD_NAME" etcdctl endpoint health >/dev/null 2>&1; then
-        break
-    fi
+    docker exec "$ETCD_NAME" etcdctl endpoint health >/dev/null 2>&1 && { ETCD_OK=1; break; }
     sleep 1
 done
-
-if ! docker exec "$ETCD_NAME" etcdctl endpoint health 2>&1 | tee /dev/stderr | grep -q 'is healthy'; then
-    log "etcd never became healthy; recent etcd logs:"
-    docker logs --tail 50 "$ETCD_NAME" >&2 || true
-    exit 1
-fi
+[[ -n "${ETCD_OK:-}" ]] || { docker logs --tail 50 "$ETCD_NAME" >&2 || true; die "etcd never became healthy"; }
 log "etcd healthy"
 
-log "starting worker ($WORKER_IMAGE)"
-
-# Device args for TT hardware
+# ── worker ────────────────────────────────────────────────────────────────
 DEVICE_ARGS=()
-if [[ -e /dev/tenstorrent ]]; then
-    DEVICE_ARGS+=(--device /dev/tenstorrent --cap-add=SYS_NICE)
-fi
+[[ -e /dev/tenstorrent ]] && DEVICE_ARGS+=(--device /dev/tenstorrent --cap-add=SYS_NICE)
 
-# Build mount args for local build - only mount the build directory to preserve
-# container's tt-llm-engine and other dependencies
-LOCAL_BUILD_MOUNT=()
-WORKER_ENTRYPOINT=()
-if [[ -n "$LOCAL_BUILD" ]]; then
-    log "bind-mounting local build: $CPP_SERVER_DIR_ABS/build -> container cpp_server/build"
-    LOCAL_BUILD_MOUNT+=(-v "${CPP_SERVER_DIR_ABS}/build:/home/container_app_user/app/server/cpp_server/build:ro")
-    WORKER_ENTRYPOINT+=(--entrypoint /bin/bash)
-fi
-
-# Model-specific worker env. DeepSeek-R1 uses the legacy MD format and the
-# 'deepseek' blaze socket descriptor prefix. Kimi K2.6 uses its own 'kimi'
-# prefix and the default MD format (its tiktoken tokenizer is advertised as
-# tik_token_model, not DeepSeek's hf_tokenizer_json layout).
+# Model-specific env: Kimi uses the 'kimi' blaze prefix + default MD format;
+# DeepSeek uses the legacy MD format + 'deepseek' prefix.
 WORKER_MODEL_ENV=()
 case "$HF_MODEL_ID" in
-    *[Kk]imi*)
-        WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=kimi)
-        ;;
-    *)
-        WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1)
-        WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek)
-        ;;
+    *[Kk]imi*) WORKER_MODEL_ENV+=(-e BLAZE_SOCKET_DESCRIPTOR_PREFIX=kimi) ;;
+    *)         WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1 -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek) ;;
 esac
 
-docker run -d --name "$WORKER_NAME" \
-    --network "$NETWORK_NAME" \
-    --shm-size=2g \
-    "${DEVICE_ARGS[@]}" \
-    "${LOCAL_BUILD_MOUNT[@]}" \
-    "${WORKER_ENTRYPOINT[@]}" \
+log "starting worker ($WORKER_IMAGE)"
+docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
+    "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
     -e DYNAMO_ENDPOINT_ENABLED=1 \
     -e DYNAMO_DISCOVERY_BACKEND=etcd \
     -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
-    -e DYNAMO_NAMESPACE=default \
-    -e DYNAMO_COMPONENT=backend \
-    -e DYNAMO_ENDPOINT_NAME=generate \
+    -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
     -e SERVER_MODE=cpp \
     -e MODEL="$HF_MODEL_ID" \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
     "${WORKER_MODEL_ENV[@]}" \
-    -e MAX_SESSIONS_COUNT=128 \
-    -e TT_LOG_LEVEL=debug \
-    -e USE_FAST_MODE=1 \
+    -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \
     "$WORKER_IMAGE" \
     ${LOCAL_BUILD:+-c 'cd cpp_server && LIB="$(pwd)/tt-llm-engine/build-full/libtt_llm_engine.so.0"; [ -f "$LIB" ] && export LD_PRELOAD="$LIB"; ./build/tt_media_server_cpp'} \
     >/dev/null
 
-log "waiting for worker to register against etcd (up to 60s)"
-REGISTERED=""
+log "waiting for worker to register with etcd (up to 60s)"
 for _ in $(seq 1 60); do
-    if docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/instances/ 2>/dev/null \
-       | grep -q '^v1/instances/'; then
-        REGISTERED=1
-        break
-    fi
-    if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER_NAME}\$"; then
-        log "worker container exited before registration; recent logs:"
-        docker logs --tail 80 "$WORKER_NAME" >&2 || true
-        exit 1
-    fi
+    docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/instances/ 2>/dev/null \
+        | grep -q '^v1/instances/' && { REGISTERED=1; break; }
+    docker ps --format '{{.Names}}' | grep -q "^${WORKER_NAME}\$" \
+        || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker exited before registering"; }
     sleep 1
 done
+[[ -n "${REGISTERED:-}" ]] || { docker logs --tail 80 "$WORKER_NAME" >&2 || true; die "worker did not register within 60s"; }
+log "worker registered:"
+docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | sed 's/^/[deploy]   /'
 
-if [[ -z "$REGISTERED" ]]; then
-    log "worker did not register within 60s; recent worker logs:"
-    docker logs --tail 80 "$WORKER_NAME" >&2 || true
-    exit 1
-fi
-
-log "worker registered the following keys:"
-docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ \
-    | grep -v '^$' | sed 's/^/[deploy]   /'
-
-# The worker advertises absolute paths (inside *its* container) for the model
-# config / tokenizer files in its MDC. Those paths don't exist in the frontend
-# container, and Dynamo's loader then treats them as HF repo ids and fails
-# with a 404. We need the same files at the same absolute path inside the
-# frontend, so we extract them from the worker image onto the host and
-# bind-mount that dir into the frontend. The image ships tokenizer.json +
-# tokenizer_config.json (and config.json); pointing $MODEL_PATH at the same
-# dir lets the frontend entrypoint skip its own HF download.
-TOKENIZER_MOUNT=()
-FRONTEND_MODEL_PATH_ENV=()
-
-# NOT under /tmp — see SCRIPT_DIR note above (dockerd PrivateTmp would make the
-# resulting bind mount silently empty).
+# ── tokenizers ──────────────────────────────────────────────────────────────
+# The worker advertises absolute model/tokenizer paths (inside its container) in
+# its MDC; the frontend needs the same files at the same path or Dynamo treats
+# them as HF repo ids and 404s. So extract them from the worker image and
+# bind-mount them in. Scratch dir lives under SCRIPT_DIR, NOT /tmp: with dockerd
+# PrivateTmp a /tmp bind mount would silently be empty.
 TOKENIZERS_TEMP_DIR="$(mktemp -d "${SCRIPT_DIR}/.deploy-tokenizers.XXXXXX")"
 log "extracting tokenizers from worker image -> $TOKENIZERS_TEMP_DIR"
 TMP_CID="$(docker create "$WORKER_IMAGE")"
-if ! docker cp "${TMP_CID}:${WORKER_TOKENIZER_DIR}/." "$TOKENIZERS_TEMP_DIR/" >/dev/null 2>&1; then
-    docker rm "$TMP_CID" >/dev/null 2>&1 || true
-    log "worker image has no tokenizers at ${WORKER_TOKENIZER_DIR}"
-    exit 1
-fi
+docker cp "${TMP_CID}:${WORKER_TOKENIZER_DIR}/." "$TOKENIZERS_TEMP_DIR/" >/dev/null 2>&1 \
+    || { docker rm "$TMP_CID" >/dev/null 2>&1 || true; die "worker image has no tokenizers at ${WORKER_TOKENIZER_DIR}"; }
 docker rm "$TMP_CID" >/dev/null 2>&1 || true
-TOKENIZERS_HOST_DIR_ABS="$TOKENIZERS_TEMP_DIR"
 
-MODEL_SUBDIR="$TOKENIZERS_HOST_DIR_ABS/$HF_MODEL_ID"
-mkdir -p "$MODEL_SUBDIR"
-
-# Validate required tokenizer files exist (expected to be in worker image)
+# Required files: HF config + tokenizer config, a tokenizer (json or tiktoken),
+# and (Kimi only) the chat template.
+MODEL_SUBDIR="$TOKENIZERS_TEMP_DIR/$HF_MODEL_ID"
+[[ -d "$MODEL_SUBDIR" ]] || die "no tokenizers for $HF_MODEL_ID in $WORKER_IMAGE"
 for f in config.json tokenizer_config.json; do
-    if [[ ! -f "$MODEL_SUBDIR/$f" ]]; then
-        log "missing $f under $MODEL_SUBDIR"
-        log "  ensure tokenizer files are included in the worker image"
-        exit 1
-    fi
+    [[ -f "$MODEL_SUBDIR/$f" ]] || die "missing $f under $MODEL_SUBDIR"
 done
-if [[ ! -f "$MODEL_SUBDIR/tokenizer.json" && ! -f "$MODEL_SUBDIR/tiktoken.model" ]]; then
-    log "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
-    log "  ensure tokenizer files are included in the worker image"
-    exit 1
-fi
-if [[ "$HF_MODEL_ID" == *Kimi* || "$HF_MODEL_ID" == *kimi* ]]; then
-    if [[ ! -f "$MODEL_SUBDIR/chat_template.jinja" ]]; then
-        log "missing chat_template.jinja under $MODEL_SUBDIR"
-        log "  ensure tokenizer files are included in the worker image"
-        exit 1
-    fi
-fi
+[[ -f "$MODEL_SUBDIR/tokenizer.json" || -f "$MODEL_SUBDIR/tiktoken.model" ]] \
+    || die "missing tokenizer.json or tiktoken.model under $MODEL_SUBDIR"
+[[ "$HF_MODEL_ID" != *[Kk]imi* || -f "$MODEL_SUBDIR/chat_template.jinja" ]] \
+    || die "missing chat_template.jinja under $MODEL_SUBDIR"
+log "tokenizer files for $HF_MODEL_ID:"
+find "$MODEL_SUBDIR" -maxdepth 1 -type f | sed 's/^/[deploy]   /'
 
-log "mounting tokenizers: $TOKENIZERS_HOST_DIR_ABS -> $WORKER_TOKENIZER_DIR"
-log "  using $HF_MODEL_ID:"
-find "$MODEL_SUBDIR" -maxdepth 1 -type f \
-    | sed "s|^|[deploy]     |"
-# Mount read-write (not :ro): the frontend entrypoint.sh runs
-# `mkdir -p "$MODEL_PATH"` under `set -e`, and on a read-only bind mount that
-# mkdir fails with EROFS (the kernel reports the error even though the dir
-# already exists), so the frontend container exits before starting. RW lets
-# the no-op mkdir succeed; nothing is actually written for the baked models.
-TOKENIZER_MOUNT+=(-v "${TOKENIZERS_HOST_DIR_ABS}:${WORKER_TOKENIZER_DIR}:rw")
-FRONTEND_MODEL_PATH_ENV+=(-e "MODEL_PATH=${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}")
-
+# ── frontend ────────────────────────────────────────────────────────────────
+# Mount :rw (not :ro): the entrypoint runs `mkdir -p "$MODEL_PATH"` under set -e;
+# on a read-only mount that mkdir fails with EROFS and the container exits.
 log "starting frontend ($FRONTEND_IMAGE)"
-docker run -d --name "$FRONTEND_NAME" \
-    --network "$NETWORK_NAME" \
-    -p "${FRONTEND_HOST_PORT}:8000" \
-    "${TOKENIZER_MOUNT[@]}" \
-    "${FRONTEND_MODEL_PATH_ENV[@]}" \
+docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
+    -v "${TOKENIZERS_TEMP_DIR}:${WORKER_TOKENIZER_DIR}:rw" \
+    -e MODEL_PATH="${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}" \
     -e DYN_DISCOVERY_BACKEND=etcd \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e MODEL_NAME="$MODEL_NAME" \
@@ -309,6 +193,5 @@ docker run -d --name "$FRONTEND_NAME" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null
 
-log "frontend reachable on http://localhost:${FRONTEND_HOST_PORT}"
-log "tailing worker logs (Ctrl+C to tear down)"
+log "frontend on http://localhost:${FRONTEND_HOST_PORT} — tailing worker logs (Ctrl+C to tear down)"
 docker logs -f "$WORKER_NAME"
