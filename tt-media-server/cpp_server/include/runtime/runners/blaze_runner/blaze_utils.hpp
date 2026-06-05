@@ -201,7 +201,10 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
 }
 
 inline pl::CounterChannelConfig makePrefillAckChannelConfig() {
-  return pl::SingleProcessCounterChannelConfig{};
+  return pl::InterProcessCounterChannelConfig{
+              .shm_name           = "/tt_prefill_layer_acks_prefill_service",
+              .connect_timeout_ms = 60000,
+          };
 }
 
 }  // namespace tt::runners::blaze::utils
