@@ -17,7 +17,6 @@
 // use PrefillTestServer which boots the stack without HTTP warmup.
 
 #include <gtest/gtest.h>
-#include <zmq.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -27,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <zmq.hpp>
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
@@ -168,9 +168,7 @@ class PrefillTestServer {
 class MockDecodeServer {
  public:
   explicit MockDecodeServer(uint16_t port)
-      : context_(1),
-        socket_(context_, zmq::socket_type::router),
-        port_(port) {
+      : context_(1), socket_(context_, zmq::socket_type::router), port_(port) {
     socket_.set(zmq::sockopt::linger, 0);
     socket_.set(zmq::sockopt::rcvtimeo, 5000);  // 5s timeout on recv
     std::string endpoint = "tcp://*:" + std::to_string(port);
@@ -187,9 +185,9 @@ class MockDecodeServer {
       zmq::message_t identity;
       auto res = socket_.recv(identity, zmq::recv_flags::dontwait);
       if (res.has_value() && identity.size() > 0) {
-        peerId_.assign(static_cast<uint8_t*>(identity.data()),
-                       static_cast<uint8_t*>(identity.data()) +
-                           identity.size());
+        peerId_.assign(
+            static_cast<uint8_t*>(identity.data()),
+            static_cast<uint8_t*>(identity.data()) + identity.size());
         // Drain the data frame
         if (identity.more()) {
           zmq::message_t dataFrame;
@@ -217,9 +215,9 @@ class MockDecodeServer {
 
   /// Receive a message from DEALER (identity + data). Returns deserialized.
   template <typename T>
-  std::optional<T> receive(std::string_view expectedType,
-                           std::chrono::milliseconds timeout =
-                               std::chrono::milliseconds(5000)) {
+  std::optional<T> receive(
+      std::string_view expectedType,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
       zmq::message_t identity;
@@ -230,8 +228,7 @@ class MockDecodeServer {
       }
       // Update peer id
       peerId_.assign(static_cast<uint8_t*>(identity.data()),
-                     static_cast<uint8_t*>(identity.data()) +
-                         identity.size());
+                     static_cast<uint8_t*>(identity.data()) + identity.size());
       if (!identity.more()) continue;
 
       zmq::message_t dataFrame;
@@ -301,8 +298,8 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   // Build a PrefillRequestMessage with random tokens
   const uint32_t taskId = 99001;
   tt::sockets::PrefillRequestMessage prefillReq(taskId);
-  prefillReq.token_ids = {100, 200, 300, 400, 500, 600, 700, 800,
-                          900, 1000, 1100, 1200, 1300, 1400, 1500, 1600,
+  prefillReq.token_ids = {100,  200,  300,  400,  500,  600,  700,  800,
+                          900,  1000, 1100, 1200, 1300, 1400, 1500, 1600,
                           1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
                           2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
   prefillReq.max_tokens = 10;
