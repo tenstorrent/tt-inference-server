@@ -50,6 +50,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server-heavy-build
 
       - name: Restore cached tokenizer files
         uses: actions/cache@v5
@@ -110,6 +111,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server-heavy-mock-pipeline
 
       - name: Build C++ server
         run: |
@@ -252,6 +254,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server-heavy-prefill-decode
 
       - name: Build C++ server
         run: |
@@ -654,6 +657,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server-heavy-gateway-split
 
       - name: Build C++ server
         run: |
@@ -1378,6 +1382,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server-heavy-tsan
 
       - name: Restore cached tokenizer files
         uses: actions/cache@v5
@@ -1531,6 +1536,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           init-private-submodule: "false"
+          ccache-key-suffix: gateway-heavy-tsan
 
       - name: Configure prefill_gateway with ThreadSanitizer
         run: |
