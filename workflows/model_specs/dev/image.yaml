@@ -242,8 +242,8 @@ templates:
 
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
-  version: "0.1.0"
-  tt_metal_commit: 9cc43dd
+  version: "0.15.0"
+  tt_metal_commit: d0393dc
   impl: tt_transformers
   min_disk_gb: 30
   min_ram_gb: 16
