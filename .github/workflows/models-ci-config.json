@@ -282,27 +282,41 @@
       }
     },
     "Qwen3-32B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "BH_GALAXY",
-            "P300X2",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "BH_GALAXY",
+                "P300X2",
+                "T3K"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         },
-        "weekly": {
-          "devices": [
-            "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
-          ]
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-8B": {
       "implementations": [
