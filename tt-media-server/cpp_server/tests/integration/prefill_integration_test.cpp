@@ -344,8 +344,7 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
 
   tt::test::WorkerResponse(seq->taskId)
-      .token(42)
-      .finalize()
+      .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
       .sendTo(server->resultQueue());
 
   // The prefill server should send back a PrefillResultMessage

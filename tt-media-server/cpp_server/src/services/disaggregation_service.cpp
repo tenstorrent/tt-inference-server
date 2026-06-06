@@ -3,6 +3,8 @@
 
 #include "services/disaggregation_service.hpp"
 
+#include <cassert>
+
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
@@ -161,7 +163,10 @@ void DisaggregationService::setupSocketHandlers() {
                 llmService->submitStreamingRequest(
                     *request,
                     [this, message, maxTokens, slotId](
-                        const LLMStreamChunk& response, bool /*isFinal*/) {
+                        const LLMStreamChunk& response, bool isFinal) {
+                      assert(
+                          isFinal &&
+                          "prefill runner must emit a single final response");
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
