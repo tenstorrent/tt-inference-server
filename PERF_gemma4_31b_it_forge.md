@@ -8,9 +8,11 @@ flag sweep that recovers the tt-xla benchmark's ~9 tok/s.
   `gemma-4-31b-it` to match `ModelNames.GEMMA_4_31B_IT`).
 - **Device:** QB2 = 2× P300 = `p300x2`, 4 chips, `(1,4)` 1D tensor-parallel mesh.
 - **Serve config:** 512 seq len, concurrency 1, `bfp_bf8` weights.
-- **Image:** `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:97aea20e33246455fa81b1d2bc5270093415ee23_fd9296b_79608294867`
-- **Wheels in image:** `tt-forge` / `pjrt-plugin-tt` / `vllm_tt` all
-  `1.2.0.dev20260530002932`; `vllm 0.19.1`; `torch-xla 2.9.0+git8d31cb3`.
+- **Image (current):** `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7_46a7c96_79778041239`
+  (`tt-forge` 1.3.0.dev20260605003323). **NOTE:** all numbers below were measured
+  on the prior build `...97aea20e..._fd9296b_79608294867` (`tt-forge`
+  1.2.0.dev20260530002932, `vllm 0.19.1`, `torch-xla 2.9.0+git8d31cb3`); the spec
+  has since been bumped to the 1.3.0 image but **not yet re-validated on it**.
 - **Runner:** server selects `vllm_forge_gemma4_31b`
   (`ModelRunners.VLLMForge_GEMMA4_31B`); mesh `(1,4)`, `max_model_length=512`,
   `max_num_seqs=1`, `max_num_batched_tokens=2560`.

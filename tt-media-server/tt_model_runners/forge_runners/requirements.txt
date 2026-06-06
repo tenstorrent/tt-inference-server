@@ -1,9 +1,10 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
 --extra-index-url https://download.pytorch.org/whl/cpu
-# Custom 1.2.0 dev/nightly built 2026-05-30, as baked into the tt-shield forge
-# image (matches pjrt-plugin-tt / vllm_tt 1.2.0.dev20260530002932). The stock
-# 1.2.0 lacks gemma-4-31b-it support / the TP fixes this build carries.
-tt-forge==1.2.0.dev20260530002932
+# Custom 1.3.0 dev/nightly built 2026-06-05, as baked into the tt-shield forge
+# image tag e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7_46a7c96_79778041239.
+# Supersedes 1.2.0.dev20260530002932 (gemma-4-31b-it was first validated on
+# that older build); carries the gemma-4-31b TP support the stock 1.3.0 lacks.
+tt-forge==1.3.0.dev20260605003323
 
 tabulate
 timm # input preprocessing
