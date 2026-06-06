@@ -338,7 +338,7 @@ class TTMochi1Runner(TTDiTRunner):
 
 WAN22_BH_RING_MESH_SHAPES = frozenset({(1, 4)})
 
-WAN22_GALAXY_BH_TRACE_REGION_BYTES = 120_000_000
+WAN22_GALAXY_BH_TRACE_REGION_BYTES = 125_000_000
 WAN22_GALAXY_ROUTER_MAX_PAYLOAD_BYTES = 8192
 
 
@@ -377,16 +377,13 @@ def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
 
 def _wan22_pipeline_args(
     request,
-    resolution,
+    resolution=None,
     image_prompt=None,
 ):
     """Build the kwargs dict shared by Wan2.2 T2V and I2V ``__call__`` sites."""
-    seed = int(request.seed) if request.seed is not None else None
+    seed = int(request.seed) if request.seed is not None else 0
     pipeline_args = {
-        "prompt": request.prompt,
-        "height": resolution.height,
-        "width": resolution.width,
-        "num_frames": WAN22_NUM_FRAMES,
+        "prompts": [request.prompt],
         "num_inference_steps": request.num_inference_steps,
         "guidance_scale": 4.0,
         "guidance_scale_2": 3.0,
@@ -395,9 +392,8 @@ def _wan22_pipeline_args(
     }
     if image_prompt is not None:
         pipeline_args["image_prompt"] = image_prompt
-    # Only include negative_prompt when set; otherwise the pipeline default applies.
     if bool(request.negative_prompt):
-        pipeline_args["negative_prompt"] = request.negative_prompt
+        pipeline_args["negative_prompts"] = [request.negative_prompt]
     return pipeline_args
 
 
@@ -772,12 +768,9 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
     def run(self, requests: list[VideoI2VGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running Distill inference")
         request = requests[0]
-        seed = int(request.seed) if request.seed is not None else None
+        seed = int(request.seed) if request.seed is not None else 0
         pipeline_args = {
-            "prompt": request.prompt,
-            "height": self.resolution.height,
-            "width": self.resolution.width,
-            "num_frames": WAN22_NUM_FRAMES,
+            "prompts": [request.prompt],
             "num_inference_steps": request.num_inference_steps or 4,
             "guidance_scale": 1.0,
             "guidance_scale_2": 1.0,
@@ -786,7 +779,7 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
             "image_prompt": self._build_image_prompt(request),
         }
         if bool(request.negative_prompt):
-            pipeline_args["negative_prompt"] = request.negative_prompt
+            pipeline_args["negative_prompts"] = [request.negative_prompt]
         frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: Distill inference completed")
         return frames
