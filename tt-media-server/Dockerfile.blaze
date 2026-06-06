@@ -19,10 +19,10 @@
 #
 # Required runtime auth for the build host:
 #   docker login ghcr.io with a token that has read access on
-#   ghcr.io/tenstorrent/tt-llm-engine/test.
+#   ghcr.io/tenstorrent/tt-llm-engine/blaze.
 # ==============================================================================
 
-ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/test:latest
+ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:latest
 
 # ==============================================================================
 # ENGINE STAGE - prebuilt tt-llm-engine + tt-metal artifacts.
