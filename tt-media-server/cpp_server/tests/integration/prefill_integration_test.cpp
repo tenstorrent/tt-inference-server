@@ -44,7 +44,7 @@
 
 namespace {
 
-constexpr uint16_t kMockDecodePort = 19500;
+constexpr uint16_t MOCK_DECODE_PORT = 19500;  // NOLINT
 
 void configureEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
@@ -58,7 +58,7 @@ void configureEnv() {
   // Socket config: prefill connects as DEALER to our mock ROUTER (direct mode)
   setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
-  setenv("SOCKET_PORT", std::to_string(kMockDecodePort).c_str(), 1);
+  setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
 }
 
@@ -76,24 +76,23 @@ class PrefillTestServer {
   }
 
   ~PrefillTestServer() {
-    stopAutoResponder_.store(true);
-    if (memoryAutoResponderThread_.joinable())
-      memoryAutoResponderThread_.join();
+    stopAutoResponder.store(true);
+    if (memoryAutoResponderThread.joinable()) memoryAutoResponderThread.join();
   }
 
-  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueue_; }
-  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueue_; }
+  tt::ipc::boost::TaskQueue& taskQueue() { return *taskQueuePtr; }
+  tt::ipc::boost::ResultQueue& resultQueue() { return *resultQueuePtr; }
   tt::ipc::boost::MemoryRequestQueue& memoryRequestQueue() {
-    return *memoryRequestQueue_;
+    return *memoryRequestQueuePtr;
   }
   tt::ipc::boost::MemoryResultQueue& memoryResultQueue() {
-    return *memoryResultQueue_;
+    return *memoryResultQueuePtr;
   }
-  void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
+  void setMemoryAutoRespond(bool on) { autoRespond.store(on); }
 
  private:
-  static constexpr std::chrono::seconds kStartupTimeout{30};
-  static constexpr std::chrono::milliseconds kPollInterval{100};
+  static constexpr int STARTUP_TIMEOUT_S = 30;  // NOLINT
+  static constexpr int POLL_INTERVAL_MS = 100;  // NOLINT
 
   PrefillTestServer() = default;
 
@@ -112,31 +111,32 @@ class PrefillTestServer {
     if (!llm)
       throw std::runtime_error("PrefillTestServer: LLMService not registered");
 
-    const auto deadline = std::chrono::steady_clock::now() + kStartupTimeout;
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(STARTUP_TIMEOUT_S);
     while (!llm->isModelReady()) {
       if (std::chrono::steady_clock::now() >= deadline)
         throw std::runtime_error(
             "PrefillTestServer: worker never signaled warmup");
-      std::this_thread::sleep_for(kPollInterval);
+      std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
     }
   }
 
   void openIpcQueues() {
-    taskQueue_ = std::make_unique<tt::ipc::boost::TaskQueue>(
+    taskQueuePtr = std::make_unique<tt::ipc::boost::TaskQueue>(
         tt::config::ttTaskQueueName());
-    resultQueue_ = std::make_unique<tt::ipc::boost::ResultQueue>(
+    resultQueuePtr = std::make_unique<tt::ipc::boost::ResultQueue>(
         std::string(tt::config::ttResultQueueName()) + "0");
-    memoryRequestQueue_ = tt::ipc::boost::MemoryRequestQueue::openExisting(
+    memoryRequestQueuePtr = tt::ipc::boost::MemoryRequestQueue::openExisting(
         tt::config::ttMemoryRequestQueueName());
-    memoryResultQueue_ = tt::ipc::boost::MemoryResultQueue::openExisting(
+    memoryResultQueuePtr = tt::ipc::boost::MemoryResultQueue::openExisting(
         tt::config::ttMemoryResultQueueName());
   }
 
   void startMemoryAutoResponder() {
-    memoryAutoResponderThread_ = std::thread([this] {
+    memoryAutoResponderThread = std::thread([this] {
       tt::domain::ManageMemoryTask req{};
-      while (!stopAutoResponder_.load()) {
-        if (!autoRespond_.load() || !memoryRequestQueue_->tryPop(req)) {
+      while (!stopAutoResponder.load()) {
+        if (!autoRespond.load() || !memoryRequestQueuePtr->tryPop(req)) {
           std::this_thread::sleep_for(std::chrono::milliseconds(10));
           continue;
         }
@@ -145,19 +145,19 @@ class PrefillTestServer {
           res.taskId = req.taskId;
           res.status = tt::domain::ManageMemoryStatus::SUCCESS;
           res.slotId = 0;
-          memoryResultQueue_->push(res);
+          memoryResultQueuePtr->push(res);
         }
       }
     });
   }
 
-  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueue_;
-  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueue_;
-  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue_;
-  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueue_;
-  std::thread memoryAutoResponderThread_;
-  std::atomic<bool> autoRespond_{true};
-  std::atomic<bool> stopAutoResponder_{false};
+  std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr;
+  std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr;
+  std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr;
+  std::unique_ptr<tt::ipc::boost::MemoryResultQueue> memoryResultQueuePtr;
+  std::thread memoryAutoResponderThread;
+  std::atomic<bool> autoRespond{true};
+  std::atomic<bool> stopAutoResponder{false};
 };
 
 // ---------------------------------------------------------------------------
@@ -168,14 +168,14 @@ class PrefillTestServer {
 class MockDecodeServer {
  public:
   explicit MockDecodeServer(uint16_t port)
-      : context_(1), socket_(context_, zmq::socket_type::router), port_(port) {
-    socket_.set(zmq::sockopt::linger, 0);
-    socket_.set(zmq::sockopt::rcvtimeo, 5000);  // 5s timeout on recv
+      : context(1), socket(context, zmq::socket_type::router) {
+    socket.set(zmq::sockopt::linger, 0);
+    socket.set(zmq::sockopt::rcvtimeo, 5000);  // 5s timeout on recv
     std::string endpoint = "tcp://*:" + std::to_string(port);
-    socket_.bind(endpoint);
+    socket.bind(endpoint);
   }
 
-  ~MockDecodeServer() { socket_.close(); }
+  ~MockDecodeServer() { socket.close(); }
 
   /// Block until a peer DEALER connects. Returns the peer's ZMQ identity.
   std::vector<uint8_t> waitForPeer(
@@ -183,17 +183,16 @@ class MockDecodeServer {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
       zmq::message_t identity;
-      auto res = socket_.recv(identity, zmq::recv_flags::dontwait);
+      auto res = socket.recv(identity, zmq::recv_flags::dontwait);
       if (res.has_value() && identity.size() > 0) {
-        peerId_.assign(
-            static_cast<uint8_t*>(identity.data()),
-            static_cast<uint8_t*>(identity.data()) + identity.size());
+        peerId.assign(static_cast<uint8_t*>(identity.data()),
+                      static_cast<uint8_t*>(identity.data()) + identity.size());
         // Drain the data frame
         if (identity.more()) {
           zmq::message_t dataFrame;
-          (void)socket_.recv(dataFrame, zmq::recv_flags::none);
+          (void)socket.recv(dataFrame, zmq::recv_flags::none);
         }
-        return peerId_;
+        return peerId;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -203,13 +202,13 @@ class MockDecodeServer {
   /// Send a serialized message to the connected DEALER peer.
   template <typename T>
   bool send(std::string_view messageType, const T& obj) {
-    if (peerId_.empty()) return false;
+    if (peerId.empty()) return false;
 
     auto data = tt::sockets::wire::serializeMessage(messageType, obj);
-    zmq::message_t idFrame(peerId_.data(), peerId_.size());
-    socket_.send(idFrame, zmq::send_flags::sndmore);
+    zmq::message_t idFrame(peerId.data(), peerId.size());
+    socket.send(idFrame, zmq::send_flags::sndmore);
     zmq::message_t msg(data.data(), data.size());
-    auto result = socket_.send(msg, zmq::send_flags::dontwait);
+    auto result = socket.send(msg, zmq::send_flags::dontwait);
     return result.has_value();
   }
 
@@ -221,18 +220,18 @@ class MockDecodeServer {
     auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline) {
       zmq::message_t identity;
-      auto res = socket_.recv(identity, zmq::recv_flags::dontwait);
+      auto res = socket.recv(identity, zmq::recv_flags::dontwait);
       if (!res.has_value()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         continue;
       }
       // Update peer id
-      peerId_.assign(static_cast<uint8_t*>(identity.data()),
-                     static_cast<uint8_t*>(identity.data()) + identity.size());
+      peerId.assign(static_cast<uint8_t*>(identity.data()),
+                    static_cast<uint8_t*>(identity.data()) + identity.size());
       if (!identity.more()) continue;
 
       zmq::message_t dataFrame;
-      auto dataRes = socket_.recv(dataFrame, zmq::recv_flags::none);
+      auto dataRes = socket.recv(dataFrame, zmq::recv_flags::none);
       if (!dataRes.has_value() || dataFrame.size() == 0) continue;
 
       auto* ptr = static_cast<uint8_t*>(dataFrame.data());
@@ -247,10 +246,9 @@ class MockDecodeServer {
   }
 
  private:
-  zmq::context_t context_;
-  zmq::socket_t socket_;
-  uint16_t port_;
-  std::vector<uint8_t> peerId_;
+  zmq::context_t context;
+  zmq::socket_t socket;
+  std::vector<uint8_t> peerId;
 };
 
 }  // namespace
@@ -262,7 +260,7 @@ class PrefillIntegrationTest : public ::testing::Test {
 
     // Start the mock decode server BEFORE the prefill server boots, so the
     // prefill's DEALER socket can connect immediately.
-    mockDecode = std::make_unique<MockDecodeServer>(kMockDecodePort);
+    mockDecode = std::make_unique<MockDecodeServer>(MOCK_DECODE_PORT);
 
     server = PrefillTestServer::start();
 
@@ -303,10 +301,12 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
                           1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400,
                           2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200};
   prefillReq.max_tokens = 10;
-  prefillReq.slot_id = 0;
+  prefillReq.slot_id =
+      7;  // decode-side slot — must NOT be overwritten by prefillSlotId
   prefillReq.temperature = 0.7f;
   prefillReq.top_p = 0.9f;
   prefillReq.registration_hashes = {111, 222};
+  prefillReq.number_of_decode_skip_tokens = 5;
 
   // Send the prefill request from mock decode to our prefill server
   bool sent = mockDecode->send("prefill_request", prefillReq);
@@ -334,7 +334,7 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   tt::domain::ManageMemoryResult memRes{};
   memRes.taskId = memReq.taskId;
   memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-  memRes.slotId = 0;
+  memRes.slotId = 2;  // prefill-side slot — distinct from decode slot_id (7)
   server->memoryResultQueue().push(memRes);
 
   // After allocation succeeds, the server submits the request to the worker.
@@ -342,6 +342,19 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
+
+  // Verify number_of_decode_skip_tokens propagated to the Sequence.
+  EXPECT_EQ(seq->getNumberOfDecodeSkipTokens(), 5)
+      << "number_of_decode_skip_tokens must propagate from "
+         "PrefillRequestMessage";
+
+  // Verify slot_id from decode (7) is the KV cache slot (the worker's output
+  // destination), while the prefill-side allocation (2) becomes the prefill
+  // KV cache slot (the source to read cached KV from).
+  EXPECT_EQ(seq->getKVCacheSlot(), 7u)
+      << "decode-side slot_id must be the primary KV cache slot";
+  EXPECT_EQ(seq->getPrefillKVCacheSlot(), 2u)
+      << "prefill-side allocation must be the prefill KV cache slot";
 
   tt::test::WorkerResponse(seq->taskId)
       .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
@@ -354,6 +367,132 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
       << "Expected PrefillResultMessage back from prefill server";
   EXPECT_EQ(result->task_id, taskId);
   EXPECT_FALSE(result->error);
+
+  server->setMemoryAutoRespond(true);
+}
+
+// Validates multi-turn prefix cache behavior in prefill mode: after the first
+// turn allocates a session (registered under the request's hashes), subsequent
+// turns whose registration_hashes share a prefix with the seed should HIT the
+// prefix cache and produce a continuation Sequence (no new ALLOCATE).
+TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
+  server->setMemoryAutoRespond(false);
+
+  // Generate a base set of 129 tokens (4 full blocks + 1) that grows each turn.
+  std::vector<int64_t> baseTokens;
+  for (int i = 1; i <= 129; ++i) baseTokens.push_back(i * 100);
+
+  // --- Turn 0: fresh ALLOCATE
+  // --------------------------------------------------
+  {
+    const uint32_t taskId = 99100;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.token_ids = baseTokens;  // 129 tokens = 4 full blocks + 1
+    req.max_tokens = 10;
+    req.slot_id = 0;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    req.registration_hashes = {1001, 1002, 1003, 1004};  // 4 block hashes
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Turn 0: failed to send";
+
+    // Expect ALLOCATE (prefix cache MISS on first request).
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "Turn 0: expected ALLOCATE";
+    EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+
+    // Respond to ALLOCATE.
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 0;
+    server->memoryResultQueue().push(memRes);
+
+    // Worker processes the request.
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Turn 0: no Sequence on task queue";
+    EXPECT_FALSE(seq->isContinuation()) << "Turn 0: must not be continuation";
+    EXPECT_EQ(seq->getNumPromptTokens(), 129u) << "Turn 0: full prompt";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Turn 0: no PrefillResult";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Turn 1+: should HIT prefix cache (continuations)
+  // -----------------------
+  for (uint32_t turn = 1; turn <= 3; ++turn) {
+    // Grow the prompt by 32 tokens per turn.
+    for (int i = 1; i <= 32; ++i)
+      baseTokens.push_back(static_cast<int64_t>(turn * 10000 + i * 100));
+
+    // Grow registration_hashes: start with the 4 seed hashes, add one per turn.
+    std::vector<uint64_t> hashes;
+    for (uint32_t h = 0; h < 4 + turn; ++h) hashes.push_back(1001 + h);
+
+    const uint32_t taskId = 99100 + turn;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.token_ids = baseTokens;
+    req.max_tokens = 10;
+    req.slot_id = 0;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    req.registration_hashes = hashes;
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Turn " << turn << ": failed to send";
+
+    // Should NOT trigger an ALLOCATE (prefix cache HIT).
+    tt::domain::ManageMemoryTask spuriousAlloc{};
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    bool gotAlloc = server->memoryRequestQueue().tryPop(spuriousAlloc);
+    EXPECT_FALSE(gotAlloc)
+        << "Turn " << turn
+        << ": unexpected ALLOCATE — prefix cache should have HIT";
+
+    // If an unexpected ALLOCATE appeared, respond so the server doesn't hang.
+    if (gotAlloc) {
+      tt::domain::ManageMemoryResult memRes{};
+      memRes.taskId = spuriousAlloc.taskId;
+      memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+      memRes.slotId = turn;
+      server->memoryResultQueue().push(memRes);
+    }
+
+    // Worker processes the continuation.
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Turn " << turn << ": no Sequence";
+    EXPECT_TRUE(seq->isContinuation())
+        << "Turn " << turn << ": must be a continuation (prefix cache HIT)";
+    // Delta prompt: only the new tokens should be sent (not the full prompt).
+    EXPECT_LT(seq->getNumPromptTokens(), baseTokens.size())
+        << "Turn " << turn << ": should send delta, not full prompt";
+
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(42 + turn, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Turn " << turn << ": no PrefillResult";
+    EXPECT_FALSE(result->error);
+  }
 
   server->setMemoryAutoRespond(true);
 }
