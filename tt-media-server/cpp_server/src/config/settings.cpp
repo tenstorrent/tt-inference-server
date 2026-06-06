@@ -672,6 +672,11 @@ unsigned prefillTimeoutMs() {
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
+size_t drogonIoThreads() {
+  return static_cast<size_t>(
+      envUlong("DROGON_IO_THREADS", defaults::DROGON_IO_THREADS));
+}
+
 bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
