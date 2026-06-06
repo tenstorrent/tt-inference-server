@@ -110,12 +110,12 @@ templates:
     # VLLMForge_QWEN_32B runner (added in this repo's tt-media-server) — the
     # prebuilt gemma image (97aea20...) does NOT contain it. See HANDOFF.
     - Qwen/Qwen3-32B
-  tt_metal_commit: "97aea20e33246455fa81b1d2bc5270093415ee23"
-  vllm_commit: "fd9296b"
+  tt_metal_commit: "e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7"
+  vllm_commit: "46a7c96"
   impl: forge_vllm_plugin
   min_disk_gb: 80
   min_ram_gb: 32
-  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:97aea20e33246455fa81b1d2bc5270093415ee23_fd9296b_79608294867"
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7_46a7c96_79778041239"
   model_type: LLM
   inference_engine: FORGE
   uses_tensor_model_cache: false

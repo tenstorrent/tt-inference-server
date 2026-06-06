@@ -15,7 +15,7 @@
 set -eu
 
 PORT=8014
-IMAGE="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:97aea20e33246455fa81b1d2bc5270093415ee23_fd9296b_79608294867"
+IMAGE="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7_46a7c96_79778041239"
 
 docker ps -q --filter "publish=${PORT}" | xargs -r docker kill
 
