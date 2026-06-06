@@ -1104,13 +1104,21 @@ ModelConfigs = {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
+        # batch-16 @ 4096 seq len, mirroring gemma-4-31b (both 32B forge TP on
+        # p300x2). NOTE: this point was measured/validated on gemma, not yet on
+        # Qwen3-32B -- the local verify on the freshly built image is the check.
+        "max_batch_size": 16,
         "vllm": {
             "model": SupportedModels.QWEN_3_32B.value,
-            "max_model_length": 512,
-            "max_num_batched_tokens": 512,
+            "max_model_length": 4096,
+            # vllm_tt requires max_num_batched_tokens >= max_model_length *
+            # max_num_seqs (no batched paged_fill_cache): 16 * 4096 = 65536.
+            "max_num_batched_tokens": 65536,
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 16,
+            # 0.1 default sizes ~3.8K KV tokens (< max_model_length -> init fails
+            # at 4096); 0.9 fits the 65536-token prefill + gives ~34K KV tokens.
+            "gpu_memory_utilization": 0.9,
         },
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },

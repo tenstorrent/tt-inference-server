@@ -121,13 +121,15 @@ templates:
   uses_tensor_model_cache: false
   status: EXPERIMENTAL
   device_model_specs:
-    # 4-chip (1,4) tensor-parallel mesh, 512 seq len / concurrency 1. Server-side
-    # config lives in tt-media-server (VLLMForge_QWEN_32B, P300X2). Same p300_x2
+    # 4-chip (1,4) tensor-parallel mesh, 4096 seq len / concurrency 16 (mirrors
+    # gemma-4-31b). Server-side config lives in tt-media-server
+    # (VLLMForge_QWEN_32B, P300X2): max_model_length=4096, max_num_seqs=16,
+    # max_num_batched_tokens=65536, gpu_memory_utilization=0.9. Same p300_x2
     # mesh-descriptor override as gemma (the runner doesn't auto-set it and the
     # image maps p300x2->p150).
     - device: P300X2
-      max_concurrency: 1
-      max_context: 512
+      max_concurrency: 16
+      max_context: 4096
       default_impl: true
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
