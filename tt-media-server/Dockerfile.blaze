@@ -149,8 +149,10 @@ RUN export CARGO_HOME=${HOME_DIR}/.cargo \
 # delivered in seconds as image layers.
 COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
-# uv's Python interpreter store - the venv at python_env/ symlinks into here.
-COPY --from=engine /root/.local/share/uv  /root/.local/share/uv
+# Note: no separate COPY of /root/.local/share/uv needed — the engine image
+# now uses `create_venv.sh --bundle-python`, so the Python interpreter is
+# deep-copied into tt-metal/python_env/ rather than symlinked to the uv
+# store. Mirrors tt-inference-server PR #4019 ("Fix Docker images").
 
 # ----- Build cpp_server with ENABLE_BLAZE=ON (uses find_package now) -----
 # Phase 2 edit in tt-media-server/cpp_server/CMakeLists.txt switched from
@@ -226,10 +228,12 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 
 # Engine artifacts - COPY straight from the engine image so the runtime image's
 # /opt tree is byte-identical to engine's final stage, no detour through builder.
+# The venv inside tt-metal/python_env/ is self-contained (--bundle-python was
+# used at venv creation), so no separate COPY of /root/.local/share/uv is
+# needed. See tt-inference-server PR #4019 for the same fix in the legacy
+# Dockerfile.
 COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
-COPY --from=engine /root/.local/share/uv  /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
 # Fix venv permissions (COPY --chown above can break symlink permissions).
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
