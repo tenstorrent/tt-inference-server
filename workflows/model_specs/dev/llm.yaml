@@ -1113,16 +1113,35 @@ templates:
         # cross-request OK; ~3 tok/s). TRACE decode (trace_mode: true +
         # sample_on_device_mode: decode_only) is the ~10x perf path but is WIP —
         # see models/demos/qwen3_6_galaxy_v2/MAMBA_CACHE_REWORK_PLAN.md + memory.
-        trace_mode: false
+        trace_mode: true
+        sample_on_device_mode: decode_only
         # Match the demo's fabric (text_demo_qwen36 set_fabric_config FABRIC_1D_RING);
         # the distributed-norm all_gather_async hangs under the wrong fabric.
         fabric_config: FABRIC_1D_RING
+        # CRITICAL: the demo opens the mesh with ttnn defaults (l1_small_size=0),
+        # but the plugin forces l1_small_size=24576 if unset -> 24KB of L1 reserved
+        # per core the demo never reserves -> decode residual CB (65536 B) exceeds
+        # its shrunken L1 bank (34816 B). Match the demo: reserve nothing.
+        l1_small_size: 0
+        # CRITICAL: on Blackhole the ttnn default dispatch axis is COL (device.py
+        # get_default_dispatch_core_axis) — the demo's open_mesh_device uses it, and the
+        # model's sub_core_grids reserve col 0 for dispatch (compute on cols 1-5). vLLM
+        # defaults the mesh to ROW dispatch, so decode matmuls REJECT the model's provided
+        # {x:1-5,y:0-7} shard and recompute a full-width grid ("Using computed config",
+        # matmul_device_operation.cpp:202) -> wrong output layout -> garbage tokens. Force
+        # COL to match the demo (cf. llama70b override_tt_config dispatch_core_axis: col).
+        dispatch_core_axis: col
       env_vars:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-        # Use the ttnn chunk GDN prefill kernel, not the C++ seq parallel-scan
-        # kernel (QWEN36_GDN_SEQ_PREFILL default 1), whose static circular
-        # buffers clash with L1 on the head cores during prefill.
-        QWEN36_GDN_SEQ_PREFILL: "0"
+        # Match the demo's prefill config (run_text_demo.sh): use the seq prefill
+        # kernel (GDN_SEQ_PREFILL default 1) with SEQ_CORES_PER_HEAD=4 to clear the
+        # ISL-128 seq-prefill L1 CB clash on the head cores. CRITICAL for the server:
+        # GDN_SEQ_PREFILL=1 keeps dn_state_buffer in DRAM (not L1), freeing ~18 MB of
+        # L1 (48 GDN layers x 384 KB) that the GDN decode _output_proj_and_reduce
+        # all-reduce needs — with GDN_SEQ_PREFILL=0 (dn_state in L1) that CB overflows
+        # (circular_buffer_config: total_size <= max_size) in decode. The demo doesn't
+        # hit this because it already runs dn_state in DRAM.
+        QWEN36_SEQ_CORES_PER_HEAD: "4"
         # Decode L1-residual contract (the "verified at 64L" decode path). Required:
         # the decode CCL pre-allocates an L1 width-sharded LAYERNORM stats buffer
         # (llama_ccl.get_all_gather_buffers), so the decode RMSNorm MUST run the
@@ -1154,7 +1173,7 @@ templates:
         QWEN36_CCL_NUM_LINKS_DELTA: "2"
         # TEMP: per-step trace-decode debug dump (current_pos / tt_out_tok) — remove
         # once trace decode advances correctly.
-        QWEN36_TRACE_DBG: "0"
+        QWEN36_TRACE_DBG: "1"
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
