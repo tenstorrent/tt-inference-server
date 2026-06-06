@@ -516,6 +516,16 @@
         }
       }
     },
+    "gemma-4-31b-it": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "gpt-oss-120b": {
       "inference_engine": "vLLM",
       "ci": {
