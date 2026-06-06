@@ -540,14 +540,20 @@ class AscendScheduler(Scheduler):
         ) >= watermark_blocks
 
     def _get_prompt_limit(self, request: Request) -> int:
+        # Use self.max_model_len (set from vllm_config.model_config.max_model_len in
+        # the base Scheduler.__init__) rather than self.scheduler_config.max_model_len:
+        # SchedulerConfig.max_model_len is an InitVar that defaults to 8192 and is NOT
+        # propagated here, so the scheduler_config field reads 8192 and wrongly caps
+        # prompts at 8192 (rejecting long-context requests even though the KV cache and
+        # max_model_len support 128k+). self.max_model_len is the correct resolved value.
         if (
             self.scheduler_config.chunked_prefill_enabled
             and not self.scheduler_config.is_multi_step
         ):
-            prompt_limit = self.scheduler_config.max_model_len
+            prompt_limit = self.max_model_len
         else:
             prompt_limit = min(
-                self.scheduler_config.max_model_len,
+                self.max_model_len,
                 self.scheduler_config.max_num_batched_tokens,
             )
 

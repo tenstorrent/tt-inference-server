@@ -1171,6 +1171,14 @@ templates:
         QWEN36_FULLATTN_WO_TUNED: "1"
         QWEN36_DELTA_OP_TUNED: "1"
         QWEN36_CCL_NUM_LINKS_DELTA: "2"
+        # Long-context prefill: chunk the GDN/DeltaNet prefill into 4096-token
+        # sequence-chunks (carrying conv+recurrent state), exactly as the demo does
+        # for ISL >= 16k (run_text_demo.sh: QWEN36_PREFILL_CHUNK=4096). Full-attention
+        # layers stay single-pass (flash SDPA). WITHOUT this the server's GDN prefill
+        # runs single-pass and corrupts above ~4k (5k glitchy, 7k mojibake); the demo
+        # is coherent to 64k precisely because it sets this. Routed via
+        # ttnn_prefill_forward -> prefill_chunked (generator.prefill_forward_single_user_text).
+        QWEN36_PREFILL_CHUNK: "4096"
         # TEMP: per-step trace-decode debug dump (current_pos / tt_out_tok) — remove
         # once trace decode advances correctly.
         QWEN36_TRACE_DBG: "1"
