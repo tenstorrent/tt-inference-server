@@ -32,6 +32,26 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Loading VLLM Forge Gemma-4 31B model..."
         )
         prompt = "Hello, it's me"
+        # Tunable per-run via env vars (mirrors vllm_runner.py). Defaults are the
+        # measured-best for the gemma-4-31b TP config on p300x2 (4-chip (1,4)
+        # mesh, 512 seq len, bs1) -- see PERF_gemma4_31b_it_forge.md:
+        #   ENABLE_TRACE=true     decode-graph replay; the dominant lever
+        #                         (greedy 4.8 -> 8.1 tok/s, +71%). Trace-capture
+        #                         fits in DRAM at 512 seq len on the 4-chip mesh.
+        #   CPU_SAMPLING=false    on-device sampling; +13% greedy ON TOP of trace
+        #                         (8.1 -> 9.2 tok/s). Worth ~nothing without trace
+        #                         (4.8 -> 5.3). (TTConfig's own default is False;
+        #                         the old hardcoded True was the deviation.)
+        #   OPTIMIZATION_LEVEL=0  REQUIRED: opt>=1 aborts in tt-mlir
+        #                         MemoryLayoutPropagation on the 1.2.0 wheel
+        #                         (tt-xla#4990), and TTConfig rejects
+        #                         enable_trace=True + opt>=1 + cpu_sampling=False,
+        #                         so the trace defaults are only valid at opt 0.
+        # Weights stay bfp_bf8: measured FASTER than bf16 (greedy 9.2 vs 8.0),
+        # since bf16 doubles per-token weight DRAM traffic.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -44,10 +64,14 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
-                "cpu_sampling": True,
-                "optimization_level": 0,
                 "experimental_weight_dtype": "bfp_bf8",
+                "cpu_sampling": cpu_sampling,
+                "optimization_level": optimization_level,
+                "enable_trace": enable_trace,
             },
+        )
+        self.logger.info(
+            f"Device {self.device_id}: additional_config={engine_args.additional_config}"
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
