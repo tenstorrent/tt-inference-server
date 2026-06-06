@@ -69,7 +69,7 @@ From  the `tt-shield` repository, run the `release.yml` using the default argume
 Once we are satisfied with release results we will progress with further phases.
 Otherwise, we will repeat release workflow multiple times, until corrections are implemented in the relevant repositories.
 
-Record relevant commit shas from the final release workflow run and its Summary output. 
+Record relevant commit shas from the final release workflow run and its Summary output. Those will be set in the next phase, within the model_specs development catalogue. 
 
 For specific run, open the web page ```https://github.com/tenstorrent/tt-shield/actions/runs/<runId>```
 
@@ -82,29 +82,41 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 `vllm-commit`: "6a6sg72e"
 
 
+## Promote development specification to production
+
+For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in `model_spec.py` file. Also the upcoming release version should be set for models/devices that are in the scope to be released.
+
+Changes are being set within the model_specs development catalogue:
+`https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
+
+Take into account, that during the release cycle some changes already might happen in development catalogue. We need to pick what is trully relevant.
+Once we have everything set in development catalogue, we need to promote such changes from development to a production catalogue.
+
+Production catalogue is being maintained at:
+`https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/prod`
+
+Script that will execute this promotion autoamtically is:
+`python3  scripts/release/promote_dev_spec_to_prod.py`
+
+Once the script is executed we need to verify which changes are being introduced into the production catalogue.
+
 ## Update model_spec.py
 
-For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in `model_spec.py` file.
 
-After changes have been added, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
+After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
 ```
 
-Execution of this script might produce changes in models which are not in the scope of this release.
+Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
 
-Using the Claude, we need to revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
-
-Prompt example for Claude: `There are lot of changes in release_model_spec.json file. Please revert all the changes to the previous state, for all the models that are not in the scope for the current release. Changes needs to be reverted (back to HEAD) for all other models that are not in scope and their device variants, new models that were added out of scope, new device variants that were added out of scope.  Scope includes: (e.g. Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2,  FLUX.1-dev on p300x2 device, Qwen3-32B on p300x2 and Llama-3.1-8B-Instruct.)`
-
-Afterwards, `git push` the changes for this json file.
+Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` file.
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
 #### outputs
 
-- `workflows/model_spec.py`: manual updates as a result of a Models CI runs
 - `release_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
 - `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs (THIS WILL NOT BE GENERATED!!!)
 - `README.md` in case that we are adding new group of devices (very rare change)
@@ -203,10 +215,28 @@ Release Notes must be added describing new supported engine features.
 
 ## Step 3: Upload assets to Release Object
 
- Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
- Prompt for claude: 
- 
- `From the following job https://github.com/tenstorrent/tt-shield/actions/runs/{job_id}  take worklfow logs only from the models in scope {...} and create a new zip file named vx.x.x-release_artifacts.zip with the same structure like the zip from previous release that you can analyze in terms of the files and structure how they should be packed. The package to examine locally: v0.13.0-release_artifacts.zip; The file to create: v0.14.0-release_artifacts.zip`
+ We need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
+
+To do so we can use the script currently implemented in the tt-shield repository:
+Once we clone the tt-shield repository, we can find the script at this path:
+`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`
+
+As input properties we need to pass:
+- runId of the release job that contains our workflow logs uploaded
+- version of the release
+- all the models/devices combinations for which we want to download artifacts and zip it as the final asset for upload
+
+```bash
+python3 build_release_artifacts.py \
+        --run-id 26592936143 \
+        --version v0.15.0 \
+        --model speecht5_tts=p150,p300x2 \
+        --model whisper-large-v3=p150,p300x2 \
+        --model distil-large-v3=p150,p300x2 \
+        --output-dir .
+```
+
+## Step 4: Release Object publishing
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
 
