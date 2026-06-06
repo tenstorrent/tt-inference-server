@@ -399,6 +399,7 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
   cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.device = envStringLower("DEVICE", "");
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
       envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
@@ -539,6 +540,19 @@ std::string prefillServerId() {
     return getHostname() + ":" + std::to_string(socketPort());
   }();
   return cached;
+}
+
+std::string logInstanceTag(int workerIndex) {
+  // Role distinguishes the node: LLM_MODE for the LLM service, else the service
+  // name. Worker subprocesses keep the base role and append their index, so a
+  // merged log still separates "decode" vs "prefill" nodes and their
+  // "decode-worker0" / "prefill-worker0" workers.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role;
 }
 
 uint32_t prefillMaxInFlight() {

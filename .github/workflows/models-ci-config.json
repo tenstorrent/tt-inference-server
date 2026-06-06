@@ -31,6 +31,7 @@
                 "N150",
                 "N300",
                 "P100",
+                "P150",
                 "P150X4",
                 "P300X2",
                 "T3K"
@@ -44,6 +45,7 @@
             "release": {
               "devices": [
                 "GALAXY",
+                "P150",
                 "P300X2"
               ]
             }
@@ -126,7 +128,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -264,7 +266,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P300X2",
             "T3K"
           ]
@@ -272,6 +274,11 @@
         "weekly": {
           "devices": [
             "GALAXY"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
           ]
         }
       }
@@ -363,7 +370,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -377,7 +384,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -500,7 +507,8 @@
         },
         "release": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "P300X2"
           ]
         }
       }
@@ -532,7 +540,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "P150X4",
             "P300X2",
             "T3K"
@@ -625,7 +633,7 @@
             "nightly": {
               "devices": [
                 "GALAXY",
-                "GALAXY_BH",
+                "BH_GALAXY",
                 "N150",
                 "N300",
                 "P300X2"
@@ -698,7 +706,7 @@
         "nightly": {
           "devices": [
             "GALAXY",
-            "GALAXY_BH",
+            "BH_GALAXY",
             "N150",
             "P150",
             "P300X2"

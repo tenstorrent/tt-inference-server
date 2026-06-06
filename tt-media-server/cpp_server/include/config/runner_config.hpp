@@ -26,6 +26,8 @@ struct MediaRunnerConfigBase : RunnerConfigBase {
   // 2-D {rows, cols}. rows > 1 enables tensor parallelism.
   std::vector<size_t> device_mesh_shape{1, 1};
   bool is_galaxy = false;
+  // Device type string (e.g. "galaxy", "bh-galaxy", "n150").
+  std::string device;
   // Empty = use the HF Hub default repo for the active runner.
   std::string model_weights_path;
   unsigned weights_distribution_timeout_seconds = 1800;

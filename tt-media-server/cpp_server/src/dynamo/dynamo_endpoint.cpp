@@ -190,7 +190,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
       const auto think = tt::utils::tokenizers::thinkTokenIds();
       usage->thinkStart = think.first;
       usage->thinkEnd = think.second;
-      const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+      const auto kNo = tt::utils::tokenizers::kNoTokenId;
       usage->inReasoning =
           usage->thinkStart != kNo && !dynReq.token_ids.empty() &&
           dynReq.token_ids.back() == static_cast<int>(usage->thinkStart);
@@ -279,8 +279,8 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
               probeId.empty() ? "?" : probeId, preProcessMs);
 
           const auto tDispatch = SteadyClock::now();
-          auto cb = [req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-                     tDispatch,
+          auto cb = [req, svc, sendChunk, signalDone, recvT, firstChunkSeen,
+                     probeId, tDispatch,
                      usage](const tt::domain::llm::LLMStreamChunk& chunk,
                             bool isFinal) {
             // Log worker-side TTFT exactly once per request: total since recv
@@ -320,7 +320,7 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
             // Usage accounting: count generated tokens and the reasoning span.
             if (!chunk.choices.empty() && chunk.choices[0].token_id) {
               const int tid = static_cast<int>(*chunk.choices[0].token_id);
-              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              const auto kNo = tt::utils::tokenizers::kNoTokenId;
               usage->completion += 1;
               if (usage->thinkStart != kNo && tid == usage->thinkStart) {
                 usage->inReasoning = true;
@@ -348,15 +348,24 @@ GenerateHandler DynamoEndpoint::makeGenerateHandler() {
                                              : 0;
               du.cached_tokens = cached < 0 ? 0 : cached;
               // Only report reasoning_tokens for models that have think tokens.
-              const auto kNo = tt::utils::tokenizers::kNoThinkTokenId;
+              const auto kNo = tt::utils::tokenizers::kNoTokenId;
               if (usage->thinkStart != kNo || usage->thinkEnd != kNo) {
                 du.reasoning_tokens = usage->reasoning;
               }
               out.completion_usage = du;
             }
-            sendChunk(out);
+            const bool sent = sendChunk(out);
             if (isFinal) {
               signalDone();
+              return;
+            }
+            if (!sent) {
+              TT_LOG_WARN(
+                  "[DynamoEndpoint] downstream send failed for task {}; "
+                  "aborting generation",
+                  req->task_id);
+              svc->abortRequest(req->task_id);
+              return;
             }
           };
 
