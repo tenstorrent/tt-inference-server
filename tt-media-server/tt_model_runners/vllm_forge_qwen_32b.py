@@ -32,6 +32,23 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Loading VLLM Forge Qwen3-32B model..."
         )
         prompt = "Hello, it's me"
+        # Tunable per-run via env vars (mirrors vllm_runner.py /
+        # vllm_forge_gemma4_31b.py). Defaults follow the gemma-4-31b TP
+        # measured-best (see PERF_gemma4_31b_it_forge.md):
+        #   ENABLE_TRACE=true     decode-graph replay (the dominant decode-speed
+        #                         lever on gemma: greedy ~4.8 -> ~9.2 tok/s).
+        #   CPU_SAMPLING=false    on-device sampling (TTConfig's own default;
+        #                         the old hardcoded True was the deviation).
+        #   OPTIMIZATION_LEVEL=0  REQUIRED: opt>=1 aborts in tt-mlir
+        #                         MemoryLayoutPropagation on the 1.x wheel
+        #                         (tt-xla#4990); TTConfig also rejects
+        #                         enable_trace + opt>=1 + cpu_sampling=False, so
+        #                         the trace defaults are only valid at opt 0.
+        # NOTE: these defaults were validated on gemma-4-31b, not yet on
+        # Qwen3-32B -- flip via env if a Qwen-specific issue appears.
+        optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
+        cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -44,10 +61,14 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
-                "cpu_sampling": True,
-                "optimization_level": 0,
                 "experimental_weight_dtype": "bfp_bf8",
+                "cpu_sampling": cpu_sampling,
+                "optimization_level": optimization_level,
+                "enable_trace": enable_trace,
             },
+        )
+        self.logger.info(
+            f"Device {self.device_id}: additional_config={engine_args.additional_config}"
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
