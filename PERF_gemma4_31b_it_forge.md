@@ -76,8 +76,68 @@ weights `bfp_bf8`. Net: **~9.2 tok/s greedy (≈2× the as-shipped 4.5)**.
 - Needs the full 4-chip connected mesh (degree `{2:4}`); a 2-chip mesh is
   insufficient (31B OOMs / topology won't map).
 
+## Concurrency × context-length sweep (batch = max_num_seqs, len = max_model_len)
+
+Goal: find a good concurrency/context balance (target batch-32 / 8K). Swept with
+the perf-tuned decode defaults (trace on, device sampling, bfp8), `GMU=0.9`,
+`XLA_PARAMETER_WRAPPING_THREADSHOLD=100000`. p300x2, 4-chip mesh. `agg`/`per` =
+aggregate / per-stream decode tok/s over `batch` concurrent greedy streams
+(short prompt, 64 tokens).
+
+| cell | batch | seq len | max_batched_tokens | status | KV tokens | KV conc @len | agg tok/s | per-stream |
+|---|---|---|---|---|---|---|---|---|
+| A | 4  | 4096 | 16384  | **OK**     | 34176 | 8.34× | **28.8** | 7.20 |
+| B | 4  | 8192 | 32768  | **OK**     | 34176 | 4.17× | **27.5** | 6.88 |
+| C | 16 | 4096 | 65536  | **OK**     | 34176 | 8.34× | **76.3** | 4.77 |
+| D | 16 | 8192 | 131072 | **OOM**    | 34176 | 4.17× | — | — |
+| E | 32 | 8192 | 262144 | not run (D failed) | — | — | — | — |
+
+### Key findings
+1. **`max_num_batched_tokens` must be `>= max_model_len * max_num_seqs`** in this
+   `vllm_tt` — not just `>= max_model_len` like upstream. Asserted in
+   `model_runner.py:285`. This is the no-batched-`paged_fill_cache` limitation
+   (proper fix tracked in tt-xla #5032/#5030). **Consequence:** the prefill graph
+   is built over the full `batch*len` token budget, so prefill activation scales
+   with **batch × len** — that product is the real wall, not batch and len
+   independently.
+2. **The fit boundary is the prefill-budget size**, ~between **65536 (C, fits)**
+   and **131072 (D, OOM)** tokens. D died in **trace capture**
+   (`capture_model -> _precompile_backbone -> torch_xla.sync()`) with a TT_FATAL
+   allocation failure on the 131072-token prefill backbone — i.e. real activation
+   OOM (≈ batch·len·hidden·2), surfacing at the trace-capture step.
+3. **KV pool is ~34176 tokens at GMU=0.9, independent of seq len** (it's a
+   GMU-sized budget). Fine for these batches with short requests, but it caps
+   *worst-case full-length* concurrency: 8.34× at 4K, 4.17× at 8K. To serve many
+   simultaneous *full-length* sequences you'd raise GMU and/or need the KV pool >=
+   batch*len.
+4. **Throughput scaling:** batch 4 → 16 (at 4K) gave 28.8 → 76.3 tok/s aggregate
+   (~2.65×) while per-stream fell 7.2 → 4.77 (batched-decode contention). 8K vs 4K
+   costs only ~4% aggregate at batch-4.
+5. **Prefill serialization caveat:** batch-16/4K steady-state decode is 76 tok/s,
+   but wall time for 16 simultaneous arrivals was 222s vs 39s at batch-4 — the 16
+   prefills appear to run largely one-at-a-time (TTFT contention), a real
+   first-token-latency concern for bursty load even where decode batches fine.
+
+### Recommended balance & open follow-ups
+- **Best fitting config found: batch-16 / 4K** (~76 tok/s aggregate, trace on).
+  For long context at lower concurrency, **batch-4 / 8K** (~27 tok/s).
+- **batch-16 / 8K and batch-32 / 8K do not fit** with trace on at GMU=0.9 — blocked
+  by the `batch*len` prefill-activation OOM during trace capture.
+- **Untested lever:** retry D/E with **`ENABLE_TRACE=false`**. Per the trace
+  seq-len cap (#4220), the capture-time OOM may clear with trace off, extending the
+  servable envelope (at the cost of the ~2× decode speedup). Not yet run.
+- The real unlock for high batch × long context is **batched `paged_fill_cache`**
+  (tt-xla #5032/#5030), which removes the `max_num_batched_tokens >= batch*len`
+  requirement so prefill activation stops scaling with batch.
+- Dimension overrides used here (`MAX_NUM_SEQS`, `MAX_MODEL_LEN`,
+  `MAX_NUM_BATCHED_TOKENS`, `GPU_MEMORY_UTILIZATION`) are sweep-only (bind-mounted
+  `runner_dims.py`); production `max_model_length`/`max_num_seqs` live in the
+  server-side `(MODEL, DEVICE)` config, not the runner.
+
 ## Reference
 - tt-xla CI: `test_vllm_tp_benchmark[gemma4-31b-it-tp]` /
   `test_tensor_parallel_generation_bhqb_gemma4_31b`.
-- Sweep artifacts: `~/gemma_sweep/` (sweep.py, results.jsonl, per-config runners, logs).
+- Sweep artifacts: `~/gemma_sweep/` (sweep.py, sweep_dims.py, results.jsonl,
+  dims_results.jsonl, runner_dims.py, logs).
 - Related: `HANDOFF_gemma4_31b_it_forge.md`, `QB2_P300_ETH_FABRIC_HANG_REPORT.md`.
+- Param-wrap / batched paged_fill_cache: tt-xla #5032, #5030; trace seq-len cap: #4220.

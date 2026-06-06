@@ -1077,15 +1077,26 @@ ModelConfigs = {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
+        # batch-16 @ 4096 seq len: best fitting concurrency/context balance
+        # measured on p300x2 (4-chip mesh) -- ~76 tok/s aggregate decode across
+        # 16 streams, trace on, bfp8. See PERF_gemma4_31b_it_forge.md.
+        "max_batch_size": 16,
         "vllm": {
             "model": SupportedModels.GEMMA_4_31B_IT.value,
-            "max_model_length": 512,
-            # Gemma-4 multimodal requires max_num_batched_tokens >= 2560
-            # (video: _VIDEO_MAX_FRAMES=32 * 78 tokens = 2496).
-            "max_num_batched_tokens": 2560,
+            "max_model_length": 4096,
+            # This vllm_tt requires max_num_batched_tokens >= max_model_length *
+            # max_num_seqs (no batched paged_fill_cache; tt-xla #5032/#5030), so
+            # the full batch*len prefill budget must be funded: 16 * 4096 = 65536.
+            # (Also clears the Gemma-4 multimodal floor of 2560: video
+            # _VIDEO_MAX_FRAMES=32 * 78 tokens = 2496.)
+            "max_num_batched_tokens": 65536,
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 16,
+            # GMU=0.1 default only sizes ~3.8K KV tokens -- below max_model_length,
+            # so init fails at 4096. 0.9 gives ~34K KV tokens (8.3x concurrency at
+            # 4096) and fits the 65536-token prefill activation. Validated on
+            # p300x2; batch-16 @ 8192 OOMs at trace capture (131072-token budget).
+            "gpu_memory_utilization": 0.9,
         },
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
