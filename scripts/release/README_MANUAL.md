@@ -213,7 +213,7 @@ Release Notes must be added describing new supported engine features.
 * we add repository paths towards the docker images
 * add notes for changes to model support and performance (if possible use `release_logs/release_models_diff.md`)
 
-## Step 3: Upload assets to Release Object
+## Step 3: Downloading workflow artifacts and assets upload to Release Object
 
  We need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
 
@@ -235,6 +235,8 @@ python3 build_release_artifacts.py \
         --model distil-large-v3=p150,p300x2 \
         --output-dir .
 ```
+
+Once the workflow assets are downloaded, we can upload them to already created Release Object.
 
 ## Step 4: Release Object publishing
 
