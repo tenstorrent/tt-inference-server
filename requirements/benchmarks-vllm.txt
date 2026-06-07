@@ -12,7 +12,11 @@
 
 -c constraints.txt
 
-vllm==0.13.0
+# vllm 0.19.1 + transformers 5.5.1: the pairing gemma-4-31b-it was qualified with
+# (and the forge image ships). vllm 0.13.0 pinned transformers<5, which can't load
+# gemma-4's tokenizer. Keep VLLM_PIN_VERSION (workflow_venvs.py) in sync.
+vllm==0.19.1
+transformers==5.5.1
 torch
 # Extra deps required by benchmark_serving_structured_output.py; the
 # `vllm bench serve` CLI does not pull these in transitively.
