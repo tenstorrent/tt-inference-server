@@ -53,19 +53,20 @@ benchmark runtime (conc-1 slowness — see Qwen). (3) fill eval reference scores
 |---|---|
 | Local serve (new image) | ✅ warms up + serves at 4K/16 |
 | Local smoke eval | ✅ `r1_aime24` ran (0.33 on ~3 smoke samples — functional, not a real accuracy figure) |
-| Local smoke benchmark | ✅ **functional, no crash** — but conc-1 ≈ **0.3 tok/s** |
+| Local smoke benchmark | ✅ **functional, no crash** |
 | CI release [run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200) | ⏱️ cancelled @ 6h job cap — serve ✓, eval ✓, benchmark did **not** finish |
 
-**Root cause of the 6h:** conc-1 benchmark runs are ~16× slower than aggregate at a batch-16 config
-(a single request still runs the batch-16 graph: ~0.3 tok/s vs ~9 aggregate). The release sweep runs
-**conc=1 for every isl/osl pair**, so those dominate → full matrix > 6h.
+**Root cause of the 6h (corrected — see `CI_benchmark_runtime.md`):** NOT a decode/conc-1 pathology.
+A controlled sweep shows decode is healthy (~5 tok/s/request, flat across conc 1→16, ~81 tok/s
+aggregate at conc-16; the earlier "0.3 tok/s" was `vllm bench serve`'s deflated whole-config
+output-throughput, not the decode rate). The 6h is from **Qwen3-32B generating ~1000 output tokens
+per request despite the requested osl=128** (~8×; ~13 configs × ~1000 tok at ~5 tok/s). Qwen-specific:
+gemma honors osl, so gemma is **not** affected.
 
-**Next / fixes (Qwen):** no clean in-branch lever — `timeout-minutes` is **not** dispatch-exposable
-(`on-dispatch.yml` never passes it; reusable-workflow default 360). Options: (a) tt-shield workflow
-change to expose/raise `timeout-minutes` per model; (b) `benchmark_config.py`: **skip conc-1 for
-forge-TP** (kills the slowest runs + ~halves the matrix — shared code, codeowner review); (c)
-re-dispatch with `workflow=evals` for a green eval run while benchmarks are handled separately.
-Also decide: keep batch-16/4K (from the gemma sweep) vs revert Qwen to 512/conc-1 (never swept on Qwen).
+**Next / fixes (Qwen):** make Qwen honor the benchmark output length — disable Qwen3 thinking for
+benchmark requests and/or ensure `max_tokens` is enforced (cuts each config ~8× → sweep ~45 min).
+Config-count trims (skip conc-1 / lower `max_context`) help proportionally but aren't the root cause.
+Verify ~1000 tok/req on a Qwen server before filing.
 
 ### Plumbing verified end-to-end (both)
 `--dev-mode` → dev spec → env_vars (`4096/16/0.9/trace`) flow into the container → new image (reused via

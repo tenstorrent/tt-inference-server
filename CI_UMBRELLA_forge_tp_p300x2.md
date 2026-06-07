@@ -22,8 +22,9 @@ waiting on the harder benchmark items.
   matrix. Ships both models servable + eval-able at `EXPERIMENTAL`. **Can merge first.**
 - **Benchmark client vllm/transformers uplift** (`CI_benchmarks_vllm_uplift.md`): vllm 0.19.1 /
   transformers 5.5.1. Prereq for benchmarks; wide/shared change, qualified vs existing models.
-- **Benchmark runtime / 6h cap** (`CI_benchmark_runtime.md`): conc-1 ~16–50× slow at batch-16 →
-  Qwen 6h timeout.
+- **Benchmark runtime / 6h cap** (`CI_benchmark_runtime.md`): Qwen3-32B benchmark over-generates
+  output (~1000 tok/req vs requested 128) → 6h timeout. Decode is healthy (controlled measurement);
+  gemma honors the length and is not affected.
 
 ## Follow-ups (checkboxes, not PRs yet)
 - [ ] Fill gemma/Qwen eval published+gpu reference scores from first clean nightly (currently None).
@@ -32,7 +33,6 @@ waiting on the harder benchmark items.
 
 ## Out of scope
 - `EXPERIMENTAL → FUNCTIONAL` perf/accuracy promotion (separate tracking effort).
-- Root-cause engine fix for conc-1-at-batch-N inefficiency (the proper fix in Benchmark-runtime).
 
 ## Evidence
 [tt-shield build run 268](https://github.com/tenstorrent/tt-shield/actions/runs/27053465897) ✅ · [gemma release run 5203](https://github.com/tenstorrent/tt-shield/actions/runs/27054513861) (serve+eval ✅, benchmark ❌ → Benchmark-uplift) ·

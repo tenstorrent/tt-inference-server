@@ -1,32 +1,49 @@
-# Forge-TP release benchmark exceeds the 6h CI cap (conc-1 at batch-N)
+# Qwen3-32B release benchmark exceeds the 6h CI cap (output over-generation, not decode)
 
-Part of the forge-TP-p300x2 umbrella. Qwen3-32B release benchmark ([tt-shield release run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200)) hit the
-**6h job cap** and was cancelled; gemma will too once its tokenizer (the Benchmark-uplift item) is
-fixed. Goal: a **small interim** so CI doesn't hang QB2 for 6h, plus a pointer to the proper fix.
+Part of the forge-TP-p300x2 umbrella. Qwen3-32B release benchmark
+([tt-shield release run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200))
+hit the **6h job cap** and was cancelled. A controlled measurement on a live server shows the
+**decode is healthy** — the 6h is from benchmark requests **generating ~8× the requested output
+length**, not from slow decode or a concurrency pathology.
+
+## Controlled measurement (gemma server, batch-16/4K, p300x2)
+Per-request decode is flat and aggregate scales linearly — **no conc-1 / partial-batch penalty:**
+
+| conc | per-request tok/s | aggregate tok/s |
+|---|---|---|
+| 1 | 5.04 | 5.04 |
+| 2 | 4.94 | 9.87 |
+| 4 | 5.03 | 20.1 |
+| 8 | 5.06 | 40.5 |
+| 16 | 5.05 | 80.8 |
+
+A warm `vllm bench serve` (conc-1) against the same server agrees: **TPOT ≈ 205 ms (~5 tok/s)**.
 
 ## Root cause
-The release sweep (`benchmark_config._expand_text_sweep_params`) runs **both conc-1 and
-conc-`max_concurrency`** for every isl/osl pair. At the batch-16 config, per-request rate is wildly
-concurrency-dependent (a single request still runs the full batch-16 graph):
-- **conc-16:** ~26s / 128 tok per request, 16 in parallel → a 128/128 config ≈ 3–4 min.
-- **conc-1:** ~383s / 128 tok (~0.3 tok/s) → 128/128 ≈ **50 min**; 128/**1024** ≈ **~3.8 h**.
+In CI, **TPOT was healthy too** (~168–216 ms ≈ 5–6 tok/s on every config) — the "0.3 tok/s"
+seen earlier was `vllm bench serve`'s *whole-config output-throughput*, not the decode rate.
+The 6h came from per-config **durations of 12–38 min × ~13 configs**. From the CI bench summaries,
+`output_throughput × duration ÷ requests`:
+- conc-1, osl=**128**, n=8 → 5.85 × 1444 / 8 ≈ **~1056 output tokens/request**
+- conc-16, osl=128, n=128 → 66.81 × 1909 / 128 ≈ **~996 tokens/request**
 
-→ The **conc-1 runs are essentially the entire 6h**, and they're unrepresentative (we serve at 16).
+→ **Qwen3-32B produced ~1000 tokens/request despite the requested osl=128** (~8×). It's
+Qwen-specific: a warm `vllm bench serve` on **gemma** honored osl (≈128 tok/request). The ~1024-ish
+value suggests the requested length isn't honored by the Qwen forge server (falls to a ~1024 default)
+and/or Qwen3 **reasoning/thinking** output isn't disabled for benchmark requests.
+
+So: 6h ≈ 13 configs × ~1000 tok/req (≈8× over-generation) at a healthy ~5 tok/s — **not** decode,
+conc-1, or batch. **gemma is not affected** (it honors osl; its CI failure was only the tokenizer).
 
 ## Options
-| | Type | Effect | Effort / Risk |
-|---|---|---|---|
-| **A. Skip conc-1 when `max_concurrency>1`** (drop the `1` in the concurrency list) | workaround | removes ~all the 6h; keeps representative conc-16 coverage | ~3 lines in `benchmark_config.py`; shared file but only gemma/Qwen have batch>1 today → tiny blast radius |
-| B. Lower cnn.yaml `max_context` for these models | workaround | drops long-osl (osl=1024) pairs; per-model, no shared code | small; under-reports context; doesn't fix conc-1 alone |
-| C. Evals-only in CI for now | workaround | zero benchmark cost | needs per-model workflow knob; no perf coverage |
-| D. Raise tt-shield timeout to 8h | ✗ | avoids the cancel only | **rejected** — still hangs QB2 8h |
-| E. Engine: don't run the full batch-N graph for a single request | **proper fix** | removes the pathology | large (tt-xla/vllm_tt), long-term |
-| F. Per-model benchmark profiles in the catalog | proper fix | clean per-model control | medium |
+| | Effect | Note |
+|---|---|---|
+| **Primary: make Qwen honor benchmark osl** — disable Qwen3 thinking for bench requests and/or ensure `max_tokens` is enforced | cuts each config ~8× → whole sweep ~45 min | small, Qwen-specific; the actual root cause |
+| Skip conc-1 when `max_concurrency>1` | ~halves the config count | proportional help, not the root cause |
+| Lower cnn.yaml `max_context` for these models | fewer isl/osl shapes | proportional help |
 
-## Recommendation
-**A** (skip conc-1 for `max_concurrency>1`), optionally + **B** if conc-16-only is still tight. Small,
-low-risk, keeps the meaningful benchmark. Track **E** as the real fix.
-
-## Note
-Independent of the Benchmark-uplift item: that lets the benchmark *start* (tokenizer); this keeps it
-*bounded* (runtime).
+## Open verification (before filing)
+Confirm ~1000 tok/request on a Qwen server (run a `vllm bench serve` against Qwen, or read a saved
+`benchmarks_output/*.json`), and determine whether it's Qwen3 thinking-not-disabled vs `max_tokens`
+not enforced. Withdrawn: the earlier "engine partial-batch decode fix" — the controlled sweep shows
+decode is healthy.
