@@ -120,6 +120,12 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
         max_tokens_all_users = 1024
     elif "DeepSeek-R1-0528" in model_config.model and is_wormhole:
         max_tokens_all_users = 32768
+    elif "Qwen3.6" in model_config.model:
+        # Qwen3.6-27B on BH Galaxy: native context 256k. Size the paged KV cache
+        # for the full 262144 tokens (~4097 blocks of block_size=64 -> ~256 MB/device
+        # for the row-sharded [blocks,1,64,256] bf16 K+V cache). The default else
+        # branch (131072) caps the servable context at 128k.
+        max_tokens_all_users = 262144
     else:
         # Note: includes num vision tokens for multi-modal
         max_tokens_all_users = 131072
