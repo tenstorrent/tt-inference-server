@@ -38,11 +38,21 @@ sweep now lands well under 6h.
 | 16 | 5.05 | 80.8 |
 
 ## Notes
-- **Separate follow-up (not this fix):** the benchmark *acceptance* still fails on perf
-  (tput ~5 vs the placeholder thresholds 18.5/37) because the perf-reference targets are
-  Qwen3-32B placeholders that are too aggressive for ~5 tok/s single-user — recalibrate from real
-  numbers (umbrella checkbox). For `EXPERIMENTAL` this is waived; the **runtime** cap is what this
-  issue fixes.
+- **Acceptance verdict is *not* gated by perf (corrected):** for `EXPERIMENTAL`,
+  `required_target_tiers` is empty, so `acceptance_criteria.py` moves **all** benchmark perf tiers
+  (functional/complete/target) to *informational* — they're reported but don't gate. The
+  per-stream `functional` tput target (0.1× = **3.7 tok/s**) even **passes** (actual ~5 > 3.7). The
+  18.5/37 numbers in the report are the `complete`/`target` tiers, informational here. The only
+  thing that actually gates is **eval accuracy** (`r1_aime24`), and in *smoke* mode that's a
+  ~3-sample run vs the full-set reference (80) → a spurious 0.33; a real nightly (`CI_NIGHTLY` limit)
+  runs a meaningful sample. So: runtime is what this issue fixes; perf is informational and even
+  passes at the EXPERIMENTAL tier; the smoke eval "failure" is a sample-size artifact.
+- **Recalibration caution (re #3995):** when we replace the placeholder perf-reference with real
+  numbers, set `theoretical.tput` to the **single-stream** value at conc=1 (≈ `tput_user`), not an
+  aggregate — otherwise `functional.tput_check` compares conc-1 actual against an aggregate-derived
+  threshold (exactly #3995). The current placeholder is safe (`tput == tput_user == 37`).
+- **TTFT is genuinely high (~2.9 s):** the `functional` ttft target (460 ms) "fails" at 2907 ms, but
+  it's informational. Worth a look later (prefill at 4K / dynamic batcher) when recalibrating.
 - Likely mechanism for why `--random-output-len` isn't honored: the openai-chat backend sends
   `max_completion_tokens` (which the forge server doesn't enforce) rather than `max_tokens`. The
   `--extra-body` `max_tokens` sidesteps it; a cleaner long-term fix is server-side honoring of

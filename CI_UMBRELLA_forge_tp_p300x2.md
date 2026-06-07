@@ -16,15 +16,22 @@ waiting on the harder benchmark items.
 | gemma-4-31b-it | ✅ | ✅ (ifeval 0.89 local) | ❌ tokenizer crash → see Benchmark-uplift |
 | Qwen3-32B | ✅ | ✅ | ⏱️ 6h cap → see Benchmark-runtime |
 
-## Sub-issues (one PR each)
-- **Initial support — serving + evals** (`CI_initial_support.md`): dev-catalog specs, runner
-  (env-var tunable), constants (TP topology), forge wheel, ifeval, perf-ref placeholder, nightly
-  matrix. Ships both models servable + eval-able at `EXPERIMENTAL`. **Can merge first.**
-- **Benchmark client vllm/transformers uplift** (`CI_benchmarks_vllm_uplift.md`): vllm 0.19.1 /
-  transformers 5.5.1. Prereq for benchmarks; wide/shared change, qualified vs existing models.
-- **Benchmark runtime / 6h cap** (`CI_benchmark_runtime.md`): Qwen3-32B benchmark over-generates
-  output (~1000 tok/req vs requested 128) → 6h timeout. Decode is healthy (controlled measurement);
-  gemma honors the length and is not affected.
+## Sub-issues / PR breakdown (one PR each)
+Three independent PRs. Two are tiny/self-contained; one (uplift) is the heavy, cross-cutting pole.
+
+| PR | Scope | Files | Risk / blast radius | Depends on |
+|---|---|---|---|---|
+| **A — Benchmark output cap** (`CI_benchmark_runtime.md`) | Force `max_tokens=osl` in text bench-serve requests so output is bounded (fixes Qwen 6h cap; general correctness) | `benchmarking/run_benchmarks.py` (1 hunk) | Tiny; only changes behavior for models that were over-generating | none |
+| **B — Initial Forge-TP support** (`CI_initial_support.md`) | Both models servable + eval-able at `EXPERIMENTAL`: dev-catalog specs, env-var-tunable runners, TP-topology constants, forge wheel, ifeval (downsampled), perf-ref placeholder, nightly matrix | `dev/cnn.yaml`, `tt_model_runners/*`, `constants.py`, `forge_runners/requirements.txt`, `eval_config.py`, `model_performance_reference.json`, `models-ci-config.json` | Additive, new models only | none (benchmark step stays red until A+C) |
+| **C — Benchmark client uplift** (`CI_benchmarks_vllm_uplift.md`) | vllm `0.13.0 → 0.19.1`, transformers `→5.5.1` (gemma-4 tokenizer prereq) | `requirements/benchmarks-vllm.txt`, `workflows/workflow_venvs.py` | **Wide** — shared client venv for *all* benchmarked LLMs; needs cross-model qualification | none (longest pole) |
+
+**Recommended merge order: A → C → B.**
+- **A** first: trivial, self-contained, a general correctness win — lands anytime.
+- **C** next: it's the long pole (broad re-qualification across forge + TTNN models), so start it early.
+- **B** last so the nightly matrix entry debuts **all-green** (serving + evals + both benchmark fixes in).
+- *Alternative:* land **B** early to unblock perf work — serving + evals go green immediately; the
+  **benchmark** step stays red (gemma tokenizer needs C, Qwen runtime needs A) until A+C land. The
+  initial-support doc already calls this out as known-failing, so this is acceptable if desired.
 
 ## Follow-ups (checkboxes, not PRs yet)
 - [ ] Fill gemma/Qwen eval published+gpu reference scores from first clean nightly (currently None).
