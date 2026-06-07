@@ -21,7 +21,7 @@ the TP mesh topology, and `model` comes from the `MODEL` env.
 `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306`
 - **tt-forge wheel: `1.3.0.dev20260605003323`** (built 2026-06-05; same build as
   `pjrt-plugin-tt` / `vllm_tt`). Built by tt-shield `on-dispatch-build-media-server`
-  run 268 from branch `kmabee/gemma4_31b_it_forge`@`f752cce2`
+  [run 268](https://github.com/tenstorrent/tt-shield/actions/runs/27053465897) from branch `kmabee/gemma4_31b_it_forge`@`f752cce2`
   (`forge-media-inference-server`). Tag = `<tt-metal aed6177>_<inf-server f752cce>_<ci 79853177306>`.
 - Predecessors: `e03b231b…_46a7c96_79778041239` (1.3.0, no branch changes);
   `97aea20e…_fd9296b_79608294867` (`tt-forge 1.2.0.dev20260530002932` — original
@@ -38,7 +38,7 @@ the TP mesh topology, and `model` comes from the `MODEL` env.
 | Local serve (new image, p01t05) | ✅ warms up + serves at 4K/16 |
 | Local smoke eval | ✅ `ifeval` prompt_level_strict_acc **0.89** |
 | Local smoke benchmark | ❌ `vllm bench serve` client crash — `AttributeError: 'list' object has no attribute 'keys'` (`transformers/tokenization_utils_base.py:1210`, gemma-4 tokenizer `extra_special_tokens` is a list) |
-| CI release run 5203 | ❌ failed @62min — serve ✓, eval ✓, all 14 benchmark runs ❌ (same tokenizer crash) |
+| CI release [run 5203](https://github.com/tenstorrent/tt-shield/actions/runs/27054513861) | ❌ failed @62min — serve ✓, eval ✓, all 14 benchmark runs ❌ (same tokenizer crash) |
 | Evals registered | `ifeval`, downsampled CI_NIGHTLY 0.1 / SMOKE 0.01; published/gpu refs TBD (first TT user) |
 | Perf reference | p300x2 128/128 conc1 placeholder (borrowed Qwen3-32B targets) |
 
@@ -54,7 +54,7 @@ benchmark runtime (conc-1 slowness — see Qwen). (3) fill eval reference scores
 | Local serve (new image) | ✅ warms up + serves at 4K/16 |
 | Local smoke eval | ✅ `r1_aime24` ran (0.33 on ~3 smoke samples — functional, not a real accuracy figure) |
 | Local smoke benchmark | ✅ **functional, no crash** — but conc-1 ≈ **0.3 tok/s** |
-| CI release run 5204 | ⏱️ cancelled @ 6h job cap — serve ✓, eval ✓, benchmark did **not** finish |
+| CI release [run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200) | ⏱️ cancelled @ 6h job cap — serve ✓, eval ✓, benchmark did **not** finish |
 
 **Root cause of the 6h:** conc-1 benchmark runs are ~16× slower than aggregate at a batch-16 config
 (a single request still runs the batch-16 graph: ~0.3 tok/s vs ~9 aggregate). The release sweep runs

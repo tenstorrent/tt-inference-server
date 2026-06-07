@@ -35,5 +35,5 @@ waiting on the harder benchmark items.
 - Root-cause engine fix for conc-1-at-batch-N inefficiency (the proper fix in Benchmark-runtime).
 
 ## Evidence
-tt-shield build run 268 ✅ · gemma release run 5203 (serve+eval ✅, benchmark ❌ → Benchmark-uplift) ·
-Qwen release run 5204 ⏱️ cancelled at 6h (→ Benchmark-runtime) · local p01t05: both serve ✅ at 4K/16.
+[tt-shield build run 268](https://github.com/tenstorrent/tt-shield/actions/runs/27053465897) ✅ · [gemma release run 5203](https://github.com/tenstorrent/tt-shield/actions/runs/27054513861) (serve+eval ✅, benchmark ❌ → Benchmark-uplift) ·
+[Qwen release run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200) ⏱️ cancelled at 6h (→ Benchmark-runtime) · local p01t05: both serve ✅ at 4K/16.

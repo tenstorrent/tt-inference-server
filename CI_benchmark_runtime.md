@@ -1,6 +1,6 @@
 # Forge-TP release benchmark exceeds the 6h CI cap (conc-1 at batch-N)
 
-Part of the forge-TP-p300x2 umbrella. Qwen3-32B release benchmark (tt-shield release run 5204) hit the
+Part of the forge-TP-p300x2 umbrella. Qwen3-32B release benchmark ([tt-shield release run 5204](https://github.com/tenstorrent/tt-shield/actions/runs/27054514200)) hit the
 **6h job cap** and was cancelled; gemma will too once its tokenizer (the Benchmark-uplift item) is
 fixed. Goal: a **small interim** so CI doesn't hang QB2 for 6h, plus a pointer to the proper fix.
 
