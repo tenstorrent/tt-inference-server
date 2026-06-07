@@ -25,15 +25,11 @@ Three independent work items. Two are tiny/self-contained; one (uplift) is the h
 | **B — Initial Forge-TP support** (`CI_initial_support.md`) | Both models servable + eval-able at `EXPERIMENTAL`: dev-catalog specs, env-var-tunable runners, TP-topology constants, forge wheel, ifeval (downsampled), perf-ref placeholder, nightly matrix | `dev/cnn.yaml`, `tt_model_runners/*`, `constants.py`, `forge_runners/requirements.txt`, `eval_config.py`, `model_performance_reference.json`, `models-ci-config.json` | Additive, new models only | none (benchmark step stays red until A+C) |
 | **C — Benchmark client uplift** (`CI_benchmarks_vllm_uplift.md`) | vllm `0.13.0 → 0.19.1`, transformers `→5.5.1` (gemma-4 tokenizer prereq) | `requirements/benchmarks-vllm.txt`, `workflows/workflow_venvs.py` | **Wide** — shared client venv for *all* benchmarked LLMs; needs cross-model qualification | none (longest pole) |
 
-**Recommended landing order: A → C → B.**
-- **A** first: trivial, self-contained, a general correctness win — lands anytime.
-- **C** next: it's the long pole (broad re-qualification across forge + TTNN models), so start it early.
-- **B** last so the nightly matrix entry debuts **all-green** (serving + evals + both benchmark fixes in).
-- *Alternative:* land **B** early to unblock perf work — serving + evals go green immediately; the
-  **benchmark** step stays red (gemma tokenizer needs C, Qwen runtime needs A) until A+C land. The
-  initial-support doc already calls this out as known-failing, so this is acceptable if desired.
+All three are independent and can land in any order — **B can land immediately** (serving + evals go
+green; the benchmark step stays known-red until A + C land), while **C** is the long pole (broad
+cross-model re-qualification).
 
-## Follow-ups (checkboxes, not PRs yet)
+## Follow-ups
 - [ ] Fill gemma/Qwen eval published+gpu reference scores from first clean nightly (currently None).
 - [ ] Replace placeholder perf-reference targets with measured numbers.
 - [ ] Decide prod-catalog promotion (currently dev-only, `EXPERIMENTAL`).
