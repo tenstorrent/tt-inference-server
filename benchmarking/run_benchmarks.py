@@ -209,8 +209,16 @@ def build_benchmark_command(
     # only truncate prompts for text-only tasks; VLMs interleave vision tokens
     # in the prompt and truncation can drop them, causing 400s at the preprocessor
     if params.task_type == "text":
+        # Force max_tokens=osl in the request body. `--random-output-len` does NOT
+        # reach this forge server as an enforced cap (the openai-chat backend's
+        # output-len isn't honored), so without this requests run unbounded — e.g.
+        # Qwen3-32B emits ~1000+ reasoning tokens for an osl=128 request, blowing
+        # the 6h CI cap. The server DOES honor max_tokens in the body. Verified: a
+        # conc-1 Qwen bench config drops from >600s (timeout) to ~25s/request.
         cmd.extend([
-            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+            "--extra-body", json.dumps(
+                {"truncate_prompt_tokens": str(isl), "max_tokens": int(osl)}
+            ),
         ])
 
     if params.task_type == "vlm":
