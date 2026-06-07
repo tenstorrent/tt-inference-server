@@ -274,7 +274,7 @@ def setup_evals_meta(
 # Pinned vLLM tag used both by `requirements/benchmarks-vllm.txt` (where
 # vllm==<VLLM_PIN_VERSION>) and as the source for the structured-output
 # benchmark scripts fetched at venv setup time. Keep these in sync.
-VLLM_PIN_VERSION = "0.19.1"
+VLLM_PIN_VERSION = "0.13.0"
 VLLM_BENCHMARKS_RAW_BASE = f"https://raw.githubusercontent.com/vllm-project/vllm/v{VLLM_PIN_VERSION}/benchmarks"
 
 # (relative_path_in_vllm_repo, relative_path_in_work_dir)
