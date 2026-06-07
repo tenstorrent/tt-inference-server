@@ -21,7 +21,7 @@ the TP mesh topology, and `model` comes from the `MODEL` env.
 `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306`
 - **tt-forge wheel: `1.3.0.dev20260605003323`** (built 2026-06-05; same build as
   `pjrt-plugin-tt` / `vllm_tt`). Built by tt-shield `on-dispatch-build-media-server`
-  run #268 from branch `kmabee/gemma4_31b_it_forge`@`f752cce2`
+  run 268 from branch `kmabee/gemma4_31b_it_forge`@`f752cce2`
   (`forge-media-inference-server`). Tag = `<tt-metal aed6177>_<inf-server f752cce>_<ci 79853177306>`.
 - Predecessors: `e03b231b…_46a7c96_79778041239` (1.3.0, no branch changes);
   `97aea20e…_fd9296b_79608294867` (`tt-forge 1.2.0.dev20260530002932` — original
@@ -38,7 +38,7 @@ the TP mesh topology, and `model` comes from the `MODEL` env.
 | Local serve (new image, p01t05) | ✅ warms up + serves at 4K/16 |
 | Local smoke eval | ✅ `ifeval` prompt_level_strict_acc **0.89** |
 | Local smoke benchmark | ❌ `vllm bench serve` client crash — `AttributeError: 'list' object has no attribute 'keys'` (`transformers/tokenization_utils_base.py:1210`, gemma-4 tokenizer `extra_special_tokens` is a list) |
-| CI release [#5203] | ❌ failed @62min — serve ✓, eval ✓, all 14 benchmark runs ❌ (same tokenizer crash) |
+| CI release run 5203 | ❌ failed @62min — serve ✓, eval ✓, all 14 benchmark runs ❌ (same tokenizer crash) |
 | Evals registered | `ifeval`, downsampled CI_NIGHTLY 0.1 / SMOKE 0.01; published/gpu refs TBD (first TT user) |
 | Perf reference | p300x2 128/128 conc1 placeholder (borrowed Qwen3-32B targets) |
 
@@ -54,7 +54,7 @@ benchmark runtime (conc-1 slowness — see Qwen). (3) fill eval reference scores
 | Local serve (new image) | ✅ warms up + serves at 4K/16 |
 | Local smoke eval | ✅ `r1_aime24` ran (0.33 on ~3 smoke samples — functional, not a real accuracy figure) |
 | Local smoke benchmark | ✅ **functional, no crash** — but conc-1 ≈ **0.3 tok/s** |
-| CI release [#5204] | ⏱️ cancelled @ 6h job cap — serve ✓, eval ✓, benchmark did **not** finish |
+| CI release run 5204 | ⏱️ cancelled @ 6h job cap — serve ✓, eval ✓, benchmark did **not** finish |
 
 **Root cause of the 6h:** conc-1 benchmark runs are ~16× slower than aggregate at a batch-16 config
 (a single request still runs the batch-16 graph: ~0.3 tok/s vs ~9 aggregate). The release sweep runs
@@ -70,8 +70,9 @@ Also decide: keep batch-16/4K (from the gemma sweep) vs revert Qwen to 512/conc-
 ### Plumbing verified end-to-end (both)
 `--dev-mode` → dev spec → env_vars (`4096/16/0.9/trace`) flow into the container → new image (reused via
 the `on-dispatch` `docker-image` input, skipping rebuild). Local default `run.py` (no `--dev-mode`) uses
-**prod**, so prod must not be relied on for CI. `[#5203]: https://github.com/tenstorrent/tt-shield/actions/runs/27054513861`
-`[#5204]: https://github.com/tenstorrent/tt-shield/actions/runs/27054514200`
+**prod**, so prod must not be relied on for CI. Release runs: 5203 =
+https://github.com/tenstorrent/tt-shield/actions/runs/27054513861 · 5204 =
+https://github.com/tenstorrent/tt-shield/actions/runs/27054514200
 
 ---
 
@@ -169,7 +170,7 @@ aggregate / per-stream decode tok/s over `batch` concurrent greedy streams
 1. **`max_num_batched_tokens` must be `>= max_model_len * max_num_seqs`** in this
    `vllm_tt` — not just `>= max_model_len` like upstream. Asserted in
    `model_runner.py:285`. This is the no-batched-`paged_fill_cache` limitation
-   (proper fix tracked in tt-xla #5032/#5030). **Consequence:** the prefill graph
+   (proper fix tracked in tt-xla#5032 / tt-xla#5030). **Consequence:** the prefill graph
    is built over the full `batch*len` token budget, so prefill activation scales
    with **batch × len** — that product is the real wall, not batch and len
    independently.
@@ -197,10 +198,10 @@ aggregate / per-stream decode tok/s over `batch` concurrent greedy streams
 - **batch-16 / 8K and batch-32 / 8K do not fit** with trace on at GMU=0.9 — blocked
   by the `batch*len` prefill-activation OOM during trace capture.
 - **Untested lever:** retry D/E with **`ENABLE_TRACE=false`**. Per the trace
-  seq-len cap (#4220), the capture-time OOM may clear with trace off, extending the
+  seq-len cap (tt-xla#4220), the capture-time OOM may clear with trace off, extending the
   servable envelope (at the cost of the ~2× decode speedup). Not yet run.
 - The real unlock for high batch × long context is **batched `paged_fill_cache`**
-  (tt-xla #5032/#5030), which removes the `max_num_batched_tokens >= batch*len`
+  (tt-xla#5032 / tt-xla#5030), which removes the `max_num_batched_tokens >= batch*len`
   requirement so prefill activation stops scaling with batch.
 - Dimension overrides used here (`MAX_NUM_SEQS`, `MAX_MODEL_LEN`,
   `MAX_NUM_BATCHED_TOKENS`, `GPU_MEMORY_UTILIZATION`) are sweep-only (bind-mounted
@@ -213,4 +214,4 @@ aggregate / per-stream decode tok/s over `batch` concurrent greedy streams
 - Sweep artifacts: `~/gemma_sweep/` (sweep.py, sweep_dims.py, results.jsonl,
   dims_results.jsonl, runner_dims.py, logs).
 - Related: `HANDOFF_gemma4_31b_it_forge.md`, `QB2_P300_ETH_FABRIC_HANG_REPORT.md`.
-- Param-wrap / batched paged_fill_cache: tt-xla #5032, #5030; trace seq-len cap: #4220.
+- Param-wrap / batched paged_fill_cache: tt-xla#5032, tt-xla#5030; trace seq-len cap: tt-xla#4220.
