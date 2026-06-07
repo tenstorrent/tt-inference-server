@@ -27,6 +27,17 @@ Re-run benchmarks and compare deltas on: forge P150 (e.g. Qwen3-4B, Llama-3.1-8B
 TTNN model, and the two new forge-TP p300x2 models. Watch for: `vllm bench serve` arg/result-JSON drift
 (0.13→0.19) and transformers 4→5 tokenizer/token-count changes.
 
-## Validated
-Local (vllm 0.19.1 + transformers 5.5.1): gemma-4 tokenizer loads; `vllm bench serve` accepts all
-`run_benchmarks.py` args and reaches the request phase. Rollback = revert the two pins.
+## Validated (local, p01t05)
+Before/after on the gemma-4-31b-it tokenizer:
+- **Before** (vllm 0.13.0 / transformers 4.57.6): `AutoTokenizer.from_pretrained("google/gemma-4-31B-it")`
+  → `AttributeError: 'list' object has no attribute 'keys'`; CI release run 5203 crashed all 14
+  benchmark runs the same way.
+- **After** (vllm 0.19.1 / transformers 5.5.1): tokenizer loads (vocab 262144); **`vllm bench serve`
+  against a live gemma server completed 2/2 requests** (output throughput 3.90 tok/s, TPOT 204 ms),
+  **no AttributeError**. The crash was at tokenizer-init (pre-request), so a completed request proves
+  the fix.
+
+Caveats: the "after" run used a throwaway 0.19.1/5.5.1 venv (same versions + same `vllm bench serve`
+command run.py issues), not the committed branch venv (reverted to 0.13.0) and not the full
+`run.py --workflow release` orchestration; it was a 2-request smoke, not the full sweep. Rollback =
+revert the two pins.
