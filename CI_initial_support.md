@@ -1,6 +1,6 @@
 # Initial Forge-TP support: gemma-4-31b-it + Qwen3-32B on p300x2 (serving + evals)
 
-Part of the forge-TP-p300x2 umbrella. One PR. Adds both models as **servable + eval-able**
+Part of the forge-TP-p300x2 umbrella. Adds both models as **servable + eval-able**
 at `EXPERIMENTAL` in CI. **Benchmarks are out of scope here** (blocked on the Benchmark-uplift and
 Benchmark-runtime items) — but serving and evals run, which unblocks perf work.
 
@@ -25,7 +25,7 @@ Benchmark-runtime items) — but serving and evals run, which unblocks perf work
 ## Acceptance
 - Nightly/release reaches **serving ✅ + evals ✅** for both models on p300x2.
 - Benchmark step known-failing until the Benchmark-uplift (gemma tokenizer) and bounded by the
-  Benchmark-runtime work; not gating this PR.
+  Benchmark-runtime work; not gating this work item.
 
 ## Validated
 Local p01t05 on the build image: both serve at 4K/16; gemma ifeval 0.89; Qwen eval functional.

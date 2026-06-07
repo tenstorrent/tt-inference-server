@@ -1,7 +1,7 @@
 # Uplift the BENCHMARKS_VLLM client venv to vllm 0.19.1 / transformers 5.5.1
 
-Part of the forge-TP-p300x2 umbrella, but **cross-cutting** — its own PR, qualified separately.
-Prereq for gemma-4-31b-it (and any new-tokenizer model) benchmarks; **not** in the initial-support PR.
+Part of the forge-TP-p300x2 umbrella, but **cross-cutting** — qualified separately.
+Prereq for gemma-4-31b-it (and any new-tokenizer model) benchmarks; **not** part of the initial-support work.
 
 ## Problem
 The benchmark client venv pins `vllm==0.13.0` → `transformers<5` → 4.57.6, which **can't load the
@@ -15,7 +15,7 @@ uses 5.10.2 (both load gemma fine). So serving/evals are unaffected.
 `requirements/benchmarks-vllm.txt`: `vllm 0.13.0 → 0.19.1`, pin `transformers==5.5.1`;
 `workflows/workflow_venvs.py`: `VLLM_PIN_VERSION 0.13.0 → 0.19.1` (matching qualification + the serving
 image). Prototyped/validated on `kmabee/gemma4_31b_it_forge` (commit `6e6c22bb`, reverted off that
-branch in `7ef618a9` to keep the initial-support PR independent — cherry-pick `6e6c22bb` for this PR).
+branch in `7ef618a9` to keep the initial-support work independent — cherry-pick `6e6c22bb` to apply).
 
 ## Scope / risk
 `BENCHMARKS_VLLM` is the **single shared client venv** for the default `tools=vllm` path → affects
