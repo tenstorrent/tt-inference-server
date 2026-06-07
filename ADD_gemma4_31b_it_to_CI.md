@@ -9,9 +9,17 @@ Serving image: `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:ae
 (tt-forge **1.3.0.dev20260605003323**; built by tt-shield `on-dispatch-build-media-server`
 from this branch).
 
+> **Scope of this add (decoupled from the benchmark-client uplift):** this ships gemma-4-31b-it
+> as **servable + eval-able now** so perf work can start testing against it immediately. The
+> **e2e CI benchmark step will NOT pass until the separate `BENCHMARKS_VLLM` vllm/transformers
+> uplift lands** (`ISSUE_benchmarks_vllm_uplift.md`, summarized in §B) — that uplift is
+> intentionally **not** part of this add (it's a wide, shared change needing its own
+> qualification). Until then gemma's release-flow *benchmark* step is a known-failing step;
+> *serving* and *evals* are unaffected.
+
 ---
 
-## A. Pieces required to onboard the model (done on this branch)
+## A. Pieces in THIS add (done on this branch — serving + evals; NOT benchmarks)
 
 | # | Area | Change | File(s) |
 |---|---|---|---|
@@ -22,7 +30,9 @@ from this branch).
 | 5 | Evals | `ifeval`, downsampled (CI_NIGHTLY 0.1 / SMOKE 0.01); first TT user → published/gpu refs TBD | `evals/eval_config.py` |
 | 6 | Perf reference | p300x2 128/128 conc-1 target (placeholder, borrowed from Qwen3-32B) | `benchmarking/benchmark_targets/model_performance_reference.json` |
 | 7 | Nightly CI matrix | gemma-4-31b-it FORGE nightly on P300X2 | `.github/workflows/models-ci-config.json` |
-| 8 | **Benchmark client fix** | bump `BENCHMARKS_VLLM` venv to vllm 0.19.1 / transformers 5.5.1 (see §B) | `requirements/benchmarks-vllm.txt`, `workflows/workflow_venvs.py` |
+
+> The benchmark-client `BENCHMARKS_VLLM` uplift is **not** in this table — it is a separate
+> prerequisite for benchmarks only (§B), shipped independently.
 
 ### Key gotchas (learned during bring-up)
 - **CI reads the `dev` catalog**, not prod: the shared tt-shield run job runs `run.py --dev-mode`
@@ -36,9 +46,13 @@ from this branch).
 
 ---
 
-## B. Cross-cutting fix — benchmark client vllm/transformers uplift (own issue/PR)
+## B. PREREQUISITE for e2e benchmarks — benchmark client uplift (separate issue/PR, NOT in this add)
 
-**This is NOT gemma-specific — it affects every model on the default `tools=vllm` benchmark path.**
+**Required for gemma's CI benchmark step to run, but intentionally excluded from this add.** It's a
+wide, shared change (see `ISSUE_benchmarks_vllm_uplift.md`); gemma *serving* + *evals* work without it,
+only the *benchmark* step is blocked. Shipping the add first unblocks perf work; the uplift follows on
+its own branch/PR once qualified. **This is NOT gemma-specific — it affects every model on the default
+`tools=vllm` benchmark path.**
 
 - Symptom (gemma-4): all benchmark runs crash — `AttributeError: 'list' object has no attribute 'keys'`
   in `transformers/tokenization_utils_base.py:_set_model_specific_special_tokens`. gemma-4's
@@ -46,7 +60,8 @@ from this branch).
 - Root cause: `requirements/benchmarks-vllm.txt` pinned `vllm==0.13.0`, which hard-pins `transformers<5`
   → 4.57.6. The serving image (and tt-xla qualification) uses **transformers 5.5.1 + vllm 0.19.1**, which
   loads the list form fine.
-- Fix (on this branch as commit `6e6c22bb`, but **should be split out**): bump the shared `BENCHMARKS_VLLM`
+- Fix (prototyped + validated, then **reverted off this branch** in commit `6e6c22bb`→`7ef618a9` to
+  keep this add independent; cherry-pick `6e6c22bb` for the uplift PR): bump the shared `BENCHMARKS_VLLM`
   venv to **vllm 0.19.1 + transformers 5.5.1** and `VLLM_PIN_VERSION 0.13.0 → 0.19.1`.
 - **Scope / action:** the `BENCHMARKS_VLLM` venv is shared by ALL models (it's the default `vllm bench
   serve` client). This bump (incl. a transformers 4→5 major) therefore needs its **own issue + PR**, and
@@ -59,8 +74,11 @@ from this branch).
 ## C. Open blockers / next steps (per model)
 
 ### gemma-4-31b-it
-- [ ] **benchmark tokenizer crash** → fixed by §B uplift (validated locally: tokenizer loads + `vllm
-      bench serve` runs on vllm 0.19.1 / transformers 5.5.1). Needs a clean CI re-run once §B lands.
+- ✅ **In this add:** serving (4K/16) + evals work on CI. *(local: serve ✅, ifeval 0.89 ✅)*
+- ⛔ **benchmark step blocked pending the §B uplift** (separate PR) — NOT a gemma-add task. The
+      `extra_special_tokens`-list tokenizer crash is fixed by the uplift (validated locally: tokenizer
+      loads + `vllm bench serve` runs on vllm 0.19.1 / transformers 5.5.1). Until the uplift merges,
+      treat gemma's release-flow benchmark as known-failing; serving/evals/manual perf are unaffected.
 - [ ] fill eval published/gpu reference scores from the first clean nightly (currently None).
 - [ ] replace the placeholder perf-reference targets with measured gemma-4 numbers.
 - [ ] decide prod-catalog promotion (currently dev-only, `status: EXPERIMENTAL`).
@@ -77,7 +95,9 @@ from this branch).
 
 ## D. CI evidence so far
 - Build: tt-shield `on-dispatch-build-media-server` #268 ✅ (forge image from this branch).
-- Release dispatch gemma `#5203` ❌ (benchmark tokenizer crash — fixed by §B).
-- Release dispatch Qwen3-32B `#5204` ⏱️ cancelled @6h (benchmark runtime).
+- Release dispatch gemma `#5203`: serve ✅ + eval ✅; benchmark ❌ (tokenizer crash — expected until the
+  §B uplift; not blocking this add's serving/eval scope).
+- Release dispatch Qwen3-32B `#5204` ⏱️ cancelled @6h (benchmark runtime — separate, see §C).
 - Local (p01t05, new image): both serve ✅ at 4K/16; gemma smoke eval ifeval 0.89 ✅; Qwen smoke
-  eval/benchmark functional ✅; gemma smoke benchmark fixed via §B (re-verify in progress).
+  eval/benchmark functional ✅. Benchmark tokenizer fix validated locally under the §B uplift (which is
+  reverted off this branch); gemma e2e benchmark only runs once the uplift lands.
