@@ -39,12 +39,30 @@ cleanup_kissat_configure_artifacts() {
         return
     fi
 
-    # Kissat's configure script fails if a previous incremental build left this
-    # symlink behind. Removing it lets configure recreate the link cleanly.
-    for makefile in "${kissat_cache}"/*/src/makefile; do
-        [ -e "${makefile}" ] || continue
-        rm -f "${makefile}"
+    # Kissat's configure script fails if a previous incremental build left
+    # symlinks in its cache. Removing only Kissat's generated build dirs keeps
+    # the rest of tt-metal's dependency cache intact.
+    for build_dir in "${kissat_cache}"/*/build; do
+        [ -e "${build_dir}" ] || continue
+        rm -rf "${build_dir}"
     done
+}
+
+cleanup_moved_cmake_build_dir() {
+    local build_dir="$1"
+    local source_dir="$2"
+    local cache_file="${build_dir}/CMakeCache.txt"
+
+    if [ ! -f "${cache_file}" ]; then
+        return
+    fi
+
+    if grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=${source_dir}" "${cache_file}"; then
+        return
+    fi
+
+    echo "Removing stale CMake build directory created for a different source path: ${build_dir}"
+    rm -rf "${build_dir}"
 }
 
 cd "${cpp_server}"
@@ -57,8 +75,12 @@ fi
 
 cleanup_kissat_configure_artifacts
 
-cd "${cpp_server}/tt-llm-engine"
+llm_engine="${cpp_server}/tt-llm-engine"
+cleanup_moved_cmake_build_dir "${llm_engine}/build-full" "${llm_engine}"
+
+cd "${llm_engine}"
 ./setup.sh --all
 
 cd "${cpp_server}"
+cleanup_moved_cmake_build_dir "${cpp_server}/build" "${cpp_server}"
 ./build.sh --blaze
