@@ -525,7 +525,7 @@ def main() -> int:
 
     print(f"Prefix cache E2E tests against {base_url}")
     print(f"  model={args.model}  stream={stream}")
-    print(f"\nWaiting for server…")
+    print("\nWaiting for server…")
 
     if not wait_for_server(base_url, args.timeout):
         print("ERROR: Server not ready within timeout")
