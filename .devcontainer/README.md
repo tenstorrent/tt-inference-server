@@ -17,6 +17,14 @@ cd /data/<user>/container-dev/tt-inference-server
 .devcontainer/run-devcontainer.sh
 ```
 
+If the `tt-metal` build cache is stale, run the same launcher with `--clean`:
+
+```bash
+.devcontainer/run-devcontainer.sh --clean
+```
+
+This runs `tt-media-server/cpp_server/tt-llm-engine/tt-metal/build_metal.sh --clean` inside the container before installing and rebuilding dependencies.
+
 The script:
 
 - validates that the repository is under `container-dev`;

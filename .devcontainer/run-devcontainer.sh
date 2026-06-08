@@ -11,6 +11,25 @@ image_name="${TT_INFERENCE_DEV_IMAGE:-tt-inference-server-dev:latest}"
 data_root="$(cd "${repo_root}/../.." && pwd -P)"
 cpp_server="${repo_root}/tt-media-server/cpp_server"
 tt_metal_home="${cpp_server}/tt-llm-engine/tt-metal"
+install_args=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --clean)
+            install_args+=(--clean)
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--clean]"
+            echo "  --clean    Clean tt-metal build artifacts before installing dependencies"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
 
 "${script_dir}/check-workspace-path.sh" "${repo_root}"
 
@@ -28,4 +47,5 @@ docker run --rm -it \
     -e "LD_LIBRARY_PATH=${tt_metal_home}/build/lib:${cpp_server}/build-full:${LD_LIBRARY_PATH:-}" \
     -w "${repo_root}" \
     "${image_name}" \
-    bash -lc '.devcontainer/install-dependencies.sh "$PWD" && exec bash'
+    bash -lc '.devcontainer/install-dependencies.sh "$PWD" "$@" && exec bash' \
+    bash "${install_args[@]}"
