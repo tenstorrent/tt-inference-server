@@ -6,7 +6,7 @@ This branch was created to patch remote execution of TT evals, benchmarks and te
 First create a venv and install pyyaml.
 
 Then run the following command (gpu is just a placeholder until we have a more appropriate device name).
-To run only one eval at a time you can comment/ uncomment evals in [evals/eval_config.py](evals/eval_config.py).
+To run only one eval at a time you can comment/ uncomment evals lines 145-312 at [evals/eval_config.py](evals/eval_config.py). 
 
 You will to obtain a huggingface token. For GPQA-Diamond you will need to grant access to the dataset on huggingface.
 
