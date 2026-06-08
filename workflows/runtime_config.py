@@ -68,6 +68,16 @@ class RuntimeConfig:
     eval_samples: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
+    # Prefix-cache benchmark
+    prefix_cache: bool = False
+    prefix_cache_preset: str = "full"
+    prefix_cache_scenarios: Optional[str] = None
+    prefix_cache_arrival: Optional[str] = None
+    prefix_cache_request_rate: Optional[float] = None
+    prefix_cache_scenarios_json: Optional[str] = None
+    prefix_cache_trace: Optional[str] = None
+    jwt_secret: Optional[str] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -133,6 +143,16 @@ class RuntimeConfig:
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
             sdxl_num_prompts=args.sdxl_num_prompts,
+            prefix_cache=getattr(args, "prefix_cache", False),
+            prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
+            prefix_cache_scenarios=getattr(args, "prefix_cache_scenarios", None),
+            prefix_cache_arrival=getattr(args, "prefix_cache_arrival", None),
+            prefix_cache_request_rate=getattr(args, "prefix_cache_request_rate", None),
+            prefix_cache_scenarios_json=getattr(
+                args, "prefix_cache_scenarios_json", None
+            ),
+            prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            jwt_secret=getattr(args, "jwt_secret", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
