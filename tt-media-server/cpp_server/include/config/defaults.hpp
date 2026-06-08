@@ -100,9 +100,6 @@ constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
 constexpr size_t CALLBACK_POOL_THREADS_MAX = 32;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
-// Number of Drogon HTTP IO threads. 0 = auto (hardware_concurrency, or 4 when
-// Dynamo is the primary traffic path). Set explicitly to reduce idle threads.
-constexpr size_t DROGON_IO_THREADS = 0;
 
 // IPC queue capacities
 constexpr size_t RESULT_QUEUE_CAPACITY = 65536;

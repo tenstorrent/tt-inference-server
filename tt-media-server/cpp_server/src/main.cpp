@@ -121,8 +121,7 @@ int main(int argc, char* argv[]) {
 
   std::string host = defs::SERVER_HOST;
   uint16_t port = defs::SERVER_PORT;
-  int threads = 0;  // 0 = auto (resolved after CLI parsing)
-  bool threadsExplicit = false;
+  int threads = std::thread::hardware_concurrency();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -132,7 +131,6 @@ int main(int argc, char* argv[]) {
       port = static_cast<uint16_t>(std::stoi(argv[++i]));
     } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
       threads = std::stoi(argv[++i]);
-      threadsExplicit = true;
     } else if (arg == "--help") {
       // Use cout for help message (before logger is initialized)
       std::cout
@@ -145,20 +143,6 @@ int main(int argc, char* argv[]) {
           << "  --help              Show this help message\n"
           << "\nEnvironment Variables:\n";
       return 0;
-    }
-  }
-
-  // Resolve Drogon IO thread count: CLI > env DROGON_IO_THREADS > auto.
-  // Auto = hardware_concurrency, reduced to 4 when Dynamo is the primary
-  // traffic path (Drogon only serves health/metrics in that mode).
-  if (!threadsExplicit) {
-    const size_t fromConfig = tt::config::drogonIoThreads();
-    if (fromConfig > 0) {
-      threads = static_cast<int>(fromConfig);
-    } else if (tt::config::dynamoEndpointEnabled()) {
-      threads = 4;  // minimal — HTTP only serves health/metrics
-    } else {
-      threads = static_cast<int>(std::thread::hardware_concurrency());
     }
   }
 
