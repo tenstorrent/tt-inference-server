@@ -11,18 +11,18 @@ namespace tt::sockets {
 
 std::unique_ptr<ISocketTransport> createSocketTransport() {
   const std::string type = tt::config::socketTransport();
-  if (type == transport_names::ZMQ) {
-    TT_LOG_INFO("[SocketTransport] Using ZMQ transport");
-    return std::make_unique<ZmqSocketTransport>();
+  if (type == transport_names::TCP) {
+    TT_LOG_INFO("[SocketTransport] Using TCP transport");
+    return std::make_unique<TcpSocketTransport>();
   }
-  if (type != transport_names::TCP) {
+  if (type != transport_names::ZMQ) {
     TT_LOG_WARN(
         "[SocketTransport] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or "
-        "'{}'. Falling back to TCP.",
+        "'{}'. Falling back to ZMQ.",
         type, transport_names::TCP, transport_names::ZMQ);
   }
-  TT_LOG_INFO("[SocketTransport] Using TCP transport");
-  return std::make_unique<TcpSocketTransport>();
+  TT_LOG_INFO("[SocketTransport] Using ZMQ transport");
+  return std::make_unique<ZmqSocketTransport>();
 }
 
 }  // namespace tt::sockets

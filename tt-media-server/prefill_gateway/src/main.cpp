@@ -50,13 +50,17 @@ struct GatewayConfig {
 
 void printUsage(const char* prog) {
   std::cerr
-      << "Usage: " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
-      << "[--prefill=<HOST>:<PORT> ...]\n\n"
+      << "Usage: " << prog
+      << " --decode-port=<PORT> --prefill-bind=<HOST>:<PORT>\n"
+      << "       " << prog
+      << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
+      << "[--prefill=<HOST>:<PORT> ...]  # SOCKET_TRANSPORT=tcp\n\n"
       << "  --decode-port=PORT   Port the gateway listens on for decode.\n"
       << "  --prefill=HOST:PORT  TCP prefill server to connect to "
          "(repeatable).\n"
       << "  --prefill-bind=HOST:PORT\n"
-      << "                        ZMQ ROUTER bind endpoint for prefills.\n"
+      << "                        ZMQ ROUTER bind endpoint for prefills "
+      << "(default transport).\n"
       << "  --prefill-stale-timeout-ms=MS\n"
       << "                        ZMQ prefill registration timeout. Default: "
          "3000.\n"
@@ -81,8 +85,7 @@ void printUsage(const char* prog) {
       << "  --help               Print this message.\n\n"
       << "Example:\n"
       << "  " << prog
-      << " --decode-port=7100 --prefill=192.168.1.1:7200 "
-         "--prefill=192.168.1.2:7200\n";
+      << " --decode-port=7100 --prefill-bind=0.0.0.0:7200\n";
 }
 
 std::optional<PrefillEndpoint> parsePrefillArg(std::string_view value) {
@@ -244,7 +247,20 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
 
 std::string_view socketTransportFromEnv() {
   const char* value = std::getenv("SOCKET_TRANSPORT");
-  return value ? std::string_view(value) : tt::sockets::transport_names::TCP;
+  if (value == nullptr || value[0] == '\0') {
+    return tt::sockets::transport_names::ZMQ;
+  }
+  const std::string_view transport(value);
+  if (transport == tt::sockets::transport_names::TCP ||
+      transport == tt::sockets::transport_names::ZMQ) {
+    return transport;
+  }
+  TT_LOG_WARN(
+      "[Gateway] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or '{}'. "
+      "Falling back to ZMQ.",
+      transport, tt::sockets::transport_names::TCP,
+      tt::sockets::transport_names::ZMQ);
+  return tt::sockets::transport_names::ZMQ;
 }
 
 volatile sig_atomic_t gStop = 0;

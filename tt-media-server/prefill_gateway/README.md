@@ -28,13 +28,13 @@ This produces:
 Run them all with:
 
 ```bash
-SOCKET_TRANSPORT=tcp ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
-To run against the ZMQ transport instead of TCP:
+ZMQ is the default transport. To run against the TCP transport instead:
 
 ```bash
-SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
+SOCKET_TRANSPORT=tcp ctest --test-dir build --output-on-failure
 ```
 
 ## Run the gateway
@@ -44,15 +44,15 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   --decode-port=7100 \
   --metrics-port=9091 \
   --health-port=9092 \
-  --prefill=127.0.0.1:7200 \
-  --prefill=127.0.0.1:7201
+  --prefill-bind=127.0.0.1:7200
 ```
 
 - `--decode-port` is the port the gateway *listens on* for the decode server.
-- `--prefill=HOST:PORT` is a TCP prefill the gateway *dials out to*. Repeat the
-  flag for each prefill.
 - `--prefill-bind=HOST:PORT` is the ZMQ prefill-side ROUTER bind endpoint.
-  ZMQ prefills dial this single endpoint and register themselves.
+  ZMQ prefills dial this single endpoint and register themselves. This is the
+  default transport mode.
+- `--prefill=HOST:PORT` is a TCP prefill the gateway *dials out to* when
+  `SOCKET_TRANSPORT=tcp`. Repeat the flag for each prefill.
 - `--prefill-stale-timeout-ms=MS` controls how long the ZMQ gateway waits
   without a prefill registration before marking that prefill down. Default:
   `3000`.
@@ -111,7 +111,7 @@ flip the inter-server socket roles to talk through the gateway:
 | Env var                         | Set on  | Effect                                                                                         |
 | ------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
 | `USE_PREFILL_GATEWAY=1`         | both    | Decode dials gateway as CLIENT. TCP prefills listen for the gateway; ZMQ prefills dial the gateway's prefill ROUTER. |
-| `SOCKET_TRANSPORT`              | all     | `tcp` (default) or `zmq`. Must be the same on all three processes.                             |
+| `SOCKET_TRANSPORT`              | all     | `zmq` (default) or `tcp`. Must be the same on all three processes.                             |
 | `PREFILL_SERVER_ID=...`         | prefill | Identity advertised in `PrefillRegistrationMessage`. Default: `<hostname>:<port>`.             |
 | `PREFILL_MAX_IN_FLIGHT=N`       | prefill | Capacity hint sent to the gateway (0 = unlimited).                                             |
 | `MAX_TOKENS_TO_PREFILL_ON_DECODE=0` | decode  | Set to 0 to force all requests through the gateway. Default 1000 keeps short prompts local. |
@@ -132,8 +132,8 @@ The default (`USE_PREFILL_GATEWAY=0`) keeps the existing direct 1:1 wiring.
                                                                   └───────────┘
 ```
 
-The commands below use TCP (default), where the gateway dials each prefill.
-For ZMQ, use the separate ZMQ commands below: the gateway binds one prefill
+The first commands below use explicit TCP, where the gateway dials each prefill.
+For the default ZMQ mode, use the separate ZMQ commands below: the gateway binds one prefill
 ROUTER endpoint and every prefill connects to it.
 
 ### Terminal A — gateway
@@ -350,8 +350,8 @@ TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8002
 ```
 
-For ZMQ — just swap `SOCKET_TRANSPORT=tcp` → `SOCKET_TRANSPORT=zmq` on
-**both** processes.
+For the default ZMQ transport, omit `SOCKET_TRANSPORT` or set
+`SOCKET_TRANSPORT=zmq` on **both** processes.
 
 #### Terminal C — drive a request
 
