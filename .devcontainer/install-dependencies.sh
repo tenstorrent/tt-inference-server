@@ -32,8 +32,30 @@ cpp_server="${repo_root}/tt-media-server/cpp_server"
 
 export TT_METAL_HOME="${TT_METAL_HOME:-${cpp_server}/tt-llm-engine/tt-metal}"
 
+cleanup_kissat_configure_artifacts() {
+    local kissat_cache="${TT_METAL_HOME}/.cpmcache/kissat"
+
+    if [ ! -d "${kissat_cache}" ]; then
+        return
+    fi
+
+    # Kissat's configure script fails if a previous incremental build left this
+    # symlink behind. Removing it lets configure recreate the link cleanly.
+    for makefile in "${kissat_cache}"/*/src/makefile; do
+        [ -e "${makefile}" ] || continue
+        rm -f "${makefile}"
+    done
+}
+
 cd "${cpp_server}"
 ./install_dependencies.sh
+
+if [ "${clean_tt_metal}" -eq 1 ]; then
+    cd "${TT_METAL_HOME}"
+    ./build_metal.sh --clean
+fi
+
+cleanup_kissat_configure_artifacts
 
 cd "${cpp_server}/tt-llm-engine"
 ./setup.sh --all
