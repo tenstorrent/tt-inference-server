@@ -90,6 +90,10 @@ class SessionManager {
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
+  // Atomically transitions the session from IN_FLIGHT back to IDLE.
+  // Thread-safe: holds the ConcurrentMap lock during the state transition.
+  void releaseInFlight(const std::string& sessionId);
+
   domain::Session* getSession(const std::string& sessionId);
   size_t getActiveSessionCount() const;
 
