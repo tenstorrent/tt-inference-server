@@ -102,15 +102,13 @@ bool usePrefillGateway();
 std::string prefillServerId();
 
 /**
- * Per-process identity for log lines, e.g. "decode/bh-47:9000 pid=3363530".
- * Format: "<role>/<instance> pid=<pid>" where role is the LLM_MODE
- * (decode/prefill/regular) for the LLM service or the service name otherwise,
- * and instance is prefillServerId() ("<hostname>:<SOCKET_PORT>" by default).
+ * Role shown in every log line, e.g. "decode", "prefill", "prefill-worker0".
+ * The role is the LLM_MODE (decode/prefill/regular) for the LLM service or the
+ * service name (image/embedding) otherwise; a forked worker subprocess appends
+ * "-worker<index>" so worker lines are distinguishable from the HTTP node.
  *
  * @param workerIndex >=0 for a forked worker subprocess; appends
- *   "-worker<index>" to the role (e.g. "decode-worker0") so worker lines stay
- *   attributable to their node even when decode/prefill are colocated and
- *   share host:SOCKET_PORT.
+ *   "-worker<index>" to the role (e.g. "decode-worker0").
  */
 std::string logInstanceTag(int workerIndex = -1);
 
@@ -288,6 +286,15 @@ int prefillMaxTokenIds();
 /** Decode max token IDs from DECODE_MAX_TOKEN_IDS. Default:
  * defaults::DECODE_MAX_TOKEN_IDS. */
 int decodeMaxTokenIds();
+
+// ---------------------------------------------------------------------------
+// Drogon HTTP server
+// ---------------------------------------------------------------------------
+
+/** Number of Drogon IO threads. From DROGON_IO_THREADS. 0 means auto-detect
+ * (hardware_concurrency; reduced to 4 when DYNAMO_ENDPOINT_ENABLED=1 since
+ * Drogon only serves health/metrics in that mode). */
+size_t drogonIoThreads();
 
 // ---------------------------------------------------------------------------
 // Dynamo TCP backend (NVIDIA Dynamo frontend integration)

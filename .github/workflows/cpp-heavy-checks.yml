@@ -50,6 +50,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
 
       - name: Restore cached tokenizer files
         uses: actions/cache@v5
@@ -110,6 +111,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
 
       - name: Build C++ server
         run: |
@@ -252,6 +254,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
 
       - name: Build C++ server
         run: |
@@ -274,7 +277,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "TCP direct split decode"
           cd cpp_server/build
           NS=tcp_decode
-          SOCKET_TRANSPORT=tcp LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=tcp LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -338,7 +341,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
           cd cpp_server/build
           NS=zmq_decode
-          SOCKET_TRANSPORT=zmq LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -445,7 +448,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
           cd cpp_server
           NS=r2_decode
-          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -654,6 +657,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
 
       - name: Build C++ server
         run: |
@@ -746,7 +750,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "TCP gateway decode server"
           cd cpp_server/build
           NS=gw_decode
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
+          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -878,7 +882,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "ZMQ gateway decode server"
           cd cpp_server/build
           NS=gw_zmq_decode
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode \
+          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -1553,6 +1557,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
 
       - name: Restore cached tokenizer files
         uses: actions/cache@v5
@@ -1706,6 +1711,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           init-private-submodule: "false"
+          ccache-key-suffix: gateway
 
       - name: Configure prefill_gateway with ThreadSanitizer
         run: |

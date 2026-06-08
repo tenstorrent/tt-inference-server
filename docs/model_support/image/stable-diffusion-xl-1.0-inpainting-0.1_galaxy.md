@@ -9,7 +9,8 @@
 `stable-diffusion-xl-1.0-inpainting-0.1` is also supported on hardware:
 
 - [WH LoudBox/QuietBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
-- [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
+- [N150](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
+- [N300](stable-diffusion-xl-1.0-inpainting-0.1_n300.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-1.0-inpainting-0.1 Inference Server on WH Galaxy
 
