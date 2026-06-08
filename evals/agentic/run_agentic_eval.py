@@ -33,6 +33,7 @@ def _add_swebench_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sweagent-config", default="config/default.yaml")
     parser.add_argument("--mini-config", default="swebench.yaml")
     parser.add_argument("--mini-model-class", default="litellm")
+    parser.add_argument("--mini-last-n-observations", type=int, default=15)
     parser.add_argument("--mini-environment-class", default="docker")
     parser.add_argument("--n-concurrent-trials", type=int, default=1)
     parser.add_argument("--max-workers", type=int, default=1)
@@ -109,6 +110,7 @@ def main() -> int:
             sweagent_config=args.sweagent_config,
             mini_config=args.mini_config,
             mini_model_class=args.mini_model_class,
+            mini_last_n_observations=args.mini_last_n_observations,
             mini_environment_class=args.mini_environment_class,
             n_concurrent_trials=args.n_concurrent_trials,
             max_workers=args.max_workers,

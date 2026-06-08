@@ -65,6 +65,7 @@ class SWEbenchEvalConfig:
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
+    mini_last_n_observations: int = 15
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
     shuffle: bool = True
@@ -142,6 +143,173 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    EvalConfig(
+        hf_model_repo="moonshotai/Kimi-K2.6",
+        tasks=[
+            # EvalTask(
+            #     task_name="r1_gpqa_diamond",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     max_concurrent=16,
+            #     # The remote Tenstorrent console only exposes /v1/chat/completions
+            #     # (text /v1/completions returns 404), so use the chat API.
+            #     use_chat_api=True,
+            #     score=EvalTaskScore(
+            #         published_score=90.5,
+            #         published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+            #         gpu_reference_score=90.91,
+            #         gpu_reference_score_ref="TBD",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "exact_match,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         "max_length": 100 * 1024,
+            #         # Per-request HTTP timeout (lm-eval default 1800s). Long
+            #         # reasoning generations on the shared console can exceed
+            #         # 30min under load, so allow up to 2h before giving up.
+            #         "timeout": 7200,
+            #     },
+            #     gen_kwargs={
+
+            #         "max_gen_toks": 64 * 1024,
+            #         "until": ["[EOS]"],
+            #         "do_sample": "true",
+            #         "temperature": 1.0,
+            #         # "top_k": 20,
+            #         "top_p": 1.0,
+            #         # "stream": "true",
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.2,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=66.7,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+                    gpu_reference_score=61.9,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        # "interleaved_thinking": True,  # Feeds reasoning content back into the message history
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 48 * 1024,
+                            "max_output_tokens": 128 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 1.0,
+                            "max_tokens": 128 * 1024,
+                            "timeout":  60 * 60,
+                        },
+                        # "llm_call_kwargs": {
+                        #     "extra_body": {
+                        #         "chat_template_kwargs": {
+                        #             "thinking": True,
+                        #             "preserve_thinking": True,
+                        #         }
+                        #     },
+                        # },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            # "terminal-bench/circuit-fibsqrt",
+                            # "terminal-bench/pytorch-model-recovery",
+                            # "terminal-bench/gpt2-codegolf",
+                            # "terminal-bench/path-tracing-reverse",
+                            # "terminal-bench/extract-moves-from-video",
+                            # "terminal-bench/make-doom-for-mips",
+                            # "terminal-bench/path-tracing",
+                            # "terminal-bench/path-tracing-reverse",
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/mteb-leaderboard",
+                            "terminal-bench/git-multibranch",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/build-pmars",
+                            "terminal-bench/pypi-server",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/filter-js-from-html",
+                            # "terminal-bench/qemu-startup",
+                            # "terminal-bench/feal-linear-cryptanalysis",
+                            # "terminal-bench/adaptive-rejection-sampler",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=80.2,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
+                    gpu_reference_score=66.2,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=16,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=1.0,
+                    max_input_tokens=48 * 1024,
+                    max_output_tokens=32 * 1024,
+                    mini_last_n_observations=15,
+                    # completion_kwargs={
+                    #     "extra_body": {
+                    #         "top_k": 20,
+                    #     },
+                    # },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[

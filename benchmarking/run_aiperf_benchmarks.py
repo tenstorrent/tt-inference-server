@@ -34,6 +34,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
+from utils.remote_readiness import _wait_for_remote_openai_ready
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -331,7 +332,7 @@ def run_benchmark(
     os.makedirs(artifact_dir, exist_ok=True)
 
     # Build aiperf command
-    # Format URL properly
+    # Ensure URL has a scheme; default to http for bare host:port strings.
     if not url.startswith("http"):
         url = f"http://{url}"
 
@@ -573,12 +574,18 @@ def main():
     deploy_url = getattr(runtime_config, "server_url", None) or os.environ.get(
         "DEPLOY_URL", "http://127.0.0.1"
     )
-    # An explicit port on deploy_url wins over service_port so AIPerf doesn't
-    # connect to host:service_port when --server-url already carries a port.
+    remote_server = bool(getattr(runtime_config, "server_url", None))
+
+    # Build the URL passed to aiperf. For remote servers preserve the full URL
+    # (scheme + host + port) so HTTPS endpoints are not downgraded to http://.
+    # For local servers keep the legacy host:port form (run_benchmark prepends http://).
     _parsed = urlparse(deploy_url.rstrip("/"))
-    aiperf_host = _parsed.hostname or "localhost"
-    aiperf_port = str(_parsed.port) if _parsed.port is not None else str(service_port)
-    aiperf_url = f"{aiperf_host}:{aiperf_port}"
+    if remote_server:
+        aiperf_url = deploy_url.rstrip("/")
+    else:
+        aiperf_host = _parsed.hostname or "localhost"
+        aiperf_port = str(_parsed.port) if _parsed.port is not None else str(service_port)
+        aiperf_url = f"{aiperf_host}:{aiperf_port}"
 
     device = DeviceTypes.from_string(device_str)
     logger.info(f"model_spec=: {model_spec}")
@@ -586,7 +593,7 @@ def main():
     logger.info(f"service_port=: {service_port}")
     logger.info(f"output_path=: {args.output_path}")
 
-    # Set environment vars
+    # Set environment vars and resolve auth token for aiperf --api-key.
     auth_token = ""
     if jwt_secret:
         json_payload = json.loads(
@@ -597,6 +604,12 @@ def main():
         auth_token = encoded_jwt
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
+        )
+    elif os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"):
+        auth_token = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = auth_token
+        logger.info(
+            "OPENAI_API_KEY / auth_token set from literal API_KEY / OPENAI_API_KEY."
         )
 
     # Get venv config for aiperf
@@ -665,18 +678,25 @@ def main():
         model_spec=model_spec,
         runtime_config=runtime_config,
     )
-    if not prompt_client.wait_for_healthy():
-        logger.error("vLLM server is not healthy. Aborting benchmarks.")
-        return 1
-
-    # Send warm-up requests to ensure server is fully initialized
-    # This prevents cold-start overhead from affecting the first benchmark
-    logger.info("Sending warm-up requests to initialize server...")
-    warmup_success = send_warmup_requests(prompt_client, model_spec, num_requests=3)
-    if not warmup_success:
-        logger.warning("Warm-up requests failed, but continuing with benchmarks")
+    if remote_server:
+        logger.info("Wait for remote OpenAI-compatible endpoint to be ready ...")
+        if not _wait_for_remote_openai_ready(prompt_client):
+            logger.error(
+                "⛔️ Remote inference endpoint is not ready. Aborting benchmarks."
+            )
+            return 1
     else:
-        logger.info("Warm-up completed successfully")
+        if not prompt_client.wait_for_healthy():
+            logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
+            return 1
+
+        # Send warm-up requests to ensure server is fully initialized
+        logger.info("Sending warm-up requests to initialize server...")
+        warmup_success = send_warmup_requests(prompt_client, model_spec, num_requests=3)
+        if not warmup_success:
+            logger.warning("Warm-up requests failed, but continuing with benchmarks")
+        else:
+            logger.info("Warm-up completed successfully")
 
     # Create artifact directory
     artifact_base = venv_config.venv_path / "artifacts" / model_spec.model_id
@@ -690,15 +710,15 @@ def main():
     return_codes = []
 
     for i, params in enumerate(all_params, 1):
-        # Health check
-        try:
-            health_check = prompt_client.get_health()
-        except requests.exceptions.RequestException as error:
-            logger.error("Health check request failed: %s", error)
-            return 1
-        if health_check.status_code != 200:
-            logger.error("vLLM server is not healthy. Aborting benchmarks.")
-            return 1
+        if not remote_server:
+            try:
+                health_check = prompt_client.get_health()
+            except requests.exceptions.RequestException as error:
+                logger.error("Health check request failed: %s", error)
+                return 1
+            if health_check.status_code != 200:
+                logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
+                return 1
 
         logger.info(f"Running benchmark {model_spec.model_name}: {i}/{len(all_params)}")
 

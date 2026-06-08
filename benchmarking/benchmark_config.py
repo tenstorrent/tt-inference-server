@@ -97,6 +97,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (8192, 128),
     (16384, 128),
     (32768, 128),
+    (49152, 128),  # 48K; fits 50K console ISL/context limits with osl=128
     (65536, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)

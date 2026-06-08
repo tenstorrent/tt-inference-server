@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -312,8 +313,24 @@ def _get_openai_base_url(service_port) -> str:
     return f"http://127.0.0.1:{service_port}/v1"
 
 
-def _setup_agentic_eval_env(service_port):
-    base_url = _get_openai_base_url(service_port)
+def _agentic_api_base(runtime_config, service_port) -> str:
+    """Resolve the OpenAI-compatible API base (``.../v1``) for agentic evals.
+
+    Targets a remote inference server when ``--server-url`` was provided
+    (e.g. the Tenstorrent console); otherwise falls back to the local
+    inference server on ``service_port``.
+    """
+    server_url = getattr(runtime_config, "server_url", None) if runtime_config else None
+    if server_url:
+        return f"{_build_base_url(server_url, service_port)}/v1"
+    return _get_openai_base_url(service_port)
+
+
+from utils.remote_readiness import _wait_for_remote_openai_ready  # noqa: F401
+
+
+def _setup_agentic_eval_env(service_port, base_url=None):
+    base_url = base_url or _get_openai_base_url(service_port)
     os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
     os.environ.setdefault("OPENAI_BASE_URL", base_url)
     os.environ.setdefault("OPENAI_API_BASE", base_url)
@@ -734,7 +751,7 @@ def build_agentic_eval_command(
             "--model-name",
             model_name,
             "--api-base",
-            _get_openai_base_url(service_port),
+            _agentic_api_base(runtime_config, service_port),
             "--output-dir",
             str(output_dir),
             "--sweagent-config",
@@ -743,6 +760,8 @@ def build_agentic_eval_command(
             swebench_config.mini_config,
             "--mini-model-class",
             swebench_config.mini_model_class,
+            "--mini-last-n-observations",
+            str(swebench_config.mini_last_n_observations),
             "--mini-environment-class",
             swebench_config.mini_environment_class,
             "--n-concurrent-trials",
@@ -794,7 +813,7 @@ def build_agentic_eval_command(
             "--jobs-dir",
             str(jobs_dir),
             "--api-base",
-            _get_openai_base_url(service_port),
+            _agentic_api_base(runtime_config, service_port),
             "--n-concurrent-trials",
             str(agentic_config.n_concurrent_trials),
             "--n-attempts",
@@ -853,10 +872,16 @@ def main():
             )
 
     device = DeviceTypes.from_string(device_str)
+    service_port = runtime_config.service_port
+    deploy_url = getattr(runtime_config, "server_url", None) or "http://127.0.0.1"
+    remote_server = bool(getattr(runtime_config, "server_url", None))
     workflow_config = WORKFLOW_EVALS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
     logger.info(f"model_spec=: {model_spec}")
     logger.info(f"device=: {device_str}")
+    logger.info(f"service_port=: {service_port}")
+    logger.info(f"deploy_url=: {deploy_url}")
+    logger.info(f"remote_server=: {remote_server}")
     assert device == model_spec.device_type
 
     # Setup authentication based on model type
@@ -879,6 +904,18 @@ def main():
         logger.info(
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
+    elif os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY"):
+        # Remote / external OpenAI-compatible endpoints (e.g. the Tenstorrent
+        # console) validate a literal bearer token, not a JWT. Honor an
+        # explicit API_KEY / OPENAI_API_KEY so a single token works for both
+        # the lm-eval (text) and agentic eval paths. JWT_SECRET still takes
+        # precedence above for on-prem tt-transformers / vllm-tt deployments.
+        literal_key = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = literal_key
+        logger.info(
+            "OPENAI_API_KEY environment variable set from literal "
+            "API_KEY / OPENAI_API_KEY for LLM evals."
+        )
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
         message = f"No evaluation tasks defined for model: {model_spec.model_name}"
@@ -898,7 +935,12 @@ def main():
 
     has_agentic_eval_tasks = _has_agentic_eval_tasks(eval_config)
     if has_agentic_eval_tasks:
-        _setup_agentic_eval_env(runtime_config.service_port)
+        _setup_agentic_eval_env(
+            runtime_config.service_port,
+            base_url=_agentic_api_base(
+                runtime_config, runtime_config.service_port
+            ),
+        )
 
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
@@ -976,16 +1018,33 @@ def main():
             model_spec=model_spec,
             runtime_config=runtime_config,
         )
-        logger.info(
-            "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
-            prompt_client.cache_monitor.get_tensor_cache_timeout(),
-        )
-        if not prompt_client.wait_for_healthy():
-            logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-            return 1
+        remote_server = bool(getattr(runtime_config, "server_url", None))
+        if remote_server:
+            # Remote OpenAI-compatible endpoints (e.g. the Tenstorrent console)
+            # don't expose vLLM's /health route; probe /v1/models instead.
+            # pass
+            if not _wait_for_remote_openai_ready(prompt_client):
+                logger.error(
+                    "⛔️ Remote inference endpoint is not ready. "
+                    "Aborting evaluations."
+                )
+                return 1
+        else:
+            logger.info(
+                "Using tensor_cache_timeout:=%ss as the vLLM server startup budget (covers tensor cache generation and warm-cache restarts on multi-DP-engine deployments)",
+                prompt_client.cache_monitor.get_tensor_cache_timeout(),
+            )
+            if not prompt_client.wait_for_healthy():
+                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
+                return 1
 
         if has_agentic_eval_tasks:
             logger.info("Skipping trace capture for agentic eval tasks.")
+        elif remote_server:
+            logger.info(
+                "Skipping trace capture for remote --server-url endpoint "
+                "(vLLM trace-capture routes are not exposed remotely)."
+            )
         elif not disable_trace_capture:
             if "image" in model_spec.supported_modalities:
                 prompt_client.capture_traces(image_resolutions=IMAGE_RESOLUTIONS)
@@ -1009,10 +1068,13 @@ def main():
                 return_codes.append(0)
                 continue
 
-            health_check = prompt_client.get_health()
-            if health_check.status_code != 200:
-                logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
-                return 1
+            if not remote_server:
+                health_check = prompt_client.get_health()
+                if health_check.status_code != 200:
+                    logger.error(
+                        "⛔️ vLLM server is not healthy. Aborting evaluations."
+                    )
+                    return 1
 
             logger.info(
                 f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"

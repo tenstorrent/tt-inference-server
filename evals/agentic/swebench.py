@@ -15,7 +15,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from evals.agentic.mini_sweagent_context_limit import CONTEXT_LIMITED_LITELLM_MODEL_CLASS
+
 logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,7 @@ class SWEbenchRunConfig:
     sweagent_config: str
     mini_config: str
     mini_model_class: str
+    mini_last_n_observations: int
     mini_environment_class: str
     n_concurrent_trials: int
     max_workers: int
@@ -52,13 +57,16 @@ def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> None:
     subprocess.run(cmd, cwd=cwd, env=env, check=True)
 
 
-def _write_swebench_container_name_patch(output_dir: Path) -> Path:
+def _write_swebench_harness_wrapper(output_dir: Path) -> Path:
     patch_dir = output_dir / "swebench_harness_patch"
     patch_dir.mkdir(parents=True, exist_ok=True)
-    patch_path = patch_dir / "sitecustomize.py"
-    patch_path.write_text(
+    wrapper_path = patch_dir / "run_harness.py"
+    wrapper_path.write_text(
         """
+from __future__ import annotations
+
 import re
+import runpy
 
 from swebench.harness.test_spec import TestSpec
 
@@ -73,20 +81,21 @@ def _get_safe_instance_container_name(self, run_id=None):
 
 
 TestSpec.get_instance_container_name = _get_safe_instance_container_name
+
+
+if __name__ == "__main__":
+    runpy.run_module("swebench.harness.run_evaluation", run_name="__main__")
 """.lstrip(),
         encoding="utf-8",
     )
-    return patch_dir
+    return wrapper_path
 
 
-def _add_swebench_container_name_patch_to_env(
-    output_dir: Path, env: dict[str, str]
-) -> dict[str, str]:
+def _add_project_root_to_env(env: dict[str, str]) -> dict[str, str]:
     patched_env = dict(env)
-    patch_dir = _write_swebench_container_name_patch(output_dir)
     python_path = patched_env.get("PYTHONPATH")
     patched_env["PYTHONPATH"] = (
-        str(patch_dir) if not python_path else f"{patch_dir}{os.pathsep}{python_path}"
+        str(PROJECT_ROOT) if not python_path else f"{PROJECT_ROOT}{os.pathsep}{python_path}"
     )
     return patched_env
 
@@ -116,6 +125,12 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     return config_path
 
 
+def _resolve_mini_model_class(mini_model_class: str) -> str:
+    if mini_model_class in ("litellm", ""):
+        return CONTEXT_LIMITED_LITELLM_MODEL_CLASS
+    return mini_model_class
+
+
 def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     model_kwargs: dict[str, Any] = {
         "api_base": config.api_base,
@@ -132,8 +147,10 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     model_config = {
         "model": {
             "model_name": config.model_name,
-            "model_class": config.mini_model_class,
+            "model_class": _resolve_mini_model_class(config.mini_model_class),
             "cost_tracking": "ignore_errors",
+            "max_input_tokens": config.max_input_tokens,
+            "last_n_observations": config.mini_last_n_observations,
             "model_kwargs": model_kwargs,
         }
     }
@@ -279,16 +296,16 @@ def build_swebench_harness_command(
     predictions_path: Path,
     run_id: str,
 ) -> list[str]:
+    wrapper_path = _write_swebench_harness_wrapper(config.output_dir)
     cmd = [
         sys.executable,
-        "-m",
-        "swebench.harness.run_evaluation",
+        str(wrapper_path.resolve()),
         "--dataset_name",
         config.dataset_name,
         "--split",
         config.dataset_split,
         "--predictions_path",
-        str(predictions_path),
+        str(predictions_path.resolve()),
         "--max_workers",
         str(config.max_workers),
         "--run_id",
@@ -443,6 +460,7 @@ def run(config: SWEbenchRunConfig) -> int:
         mini_cmd = build_mini_sweagent_command(
             config, mini_config_path, mini_output_dir
         )
+        env = _add_project_root_to_env(env)
         _run_command(mini_cmd, cwd=config.output_dir, env=env)
         preds_path = _find_sweagent_preds(mini_output_dir)
     else:
@@ -452,7 +470,6 @@ def run(config: SWEbenchRunConfig) -> int:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
     harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
-    env = _add_swebench_container_name_patch_to_env(config.output_dir, env)
     _run_command(harness_cmd, cwd=config.output_dir, env=env)
 
     harness_report_path = _find_harness_report(

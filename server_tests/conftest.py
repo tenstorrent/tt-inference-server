@@ -114,17 +114,27 @@ def results_report(request, output_path):
 
 
 # 5. Helper fixture to make API calls (unchanged, it's already clean)
+def _get_bearer_token() -> str | None:
+    """Resolve auth for local JWT/VLLM keys or remote literal API tokens."""
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+    if api_key:
+        return api_key
+    env_config = EnvironmentConfig()
+    env_config.jwt_secret = os.getenv("JWT_SECRET")
+    prompt_client = PromptClient(env_config)
+    return prompt_client._get_authorization()
+
+
 @pytest.fixture
-def api_client(endpoint_url):
+def api_client(endpoint_url, request):
     """A simple client to make requests."""
 
-    env_config = EnvironmentConfig()
-    prompt_client = PromptClient(env_config)
-    authorization = prompt_client._get_authorization()
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {authorization}",
-    }
+    authorization = _get_bearer_token()
+    headers = {"Content-Type": "application/json"}
+    if authorization:
+        headers["Authorization"] = f"Bearer {authorization}"
+
+    model_name = request.config.getoption("--model-name", default=None)
 
     def _make_request(
         json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
@@ -134,6 +144,10 @@ def api_client(endpoint_url):
         try:
             kwargs = {"headers": headers, "timeout": timeout, "stream": stream}
             if json_payload is not None:
+                # Inject model name when missing so multi-model endpoints (e.g.
+                # the Tenstorrent console) can route the request correctly.
+                if model_name and "model" not in json_payload:
+                    json_payload = {**json_payload, "model": model_name}
                 kwargs["json"] = json_payload
             response = request_method(url, **kwargs)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)

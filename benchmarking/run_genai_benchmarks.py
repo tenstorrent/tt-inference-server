@@ -132,10 +132,12 @@ def run_genai_benchmarks(
     benchmarks_output_dir = get_default_workflow_root_log_dir() / "benchmarks_output"
     benchmarks_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate AUTH_TOKEN from JWT_SECRET
-    auth_token = generate_auth_token(jwt_secret)
+    # Generate AUTH_TOKEN from JWT_SECRET or a literal remote API key.
+    auth_token = generate_auth_token(jwt_secret) or os.getenv("API_KEY") or os.getenv(
+        "OPENAI_API_KEY", ""
+    )
     if not auth_token:
-        logger.warning("No JWT_SECRET provided, AUTH_TOKEN will be empty")
+        logger.warning("No JWT_SECRET or API_KEY provided, AUTH_TOKEN will be empty")
 
     # Get Docker image
     release = os.getenv("RELEASE", DEFAULT_RELEASE)

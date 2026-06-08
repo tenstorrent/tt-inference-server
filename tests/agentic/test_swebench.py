@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from evals.agentic.swebench import (  # noqa: E402
     SWEbenchRunConfig,
-    _add_swebench_container_name_patch_to_env,
     _write_mini_sweagent_model_config,
     build_mini_sweagent_command,
     build_sweagent_command,
@@ -164,7 +163,8 @@ def test_build_swebench_harness_command_uses_official_runner(tmp_path):
         run_id="swe_bench_verified",
     )
 
-    assert cmd[1:4] == ["-m", "swebench.harness.run_evaluation", "--dataset_name"]
+    assert cmd[1].endswith("swebench_harness_patch/run_harness.py")
+    assert cmd[2] == "--dataset_name"
     assert cmd[cmd.index("--dataset_name") + 1] == "SWE-bench/SWE-bench_Verified"
     assert cmd[cmd.index("--predictions_path") + 1] == str(
         tmp_path / "predictions.jsonl"
@@ -173,17 +173,15 @@ def test_build_swebench_harness_command_uses_official_runner(tmp_path):
     assert cmd[cmd.index("--timeout") + 1] == "1800"
 
 
-def test_swebench_container_name_patch_prepends_pythonpath(tmp_path):
-    env = _add_swebench_container_name_patch_to_env(
-        tmp_path,
-        {"PYTHONPATH": "/existing/path"},
-    )
+def test_swebench_harness_wrapper_sanitizes_container_names(tmp_path):
+    from evals.agentic.swebench import _write_swebench_harness_wrapper
 
-    patch_path = tmp_path / "swebench_harness_patch" / "sitecustomize.py"
-    assert patch_path.exists()
-    assert env["PYTHONPATH"].startswith(str(patch_path.parent))
-    assert env["PYTHONPATH"].endswith("/existing/path")
-    assert "get_safe_instance_container_name" in patch_path.read_text(encoding="utf-8")
+    wrapper_path = _write_swebench_harness_wrapper(tmp_path)
+
+    assert wrapper_path.exists()
+    wrapper_text = wrapper_path.read_text(encoding="utf-8")
+    assert "get_safe_instance_container_name" in wrapper_text
+    assert 'runpy.run_module("swebench.harness.run_evaluation"' in wrapper_text
 
 
 def test_run_scores_existing_predictions_without_converting(monkeypatch, tmp_path):

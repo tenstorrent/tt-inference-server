@@ -1024,3 +1024,29 @@ templates:
   metadata:
     Qwen/Qwen2.5-Coder-32B-Instruct:
       tool_call_parser_name: hermes
+
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url` (e.g. Tenstorrent console). The GPU device entry
+# is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
+# no local TT serving is implied.
+- weights:
+    - moonshotai/Kimi-K2.6
+  impl: tt_transformers
+  tt_metal_commit: remote  # placeholder: model is served externally, not built locally
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 16
+      max_context: 131072  # 128 * 1024; remote console MAX_ISL is 50K (see run_benchmarks)
+      default_impl: true
+      # Shared console endpoint intermittently 500s/403s (WAF) under load;
+      # extra retries prevent transient failures from dropping eval samples.
+      eval_max_retries: 3
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K2.6:
+      remote_api_model: moonshotai/Kimi-K2.6
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: hermes
