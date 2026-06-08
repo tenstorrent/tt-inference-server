@@ -18,37 +18,34 @@ CHUNK_TYPE = "streaming_chunk"
 FINAL_TYPE = "final_result"
 
 
-class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
+class VLLMForgeQwen32BRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
     @log_execution_time(
-        "VLLM Forge Gemma-4 31B model load",
+        "VLLM Forge Qwen3-32B model load",
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     async def warmup(self) -> bool:
         self.logger.info(
-            f"Device {self.device_id}: Loading VLLM Forge Gemma-4 31B model..."
+            f"Device {self.device_id}: Loading VLLM Forge Qwen3-32B model..."
         )
         prompt = "Hello, it's me"
-        # Tunable per-run via env vars (mirrors vllm_runner.py). Defaults are the
-        # measured-best for the gemma-4-31b TP config on p300x2 (4-chip (1,4)
-        # mesh, 512 seq len, bs1) -- see PERF_gemma4_31b_it_forge.md:
-        #   ENABLE_TRACE=true     decode-graph replay; the dominant lever
-        #                         (greedy 4.8 -> 8.1 tok/s, +71%). Trace-capture
-        #                         fits in DRAM at 512 seq len on the 4-chip mesh.
-        #   CPU_SAMPLING=false    on-device sampling; +13% greedy ON TOP of trace
-        #                         (8.1 -> 9.2 tok/s). Worth ~nothing without trace
-        #                         (4.8 -> 5.3). (TTConfig's own default is False;
-        #                         the old hardcoded True was the deviation.)
+        # Tunable per-run via env vars (mirrors vllm_runner.py /
+        # vllm_forge_gemma4_31b.py). Defaults follow the gemma-4-31b TP
+        # measured-best (see PERF_gemma4_31b_it_forge.md):
+        #   ENABLE_TRACE=true     decode-graph replay (the dominant decode-speed
+        #                         lever on gemma: greedy ~4.8 -> ~9.2 tok/s).
+        #   CPU_SAMPLING=false    on-device sampling (TTConfig's own default;
+        #                         the old hardcoded True was the deviation).
         #   OPTIMIZATION_LEVEL=0  REQUIRED: opt>=1 aborts in tt-mlir
-        #                         MemoryLayoutPropagation on the 1.2.0 wheel
-        #                         (tt-xla#4990), and TTConfig rejects
-        #                         enable_trace=True + opt>=1 + cpu_sampling=False,
-        #                         so the trace defaults are only valid at opt 0.
-        # Weights stay bfp_bf8: measured FASTER than bf16 (greedy 9.2 vs 8.0),
-        # since bf16 doubles per-token weight DRAM traffic.
+        #                         MemoryLayoutPropagation on the 1.x wheel
+        #                         (tt-xla#4990); TTConfig also rejects
+        #                         enable_trace + opt>=1 + cpu_sampling=False, so
+        #                         the trace defaults are only valid at opt 0.
+        # NOTE: these defaults were validated on gemma-4-31b, not yet on
+        # Qwen3-32B -- flip via env if a Qwen-specific issue appears.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
@@ -93,7 +90,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         raise ValueError(f"Invalid prompt type: {type(request.prompt)}")
 
     @log_execution_time(
-        "Run VLLM Forge Gemma-4 31B inference",
+        "Run VLLM Forge Qwen3-32B inference",
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
@@ -104,7 +101,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
 
     async def _run_async(self, requests: list[CompletionRequest]):
         try:
-            self.logger.debug(f"Device {self.device_id}: Running Gemma-4 31B inference")
+            self.logger.debug(f"Device {self.device_id}: Running Qwen3-32B inference")
 
             request = requests[0]
             if request.stream:
@@ -113,12 +110,12 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 return await self._generate_non_streaming(requests)
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: Gemma-4 31B inference failed: {type(e).__name__}: {e}"
+                f"Device {self.device_id}: Qwen3-32B inference failed: {type(e).__name__}: {e}"
             )
             self.logger.error(
                 f"Device {self.device_id}: Full traceback: {traceback.format_exc()}"
             )
-            raise RuntimeError(f"Gemma-4 31B inference failed: {str(e)}") from e
+            raise RuntimeError(f"Qwen3-32B inference failed: {str(e)}") from e
 
     async def _generate_streaming(self, request: CompletionRequest):
         """Yields CompletionOutput dicts for streaming generation."""
@@ -154,7 +151,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 )
 
         self.logger.info(
-            f"Device {self.device_id}: Gemma-4 31B streaming generation completed"
+            f"Device {self.device_id}: Qwen3-32B streaming generation completed"
         )
 
         yield CompletionOutput(
@@ -166,7 +163,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         self, request: CompletionRequest
     ) -> CompletionOutput:
         self.logger.info(
-            f"Device {self.device_id}: Starting Gemma-4 31B non-streaming generation"
+            f"Device {self.device_id}: Starting Qwen3-32B non-streaming generation"
         )
 
         sampling_params = build_sampling_params(request)
@@ -181,7 +178,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         generated_text = "".join(generated_text)
 
         self.logger.info(
-            f"Device {self.device_id}: Gemma-4 31B non-streaming generation completed"
+            f"Device {self.device_id}: Qwen3-32B non-streaming generation completed"
         )
 
         return CompletionOutput(
