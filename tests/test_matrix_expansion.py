@@ -946,11 +946,12 @@ class TestImageMatrixExpansion:
         "motif-p150x4",
         "motif-p150x8",
         "motif-p300x2",
+        "tt-z-image-turbo-p300x2",
     }
 
     def test_image_suite_count(self):
         suites = load_suite_files_by_category("image")
-        assert len(suites) == 19
+        assert len(suites) == 20
 
     def test_image_suite_ids(self):
         suites = load_suite_files_by_category("image")
@@ -1052,7 +1053,7 @@ class TestAllSuitesLoad:
 
     def test_total_suite_count(self):
         all_suites = load_suite_files()
-        assert len(all_suites) == 57
+        assert len(all_suites) == 58
 
     def test_no_duplicate_ids(self):
         all_suites = load_suite_files()

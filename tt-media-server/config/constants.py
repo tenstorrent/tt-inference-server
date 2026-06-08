@@ -1148,6 +1148,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 1500,
     },
 }
 
