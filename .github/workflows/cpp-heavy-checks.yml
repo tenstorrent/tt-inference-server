@@ -223,7 +223,7 @@ jobs:
         if: always()
         run: exit "${BENCH_FAIL:-0}"
 
-          cpp-server-prefill-decode-split:
+  cpp-server-prefill-decode-split:
     name: C++ Server Prefill/Decode Split Test
     # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)
     # concurrently. On a 4-core GitHub runner that oversubscribes the CPU and
@@ -278,7 +278,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "TCP direct split decode"
           cd cpp_server/build
           NS=tcp_decode
-          SOCKET_TRANSPORT=tcp LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=tcp LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -296,7 +296,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "TCP direct split prefill"
           cd cpp_server/build
           NS=tcp_prefill
-          SOCKET_TRANSPORT=tcp LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=tcp LLM_DEVICE_BACKEND=mock LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -342,7 +342,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
           cd cpp_server/build
           NS=zmq_decode
-          SOCKET_TRANSPORT=zmq LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -360,7 +360,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_DEVICE_BACKEND=mock LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -449,7 +449,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --port 9000 --label "mock_prefill_runner decode"
           cd cpp_server
           NS=r2_decode
-          LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          LLM_DEVICE_BACKEND=mock LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -695,7 +695,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --port 9201 --label "TCP gateway prefill-1"
           cd cpp_server/build
           NS=gw_prefill1
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
+          SOCKET_TRANSPORT=tcp LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9201 \
           PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -714,7 +714,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --port 9202 --label "TCP gateway prefill-2"
           cd cpp_server/build
           NS=gw_prefill2
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
+          SOCKET_TRANSPORT=tcp LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=prefill SOCKET_PORT=9202 \
           PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
@@ -751,7 +751,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "TCP gateway decode server"
           cd cpp_server/build
           NS=gw_decode
-          SOCKET_TRANSPORT=tcp USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
+          SOCKET_TRANSPORT=tcp LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -826,7 +826,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8201 --label "ZMQ gateway prefill-1"
           cd cpp_server/build
           NS=gw_zmq_prefill1
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
           PREFILL_SERVER_ID=prefill-1 PREFILL_MAX_IN_FLIGHT=4 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -846,7 +846,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8202 --label "ZMQ gateway prefill-2"
           cd cpp_server/build
           NS=gw_zmq_prefill2
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
+          SOCKET_TRANSPORT=zmq LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=prefill \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9201 \
           PREFILL_SERVER_ID=prefill-2 PREFILL_MAX_IN_FLIGHT=4 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
@@ -883,7 +883,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8200 --label "ZMQ gateway decode server"
           cd cpp_server/build
           NS=gw_zmq_decode
-          SOCKET_TRANSPORT=zmq USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
+          SOCKET_TRANSPORT=zmq LLM_DEVICE_BACKEND=mock USE_PREFILL_GATEWAY=1 LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
           SOCKET_HOST=127.0.0.1 SOCKET_PORT=9200 \
           TT_LOG_LEVEL=debug \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
