@@ -1350,6 +1350,181 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
+  dynamo-prefix-cache-e2e:
+    needs: cpp-build
+    name: Dynamo Frontend Prefix Cache E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: default
+      DYNAMO_COMPONENT: backend
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      LLM_DEVICE_BACKEND: mock_pipeline
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v7
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+          etcd --version
+          etcdctl version
+
+      - name: Start etcd
+        run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
+
+      - name: Set up uv for Dynamo
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + requests
+        run: |
+          mkdir -p "$HOME/.venvs"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --package ai-dynamo \
+            --package uvloop \
+            --package requests
+
+      - name: Start cpp_server backend (port 8001)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend"
+          cd cpp_server
+          ./build/tt_media_server_cpp -p 8001 > ../backend.log 2>&1 &
+          echo $! > ../backend.pid
+          cd ..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file backend.pid \
+            --label "Dynamo backend"
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              exit 1
+            }
+          done
+
+      - name: Start Dynamo frontend (port 8000)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --router-mode kv \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
+
+      - name: Run prefix cache E2E tests against Dynamo frontend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          "$HOME/.venvs/dynamo/bin/python3" \
+            cpp_server/tests/test_prefix_cache_e2e.py \
+            --port 8000 \
+            --model "${MODEL_NAME}" \
+            --verbose \
+            --timeout 60
+
+      - name: Stop Dynamo frontend, cpp_server backend, and etcd
+        if: always()
+        run: |
+          for pidfile in frontend.pid backend.pid etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --label "Dynamo prefix cache E2E"
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in etcd.log frontend.log backend.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dynamo-prefix-cache-e2e-logs
+          path: |
+            tt-media-server/etcd.log
+            tt-media-server/frontend.log
+            tt-media-server/backend.log
+          retention-days: 1
+          if-no-files-found: warn
+
   cpp-tsan:
     name: C++ ThreadSanitizer
     runs-on: ubuntu-latest
