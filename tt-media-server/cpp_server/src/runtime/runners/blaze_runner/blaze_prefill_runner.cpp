@@ -4,10 +4,12 @@
 #include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <thread>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -30,7 +32,8 @@ BlazePrefillRunner::BlazePrefillRunner(
       stopQueue(stopQueue),
       slotManager(tt::config::pmMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
-      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
+      outputHangTimeout(tt::config::outputHangTimeoutMs()),
+      simPrefillMsPer5kTokens(tt::config::simulatePrefillMsPer5kTokens()) {
   TT_LOG_INFO(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
@@ -719,6 +722,21 @@ void BlazePrefillRunner::handleTask(
       auto destSlot = migrationUuid.has_value()
                           ? std::make_optional(task->getKVCacheSlot())
                           : std::nullopt;
+
+      // Debug: simulate real on-device prefill cost. Blocks the worker's step
+      // loop (prefill is serialized), so the IPC task queue — and thus
+      // tt_num_requests_in_flight — builds up under load. Off when 0.
+      if (simPrefillMsPer5kTokens > 0) {
+        const size_t prefillTokens = task->getNumPromptTokens();
+        const std::chrono::duration<double, std::milli> delay{
+            static_cast<double>(prefillTokens) * simPrefillMsPer5kTokens /
+            5000.0};
+        TT_LOG_DEBUG(
+            "[BlazePrefillRunner] handleRequest: simulating prefill delay "
+            "taskId={}, tokens={}, delayMs={}",
+            task->taskId, prefillTokens, delay.count());
+        std::this_thread::sleep_for(delay);
+      }
 
       ps::ISRequest req = utils::makeSubmitRequest(slotId, *task, destSlot);
       TT_LOG_DEBUG(
