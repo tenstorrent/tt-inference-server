@@ -68,6 +68,7 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 # Data types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class UsageInfo:
     prompt_tokens: int = 0
@@ -77,7 +78,11 @@ class UsageInfo:
     reasoning_tokens: int = 0
 
     def cache_pct(self) -> float:
-        return (self.cached_tokens / self.prompt_tokens * 100) if self.prompt_tokens else 0.0
+        return (
+            (self.cached_tokens / self.prompt_tokens * 100)
+            if self.prompt_tokens
+            else 0.0
+        )
 
 
 @dataclass
@@ -91,6 +96,7 @@ class TurnResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _headers() -> dict:
     token = os.environ.get("OPENAI_API_KEY", "your-secret-key")
@@ -186,7 +192,7 @@ def send_chat(
 
         # Standard OpenAI SSE: `data: {json}`
         if line.startswith("data:"):
-            data = line[len("data:"):].strip()
+            data = line[len("data:") :].strip()
             if data == "[DONE]":
                 break
             try:
@@ -242,7 +248,10 @@ def _print_turn(turn_num: int, result: TurnResult, label: str = "") -> None:
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_multi_turn_prefix_cache(base_url: str, model: str, stream: bool, verbose: bool) -> bool:
+
+def test_multi_turn_prefix_cache(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
     """3-turn conversation.  Turn 1 is fresh; turns 2 & 3 should show
     growing ``cached_tokens``."""
     print("\n=== Test: Multi-turn prefix cache ===")
@@ -264,7 +273,12 @@ def test_multi_turn_prefix_cache(base_url: str, model: str, stream: bool, verbos
     _print_turn(2, r2, "continuation")
 
     messages.append({"role": "assistant", "content": r2.content})
-    messages.append({"role": "user", "content": "Which of those two cities is larger by population?"})
+    messages.append(
+        {
+            "role": "user",
+            "content": "Which of those two cities is larger by population?",
+        }
+    )
     r3 = send_chat(base_url, messages, model=model, stream=stream, verbose=verbose)
     if r3.error:
         print(f"  FAIL: Turn 3 errored — {r3.error}")
@@ -273,7 +287,9 @@ def test_multi_turn_prefix_cache(base_url: str, model: str, stream: bool, verbos
 
     ok = True
     if r1.usage.cached_tokens != 0:
-        print(f"  WARN: Turn 1 cached_tokens={r1.usage.cached_tokens} (expected 0 for fresh turn)")
+        print(
+            f"  WARN: Turn 1 cached_tokens={r1.usage.cached_tokens} (expected 0 for fresh turn)"
+        )
 
     if r2.usage.cached_tokens == 0:
         print("  FAIL: Turn 2 cached_tokens=0 — prefix should have been reused")
@@ -290,17 +306,24 @@ def test_multi_turn_prefix_cache(base_url: str, model: str, stream: bool, verbos
             f"vs Turn 2 ({r2.usage.cached_tokens})"
         )
     else:
-        print(f"  OK: Turn 3 cached tokens grew {r2.usage.cached_tokens} → {r3.usage.cached_tokens}")
+        print(
+            f"  OK: Turn 3 cached tokens grew {r2.usage.cached_tokens} → {r3.usage.cached_tokens}"
+        )
 
     return ok
 
 
-def test_identical_prompt_caches(base_url: str, model: str, stream: bool, verbose: bool) -> bool:
+def test_identical_prompt_caches(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
     """Send the exact same prompt twice.  Second request should hit the
     prefix cache."""
     print("\n=== Test: Identical prompt caches ===")
     system = {"role": "system", "content": SYSTEM_PROMPT}
-    messages = [system, {"role": "user", "content": "Explain how TCP works in one paragraph."}]
+    messages = [
+        system,
+        {"role": "user", "content": "Explain how TCP works in one paragraph."},
+    ]
 
     r1 = send_chat(base_url, messages, model=model, stream=stream, verbose=verbose)
     if r1.error:
@@ -325,7 +348,9 @@ def test_identical_prompt_caches(base_url: str, model: str, stream: bool, verbos
     return ok
 
 
-def test_shared_prefix_different_suffix(base_url: str, model: str, stream: bool, verbose: bool) -> bool:
+def test_shared_prefix_different_suffix(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
     """Two single-turn requests that share the system prompt but differ in the
     user message.  The shared prefix should be cached on the second request."""
     print("\n=== Test: Shared system prompt, different user messages ===")
@@ -334,7 +359,9 @@ def test_shared_prefix_different_suffix(base_url: str, model: str, stream: bool,
     r1 = send_chat(
         base_url,
         [system, {"role": "user", "content": "What is Python?"}],
-        model=model, stream=stream, verbose=verbose,
+        model=model,
+        stream=stream,
+        verbose=verbose,
     )
     if r1.error:
         print(f"  FAIL: Request 1 errored — {r1.error}")
@@ -346,7 +373,9 @@ def test_shared_prefix_different_suffix(base_url: str, model: str, stream: bool,
     r2 = send_chat(
         base_url,
         [system, {"role": "user", "content": "What is Rust?"}],
-        model=model, stream=stream, verbose=verbose,
+        model=model,
+        stream=stream,
+        verbose=verbose,
     )
     if r2.error:
         print(f"  FAIL: Request 2 errored — {r2.error}")
@@ -358,11 +387,15 @@ def test_shared_prefix_different_suffix(base_url: str, model: str, stream: bool,
         print("  FAIL: Shared system-prompt prefix not cached on request 2")
         ok = False
     else:
-        print(f"  OK: Shared system-prompt prefix reused {r2.usage.cached_tokens} cached tokens")
+        print(
+            f"  OK: Shared system-prompt prefix reused {r2.usage.cached_tokens} cached tokens"
+        )
     return ok
 
 
-def test_different_conversations_no_sharing(base_url: str, model: str, stream: bool, verbose: bool) -> bool:
+def test_different_conversations_no_sharing(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
     """Two completely unrelated conversations should not share cache."""
     print("\n=== Test: Different conversations don't share cache ===")
 
@@ -370,9 +403,14 @@ def test_different_conversations_no_sharing(base_url: str, model: str, stream: b
         base_url,
         [
             {"role": "system", "content": "You are a marine biologist."},
-            {"role": "user", "content": "Tell me about the migration patterns of blue whales."},
+            {
+                "role": "user",
+                "content": "Tell me about the migration patterns of blue whales.",
+            },
         ],
-        model=model, stream=stream, verbose=verbose,
+        model=model,
+        stream=stream,
+        verbose=verbose,
     )
     if ra.error:
         print(f"  FAIL: Conv A errored — {ra.error}")
@@ -384,10 +422,18 @@ def test_different_conversations_no_sharing(base_url: str, model: str, stream: b
     rb = send_chat(
         base_url,
         [
-            {"role": "system", "content": "You are an astrophysicist specializing in dark matter."},
-            {"role": "user", "content": "What evidence supports the existence of dark matter?"},
+            {
+                "role": "system",
+                "content": "You are an astrophysicist specializing in dark matter.",
+            },
+            {
+                "role": "user",
+                "content": "What evidence supports the existence of dark matter?",
+            },
         ],
-        model=model, stream=stream, verbose=verbose,
+        model=model,
+        stream=stream,
+        verbose=verbose,
     )
     if rb.error:
         print(f"  FAIL: Conv B errored — {rb.error}")
@@ -404,7 +450,9 @@ def test_different_conversations_no_sharing(base_url: str, model: str, stream: b
     return True
 
 
-def test_five_turn_growing_cache(base_url: str, model: str, stream: bool, verbose: bool) -> bool:
+def test_five_turn_growing_cache(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
     """Five-turn conversation tracking how cached_tokens grows each turn."""
     print("\n=== Test: 5-turn growing conversation ===")
     system = {"role": "system", "content": SYSTEM_PROMPT}
@@ -433,12 +481,14 @@ def test_five_turn_growing_cache(base_url: str, model: str, stream: bool, verbos
     print("  -----+---------------+---------------+--------")
     for i, r in enumerate(results, 1):
         u = r.usage
-        print(f"  {i:>4} | {u.prompt_tokens:>13} | {u.cached_tokens:>13} | {u.cache_pct():>5.1f}%")
+        print(
+            f"  {i:>4} | {u.prompt_tokens:>13} | {u.cached_tokens:>13} | {u.cache_pct():>5.1f}%"
+        )
 
     ok = True
     for i in range(1, len(results)):
         if results[i].usage.cached_tokens == 0:
-            print(f"  FAIL: Turn {i+1} cached_tokens=0 — expected prefix reuse")
+            print(f"  FAIL: Turn {i + 1} cached_tokens=0 — expected prefix reuse")
             ok = False
 
     if ok:
@@ -449,6 +499,7 @@ def test_five_turn_growing_cache(base_url: str, model: str, stream: bool, verbos
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
 
 def _dump_one_request(base_url: str, model: str, stream: bool) -> int:
     """Send a single request and dump the raw response for debugging."""
@@ -502,22 +553,38 @@ def _dump_one_request(base_url: str, model: str, stream: bool) -> int:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="E2E prefix cache verification for Dynamo frontend + cpp_server",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000,
-                        help="Server port (default: 8000 = cpp_server direct)")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Server port (default: 8000 = cpp_server direct)",
+    )
     parser.add_argument("--model", default="tt-cpp-server")
-    parser.add_argument("--no-stream", action="store_true",
-                        help="Use non-streaming requests (stream=false)")
-    parser.add_argument("--verbose", "-v", action="store_true",
-                        help="Print every SSE chunk / response body")
-    parser.add_argument("--timeout", type=int, default=60,
-                        help="Seconds to wait for server readiness")
-    parser.add_argument("--dump", action="store_true",
-                        help="Send one request and dump raw response, then exit")
+    parser.add_argument(
+        "--no-stream",
+        action="store_true",
+        help="Use non-streaming requests (stream=false)",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Print every SSE chunk / response body",
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=60, help="Seconds to wait for server readiness"
+    )
+    parser.add_argument(
+        "--dump",
+        action="store_true",
+        help="Send one request and dump raw response, then exit",
+    )
     args = parser.parse_args()
 
     base_url = f"http://{args.host}:{args.port}"
@@ -556,6 +623,7 @@ def main() -> int:
         except Exception as exc:
             print(f"  ERROR in {name}: {exc}")
             import traceback
+
             traceback.print_exc()
             failed += 1
 
