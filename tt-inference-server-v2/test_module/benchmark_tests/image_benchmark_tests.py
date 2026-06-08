@@ -19,9 +19,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.utils import get_num_calls
-
 from report_module.schema import Block
+
+from workflows.utils import get_num_calls
 
 from .._test_common import (
     MetricSpec,
@@ -51,6 +51,19 @@ STRENGTH_IMG2IMG = 0.6
 GUIDANCE_SCALE_INPAINTING = 8.0
 SEED_INPAINTING = 0
 STRENGTH_INPAINTING = 0.99
+
+# Z-Image-Turbo is a Decoupled-DMD distilled model: 8 NFEs (≈9 scheduler steps),
+# guidance_scale must be 0.0 — non-zero CFG degrades quality on Turbo variants.
+# The TT runner hard-codes steps=9 internally; we mirror it for honest reporting.
+Z_IMAGE_TURBO_INFERENCE_STEPS = 9
+Z_IMAGE_TURBO_GUIDANCE_SCALE = 0.0
+Z_IMAGE_TURBO_BENCHMARK_NUM_PROMPTS = 5
+Z_IMAGE_TURBO_PROMPTS_PAYLOAD = "tt-z-image-turbo_payload.json"
+Z_IMAGE_TURBO_BASE_SEED = 42
+
+_DATASETS_AND_PAYLOADS_DIR = (
+    Path(__file__).resolve().parent.parent / "datasets_and_payloads"
+)
 
 
 def _generate_image(
@@ -307,6 +320,90 @@ def _run_motif_image_6b_preview_benchmark(
     )
 
 
+def _load_z_image_turbo_prompts() -> list[str]:
+    path = _DATASETS_AND_PAYLOADS_DIR / Z_IMAGE_TURBO_PROMPTS_PAYLOAD
+    with open(path, "r") as f:
+        data = json.load(f)
+    prompts = data.get("prompts") or []
+    if not prompts:
+        raise RuntimeError(f"No prompts found in {path}")
+    return prompts
+
+
+def _generate_image_z_image_turbo(
+    ctx: MediaContext,
+    prompt: str,
+    seed: int,
+    num_inference_steps: int = Z_IMAGE_TURBO_INFERENCE_STEPS,
+) -> tuple[bool, float]:
+    headers = {
+        "accept": "application/json",
+        "Authorization": "Bearer your-secret-key",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "prompt": prompt,
+        "seed": seed,
+        "number_of_images": 1,
+        "num_inference_steps": num_inference_steps,
+    }
+    start_time = time.time()
+    response = requests.post(
+        f"{ctx.base_url}/v1/images/generations",
+        json=payload,
+        headers=headers,
+        timeout=90,
+    )
+    elapsed = time.time() - start_time
+
+    if response.status_code != 200:
+        logger.error(
+            f"❌ Z-Image-Turbo generation failed (status {response.status_code})"
+        )
+        try:
+            logger.error(f"Error details: {response.json()}")
+        except Exception as e:
+            logger.error(f"Could not parse error response: {e}")
+            logger.error(f"Raw response: {response.text[:500]}")
+        raise RuntimeError(
+            f"Z-Image-Turbo generation failed with status {response.status_code}"
+        )
+
+    logger.info(f"✅ Z-Image-Turbo generation successful in {elapsed:.2f}s")
+    return True, elapsed
+
+
+def _run_z_image_turbo_benchmark(
+    ctx: MediaContext, num_calls: int, concurrency: int = 1
+) -> list[ImageGenerationTestStatus]:
+    # concurrency is accepted for dispatch signature compatibility but Z-Image-Turbo
+    # is run sequentially to keep deterministic seed/prompt pairing.
+    del concurrency
+    logger.info("Running Z-Image-Turbo benchmark.")
+    prompts = _load_z_image_turbo_prompts()
+
+    status_list: list[ImageGenerationTestStatus] = []
+    steps = Z_IMAGE_TURBO_INFERENCE_STEPS
+    for i in range(num_calls):
+        prompt = prompts[i % len(prompts)]
+        seed = Z_IMAGE_TURBO_BASE_SEED + i
+        logger.info(
+            f"Generating image {i + 1}/{num_calls} (seed={seed}): {prompt[:60]}..."
+        )
+        status, elapsed = _generate_image_z_image_turbo(ctx, prompt, seed, steps)
+        inference_steps_per_second = steps / elapsed if elapsed > 0 else 0
+        logger.info(f"Generated image with {steps} steps in {elapsed:.2f} seconds.")
+        status_list.append(
+            ImageGenerationTestStatus(
+                status=status,
+                elapsed=elapsed,
+                num_inference_steps=steps,
+                inference_steps_per_second=inference_steps_per_second,
+            )
+        )
+    return status_list
+
+
 IMAGE_BENCHMARK_DISPATCH: dict[
     str, Callable[[MediaContext, int, int], list[ImageGenerationTestStatus]]
 ] = {
@@ -317,6 +414,7 @@ IMAGE_BENCHMARK_DISPATCH: dict[
     "tt-flux.1-dev": _run_flux_1_dev_benchmark,
     "tt-flux.1-schnell": _run_flux_1_schnell_benchmark,
     "tt-motif-image-6b-preview": _run_motif_image_6b_preview_benchmark,
+    "tt-z-image-turbo": _run_z_image_turbo_benchmark,
 }
 
 
@@ -356,7 +454,7 @@ def _image_target_checks(
 
 
 def run_image_benchmark(ctx: MediaContext) -> Block:
-    """Run benchmarks for an image model (SDXL, SD3.5, Flux, Motif)."""
+    """Run benchmarks for an image model (SDXL, SD3.5, Flux, Motif, Z-Image-Turbo)."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
@@ -376,6 +474,12 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
                 )
             else:
                 max_concurrency = None
+        elif runner_in_use == "tt-z-image-turbo":
+            logger.info(
+                f"Overriding num_calls for Z-Image-Turbo to "
+                f"{Z_IMAGE_TURBO_BENCHMARK_NUM_PROMPTS} prompts"
+            )
+            num_calls = Z_IMAGE_TURBO_BENCHMARK_NUM_PROMPTS
 
         benchmark_fn = IMAGE_BENCHMARK_DISPATCH.get(
             runner_in_use, _run_sdxl_image_generation_benchmark

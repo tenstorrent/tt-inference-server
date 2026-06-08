@@ -9,7 +9,6 @@ import os
 from abc import abstractmethod
 
 import ttnn
-from PIL import Image
 from config.constants import (
     WAN22_NUM_FRAMES,
     ModelRunners,
@@ -37,6 +36,7 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
     ImagePrompt,
     WanPipelineI2V,
 )
+from PIL import Image
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
