@@ -35,6 +35,18 @@ signal:trantor::Date::toFormattedString
 race:trantor::TcpServer::stop
 race:TcpServer.cc
 
+# ── drogon/trantor listener teardown at process exit ───────────────────────
+# At static-deinit the HttpAppFramework singleton destroys ListenerManager ->
+# trantor::TcpServer, freeing its per-EventLoop timing-wheel map, while a
+# not-yet-joined "DrogonIoLoop" thread is still lazily inserting a TimingWheel
+# for a late connection. Drogon (1.9.12) exposes no API to join its IO-loop
+# pool before the singleton is destroyed, so this ordering cannot be fixed from
+# application code; it is benign (the process is exiting). The destructor frame
+# symbolizes as `trantor::TcpServer::~TcpServer() <null>` (symbol only, no
+# file), so `race:TcpServer.cc` above does not match it — match by symbol.
+race:trantor::TcpServer::~TcpServer
+race:drogon::ListenerManager::~ListenerManager
+
 # ── trantor::EventLoop test-fixture lifecycle ──────────────────────────────
 # session_manager_test's LoopFixture posts loop->quit() from the main thread
 # while the loop-thread lambda is destructing trantor::EventLoop. The

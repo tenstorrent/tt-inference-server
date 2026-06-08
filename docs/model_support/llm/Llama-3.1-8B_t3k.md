@@ -19,8 +19,10 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100/P150](Llama-3.1-8B_p100.md)
-- [N150/N300](Llama-3.1-8B_n150.md)
+- [P100](Llama-3.1-8B_p100.md)
+- [P150](Llama-3.1-8B_p150.md)
+- [N150](Llama-3.1-8B_n150.md)
+- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on WH LoudBox/QuietBox
 

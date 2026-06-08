@@ -2,14 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import os
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
 import requests
-import json
-from datetime import datetime
+
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 

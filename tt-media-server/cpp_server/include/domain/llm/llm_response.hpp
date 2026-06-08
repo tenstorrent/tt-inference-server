@@ -114,6 +114,12 @@ struct LLMStreamChunk : BaseResponse {
   std::vector<LLMChoice> choices;
   std::optional<std::string> error;
   std::optional<CompletionUsage> usage;
+
+  // In disaggregation, the decode server fills this on the first chunk with the
+  // number of prompt tokens the prefill server served from its KV cache
+  // (prefix-cache reuse), so the transport can report
+  // usage.prompt_tokens_details.cached_tokens. Unset in non-disaggregated runs.
+  std::optional<int> cached_prompt_tokens;
 };
 
 /**

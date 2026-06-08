@@ -48,6 +48,7 @@ _V2_ROUTED_MODELS = frozenset(
         "stable-diffusion-xl-1.0-inpainting-0.1",
         "whisper-large-v3",
         "distil-large-v3",
+        "Z-Image-Turbo",
     }
 )
 
