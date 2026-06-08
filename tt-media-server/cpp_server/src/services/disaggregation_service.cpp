@@ -63,6 +63,9 @@ void DisaggregationService::setupSocketHandlers() {
           LLMChoice choice;
           choice.text = message.generated_text;
           response.choices.push_back(std::move(choice));
+          // Surface the prefill server's prefix-cache reuse count to the
+          // transport's usage accounting (prompt_tokens_details.cached_tokens).
+          response.cached_prompt_tokens = message.cached_tokens;
 
           callback.value()(response, false);
 
@@ -158,10 +161,40 @@ void DisaggregationService::setupSocketHandlers() {
           resolvePrefillSession(
               request, message.registration_hashes,
               [this, request, message, maxTokens, slotId]() {
+                // Tokens the prefill server served from its KV cache
+                // (prefix-cache reuse) = prompt tokens trimmed off by
+                // resolvePrefillSession (full prompt - remaining delta).
+                const size_t fullPromptTokens = message.token_ids.size();
+                const size_t trimmedPromptTokens =
+                    std::get<std::vector<int>>(request->prompt).size();
+                // Cached (reused) prompt tokens = the leading prefix that did
+                // NOT need a fresh prefill. Two sources describe that same
+                // prefix; take the larger:
+                //   - decode_skip_tokens: the prefix the decode node already
+                //     holds in its KV from earlier turns. The decode node does
+                //     the multi-turn prefix match and ships the full prompt
+                //     plus this skip count (it does not trim itself); the
+                //     prefill runner honors it. This is the dominant source in
+                //     chat.
+                //   - prefill-side trim (fullPrompt - delta): when the prefill
+                //     server independently hits its own prefix cache.
+                const int prefillTrim = static_cast<int>(
+                    fullPromptTokens >= trimmedPromptTokens
+                        ? fullPromptTokens - trimmedPromptTokens
+                        : 0);
+                const int cachedTokens =
+                    std::max(prefillTrim, message.number_of_decode_skip_tokens);
+                // Capture the resolved sessionId by value:
+                // submitStreamingRequest hands the request to the pipeline, so
+                // request->sessionId is no longer reliable by the time this
+                // async callback fires.
+                const std::string prefillSessionId =
+                    request->sessionId.value_or("");
                 llmService->submitStreamingRequest(
                     *request,
-                    [this, message, maxTokens, slotId](
-                        const LLMStreamChunk& response, bool /*isFinal*/) {
+                    [this, prefillSessionId, message, maxTokens, slotId,
+                     cachedTokens](const LLMStreamChunk& response,
+                                   bool /*isFinal*/) {
                       auto prefillResult =
                           tt::sockets::PrefillResultMessage(message.task_id);
                       prefillResult.slot_id = slotId;
@@ -169,6 +202,7 @@ void DisaggregationService::setupSocketHandlers() {
                       prefillResult.top_p = message.top_p;
                       prefillResult.top_k = message.top_k;
                       prefillResult.fast_mode = message.fast_mode;
+                      prefillResult.cached_tokens = cachedTokens;
 
                       bool isError =
                           !response.choices.empty() &&
@@ -198,6 +232,19 @@ void DisaggregationService::setupSocketHandlers() {
                       }
 
                       socketService->sendPrefillResult(prefillResult);
+
+                      // Release the prefill session's in-flight hold now that
+                      // this one-shot prefill (max_tokens=1) is done. Unlike
+                      // the decode/HTTP transports, the prefill path has no
+                      // stream-end release, so without this the session stays
+                      // IN_FLIGHT forever — and evictOldSessions only reclaims
+                      // IDLE sessions, so the prefill pool fills with
+                      // un-evictable sessions and allocation eventually fails.
+                      // Releasing to IDLE-but-cached also lets the next turn's
+                      // prefix cache match it. clearInFlight() is idempotent.
+                      if (!prefillSessionId.empty() && sessionManager) {
+                        sessionManager->releaseInFlight(prefillSessionId);
+                      }
                     });
               },
               [this, message, slotId](std::string_view error) {
@@ -281,7 +328,11 @@ void DisaggregationService::resolvePrefillSession(
     const std::vector<uint64_t>& routingHashes,
     std::function<void()> onResolved,
     std::function<void(std::string_view)> onError) {
-  if (!sessionManager || routingHashes.empty()) {
+  if (!sessionManager) {
+    TT_LOG_ERROR(
+        "[DisaggregationService] No session manager configured; skipping "
+        "prefix cache resolution for taskId={}",
+        request->task_id);
     onResolved();
     return;
   }
@@ -299,6 +350,10 @@ void DisaggregationService::resolvePrefillSession(
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
+    // Record the acquired session so the prefill completion can release its
+    // in-flight hold (see clearInFlight below).
+    request->sessionId = acquired->sessionId;
+    request->continuation = true;
     applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     onResolved();
@@ -387,6 +442,7 @@ void DisaggregationService::handleStreamingRequest(
     int decodeSkipTokens = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
+
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
