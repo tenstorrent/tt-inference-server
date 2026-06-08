@@ -100,7 +100,7 @@ Script that will execute this promotion autoamtically is:
 
 Once the script is executed we need to verify which changes are being introduced into the production catalogue.
 
-## Update model_spec.py
+## update_model_spec.py
 
 
 After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
