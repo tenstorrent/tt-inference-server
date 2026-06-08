@@ -1,10 +1,14 @@
-# segformer Tenstorrent Support on N150/N300
+# segformer Tenstorrent Support on N150
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N150 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other cnn models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
+
+`segformer` is also supported on hardware:
+
+- [N300](segformer_n300.md)
 
 ## Quickstart - Deploy segformer Inference Server on n150
 
@@ -20,29 +24,6 @@ python3 run.py --model segformer --device n150 --workflow server --docker-server
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
 ## Model Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Weights | [segformer](https://huggingface.co/segformer) |
-| Model Status | 🟡 Functional |
-| Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers) |
-| tt-metal Commit | `079a2c2` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2` |
-
----
-
-## N300 Configuration
-
-### Quickstart - Deploy on n300
-
-**via run.py command**
-
-```bash
-python3 run.py --model segformer --device n300 --workflow server --docker-server
-```
-
-### Model Parameters
 
 | Parameter | Value |
 |-----------|-------|

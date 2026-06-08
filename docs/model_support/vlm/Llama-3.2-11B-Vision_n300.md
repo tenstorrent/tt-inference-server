@@ -1,4 +1,4 @@
-# Llama-3.2-11B-Vision Tenstorrent Support on N150/N300
+# Llama-3.2-11B-Vision Tenstorrent Support on N300
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `Llama-3.2-11B-Vision` in commands below.
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other vlm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
