@@ -269,6 +269,13 @@ class HostSetupManager:
                 "tokenizer_format": "tokenizer_config.json",
                 "params_format": "config.json",
             },
+            {
+                "format_name": "diffusers",
+                "weights_format": "**/*.safetensors",
+                "tokenizer_format": "tokenizer.json",
+                "params_format": "model_index.json",
+                "tokenizer_optional": True,
+            },
         ]
 
         # Check each format
@@ -281,7 +288,7 @@ class HostSetupManager:
             logger.info(f"has_tokenizer: {has_tokenizer}")
             logger.info(f"has_params: {has_params}")
 
-            if has_weights and has_tokenizer and has_params:
+            if has_weights and (has_tokenizer or fmt.get("tokenizer_optional")) and has_params:
                 self.setup_config.model_weights_format = fmt["format_name"]
                 logger.info(f"Detected {fmt['format_name']} model format")
                 logger.info(
