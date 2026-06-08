@@ -117,6 +117,10 @@ struct PrefillResultMessage {
   std::optional<float> top_p;
   std::optional<int> top_k;
   bool fast_mode = false;
+  // Number of prompt tokens the prefill server served from its KV cache
+  // (prefix-cache reuse). The decode server surfaces this as
+  // usage.prompt_tokens_details.cached_tokens.
+  int cached_tokens = 0;
 
   explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
@@ -132,7 +136,7 @@ struct PrefillResultMessage {
     int topKVal = top_k.value_or(0);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
        token_ids, rt, sid, error, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fast_mode);
+       topKVal, fast_mode, cached_tokens);
   }
 
   template <class Archive>
@@ -153,8 +157,9 @@ struct PrefillResultMessage {
     bool hasTopK;
     int topKVal;
     bool fastMode;
+    int cachedTokens;
     ar(tid, genText, fin, tg, pt, tids, rt, sid, err, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode);
+       topPVal, hasTopK, topKVal, fastMode, cachedTokens);
     PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -170,6 +175,7 @@ struct PrefillResultMessage {
     if (hasTopP) msg.top_p = topPVal;
     if (hasTopK) msg.top_k = topKVal;
     msg.fast_mode = fastMode;
+    msg.cached_tokens = cachedTokens;
     return msg;
   }
 };

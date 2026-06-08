@@ -1,4 +1,4 @@
-# whisper-large-v3 Tenstorrent Support on P100/P150
+# whisper-large-v3 Tenstorrent Support on P150
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 
 #### Useful links
 
-- [P100/P150 details](https://tenstorrent.com/hardware/blackhole)
+- [P150 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other audio models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -18,7 +18,8 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 - [WH Galaxy](whisper-large-v3_galaxy.md)
 - [BH QuietBox 2](whisper-large-v3_p300x2.md)
 - [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)
-- [N150/N300](whisper-large-v3_n150.md)
+- [N150](whisper-large-v3_n150.md)
+- [N300](whisper-large-v3_n300.md)
 
 ## Quickstart - Deploy whisper-large-v3 Inference Server on p150
 
