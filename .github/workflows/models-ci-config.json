@@ -20,23 +20,6 @@
         }
       }
     },
-    "Llama-3.1-8B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150",
-            "P300X2"
-          ]
-        }
-      }
-    },
     "Llama-3.1-8B-Instruct": {
       "implementations": [
         {
