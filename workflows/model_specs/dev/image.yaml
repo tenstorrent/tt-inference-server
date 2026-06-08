@@ -227,13 +227,13 @@ templates:
   min_ram_gb: 6
   model_type: IMAGE
   inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: T3K
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-      env_vars:
-        TT_DIT_CACHE_DIR: /tmp/TT_DIT_CACHE
     - device: GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
