@@ -89,8 +89,9 @@ class BenchmarkConfig:
 
 
 BENCHMARK_ISL_OSL_PAIRS = [
+    # qwen3.6 server pads everything <=4096 to the 4096 bucket, so short ISLs run there.
+    # 262016 (not 262144) so isl+osl <= max_context 262144.
     (128, 128),
-    (128, 1024),
     (1024, 128),
     (2048, 128),
     (4096, 128),
@@ -98,6 +99,11 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (16384, 128),
     (32768, 128),
     (65536, 128),
+    (131072, 128),
+    # 256k bucket: 240000 (not 262016) so the random prompt's chat-template expansion
+    # stays under max_model_len 262144 (262016 expanded to 271393 -> scheduler stuck).
+    # get_padded_prefill_len(240000) -> 262144, so this still exercises the 256k prefill.
+    (240000, 128),
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
@@ -648,8 +654,13 @@ for model_id, model_spec in MODEL_SPECS.items():
 
         tasks.append(benchmark_task_runs)
 
-    # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    # Structured-output benchmarks: llms and vlms, can be extended.
+    # qwen3.6: skip — guided/JSON decoding (grammar sampler) is not supported on the
+    # batch-1 TT backend and hangs the server.
+    _mid = str(model_spec.model_id).lower()
+    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM) and not (
+        "qwen3.6" in _mid or "qwen3-6" in _mid or "qwen3_6" in _mid
+    )
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(
