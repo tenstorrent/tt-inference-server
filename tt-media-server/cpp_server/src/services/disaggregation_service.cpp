@@ -3,8 +3,6 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include <cassert>
-
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "runtime/worker/worker_manager.hpp"
