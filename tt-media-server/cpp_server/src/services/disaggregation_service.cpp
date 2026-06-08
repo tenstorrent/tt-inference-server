@@ -154,6 +154,7 @@ void DisaggregationService::setupSocketHandlers() {
           auto slotId = message.slot_id;
           request->slotId = slotId;
           request->decode_position_id = message.decode_position_id;
+          request->decode_skip_tokens = message.decode_skip_tokens;
 
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
@@ -441,12 +442,16 @@ void DisaggregationService::handleStreamingRequest(
     int decodePositionId = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
+    // Same reused prefix as decodePositionId but excluding the accumulated
+    // think tokens that were folded into kv_position_id during session
+    // resolution.
+    int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request),
-        decodePositionId);
+        slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
+        decodeSkipTokens);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

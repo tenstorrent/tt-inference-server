@@ -307,6 +307,8 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   prefillReq.top_p = 0.9f;
   prefillReq.registration_hashes = {111, 222};
   prefillReq.decode_position_id = 5;
+  // Distinct from decode_position_id to confirm both propagate independently.
+  prefillReq.decode_skip_tokens = 3;
 
   // Send the prefill request from mock decode to our prefill server
   bool sent = mockDecode->send("prefill_request", prefillReq);
@@ -346,6 +348,11 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   // Verify decode_position_id propagated to the Sequence.
   EXPECT_EQ(seq->getDecodePositionId(), 5)
       << "decode_position_id must propagate from "
+         "PrefillRequestMessage";
+
+  // Verify decode_skip_tokens propagated to the Sequence.
+  EXPECT_EQ(seq->getDecodeSkipTokens(), 3)
+      << "decode_skip_tokens must propagate from "
          "PrefillRequestMessage";
 
   // Verify slot_id from decode (7) is the KV cache slot (the worker's output

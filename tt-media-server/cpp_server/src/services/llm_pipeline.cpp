@@ -172,6 +172,8 @@ void LLMPipeline::resolveSession(
         // thinking tokens (accumulated in cache but not in hash)
         req->kv_position_id = --acquired->numberOfMatchedTokens +
                               acquired->accumulatedThinkTokens;
+        req->accumulated_think_tokens =
+            static_cast<int>(acquired->accumulatedThinkTokens);
 
         std::vector<int> fullPrompt;
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {
