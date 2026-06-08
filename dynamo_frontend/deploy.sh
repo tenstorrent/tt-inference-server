@@ -115,6 +115,7 @@ log "starting worker ($WORKER_IMAGE)"
 docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
     -e DYNAMO_ENDPOINT_ENABLED=1 \
+    -e DYNAMO_ENABLE_RESPONSES_API=true \
     -e DYNAMO_DISCOVERY_BACKEND=etcd \
     -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
