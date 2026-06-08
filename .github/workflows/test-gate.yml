@@ -44,6 +44,9 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+              # C++ CI build/cache infra: changes here must re-run the C++ jobs
+              # that depend on it (otherwise infra-only PRs silently skip them).
+              - '.github/actions/setup-cpp-ci/**'
             prefill_gateway:
               - 'tt-media-server/prefill_gateway/**'
             media_server_deps:
@@ -526,6 +529,8 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-build (same TUs).
+          ccache-key-suffix: server
 
       # See cpp-build: cache the tokenizer bundle so the clang-tidy build's
       # tokenizer pre-fetch skips HuggingFace (avoids 429s on GitHub runners).
@@ -600,16 +605,20 @@ jobs:
   cpp-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Build & Unit Tests
-    # Per-commit compile + unit-test gate on ubuntu-latest. It also uploads the
-    # cpp-server-build artifact consumed by the per-commit cpp-server-benchmarks
-    # (mock backend) job. The heavier benchmarks/sanitizers moved to the
-    # scheduled cpp-heavy-checks.yml workflow (which builds its own artifact).
+    name: C++ Build, Unit Tests & Benchmarks
+    # Per-commit compile + unit-test + mock/structured-output benchmark gate on
+    # ubuntu-latest. Build and bench run in ONE job: the freshly built binary in
+    # cpp_server/build is benchmarked in place, so there is no build artifact to
+    # archive/upload/download/unpack (that round-trip used to cost ~5 min on the
+    # critical path). The heavier benches/sanitizers run in cpp-heavy-checks.yml.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
     env:
+      # Bench steps import the tt-media-server package (pytest helpers + the
+      # non-streaming smoke test), so the build job now needs PYTHONPATH too.
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
       # Loopback must bypass any injected HTTP proxy so curl/requests probes
       # to a server on 127.0.0.1 (e.g. CancellationE2E's /tt-liveness) resolve
       # directly. Harmless on GitHub runners; required on the self-hosted
@@ -632,6 +641,8 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          # Shares the cpp_server compile ccache with cpp-format-check.
+          ccache-key-suffix: server
 
       # Reuse the tokenizer bundle across runs so build.sh's pre-fetch skips
       # HuggingFace entirely on a cache hit. GitHub runners share egress IPs
@@ -658,47 +669,11 @@ jobs:
           ctest --output-on-failure
           cd ../..
 
-      - name: Archive C++ build
-        run: |
-          cd cpp_server
-          tar -czf cpp-server-build.tar.gz build tokenizers
-
-      - name: Upload C++ build
-        uses: actions/upload-artifact@v6
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server/cpp-server-build.tar.gz
-          retention-days: 1
-
-  cpp-server-benchmarks:
-    needs: [detect-changes, cpp-build]
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server Benchmarks
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-      # Loopback must bypass any injected proxy (see cpp-build).
-      no_proxy: "localhost,127.0.0.1,::1"
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Download C++ build
-        uses: actions/download-artifact@v7
-        with:
-          name: cpp-server-build
-          path: tt-media-server/cpp_server
-
-      - name: Set up C++ build artifact
-        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
-
+      # ── Mock backend benchmarks (same job) ───────────────────────────
+      # The binary just built in cpp_server/build is benchmarked in place, so
+      # there is no build artifact to archive/upload/download/unpack -- that
+      # round-trip (gzip + boost re-install on the consumer) previously cost
+      # ~5 min of wall-clock on the build -> bench critical path.
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -894,6 +869,7 @@ jobs:
         uses: ./.github/actions/setup-cpp-ci
         with:
           init-private-submodule: "false"
+          ccache-key-suffix: gateway
 
       - name: Configure prefill_gateway
         run: |
@@ -1259,7 +1235,6 @@ jobs:
       - test-coverage
       - cpp-format-check
       - cpp-build
-      - cpp-server-benchmarks
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1302,7 +1277,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build|cpp-server-benchmarks)
+              cpp-format-check|cpp-build)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
                 else
@@ -1350,7 +1325,6 @@ jobs:
             test-coverage
             cpp-format-check
             cpp-build
-            cpp-server-benchmarks
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1367,7 +1341,6 @@ jobs:
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
-            [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"

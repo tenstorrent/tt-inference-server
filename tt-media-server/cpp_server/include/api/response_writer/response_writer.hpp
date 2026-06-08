@@ -62,6 +62,15 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   /** Signal end-of-stream. Idempotent; releases in-flight slot. */
   virtual void finalize() = 0;
 
+  /**
+   * Disaggregation: the decode server stamps the prefill server's prefix-cache
+   * reuse onto the first stream chunk (LLMStreamChunk::cached_prompt_tokens).
+   * When present it overrides the request-derived cachedTokenCount in usage.
+   * Safe to call on every chunk; no-op for the aggregated path. The controller
+   * calls this before its content filter so a cached-only chunk still counts.
+   */
+  void observeCachedTokens(const LLMStreamChunk& chunk);
+
   bool isDone() const { return done.load(); }
 
  protected:
@@ -80,6 +89,8 @@ class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
   CompletionUsage buildUsage() const;
 
   ResponseWriterParams params;
+  // -1 = unset (use params.cachedTokenCount); >=0 = override from prefill.
+  std::atomic<int> cachedTokensOverride{-1};
   std::chrono::high_resolution_clock::time_point startTime =
       std::chrono::high_resolution_clock::now();
   std::optional<std::chrono::high_resolution_clock::time_point> firstTokenTime;
