@@ -12,18 +12,20 @@
 # rebuilt tt-metal and tt-llm-engine on every blaze build even when nothing
 # upstream had changed.
 #
-# Pinning (mirrors PR #3917):
-#   The tt-llm-engine SHA is sourced from the superproject's submodule
-#   gitlink: `git rev-parse :tt-media-server/cpp_server/tt-llm-engine`.
-#   That SHA is passed via --build-arg TT_LLM_ENGINE_COMMIT and used as
-#   the engine image tag. Single source of truth = the submodule pointer;
-#   no chance of consumer/engine drift.
+# Pinning model:
+#   The caller passes the FULL engine image reference as a build-arg, e.g.
+#     --build-arg TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:a018a2d6b270
+#   This Dockerfile does not derive or compute the tag — the operator
+#   picks the exact image (by sha, short-sha, or :latest) at dispatch
+#   time. Source of truth = whatever the caller passes.
 #
 # Required build args:
-#   TT_LLM_ENGINE_COMMIT              — full SHA of the tt-llm-engine
-#                                       submodule pointer (required;
-#                                       FROM fails with "manifest unknown"
-#                                       if not set)
+#   TT_LLM_ENGINE_IMAGE                   — full image reference for the
+#                                           prebuilt engine image
+#                                           (required; FROM fails with
+#                                           "manifest unknown" if not set
+#                                           because the sentinel default
+#                                           below isn't a valid tag)
 #   TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG — stamped into /info for debugging
 #
 # Required runtime auth (on the docker build host):
@@ -31,11 +33,10 @@
 #   ghcr.io/tenstorrent/tt-llm-engine/blaze.
 # ==============================================================================
 
-# IMPORTANT: TT_LLM_ENGINE_COMMIT MUST be passed via --build-arg. The
+# IMPORTANT: TT_LLM_ENGINE_IMAGE MUST be passed via --build-arg. The
 # sentinel default below produces a clear "manifest unknown" error if the
 # caller forgets — better than a cryptic "invalid reference format".
-ARG TT_LLM_ENGINE_COMMIT=MUST_PASS_TT_LLM_ENGINE_COMMIT_FROM_SUBMODULE_POINTER
-ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:${TT_LLM_ENGINE_COMMIT}
+ARG TT_LLM_ENGINE_IMAGE=ghcr.io/tenstorrent/tt-llm-engine/blaze:MUST_PASS_TT_LLM_ENGINE_IMAGE_AT_BUILD_TIME
 
 # ==============================================================================
 # ENGINE STAGE - prebuilt tt-llm-engine + tt-metal artifacts.
@@ -53,9 +54,11 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=unknown
-ARG TT_LLM_ENGINE_COMMIT=MUST_PASS_TT_LLM_ENGINE_COMMIT_FROM_SUBMODULE_POINTER
+# Surface the engine image reference inside the runtime image for
+# debugging — `cat /etc/tt-llm-engine-image` to see what was pulled.
+ARG TT_LLM_ENGINE_IMAGE
 ENV TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG=${TT_INFERENCE_SERVER_COMMIT_SHA_OR_TAG}
-ENV TT_LLM_ENGINE_COMMIT=${TT_LLM_ENGINE_COMMIT}
+ENV TT_LLM_ENGINE_IMAGE=${TT_LLM_ENGINE_IMAGE}
 
 ENV ENVIRONMENT=development
 ENV TT_MM_THROTTLE_PERF=5
