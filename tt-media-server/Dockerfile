@@ -89,7 +89,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -253,11 +253,6 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 # Copy everything from builder
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
-
-# Copy uv's Python installation (venv symlinks point to /root/.local/share/uv/python)
-# Make parent directories traversable and uv directory fully accessible
-COPY --from=builder /root/.local/share/uv /root/.local/share/uv
-RUN chmod 755 /root /root/.local /root/.local/share && chmod -R 755 /root/.local/share/uv
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
