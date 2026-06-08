@@ -13,11 +13,11 @@ Umbrella for getting the two 4-chip tensor-parallel Forge LLMs on **p300x2 / QB2
 ## Sub-issues / breakdown
 Three independent work items. Two are tiny/self-contained; one (uplift) is the heavy, cross-cutting pole.
 
-| Item | Scope | Files | Risk / blast radius | Depends on |
-|---|---|---|---|---|
-| **A — Benchmark output cap** (`CI_benchmark_runtime.md`) | Force `max_tokens=osl` in text bench-serve requests so output is bounded (fixes Qwen 6h cap; general correctness) | `benchmarking/run_benchmarks.py` (1 hunk) | Tiny; only changes behavior for models that were over-generating | none |
-| **B — Initial Forge-TP support** (`CI_initial_support.md`) | Both models servable + eval-able at `EXPERIMENTAL`: dev-catalog specs, env-var-tunable runners, TP-topology constants, forge wheel, ifeval (downsampled), perf-ref placeholder, nightly matrix | `dev/cnn.yaml`, `tt_model_runners/*`, `constants.py`, `forge_runners/requirements.txt`, `eval_config.py`, `model_performance_reference.json`, `models-ci-config.json` | Additive, new models only | none (benchmark step stays red until A+C) |
-| **C — Benchmark client uplift** (`CI_benchmarks_vllm_uplift.md`) | vllm `0.13.0 → 0.19.1`, transformers `→5.5.1` (gemma-4 tokenizer prereq) | `requirements/benchmarks-vllm.txt`, `workflows/workflow_venvs.py` | **Wide** — shared client venv for *all* benchmarked LLMs; needs cross-model qualification | none (longest pole) |
+| Item | Sub-issue | Scope | Files | Risk / blast radius | Depends on |
+|---|---|---|---|---|---|
+| **A — Benchmark output cap** | _TBD_ | Force `max_tokens=osl` in text bench-serve requests so output is bounded (fixes Qwen 6h cap; general correctness) | `benchmarking/run_benchmarks.py` (1 hunk) | Tiny; only changes behavior for models that were over-generating | none |
+| **B — Initial Forge-TP support** | _TBD_ | Both models servable + eval-able at `EXPERIMENTAL`: dev-catalog specs, env-var-tunable runners, TP-topology constants, forge wheel, ifeval (downsampled), perf-ref placeholder, nightly matrix | `dev/cnn.yaml`, `tt_model_runners/*`, `constants.py`, `forge_runners/requirements.txt`, `eval_config.py`, `model_performance_reference.json`, `models-ci-config.json` | Additive, new models only | none (benchmark step stays red until A+C) |
+| **C — Benchmark client uplift** | _TBD_ | vllm `0.13.0 → 0.19.1`, transformers `→5.5.1` (gemma-4 tokenizer prereq) | `requirements/benchmarks-vllm.txt`, `workflows/workflow_venvs.py` | **Wide** — shared client venv for *all* benchmarked LLMs; needs cross-model qualification | none (longest pole) |
 
 All three are independent and can land in any order — **B can land immediately** (serving + evals go green; the benchmark step stays known-red until A + C land), while **C** is the long pole (broad cross-model re-qualification).
 
