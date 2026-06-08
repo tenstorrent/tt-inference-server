@@ -275,6 +275,18 @@
             "output_type": "pil"
         }
     },
+    "Z-Image-Turbo-512x512": {
+        "accuracy": {
+            "5000": {
+                "fid_valid_range": [175.0, 192.0],
+                "clip_valid_range": [30.5, 33.2]
+            },
+            "100": {
+                "fid_valid_range": [175.0, 192.0],
+                "clip_valid_range": [30.5, 33.2]
+            }
+        }
+    },
     "Wan2.2-I2V-A14B-Diffusers": {
         "hf_id": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         "num_inference_steps": 40,
