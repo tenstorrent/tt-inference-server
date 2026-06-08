@@ -648,7 +648,7 @@ target_include_directories(worker_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# LLMService unit test: drives produceStream via submitStreamingRequest.
+# LLMService unit test: drives processStreamingRequest in-process.
 # Pulls in the same translation units that the main server links so the
 # real LLMService can be constructed without forking workers.
 add_executable(llm_service_test
@@ -793,6 +793,33 @@ target_include_directories(tool_calling_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(prefill_integration_test
+    tests/integration/prefill_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
+)
+target_link_libraries(prefill_integration_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    xxhash_lib
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(prefill_integration_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(prefill_integration_test PRIVATE libzmq)
+endif()
+target_include_directories(prefill_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 # main_integration_test boots the whole server stack (services, IPC queues,
 # Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
@@ -801,9 +828,10 @@ include(GoogleTest)
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
+add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
-set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PROPERTIES
+set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PrefillIntegrationTest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )

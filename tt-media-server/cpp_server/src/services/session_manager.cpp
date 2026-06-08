@@ -202,6 +202,10 @@ domain::Session* SessionManager::getSession(const std::string& sessionId) {
   return sessions.getPtr(sessionId);
 }
 
+void SessionManager::releaseInFlight(const std::string& sessionId) {
+  sessions.modify(sessionId, [](domain::Session& s) { s.clearInFlight(); });
+}
+
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::lockSlot(uint32_t slotId) {
