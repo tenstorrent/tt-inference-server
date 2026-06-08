@@ -1,4 +1,4 @@
-# Llama-3.1-8B Tenstorrent Support on N150/N300
+# Llama-3.1-8B Tenstorrent Support on N150
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N150 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -19,8 +19,10 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100/P150](Llama-3.1-8B_p100.md)
+- [P100](Llama-3.1-8B_p100.md)
+- [P150](Llama-3.1-8B_p150.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
+- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on n150
 
@@ -58,46 +60,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 65536 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
-| tt-metal Commit | `25305db` |
-| vLLM Commit | `6e67d2d` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-25305db-6e67d2d` |
-
----
-
-## N300 Configuration
-
-### Quickstart - Deploy on n300
-
-**docker run command**
-
-```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-25305db-6e67d2d \
-  --model Llama-3.1-8B \
-  --tt-device n300
-```
-
-**via run.py command**
-
-```bash
-python3 run.py --model Llama-3.1-8B --device n300 --workflow server --docker-server
-```
-
-### Model Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
-| Model Status | 🟢 Complete |
-| Max Batch Size | 32 |
-| Max Context Length | 131072 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/25305db/models/tt_transformers) |
 | tt-metal Commit | `25305db` |
 | vLLM Commit | `6e67d2d` |

@@ -1,4 +1,4 @@
-# Qwen2.5-7B Tenstorrent Support on N150/N300
+# Qwen2.5-7B Tenstorrent Support on N300
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `Qwen2.5-7B` in commands below.
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N300 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 

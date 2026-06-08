@@ -1,15 +1,16 @@
-# speecht5_tts Tenstorrent Support on P100/P150
+# speecht5_tts Tenstorrent Support on P150
 
 #### Useful links
 
-- [P100/P150 details](https://tenstorrent.com/hardware/blackhole)
+- [P150 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other tts models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `speecht5_tts` is also supported on hardware:
 
 - [BH QuietBox 2](speecht5_tts_p300x2.md)
-- [N150/N300](speecht5_tts_n150.md)
+- [N150](speecht5_tts_n150.md)
+- [N300](speecht5_tts_n300.md)
 
 ## Quickstart - Deploy speecht5_tts Inference Server on p150
 
