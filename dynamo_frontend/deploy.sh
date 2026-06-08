@@ -8,7 +8,6 @@ NETWORK_NAME="dynamo-net"
 ETCD_NAME="etcd"
 WORKER_NAME="tt-cpp-worker"
 FRONTEND_NAME="dynamo-frontend"
-PROXY_NAME="dynamo-proxy"
 FRONTEND_HOST_PORT="8080"
 MODEL_NAME="tt-cpp-server"
 LLM_DEVICE_BACKEND="pipeline_manager"
@@ -78,7 +77,7 @@ fi
 
 cleanup() {
     log "tearing down"
-    docker rm -f "$PROXY_NAME" "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
+    docker rm -f "$FRONTEND_NAME" "$WORKER_NAME" "$ETCD_NAME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -116,7 +115,6 @@ log "starting worker ($WORKER_IMAGE)"
 docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
     -e DYNAMO_ENDPOINT_ENABLED=1 \
-    -e DYNAMO_ENABLE_RESPONSES_API=true \
     -e DYNAMO_DISCOVERY_BACKEND=etcd \
     -e DYNAMO_ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e DYNAMO_NAMESPACE=default -e DYNAMO_COMPONENT=backend -e DYNAMO_ENDPOINT_NAME=generate \
@@ -148,7 +146,7 @@ docker exec "$ETCD_NAME" etcdctl get --prefix --keys-only v1/ | grep -v '^$' | s
 # fetch_tokenizers.sh the worker uses), so MODEL_PATH just points the entrypoint
 # at the baked dir — no tokenizer extraction or bind-mount needed.
 log "starting frontend ($FRONTEND_IMAGE)"
-docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" \
+docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8000" \
     -e MODEL_PATH="${WORKER_TOKENIZER_DIR}/${HF_MODEL_ID}" \
     -e DYN_DISCOVERY_BACKEND=etcd \
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
@@ -166,14 +164,5 @@ docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null
 
-# ── proxy ──────────────────────────────────────────────────────────────────
-# nginx proxy on the host port: routes /v1/responses directly to the
-# worker's LLMController (which supports previous_response_id), everything
-# else to the Dynamo frontend.
-log "starting proxy (nginx)"
-docker run -d --name "$PROXY_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_HOST_PORT}:8080" \
-    -v "${SCRIPT_DIR}/nginx-proxy.conf:/etc/nginx/nginx.conf:ro" \
-    nginx:alpine-slim >/dev/null
-
-log "proxy on http://localhost:${FRONTEND_HOST_PORT} — tailing worker logs (Ctrl+C to tear down)"
+log "frontend on http://localhost:${FRONTEND_HOST_PORT} — tailing worker logs (Ctrl+C to tear down)"
 docker logs -f "$WORKER_NAME"
