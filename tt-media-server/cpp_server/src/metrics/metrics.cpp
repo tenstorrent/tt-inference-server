@@ -134,6 +134,17 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add({});
 
+  slot_blocks_family_ =
+      &prometheus::BuildGauge()
+           .Name("tt_slot_blocks")
+           .Help(
+               "Number of committed KV-cache blocks occupied by each slot "
+               "(logical prefix-cache view: 1 key block + remaining blocks, "
+               "full blocks only). Refreshed when a session's prefix is "
+               "registered at turn end. Labelled by slot_id (bounded by the "
+               "slot pool size).")
+           .Register(*registry_);
+
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
       &prometheus::BuildSummary()
@@ -226,6 +237,24 @@ void ServerMetrics::setQueueDepth(double n) {
 void ServerMetrics::setActiveSessionsCount(double n) {
   // Called when sessions are created/removed — write directly.
   active_sessions_->Set(n);
+}
+
+void ServerMetrics::setSlotBlocks(uint32_t slotId, double blocks) {
+  // Called at turn-end prefix registration — session-lifecycle frequency.
+  // Family::Add is idempotent for identical labels, so this reuses the
+  // existing gauge for the slot.
+  slot_blocks_family_
+      ->Add({{"model_name", model_name_}, {"slot_id", std::to_string(slotId)}})
+      .Set(blocks);
+}
+
+void ServerMetrics::removeSlot(uint32_t slotId) {
+  // Drop the series so Prometheus stops reporting a stale value after the
+  // slot is deallocated. Add() returns the existing gauge (or creates one),
+  // which Remove() then deletes from the family.
+  auto& gauge = slot_blocks_family_->Add(
+      {{"model_name", model_name_}, {"slot_id", std::to_string(slotId)}});
+  slot_blocks_family_->Remove(&gauge);
 }
 
 void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {

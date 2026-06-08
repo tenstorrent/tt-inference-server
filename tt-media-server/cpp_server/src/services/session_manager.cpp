@@ -103,6 +103,7 @@ void SessionManager::finalizeSessionClose(const std::string& sessionId,
                                           const domain::Session& session) {
   if (session.getSlotId() != tt::domain::INVALID_SLOT_ID) {
     sendDeallocRequest(sessionId, session.getSlotId());
+    tt::metrics::ServerMetrics::instance().removeSlot(session.getSlotId());
   }
   TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
   updateSessionCountMetric();
@@ -720,9 +721,11 @@ void SessionManager::registerPrefixHash(
 
   // Update session's hash field (stores the key for staleness checks).
   uint64_t oldHash = 0;
-  bool sessionFound =
-      sessions.modify(sessionId, [&oldHash, keyHash](domain::Session& s) {
+  uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+  bool sessionFound = sessions.modify(
+      sessionId, [&oldHash, &slotId, keyHash](domain::Session& s) {
         oldHash = s.getHash();
+        slotId = s.getSlotId();
         s.setHash(keyHash);
       });
 
@@ -792,6 +795,12 @@ void SessionManager::registerPrefixHash(
       "[SessionManager] registerPrefixHash: registered sessionId={} under "
       "keyHash={} with {} remaining blocks",
       sessionId, keyHash, remaining.size());
+
+  // Publish the slot's committed block count (1 key block + remaining).
+  if (slotId != tt::domain::INVALID_SLOT_ID) {
+    tt::metrics::ServerMetrics::instance().setSlotBlocks(
+        slotId, static_cast<double>(blockInfos.size()));
+  }
 }
 
 void SessionManager::updateSessionCountMetric() {
