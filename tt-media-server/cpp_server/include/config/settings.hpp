@@ -299,6 +299,15 @@ int prefillMaxTokenIds();
 int decodeMaxTokenIds();
 
 // ---------------------------------------------------------------------------
+// Drogon HTTP server
+// ---------------------------------------------------------------------------
+
+/** Number of Drogon IO threads. From DROGON_IO_THREADS. 0 means auto-detect
+ * (hardware_concurrency; reduced to 4 when DYNAMO_ENDPOINT_ENABLED=1 since
+ * Drogon only serves health/metrics in that mode). */
+size_t drogonIoThreads();
+
+// ---------------------------------------------------------------------------
 // Dynamo TCP backend (NVIDIA Dynamo frontend integration)
 // ---------------------------------------------------------------------------
 

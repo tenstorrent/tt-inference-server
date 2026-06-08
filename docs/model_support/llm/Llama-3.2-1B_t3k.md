@@ -15,7 +15,8 @@ To use non-default weights, replace `Llama-3.2-1B` in commands below.
 
 `Llama-3.2-1B` is also supported on hardware:
 
-- [N150/N300](Llama-3.2-1B_n150.md)
+- [N150](Llama-3.2-1B_n150.md)
+- [N300](Llama-3.2-1B_n300.md)
 
 ## Quickstart - Deploy Llama-3.2-1B Inference Server on WH LoudBox/QuietBox
 

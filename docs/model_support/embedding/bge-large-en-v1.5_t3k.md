@@ -9,7 +9,8 @@
 `bge-large-en-v1.5` is also supported on hardware:
 
 - [WH Galaxy](bge-large-en-v1.5_galaxy.md)
-- [N150/N300](bge-large-en-v1.5_n150.md)
+- [N150](bge-large-en-v1.5_n150.md)
+- [N300](bge-large-en-v1.5_n300.md)
 
 ## Quickstart - Deploy bge-large-en-v1.5 Inference Server on WH LoudBox/QuietBox
 

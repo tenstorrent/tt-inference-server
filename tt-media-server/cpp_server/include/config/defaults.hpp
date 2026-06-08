@@ -48,7 +48,7 @@ constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
 constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
 constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
-constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 80;
+constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
@@ -100,6 +100,9 @@ constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
 constexpr size_t CALLBACK_POOL_THREADS_MAX = 32;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
+// Number of Drogon HTTP IO threads. 0 = auto (hardware_concurrency, or 4 when
+// Dynamo is the primary traffic path). Set explicitly to reduce idle threads.
+constexpr size_t DROGON_IO_THREADS = 0;
 
 // IPC queue capacities
 constexpr size_t RESULT_QUEUE_CAPACITY = 65536;
