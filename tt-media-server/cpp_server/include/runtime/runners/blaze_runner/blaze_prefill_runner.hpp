@@ -72,6 +72,8 @@ class BlazePrefillRunner : public IRunner {
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
+  // Debug: artificial prefill delay, (tokens / 5000) * this many ms. 0 = off.
+  unsigned simPrefillMsPer5kTokens;
 };
 
 }  // namespace tt::runners::blaze

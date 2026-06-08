@@ -242,6 +242,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
+unsigned simulatePrefillMsPer5kTokens() {
+  return static_cast<unsigned>(envUlong(
+      "SIMULATE_PREFILL_MS_PER_5K_TOKENS",
+      defaults::SIMULATE_PREFILL_MS_PER_5K_TOKENS));
+}
+
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
 }

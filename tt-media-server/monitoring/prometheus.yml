@@ -8,11 +8,15 @@ rule_files:
   - /etc/prometheus/rules/*.yml
 
 scrape_configs:
+  # --- Single-server (LLM_MODE=regular) ----------------------------------
+  # TARGET and SERVICE are substituted at container startup by docker-compose
+  # (sed). Set SERVER_TARGET=<container-name>:<port> and SERVER_SERVICE=<name>
+  # (e.g. "python" or "cpp") when running docker compose. SERVER_SERVICE
+  # defaults to "python" for backwards compatibility with the original setup.
+  #
+  # Every series gets role="regular" so the regular dashboard can coexist with
+  # the disaggregated prefill/decode targets below without double-counting.
   - job_name: "tt_media_server"
-    # TARGET and SERVICE are substituted at container startup by docker-compose
-    # (sed). Set SERVER_TARGET=<container-name>:<port> and SERVER_SERVICE=<name>
-    # (e.g. "python" or "cpp") when running docker compose. SERVER_SERVICE
-    # defaults to "python" for backwards compatibility with the original setup.
     static_configs:
       - targets:
           - "__SERVER_TARGET__"
@@ -20,6 +24,41 @@ scrape_configs:
           instance: "tt_media_server"
           service: "__SERVER_SERVICE__"
           language: "__SERVER_SERVICE__"
+          role: "regular"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s
+
+  # --- Disaggregated prefill/decode (LLM_MODE=prefill | decode) ----------
+  # The two C++ servers expose IDENTICAL metric names, so they are told apart
+  # purely by the role label below. The prefill/decode Grafana dashboards each
+  # filter on role={"prefill"|"decode"}. When a target is not running (e.g.
+  # single-server mode) Prometheus marks it down and emits no series, so these
+  # jobs are harmless to leave configured.
+  #
+  # Set PREFILL_TARGET / DECODE_TARGET to <container-name>:<port>.
+  - job_name: "tt_media_server_prefill"
+    static_configs:
+      - targets:
+          - "__PREFILL_TARGET__"
+        labels:
+          instance: "tt_media_server_prefill"
+          service: "cpp"
+          language: "cpp"
+          role: "prefill"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s
+
+  - job_name: "tt_media_server_decode"
+    static_configs:
+      - targets:
+          - "__DECODE_TARGET__"
+        labels:
+          instance: "tt_media_server_decode"
+          service: "cpp"
+          language: "cpp"
+          role: "decode"
     metrics_path: /metrics
     scheme: http
     scrape_timeout: 4s

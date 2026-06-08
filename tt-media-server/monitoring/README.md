@@ -44,6 +44,44 @@ PrefillGateway `--metrics-port` endpoint when the gateway is enabled.
 `SERVER_SERVICE` defaults to `python` (kept for backwards compatibility
 with the original setup).
 
+### Disaggregated prefill / decode
+
+When you run the C++ server split into a prefill node and a decode node:
+
+```bash
+# Prefill server on :8001, decode server on :8000 (defaults shown in the prompt)
+TT_LOG_LEVEL=debug LLM_MODE=prefill ./build/tt_media_server_cpp -p 8001
+MAX_TOKENS_TO_PREFILL_ON_DECODE=0 TT_LOG_LEVEL=debug LLM_MODE=decode ./build/tt_media_server_cpp
+```
+
+point Prometheus at **both** servers — they expose identical metric names and
+are told apart only by a `role` label that the scrape config attaches:
+
+```bash
+PREFILL_TARGET=<server-container-name>:8001 \
+DECODE_TARGET=<server-container-name>:8000 \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+`PREFILL_TARGET` defaults to `tt-prefill-server:8001` and `DECODE_TARGET` to
+`tt-decode-server:8000`. Targets that aren't running are simply marked *down*
+by Prometheus and emit no series, so these jobs are harmless to leave
+configured in single-server mode (and vice versa — the `tt_media_server`
+regular job is harmless when only prefill/decode are up).
+
+Two dedicated dashboards are provisioned for this setup:
+
+| Dashboard (Grafana title)                     | uid                          | filters on   | focus |
+|-----------------------------------------------|------------------------------|--------------|-------|
+| TT Inference Server — Prefill (disaggregated) | `tt-inference-server-prefill`| `role="prefill"` | prompt-token throughput, prefill (E2E) latency, queue depth, per-slot ISL |
+| TT Inference Server — Decode (disaggregated)  | `tt-inference-server-decode` | `role="decode"`  | TSU / TPOT / ITL, decoding users, output throughput, per-slot decode perf |
+
+> **Note (current iteration):** only the dashboards and scrape labels are
+> disaggregation-aware. The metrics emitted by `metrics.cpp` are still the
+> shared regular-mode set, so a handful of panels are mode-irrelevant by
+> construction (e.g. TPOT on the prefill dashboard, were it shown). Tailoring
+> the *exposed* metrics per mode is the next iteration.
+
 ### Docker Scrape Targets
 
 Prometheus runs in Docker, so `localhost` inside Prometheus refers to the
@@ -88,7 +126,9 @@ monitoring/
     │   ├── datasources/prometheus.yml        # auto-registers Prometheus datasource
     │   └── dashboards/default.yml            # tells Grafana where to load dashboards from
     └── dashboards/
-        ├── tt_media_server_cpp.json          # C++ server dashboard (latency, throughput, queue)
+        ├── tt_media_server_cpp.json          # C++ server dashboard, regular mode (latency, throughput, queue)
+        ├── tt_media_server_cpp_prefill.json  # C++ disaggregated prefill node (role="prefill")
+        ├── tt_media_server_cpp_decode.json   # C++ disaggregated decode node (role="decode")
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
         └── tt_prefill_gateway.json           # PrefillGateway routing, latency, heartbeat dashboard
 ```

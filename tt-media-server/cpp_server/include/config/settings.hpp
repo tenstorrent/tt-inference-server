@@ -237,6 +237,11 @@ unsigned warmupTimeoutMs();
  * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
 
+/** Debug: ms of artificial prefill delay per 5k input tokens, from
+ * SIMULATE_PREFILL_MS_PER_5K_TOKENS. 0 disables (default). Set to 2000 to
+ * simulate 2 s per 5k tokens. See defaults::SIMULATE_PREFILL_MS_PER_5K_TOKENS. */
+unsigned simulatePrefillMsPer5kTokens();
+
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
 

@@ -81,6 +81,14 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
  */
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 60000;
 
+/**
+ * Debug knob: artificially slow down prefill to model real on-device cost.
+ * The prefill runner sleeps (tokens / 5000) * this many ms before submitting
+ * each prefill turn. 0 disables the simulation (production default). Set to
+ * 2000 to simulate "2 s per 5k input tokens".
+ */
+constexpr unsigned SIMULATE_PREFILL_MS_PER_5K_TOKENS = 0;
+
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "deepseek";
 
