@@ -435,6 +435,165 @@
         "x": 0,
         "y": 25
       },
+      "id": 1050,
+      "title": "Prefill Input (ISL per request)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Distribution of input sequence length (prompt tokens) per request arriving at the prefill server, over time. Built from the tt_request_prompt_tokens histogram; each column is one scrape window, banded by the histogram buckets (1..8192). Reveals bimodal / long-tail prompt mixes that an average would hide.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 1051,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "show": true,
+          "yHistogram": true
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(tt_request_prompt_tokens_bucket{role=\"prefill\"}[$__rate_interval])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}"
+        }
+      ],
+      "title": "ISL Distribution (prompt tokens / request)",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-request input length percentiles (p50/p90/p99) and mean, derived from the tt_request_prompt_tokens histogram. Correlate with the prefill latency panel below \u2014 prefill cost scales with ISL.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "id": 1052,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(tt_request_prompt_tokens_bucket{role=\"prefill\"}[$__rate_interval])) by (le))",
+          "legendFormat": "P99"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.9, sum(rate(tt_request_prompt_tokens_bucket{role=\"prefill\"}[$__rate_interval])) by (le))",
+          "legendFormat": "P90"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum(rate(tt_request_prompt_tokens_bucket{role=\"prefill\"}[$__rate_interval])) by (le))",
+          "legendFormat": "P50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_request_prompt_tokens_sum{role=\"prefill\"}[5m]) / rate(tt_request_prompt_tokens_count{role=\"prefill\"}[5m])",
+          "legendFormat": "avg"
+        }
+      ],
+      "title": "ISL Percentiles (prompt tokens / request)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
       "id": 1010,
       "title": "Prefill Latency",
       "type": "row"
@@ -464,7 +623,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 26
+        "y": 35
       },
       "id": 1011,
       "options": {
@@ -535,7 +694,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 26
+        "y": 35
       },
       "id": 1012,
       "options": {
@@ -587,7 +746,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 43
       },
       "id": 104,
       "title": "Infrastructure (per-process CPU / memory / threads)",
@@ -622,7 +781,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 35
+        "y": 44
       },
       "id": 105,
       "options": {
@@ -680,7 +839,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 35
+        "y": 44
       },
       "id": 106,
       "options": {
@@ -738,7 +897,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 35
+        "y": 44
       },
       "id": 107,
       "options": {
@@ -796,7 +955,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 43
+        "y": 52
       },
       "id": 108,
       "options": {
@@ -854,7 +1013,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 43
+        "y": 52
       },
       "id": 109,
       "options": {
@@ -912,7 +1071,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 43
+        "y": 52
       },
       "id": 110,
       "options": {
