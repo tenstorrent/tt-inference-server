@@ -328,7 +328,11 @@ void DisaggregationService::resolvePrefillSession(
     const std::vector<uint64_t>& routingHashes,
     std::function<void()> onResolved,
     std::function<void(std::string_view)> onError) {
-  if (!sessionManager || routingHashes.empty()) {
+  if (!sessionManager) {
+    TT_LOG_ERROR(
+        "[DisaggregationService] No session manager configured; skipping "
+        "prefix cache resolution for taskId={}",
+        request->task_id);
     onResolved();
     return;
   }
