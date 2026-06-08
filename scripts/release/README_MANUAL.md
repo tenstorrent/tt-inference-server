@@ -84,7 +84,7 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 
 ## Promote development specification to production
 
-For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in `model_spec.py` file. Also the upcoming release version should be set for models/devices that are in the scope to be released.
+For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in models_spec dev catalogue. Also the upcoming release version should be set for models/devices that are in the scope to be released.
 
 Changes are being set within the model_specs development catalogue:
 `https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
