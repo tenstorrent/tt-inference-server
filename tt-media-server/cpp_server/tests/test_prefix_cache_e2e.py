@@ -137,6 +137,8 @@ def send_chat(
     model: str = "tt-cpp-server",
     stream: bool = True,
     verbose: bool = False,
+    request_id: str | None = None,
+    previous_response_id: str | None = None,
 ) -> TurnResult:
     """Send a chat completion and return content + usage."""
     payload: dict = {
@@ -147,6 +149,10 @@ def send_chat(
     }
     if stream:
         payload["stream_options"] = {"include_usage": True}
+    if request_id is not None:
+        payload["request_id"] = request_id
+    if previous_response_id is not None:
+        payload["previous_response_id"] = previous_response_id
 
     result = TurnResult()
     try:
@@ -496,6 +502,244 @@ def test_five_turn_growing_cache(
     return ok
 
 
+def test_response_id_two_turn_cache(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
+    """Two-turn conversation using previous_response_id for session
+    continuation. Turn 1 sends request_id='resp-t1'. Turn 2 references it via
+    previous_response_id='resp-t1' and should get a prefix cache hit."""
+    print("\n=== Test: Response-id two-turn prefix cache ===")
+    system = {"role": "system", "content": SYSTEM_PROMPT}
+    messages = [system, {"role": "user", "content": "What is a hash table?"}]
+
+    r1 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="resp-t1",
+    )
+    if r1.error:
+        print(f"  FAIL: Turn 1 errored — {r1.error}")
+        return False
+    _print_turn(1, r1, "fresh, request_id=resp-t1")
+
+    messages.append({"role": "assistant", "content": r1.content})
+    messages.append(
+        {"role": "user", "content": "How does it handle collisions?"}
+    )
+
+    r2 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="resp-t2",
+        previous_response_id="resp-t1",
+    )
+    if r2.error:
+        print(f"  FAIL: Turn 2 errored — {r2.error}")
+        return False
+    _print_turn(2, r2, "continuation via previous_response_id=resp-t1")
+
+    ok = True
+    if r1.usage.cached_tokens != 0:
+        print(
+            f"  WARN: Turn 1 cached_tokens={r1.usage.cached_tokens} "
+            "(expected 0 for fresh turn)"
+        )
+
+    if r2.usage.cached_tokens == 0:
+        print(
+            "  FAIL: Turn 2 cached_tokens=0 — response-id continuation "
+            "should have triggered prefix reuse"
+        )
+        ok = False
+    else:
+        print(f"  OK: Turn 2 reused {r2.usage.cached_tokens} cached tokens via response-id")
+
+    return ok
+
+
+def test_response_id_three_turn_rekey(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
+    """Three-turn conversation where each turn re-keys the response id.
+    Turn 1: request_id='rk-1'.
+    Turn 2: previous_response_id='rk-1', request_id='rk-2'.
+    Turn 3: previous_response_id='rk-2', request_id='rk-3'.
+    Cached tokens should grow across turns."""
+    print("\n=== Test: Response-id three-turn re-key ===")
+    system = {"role": "system", "content": SYSTEM_PROMPT}
+    messages: list[dict] = [
+        system,
+        {"role": "user", "content": "Explain how a B-tree works."},
+    ]
+
+    r1 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="rk-1",
+    )
+    if r1.error:
+        print(f"  FAIL: Turn 1 errored — {r1.error}")
+        return False
+    _print_turn(1, r1, "fresh, request_id=rk-1")
+
+    messages.append({"role": "assistant", "content": r1.content})
+    messages.append({"role": "user", "content": "What about B+ trees?"})
+
+    r2 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="rk-2",
+        previous_response_id="rk-1",
+    )
+    if r2.error:
+        print(f"  FAIL: Turn 2 errored — {r2.error}")
+        return False
+    _print_turn(2, r2, "continuation via previous_response_id=rk-1")
+
+    messages.append({"role": "assistant", "content": r2.content})
+    messages.append({"role": "user", "content": "When would I use an LSM tree instead?"})
+
+    r3 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="rk-3",
+        previous_response_id="rk-2",
+    )
+    if r3.error:
+        print(f"  FAIL: Turn 3 errored — {r3.error}")
+        return False
+    _print_turn(3, r3, "continuation via previous_response_id=rk-2")
+
+    ok = True
+    if r2.usage.cached_tokens == 0:
+        print("  FAIL: Turn 2 cached_tokens=0 — expected response-id prefix reuse")
+        ok = False
+    else:
+        print(f"  OK: Turn 2 reused {r2.usage.cached_tokens} cached tokens")
+
+    if r3.usage.cached_tokens == 0:
+        print("  FAIL: Turn 3 cached_tokens=0 — expected response-id prefix reuse")
+        ok = False
+    elif r3.usage.cached_tokens <= r2.usage.cached_tokens:
+        print(
+            f"  WARN: Turn 3 cached_tokens ({r3.usage.cached_tokens}) did not grow "
+            f"vs Turn 2 ({r2.usage.cached_tokens})"
+        )
+    else:
+        print(
+            f"  OK: Turn 3 cached tokens grew {r2.usage.cached_tokens} → {r3.usage.cached_tokens}"
+        )
+
+    return ok
+
+
+def test_response_id_miss_falls_back(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
+    """When previous_response_id references a non-existent id, the request
+    should still succeed (fall back to new session) with cached_tokens=0."""
+    print("\n=== Test: Response-id miss falls back to new session ===")
+    system = {"role": "system", "content": SYSTEM_PROMPT}
+    messages = [
+        system,
+        {"role": "user", "content": "What is gradient descent?"},
+    ]
+
+    r1 = send_chat(
+        base_url,
+        messages,
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="fallback-1",
+        previous_response_id="nonexistent-id",
+    )
+    if r1.error:
+        print(f"  FAIL: Request errored — {r1.error}")
+        return False
+    _print_turn(1, r1, "previous_response_id=nonexistent-id")
+
+    if r1.usage.cached_tokens > 0:
+        print(
+            f"  WARN: Got cached_tokens={r1.usage.cached_tokens} despite a miss "
+            "(could be an unrelated prefix-hash hit)"
+        )
+    else:
+        print("  OK: Bogus previous_response_id correctly fell back (cached_tokens=0)")
+    return True
+
+
+def test_response_id_does_not_cross_pollinate(
+    base_url: str, model: str, stream: bool, verbose: bool
+) -> bool:
+    """Two independent conversations with their own response ids. Using the
+    wrong previous_response_id should not produce a prefix cache hit from the
+    other conversation."""
+    print("\n=== Test: Response-id doesn't cross-pollinate conversations ===")
+    system = {"role": "system", "content": SYSTEM_PROMPT}
+
+    # Conversation A
+    r_a = send_chat(
+        base_url,
+        [system, {"role": "user", "content": "Explain monads in Haskell."}],
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="conv-a-1",
+    )
+    if r_a.error:
+        print(f"  FAIL: Conv A errored — {r_a.error}")
+        return False
+    _print_turn(1, r_a, "conv A, request_id=conv-a-1")
+
+    # Conversation B — references conv A's id but sends completely different content
+    r_b = send_chat(
+        base_url,
+        [
+            {"role": "system", "content": "You are a chef who explains recipes."},
+            {"role": "user", "content": "How do I make sourdough bread?"},
+        ],
+        model=model,
+        stream=stream,
+        verbose=verbose,
+        request_id="conv-b-1",
+        previous_response_id="conv-a-1",
+    )
+    if r_b.error:
+        print(f"  FAIL: Conv B errored — {r_b.error}")
+        return False
+    _print_turn(2, r_b, "conv B with previous_response_id=conv-a-1")
+
+    # Conv B *will* get a response-id hit (it reuses conv A's slot), but the
+    # cached_tokens should reflect only the blocks whose content hashes
+    # actually match — which should be very few (if any) given the completely
+    # different system prompt and user message.
+    if r_b.usage.cached_tokens > 0 and r_b.usage.cache_pct() > 50:
+        print(
+            f"  WARN: Conv B shows {r_b.usage.cached_tokens} cached tokens "
+            f"({r_b.usage.cache_pct():.0f}%) — unexpectedly high for unrelated content"
+        )
+    else:
+        cached = r_b.usage.cached_tokens
+        print(f"  OK: Conv B cached_tokens={cached} — reasonable for mismatched content")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
@@ -609,6 +853,10 @@ def main() -> int:
         ("shared_prefix_different_suffix", test_shared_prefix_different_suffix),
         ("different_conversations_no_sharing", test_different_conversations_no_sharing),
         ("five_turn_growing_cache", test_five_turn_growing_cache),
+        ("response_id_two_turn_cache", test_response_id_two_turn_cache),
+        ("response_id_three_turn_rekey", test_response_id_three_turn_rekey),
+        ("response_id_miss_falls_back", test_response_id_miss_falls_back),
+        ("response_id_does_not_cross_pollinate", test_response_id_does_not_cross_pollinate),
     ]
 
     passed = 0
