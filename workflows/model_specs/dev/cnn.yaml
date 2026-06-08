@@ -127,6 +127,71 @@ templates:
         ENABLE_TRACE: "true"
 
 - weights:
+    # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
+    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. batch-16 / 4K
+    # is the best fitting balance (~76 tok/s aggregate). Dims are env-driven here
+    # (constants.py only carries the TP mesh topology), mirroring the single-chip
+    # forge LLMs above.
+    - google/gemma-4-31b-it
+  tt_metal_commit: "e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7"
+  vllm_commit: "46a7c96"
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 4096
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "4096"
+        MAX_NUM_SEQS: "16"
+        GPU_MEMORY_UTILIZATION: "0.9"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "false"
+        # 4-chip (1,4) TP mesh: the runner doesn't auto-set this and the image
+        # maps p300x2->p150, so pin the p300_x2 descriptor (else stablehlo
+        # "unknown mesh: @mesh" at compile). -e overrides --env-file here.
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+
+- weights:
+    # Qwen3-32B Forge LLM (tensor-parallel) on p300x2/QB2, mirroring gemma-4-31b.
+    # basename "Qwen3-32B" matches ModelNames.QWEN_3_32B. batch-16 / 4K (same as
+    # gemma; not yet independently swept on Qwen -- local verify is the check).
+    - Qwen/Qwen3-32B
+  tt_metal_commit: "e03b231b1de926cd8f9a0e1a2d39dd1df599f7a7"
+  vllm_commit: "46a7c96"
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:aed6177ab424aa93f447118aac5a7b8ab1cafdbc_f752cce_79853177306"
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 4096
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "4096"
+        MAX_NUM_SEQS: "16"
+        GPU_MEMORY_UTILIZATION: "0.9"
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "false"
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+
+- weights:
     - resnet-50
   version: "0.13.0"
   tt_metal_commit: "079a2c2"
