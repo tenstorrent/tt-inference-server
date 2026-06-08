@@ -4670,6 +4670,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: T3K
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
       galaxy:
@@ -4694,6 +4696,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p150x4:
         defaultImpl: tt_transformers
         impls:
@@ -4716,6 +4720,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x4
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p150x8:
         defaultImpl: tt_transformers
         impls:
@@ -4738,6 +4744,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p300x2:
         defaultImpl: tt_transformers
         impls:
@@ -4760,6 +4768,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P300x2
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
     defaultEngine: media
   Wan2.2-T2V-A14B-Diffusers:
     media:
@@ -4785,6 +4795,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: T3K
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
       galaxy:
@@ -4809,6 +4821,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p150x4:
         defaultImpl: tt_transformers
         impls:
@@ -4831,6 +4845,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x4
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p150x8:
         defaultImpl: tt_transformers
         impls:
@@ -4853,6 +4869,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
       p300x2:
         defaultImpl: tt_transformers
         impls:
@@ -4875,6 +4893,8 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P300x2
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
     defaultEngine: media
   stable-diffusion-xl-base-1.0:
     media:
@@ -5915,7 +5935,7 @@ models:
               - name: MESH_DEVICE
                 value: T3K
               - name: TT_DIT_CACHE_DIR
-                value: /tmp/TT_DIT_CACHE
+                value: /home/container_app_user/cache_root/tt_dit_cache
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
       galaxy:
@@ -5940,6 +5960,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
     defaultEngine: media
   Qwen-Image-2512:
     media:
@@ -5966,7 +5988,7 @@ models:
               - name: MESH_DEVICE
                 value: T3K
               - name: TT_DIT_CACHE_DIR
-                value: /tmp/TT_DIT_CACHE
+                value: /home/container_app_user/cache_root/tt_dit_cache
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
       galaxy:
@@ -5991,6 +6013,8 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
     defaultEngine: media
   whisper-large-v3:
     media:
