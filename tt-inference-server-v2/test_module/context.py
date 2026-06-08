@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -36,10 +37,34 @@ class MediaContext:
     service_port: int
     spec_tests_num_prompts_cap: Optional[int] = None
     runtime_config: Optional[Any] = None
+    server_url: Optional[str] = None
 
     @property
     def base_url(self) -> str:
+        if self.server_url:
+            normalized = self.server_url.rstrip("/")
+            if urlparse(normalized).port is not None:
+                return normalized
+            return f"{normalized}:{self.service_port}"
         return f"http://localhost:{self.service_port}"
+
+    @property
+    def server_host(self) -> str:
+        """Scheme + host with no port, for split host/port consumers."""
+        if self.server_url:
+            parsed = urlparse(self.server_url.rstrip("/"))
+            scheme = parsed.scheme or "http"
+            return f"{scheme}://{parsed.hostname}"
+        return "http://localhost"
+
+    @property
+    def server_port(self) -> int:
+        """Explicit port from ``server_url`` when present, else service_port."""
+        if self.server_url:
+            port = urlparse(self.server_url.rstrip("/")).port
+            if port is not None:
+                return port
+        return int(self.service_port)
 
     @property
     def test_payloads_path(self) -> str:

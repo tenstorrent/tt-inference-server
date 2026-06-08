@@ -67,7 +67,7 @@ class CnnParamTest(BaseTest):
     TASK_TYPE = "cnn"
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/cnn/search-image"
+        self.url = f"{self.base_url}/v1/cnn/search-image"
         logger.info(f"Testing CNN parameters at {self.url}")
 
         # Create list of payloads to test different parameters

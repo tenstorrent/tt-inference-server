@@ -109,7 +109,25 @@ def _build_context(
         service_port=args.service_port,
         spec_tests_num_prompts_cap=args.num_prompts,
         runtime_config=runtime_config,
+        server_url=_resolve_server_url(args, runtime_config),
     )
+
+
+def _resolve_server_url(
+    args: argparse.Namespace, runtime_config: Optional[RuntimeConfig]
+) -> Optional[str]:
+    """Pick the inference-server URL to target an already-running server.
+
+    Prefers the explicit ``--server-url`` CLI flag, then the value v1 stored
+    in ``RuntimeConfig.server_url`` (propagated through the v2 bridge via the
+    runtime model spec JSON). ``None`` keeps the historical localhost default.
+    """
+    explicit = getattr(args, "server_url", None)
+    if explicit:
+        return explicit
+    if runtime_config is not None:
+        return getattr(runtime_config, "server_url", None)
+    return None
 
 
 def _resolve_eval_config(model_name: str):

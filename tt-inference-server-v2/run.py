@@ -112,6 +112,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)
     parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help=(
+            "Base URL of an already-running inference server to target "
+            "(e.g. 'http://192.168.1.10'). Overrides the default localhost "
+            "host; combine with --service-port unless the URL carries an "
+            "explicit port. Propagated from v1 run.py --server-url through "
+            "the v2 bridge."
+        ),
+    )
+    parser.add_argument(
         "--num-prompts",
         type=int,
         default=None,
@@ -254,6 +266,19 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    if args.server_url:
+        from urllib.parse import urlparse
+
+        server_url = args.server_url.strip().rstrip("/")
+        parsed = urlparse(server_url)
+        if not parsed.scheme:
+            server_url = f"http://{server_url}"
+            parsed = urlparse(server_url)
+        if not parsed.hostname:
+            parser.error(
+                "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
+            )
+        args.server_url = server_url
     if args.prefix_cache and args.workflow != "benchmarks":
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks "

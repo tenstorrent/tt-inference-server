@@ -55,8 +55,8 @@ def run_llm_performance(
     if they don't need the in-memory copy.
     """
     server = ServerConnection(
-        base_url="http://localhost",
-        service_port=ctx.service_port,
+        base_url=ctx.server_host,
+        service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
     )
     output_dir = Path(ctx.output_path) / output_subdir

@@ -112,7 +112,7 @@ def test_report_generator_writes_ci_report_data(tmp_path: Path):
     result = ReportGenerator().generate(schema, tmp_path)
 
     assert result.markdown_path.parent == tmp_path
-    assert result.json_path.parent == tmp_path
+    assert result.json_path.parent == tmp_path / "data"
     assert (tmp_path / "data" / f"report_data_{schema.report_id}.json").exists()
 
 

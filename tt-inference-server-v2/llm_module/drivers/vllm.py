@@ -59,6 +59,8 @@ class VLLMBenchDriver(LLMDriver):
             json.dumps({"truncate_prompt_tokens": str(config.isl)}),
             "--model",
             server.model,
+            "--host",
+            server.host,
             "--port",
             str(server.service_port),
             "--dataset-name",

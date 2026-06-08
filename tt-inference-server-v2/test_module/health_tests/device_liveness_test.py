@@ -25,7 +25,7 @@ class DeviceLivenessTest(BaseTest):
     TASK_TYPE = "health"
 
     async def _run_specific_test_async(self):
-        url = f"http://localhost:{self.service_port}/tt-liveness"
+        url = f"{self.base_url}/tt-liveness"
 
         if (
             self.targets["num_of_devices"] is None

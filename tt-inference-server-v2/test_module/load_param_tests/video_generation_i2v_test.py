@@ -74,7 +74,6 @@ class VideoGenerationI2VTest(BaseTest):
     """Happy-path test for the I2V endpoint end-to-end."""
 
     async def _run_specific_test_async(self):
-        self.base_url = f"http://localhost:{self.service_port}"
         self.poll_timeout = self.targets.get(
             "poll_timeout", DEFAULT_POLL_TIMEOUT_SECONDS
         )

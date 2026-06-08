@@ -149,8 +149,8 @@ def run_prefix_cache(
     driver.prepare_trace_analyses(runs)
 
     server = ServerConnection(
-        base_url="http://localhost",
-        service_port=ctx.service_port,
+        base_url=ctx.server_host,
+        service_port=ctx.server_port,
         model=model_repo,
         tokenizer=model_repo,
         auth_token=auth_token,

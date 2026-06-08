@@ -35,7 +35,7 @@ class EmbeddingLoadTest(BaseTest):
     HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/embeddings"
+        self.url = f"{self.base_url}/v1/embeddings"
         logger.info(self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds

@@ -50,8 +50,8 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
 
 def _server_connection(ctx: MediaContext) -> ServerConnection:
     return ServerConnection(
-        base_url="http://127.0.0.1",
-        service_port=ctx.service_port,
+        base_url=ctx.server_host,
+        service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
     )
 
@@ -62,7 +62,7 @@ def _driver_context(ctx: MediaContext) -> DriverContext:
 
 
 def _configure_openai_env(ctx: MediaContext) -> None:
-    base_url = f"http://127.0.0.1:{ctx.service_port}/v1"
+    base_url = f"{ctx.base_url}/v1"
     os.environ.setdefault("OPENAI_API_KEY", os.getenv("API_KEY", "EMPTY"))
     os.environ.setdefault("OPENAI_BASE_URL", base_url)
     os.environ.setdefault("OPENAI_API_BASE", base_url)
@@ -72,7 +72,7 @@ def _configure_openai_env(ctx: MediaContext) -> None:
 def _require_openai_server(ctx: MediaContext) -> None:
     """Check the OpenAI-compatible server path used by agentic harnesses."""
 
-    url = f"http://127.0.0.1:{ctx.service_port}/v1/models"
+    url = f"{ctx.base_url}/v1/models"
     try:
         with urlopen(url, timeout=30) as response:
             if response.status != 200:
