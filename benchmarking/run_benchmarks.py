@@ -209,8 +209,15 @@ def build_benchmark_command(
     # only truncate prompts for text-only tasks; VLMs interleave vision tokens
     # in the prompt and truncation can drop them, causing 400s at the preprocessor
     if params.task_type == "text":
+        # Pin output length via max_tokens in the request body. --random-output-len
+        # isn't always enforced as a hard cap server-side (the forge OpenAI-compat
+        # server ignores it), so requests can run unbounded -- Qwen3-32B then emits
+        # ~1000+ reasoning tokens for osl=128 and blows the 6h CI cap. max_tokens in
+        # the body is honored.
         cmd.extend([
-            "--extra-body", json.dumps({"truncate_prompt_tokens": str(isl)}),
+            "--extra-body", json.dumps(
+                {"truncate_prompt_tokens": str(isl), "max_tokens": int(osl)}
+            ),
         ])
 
     if params.task_type == "vlm":
