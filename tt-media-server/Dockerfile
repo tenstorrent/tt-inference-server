@@ -148,7 +148,8 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 # imported from embedded Python need to exist there as well as in python_env.
 RUN uv pip install --no-cache-dir --python /opt/venv/bin/python3 \
     "transformers==4.55.0" \
-    "peft==0.18.1"
+    "peft==0.18.1" \
+    "${TT_METAL_HOME}"
 
 # Install tt-vllm-plugin
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
