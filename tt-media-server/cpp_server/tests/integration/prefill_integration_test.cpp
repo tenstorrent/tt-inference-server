@@ -466,15 +466,6 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
         << "Turn " << turn
         << ": unexpected ALLOCATE — prefix cache should have HIT";
 
-    // If an unexpected ALLOCATE appeared, respond so the server doesn't hang.
-    if (gotAlloc) {
-      tt::domain::ManageMemoryResult memRes{};
-      memRes.taskId = spuriousAlloc.taskId;
-      memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
-      memRes.slotId = turn;
-      server->memoryResultQueue().push(memRes);
-    }
-
     // Worker processes the continuation.
     auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "Turn " << turn << ": no Sequence";
@@ -495,6 +486,274 @@ TEST_F(PrefillIntegrationTest, MultiTurn_SubsequentRequestsAreContinuations) {
   }
 
   server->setMemoryAutoRespond(true);
+}
+
+// Validates that a slot copy is triggered when the best-matching session is
+// in-flight (busy). The flow:
+//   1. Request A seeds a new session (ALLOCATE, registers prefix hashes).
+//   2. Request B is a continuation of A → HITs the prefix cache, session is
+//      now IN_FLIGHT.
+//   3. While B is still in-flight, request C arrives with the same prefix →
+//      the prefix cache finds A's session but it's busy → falls through to
+//      ALLOCATE with slotIdToCopyFrom pointing to A's slot.
+//   4. After C completes, request D arrives with the same prefix as C →
+//      should HIT C's newly registered session (confirms prefix hashes were
+//      propagated to the new session created by slot copy).
+TEST_F(PrefillIntegrationTest, SlotCopy_TriggeredWhenSessionInFlight) {
+  setenv("MIN_TOKENS_TO_COPY", "32", 1);
+  server->setMemoryAutoRespond(false);
+
+  // Track prefillSlotIds across requests to verify session reuse.
+  uint32_t prefillSlotA = 0;
+  uint32_t prefillSlotB = 0;
+  uint32_t prefillSlotC = 0;
+  uint32_t prefillSlotD = 0;
+
+  // A long prefix (>= 2 blocks of 32 tokens each = 64+ tokens).
+  const std::vector<int64_t> baseTokens = [] {
+    std::vector<int64_t> t;
+    for (int i = 1; i <= 96; ++i) t.push_back(i * 100);
+    return t;
+  }();
+
+  // Registration hashes for 3 blocks (first block + 2 remaining).
+  const std::vector<uint64_t> seedHashes = {2001, 2002, 2003};
+
+  // --- Request A: seed the session (ALLOCATE) ---
+  {
+    const uint32_t taskId = 99200;
+    tt::sockets::PrefillRequestMessage req(taskId);
+    req.token_ids = baseTokens;  // 96 tokens = 3 blocks
+    req.max_tokens = 10;
+    req.slot_id = 0;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    req.registration_hashes = seedHashes;
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Request A: failed to send";
+
+    // Expect ALLOCATE (prefix cache MISS).
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received) << "Request A: expected ALLOCATE";
+    EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    EXPECT_FALSE(memReq.slotIdToCopyFrom.has_value())
+        << "Request A: first allocation should NOT have slotIdToCopyFrom";
+
+    // Respond to ALLOCATE: assign slot 0.
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 0;
+    server->memoryResultQueue().push(memRes);
+
+    // Worker processes request A.
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request A: no Sequence";
+    EXPECT_FALSE(seq->isContinuation())
+        << "Request A: must not be continuation";
+    prefillSlotA = seq->getPrefillKVCacheSlot();
+
+    // Complete request A so the session is registered with its prefix hashes.
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(42, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request A: no PrefillResult";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Request B: continuation that keeps the session IN_FLIGHT ---
+  // Same prefix hashes + one more block → HITs A's session.
+  uint32_t seqBTaskId = 0;  // Saved for cleanup at the end.
+  const uint32_t taskIdB = 99201;
+  {
+    // Extend the prompt by one block (32 tokens).
+    std::vector<int64_t> tokensB = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensB.push_back(10000 + i * 100);
+
+    tt::sockets::PrefillRequestMessage req(taskIdB);
+    req.token_ids = tokensB;  // 128 tokens = 4 blocks
+    req.max_tokens = 10;
+    req.slot_id = 0;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    req.registration_hashes = {2001, 2002, 2003, 2004};  // 4 block hashes
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Request B: failed to send";
+
+    // B should NOT trigger an ALLOCATE (prefix cache HIT).
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    tt::domain::ManageMemoryTask spurious{};
+    EXPECT_FALSE(server->memoryRequestQueue().tryPop(spurious))
+        << "Request B: unexpected ALLOCATE — should HIT the prefix cache";
+
+    // Worker processes request B (continuation).
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request B: no Sequence";
+    EXPECT_TRUE(seq->isContinuation())
+        << "Request B: must be a continuation (prefix cache HIT)";
+    seqBTaskId = seq->taskId;
+    prefillSlotB = seq->getPrefillKVCacheSlot();
+
+    // DON'T complete request B — keep the session IN_FLIGHT.
+  }
+
+  // --- Request C: same prefix, session is busy → slot copy ---
+  const uint32_t taskIdC = 99202;
+  {
+    // Same base tokens + different extension → same prefix but different tail.
+    std::vector<int64_t> tokensC = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensC.push_back(20000 + i * 100);
+
+    tt::sockets::PrefillRequestMessage req(taskIdC);
+    req.token_ids = tokensC;  // 128 tokens = 4 blocks
+    req.max_tokens = 10;
+    req.slot_id = 1;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    // Same seed hashes (3 blocks match A's registered session) + one more.
+    req.registration_hashes = {2001, 2002, 2003, 2005};
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Request C: failed to send";
+
+    // Session is IN_FLIGHT (B holds it), so C falls through to ALLOCATE.
+    // The ALLOCATE should have slotIdToCopyFrom = slot 0 (A's slot).
+    tt::domain::ManageMemoryTask memReq{};
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+    bool received = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (server->memoryRequestQueue().tryPop(memReq)) {
+        received = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(received)
+        << "Request C: expected ALLOCATE (session is in-flight)";
+    EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    ASSERT_TRUE(memReq.slotIdToCopyFrom.has_value())
+        << "Request C: ALLOCATE should have slotIdToCopyFrom (slot copy)";
+    EXPECT_EQ(*memReq.slotIdToCopyFrom, 0u)
+        << "Request C: slotIdToCopyFrom should be slot 0 (request A's slot)";
+
+    // Respond to ALLOCATE: assign slot 1.
+    tt::domain::ManageMemoryResult memRes{};
+    memRes.taskId = memReq.taskId;
+    memRes.status = tt::domain::ManageMemoryStatus::SUCCESS;
+    memRes.slotId = 1;
+    server->memoryResultQueue().push(memRes);
+
+    // The sequence for C should be flagged as a continuation (slot copy).
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request C: no Sequence";
+    EXPECT_TRUE(seq->isContinuation())
+        << "Request C: must be a continuation (slot copy)";
+    ASSERT_TRUE(seq->getKVPositionId().has_value())
+        << "Request C: slot copy should set kv_position_id";
+    prefillSlotC = seq->getPrefillKVCacheSlot();
+
+    // Complete request C.
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(99, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request C: no PrefillResult";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Request D: follow-up to C → should HIT C's new session ---
+  // This confirms that C's session was registered with its prefix hashes in
+  // the prefix cache (slot copy propagates hashes to the newly created
+  // session).
+  {
+    const uint32_t taskIdD = 99203;
+    // Same tokens as C + one more block → extends C's prefix.
+    std::vector<int64_t> tokensD = baseTokens;
+    for (int i = 1; i <= 32; ++i) tokensD.push_back(20000 + i * 100);
+    for (int i = 1; i <= 32; ++i) tokensD.push_back(30000 + i * 100);
+
+    tt::sockets::PrefillRequestMessage req(taskIdD);
+    req.token_ids = tokensD;  // 160 tokens = 5 blocks
+    req.max_tokens = 10;
+    req.slot_id = 1;
+    req.temperature = 0.7f;
+    req.top_p = 0.9f;
+    // Hashes: first 4 match C's registered hashes, plus one new.
+    req.registration_hashes = {2001, 2002, 2003, 2005, 2006};
+
+    bool sent = mockDecode->send("prefill_request", req);
+    ASSERT_TRUE(sent) << "Request D: failed to send";
+
+    // D should NOT trigger an ALLOCATE (prefix cache HIT on C's session).
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    tt::domain::ManageMemoryTask spurious{};
+    EXPECT_FALSE(server->memoryRequestQueue().tryPop(spurious))
+        << "Request D: unexpected ALLOCATE — should HIT C's session "
+           "(prefix hashes were registered on slot copy)";
+
+    // Worker processes D (continuation).
+    auto seq = server->taskQueue().receive();
+    ASSERT_NE(seq, nullptr) << "Request D: no Sequence";
+    EXPECT_TRUE(seq->isContinuation())
+        << "Request D: must be a continuation (HIT on C's session)";
+    EXPECT_EQ(seq->getKVCacheSlot(), 1u)
+        << "Request D: should reuse slot 1 from request C";
+    EXPECT_LT(seq->getNumPromptTokens(), tokensD.size())
+        << "Request D: should send delta, not full prompt";
+    prefillSlotD = seq->getPrefillKVCacheSlot();
+
+    // Complete request D.
+    tt::test::WorkerResponse(seq->taskId)
+        .tokenWithFlags(101, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request D: no PrefillResult";
+    EXPECT_FALSE(result->error);
+  }
+
+  // --- Verify prefillSlotId consistency across request pairs ---
+  EXPECT_EQ(prefillSlotA, prefillSlotB)
+      << "Requests A and B must share the same prefillSlotId (same session)";
+  EXPECT_EQ(prefillSlotC, prefillSlotD)
+      << "Requests C and D must share the same prefillSlotId (slot copy "
+         "session)";
+  EXPECT_NE(prefillSlotA, prefillSlotC)
+      << "A/B and C/D must use different prefillSlotIds (different sessions)";
+
+  // --- Cleanup: complete request B so the test suite can proceed ---
+  {
+    tt::test::WorkerResponse(seqBTaskId)
+        .tokenWithFlags(50, tt::ipc::SharedToken::FLAG_FINAL)
+        .sendTo(server->resultQueue());
+
+    // Drain the PrefillResult for B.
+    auto result = mockDecode->receive<tt::sockets::PrefillResultMessage>(
+        "prefill_result", std::chrono::milliseconds(5000));
+    ASSERT_TRUE(result.has_value()) << "Request B cleanup: no PrefillResult";
+  }
+
+  server->setMemoryAutoRespond(true);
+  unsetenv("MIN_TOKENS_TO_COPY");
 }
 
 // ---------------------------------------------------------------------------
