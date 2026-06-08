@@ -42,7 +42,8 @@ LLMRequest makeRequest(uint32_t numTokens) {
 
 }  // namespace
 
-// Matched tokens are trimmed exactly; an already-aligned remainder is untouched.
+// Matched tokens are trimmed exactly; an already-aligned remainder is
+// untouched.
 TEST(ApplyDeltaPrompt, RemainderAlreadyAligned) {
   // 128 total tokens, 96 matched → remainder = 32
   auto req = makeRequest(128);
