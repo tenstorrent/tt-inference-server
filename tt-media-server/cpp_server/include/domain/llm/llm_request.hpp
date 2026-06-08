@@ -133,7 +133,7 @@ struct LLMRequest : BaseRequest {
 
   // Number of tokens already in the decode-side KV cache that the prefill
   // prefill should not send this part of KV.
-  int number_of_decode_skip_tokens = 0;
+  int decode_position_id = 0;
 
   std::optional<bool> disaggregation_override;
 

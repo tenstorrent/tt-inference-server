@@ -153,8 +153,7 @@ void DisaggregationService::setupSocketHandlers() {
                                                     message.token_ids.end());
           auto slotId = message.slot_id;
           request->slotId = slotId;
-          request->number_of_decode_skip_tokens =
-              message.number_of_decode_skip_tokens;
+          request->decode_position_id = message.decode_position_id;
 
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
@@ -170,7 +169,7 @@ void DisaggregationService::setupSocketHandlers() {
                 // Cached (reused) prompt tokens = the leading prefix that did
                 // NOT need a fresh prefill. Two sources describe that same
                 // prefix; take the larger:
-                //   - decode_skip_tokens: the prefix the decode node already
+                //   - decode_position_id: the prefix the decode node already
                 //     holds in its KV from earlier turns. The decode node does
                 //     the multi-turn prefix match and ships the full prompt
                 //     plus this skip count (it does not trim itself); the
@@ -183,7 +182,7 @@ void DisaggregationService::setupSocketHandlers() {
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
                 const int cachedTokens =
-                    std::max(prefillTrim, message.number_of_decode_skip_tokens);
+                    std::max(prefillTrim, message.decode_position_id);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
@@ -439,7 +438,7 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
-    int decodeSkipTokens = request.kv_position_id.has_value()
+    int decodePositionId = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
 
@@ -447,7 +446,7 @@ void DisaggregationService::handleStreamingRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
         slotId, tt::utils::mapper::mapSamplingParams(request),
-        decodeSkipTokens);
+        decodePositionId);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);
