@@ -288,42 +288,27 @@ void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
     return;
   }
 
-  // The remaining (unmatched) prompt tokens that will be prefilled must be
-  // aligned to 32 so the prefill kernel can operate on full tiles.  If the
-  // remainder isn't divisible by 32, we pull back some matched tokens into
-  // the delta to pad the remainder up to the next multiple of 32.
-  constexpr uint32_t kAlignment = 32;
-  const uint32_t totalTokens = static_cast<uint32_t>(tokens.size());
-  const uint32_t remainder = totalTokens - matchedTokens;
-  const uint32_t alignedRemainder =
-      ((remainder + kAlignment - 1) / kAlignment) * kAlignment;
-
-  // How many extra tokens we need to pull back from the matched prefix.
-  const uint32_t pullBack = alignedRemainder - remainder;
-  const uint32_t effectiveSkip =
-      (pullBack <= matchedTokens) ? (matchedTokens - pullBack) : 0;
-
-  if (effectiveSkip == 0) {
-    TT_LOG_DEBUG(
-        "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-        "remainder={} — cannot align, full prefill will run",
-        matchedTokens, remainder);
-    return;
-  }
-
+  // `matchedTokens` is always a multiple of 32 because prefix-cache blocks are
+  // 32 tokens wide, so trimming exactly `matchedTokens` leaves the resumed
+  // prefill starting on a tile boundary — it never writes into an existing
+  // partial tile. We send the whole remaining suffix as-is; any *trailing*
+  // partial tile is fine for prefill (only writing into a partial tile at the
+  // start would corrupt previously-written KV, which the tile alignment of
+  // `matchedTokens` guarantees against). No 32-rounding / pull-back of matched
+  // tokens is needed.
   TT_LOG_DEBUG(
       "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-      "effectiveSkip={} pullBack={} alignedRemainder={}",
-      matchedTokens, effectiveSkip, pullBack, alignedRemainder);
+      "remainder={}",
+      matchedTokens, static_cast<uint32_t>(tokens.size()) - matchedTokens);
 
-  // Remove the first `effectiveSkip` tokens — they are already in KV cache.
+  // Remove the first `matchedTokens` tokens — they are already in KV cache.
   tokens.erase(tokens.begin(),
-               tokens.begin() + static_cast<ptrdiff_t>(effectiveSkip));
+               tokens.begin() + static_cast<ptrdiff_t>(matchedTokens));
   req.prompt_tokens_count = static_cast<int>(tokens.size());
 
   // kv_position_id points to the last valid KV cache position (0-indexed),
   // which is one less than the number of tokens we're reusing.
-  req.kv_position_id = effectiveSkip - 1;
+  req.kv_position_id = matchedTokens - 1;
 }
 
 void DisaggregationService::resolvePrefillSession(
