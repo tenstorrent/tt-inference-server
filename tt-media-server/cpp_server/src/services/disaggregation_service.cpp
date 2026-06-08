@@ -242,11 +242,8 @@ void DisaggregationService::setupSocketHandlers() {
                       // un-evictable sessions and allocation eventually fails.
                       // Releasing to IDLE-but-cached also lets the next turn's
                       // prefix cache match it. clearInFlight() is idempotent.
-                      if (!prefillSessionId.empty()) {
-                        if (auto* s =
-                                sessionManager->getSession(prefillSessionId)) {
-                          s->clearInFlight();
-                        }
+                      if (!prefillSessionId.empty() && sessionManager) {
+                        sessionManager->releaseInFlight(prefillSessionId);
                       }
                     });
               },
@@ -356,6 +353,7 @@ void DisaggregationService::resolvePrefillSession(
     // Record the acquired session so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
+    request->continuation = true;
     applyDeltaPrompt(*request, acquired->numberOfMatchedTokens);
     sessionManager->registerPrefixHash(acquired->sessionId, blockInfos);
     onResolved();
