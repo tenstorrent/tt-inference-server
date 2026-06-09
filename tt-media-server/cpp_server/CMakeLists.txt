@@ -375,9 +375,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
-    src/runtime/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
-    src/runtime/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
-    src/runtime/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/runtime/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
     src/services/json_tool_call_parser.cpp
@@ -389,7 +386,8 @@ set(LLM_RUNNER_LIB_SOURCES
 # Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runtime/runners/blaze_runner/blaze_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_decode_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_prefill_runner.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -485,13 +483,23 @@ target_include_directories(llm_runner_test PRIVATE
 )
 
 if(ENABLE_BLAZE)
-    add_executable(blaze_runner_test
-        tests/blaze_runner_test.cpp
+    add_executable(blaze_decode_runner_test
+        tests/blaze_decode_runner_test.cpp
         src/runtime/worker/single_process_worker_metrics.cpp
         src/runtime/worker/worker_metrics_shm.cpp
     )
-    target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-    target_include_directories(blaze_runner_test PRIVATE
+    target_link_libraries(blaze_decode_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_decode_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(blaze_prefill_runner_test
+        tests/blaze_prefill_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_prefill_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_prefill_runner_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 endif()
@@ -842,7 +850,8 @@ set_tests_properties(MainIntegrationTest ToolCallingIntegrationTest PrefillInteg
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 if(ENABLE_BLAZE)
-    gtest_discover_tests(blaze_runner_test)
+    gtest_discover_tests(blaze_decode_runner_test)
+    gtest_discover_tests(blaze_prefill_runner_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
