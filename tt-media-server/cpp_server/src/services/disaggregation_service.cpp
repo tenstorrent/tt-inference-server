@@ -167,27 +167,22 @@ void DisaggregationService::setupSocketHandlers() {
                 const size_t fullPromptTokens = message.token_ids.size();
                 const size_t trimmedPromptTokens =
                     std::get<std::vector<int>>(request->prompt).size();
-                // Cached (reused) prompt tokens = the leading prefix that did
-                // NOT need a fresh prefill. Two sources describe that same
-                // prefix; take the larger:
-                //   - decode_skip_tokens: the prompt prefix the decode node
-                //     already holds in its KV from earlier turns. The decode
-                //     node does the multi-turn prefix match and ships the full
-                //     prompt plus this skip count (it does not trim itself);
-                //     the prefill runner honors it. This is the dominant source
-                //     in chat. We use decode_skip_tokens (not
-                //     decode_position_id) because it excludes the accumulated
-                //     think tokens folded into kv_position_id — those occupy KV
-                //     slots but are not prompt tokens, so counting them would
-                //     inflate cached_tokens beyond prompt_tokens.
-                //   - prefill-side trim (fullPrompt - delta): when the prefill
-                //     server independently hits its own prefix cache.
-                const int prefillTrim = static_cast<int>(
+                // Cached (reused) prompt tokens = the leading prefix this
+                // prefill did NOT recompute = what resolvePrefillSession
+                // trimmed off its own prefix-cache hit (fullPrompt - remaining
+                // delta).
+                //
+                // Only the prefill-side trim counts: the prefill runner trims
+                // and recomputes purely by its own prefix match, so any prefix
+                // the decode node reports (decode_skip_tokens) but that prefill
+                // does not have gets recomputed here — it is not cached.
+                // Folding decode_skip_tokens in (e.g. via max) would
+                // over-report cached_tokens by exactly the tokens prefill
+                // re-prefilled.
+                const int cachedTokens = static_cast<int>(
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
-                const int cachedTokens =
-                    std::max(prefillTrim, message.decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
