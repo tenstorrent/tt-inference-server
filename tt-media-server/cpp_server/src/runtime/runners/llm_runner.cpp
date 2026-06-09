@@ -30,10 +30,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     : config(config), resultQueue(resultQueue), cancelQueue(cancelQueue) {
   scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
-  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
-    memoryManager = std::make_unique<services::MemoryManager>();
-    memoryThread = std::thread([this] { memoryLoop(); });
-  }
+  memoryManager = std::make_unique<services::MemoryManager>();
+  memoryThread = std::thread([this] { memoryLoop(); });
 
   try {
     const auto& tok = tt::utils::tokenizers::activeTokenizer();
