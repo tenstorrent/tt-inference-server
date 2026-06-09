@@ -3,6 +3,9 @@
     "build": {
       "dockerfile": "Dockerfile"
     },
+    "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/check-workspace-path.sh\" \"${localWorkspaceFolder}\"",
+    "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+    "workspaceFolder": "${localWorkspaceFolder}",
     "runArgs": [
       "--device=/dev/tenstorrent",
       "-v", "/dev/shm:/dev/shm",
@@ -10,14 +13,14 @@
     ],
     "mounts": [
       "source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind",
-      "source=/data/TT_USER,target=/data/TT_USER,type=bind"
+      "source=${localWorkspaceFolder}/../..,target=${localWorkspaceFolder}/../..,type=bind"
     ],
     "forwardPorts": [8000, 9000],
     "containerEnv": {
-      "TT_METAL_HOME": "/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/tt-metal",
-      "LD_LIBRARY_PATH": "/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/tt-metal/build/lib:/data/TT_USER/tt-inference-server/tt-media-server/cpp_server/tt-llm-engine/build-full:${containerEnv:LD_LIBRARY_PATH}"
+      "TT_METAL_HOME": "${localWorkspaceFolder}/tt-media-server/cpp_server/tt-llm-engine/tt-metal",
+      "LD_LIBRARY_PATH": "${localWorkspaceFolder}/tt-media-server/cpp_server/tt-llm-engine/tt-metal/build/lib:${localWorkspaceFolder}/tt-media-server/cpp_server/build-full:${containerEnv:LD_LIBRARY_PATH}"
     },
-    "postCreateCommand": "cd /data/TT_USER/tt-inference-server/tt-media-server/cpp_server && ./install_dependencies.sh && cd tt-llm-engine && ./setup.sh --all && cd .. && ./build.sh --blaze",
+    "postCreateCommand": "bash .devcontainer/install-dependencies.sh",
     "customizations": {
       "vscode": {
         "extensions": [
