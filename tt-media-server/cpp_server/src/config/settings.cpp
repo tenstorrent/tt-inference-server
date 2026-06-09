@@ -224,9 +224,8 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 }
 
 std::string blazeSocketDescriptorPrefix() {
-  static const std::string cached =
-      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
-                resolveBlazeSocketDescriptorPrefix());
+  static const std::string cached = envString(
+      "BLAZE_SOCKET_DESCRIPTOR_PREFIX", resolveBlazeSocketDescriptorPrefix());
   return cached;
 }
 
