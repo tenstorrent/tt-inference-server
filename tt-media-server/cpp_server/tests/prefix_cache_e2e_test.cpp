@@ -60,7 +60,6 @@ struct TestConfig {
   std::string host = detectDockerGateway();
   uint16_t port = 8080;  // Dynamo frontend default from deploy.sh
   std::string model = "deepseek-ai/DeepSeek-R1-0528";
-  std::string apiKey = "your-secret-key";
   size_t firstBlockSize = tt::config::defaults::KV_CACHE_FIRST_BLOCK_SIZE;
   size_t blockSize = tt::config::defaults::KV_CACHE_BLOCK_SIZE;
 
@@ -69,7 +68,6 @@ struct TestConfig {
     if (const char* h = std::getenv("DYNAMO_HOST")) cfg.host = h;
     if (const char* p = std::getenv("DYNAMO_PORT")) cfg.port = std::stoi(p);
     if (const char* m = std::getenv("DYNAMO_MODEL")) cfg.model = m;
-    if (const char* k = std::getenv("OPENAI_API_KEY")) cfg.apiKey = k;
     if (const char* fb = std::getenv("KV_CACHE_FIRST_BLOCK_SIZE"))
       cfg.firstBlockSize = std::stoul(fb);
     if (const char* bs = std::getenv("KV_CACHE_BLOCK_SIZE"))
@@ -94,13 +92,11 @@ struct ChatResponse {
 };
 
 std::string buildHttpRequest(const std::string& host, uint16_t port,
-                             const std::string& body,
-                             const std::string& apiKey) {
+                             const std::string& body) {
   std::ostringstream oss;
   oss << "POST /v1/chat/completions HTTP/1.1\r\n"
       << "Host: " << host << ":" << port << "\r\n"
       << "Content-Type: application/json\r\n"
-      << "Authorization: Bearer " << apiKey << "\r\n"
       << "Content-Length: " << body.size() << "\r\n"
       << "\r\n"
       << body;
@@ -108,8 +104,7 @@ std::string buildHttpRequest(const std::string& host, uint16_t port,
 }
 
 std::string sendHttpRequest(const std::string& host, uint16_t port,
-                            const std::string& body, const std::string& apiKey,
-                            int timeoutMs = 120000) {
+                            const std::string& body, int timeoutMs = 120000) {
   int sock = ::socket(AF_INET, SOCK_STREAM, 0);
   if (sock < 0) {
     throw std::runtime_error("Failed to create socket");
@@ -135,7 +130,7 @@ std::string sendHttpRequest(const std::string& host, uint16_t port,
                              std::to_string(port));
   }
 
-  std::string request = buildHttpRequest(host, port, body, apiKey);
+  std::string request = buildHttpRequest(host, port, body);
   if (::send(sock, request.c_str(), request.size(), 0) < 0) {
     ::close(sock);
     throw std::runtime_error("Failed to send request");
@@ -269,8 +264,7 @@ ChatResponse sendChat(const TestConfig& cfg,
                       int maxTokens = 32) {
   std::string body = buildChatRequestJson(cfg.model, messages, maxTokens);
   try {
-    std::string rawResponse =
-        sendHttpRequest(cfg.host, cfg.port, body, cfg.apiKey);
+    std::string rawResponse = sendHttpRequest(cfg.host, cfg.port, body);
     return parseStreamingResponse(rawResponse);
   } catch (const std::exception& e) {
     ChatResponse result;

@@ -663,6 +663,9 @@ jobs:
             --package requests
 
       - name: Start cpp_server backend (port 8001)
+        env:
+          KV_CACHE_FIRST_BLOCK_SIZE: '128'
+          KV_CACHE_BLOCK_SIZE: '32'
         run: |
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --label "Dynamo backend"
           cd cpp_server
@@ -707,10 +710,11 @@ jobs:
 
       - name: Run prefix cache E2E tests against Dynamo frontend
         env:
-          OPENAI_API_KEY: 'your-secret-key'
           DYNAMO_HOST: '127.0.0.1'
           DYNAMO_PORT: '8000'
           DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
+          KV_CACHE_FIRST_BLOCK_SIZE: '128'
+          KV_CACHE_BLOCK_SIZE: '32'
         run: |
           cd cpp_server/build
           ./prefix_cache_e2e_test
