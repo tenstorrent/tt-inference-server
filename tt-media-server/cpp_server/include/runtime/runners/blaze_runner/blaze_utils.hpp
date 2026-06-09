@@ -205,7 +205,8 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::InterProcessCounterChannelConfig{
-          .shm_name = "/tt_prefill_layer_acks_" + tt::config::prefillH2DServiceId(),
+          .shm_name =
+              "/tt_prefill_layer_acks_" + tt::config::prefillH2DServiceId(),
           .connect_timeout_ms = 60000,
       };
     case tt::config::ModelRunnerType::MOCK_PIPELINE:

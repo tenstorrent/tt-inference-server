@@ -35,7 +35,8 @@ BlazePrefillRunner::BlazePrefillRunner(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{
-      .layers_per_chunk = static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
+      .layers_per_chunk =
+          static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
       .chunk_size = 5120,
   };
   managerParams.max_users = static_cast<uint32_t>(tt::config::psMaxUsers());
