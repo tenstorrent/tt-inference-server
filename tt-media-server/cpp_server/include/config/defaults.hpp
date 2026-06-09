@@ -67,11 +67,10 @@ constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
-constexpr const char* PREFILL_H2D_SERVICE_ID = "prefill_service";
-constexpr const char* PREFILL_NUM_LAYERS = "61";
+constexpr const char* PREFILL_NUM_LAYERS= "61";
+constexpr const char* PREFILL_CHUNK_SIZE= "5120";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
-constexpr size_t DS_MAX_USERS = 128;
-constexpr size_t PS_MAX_USERS = 128;
+constexpr size_t PM_MAX_USERS = 128;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 /**
  * Max time (ms) the runner may go without producing a model output while at

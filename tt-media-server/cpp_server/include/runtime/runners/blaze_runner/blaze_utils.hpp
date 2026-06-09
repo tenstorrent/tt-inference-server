@@ -191,7 +191,7 @@ inline pl::PrefillPipelineConfig makePrefillPipelineConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::PrefillH2DConfig{
-          .service_id = tt::config::prefillH2DServiceId(),
+          .service_id = tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = tt::config::pmConnectTimeoutMs()};
     case tt::config::ModelRunnerType::MOCK_PIPELINE:
       return pl::PrefillMockConfig{.auto_layer_acks = true};
@@ -205,8 +205,7 @@ inline pl::CounterChannelConfig makePrefillAckChannelConfig(
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
       return pl::InterProcessCounterChannelConfig{
-          .shm_name =
-              "/tt_prefill_layer_acks_" + tt::config::prefillH2DServiceId(),
+          .shm_name = "/tt_prefill_layer_acks_" + tt::config::blazeSocketDescriptorPrefix(),
           .connect_timeout_ms = 60000,
       };
     case tt::config::ModelRunnerType::MOCK_PIPELINE:

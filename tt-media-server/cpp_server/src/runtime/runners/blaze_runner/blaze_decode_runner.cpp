@@ -28,7 +28,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       stopQueue(stopQueue),
-      slotManager(tt::config::dsMaxUsers()),
+      slotManager(tt::config::pmMaxUsers()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO(
       "BlazeDecodeRunner: Constructing DecodeScheduler with SocketConfig...");
@@ -40,7 +40,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
       .think_open_token_id = static_cast<uint32_t>(thinkTokenIds.first),
       .think_close_token_id = static_cast<uint32_t>(thinkTokenIds.second),
   };
-  managerParams.max_users = static_cast<uint32_t>(tt::config::dsMaxUsers());
+  managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   decodeScheduler =
       std::make_unique<ds::DecodeScheduler>(pipelineConfig, managerParams);
   TT_LOG_INFO(
@@ -191,7 +191,7 @@ void BlazeDecodeRunner::step() {
 void BlazeDecodeRunner::drainAndHandleMemoryResponses() {
   ds::SchedulerResponse response;
   size_t drained = 0;
-  size_t maxUsers = tt::config::dsMaxUsers();
+  size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && decodeScheduler->try_pop_response(response)) {
     handleMemoryResponse(response);
     drained++;
@@ -201,7 +201,7 @@ void BlazeDecodeRunner::drainAndHandleMemoryResponses() {
 void BlazeDecodeRunner::drainAndHandleOutputs() {
   ds::OutputMessage output;
   size_t drained = 0;
-  size_t maxUsers = tt::config::dsMaxUsers();
+  size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && decodeScheduler->try_pop_output(output)) {
     handleOutput(output);
     drained++;
@@ -663,7 +663,7 @@ void BlazeDecodeRunner::handleRequest(
     std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
-  assert(slotId < tt::config::dsMaxUsers());
+  assert(slotId < tt::config::pmMaxUsers());
 
   bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {

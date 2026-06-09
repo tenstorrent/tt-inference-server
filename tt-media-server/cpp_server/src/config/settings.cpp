@@ -224,12 +224,8 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
-  return static_cast<size_t>(envUlong("DS_MAX_USERS", defaults::DS_MAX_USERS));
-}
-
-size_t psMaxUsers() {
-  return static_cast<size_t>(envUlong("PS_MAX_USERS", defaults::PS_MAX_USERS));
+size_t pmMaxUsers() {
+  return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
 unsigned warmupTimeoutMs() {
@@ -271,12 +267,12 @@ std::string ttWarmupSignalsQueueName() {
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
-std::string prefillH2DServiceId() {
-  return envString("PREFILL_H2D_SERVICE_ID", defaults::PREFILL_H2D_SERVICE_ID);
-}
-
 std::string prefillNumLayers() {
   return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
+std::string prefillChunkSize() {
+  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {

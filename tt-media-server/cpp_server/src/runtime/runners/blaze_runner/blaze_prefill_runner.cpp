@@ -28,18 +28,17 @@ BlazePrefillRunner::BlazePrefillRunner(
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       stopQueue(stopQueue),
-      slotManager(tt::config::psMaxUsers()),
+      slotManager(tt::config::pmMaxUsers()),
       lastOutputTime(std::chrono::steady_clock::now()),
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO(
       "BlazePrefillRunner: Constructing PrefillScheduler with SocketConfig...");
   auto pipelineConfig = utils::makePrefillPipelineConfig(config);
   ps::SchedulerParams managerParams{
-      .layers_per_chunk =
-          static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
-      .chunk_size = 5120,
+      .layers_per_chunk = static_cast<uint32_t>(std::stoi(tt::config::prefillNumLayers())),
+      .chunk_size = static_cast<uint32_t>(std::stoi(tt::config::prefillChunkSize())),
   };
-  managerParams.max_users = static_cast<uint32_t>(tt::config::psMaxUsers());
+  managerParams.max_users = static_cast<uint32_t>(tt::config::pmMaxUsers());
   auto ackChannelConfig = utils::makePrefillAckChannelConfig(config);
   prefillScheduler = std::make_unique<ps::PrefillScheduler>(
       pipelineConfig, ackChannelConfig, managerParams);
@@ -78,7 +77,7 @@ bool BlazePrefillRunner::warmup() {
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens(5120, 12345);
+  std::vector<int64_t> warmupTokens(std::stoi(tt::config::prefillChunkSize()), 12345);
   uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<tt::domain::llm::Sequence>(
@@ -193,7 +192,7 @@ void BlazePrefillRunner::step() {
 void BlazePrefillRunner::drainAndHandleMemoryResponses() {
   ps::SchedulerResponse response;
   size_t drained = 0;
-  size_t maxUsers = tt::config::psMaxUsers();
+  size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && prefillScheduler->try_pop_response(response)) {
     handleMemoryResponse(response);
     drained++;
@@ -203,7 +202,7 @@ void BlazePrefillRunner::drainAndHandleMemoryResponses() {
 void BlazePrefillRunner::drainAndHandleOutputs() {
   ps::OutputMessage output;
   size_t drained = 0;
-  size_t maxUsers = tt::config::psMaxUsers();
+  size_t maxUsers = tt::config::pmMaxUsers();
   while (drained < maxUsers && prefillScheduler->try_pop_output(output)) {
     handleOutput(output);
     drained++;
@@ -633,7 +632,7 @@ void BlazePrefillRunner::handleRequest(
     std::unique_ptr<tt::domain::llm::Sequence> request) {
   auto slotId = request->getPrefillKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
-  assert(slotId < tt::config::psMaxUsers());
+  assert(slotId < tt::config::pmMaxUsers());
 
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {

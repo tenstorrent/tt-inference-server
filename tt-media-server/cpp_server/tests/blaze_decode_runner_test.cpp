@@ -346,7 +346,7 @@ TEST(BlazeDecodeRunnerIntegrationTest,
   constexpr uint32_t kFirstTaskId = 9000;
   constexpr size_t kRequestedUsers = 128;
   constexpr int kMaxTokensPerUser = 4;
-  const size_t userCount = std::min(kRequestedUsers, tt::config::dsMaxUsers());
+  const size_t userCount = std::min(kRequestedUsers, tt::config::pmMaxUsers());
   ASSERT_GE(userCount, 2u)
       << "Need at least two scheduler users for backpressure coverage";
 

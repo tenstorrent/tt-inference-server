@@ -307,7 +307,7 @@ TEST(BlazePrefillRunnerIntegrationTest,
 
   constexpr uint32_t kFirstTaskId = 9000;
   constexpr size_t kRequestedUsers = 128;
-  const size_t userCount = std::min(kRequestedUsers, tt::config::psMaxUsers());
+  const size_t userCount = std::min(kRequestedUsers, tt::config::pmMaxUsers());
   ASSERT_GE(userCount, 2u)
       << "Need at least two scheduler users for backpressure coverage";
 
