@@ -572,8 +572,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
   // Prepend unique prefix to change the first block hash (prefix cache hashes
   // from the start, so appending at the end doesn't prevent cache hits)
-  std::string uniquePrefix =
-      "[MULTITURN-TEST-" + std::to_string(millis) + "] ";
+  std::string uniquePrefix = "[MULTITURN-TEST-" + std::to_string(millis) + "] ";
 
   // Turn 1
   std::vector<Json::Value> messages = {
