@@ -292,7 +292,7 @@ void InterServerService::setupMessageHandlers() {
       });
 
   socket_manager_.registerHandler<PrefillRegistrationMessage>(
-      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage& msg) {});
+      tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
 
   // Handle incoming prefill results
   socket_manager_.registerHandler<PrefillResultMessage>(
