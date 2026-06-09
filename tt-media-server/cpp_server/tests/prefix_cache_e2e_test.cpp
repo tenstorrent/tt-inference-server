@@ -560,8 +560,9 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   // and prefix cache should hit on the shared history.
   //
   // Turn 1: system + user1 → cached = 0
-  // Turn 2: system + user1 + assistant1 + user2 → cached > 0 (matches turn 1 prefix)
-  // Turn 3: system + user1 + assistant1 + user2 + assistant2 + user3 → cached > turn2
+  // Turn 2: system + user1 + assistant1 + user2 → cached > 0 (matches turn 1
+  // prefix) Turn 3: system + user1 + assistant1 + user2 + assistant2 + user3 →
+  // cached > turn2
 
   std::cout << "\n=== Test: Multi-turn hash creation ===" << std::endl;
 
@@ -648,13 +649,12 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
   // Each conversation has a unique system prompt suffix
   constexpr int kNumConversations = 20;
 
-  std::cout << "  Creating " << kNumConversations
-            << " unique conversations..." << std::endl;
+  std::cout << "  Creating " << kNumConversations << " unique conversations..."
+            << std::endl;
 
   for (int i = 0; i < kNumConversations; ++i) {
-    std::string uniqueSuffix =
-        " [eviction-test-" + std::to_string(millis) + "-conv-" +
-        std::to_string(i) + "]";
+    std::string uniqueSuffix = " [eviction-test-" + std::to_string(millis) +
+                               "-conv-" + std::to_string(i) + "]";
 
     std::vector<Json::Value> messages = {
         makeMessage("system", std::string(kSystemPromptCoding) + uniqueSuffix),
