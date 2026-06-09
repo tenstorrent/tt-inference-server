@@ -26,6 +26,8 @@ from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
+_V2_DIR_NAME = "tt-inference-server-v2"
+
 _V2_WORKFLOW_NAMES = {
     WorkflowType.BENCHMARKS: "benchmarks",
     WorkflowType.EVALS: "evals",
@@ -69,9 +71,7 @@ def can_route_to_v2(model_spec, runtime_config) -> bool:
     # Agentic evals and the prefix-cache benchmark are v2-only features with no
     # v1 driver. They route to v2 for ANY model (not just the image/audio set in
     # _V2_ROUTED_MODELS), launched through their dedicated venv launchers.
-    if wf == WorkflowType.AGENTIC:
-        return True
-    if _is_prefix_cache_run(wf, runtime_config):
+    if wf == WorkflowType.AGENTIC or _is_prefix_cache_run(wf, runtime_config):
         return True
     if not is_v2_routed_model(model_spec):
         return False
@@ -88,7 +88,7 @@ def run_v2_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowRes
         )
 
     repo_root = Path(__file__).resolve().parent.parent
-    v2_dir = repo_root / "tt-inference-server-v2"
+    v2_dir = repo_root / _V2_DIR_NAME
 
     output_dir = get_default_workflow_root_log_dir() / "reports_output" / v2_workflow
     ensure_readwriteable_dir(output_dir)
