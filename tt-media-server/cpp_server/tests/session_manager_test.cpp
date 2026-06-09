@@ -10,8 +10,10 @@
 #include <future>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "domain/session.hpp"
+#include "utils/conversation_hasher.hpp"
 
 namespace {
 
@@ -55,6 +57,25 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
             std::make_exception_ptr(std::runtime_error(std::string(err))));
       },
       loop, {}, slotId);
+
+  return future.get();
+}
+
+std::string createSessionWithSlot(
+    tt::services::SessionManager& manager, trantor::EventLoop* loop,
+    uint32_t slotId, const std::vector<tt::utils::BlockHashInfo>& blockInfos) {
+  std::promise<std::string> promise;
+  auto future = promise.get_future();
+
+  manager.createSession(
+      [&promise](const tt::domain::Session& s) {
+        promise.set_value(s.getSessionId());
+      },
+      [&promise](std::string_view err) {
+        promise.set_exception(
+            std::make_exception_ptr(std::runtime_error(std::string(err))));
+      },
+      loop, blockInfos, slotId);
 
   return future.get();
 }
@@ -438,6 +459,259 @@ TEST(SessionManagerConcurrency,
     EXPECT_LE(cancelCount.load(), 1) << "iteration " << i;
     EXPECT_EQ(manager.getActiveSessionCount(), 0u) << "iteration " << i;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Response-id continuation tests
+//
+// These cover the OpenAI Responses API routing path: initResponseId stores
+// a session under a response id for the first time, registerResponseId re-keys
+// from one id to another, and tryAcquireByResponseId resolves that id back to
+// the session/slot. The prefix delta is derived from block matching
+// (computeMatchedTokens), not stored in the response-id index.
+// ---------------------------------------------------------------------------
+
+TEST(SessionManagerResponseId, RegisterThenAcquire_ReturnsSessionAndSlot) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 50u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+
+  auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(acquired.has_value());
+  EXPECT_EQ(acquired->sessionId, sessionId);
+  EXPECT_EQ(acquired->slotId, 50u);
+
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  session->clearInFlight();
+}
+
+TEST(SessionManagerResponseId, AcquireUnknownId_ReturnsNullopt) {
+  tt::services::SessionManager manager;
+  EXPECT_FALSE(
+      manager.tryAcquireByResponseId("no-such-id", nullptr).has_value());
+}
+
+TEST(SessionManagerResponseId, AcquireEmptyId_ReturnsNullopt) {
+  tt::services::SessionManager manager;
+  EXPECT_FALSE(manager.tryAcquireByResponseId("", nullptr).has_value());
+}
+
+TEST(SessionManagerResponseId, RegisterEmptyId_IsNoOp) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 51u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "");
+
+  auto session = manager.getSession(sessionId);
+  ASSERT_TRUE(session);
+  EXPECT_TRUE(session->getResponseId().empty());
+}
+
+TEST(SessionManagerResponseId, ReKey_MovesSessionToNewId) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 52u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+  manager.registerResponseId("resp-1", "resp-2");
+
+  // The previous turn's id no longer resolves once re-keyed.
+  EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
+
+  // The new id resolves.
+  auto acquired = manager.tryAcquireByResponseId("resp-2", nullptr);
+  ASSERT_TRUE(acquired.has_value());
+  EXPECT_EQ(acquired->sessionId, sessionId);
+
+  manager.getSession(sessionId)->clearInFlight();
+}
+
+TEST(SessionManagerResponseId, AcquireMarksInFlight_SecondAcquireThrows) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 53u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+
+  auto acquired = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(acquired.has_value());
+
+  // The only session under this id is now in-flight → maps to HTTP 429.
+  EXPECT_THROW(manager.tryAcquireByResponseId("resp-1", nullptr),
+               tt::services::SessionInFlightException);
+
+  manager.getSession(sessionId)->clearInFlight();
+}
+
+TEST(SessionManagerResponseId, AcquireAfterRelease_Succeeds) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 54u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+
+  auto first = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(first.has_value());
+  manager.getSession(sessionId)->clearInFlight();
+
+  auto second = manager.tryAcquireByResponseId("resp-1", nullptr);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->sessionId, sessionId);
+  manager.getSession(sessionId)->clearInFlight();
+}
+
+TEST(SessionManagerResponseId, CloseSession_RemovesFromResponseIdIndex) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 56u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+  ASSERT_EQ(manager.closeSession(sessionId),
+            tt::services::CloseSessionResult::SUCCESS);
+
+  // The index entry must be gone after the session is closed.
+  EXPECT_FALSE(manager.tryAcquireByResponseId("resp-1", nullptr).has_value());
+}
+
+TEST(SessionManagerResponseId, CloseWhileAcquired_FiresCancelFn) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 57u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "resp-1");
+
+  std::atomic<bool> cancelCalled{false};
+  auto acquired = manager.tryAcquireByResponseId(
+      "resp-1", [&cancelCalled]() { cancelCalled = true; });
+  ASSERT_TRUE(acquired.has_value());
+
+  // The cancel fn registered atomically with the in-flight mark must fire.
+  manager.closeSession(sessionId);
+  EXPECT_TRUE(cancelCalled.load());
+  EXPECT_FALSE(manager.getSession(sessionId));
+}
+
+TEST(SessionManagerResponseId, TwoTurnContinuation_ReKeysAcrossIds) {
+  // Simulates the two-turn response-id flow: turn 1 registers the session
+  // under id "r1"; turn 2 acquires by "r1", re-keys under "r2" for turn 3.
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 58u);
+  ASSERT_FALSE(sessionId.empty());
+
+  manager.initResponseId(sessionId, "r1");
+
+  // Turn 2: arrives with previous_response_id="r1".
+  auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
+  ASSERT_TRUE(t2.has_value());
+  EXPECT_EQ(t2->sessionId, sessionId);
+  // Re-key under turn 2's own id.
+  manager.registerResponseId("r1", "r2");
+  manager.getSession(sessionId)->clearInFlight();
+
+  // Turn 3: arrives with previous_response_id="r2".
+  auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
+  ASSERT_TRUE(t3.has_value());
+  EXPECT_EQ(t3->sessionId, sessionId);
+  EXPECT_FALSE(manager.tryAcquireByResponseId("r1", nullptr).has_value());
+  manager.getSession(sessionId)->clearInFlight();
+}
+
+TEST(SessionManagerResponseId,
+     PrefixCacheIndex_HitAndUpdated_ViaResponseIdPath) {
+  // Verifies that the prefix cache index is populated when a session is
+  // created with block infos, remains queryable after acquisition through the
+  // response-id path, and reflects updated blocks after re-registration.
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  // --- Turn 1: create session with 3 initial blocks ---
+  std::vector<tt::utils::BlockHashInfo> turn1Blocks = {
+      {100, 0},  // key block
+      {200, 0},  // remaining block 1
+      {300, 0},  // remaining block 2
+  };
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 60u, turn1Blocks);
+  ASSERT_FALSE(sessionId.empty());
+
+  // Prefix index should reflect all 3 blocks for this session.
+  auto [matchedTokens1, thinkTokens1] =
+      manager.computeMatchedTokens(sessionId, turn1Blocks);
+  EXPECT_GT(matchedTokens1, 0u)
+      << "prefixCacheIndex should have been populated by createSession";
+
+  // Register the session under response id "r1" and prefix hash.
+  manager.initResponseId(sessionId, "r1");
+
+  manager.registerPrefixHash(sessionId, turn1Blocks);
+  // --- Turn 2: arrive via previous_response_id="r1" ---
+  auto t2 = manager.tryAcquireByResponseId("r1", nullptr);
+  ASSERT_TRUE(t2.has_value());
+  EXPECT_EQ(t2->sessionId, sessionId);
+  EXPECT_EQ(t2->slotId, 60u);
+
+  // While acquired through the response-id path, the prefix cache index
+  // should still be intact and report the same match.
+  auto [matchedTokens2, thinkTokens2] =
+      manager.computeMatchedTokens(sessionId, turn1Blocks);
+  EXPECT_EQ(matchedTokens2, matchedTokens1)
+      << "prefixCacheIndex should still be queryable after response-id acquire";
+
+  // Simulate turn 2 producing more tokens: update the prefix hash with an
+  // extended block sequence (original 3 blocks + 1 new block).
+  std::vector<tt::utils::BlockHashInfo> turn2Blocks = {
+      {100, 0},  // same key block
+      {200, 0},  // same remaining block 1
+      {300, 0},  // same remaining block 2
+      {400, 0},  // new block from turn 2's output
+  };
+  manager.registerPrefixHash(sessionId, turn2Blocks);
+  manager.registerResponseId("r1", "r2");
+  manager.getSession(sessionId)->clearInFlight();
+
+  // The prefix index should now match all 4 blocks.
+  auto [matchedTokens3, thinkTokens3] =
+      manager.computeMatchedTokens(sessionId, turn2Blocks);
+  EXPECT_GT(matchedTokens3, matchedTokens1)
+      << "prefixCacheIndex should reflect the updated (longer) block sequence";
+
+  // The original 3-block query should still match its 3 blocks (prefix).
+  auto [matchedTokens4, thinkTokens4] =
+      manager.computeMatchedTokens(sessionId, turn1Blocks);
+  EXPECT_EQ(matchedTokens4, matchedTokens1)
+      << "shorter prefix query should still match the original blocks";
+
+  // --- Turn 3: arrive via previous_response_id="r2" ---
+  auto t3 = manager.tryAcquireByResponseId("r2", nullptr);
+  ASSERT_TRUE(t3.has_value());
+  EXPECT_EQ(t3->sessionId, sessionId);
+
+  // Prefix index should still be consistent after the second response-id hop.
+  auto [matchedTokens5, thinkTokens5] =
+      manager.computeMatchedTokens(sessionId, turn2Blocks);
+  EXPECT_EQ(matchedTokens5, matchedTokens3)
+      << "prefixCacheIndex should survive re-keying across response ids";
+
+  manager.getSession(sessionId)->clearInFlight();
 }
 
 }  // namespace
