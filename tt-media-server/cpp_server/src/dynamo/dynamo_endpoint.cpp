@@ -71,6 +71,14 @@ std::shared_ptr<tt::domain::llm::LLMRequest> buildLLMRequest(
   if (dyn.repetition_penalty.has_value())
     req->repetition_penalty = *dyn.repetition_penalty;
 
+  const std::string prevResponseId =
+      dyn.raw.get("previous_response_id", "").asString();
+  if (!prevResponseId.empty()) req->previousResponseId = prevResponseId;
+
+  std::string currentId = dyn.raw.get("id", "").asString();
+  if (currentId.empty()) currentId = dyn.raw.get("request_id", "").asString();
+  if (!currentId.empty()) req->responseId = currentId;
+
   return req;
 }
 

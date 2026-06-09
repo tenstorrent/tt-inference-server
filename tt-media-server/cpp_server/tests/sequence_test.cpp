@@ -136,6 +136,8 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.setContinuation(true);
   orig.setDisaggregated(true);
   orig.setKVPositionId(17);
+  orig.setDecodePositionId(18);
+  orig.setDecodeSkipTokens(11);
 
   std::ostringstream os;
   orig.serialize(os);
@@ -155,6 +157,8 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored.isDisaggregated(), orig.isDisaggregated());
   ASSERT_TRUE(restored.getKVPositionId().has_value());
   EXPECT_EQ(*restored.getKVPositionId(), *orig.getKVPositionId());
+  EXPECT_EQ(restored.getDecodePositionId(), orig.getDecodePositionId());
+  EXPECT_EQ(restored.getDecodeSkipTokens(), orig.getDecodeSkipTokens());
   EXPECT_EQ(restored.numCachedBlocks(), orig.numCachedBlocks());
 
   const auto& sp = restored.getSamplingParams();
