@@ -94,7 +94,9 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-    if workflow_type == WorkflowType.BENCHMARKS:
+    if workflow_type == WorkflowType.BENCHMARKS and not getattr(
+        args, "prefix_cache", False
+    ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         assert model_spec.model_id in BENCHMARK_CONFIGS, (

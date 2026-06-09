@@ -37,6 +37,10 @@ generated_modules
 *_params.pt
 *.json
 *.jsonl
+# Curated assets shipped with the v2 prefix-cache benchmark need to escape the
+# wildcards above so CI runs can use them out of the box.
+!tt-inference-server-v2/llm_module/prefix_cache/manifest.json
+!tt-inference-server-v2/llm_module/prefix_cache/sample_traces/*.jsonl
 *.pt
 *.tti
 *.txt
@@ -54,6 +58,7 @@ scripts/examples/example_data
 # unignore
 !**/CMakeLists.txt
 !requirements*.txt
+!requirements/*.txt
 !**/uv-overrides.txt
 !**/tsan_suppressions.txt
 !workflows/model_performance_reference.json

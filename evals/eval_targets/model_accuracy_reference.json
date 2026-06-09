@@ -17,7 +17,7 @@
                     188.162
                 ],
                 "clip_valid_range": [
-                    31.70502465208177,
+                    31.68,
                     32.094664207879916
                 ]
             }
@@ -273,6 +273,18 @@
         },
         "extra_args": {
             "output_type": "pil"
+        }
+    },
+    "Z-Image-Turbo-512x512": {
+        "accuracy": {
+            "5000": {
+                "fid_valid_range": [175.0, 192.0],
+                "clip_valid_range": [30.5, 33.2]
+            },
+            "100": {
+                "fid_valid_range": [175.0, 192.0],
+                "clip_valid_range": [30.5, 33.2]
+            }
         }
     },
     "Wan2.2-I2V-A14B-Diffusers": {

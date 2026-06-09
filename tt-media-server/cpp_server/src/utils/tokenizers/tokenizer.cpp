@@ -63,8 +63,8 @@ Tokenizer::Tokenizer(const std::string& path) {
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
     tok_ = ::tokenizers::Tokenizer::FromBlobJSON(blob);
     specialTokenIds_ = parseSpecialTokenIds(blob);
-  } else if (path.size() >= 7 &&
-             path.compare(path.size() - 7, 7, ".model") == 0) {
+  } else if (path.size() >= 6 &&
+             path.compare(path.size() - 6, 6, ".model") == 0) {
     tok_ = ::tokenizers::Tokenizer::FromBlobSentencePiece(blob);
   } else {
     throw std::runtime_error(
@@ -243,6 +243,7 @@ const StaticTokenizerInfo& deepseekR1Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"deepseek-ai/DeepSeek-R1-0528",
       /*stopTokenIds=*/{1},
+      /*eosTokenId=*/1,
       /*assistantHeaderSequence=*/{128804},
       /*thinkStartTokenId=*/128798,
       /*thinkEndTokenId=*/128799,
@@ -254,6 +255,7 @@ const StaticTokenizerInfo& llama31Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"meta-llama/Llama-3.1-8B-Instruct",
       /*stopTokenIds=*/{128001, 128008, 128009},
+      /*eosTokenId=*/128001,
       /*assistantHeaderSequence=*/{128006, 78191, 128007, 271},
   };
   return kInfo;
@@ -263,7 +265,10 @@ const StaticTokenizerInfo& kimiK26Info() {
   static const StaticTokenizerInfo kInfo{
       /*modelName=*/"moonshotai/Kimi-K2.6",
       /*stopTokenIds=*/{163586},
+      /*eosTokenId=*/163585,
       /*assistantHeaderSequence=*/{163588},
+      /*thinkStartTokenId=*/163606,  // <think>
+      /*thinkEndTokenId=*/163607,    // </think>
   };
   return kInfo;
 }

@@ -81,7 +81,7 @@ size_t ImageService::currentQueueSize() const {
   return inFlight.load(std::memory_order_acquire);
 }
 
-domain::image::ImageResponse ImageService::processRequest(
+domain::image::ImageResponse ImageService::produceResponse(
     domain::ImageGenerateRequest request) {
   struct InFlightGuard {
     std::atomic<size_t>& counter;

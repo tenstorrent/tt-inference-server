@@ -35,6 +35,17 @@ std::string runnerType();
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t numWorkers();
 
+/**
+ * Size of the process-wide ThreadPool that fronts inference dispatch (used by
+ * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
+ * threads for the full inference latency, so this caps the in-flight
+ * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
+ * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
+ * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
+ */
+size_t callbackPoolThreads();
+
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
@@ -90,6 +101,17 @@ bool usePrefillGateway();
  * "<hostname>:<SOCKET_PORT>". From PREFILL_SERVER_ID. */
 std::string prefillServerId();
 
+/**
+ * Role shown in every log line, e.g. "decode", "prefill", "prefill-worker0".
+ * The role is the LLM_MODE (decode/prefill/regular) for the LLM service or the
+ * service name (image/embedding) otherwise; a forked worker subprocess appends
+ * "-worker<index>" so worker lines are distinguishable from the HTTP node.
+ *
+ * @param workerIndex >=0 for a forked worker subprocess; appends
+ *   "-worker<index>" to the role (e.g. "decode-worker0").
+ */
+std::string logInstanceTag(int workerIndex = -1);
+
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
@@ -138,6 +160,14 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::MAX_CONTEXT_LENGTH. */
 size_t maxContextLength();
 
+/** Max input sequence length (prompt tokens) from MAX_ISL. Default:
+ * defaults::MAX_ISL. */
+size_t maxISL();
+
+/** Minimum matched tokens required to justify a slot copy operation.
+ * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
+size_t minTokensToCopy();
+
 /** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_BLOCK_SIZE. */
 size_t kvCacheBlockSize();
@@ -145,6 +175,11 @@ size_t kvCacheBlockSize();
 /** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
  * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
 size_t kvCacheFirstBlockSize();
+
+/** Minimum match percentage for prefix cache hit from
+ * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
+ * Set to 0 to disable threshold check (accept any match). */
+float prefixCacheHitThreshold();
 
 /** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
 bool useFastMode();
@@ -178,9 +213,17 @@ std::string blazeSocketDescriptorPrefix();
  * defaults::PM_CONNECT_TIMEOUT_MS. */
 unsigned pmConnectTimeoutMs();
 
-/** Decode scheduler max users from DS_MAX_USERS. Default:
- * defaults::DS_MAX_USERS. */
-size_t dsMaxUsers();
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Prefill number of layers from PREFILL_NUM_LAYERS. Default:
+ * defaults::PREFILL_NUM_LAYERS. */
+std::string prefillNumLayers();
+
+/** Prefill chunk size from PREFILL_CHUNK_SIZE. Default:
+ * defaults::PREFILL_CHUNK_SIZE. */
+std::string prefillChunkSize();
 
 /** Warmup timeout (ms) while waiting for the first token during runner warmup.
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
@@ -225,9 +268,7 @@ std::string ttMemoryResultQueueName();
  * Inherited across fork+execv so main and worker resolve to the same name. */
 std::string workerMetricsShmName();
 
-/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
- * defaults::USE_DEEPSEEK_MD_FORMAT. */
-bool useDeepseekMdFormat();
+std::string wireFormat();
 
 // IPC queue capacities - configurable via environment variables
 /** Result queue capacity from RESULT_QUEUE_CAPACITY. Default:

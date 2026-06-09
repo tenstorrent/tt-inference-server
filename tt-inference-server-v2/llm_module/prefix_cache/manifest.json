@@ -1,0 +1,132 @@
+{
+  "_comment": [
+    "Opinionated prefix-caching benchmark scenarios run by --tools aiperf --prefix-cache.",
+    "Each scenario produces multiple runs (cartesian product of concurrencies x arrivals x isl_profiles).",
+    "Scenarios:",
+    "  - shared_system  : single shared system prompt (100% prefix reuse).",
+    "  - prefix_pool    : pool of N distinct prefixes; reuse_ratio = request_count / N.",
+    "  - multi_turn     : multi-turn conversations re-sending history (organic reuse).",
+    "  - mooncake_trace : trace-driven via AIPerf's --custom-dataset-type mooncake-trace.",
+    "                    Replays a JSONL trace with optional --synthesis-* multipliers",
+    "                    (https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md).",
+    "  - baseline       : zero-prefix control matched to shared_system/prefix_pool grid.",
+    "Arrival patterns (aiperf 0.5.0 --arrival-pattern choices):",
+    "  - constant | poisson | gamma   (bursty traffic = gamma + smoothness<1)",
+    "Field reference:",
+    "  isl_profiles[*].isl_mean / isl_stddev   : synthetic-input-tokens-mean / -stddev",
+    "  osl_mean / osl_stddev                    : output-tokens-mean / -stddev",
+    "  concurrencies                            : list of concurrency values to sweep",
+    "  arrival_patterns[*].pattern              : constant | poisson | gamma",
+    "  arrival_patterns[*].smoothness           : gamma shape (<1.0 = bursty)",
+    "  request_count                            : total requests per run",
+    "  shared_system_prompt_length              : tokens (mutually exclusive with prefix pool)",
+    "  num_prefix_prompts / prefix_prompt_length: prefix pool size + per-prefix length",
+    "  conversation_*                           : multi-turn knobs",
+    "  mooncake_trace.traces                    : list of {name, path} JSONL traces",
+    "  mooncake_trace.synthesis_grid            : list of {name, speedup, prefix_len, prefix_root, prompt_len, max_isl, max_osl}",
+    "  mooncake_trace.fixed_schedule            : true => use trace timestamps verbatim",
+    "  mooncake_trace.block_size                : KV-cache block size for radix grouping"
+  ],
+  "presets": {
+    "ci": {
+      "request_count": 32,
+      "concurrencies": [1, 8],
+      "isl_profiles": [
+        {"name": "short", "isl_mean": 256, "isl_stddev": 64}
+      ],
+      "osl_mean": 128,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 512,
+          "arrival_patterns": [{"pattern": "constant"}]
+        },
+        "prefix_pool": {
+          "prefix_prompt_length": 512,
+          "reuse_ratios": [4],
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "multi_turn": {
+          "conversation_num": 16,
+          "conversation_turn_mean": 4,
+          "conversation_turn_stddev": 1,
+          "conversation_turn_delay_mean_ms": 500,
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "mooncake_trace": {
+          "request_count": 64,
+          "block_size": 512,
+          "fixed_schedule": false,
+          "traces": [
+            {"name": "ci_sample", "path": "sample_traces/ci_mooncake.jsonl"}
+          ],
+          "synthesis_grid": [
+            {"name": "baseline"},
+            {"name": "more_reuse", "prefix_len": 1.5, "prompt_len": 0.7}
+          ],
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "full": {
+      "request_count": 256,
+      "concurrencies": [1, 8, 32],
+      "isl_profiles": [
+        {"name": "short", "isl_mean": 256, "isl_stddev": 64},
+        {"name": "long",  "isl_mean": 4096, "isl_stddev": 256}
+      ],
+      "osl_mean": 128,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_lengths": [512, 4096],
+          "arrival_patterns": [
+            {"pattern": "constant"},
+            {"pattern": "poisson"}
+          ]
+        },
+        "prefix_pool": {
+          "prefix_prompt_lengths": [512, 4096],
+          "reuse_ratios": [2, 4, 16, 64],
+          "arrival_patterns": [
+            {"pattern": "constant"},
+            {"pattern": "poisson"},
+            {"pattern": "gamma", "smoothness": 0.5}
+          ]
+        },
+        "multi_turn": {
+          "conversation_num": 64,
+          "conversation_turn_mean": 6,
+          "conversation_turn_stddev": 2,
+          "conversation_turn_delay_mean_ms": 1500,
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "mooncake_trace": {
+          "request_count": 256,
+          "block_size": 512,
+          "fixed_schedule": false,
+          "traces": [
+            {"name": "ci_sample", "path": "sample_traces/ci_mooncake.jsonl"}
+          ],
+          "synthesis_grid": [
+            {"name": "baseline"},
+            {"name": "more_reuse",      "prefix_len": 1.5, "prompt_len": 0.7},
+            {"name": "scaled_2x",       "speedup": 2.0},
+            {"name": "diverse_prefixes","prefix_root": 4},
+            {"name": "long_context",    "prefix_len": 2.0, "max_isl": 8192}
+          ],
+          "arrival_patterns": [
+            {"pattern": "poisson"},
+            {"pattern": "gamma", "smoothness": 0.5}
+          ]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    }
+  }
+}

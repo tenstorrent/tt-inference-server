@@ -13,14 +13,14 @@
 #include "domain/image_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
 #include "runtime/worker/worker_manager.hpp"
-#include "services/base_service.hpp"
 #include "services/media_worker_scheduler.hpp"
+#include "services/request_pipeline.hpp"
 
 namespace tt::services {
 
 /** Image service facade backed by media worker processes. */
-class ImageService : public BaseService<domain::ImageGenerateRequest,
-                                        domain::image::ImageResponse> {
+class ImageService : public BaseSyncService<domain::ImageGenerateRequest,
+                                            domain::image::ImageResponse> {
  public:
   ImageService(config::ImageConfig config,
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -37,7 +37,7 @@ class ImageService : public BaseService<domain::ImageGenerateRequest,
   std::string runnerInUse() const override;
 
  protected:
-  domain::image::ImageResponse processRequest(
+  domain::image::ImageResponse produceResponse(
       domain::ImageGenerateRequest request) override;
   void preProcess(domain::ImageGenerateRequest& request) const override;
   size_t currentQueueSize() const override;

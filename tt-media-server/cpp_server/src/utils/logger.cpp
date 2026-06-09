@@ -21,7 +21,7 @@ ZeroOverheadLogger::Level ZeroOverheadLogger::level = ZeroOverheadLogger::INFO;
 std::shared_ptr<spdlog::logger> ZeroOverheadLogger::logger;
 bool ZeroOverheadLogger::initialized = false;
 
-void ZeroOverheadLogger::initialize() {
+void ZeroOverheadLogger::initialize(std::string instanceTag) {
   if (initialized) {
     return;
   }
@@ -32,12 +32,18 @@ void ZeroOverheadLogger::initialize() {
     level = parseLogLevel(logLevelEnv);
   }
 
+  if (instanceTag.empty()) {
+    instanceTag = "tt-media-server";
+  }
+  const std::string pattern =
+      "[%Y-%m-%d %H:%M:%S.%f] [" + instanceTag + "] [%l] %v";
+
   // Create spdlog sinks
   std::vector<spdlog::sink_ptr> sinks;
 
   // Always add console sink
   auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  consoleSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+  consoleSink->set_pattern(pattern);
   sinks.push_back(consoleSink);
 
   // Check for file logging configuration
@@ -53,7 +59,7 @@ void ZeroOverheadLogger::initialize() {
     auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         logFileEnv, tt::config::defaults::LOG_FILE_MAX_BYTES,
         tt::config::defaults::LOG_FILE_MAX_COUNT);
-    fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+    fileSink->set_pattern(pattern);
     sinks.push_back(fileSink);
   }
 

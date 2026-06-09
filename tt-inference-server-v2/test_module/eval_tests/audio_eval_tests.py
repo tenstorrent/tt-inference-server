@@ -19,15 +19,16 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from report_module.schema import Block
+
 from workflows.utils import (
     get_num_calls,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from report_module.schema import Block
 
 from .._test_common import ReportCheckTypes, block_id
-from ..context import MediaContext, count_tokens, require_health
+from ..context import HardwareRequirement, MediaContext, count_tokens, require_health
 from ..test_status import AudioTestStatus
 
 logger = logging.getLogger(__name__)
@@ -255,13 +256,95 @@ def _is_whisper(ctx: MediaContext) -> bool:
     return getattr(impl, "impl_name", None) == "whisper"
 
 
+def _wer_from_task_block(task_block: dict) -> Optional[float]:
+    if not isinstance(task_block, dict):
+        return None
+    for key in ("wer,none", "wer"):
+        val = task_block.get(key)
+        if isinstance(val, (int, float)):
+            return float(val)
+    for key, val in task_block.items():
+        if (
+            isinstance(key, str)
+            and key.lower().startswith("wer")
+            and isinstance(val, (int, float))
+        ):
+            return float(val)
+    return None
+
+
+def _extract_wer(results: dict, task_name: str) -> Optional[float]:
+    metrics = results.get("metrics") or {}
+    for key in (f"{task_name}_wer", "wer"):
+        val = metrics.get(key)
+        if isinstance(val, (int, float)):
+            return float(val)
+
+    detailed = results.get("detailed_results") or {}
+    wer = _wer_from_task_block(detailed.get(task_name) or {})
+    if wer is not None:
+        return wer
+    for tname, block in detailed.items():
+        if isinstance(tname, str) and task_name in tname:
+            wer = _wer_from_task_block(block)
+            if wer is not None:
+                return wer
+    for block in detailed.values():
+        wer = _wer_from_task_block(block)
+        if wer is not None:
+            return wer
+
+    raw = results.get("evaluation_results") or {}
+    json_files = raw.get("json_results") or {}
+    for data in json_files.values():
+        nested = (data or {}).get("results") or {}
+        wer = _wer_from_task_block(nested.get(task_name) or {})
+        if wer is not None:
+            return wer
+        for tname, block in nested.items():
+            if isinstance(tname, str) and task_name in tname:
+                wer = _wer_from_task_block(block)
+                if wer is not None:
+                    return wer
+        for block in nested.values():
+            wer = _wer_from_task_block(block)
+            if wer is not None:
+                return wer
+    return None
+
+
+def _audio_eval_fail_block(ctx: MediaContext, task, error: str) -> Block:
+    return Block(
+        kind="evals",
+        task_type="audio",
+        title="Audio Eval",
+        id=block_id(ctx) or None,
+        targets={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+        },
+        data={
+            "task_name": task.task_name,
+            "tolerance": task.score.tolerance,
+            "published_score": task.score.published_score,
+            "score": None,
+            "published_score_ref": task.score.published_score_ref,
+            "accuracy_check": ReportCheckTypes.FAIL,
+            "wer": None,
+            "error": error,
+        },
+    )
+
+
 def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest."""
     from .._test_common import TestConfig
     from .whisper_eval_test import WhisperEvalTest
 
     task = ctx.all_params.tasks[0]
-    timeout_s = 1800  # full LibriSpeech run on n150 is ~10 min; pad for safety
+    timeout_s = 3600  # full serial LibriSpeech run on n150 (concurrency=1) is ~45 min
 
     test = WhisperEvalTest(
         config=TestConfig.create_default(timeout=timeout_s),
@@ -274,6 +357,18 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     test.debug_mode = False
     test.mock_mode = False
 
+    if not test.lmms_eval_exec:
+        logger.error(
+            "lmms-eval executable not found; the EVALS_AUDIO venv is not provisioned. "
+            "Cannot run audio eval for %s.",
+            ctx.model_spec.model_name,
+        )
+        return _audio_eval_fail_block(
+            ctx,
+            task,
+            "lmms-eval executable not found (EVALS_AUDIO venv not provisioned)",
+        )
+
     logger.info(
         "Invoking WhisperEvalTest (lmms-eval): task=%s base_url=%s hf_model_repo=%s",
         test.task_name,
@@ -281,24 +376,9 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
         test.hf_model_repo,
     )
 
-    results = asyncio.run(
-        asyncio.wait_for(test._run_specific_test_async(), timeout=timeout_s)
-    )
+    results = asyncio.run(test._run_specific_test_async())
 
-    wer = None
-    metrics = results.get("metrics") or {}
-    for key in (f"{task.task_name}_wer", "wer"):
-        val = metrics.get(key)
-        if isinstance(val, (int, float)):
-            wer = float(val)
-            break
-
-    if wer is None:
-        detailed = results.get("detailed_results") or {}
-        task_block = detailed.get(task.task_name) or {}
-        raw = task_block.get("wer,none")
-        if isinstance(raw, (int, float)):
-            wer = float(raw)
+    wer = _extract_wer(results, task.task_name)
 
     if wer is None:
         logger.error(
@@ -306,28 +386,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
             "results keys=%s",
             list(results.keys()),
         )
-        return Block(
-            kind="evals",
-            task_type="audio",
-            title="Audio Eval",
-            id=block_id(ctx) or None,
-            targets={
-                "task_name": task.task_name,
-                "tolerance": task.score.tolerance,
-                "published_score": task.score.published_score,
-                "published_score_ref": task.score.published_score_ref,
-            },
-            data={
-                "task_name": task.task_name,
-                "tolerance": task.score.tolerance,
-                "published_score": task.score.published_score,
-                "score": None,
-                "published_score_ref": task.score.published_score_ref,
-                "accuracy_check": ReportCheckTypes.FAIL,
-                "wer": None,
-                "error": "WER not found in lmms-eval results",
-            },
-        )
+        return _audio_eval_fail_block(ctx, task, "WER not found in lmms-eval results")
 
     score = 100.0 - wer
     published = task.score.published_score
@@ -380,7 +439,7 @@ def run_audio_eval(ctx: MediaContext) -> Block:
     logger.info(
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    require_health(ctx)
+    require_health(ctx, HardwareRequirement.ANY_CHIP)
 
     if _is_whisper(ctx):
         return _run_whisper_lmms_eval(ctx)

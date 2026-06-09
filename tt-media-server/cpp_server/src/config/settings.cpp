@@ -135,6 +135,24 @@ std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
 
+size_t callbackPoolThreads() {
+  static const size_t cached = [] {
+    // CALLBACK_POOL_THREADS=N picks an explicit size; 0 or unset auto-scales.
+    const size_t fromEnv =
+        static_cast<size_t>(envUlong("CALLBACK_POOL_THREADS", 0));
+    if (fromEnv > 0) {
+      return std::min(fromEnv, defaults::CALLBACK_POOL_THREADS_MAX);
+    }
+    // Auto: at least the legacy floor, never less than the per-deploy worker
+    // count so HTTP dispatch threads never silently cap below DEVICE_IDS
+    // (the root cause of 16-wide serialization on 32-chip Galaxy SDXL).
+    return std::min(
+        std::max<size_t>(numWorkers(), defaults::CALLBACK_POOL_THREADS_MIN),
+        defaults::CALLBACK_POOL_THREADS_MAX);
+  }();
+  return cached;
+}
+
 unsigned batchTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
@@ -206,7 +224,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
+size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -220,13 +238,12 @@ unsigned outputHangTimeoutMs() {
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
-bool useDeepseekMdFormat() {
-  return static_cast<bool>(
-      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
-}
-
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string wireFormat() {
+  return envString("WIRE_FORMAT", defaults::WIRE_FORMAT);
 }
 
 std::string ttResultQueueName() {
@@ -248,6 +265,14 @@ std::string ttMediaResultQueueName() {
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string prefillNumLayers() {
+  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
+std::string prefillChunkSize() {
+  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
@@ -382,6 +407,7 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.max_batch_size = static_cast<size_t>(envUlong("MAX_BATCH_SIZE", 1));
   cfg.device_mesh_shape = parseMeshShape(envString("DEVICE_MESH_SHAPE", "1,1"));
   cfg.is_galaxy = envBool("IS_GALAXY", false);
+  cfg.device = envStringLower("DEVICE", "");
   cfg.model_weights_path = envString("MODEL_WEIGHTS_PATH", "");
   cfg.weights_distribution_timeout_seconds = static_cast<unsigned>(
       envUlong("WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS", 1800));
@@ -524,6 +550,19 @@ std::string prefillServerId() {
   return cached;
 }
 
+std::string logInstanceTag(int workerIndex) {
+  // Role distinguishes the node: LLM_MODE for the LLM service, else the service
+  // name. Worker subprocesses keep the base role and append their index, so a
+  // merged log still separates "decode" vs "prefill" nodes and their
+  // "decode-worker0" / "prefill-worker0" workers.
+  std::string role = isLlmService() ? std::string(toString(llmMode()))
+                                    : std::string(toString(modelService()));
+  if (workerIndex >= 0) {
+    role += "-worker" + std::to_string(workerIndex);
+  }
+  return role;
+}
+
 uint32_t prefillMaxInFlight() {
   return static_cast<uint32_t>(
       envUlong("PREFILL_MAX_IN_FLIGHT", defaults::PREFILL_MAX_IN_FLIGHT));
@@ -574,6 +613,18 @@ size_t maxContextLength() {
   return cached;
 }
 
+size_t maxISL() {
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_ISL", defaults::MAX_ISL));
+  return cached;
+}
+
+size_t minTokensToCopy() {
+  static const size_t cached = static_cast<size_t>(
+      envUlong("MIN_TOKENS_TO_COPY", defaults::MIN_TOKENS_TO_COPY));
+  return cached;
+}
+
 size_t kvCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
@@ -588,6 +639,19 @@ size_t kvCacheFirstBlockSize() {
                               defaults::KV_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
+}
+
+float prefixCacheHitThreshold() {
+  const unsigned long val = envUlong("PREFIX_CACHE_HIT_THRESHOLD",
+                                     defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  if (val > 100) {
+    TT_LOG_WARN(
+        "[Config] PREFIX_CACHE_HIT_THRESHOLD={} out of range [0,100], "
+        "using {}",
+        val, defaults::PREFIX_CACHE_HIT_THRESHOLD);
+    return static_cast<float>(defaults::PREFIX_CACHE_HIT_THRESHOLD);
+  }
+  return static_cast<float>(val);
 }
 
 bool useFastMode() {

@@ -22,6 +22,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "max_concurrency": "Concurrency",
     "concurrency": "Concurrency",
     "num_requests": "Num Requests",
+    "num_runs": "Total Runs",
     "num_prompts": "Num Prompts",
     "num_responses": "Num Responses",
     "num_concurrent_requests": "Num Concurrent Requests",
@@ -29,6 +30,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "mean_ttft_ms": "TTFT (ms)",
     "std_ttft_ms": "TTFT Std (ms)",
     "ttft": "TTFT",
+    "ttft_ms": "TTFT (ms)",
     "p5_ttft": "P5 TTFT (ms)",
     "p25_ttft": "P25 TTFT (ms)",
     "p50_ttft": "P50 TTFT (ms)",
@@ -126,6 +128,7 @@ DISPLAY_NAMES: Dict[str, str] = {
 # decimal_places_map;
 DECIMAL_PLACES: Dict[str, int] = {
     "mean_ttft_ms": 1,
+    "ttft_ms": 1,
     "std_ttft_ms": 1,
     "p5_ttft": 1,
     "p25_ttft": 1,

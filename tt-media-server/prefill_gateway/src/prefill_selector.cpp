@@ -47,13 +47,31 @@ PrefillEligibilitySummary summarizePrefillEligibility(
   return summary;
 }
 
-std::optional<std::string> selectPrefill(
-    const std::vector<PrefillSnapshot>& prefills, size_t registrationHash,
-    const std::optional<std::string>& stickyTarget, size_t& roundRobinCursor) {
-  if (registrationHash != 0 && stickyTarget.has_value()) {
+std::string_view routingReasonName(PrefillRoutingReason reason) {
+  switch (reason) {
+    case PrefillRoutingReason::PrefixMatch:
+      return "prefix_match";
+    case PrefillRoutingReason::StickyFallback:
+      return "sticky_fallback";
+    case PrefillRoutingReason::LeastInflight:
+      return "least_inflight";
+    case PrefillRoutingReason::RoundRobin:
+      return "round_robin";
+    case PrefillRoutingReason::NoEligiblePrefill:
+      return "no_eligible_prefill";
+  }
+  return "unknown";
+}
+
+PrefillSelection selectPrefill(const std::vector<PrefillSnapshot>& prefills,
+                               size_t registrationHash,
+                               const std::optional<std::string>& stickyTarget,
+                               size_t& roundRobinCursor) {
+  const bool hasStickyHint = registrationHash != 0 && stickyTarget.has_value();
+  if (hasStickyHint) {
     const PrefillSnapshot* hit = findById(prefills, *stickyTarget);
     if (hit && isEligible(*hit)) {
-      return *stickyTarget;
+      return {*stickyTarget, PrefillRoutingReason::PrefixMatch};
     }
   }
 
@@ -64,7 +82,7 @@ std::optional<std::string> selectPrefill(
   }
 
   if (eligible.empty()) {
-    return std::nullopt;
+    return {std::nullopt, PrefillRoutingReason::NoEligiblePrefill};
   }
 
   const auto minInFlight =
@@ -79,12 +97,16 @@ std::optional<std::string> selectPrefill(
   }
 
   if (leastLoaded.size() == 1) {
-    return leastLoaded.front()->server_id;
+    return {leastLoaded.front()->server_id,
+            hasStickyHint ? PrefillRoutingReason::StickyFallback
+                          : PrefillRoutingReason::LeastInflight};
   }
 
   const size_t pickIndex = roundRobinCursor % leastLoaded.size();
   ++roundRobinCursor;
-  return leastLoaded[pickIndex]->server_id;
+  return {leastLoaded[pickIndex]->server_id,
+          hasStickyHint ? PrefillRoutingReason::StickyFallback
+                        : PrefillRoutingReason::RoundRobin};
 }
 
 }  // namespace tt::gateway

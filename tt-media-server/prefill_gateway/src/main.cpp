@@ -16,6 +16,10 @@
 
 #include "gateway/affinity_cache.hpp"
 #include "gateway/dispatcher.hpp"
+#include "gateway/gateway_health.hpp"
+#include "gateway/gateway_health_server.hpp"
+#include "gateway/gateway_metrics.hpp"
+#include "gateway/gateway_metrics_server.hpp"
 #include "gateway/prefill_connection_wiring.hpp"
 #include "gateway/prefill_registry.hpp"
 #include "gateway/zmq_prefill_router.hpp"
@@ -40,17 +44,22 @@ struct GatewayConfig {
   std::chrono::milliseconds timeoutWindow{60000};
   std::chrono::milliseconds timeoutCooldown{30000};
   uint32_t timeoutThreshold = 3;
+  uint16_t metricsPort = 9091;
+  uint16_t healthPort = 0;
 };
 
 void printUsage(const char* prog) {
   std::cerr
-      << "Usage: " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
-      << "[--prefill=<HOST>:<PORT> ...]\n\n"
+      << "Usage: " << prog
+      << " --decode-port=<PORT> --prefill-bind=<HOST>:<PORT>\n"
+      << "       " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
+      << "[--prefill=<HOST>:<PORT> ...]  # SOCKET_TRANSPORT=tcp\n\n"
       << "  --decode-port=PORT   Port the gateway listens on for decode.\n"
       << "  --prefill=HOST:PORT  TCP prefill server to connect to "
          "(repeatable).\n"
       << "  --prefill-bind=HOST:PORT\n"
-      << "                        ZMQ ROUTER bind endpoint for prefills.\n"
+      << "                        ZMQ ROUTER bind endpoint for prefills "
+      << "(default transport).\n"
       << "  --prefill-stale-timeout-ms=MS\n"
       << "                        ZMQ prefill registration timeout. Default: "
          "3000.\n"
@@ -68,11 +77,13 @@ void printUsage(const char* prog) {
       << "                        Timeouts in the window before cooldown. Use "
          "0 to "
          "disable. Default: 3.\n"
+      << "  --metrics-port=PORT  Port for Prometheus GET /metrics. Use 0 to "
+         "disable. Default: 9091.\n"
+      << "  --health-port=PORT   Port for GET /tt-liveness and /health. Use "
+         "0 to disable. Default: 0.\n"
       << "  --help               Print this message.\n\n"
       << "Example:\n"
-      << "  " << prog
-      << " --decode-port=7100 --prefill=192.168.1.1:7200 "
-         "--prefill=192.168.1.2:7200\n";
+      << "  " << prog << " --decode-port=7100 --prefill-bind=0.0.0.0:7200\n";
 }
 
 std::optional<PrefillEndpoint> parsePrefillArg(std::string_view value) {
@@ -173,6 +184,28 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
       continue;
     }
 
+    if (auto v = flagValue(arg, "--metrics-port=")) {
+      int port = std::stoi(std::string(*v));
+      if (port < 0 || port > 65535) {
+        std::cerr << "Invalid --metrics-port value: " << *v
+                  << " (expected 0-65535)\n";
+        return std::nullopt;
+      }
+      cfg.metricsPort = static_cast<uint16_t>(port);
+      continue;
+    }
+
+    if (auto v = flagValue(arg, "--health-port=")) {
+      int port = std::stoi(std::string(*v));
+      if (port < 0 || port > 65535) {
+        std::cerr << "Invalid --health-port value: " << *v
+                  << " (expected 0-65535)\n";
+        return std::nullopt;
+      }
+      cfg.healthPort = static_cast<uint16_t>(port);
+      continue;
+    }
+
     if (auto v = flagValue(arg, "--prefill=")) {
       auto ep = parsePrefillArg(*v);
       if (!ep) {
@@ -212,12 +245,42 @@ std::optional<GatewayConfig> parseArgs(int argc, char** argv) {
 
 std::string_view socketTransportFromEnv() {
   const char* value = std::getenv("SOCKET_TRANSPORT");
-  return value ? std::string_view(value) : tt::sockets::transport_names::TCP;
+  if (value == nullptr || value[0] == '\0') {
+    return tt::sockets::transport_names::ZMQ;
+  }
+  const std::string_view transport(value);
+  if (transport == tt::sockets::transport_names::TCP ||
+      transport == tt::sockets::transport_names::ZMQ) {
+    return transport;
+  }
+  TT_LOG_WARN(
+      "[Gateway] Unknown SOCKET_TRANSPORT='{}'; expected '{}' or '{}'. "
+      "Falling back to ZMQ.",
+      transport, tt::sockets::transport_names::TCP,
+      tt::sockets::transport_names::ZMQ);
+  return tt::sockets::transport_names::ZMQ;
 }
 
 volatile sig_atomic_t gStop = 0;
 
 void signalHandler(int /*sig*/) { gStop = 1; }
+
+std::vector<tt::gateway::GatewayPrefillMetricSnapshot> buildPrefillMetrics(
+    const tt::gateway::PrefillRegistry& registry) {
+  const auto now = std::chrono::steady_clock::now();
+  std::vector<tt::gateway::GatewayPrefillMetricSnapshot> out;
+  for (const auto& snapshot : registry.snapshot()) {
+    double heartbeatAgeSeconds = 0.0;
+    if (snapshot.last_heartbeat != std::chrono::steady_clock::time_point{}) {
+      heartbeatAgeSeconds =
+          std::chrono::duration<double>(now - snapshot.last_heartbeat).count();
+    }
+    out.push_back({snapshot.server_id, snapshot.healthy,
+                   snapshot.accepting_tasks, snapshot.in_flight,
+                   snapshot.cached_blocks, heartbeatAgeSeconds});
+  }
+  return out;
+}
 
 }  // namespace
 
@@ -229,6 +292,7 @@ int main(int argc, char** argv) {
   const GatewayConfig& cfg = *cfgOpt;
   const bool useZmqPrefillRouter =
       socketTransportFromEnv() == tt::sockets::transport_names::ZMQ;
+  const std::string_view transport = useZmqPrefillRouter ? "zmq" : "tcp";
 
   if (useZmqPrefillRouter && cfg.prefillBindPort == 0) {
     std::cerr
@@ -242,9 +306,17 @@ int main(int argc, char** argv) {
   if (useZmqPrefillRouter && !cfg.prefills.empty()) {
     TT_LOG_WARN("[Gateway] Ignoring --prefill endpoints in ZMQ ROUTER mode");
   }
+  if (cfg.healthPort != 0 && cfg.healthPort == cfg.metricsPort) {
+    std::cerr << "--health-port must be different from --metrics-port.\n";
+    return 1;
+  }
 
   TT_LOG_INFO("[Gateway] Starting — decode port={}, transport={}",
-              cfg.decodePort, useZmqPrefillRouter ? "zmq" : "tcp");
+              cfg.decodePort, transport);
+
+  auto& metrics = tt::gateway::GatewayMetrics::instance();
+  tt::gateway::GatewayMetricsServer metricsServer(metrics);
+  tt::gateway::GatewayHealthServer healthServer;
 
   tt::gateway::PrefillRegistry registry;
   tt::gateway::AffinityCache affinity;
@@ -254,6 +326,24 @@ int main(int argc, char** argv) {
   if (!decodeSm.initializeAsServer(cfg.decodePort)) {
     TT_LOG_ERROR("[Gateway] Failed to bind decode port {}", cfg.decodePort);
     return 1;
+  }
+
+  auto healthProvider = [&registry, &decodeSm, transport]() {
+    return buildGatewayHealthStatus(registry, transport,
+                                    decodeSm.isConnected());
+  };
+  if (!metricsServer.start(cfg.metricsPort)) {
+    TT_LOG_ERROR("[Gateway] Failed to start metrics endpoint on port {}",
+                 cfg.metricsPort);
+    return 1;
+  }
+  if (cfg.healthPort != 0) {
+    healthServer.setHealthProvider(healthProvider);
+    if (!healthServer.start(cfg.healthPort)) {
+      TT_LOG_ERROR("[Gateway] Failed to start health endpoint on port {}",
+                   cfg.healthPort);
+      return 1;
+    }
   }
 
   tt::gateway::ZmqPrefillRouter zmqPrefillRouter;
@@ -362,7 +452,23 @@ int main(int argc, char** argv) {
         dispatcherPtr->onPrefillCancel(msg);
       });
 
-  decodeSm.setConnectionLostCallback([]() {
+  decodeSm.registerHandler<tt::sockets::PrefillHealthRequestMessage>(
+      tt::sockets::tags::PREFILL_HEALTH_REQUEST,
+      [&decodeSm,
+       &healthProvider](const tt::sockets::PrefillHealthRequestMessage&) {
+        const auto health = healthProvider();
+        tt::sockets::PrefillHealthStatusMessage response;
+        response.ready = health.ready;
+        (void)decodeSm.sendObject(tt::sockets::tags::PREFILL_HEALTH_STATUS,
+                                  response);
+      });
+
+  decodeSm.setConnectionEstablishedCallback([&metrics]() {
+    metrics.setDecodeConnected(true);
+    TT_LOG_INFO("[Gateway] Decode connected");
+  });
+  decodeSm.setConnectionLostCallback([&metrics]() {
+    metrics.setDecodeConnected(false);
     TT_LOG_WARN("[Gateway] Decode disconnected — waiting for reconnect");
   });
 
@@ -410,6 +516,15 @@ int main(int argc, char** argv) {
         });
   }
 
+  std::jthread metricsSnapshotThread(
+      [&registry, &affinity, &metrics](std::stop_token stopToken) {
+        while (!stopToken.stop_requested()) {
+          metrics.setPrefillSnapshots(buildPrefillMetrics(registry));
+          metrics.setRoutingTableSize(affinity.size());
+          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+      });
+
   TT_LOG_INFO("[Gateway] Running. Send SIGINT/SIGTERM to stop.");
 
   std::signal(SIGINT, signalHandler);
@@ -424,11 +539,15 @@ int main(int argc, char** argv) {
   if (proberThread.joinable()) proberThread.join();
   requestTimeoutThread.request_stop();
   if (requestTimeoutThread.joinable()) requestTimeoutThread.join();
+  metricsSnapshotThread.request_stop();
+  if (metricsSnapshotThread.joinable()) metricsSnapshotThread.join();
   watchdogThread.request_stop();
   if (watchdogThread.joinable()) watchdogThread.join();
   decodeSm.stop();
   for (auto& sm : prefillSms) sm->stop();
   zmqPrefillRouter.stop();
+  healthServer.stop();
+  metricsServer.stop();
   TT_LOG_INFO("[Gateway] Stopped.");
 
   return 0;

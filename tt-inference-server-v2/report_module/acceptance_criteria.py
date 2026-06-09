@@ -139,7 +139,9 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
                     if not _passes_check(check_value):
                         metric = check_name[: -len(CHECK_SUFFIX)]
                         block_blockers[f"{block_key}.{lvl}.{check_name}"] = (
-                            f"{lvl} {metric} failed (check={check_value!r})"
+                            _format_benchmark_failure(
+                                lvl, check_name, metric, level_checks
+                            )
                         )
             if not any_check_seen:
                 block_blockers[f"{block_key}.target_checks"] = (
@@ -241,6 +243,37 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         failed,
         blockers=blockers,
     )
+
+
+def _format_metric_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        return f"{float(value):.4f}"
+    return str(value)
+
+
+def _format_benchmark_failure(
+    level_name: str,
+    check_name: str,
+    metric: str,
+    level_checks: Mapping[str, Any],
+) -> str:
+    threshold = level_checks.get(metric)
+    ratio = level_checks.get(f"{metric}_ratio")
+    parts = [f"{level_name} {check_name} failed"]
+    actual: Any = None
+    if isinstance(threshold, (int, float)) and isinstance(ratio, (int, float)):
+        actual = threshold * ratio
+    if actual is not None:
+        parts.append(f"actual {metric}={_format_metric_value(actual)}")
+    if threshold is not None and not (
+        isinstance(threshold, str) and threshold == "Undefined"
+    ):
+        parts.append(f"threshold {metric}={_format_metric_value(threshold)}")
+    if ratio is not None and not (isinstance(ratio, str) and ratio == "Undefined"):
+        parts.append(f"ratio={_format_metric_value(ratio)}")
+    return "; ".join(parts) + "."
 
 
 def _block_key(block: Block) -> str:

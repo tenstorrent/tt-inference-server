@@ -17,7 +17,7 @@ CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
-FRESH_CONFIGURE="ON"
+FRESH_CONFIGURE="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -51,8 +51,8 @@ while [[ $# -gt 0 ]]; do
             KAFKA_ENABLED="ON"
             shift
             ;;
-        --no-fresh)
-            FRESH_CONFIGURE="OFF"
+        --fresh)
+            FRESH_CONFIGURE="ON"
             shift
             ;;
         --toolchain-path)
@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --blaze              Build with tt-blaze pipeline_manager support"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
-            echo "  --no-fresh           Reuse existing CMake configure state"
+            echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -166,151 +166,13 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pre-fetch tokenizer files for all supported models
+# Pre-fetch tokenizer files for all supported models.
+# Delegated to scripts/fetch_tokenizers.sh so the SAME logic is reused by
+# dynamo_frontend/Dockerfile.frontend (which bakes the identical assets into
+# the frontend image). Edit the model list / download logic there, not here.
 # ---------------------------------------------------------------------------
-TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
-mkdir -p "${TOKENIZER_DIR}"
-
-HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
-if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
-    HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
-fi
-
-# Download a single file from HuggingFace with optional auth.
-# Args: dest_path hf_url requires_auth model_name
-# Returns 0 on success, 1 on failure.
-download_hf_file() {
-    local dest="$1"
-    local url="$2"
-    local requires_auth="$3"
-    local model_name="$4"
-    local filename
-    filename=$(basename "${dest}")
-
-    if [ -f "${dest}" ]; then
-        return 0
-    fi
-
-    local wget_args=()
-    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
-        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
-    fi
-
-    if wget -q "${wget_args[@]}" -O "${dest}" "${url}" 2>&1; then
-        echo "  ${filename} downloaded"
-        return 0
-    fi
-
-    rm -f "${dest}"
-    echo "  ERROR: Failed to download ${model_name}/${filename}."
-    echo "  URL: ${url}"
-    if [ "${requires_auth}" = "true" ]; then
-        echo "  This is a gated model. Make sure you have:"
-        echo "    1. A valid HF_TOKEN set in your environment"
-        echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
-    fi
-    return 1
-}
-
-# Download tokenizer files for a model.
-# Args:
-#   model_name          - HF model path (e.g., "deepseek-ai/DeepSeek-R1-0528")
-#   hf_repo             - Base URL for raw files
-#   requires_auth       - "true" if gated model requiring HF_TOKEN
-#   placeholder_config  - Fallback config.json content if HF fetch fails
-#   tokenizer_type      - "json" (default) for tokenizer.json, "tiktoken" for tiktoken.model
-download_tokenizer() {
-    local model_name="$1"
-    local hf_repo="$2"
-    local requires_auth="$3"
-    local placeholder_config="${4:-}"
-    local tokenizer_type="${5:-json}"
-
-    local model_dir="${TOKENIZER_DIR}/${model_name}"
-    local model_config="${model_dir}/config.json"
-
-    # Determine required files based on tokenizer type
-    local required_files=("tokenizer_config.json")
-    if [ "${tokenizer_type}" = "tiktoken" ]; then
-        required_files+=("tiktoken.model" "chat_template.jinja")
-    else
-        required_files+=("tokenizer.json")
-    fi
-
-    # Check if all required files exist
-    local all_exist=true
-    for f in "${required_files[@]}"; do
-        if [ ! -f "${model_dir}/${f}" ]; then
-            all_exist=false
-            break
-        fi
-    done
-    if [ "${all_exist}" = "true" ] && [ -f "${model_config}" ]; then
-        echo "  Using existing ${model_name} tokenizer + config."
-        return 0
-    fi
-
-    # Skip gated models without auth token
-    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
-        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
-        return 0
-    fi
-
-    mkdir -p "${model_dir}"
-    echo "Downloading ${model_name} tokenizer..."
-
-    # Download required tokenizer files
-    for f in "${required_files[@]}"; do
-        if ! download_hf_file "${model_dir}/${f}" "${hf_repo}/${f}" "${requires_auth}" "${model_name}"; then
-            return 1
-        fi
-    done
-
-    # Download config.json with placeholder fallback
-    if [ ! -f "${model_config}" ]; then
-        if download_hf_file "${model_config}" "${hf_repo}/config.json" "${requires_auth}" "${model_name}" 2>/dev/null; then
-            :
-        elif [ -n "${placeholder_config}" ]; then
-            echo "  config.json HF fetch failed; writing minimal placeholder."
-            printf '%s\n' "${placeholder_config}" > "${model_config}"
-        else
-            echo "  WARN: ${model_name} config.json missing and no placeholder supplied."
-            echo "  Dynamo frontend will fail with 'unable to extract config.json'."
-            return 1
-        fi
-    fi
-}
-
 echo ""
-echo "Pre-fetching tokenizer files for supported models..."
-
-# DeepSeek R1-0528 (public, no auth) — required for default build.
-# The placeholder mirrors dynamo_frontend/deploy.sh's offline fallback:
-# `model_type` is what makes Dynamo's frontend pick a HF transformer
-# architecture; `architectures` lets the loader pass its sanity check.
-download_tokenizer \
-    "deepseek-ai/DeepSeek-R1-0528" \
-    "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
-    "false" \
-    '{"model_type":"deepseek_v3","architectures":["DeepseekV3ForCausalLM"]}'
-
-# Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
-download_tokenizer \
-    "meta-llama/Llama-3.1-8B-Instruct" \
-    "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
-    "true" \
-    '{"model_type":"llama","architectures":["LlamaForCausalLM"]}'
-
-# Kimi K2.6 (public tiktoken tokenizer + jinja chat template; no tokenizer.json on HF)
-# Uses /resolve/main for tiktoken.model (LFS file) but /raw/main for text files
-download_tokenizer \
-    "moonshotai/Kimi-K2.6" \
-    "https://huggingface.co/moonshotai/Kimi-K2.6/resolve/main" \
-    "false" \
-    '{"model_type":"kimi_k25","architectures":["KimiK25ForConditionalGeneration"]}' \
-    "tiktoken"
-
-echo ""
+"${SCRIPT_DIR}/scripts/fetch_tokenizers.sh" "${SCRIPT_DIR}/tokenizers"
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -369,7 +231,8 @@ CMAKE_ARGS=(
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 [ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")
-if [ "${CI_CCACHE:-0}" = "1" ] && command -v ccache >/dev/null 2>&1; then
+# Use ccache if available for faster rebuilds
+if command -v ccache >/dev/null 2>&1; then
     CMAKE_ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
 fi
 

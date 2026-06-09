@@ -96,6 +96,8 @@ std::vector<PrefillSnapshot> PrefillRegistry::snapshot() const {
     snap.accepting_tasks = peer.accepting_tasks;
     snap.in_flight = peer.in_flight;
     snap.max_in_flight = peer.max_in_flight;
+    snap.cached_blocks = peer.cached_blocks.size();
+    snap.last_heartbeat = peer.last_heartbeat;
     out.push_back(std::move(snap));
   }
   return out;

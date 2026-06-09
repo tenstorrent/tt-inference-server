@@ -280,7 +280,20 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
 
     if (writer->isDone()) return;
 
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+    // Disaggregation: capture the prefill server's cached-token count (stamped
+    // on the first chunk) before the content filter below, so it surfaces in
+    // usage even if that chunk carries no displayable text.
+    writer->observeCachedTokens(chunk);
+
+    // Only forward chunks with content to the writer; suppressed tokens (e.g.,
+    // think markers with empty text) are tracked above but not sent to client.
+    if (!chunk.choices.empty() &&
+        (!chunk.choices[0].text.empty() ||
+         !chunk.choices[0].reasoning.value_or("").empty() ||
+         chunk.choices[0].tool_calls.has_value() ||
+         chunk.choices[0].finish_reason.has_value())) {
+      writer->handleTokenChunk(chunk);
+    }
     if (isFinal) {
       writer->finalize();
     }

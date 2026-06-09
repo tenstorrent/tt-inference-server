@@ -85,6 +85,16 @@ if [ "${DYN_DEBUG_PERF:-0}" != "0" ]; then
     DEBUG_PERF_FLAG="--dyn-debug-perf"
 fi
 
+# Optional router mode. Default (unset) leaves Dynamo's own default
+# (round-robin). Set ROUTER_MODE to one of round-robin|random|power-of-two|
+# kv|direct|least-loaded|device-aware-weighted. Note: per-request timing
+# fields like nvext.timing.ttft_ms / prefill_time_ms are only populated on
+# the kv-router push path, so ROUTER_MODE=kv is required to surface them.
+ROUTER_MODE_FLAG=""
+if [ -n "${ROUTER_MODE:-}" ]; then
+    ROUTER_MODE_FLAG="--router-mode ${ROUTER_MODE}"
+fi
+
 echo "[entrypoint] Starting Dynamo frontend on port $HTTP_PORT..."
 echo "  DYN_DISCOVERY_BACKEND=$DYN_DISCOVERY_BACKEND"
 if [ "$DYN_DISCOVERY_BACKEND" = "etcd" ]; then
@@ -102,6 +112,7 @@ echo "  RAYON_NUM_THREADS=$RAYON_NUM_THREADS"
 echo "  DYN_TOKENIZER=$DYN_TOKENIZER"
 echo "  RUST_LOG=${RUST_LOG:-<unset>}"
 echo "  DEBUG_PERF_FLAG=$DEBUG_PERF_FLAG"
+echo "  ROUTER_MODE=${ROUTER_MODE:-<default>}"
 
 exec python -m dynamo.frontend \
     --http-port "$HTTP_PORT" \
@@ -109,4 +120,5 @@ exec python -m dynamo.frontend \
     --model-path "$MODEL_PATH" \
     --dyn-chat-processor "$DYN_CHAT_PROCESSOR" \
     --tokenizer "$DYN_TOKENIZER" \
+    $ROUTER_MODE_FLAG \
     $DEBUG_PERF_FLAG

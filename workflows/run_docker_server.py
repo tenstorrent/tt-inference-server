@@ -176,10 +176,7 @@ def ensure_docker_image(image_name):
         logger=logger,
     )
     if return_code != 0:
-        err_str = "⛔ Docker image does not exist locally."
-        if "-release-" in image_name:
-            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
-        logger.error(err_str)
+        logger.error("⛔ Docker image does not exist locally.")
         return False
     logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
     return True

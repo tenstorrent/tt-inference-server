@@ -24,7 +24,7 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
     """DP2 burst load, 60s audio, chunk 5s. Server: AUDIO_CHUNK_DURATION_SECONDS=5."""
 
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/audio/transcriptions"
+        self.url = f"{self.base_url}/v1/audio/transcriptions"
         num_concurrent = self.targets.get("num_concurrent", 64)
         target_max_duration_s = self.targets.get("max_duration_s", None)
 

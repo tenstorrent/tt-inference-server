@@ -28,13 +28,13 @@ This produces:
 Run them all with:
 
 ```bash
-SOCKET_TRANSPORT=tcp ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
-To run against the ZMQ transport instead of TCP:
+ZMQ is the default transport. To run against the TCP transport instead:
 
 ```bash
-SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
+SOCKET_TRANSPORT=tcp ctest --test-dir build --output-on-failure
 ```
 
 ## Run the gateway
@@ -42,15 +42,17 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
 ```bash
 ./build/prefill_gateway \
   --decode-port=7100 \
-  --prefill=127.0.0.1:7200 \
-  --prefill=127.0.0.1:7201
+  --metrics-port=9091 \
+  --health-port=9092 \
+  --prefill-bind=127.0.0.1:7200
 ```
 
 - `--decode-port` is the port the gateway *listens on* for the decode server.
-- `--prefill=HOST:PORT` is a TCP prefill the gateway *dials out to*. Repeat the
-  flag for each prefill.
 - `--prefill-bind=HOST:PORT` is the ZMQ prefill-side ROUTER bind endpoint.
-  ZMQ prefills dial this single endpoint and register themselves.
+  ZMQ prefills dial this single endpoint and register themselves. This is the
+  default transport mode.
+- `--prefill=HOST:PORT` is a TCP prefill the gateway *dials out to* when
+  `SOCKET_TRANSPORT=tcp`. Repeat the flag for each prefill.
 - `--prefill-stale-timeout-ms=MS` controls how long the ZMQ gateway waits
   without a prefill registration before marking that prefill down. Default:
   `3000`.
@@ -62,6 +64,43 @@ SOCKET_TRANSPORT=zmq ctest --test-dir build --output-on-failure
   if a prefill times out `3` requests within `60000`ms, the gateway stops
   assigning new requests to it for `30000`ms. Use `--timeout-threshold=0` to
   disable this protection.
+- `--metrics-port=PORT` exposes Prometheus metrics at `GET /metrics`. Default:
+  `9091`. Use `--metrics-port=0` to disable the endpoint.
+- `--health-port=PORT` — `GET /tt-liveness` (liveness) and `GET /health`
+  (readiness). Default: `0` (disabled). Must differ from `--metrics-port`.
+
+## HTTP endpoints
+
+| Flag | Default | Paths |
+| ---- | ------- | ----- |
+| `--metrics-port` | `9091` | `GET /metrics` (Prometheus) |
+| `--health-port` | `0` | `GET /tt-liveness`, `GET /health` |
+
+`GET /tt-liveness` always returns **200** with JSON (`status: alive`) so
+orchestrators can tell the process is up even when degraded.
+
+`GET /health` returns **200** when the gateway can route (`status: healthy`) and
+**503** when it cannot (`status: unhealthy`), for example when
+`decode_connected` is false, `healthy_prefills` is 0, or
+`accepting_prefills` is 0.
+
+Both responses include `transport`, `registered_prefills`, `healthy_prefills`,
+`accepting_prefills`, and `decode_connected`.
+
+Decode servers also send periodic socket-level health probes over the existing
+inter-server connection. In direct mode the prefill replies with its own status;
+in gateway mode the PrefillGateway replies with the same aggregate readiness
+used by `GET /health`. Decode falls back to local prefill while that path is not
+ready.
+
+```bash
+curl -s http://127.0.0.1:9091/metrics | head
+curl -s http://127.0.0.1:9092/tt-liveness | jq .
+curl -s http://127.0.0.1:9092/health | jq .
+```
+
+For Grafana, see [`monitoring/README.md`](../monitoring/README.md). Notable
+series: `tt_gateway_routing_decisions_total`, `tt_prefill_*`, `tt_gateway_*`.
 
 ## End-to-end curl test (real cpp_server + gateway)
 
@@ -72,7 +111,7 @@ flip the inter-server socket roles to talk through the gateway:
 | Env var                         | Set on  | Effect                                                                                         |
 | ------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
 | `USE_PREFILL_GATEWAY=1`         | both    | Decode dials gateway as CLIENT. TCP prefills listen for the gateway; ZMQ prefills dial the gateway's prefill ROUTER. |
-| `SOCKET_TRANSPORT`              | all     | `tcp` (default) or `zmq`. Must be the same on all three processes.                             |
+| `SOCKET_TRANSPORT`              | all     | `zmq` (default) or `tcp`. Must be the same on all three processes.                             |
 | `PREFILL_SERVER_ID=...`         | prefill | Identity advertised in `PrefillRegistrationMessage`. Default: `<hostname>:<port>`.             |
 | `PREFILL_MAX_IN_FLIGHT=N`       | prefill | Capacity hint sent to the gateway (0 = unlimited).                                             |
 | `MAX_TOKENS_TO_PREFILL_ON_DECODE=0` | decode  | Set to 0 to force all requests through the gateway. Default 1000 keeps short prompts local. |
@@ -93,8 +132,8 @@ The default (`USE_PREFILL_GATEWAY=0`) keeps the existing direct 1:1 wiring.
                                                                   └───────────┘
 ```
 
-The commands below use TCP (default), where the gateway dials each prefill.
-For ZMQ, use the separate ZMQ commands below: the gateway binds one prefill
+The first commands below use explicit TCP, where the gateway dials each prefill.
+For the default ZMQ mode, use the separate ZMQ commands below: the gateway binds one prefill
 ROUTER endpoint and every prefill connects to it.
 
 ### Terminal A — gateway
@@ -103,6 +142,8 @@ ROUTER endpoint and every prefill connects to it.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=tcp ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --health-port=9092 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -173,6 +214,8 @@ connect to one gateway ROUTER endpoint on `:7200`.
 cd tt-media-server/prefill_gateway
 TT_LOG_LEVEL=info SOCKET_TRANSPORT=zmq ./build/prefill_gateway \
   --decode-port=7100 \
+  --metrics-port=9091 \
+  --health-port=9092 \
   --request-timeout-ms=2000 \
   --timeout-window-ms=10000 \
   --timeout-threshold=2 \
@@ -233,6 +276,9 @@ PREFILL_SERVER_ID=prefill-1 \
 
 ### Terminal E — drive a request through decode
 
+After prefills register, `curl -s http://127.0.0.1:9092/tt-liveness | jq .`
+should show `healthy_prefills: 2` and `decode_connected: true`.
+
 ```bash
 curl -N http://localhost:8001/v1/chat/completions \
   -H 'Content-Type: application/json' \
@@ -276,14 +322,13 @@ temporarily make that prefill ineligible for new tasks according to
 Without the gateway the decode server is the socket **server** and the prefill
 is the socket **client** that dials into it. Two terminals suffice.
 
-### TCP
+### ZMQ
 
 #### Terminal A — decode (listens on :9000)
 
 ```bash
 cd tt-media-server/cpp_server
 LLM_MODE=decode \
-SOCKET_TRANSPORT=tcp \
 MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
 SOCKET_HOST=0.0.0.0 \
 SOCKET_PORT=9000 \
@@ -296,7 +341,6 @@ TT_LOG_LEVEL=info \
 ```bash
 cd tt-media-server/cpp_server
 LLM_MODE=prefill \
-SOCKET_TRANSPORT=tcp \
 SOCKET_HOST=127.0.0.1 \
 SOCKET_PORT=9000 \
 LLM_DEVICE_BACKEND=mock \
@@ -304,8 +348,7 @@ TT_LOG_LEVEL=info \
 ./build/tt_media_server_cpp -p 8002
 ```
 
-For ZMQ — just swap `SOCKET_TRANSPORT=tcp` → `SOCKET_TRANSPORT=zmq` on
-**both** processes.
+For TCP, set `SOCKET_TRANSPORT=tcp` on **both** processes.
 
 #### Terminal C — drive a request
 

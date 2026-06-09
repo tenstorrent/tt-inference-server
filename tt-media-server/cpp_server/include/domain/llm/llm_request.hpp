@@ -131,6 +131,20 @@ struct LLMRequest : BaseRequest {
   // `disaggregated == true`.
   std::optional<uint32_t> kv_position_id;
 
+  // Number of tokens already in the decode-side KV cache that the prefill
+  // prefill should not send this part of KV.
+  int decode_position_id = 0;
+
+  // Accumulated think (reasoning) tokens in the matched prefix, folded into
+  // kv_position_id during decode-side session resolution. Used to derive
+  // decode_skip_tokens. Set on a prefix-cache hit.
+  int accumulated_think_tokens = 0;
+
+  // Same leading reused prefix as decode_position_id but excluding the
+  // accumulated think tokens. Computed on the decode side and forwarded to the
+  // prefill server, which stores it on the Sequence.
+  int decode_skip_tokens = 0;
+
   std::optional<bool> disaggregation_override;
 
   bool parallel_tool_calls = true;
@@ -161,6 +175,9 @@ struct LLMRequest : BaseRequest {
       nullptr;  // Pointer to session in SessionManager
   bool continuation =
       false;  // True if this request continues an existing session
+
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
 
   std::string toString() const {
     std::string promptInfo;

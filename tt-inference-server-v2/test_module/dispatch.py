@@ -21,7 +21,6 @@ from __future__ import annotations
 import importlib
 import logging
 from copy import deepcopy
-from enum import Enum
 from typing import Callable, List, Optional, Tuple
 
 from report_module.schema import Block
@@ -45,17 +44,11 @@ from .eval_tests import (
     run_tts_eval,
     run_video_eval,
 )
+from .task_types import MediaTaskType
 
 logger = logging.getLogger(__name__)
 
 MediaRunner = Callable[[MediaContext], Block]
-
-
-class MediaTaskType(Enum):
-    EVALUATION = "evaluation"
-    BENCHMARK = "benchmark"
-    SPEC_TESTS = "spec_tests"
-
 
 EVAL_DISPATCH: dict[str, MediaRunner] = {
     "CNN": run_cnn_eval,
