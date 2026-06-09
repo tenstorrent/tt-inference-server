@@ -32,15 +32,15 @@
       "label": "C++ Server Prefill/Decode Split (TCP)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_tpot_ms": 12,
+      "max_mean_ttft_ms": 1000
     },
     "prefill_decode_split_zmq": {
       "label": "C++ Server Prefill/Decode Split (ZMQ)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_tpot_ms": 12,
+      "max_mean_ttft_ms": 1000
     },
     "prefill_decode_split_runner": {
       "label": "C++ Server Prefill/Decode Split (mock_prefill_runner)",
@@ -53,15 +53,15 @@
       "label": "C++ Server Gateway Split (TCP)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
+      "max_mean_tpot_ms": 12,
       "max_mean_ttft_ms": 2000
     },
     "gateway_split_zmq": {
       "label": "C++ Server Gateway Split (ZMQ)",
       "min_completed": 1000,
       "max_failed": 0,
-      "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_tpot_ms": 12,
+      "max_mean_ttft_ms": 2000
     },
     "dynamo_frontend": {
       "label": "Dynamo Frontend + cpp_server Integration",

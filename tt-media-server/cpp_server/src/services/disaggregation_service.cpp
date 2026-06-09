@@ -350,7 +350,6 @@ void DisaggregationService::resolvePrefillSession(
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
-    request->slotId = acquired->slotId;
     // Record the acquired session so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;
@@ -406,7 +405,6 @@ void DisaggregationService::resolvePrefillSession(
           request->sessionId = session.getSessionId();
           request->prefillSlotId =
               sm->acquireInFlight(session.getSessionId(), nullptr);
-          request->slotId = request->prefillSlotId;
 
           // If copying, set continuation and kv_position_id on the request.
           if (slotToCopyFrom.has_value() && copyMatchedTokens > 0) {
