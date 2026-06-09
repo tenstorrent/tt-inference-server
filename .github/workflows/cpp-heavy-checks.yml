@@ -708,13 +708,12 @@ jobs:
       - name: Run prefix cache E2E tests against Dynamo frontend
         env:
           OPENAI_API_KEY: 'your-secret-key'
+          DYNAMO_HOST: '127.0.0.1'
+          DYNAMO_PORT: '8000'
+          DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
         run: |
-          "$HOME/.venvs/dynamo/bin/python3" \
-            cpp_server/tests/test_prefix_cache_e2e.py \
-            --port 8000 \
-            --model "${MODEL_NAME}" \
-            --verbose \
-            --timeout 60
+          cd cpp_server/build
+          ./prefix_cache_e2e_test
 
       - name: Stop Dynamo frontend, cpp_server backend, and etcd
         if: always()
