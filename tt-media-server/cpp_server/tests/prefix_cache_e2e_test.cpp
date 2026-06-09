@@ -575,7 +575,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   EXPECT_EQ(t1.usage.cachedTokens, 0) << "Turn 1 should have cached=0 (fresh)";
   int t1Prompt = t1.usage.promptTokens;
 
-  std::cout << "t1.content: " << t1.content <<std::endl;
+  std::cout << "t1.content: " << t1.content << std::endl;
   // Turn 2
   messages.push_back(makeMessage("assistant", t1.content));
   messages.push_back(makeMessage("user", "How does it handle collisions?"));
@@ -597,8 +597,7 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
 
   int t2Prompt = t2.usage.promptTokens;
 
-
-  std::cout <<"t2.content: " << t2.content <<std::endl;
+  std::cout << "t2.content: " << t2.content << std::endl;
   // Turn 3
   messages.push_back(makeMessage("assistant", t2.content));
   messages.push_back(makeMessage("user", "What about open addressing?"));
