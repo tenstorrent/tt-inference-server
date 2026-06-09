@@ -350,6 +350,7 @@ void DisaggregationService::resolvePrefillSession(
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
+    request->slotId = acquired->slotId;
     // Record the acquired session so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
     request->sessionId = acquired->sessionId;

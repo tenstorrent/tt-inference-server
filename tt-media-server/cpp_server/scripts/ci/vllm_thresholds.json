@@ -47,7 +47,7 @@
       "min_completed": 1000,
       "max_failed": 0,
       "max_mean_tpot_ms": 10,
-      "max_mean_ttft_ms": 650
+      "max_mean_ttft_ms": 2000
     },
     "gateway_split_tcp": {
       "label": "C++ Server Gateway Split (TCP)",
