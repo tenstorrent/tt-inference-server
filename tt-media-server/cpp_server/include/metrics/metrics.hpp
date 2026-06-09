@@ -78,6 +78,25 @@ class ServerMetrics {
   void setActiveSessionsCount(double n);
 
   /**
+   * Set the number of committed KV-cache blocks occupied by a slot.
+   *
+   * This is the *logical* prefix-cache block count tracked by SessionManager
+   * (1 key block + remaining blocks), counting only full/committed blocks and
+   * refreshed when a session's prefix is registered at turn end. It is not the
+   * memory-manager's physical occupancy.
+   *
+   * Called directly (session-lifecycle frequency, not per token). `slotId` is
+   * a bounded label (slot pool size); never label by session UUID.
+   */
+  void setSlotBlocks(uint32_t slotId, double blocks);
+
+  /**
+   * Remove a slot's block gauge. MUST be called when a slot is deallocated
+   * (session closed/evicted) so Prometheus stops reporting a stale value.
+   */
+  void removeSlot(uint32_t slotId);
+
+  /**
    * Record one completed HTTP request/response pair. Called from the Drogon
    * pre-sending advice hook. `status_code` is the numeric HTTP status
    * (200, 4xx, 5xx).
@@ -184,6 +203,7 @@ class ServerMetrics {
   prometheus::Gauge* max_queue_size_{nullptr};
   prometheus::Gauge* decoding_requests_{nullptr};
   prometheus::Gauge* active_sessions_{nullptr};
+  prometheus::Family<prometheus::Gauge>* slot_blocks_family_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
