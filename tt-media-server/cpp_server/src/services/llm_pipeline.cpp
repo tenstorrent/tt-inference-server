@@ -141,9 +141,83 @@ void LLMPipeline::resolveSession(
   TT_LOG_INFO("[LLMPipeline] Routing taskId={} blocks={}", req->task_id,
               routingInfo.blocks.size());
 
-  // Layer 1: Prefix-cache routing. Always attempt lookup.
+  // Layer 1a: Responses API continuation. When the previous_response_id is
+  // supplied, we route by that id instead of the content-prefix
+  // hash (parallel to the prefixIndex path below). The token delta is still
+  // computed by the hasher so we only prefill the new turn.
+  const bool useResponseId =
+      req->previousResponseId.has_value() && !req->previousResponseId->empty();
+  if (useResponseId) {
+    try {
+      const auto tAcquireStart = std::chrono::steady_clock::now();
+      auto acquired = sessionManager_->tryAcquireByResponseId(
+          *req->previousResponseId, cancelFn);
+      const auto acquireUs =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - tAcquireStart)
+              .count();
+      TT_LOG_INFO(
+          "[SessionTimer] taskId={} tryAcquireByResponseId_us={} hit={}",
+          req->task_id, acquireUs, acquired.has_value());
+
+      if (acquired.has_value()) {
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+        TT_LOG_INFO(
+            "[LLMPipeline] Response-id HIT taskId={} prevId={} sessionId={} "
+            "slotId={}",
+            req->task_id, *req->previousResponseId, acquired->sessionId,
+            acquired->slotId);
+        req->slotId = acquired->slotId;
+        req->session = sessionManager_->getSession(acquired->sessionId);
+        req->continuation = true;
+
+        auto [matchedTokens, thinkTokens] =
+            sessionManager_->computeMatchedTokens(acquired->sessionId,
+                                                  routingInfo.blocks);
+        req->kv_position_id = matchedTokens - 1 + thinkTokens;
+        applyDeltaPrompt(*req, matchedTokens);
+        TT_LOG_INFO(
+            "[LLMPipeline] Response-id delta taskId={} matchedTokens={} "
+            "thinkTokens={} deltaTokens={}",
+            req->task_id, matchedTokens, thinkTokens, req->prompt_tokens_count);
+
+        if (auto* deltaTokens = std::get_if<std::vector<int>>(&req->prompt)) {
+          req->session->initTokenAccumulator(
+              *deltaTokens, routingInfo.blocks,
+              [mgr = sessionManager_](
+                  const std::string& sessionId,
+                  const std::vector<tt::utils::BlockHashInfo>& blocks) {
+                mgr->registerPrefixHash(sessionId, blocks);
+              });
+        }
+        sessionManager_->registerPrefixHash(acquired->sessionId,
+                                            routingInfo.blocks);
+        if (req->responseId.has_value()) {
+          sessionManager_->registerResponseId(*req->previousResponseId,
+                                              *req->responseId);
+        }
+        info.validSessionFound = true;
+        info.registrationHashes = routingInfo.hashes();
+        onResolved(info);
+        return;
+      }
+
+      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
+      TT_LOG_INFO(
+          "[LLMPipeline] Response-id MISS taskId={} prevId={} → allocating "
+          "new session",
+          req->task_id, *req->previousResponseId);
+    } catch (const services::SessionInFlightException& e) {
+      TT_LOG_WARN("[LLMPipeline] Session busy for prevId={}: {}",
+                  *req->previousResponseId, e.what());
+      onError({SessionErrorType::RATE_LIMIT, e.what()});
+      return;
+    }
+  }
+
+  // Layer 1b: Prefix-cache routing. Skipped when we routed by response id.
   std::optional<SessionManager::AcquiredSession> acquired;
-  if (!routingInfo.blocks.empty()) {
+  if (!useResponseId && !routingInfo.blocks.empty()) {
     try {
       const auto tAcquireStart = std::chrono::steady_clock::now();
 
@@ -272,6 +346,12 @@ void LLMPipeline::resolveSession(
                 .count();
 
         req->session = mgr->getSession(session.getSessionId());
+
+        // Register under this turn's response id (when present) so the
+        // next request's previous_response_id resolves to this session/slot.
+        if (req->responseId.has_value()) {
+          mgr->initResponseId(session.getSessionId(), *req->responseId);
+        }
 
         std::vector<int> fullPrompt;
         if (auto* p = std::get_if<std::vector<int>>(&req->prompt)) {

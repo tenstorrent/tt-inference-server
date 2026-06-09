@@ -166,6 +166,9 @@ struct LLMRequest : BaseRequest {
   bool continuation =
       false;  // True if this request continues an existing session
 
+  std::optional<std::string> previousResponseId;
+  std::optional<std::string> responseId;
+
   std::string toString() const {
     std::string promptInfo;
     if (auto* s = std::get_if<std::string>(&prompt)) {
