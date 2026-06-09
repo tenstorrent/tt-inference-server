@@ -172,7 +172,6 @@ TT_LOG_LEVEL=info \
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
 LLM_DEVICE_BACKEND=mock \
@@ -191,7 +190,6 @@ PREFILL_SERVER_ID=prefill-0 \
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
 LLM_DEVICE_BACKEND=mock \
@@ -243,7 +241,6 @@ TT_LOG_LEVEL=info \
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8002 \
 TT_IPC_SHM_P2C=tt_ipc_p2c_8002 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
 LLM_DEVICE_BACKEND=mock \
@@ -262,7 +259,6 @@ PREFILL_SERVER_ID=prefill-0 \
 cd tt-media-server/cpp_server
 TT_IPC_SHM_C2P=tt_ipc_c2p_8003 \
 TT_IPC_SHM_P2C=tt_ipc_p2c_8003 \
-PREFILL_TIMEOUT_MS=15000 \
 TT_LOG_LEVEL=info \
 LLM_MODE=prefill \
 LLM_DEVICE_BACKEND=mock \

@@ -676,11 +676,6 @@ unsigned sessionAllocationMaxRetries() {
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
 }
 
-unsigned prefillTimeoutMs() {
-  return static_cast<unsigned>(
-      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
-}
-
 bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
