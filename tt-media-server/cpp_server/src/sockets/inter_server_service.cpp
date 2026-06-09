@@ -144,8 +144,8 @@ bool InterServerService::sendPrefillRequest(
     uint32_t taskId, const std::vector<uint64_t>& registrationHashes,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
-    const tt::domain::llm::SamplingParams& sampling,
-    int numberOfDecodeSkipTokens) {
+    const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
+    int decodeSkipTokens) {
   if (!enabled_) {
     return false;
   }
@@ -159,7 +159,8 @@ bool InterServerService::sendPrefillRequest(
   message.top_p = sampling.top_p;
   message.top_k = sampling.top_k;
   message.fast_mode = sampling.fast_mode;
-  message.number_of_decode_skip_tokens = numberOfDecodeSkipTokens;
+  message.decode_position_id = decodePositionId;
+  message.decode_skip_tokens = decodeSkipTokens;
 
   return socket_manager_.sendObject("prefill_request", message);
 }

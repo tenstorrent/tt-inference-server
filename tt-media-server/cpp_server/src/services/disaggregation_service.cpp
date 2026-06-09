@@ -153,8 +153,8 @@ void DisaggregationService::setupSocketHandlers() {
                                                     message.token_ids.end());
           auto slotId = message.slot_id;
           request->slotId = slotId;
-          request->number_of_decode_skip_tokens =
-              message.number_of_decode_skip_tokens;
+          request->decode_position_id = message.decode_position_id;
+          request->decode_skip_tokens = message.decode_skip_tokens;
 
           // Resolve prefix cache asynchronously: on HIT sets prefillSlotId
           // and trims prompt, on MISS allocates a new session first.
@@ -167,23 +167,22 @@ void DisaggregationService::setupSocketHandlers() {
                 const size_t fullPromptTokens = message.token_ids.size();
                 const size_t trimmedPromptTokens =
                     std::get<std::vector<int>>(request->prompt).size();
-                // Cached (reused) prompt tokens = the leading prefix that did
-                // NOT need a fresh prefill. Two sources describe that same
-                // prefix; take the larger:
-                //   - decode_skip_tokens: the prefix the decode node already
-                //     holds in its KV from earlier turns. The decode node does
-                //     the multi-turn prefix match and ships the full prompt
-                //     plus this skip count (it does not trim itself); the
-                //     prefill runner honors it. This is the dominant source in
-                //     chat.
-                //   - prefill-side trim (fullPrompt - delta): when the prefill
-                //     server independently hits its own prefix cache.
-                const int prefillTrim = static_cast<int>(
+                // Cached (reused) prompt tokens = the leading prefix this
+                // prefill did NOT recompute = what resolvePrefillSession
+                // trimmed off its own prefix-cache hit (fullPrompt - remaining
+                // delta).
+                //
+                // Only the prefill-side trim counts: the prefill runner trims
+                // and recomputes purely by its own prefix match, so any prefix
+                // the decode node reports (decode_skip_tokens) but that prefill
+                // does not have gets recomputed here — it is not cached.
+                // Folding decode_skip_tokens in (e.g. via max) would
+                // over-report cached_tokens by exactly the tokens prefill
+                // re-prefilled.
+                const int cachedTokens = static_cast<int>(
                     fullPromptTokens >= trimmedPromptTokens
                         ? fullPromptTokens - trimmedPromptTokens
                         : 0);
-                const int cachedTokens =
-                    std::max(prefillTrim, message.number_of_decode_skip_tokens);
                 // Capture the resolved sessionId by value:
                 // submitStreamingRequest hands the request to the pipeline, so
                 // request->sessionId is no longer reliable by the time this
@@ -285,42 +284,27 @@ void DisaggregationService::applyDeltaPrompt(LLMRequest& req,
     return;
   }
 
-  // The remaining (unmatched) prompt tokens that will be prefilled must be
-  // aligned to 32 so the prefill kernel can operate on full tiles.  If the
-  // remainder isn't divisible by 32, we pull back some matched tokens into
-  // the delta to pad the remainder up to the next multiple of 32.
-  constexpr uint32_t kAlignment = 32;
-  const uint32_t totalTokens = static_cast<uint32_t>(tokens.size());
-  const uint32_t remainder = totalTokens - matchedTokens;
-  const uint32_t alignedRemainder =
-      ((remainder + kAlignment - 1) / kAlignment) * kAlignment;
-
-  // How many extra tokens we need to pull back from the matched prefix.
-  const uint32_t pullBack = alignedRemainder - remainder;
-  const uint32_t effectiveSkip =
-      (pullBack <= matchedTokens) ? (matchedTokens - pullBack) : 0;
-
-  if (effectiveSkip == 0) {
-    TT_LOG_DEBUG(
-        "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-        "remainder={} — cannot align, full prefill will run",
-        matchedTokens, remainder);
-    return;
-  }
-
+  // `matchedTokens` is always a multiple of 32 because prefix-cache blocks are
+  // 32 tokens wide, so trimming exactly `matchedTokens` leaves the resumed
+  // prefill starting on a tile boundary — it never writes into an existing
+  // partial tile. We send the whole remaining suffix as-is; any *trailing*
+  // partial tile is fine for prefill (only writing into a partial tile at the
+  // start would corrupt previously-written KV, which the tile alignment of
+  // `matchedTokens` guarantees against). No 32-rounding / pull-back of matched
+  // tokens is needed.
   TT_LOG_DEBUG(
       "[DisaggregationService] applyDeltaPrompt: matchedTokens={} "
-      "effectiveSkip={} pullBack={} alignedRemainder={}",
-      matchedTokens, effectiveSkip, pullBack, alignedRemainder);
+      "remainder={}",
+      matchedTokens, static_cast<uint32_t>(tokens.size()) - matchedTokens);
 
-  // Remove the first `effectiveSkip` tokens — they are already in KV cache.
+  // Remove the first `matchedTokens` tokens — they are already in KV cache.
   tokens.erase(tokens.begin(),
-               tokens.begin() + static_cast<ptrdiff_t>(effectiveSkip));
+               tokens.begin() + static_cast<ptrdiff_t>(matchedTokens));
   req.prompt_tokens_count = static_cast<int>(tokens.size());
 
   // kv_position_id points to the last valid KV cache position (0-indexed),
   // which is one less than the number of tokens we're reusing.
-  req.kv_position_id = effectiveSkip - 1;
+  req.kv_position_id = matchedTokens - 1;
 }
 
 void DisaggregationService::resolvePrefillSession(
@@ -439,14 +423,18 @@ void DisaggregationService::handleStreamingRequest(
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
-    int decodeSkipTokens = request.kv_position_id.has_value()
+    int decodePositionId = request.kv_position_id.has_value()
                                ? static_cast<int>(*request.kv_position_id + 1)
                                : 0;
+    // Same reused prefix as decodePositionId but excluding the accumulated
+    // think tokens that were folded into kv_position_id during session
+    // resolution.
+    int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
     auto sent = socketService->sendPrefillRequest(
         request.task_id, registrationHashes,
         std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
-        slotId, tt::utils::mapper::mapSamplingParams(request),
+        slotId, tt::utils::mapper::mapSamplingParams(request), decodePositionId,
         decodeSkipTokens);
 
     if (!sent) {
