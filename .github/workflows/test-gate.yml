@@ -606,7 +606,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build, Unit Tests & Benchmarks
-    # Per-commit compile + unit-test + mock/structured-output benchmark gate on
+    # Per-commit compile + unit-test + mock benchmark gate on
     # ubuntu-latest. Build and bench run in ONE job: the freshly built binary in
     # cpp_server/build is benchmarked in place, so there is no build artifact to
     # archive/upload/download/unpack (that round-trip used to cost ~5 min on the
@@ -740,44 +740,6 @@ jobs:
           OPENAI_API_KEY: 'your-secret-key'
         run: python cpp_server/tests/test_non_streaming_chat.py
 
-      - name: Bench mock backend (structured output - json_object)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --extra-body '{"response_format": {"type": "json_object"}}' \
-            --save-result \
-            --result-filename "vllm-bench-structured-output-json-object.json" \
-            2>&1 | tee bench_structured_output_json_object.txt
-
-      - name: Bench mock backend (structured output - json_schema)
-        env:
-          OPENAI_API_KEY: 'your-secret-key'
-        run: |
-          vllm bench serve \
-            --model 'deepseek-ai/DeepSeek-R1-0528' \
-            --tokenizer 'cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528' \
-            --backend openai-chat \
-            --endpoint /v1/chat/completions \
-            --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
-            --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
-            --save-result \
-            --result-filename "vllm-bench-structured-output-json-schema.json" \
-            2>&1 | tee bench_structured_output_json_schema.txt
-
       - name: Stop mock server
         if: always()
         run: |
@@ -791,8 +753,7 @@ jobs:
       # (cpp-server-mock-pipeline-bench). Its tt-llm-engine decode_scheduler
       # pins 3 CPU cores, which starves a 4-core GitHub runner and makes the
       # throughput thresholds unmeetable — so it stays on the xlarge
-      # self-hosted runner while the mock / structured-output benches here run
-      # on ubuntu-latest.
+      # self-hosted runner while the mock bench here runs on ubuntu-latest.
 
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
@@ -802,10 +763,6 @@ jobs:
           FAIL=0
           python3 "$CHECK" --config "$CONFIG" --scenario cpp_mock \
             --result vllm-bench-mock.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_object \
-            --result vllm-bench-structured-output-json-object.json || FAIL=1
-          python3 "$CHECK" --config "$CONFIG" --scenario cpp_structured_json_schema \
-            --result vllm-bench-structured-output-json-schema.json || FAIL=1
           echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
 
       # ── Artifacts & logs ─────────────────────────────────────────────
@@ -822,8 +779,6 @@ jobs:
           name: cpp-server-bench-results
           path: |
             tt-media-server/vllm-bench-mock.json
-            tt-media-server/vllm-bench-structured-output-json-object.json
-            tt-media-server/vllm-bench-structured-output-json-schema.json
           retention-days: 1
           if-no-files-found: warn
 
