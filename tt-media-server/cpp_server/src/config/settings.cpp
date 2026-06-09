@@ -224,7 +224,7 @@ unsigned pmConnectTimeoutMs() {
       envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
 }
 
-size_t dsMaxUsers() {
+size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
@@ -265,6 +265,14 @@ std::string ttMediaResultQueueName() {
 std::string ttWarmupSignalsQueueName() {
   return envString("TT_WARMUP_SIGNALS_QUEUE",
                    defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string prefillNumLayers() {
+  return envString("PREFILL_NUM_LAYERS", defaults::PREFILL_NUM_LAYERS);
+}
+
+std::string prefillChunkSize() {
+  return envString("PREFILL_CHUNK_SIZE", defaults::PREFILL_CHUNK_SIZE);
 }
 
 std::string ttMemoryRequestQueueName() {
