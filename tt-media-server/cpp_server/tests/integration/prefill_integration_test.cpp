@@ -45,6 +45,8 @@
 namespace {
 
 constexpr uint16_t MOCK_DECODE_PORT = 19500;  // NOLINT
+constexpr const char* EXPECTED_PREFILL_SERVER_ID = "prefill-integration-test";
+constexpr uint32_t EXPECTED_PREFILL_MAX_IN_FLIGHT = 3;
 
 void configureEnv() {
   setenv("LLM_DEVICE_BACKEND", "mock", 1);
@@ -61,6 +63,9 @@ void configureEnv() {
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
+  setenv("PREFILL_SERVER_ID", EXPECTED_PREFILL_SERVER_ID, 1);
+  setenv("PREFILL_MAX_IN_FLIGHT",
+         std::to_string(EXPECTED_PREFILL_MAX_IN_FLIGHT).c_str(), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,11 +193,28 @@ class MockDecodeServer {
       if (res.has_value() && identity.size() > 0) {
         peerId.assign(static_cast<uint8_t*>(identity.data()),
                       static_cast<uint8_t*>(identity.data()) + identity.size());
-        // Drain the data frame
-        if (identity.more()) {
-          zmq::message_t dataFrame;
-          (void)socket.recv(dataFrame, zmq::recv_flags::none);
+        if (!identity.more()) {
+          ADD_FAILURE() << "Prefill registration payload was missing";
+          return {};
         }
+
+        zmq::message_t dataFrame;
+        auto dataRes = socket.recv(dataFrame, zmq::recv_flags::none);
+        if (!dataRes.has_value() || dataFrame.size() == 0) {
+          ADD_FAILURE() << "Prefill registration frame was empty";
+          return {};
+        }
+
+        auto* ptr = static_cast<uint8_t*>(dataFrame.data());
+        std::vector<uint8_t> rawData(ptr, ptr + dataFrame.size());
+        EXPECT_EQ(tt::sockets::wire::readMessageType(rawData),
+                  std::string(tt::sockets::tags::PREFILL_REGISTRATION));
+
+        auto registration = tt::sockets::wire::deserializePayload<
+            tt::sockets::PrefillRegistrationMessage>(rawData);
+        EXPECT_EQ(registration.server_id, EXPECTED_PREFILL_SERVER_ID);
+        EXPECT_FALSE(registration.server_id.empty());
+        EXPECT_EQ(registration.max_in_flight, EXPECTED_PREFILL_MAX_IN_FLIGHT);
         return peerId;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
