@@ -70,6 +70,7 @@ def test_extract_params_speed_bench_throughput_slug():
     params = extract_params_from_filename(name)
     assert params["public_dataset"] == "speed_bench_throughput_1k"
 
+
 def test_process_spec_decode_pair_file(tmp_path):
     name = (
         "benchmark_spec_decode_pair_mid_gpu_"

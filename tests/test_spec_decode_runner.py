@@ -11,7 +11,6 @@ from benchmarking import run_spec_decode_benchmarks as runner
 from benchmarking.run_spec_decode_benchmarks import (
     build_aiperf_cmd,
     parse_workflow_args,
-    select_profile,
     warmup_endpoint,
 )
 from benchmarking.spec_decode_common import SpecDecodeRunSpec

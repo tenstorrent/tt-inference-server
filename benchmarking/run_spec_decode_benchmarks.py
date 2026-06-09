@@ -69,8 +69,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_workflow_args(workflow_args_str: Optional[str]) -> Dict[str, str]:
-    """ Tokens without '=' are skipped. otherwise, mirrors run_guidellm_benchmarks.py's parser.
-    """
+    """Tokens without '=' are skipped. otherwise, mirrors run_guidellm_benchmarks.py's parser."""
     parsed: Dict[str, str] = {}
     if not workflow_args_str:
         return parsed
@@ -106,7 +105,7 @@ def build_aiperf_cmd(
     """Build the ``aiperf profile`` command for one ``SpecDecodeRunSpec``.
 
     Spec-decode-specific knobs vs. the general aiperf perf runner:
-      - ``--public-dataset <name>`` so far only run with speed-bench, but can be 
+      - ``--public-dataset <name>`` so far only run with speed-bench, but can be
         extended for other datasets (such as spec-bench) that aiperf supports.
       - ``--extra-inputs temperature:0`` so draft/target sampling is
         deterministic; matches the spec-decode comparison convention.

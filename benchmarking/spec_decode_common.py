@@ -34,8 +34,9 @@ class SpecDecodeRunSpec:
     max_concurrency: int
     num_prompts: Optional[int] = None
     output_len: Optional[int] = None
+
     # Upper bound on tokens generated per request, injected as
-    # ``--extra-inputs max_completion_tokens:<N>``. this is not a lower bound, the model 
+    # ``--extra-inputs max_completion_tokens:<N>``. this is not a lower bound, the model
     # is allowed to output its natural length, then it cuts off at N to prevent timeout
     def __post_init__(self) -> None:
         if not self.public_dataset:
