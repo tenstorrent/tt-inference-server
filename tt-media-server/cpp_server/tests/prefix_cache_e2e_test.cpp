@@ -208,12 +208,16 @@ ChatResponse parseStreamingResponse(const std::string& rawResponse) {
       continue;
     }
 
-    // Extract content delta
+    // Extract content delta (DeepSeek R1 uses reasoning_content, not content)
     if (chunk.isMember("choices") && chunk["choices"].isArray() &&
         !chunk["choices"].empty()) {
       const auto& delta = chunk["choices"][0]["delta"];
-      if (delta.isMember("content")) {
+      if (delta.isMember("content") && !delta["content"].isNull()) {
         result.content += delta["content"].asString();
+      }
+      if (delta.isMember("reasoning_content") &&
+          !delta["reasoning_content"].isNull()) {
+        result.content += delta["reasoning_content"].asString();
       }
     }
 
@@ -457,17 +461,17 @@ TEST_F(PrefixCacheE2ETest, ExactCachedTokenValues) {
             << " cached=" << r2.usage.cachedTokens
             << " completion=" << r2.usage.completionTokens << std::endl;
 
-  // The reused portion is the block-aligned prefix of Request 2's prompt.
-  // Request 2 includes: Request 1's prompt + assistant response + new user.
-  // After Request 1 completes, its full prompt+completion is in the cache.
-  // Request 2 matches the entire shared prefix (everything except the trailing
-  // partial block), so expected cached = block-aligned(R2 prompt).
+  // R2's prompt includes r1.content as the assistant response, but the frontend
+  // re-tokenizes this text. The re-tokenized tokens won't match R1's original
+  // completion token IDs exactly, so R2's prompt diverges from R1's cached
+  // session right after R1's prompt. The matching prefix is R1's prompt.
+  // (To get exact token continuation, use previous_response_id instead.)
   int expectedCached = computeExpectedCachedTokens(
-      r2.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
 
   std::cout << "    Expected cached_tokens: " << expectedCached << std::endl;
-  std::cout << "    (Based on request 2 prompt_tokens=" << r2.usage.promptTokens
-            << ", first_block=" << cfg_.firstBlockSize
+  std::cout << "    (Based on R1 prompt_tokens=" << r1.usage.promptTokens
+            << " as matching prefix, first_block=" << cfg_.firstBlockSize
             << ", block=" << cfg_.blockSize << ")" << std::endl;
 
   // Request 2 MUST have more cached tokens than Request 1 since it includes
@@ -544,14 +548,18 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r2.usage.cachedTokens
             << " completion=" << r2.usage.completionTokens << std::endl;
 
+  // R2's prompt includes the assistant response as text, but re-tokenization
+  // produces different token IDs than R1's original completion. So R2 only
+  // matches R1's prompt prefix.
   int r2ExpectedCached = computeExpectedCachedTokens(
-      r2.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
   std::cout << "    Expected cached: " << r2ExpectedCached << std::endl;
 
   EXPECT_GT(r2.usage.cachedTokens, 0)
       << "Request 2 should have cached_tokens > 0 (reuses R1's cached prefix)";
   EXPECT_LE(std::abs(r2.usage.cachedTokens - r2ExpectedCached), 1)
-      << "Request 2 cached should match block-aligned R2 prompt";
+      << "Request 2 cached should match block-aligned R1 prompt (matching "
+         "prefix)";
 
   // Save R2 messages for replay later
   std::vector<Json::Value> r2MessagesCopy = r2Messages;
@@ -609,12 +617,15 @@ TEST_F(PrefixCacheE2ETest, CacheReplayScenario) {
             << " cached=" << r5.usage.cachedTokens
             << " completion=" << r5.usage.completionTokens << std::endl;
 
+  // R5 replays R2 exactly. Like R2, it only matches R1's prompt prefix
+  // because re-tokenization of the assistant text diverges from cached tokens.
   int r5ExpectedCached = computeExpectedCachedTokens(
-      r5.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
+      r1.usage.promptTokens, cfg_.firstBlockSize, cfg_.blockSize);
   std::cout << "    Expected cached: " << r5ExpectedCached << std::endl;
 
   EXPECT_LE(std::abs(r5.usage.cachedTokens - r5ExpectedCached), 1)
-      << "Request 5 cached should match block-aligned R2 prompt";
+      << "Request 5 cached should match block-aligned R1 prompt (matching "
+         "prefix)";
 
   EXPECT_EQ(r5.usage.cachedTokens, r2CachedTokens)
       << "Request 5 (replay) should have same cached_tokens as original R2";
