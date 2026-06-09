@@ -570,11 +570,14 @@ TEST_F(PrefixCacheE2ETest, MultiTurnHashCreation) {
   auto epoch = now.time_since_epoch();
   auto millis =
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
-  std::string uniqueSuffix = " [multiturn-test-" + std::to_string(millis) + "]";
+  // Prepend unique prefix to change the first block hash (prefix cache hashes
+  // from the start, so appending at the end doesn't prevent cache hits)
+  std::string uniquePrefix =
+      "[MULTITURN-TEST-" + std::to_string(millis) + "] ";
 
   // Turn 1
   std::vector<Json::Value> messages = {
-      makeMessage("system", std::string(kSystemPromptCoding) + uniqueSuffix),
+      makeMessage("system", uniquePrefix + std::string(kSystemPromptCoding)),
       makeMessage("user", "What is a hash table?")};
 
   std::cout << "  Turn 1..." << std::endl;
@@ -646,18 +649,19 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
 
   // Create many unique conversations to trigger potential eviction
-  // Each conversation has a unique system prompt suffix
+  // Each conversation has a unique system prompt PREFIX (not suffix!) to change
+  // the first block hash and prevent cache hits between conversations
   constexpr int kNumConversations = 20;
 
   std::cout << "  Creating " << kNumConversations << " unique conversations..."
             << std::endl;
 
   for (int i = 0; i < kNumConversations; ++i) {
-    std::string uniqueSuffix = " [eviction-test-" + std::to_string(millis) +
-                               "-conv-" + std::to_string(i) + "]";
+    std::string uniquePrefix = "[EVICTION-TEST-" + std::to_string(millis) +
+                               "-CONV-" + std::to_string(i) + "] ";
 
     std::vector<Json::Value> messages = {
-        makeMessage("system", std::string(kSystemPromptCoding) + uniqueSuffix),
+        makeMessage("system", uniquePrefix + std::string(kSystemPromptCoding)),
         makeMessage("user", "Question " + std::to_string(i))};
 
     ChatResponse r = sendChat(cfg_, messages);
@@ -672,11 +676,11 @@ TEST_F(PrefixCacheE2ETest, SessionEvictionUnderLoad) {
             << std::endl;
 
   // Now create a conversation and verify prefix caching still works
-  std::string finalSuffix =
-      " [eviction-test-" + std::to_string(millis) + "-final]";
+  std::string finalPrefix =
+      "[EVICTION-TEST-" + std::to_string(millis) + "-FINAL] ";
 
   std::vector<Json::Value> finalMessages = {
-      makeMessage("system", std::string(kSystemPromptMarine) + finalSuffix),
+      makeMessage("system", finalPrefix + std::string(kSystemPromptMarine)),
       makeMessage("user", "Tell me about whales.")};
 
   std::cout << "  Final conversation - request 1 (fresh)..." << std::endl;
